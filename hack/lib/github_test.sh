@@ -684,7 +684,9 @@ A <!-- watch:runners -->"
 # The line says how many of the repository's runners are online, over every
 # page; GitHub is asked for them only when a run waits.
 (
-  ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+  # Counts back from the pinned GH_NOW, never the real clock: a second ticking
+  # between building RUNS and a check's expectation failed it (#1299).
+  ago() { date -u -d "$now $1 ago" +%Y-%m-%dT%H:%M:%SZ; }
   declare -A JOBS
   NONE='{"jobs":[]}'
   gh() {
