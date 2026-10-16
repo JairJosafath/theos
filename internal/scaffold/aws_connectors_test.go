@@ -14,10 +14,11 @@ import (
 // renderLambda renders aws-lambda-ts with aws-standard and connectors.
 func renderLambda(t *testing.T, connectors ...string) Result {
 	t.Helper()
-	sides := []side{
-		{model.SideFramework, "aws-lambda-ts"},
-		{model.SideStandard, "aws-standard"},
-	}
+	sides := make([]side, 0, 2+len(connectors))
+	sides = append(sides,
+		side{model.SideFramework, "aws-lambda-ts"},
+		side{model.SideStandard, "aws-standard"},
+	)
 	for _, c := range connectors {
 		sides = append(sides, side{model.SideConnector, c})
 	}
