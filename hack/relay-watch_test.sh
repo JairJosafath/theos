@@ -37,7 +37,15 @@ PARENTS= PARENTS_RC=0
 parents() { echo x >>"$T/tends"; [ -n "$PARENTS" ] && printf '%s\n' "$PARENTS"; return "$PARENTS_RC"; }
 tends() { cat "$T/tends" 2>/dev/null | wc -l | tr -d ' '; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
-run_triage() { echo triage >>"$T/triages"; echo "triage started (pid 1)"; return "$TRIAGE_RC"; }
+# run_triage records the triage in .relay/triaged as hack/relay.sh --triage
+# does, the only writer: the issues (the watch's list) as its session starts,
+# only the time when it fails to start one.
+run_triage() {
+  echo triage >>"$T/triages"
+  if [ "$TRIAGE_RC" = 0 ]; then echo "$(date +%s) $list" >"$DIR/triaged"; else date +%s >"$DIR/triaged"; fi
+  echo "triage started (pid 1)"
+  return "$TRIAGE_RC"
+}
 # The watch asks for the proposed issues every round here; its WATCH_RETRY
 # between asks has its own tests below.
 TRIAGE_ASK=0
