@@ -23,12 +23,17 @@ type giteaRunner struct {
 	} `json:"labels"`
 }
 
-func (r giteaRunner) runner() Runner {
-	out := Runner{ID: r.ID, Name: r.Name, Ephemeral: r.Ephemeral, Busy: r.Busy}
+// online is whether Gitea has heard from the runner lately.
+func (r giteaRunner) online() bool {
 	switch r.Status {
 	case "online", "idle", "active":
-		out.Online = true
+		return true
 	}
+	return false
+}
+
+func (r giteaRunner) runner() Runner {
+	out := Runner{ID: r.ID, Name: r.Name, Ephemeral: r.Ephemeral, Busy: r.Busy, Online: r.online()}
 	for _, l := range r.Labels {
 		out.Labels = append(out.Labels, l.Name)
 	}
@@ -62,32 +67,45 @@ func (g *gitea) RunnerRegistrationToken(ctx context.Context) (string, error) {
 	return token.Token, nil
 }
 
-// Runners returns the runners registered to the owner organization, reading
-// at most runnerPages pages; a pool has far fewer. Gitea lists the runners it
-// heard from last first, so one that calls it while the pages are read can
-// move to an earlier page: a runner listed twice is returned once.
+// Runners returns the runners registered to the owner organization.
 func (g *gitea) Runners(ctx context.Context) ([]Runner, error) {
-	var out []Runner
+	runners, err := g.listRunners(ctx, g.runnersPath(), fmt.Sprintf("%q", g.owner))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Runner, 0, len(runners))
+	for _, r := range runners {
+		out = append(out, r.runner())
+	}
+	return out, nil
+}
+
+// listRunners reads the runners Gitea lists at path, of whose, at most
+// runnerPages pages; a pool has far fewer. Gitea lists the runners it heard
+// from last first, so one that calls it while the pages are read can move to
+// an earlier page: a runner listed twice is returned once.
+func (g *gitea) listRunners(ctx context.Context, path, whose string) ([]giteaRunner, error) {
+	var out []giteaRunner
 	seen := map[int64]bool{}
 	for page := 1; page <= runnerPages; page++ {
 		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
-		status, data, err := g.do(ctx, http.MethodGet, g.runnersPath()+"?"+query.Encode(), nil)
+		status, data, err := g.do(ctx, http.MethodGet, path+"?"+query.Encode(), nil)
 		if err != nil {
 			return nil, err
 		}
 		if status != http.StatusOK {
-			return nil, fmt.Errorf("gitea: listing the runners of %q failed (HTTP %d): %s", g.owner, status, apiMessage(data))
+			return nil, fmt.Errorf("gitea: listing the runners of %s failed (HTTP %d): %s", whose, status, apiMessage(data))
 		}
 		var runners struct {
 			Runners []giteaRunner `json:"runners"`
 		}
 		if err := json.Unmarshal(data, &runners); err != nil {
-			return nil, fmt.Errorf("gitea: listing the runners of %q: %w", g.owner, err)
+			return nil, fmt.Errorf("gitea: listing the runners of %s: %w", whose, err)
 		}
 		for _, r := range runners.Runners {
 			if !seen[r.ID] {
 				seen[r.ID] = true
-				out = append(out, r.runner())
+				out = append(out, r)
 			}
 		}
 		if len(runners.Runners) < issuePageSize {
