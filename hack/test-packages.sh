@@ -72,7 +72,7 @@ done
 # or FILE is new and has one.
 embeds() {
   if git cat-file -e "$base:$1" 2>/dev/null; then
-    git diff "$base" -- "$1" | grep -q '^[-+][[:space:]]*//go:embed'
+    git diff "$base" -- "$1" | grep '^[-+][[:space:]]*//go:embed' >/dev/null
   else
     grep -q '^[[:space:]]*//go:embed' "$1" 2>/dev/null
   fi
