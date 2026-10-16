@@ -9,16 +9,16 @@ assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
 `make check` contract CI runs. Nothing deploys, bootstraps or calls AWS.
 
-Copied from: ts-standard v1.4.1, the TypeScript rules and `principles.md`. A
+Copied from: ts-standard v1.5.0, the TypeScript rules and `principles.md`. A
 drift test in C4 Factory's `internal/scaffold` keeps the shared files equal:
 `.editorconfig`, `.prettierrc.json` and `docs/style/typescript.md` render the
 same as ts-standard's for `node-cli`, and every line ts-standard's
 `eslint.config.mjs` and `docs/style/principles.md` render the same for all its
 Frameworks appears in this Standard's, in the same order. For
 `aws-lambda-go`, `.golangci.yml` and `docs/style/go.md` are go-standard
-v1.2.1's, and the same test keeps them byte for byte equal to go-standard's.
+v1.3.0's, and the same test keeps them byte for byte equal to go-standard's.
 For `aws-lambda-py`, `ruff.toml` and `mypy.ini` render the same as
-python-standard v1.2.1's, and `docs/style/python.md` holds its `python.md`'s
+python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
@@ -116,7 +116,7 @@ byte for byte.
   `.gitea/workflows/check.yaml` runs it on pull requests and on `main` on a
   runner labelled `go` (which has uv), under the status context
   `check / check`, which the protected `main` requires
-  (`model.CheckContexts`). npm's and uv's caches go to the runner's
+  (Gitea Actions' check contexts, `model.CI` in `internal/model/ci.go`). npm's and uv's caches go to the runner's
   memory-backed `/tmp`. A change to only `CHANGELOG.md`, `docs/` or images
   (`.png`, `.jpg`, `.gif`, `.svg`) skips the steps after the checkout and
   passes, so the context still reports; any other file, `README.md`

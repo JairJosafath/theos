@@ -49,7 +49,7 @@ func pausedMessage(ns, message string) {
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(cond.Message).To(Equal(message))
-	}, wholeRound).Should(Succeed())
+	}).Should(Succeed())
 }
 
 // Decisions 4 and 5 of docs/plans/done/upgrade-in-place.md (#683).
@@ -64,7 +64,7 @@ var _ = Describe("Brief paused", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 
 		By("a person pausing one of the Brief's Crews by hand, and keeping a Crew of their own")
 		crewOf := func(name string, labels map[string]string, paused bool) *c4v1alpha1.Crew {
@@ -131,7 +131,7 @@ var _ = Describe("Brief paused", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(getCrew(Default, "by-hand").Spec.Paused).To(BeTrue())
 		Expect(getCrew(Default, "other").Spec.Paused).To(BeFalse())
 	})
@@ -151,7 +151,7 @@ var _ = Describe("Brief paused", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.Paused).To(BeTrue())
 		Expect(crew.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPausedBy, c4v1alpha1.PausedByBrief))

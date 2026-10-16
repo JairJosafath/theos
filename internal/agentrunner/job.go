@@ -42,7 +42,8 @@ const (
 	EnvGitToken     = "C4_GIT_TOKEN"
 	EnvCheckCommand = "C4_CHECK_COMMAND"
 	EnvContext      = "C4_CONTEXT"
-	// EnvProtectedPaths lists the Standard's protected paths, comma-separated.
+	// EnvProtectedPaths lists the paths the agent must not change, the
+	// platform's and the Standard's, comma-separated.
 	EnvProtectedPaths = "C4_PROTECTED_PATHS"
 	// EnvAllowedPaths lists the protected paths an approved Standard change lets
 	// this Task change, comma-separated.
@@ -97,8 +98,9 @@ type Job struct {
 	Token     string
 	// CheckCommand is the quality contract, run in the repository after the agent.
 	CheckCommand []string
-	// ProtectedPaths are the Standard's paths the agent must not change, next to
-	// the platform's.
+	// ProtectedPaths are the paths the agent must not change, as the operator
+	// computed them for the Container's CI system: the platform's and the
+	// Standard's.
 	ProtectedPaths []string
 	// AllowedPaths gate the Task: when set, it may change only these paths.
 	AllowedPaths []string

@@ -63,13 +63,27 @@ func TestScaffoldInput(t *testing.T) {
 			FrameworkRef:      c4v1alpha1.LocalRef{Name: "python-fastapi"},
 			StandardRef:       &c4v1alpha1.LocalRef{Name: "python-strict"},
 			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
+			Operations: &c4v1alpha1.OperationsSpec{
+				Recovery: &c4v1alpha1.OperationsRecovery{RPO: "15m"},
+				Alerts:   &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			},
 		},
 	}
-	got := scaffoldInput(container, []string{"postgres"}, model.ChecksBeforeRelease)
+	ci, err := model.HostCI("gitea")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container))
 	want := scaffold.Input{
+		CI:      ci,
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
 		Type: "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
 		Connectors: []string{"postgres"}, Checks: "BeforeRelease",
+		Operations: model.Operations{
+			Backups:  model.OperationsBackups{RetentionDays: model.DefaultRetentionDays},
+			Recovery: model.OperationsRecovery{RPO: "15m", RTO: model.DefaultRTO},
+			Alerts:   model.OperationsAlerts{Email: "ops@example.com"},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)

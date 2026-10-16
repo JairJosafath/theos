@@ -42,7 +42,7 @@ var _ = Describe("Brief parallel", func() {
 		By("making the Crew with parallel 3 when the Brief says nothing")
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(model.BriefParallelDefault))
 		Eventually(func(g Gomega) {
 			app := briefApp(g, ns, "linter")
@@ -87,7 +87,7 @@ var _ = Describe("Brief parallel", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(int32(2)))
 		other := &c4v1alpha1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "other"), other)).To(Succeed())
@@ -102,7 +102,7 @@ var _ = Describe("Brief parallel", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(model.BriefParallelDefault))
 
 		By("applying round 2's parallel.yaml of 2, from its new prompt, to round 1's Crew")
@@ -115,7 +115,7 @@ var _ = Describe("Brief parallel", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(b.Status.Parallel).To(Equal(int32(2)))
 			g.Expect(b.Status.ParallelRound).To(Equal(int32(2)))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(linterCrew(g, ns).Spec.Parallel).To(Equal(int32(2)))
 			g.Expect(briefApp(g, ns, "linter").Parallel).To(Equal(int32(2)))
@@ -161,7 +161,7 @@ var _ = Describe("Brief parallel", func() {
 		planRound(ns, 1, 1, parallelPlan(ns, 1, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}, wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(int32(1)))
 		Expect(getBrief(Default, ns).Status.Parallel).To(Equal(int32(1)))
 	})

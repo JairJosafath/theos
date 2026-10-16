@@ -37,6 +37,11 @@ spec:
     name: small
   deploymentRef:
     name: k8s-manifests
+  operations:
+    recovery:
+      rpo: 15m
+    alerts:
+      email: ops@webshop.example
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: DataStore

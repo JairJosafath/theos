@@ -149,7 +149,7 @@ func TestProjectNotesUnprotected(t *testing.T) {
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		t.Fatal(err)
 	}
-	lists := map[string][]string{"AgentNeverPaths": AgentNeverPaths, "PlatformProtectedPaths": PlatformProtectedPaths}
+	lists := map[string][]string{"AgentNeverPaths": AgentNeverPaths, "PlatformProtectedPaths": PlatformProtectedPaths(giteaActions)}
 	standards := 0
 	for _, e := range values.Catalog.Entries {
 		if e.Kind == "Standard" {

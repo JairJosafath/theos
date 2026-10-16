@@ -104,7 +104,8 @@ it against this table. Where the code lives:
   the adapters a GitProvider names and gives each reconciler the ports it
   calls. A depguard rule denies `internal/adapters` and `internal/gitprovider`
   in `internal/controller`.
-- **The per-CI table** (workflow path, check contexts, protected paths) is in
+- **The per-CI table** (`model.CI`: its name, which names the templates'
+  `.c4factory/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
 - **The host-neutral guard** is a Go test beside the ports
   (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
@@ -119,7 +120,7 @@ port is now.
 | --- | --- | --- | --- | --- | --- | --- |
 | GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: webhooks (#1084) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only | `gitprovider.Provider` |
 | Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `Provider` and `IssueTracker` |
-| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model` | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094) | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs with the GitProvider Secret | `Provider`; `model.CheckContexts`, `model.PlatformProtectedPaths` |
+| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model` | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094) | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs with the GitProvider Secret | `Provider`; the per-CI table `model.CI` (`internal/model/ci.go`) |
 | AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `Provider` |
 | Registry | Go modules (optional), Go proxy address, container images (#1069) | the host's own, else `GitProvider.spec.registry.<member>` | Gitea packages | to write (#1094) | GitProvider Secret for the operator; CI pushes with its job token | `Provider`, `Repository.GoProxy` |
 | AgentRuntime | start a run, its state and result, stop it, list held runs; the fence is the adapter's | Helm installs one; no field until a second | Agent Sandbox | to write; the sandbox's pod spec and fence tests in `make test` | operator ServiceAccount; the sandbox gets no Kubernetes token | `SandboxGVK`, `buildSandbox`, `runState` in `internal/controller` |

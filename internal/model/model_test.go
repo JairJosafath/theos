@@ -293,13 +293,18 @@ func TestClusterNamespace(t *testing.T) {
 }
 
 func TestAgentProtectedPaths(t *testing.T) {
-	got := AgentProtectedPaths([]string{"Makefile", ".gitea/", "docs/style/"})
+	got := AgentProtectedPaths(giteaActions, []string{"Makefile", ".gitea/", "docs/style/"})
 	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "docs/style/"}
 	if !slices.Equal(got, want) {
 		t.Errorf("AgentProtectedPaths() = %v, want %v", got, want)
 	}
-	if !slices.Equal(AgentProtectedPaths(nil), PlatformProtectedPaths) {
-		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", AgentProtectedPaths(nil))
+	if got := AgentProtectedPaths(giteaActions, nil); !slices.Equal(got, PlatformProtectedPaths(giteaActions)) {
+		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", got)
+	}
+	other := CI{Name: "other", ProtectedPaths: []string{".other-ci.yml"}}
+	want = []string{".c4factory.yaml", ".devcontainer/", ".other-ci.yml", "Makefile"}
+	if got := AgentProtectedPaths(other, []string{"Makefile"}); !slices.Equal(got, want) {
+		t.Errorf("AgentProtectedPaths(other) = %v, want %v", got, want)
 	}
 }
 
@@ -340,7 +345,7 @@ func TestUnpassedChecks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := UnpassedChecks(tt.contexts); !slices.Equal(got, tt.want) {
+			if got := UnpassedChecks([]string{"check*"}, tt.contexts); !slices.Equal(got, tt.want) {
 				t.Errorf("UnpassedChecks(%v) = %v, want %v", tt.contexts, got, tt.want)
 			}
 		})

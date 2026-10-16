@@ -118,6 +118,10 @@ const (
 	// full check when the Container's spec.checks asks, and its repository's CI
 	// already does; False with the update in flight or its stop while not.
 	ConditionChecksApplied = "ChecksApplied"
+	// ConditionOperationsApplied is True when a scaffolded Container's
+	// spec.operations is the block its repository was rendered with; False
+	// with reason ChangedAfterScaffold once the block changes.
+	ConditionOperationsApplied = "OperationsApplied"
 )
 
 // Condition reasons.
@@ -127,6 +131,7 @@ const (
 	ReasonValid                = "Valid"
 	ReasonUnsupportedType      = "UnsupportedType"
 	ReasonUnsupportedFramework = "UnsupportedFramework"
+	ReasonUnsupportedCI        = "UnsupportedCI"
 	ReasonDeploysItself        = "DeploysItself"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"
@@ -167,6 +172,10 @@ const (
 	// ReasonPending: ChecksApplied is False while the Standard update that brings
 	// the Container's checks to its repository hasn't merged yet.
 	ReasonPending = "Pending"
+	// ReasonChangedAfterScaffold: OperationsApplied is False because the
+	// Container's spec.operations changed after its scaffold, and nothing yet
+	// carries the change to its repository.
+	ReasonChangedAfterScaffold = "ChangedAfterScaffold"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

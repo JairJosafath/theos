@@ -123,6 +123,26 @@ export interface StandardFile {
   change?: string
 }
 
+/** A Container's operations: what its deploy target's backups, recovery and alarms are rendered with. */
+export interface Operations {
+  backups?: {
+    /** Days of backups kept; 0 is point-in-time recovery only. */
+    retentionDays?: number
+    /** An AWS region a copy goes to; empty is none. */
+    copyToRegion?: string
+  }
+  recovery?: {
+    /** How much data may be lost, such as 1h. */
+    rpo?: string
+    /** How long a recovery may take, such as 4h. */
+    rto?: string
+  }
+  alerts?: {
+    /** Who the alarms tell; empty is nobody. */
+    email?: string
+  }
+}
+
 export interface Container extends K8sObject {
   spec: {
     softwareSystemRef: LocalRef
@@ -136,9 +156,13 @@ export interface Container extends K8sObject {
     deploymentRef?: LocalRef
     /** When CI runs the full check; the API server defaults it to EveryChange. */
     checks?: ChecksMode
+    /** Backups, recovery and alerts; any field left out takes its default. */
+    operations?: Operations
   }
   status?: {
     phase?: ContainerPhase
+    /** The operations the scaffold rendered with, every field filled in. */
+    operations?: Operations
     repositoryURL?: string
     scaffoldedFrom?: string[]
     appliedRelationships?: string[]

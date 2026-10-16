@@ -370,11 +370,6 @@ func joinAnd(items []string) string {
 	}
 }
 
-// CheckContexts are the status check contexts a protected default branch requires.
-// A Standard's CI must report under a context that matches one of these glob
-// patterns, such as "check / check (pull_request)".
-var CheckContexts = []string{"check*"}
-
 // checkSuccess is the state of a check, or of all of a commit's checks, that passed.
 const checkSuccess = "success"
 
@@ -395,13 +390,14 @@ const (
 // checksFailed reports whether a commit's checks, as a whole, failed.
 func checksFailed(state string) bool { return state == checkFailure || state == checkError }
 
-// UnpassedChecks returns the CheckContexts patterns that contexts, the state of
-// each check on a commit by its context, does not pass, the way branch protection
+// UnpassedChecks returns the patterns of required, a CI system's
+// CheckContexts, that contexts, the state of each check on a commit by its
+// context, does not pass, the way branch protection
 // reads them: no check that ran matches the pattern, or one that matches has not
 // succeeded. A skipped check neither passes nor fails a pattern.
-func UnpassedChecks(contexts map[string]string) []string {
+func UnpassedChecks(required []string, contexts map[string]string) []string {
 	var out []string
-	for _, pattern := range CheckContexts {
+	for _, pattern := range required {
 		matched, passed := false, true
 		for context, state := range contexts {
 			if state != checkSkipped && matchGlob(pattern, context) {
@@ -441,10 +437,6 @@ func matchGlob(pattern, s string) bool {
 // require.
 func Protected(hasStandard bool) bool { return hasStandard }
 
-// PlatformProtectedPaths belong to the operator and the Standard's CI: no agent
-// may change them, whatever the Standard. A path ending in "/" is a directory.
-var PlatformProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
-
 // ProjectNotesPath is the project's own word to its agents about its workspace
 // and ways, read after AGENTS.md when the repository has it. No Standard
 // protects it, so any issue may change it; the factory writes no such file.
@@ -454,12 +446,11 @@ const ProjectNotesPath = "docs/project-notes.md"
 // Git user may push such tags, since release jobs hold the signing keys.
 const ReleaseTags = "v*"
 
-// AgentProtectedPaths returns the paths agents may not change in a Container: the
-// platform's and its Standard's, sorted and without duplicates.
-func AgentProtectedPaths(standard []string) []string {
-	out := slices.Concat(PlatformProtectedPaths, standard)
-	slices.Sort(out)
-	return slices.Compact(out)
+// AgentProtectedPaths returns the paths agents may not change in a Container:
+// the platform's for its CI system and its Standard's, sorted and without
+// duplicates.
+func AgentProtectedPaths(ci CI, standard []string) []string {
+	return sortedPaths(PlatformProtectedPaths(ci), standard)
 }
 
 // TouchedPaths returns the changed paths that fall under a protected path: equal

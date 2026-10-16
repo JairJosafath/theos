@@ -685,6 +685,34 @@ Container's `StandardUpdated` and `ChecksApplied` are False, reason
 `ChecksLeftOut`, naming the file, and CI keeps its mode until the Container's
 checks or the Standard's `ref` change again.
 
+## What an app promises: operations
+
+A Container's optional `spec.operations` says what the app promises wherever
+it runs: how long its backups are kept (`backups.retentionDays`, 0 for
+point-in-time recovery only) and the second AWS region they are copied to
+(`backups.copyToRegion`), its recovery objectives (`recovery.rpo` and
+`recovery.rto`, such as `15m` or `4h`), and who its alarms tell
+(`alerts.email`):
+
+```bash
+kubectl -n webshop patch container orders-api --type merge \
+  -p '{"spec":{"operations":{"recovery":{"rpo":"15m"},"alerts":{"email":"ops@webshop.example"}}}}'
+```
+
+Leave out what you don't need to say: the factory fills in 35 days, `1h`,
+`4h`, no copy and nobody told, without writing them into the Container. There
+is no tier: whether the app runs as `production` or `development` is the
+place it is deployed to, and a deploy that says nothing is `development`. A
+Brief's planner writes the block on a Container it makes, from what your idea
+states, and never a tier. The Container's page shows the block.
+
+The block renders into the repository when the Container is scaffolded, and
+its `OperationsApplied` condition is True. Change it afterwards and the
+condition turns False, reason `ChangedAfterScaffold`: the factory doesn't
+carry the change to the repository yet, so file an issue in the app that
+changes `infra/operations.ts`. Only the AWS templates read the block, from
+their next releases on.
+
 ## Upgrading
 
 Upgrade whenever a release is out, while Tasks run; there is no need to
@@ -729,6 +757,12 @@ the chart sets, set its values (`agents.*`, `catalog.*`, [the chart's
 README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 `catalog.enabled` off and keep your own. An object the chart stops rendering
 stays until you delete it.
+
+**Your objects keep working.** Within `c4.factory.io/v1alpha1` a release
+never removes, renames or retypes a field, never adds a required one and
+never tightens a rule so that an object you applied before is refused after;
+a change that must break waits for a `v1beta1` that converts your objects.
+See [Compatibility](design.md#compatibility).
 
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
 one step: the Pause button on its card in the UI sets its `spec.paused` to

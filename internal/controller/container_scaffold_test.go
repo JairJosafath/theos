@@ -480,6 +480,25 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(cond.Message).To(Equal("python-fastapi and clashing both write pyproject.toml"))
 	})
 
+	It("fails a template that has no files for the Git host's CI system, naming the ones it has", func() {
+		ns := newProjectNamespace()
+		gitFake.addTemplate(templatesURL+"gitlab-compute", "v1.0.0", scaffold.Tree{
+			".c4factory/ci/gitlabCI/.gitlab-ci.yml": {Data: []byte("check:\n")},
+		})
+		createFactory(ns)
+		mustCreate(&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "gitlab-only"),
+			Spec: newCatalogSpec(templatesURL+"gitlab-compute", "v1.0.0", c4v1alpha1.ContainerTypeService)})
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "gitlab-only"}
+		mustCreate(newSystem(ns, "webshop-core"), container)
+
+		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedCI))
+		Expect(cond.Message).To(Equal("gitlab-only doesn't support giteaActions; it supports gitlabCI"))
+	})
+
 	It("fails a template pinned to a branch", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)

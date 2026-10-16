@@ -846,7 +846,11 @@ model and context it needs.
   The block renders into `infra/operations.ts`, which the stacks read and
   the Standard's test enforces; a change to the block reaches the
   repository by a pull request the operator opens and merges, as a Standard
-  bump does. Deploy-time values (an alert email, a certificate) are
+  bump does. The Container's `OperationsApplied` says whether it has: until
+  that pull request exists (the plan's step 12), a change after the
+  scaffold leaves it False, reason `ChangedAfterScaffold`. What the block
+  leaves out, `internal/model` fills in (35 days, `1h`, `4h`), never CRD
+  defaulting, so the Container reads back as it was written. Deploy-time values (an alert email, a certificate) are
   CloudFormation parameters a deploy target overrides. Every AWS
   repository carries `docs/runbook.md`: how to restore, roll back and
   answer each alarm. A Brief's planner sets the block from the idea and
@@ -1363,11 +1367,17 @@ implementation and no port.
   CI port.
 - **What a CI system writes is a business rule, not an adapter.** Where the
   workflow files go (`.gitea/workflows/`, `.github/workflows/`,
-  `.gitlab-ci.yml`), the check contexts the merge rules require (today
-  `model.CheckContexts`) and the paths the platform protects (today
-  `model.PlatformProtectedPaths`) are one row per CI system in a table in
-  `internal/model`. `scaffold.Input` names the CI system, and the templates
-  render that system's files (#1095).
+  `.gitlab-ci.yml`), the check contexts the merge rules require and the paths
+  the platform protects are one row per CI system in a table in
+  `internal/model` (`model.CI`, in `ci.go`); the rules take the row, and a
+  Container's is its Git host's own CI system (`model.HostCI`) until
+  `GitProvider.spec.ci` comes with a second one. `scaffold.Input` names the CI
+  system, and a template keeps each system's files under
+  `.c4factory/ci/<name>/` (`.c4factory/ci/giteaActions/.gitea/...`), which
+  renders at the repository root only for the Container's system. A template
+  with CI files but none for the Container's system fails the Container with
+  reason `UnsupportedCI`, naming the systems it has; one without
+  `.c4factory/ci/` works on any (#1095).
 
 **A port is a narrow Go interface, with its shared types in its own file, one
 fake and one contract suite.** A host adapter implements several ports (Gitea
@@ -1558,6 +1568,40 @@ the next run, and a new Standard ref through its update pull request. A
 person who wants a quiet moment pauses a Brief and waits for its `Paused`
 condition to say nothing is running. See
 [plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
+
+## Compatibility
+
+**An object a client stored keeps validating across upgrades** (#1097). All
+of `c4.factory.io` serves `v1alpha1` only, and until a later version is
+served, a release keeps every `v1alpha1` object of the one before valid and
+meaning what it meant. Within `v1alpha1` a release never:
+
+- removes or renames a field, or changes its type;
+- adds a required field, or makes an optional one required;
+- removes an enum value;
+- tightens a CEL rule or a bound so an object that validated before fails
+  after;
+- changes what a default, or an unset field, means.
+
+Adding an optional field, an enum value, a condition type, a condition
+reason or a kind is fine. A change that must break one of these waits for
+`v1beta1` (#1082), which is served beside `v1alpha1` and converts every
+`v1alpha1` object; `v1beta1` comes after the shapes it would freeze settle
+(the Git host's ports, #1093, and the deploy model, #1068).
+
+The status is held to it as the spec is: the UI and a client's scripts read
+it. The promise is about the API, not about what the operator does with an
+object, which a release may change as the release notes say.
+
+`make check` guards what a schema can show. `test/compat/baseline/` holds
+`config/crd/bases` as of the last release, which `hack/release.sh` copies
+there in the pull request that names the release; the test in `test/compat`
+fails when the current CRDs drop a kind, a served version or a field, change
+a field's type, add an enum to a field or drop an enum value, tighten a
+bound (a length, item count or number range, a pattern, a format, a list or
+map type), or require a field under an object the baseline already had (a
+required field inside a new optional object is fine). CEL rules and what a
+default means are left to review.
 
 ## Out of scope for v1
 

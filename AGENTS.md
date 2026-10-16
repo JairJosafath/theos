@@ -134,7 +134,8 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   pull request to main whose body says `Closes #N`, merged with
   `hack/lib/github.sh land PR` once `make check` passes (`land` takes the merge
   turn, one across every device, merges `origin/main` in, reruns `make check`
-  and merges). No long-lived or stacked branches. A plan's pull request says
+  and merges; over 400 changed lines it wants a review pass first, the
+  `handoff` skill's "Review before landing"). No long-lived or stacked branches. A plan's pull request says
   `Refs #N` and never a closing word next to `#N`; the parent gets a
   `Depends on #S` line per step, goes `status/waiting` and closes itself when
   its last step closes. Never close a parent by hand (`hack/close-guard.sh`
@@ -143,6 +144,12 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   that is safe and never touches a branch or uncommitted work. VS Code runs it
   every 5 minutes, Claude Code at session start, the relay before each session;
   run it yourself before you branch or pick an issue.
+- **A bug fix brings its test.** It adds a test that failed before the fix
+  and names the issue in the spec or table case (`#1019`), at the lowest tier
+  that sees the bug, and the pull request body names the test. `land` and
+  `merge` refuse a pull request closing a `kind/bug` issue that changes no
+  test file (`*_test.go`, `*_test.sh`, `*.test.ts`), unless a line of its
+  body says `No test: <why>` (a docs-only or chart-only fix).
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).

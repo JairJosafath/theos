@@ -180,13 +180,6 @@ func targetHeld(g Gomega, ns, crewRepo, briefRepo string) {
 		HaveField("Recommend", "Change the Brief's spec.releases entry for linter to the Crew's target."))))
 }
 
-// wholeRound is how long a spec waits for a round to apply end to end: the
-// plan accepted, the Container scaffolded, its Crew made, the issues filed
-// and the plan merged, each by an event to the next controller. That takes
-// about 3s on an idle device and was seen past 10s on a loaded one, an API
-// call alone taking 8s (#501).
-const wholeRound = 30 * time.Second
-
 // Step 4 of docs/plans/done/brief-releases.md: a released app's Crew tags, prepares
 // and publishes, and its rounds' issues go into release milestones.
 var _ = Describe("Brief releases", func() {
@@ -203,7 +196,7 @@ var _ = Describe("Brief releases", func() {
 
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases).To(BeTrue())
 		Expect(crew.Spec.PrepareReleases).To(BeTrue())
@@ -228,7 +221,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2))
 		Expect(linterCrew(Default, ns).Spec.TagReleases).To(BeTrue())
@@ -262,7 +255,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
 
 		By("filing a round whose issues are all fixes in the next patch version")
@@ -273,7 +266,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.1.1"}))
 		milestones := gitFake.allMilestones(ns, "linter")
 		Expect(milestones).To(HaveLen(2))
@@ -312,7 +305,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(3)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.1.1"}))
 		taken := gitFake.issue(ns, "linter", safety)
 		Expect(taken.Labels).To(ContainElement(model.LabelReady))
@@ -344,7 +337,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.History).NotTo(BeEmpty())
 			g.Expect(b.Status.History[0].Outcome).To(Equal(model.ReasonApplied))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
 		n := int(getBrief(Default, ns).Status.Issues[0].Number)
 		failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
@@ -361,7 +354,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.History).To(HaveLen(2))
 			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.2.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.1 and v0.2.0")
 		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
@@ -378,7 +371,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.History).NotTo(BeEmpty())
 			g.Expect(b.Status.History[0].Outcome).To(Equal(model.ReasonApplied))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		n := int(getBrief(Default, ns).Status.Issues[0].Number)
 		failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
 
@@ -398,7 +391,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.History).To(HaveLen(2))
 			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.7", "v0.9.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.7 and v0.9.0")
 	})
@@ -415,7 +408,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.15.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
 		Expect(milestoneDue(ns, "v0.13.1")).To(BeTemporally(">", inProgress))
@@ -435,7 +428,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, plan)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.13.1"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
 	})
@@ -452,7 +445,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, plan)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.2.0", "v0.1.1"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
 		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
@@ -465,7 +458,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
 	})
@@ -484,7 +477,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.4", "v0.19.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
 	})
@@ -497,7 +490,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{""}), "filed before releases were on")
 
 		By("pausing the Crew, so the issues keep their labels, and a person making v0.1.0")
@@ -523,7 +516,7 @@ var _ = Describe("Brief releases", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).WithTimeout(wholeRound).Should(Succeed())
+		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
 		Expect(gitFake.issue(ns, "linter", older).milestone).To(Equal("v0.1.0"))
 		Expect(gitFake.issue(ns, "linter", proposed).milestone).To(Equal(model.FollowUpMilestone))

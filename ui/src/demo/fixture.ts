@@ -154,9 +154,19 @@ export function demoStory(now: number): StoryData {
         standardRef: { name: 'python-standard' },
         computeRef: { name: 'small' },
         deploymentRef: { name: 'k8s-manifests' },
+        operations: {
+          backups: { retentionDays: 90, copyToRegion: 'eu-west-1' },
+          recovery: { rpo: '15m' },
+          alerts: { email: 'orders-oncall@example.com' },
+        },
       },
       {
         phase: 'Ready',
+        operations: {
+          backups: { retentionDays: 90, copyToRegion: 'eu-west-1' },
+          recovery: { rpo: '15m', rto: '4h' },
+          alerts: { email: 'orders-oncall@example.com' },
+        },
         repositoryURL: `${GITEA}/webshop/orders-api`,
         scaffoldedFrom: [
           'python-fastapi@v1.3.0',

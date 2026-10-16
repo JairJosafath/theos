@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
@@ -61,13 +62,17 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1alpha1.Cr
 }
 
 // readSource reads the Container's files at tag from Gitea and hashes them
-// into the release's source, the factory's own left out; it reads the module
-// path from the root go.mod.
-func readSource(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	tag string) (*model.ReleaseSource, error) {
+// into the release's source, the factory's own on its CI system left out; it
+// reads the module path from the root go.mod.
+func readSource(ctx context.Context, c client.Reader, container *c4v1alpha1.Container,
+	provider gitprovider.Provider, repo gitprovider.Repository, tag string) (*model.ReleaseSource, error) {
+	ci, err := containerCI(ctx, c, container)
+	if err != nil {
+		return nil, err
+	}
 	var files []model.SourceFile
 	module := ""
-	err := provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
+	err = provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
 		file := model.SourceFile{Path: f.Path, Mode: model.FileMode(f.Mode), Size: f.Size}
 		var err error
 		if f.Path == "go.mod" && f.Mode != gitprovider.SourceSymlink && f.Size <= maxGoMod {
@@ -86,7 +91,7 @@ func readSource(ctx context.Context, provider gitprovider.Provider, repo gitprov
 	if err != nil {
 		return nil, err
 	}
-	return model.NewSource(files, module)
+	return model.NewSource(ci, files, module)
 }
 
 // sourceRead is a release's source as read from Gitea at its tag.
