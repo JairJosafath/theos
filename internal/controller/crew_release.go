@@ -36,7 +36,7 @@ const (
 	reasonReleaseGitFailure = "GitHostUnavailable"
 	reasonPreparingRelease  = "PreparingRelease"
 	reasonReleaseRunFailed  = "ReleaseRunFailed"
-	reasonReleaseRunPassed  = "ReleaseRunSucceeded"
+	reasonReleaseRunPassed  = "ReleaseRunSucceeded" //nolint:gosec // a condition's reason
 	reasonReleaseRunOverdue = "ReleaseRunOverdue"
 )
 

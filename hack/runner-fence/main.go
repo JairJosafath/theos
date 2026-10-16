@@ -84,7 +84,7 @@ func main() {
 func read(paths []string) (objects, error) {
 	var objs objects
 	for _, path := range paths {
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // a YAML file named on the command line
 		if err != nil {
 			return objs, err
 		}

@@ -355,10 +355,13 @@ is no number) `--next` files the issue ready and reserves nothing.
 Follow-ups that need a decision are still filed `status/proposed` for the
 triage.
 Each session, the triage's and the maintainer's too, gets
-`TMPDIR=<its worktree>/.dev/tmp` (#1269), on disk and gitignored, not the
-device's `/tmp`, a small tmpfs every session shares, which one session's
-scratch, Go's build dirs and envtest's once filled: the relay empties it before
-the session starts and removes it when the session ends.
+`TMPDIR=~/.cache/c4factory/tmp/<its worktree>` (#1269, #1307;
+`RELAY_SCRATCH` moves the parent): on disk, not the device's `/tmp`, a small
+tmpfs every session shares, which one session's scratch, Go's build dirs and
+envtest's once filled; and outside any git checkout, so a test that runs git in
+a `mktemp -d` directory finds no repository above it, as it would in the
+worktree. The relay empties it before the session starts and removes it when
+the session ends.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -524,8 +527,8 @@ percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
 naming its three largest entries, under the Maintainer report's Health only,
 with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
 `.relay/tmp-full` holds the note while it lasts; the first round under the
-threshold removes it. Relay sessions keep their scratch in their worktree's
-`.dev/tmp`, so what fills `/tmp` is someone else's.
+threshold removes it. Relay sessions keep their scratch in
+`~/.cache/c4factory/tmp`, so what fills `/tmp` is someone else's.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -726,7 +729,7 @@ queue:
   workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
+  `vulncheck`, `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
@@ -885,6 +888,14 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   one of the two groups, or with `cancel-in-progress`; Lint or UI off pull
   requests to main or with other paths there; Lint without its `test-hack`
   job; and Tests on pull requests or grouped by anything but the commit.
+- **Vulnerabilities runs govulncheck.** *Vulnerabilities* (`vulncheck.yml`)
+  runs `make vulncheck` (`govulncheck ./...`, which needs the network and so
+  stays out of `make check`) on pushes to main and pull requests to main that
+  change the Go code, the modules or the `Makefile`, and every Monday at 04:23
+  UTC, so a new advisory shows up without a change. It fails on a known
+  vulnerability the code reaches, in a module or in the standard library of
+  `go.mod`'s toolchain; two failed runs on main file "main is red:
+  Vulnerabilities", which a bump of the toolchain or the module fixes.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a
