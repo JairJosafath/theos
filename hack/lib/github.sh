@@ -163,13 +163,13 @@
 #                                        status/proposed when it has no status. Only for issues from the
 #                                        owner, members and collaborators; safe to repeat
 #
-# FILE may be - for stdin. Pickup order, oldest first: a status/ready issue
-# this checkout reserved (create --next), else a priority/urgent issue
-# (a status/in-progress one without a live claim, else a status/ready one),
-# else a priority/velocity one (the same way), else a status/in-progress issue
-# without a live claim, else a status/ready one; issues with a live claim, or
-# whose body says "Depends on #M" while #M is open, are skipped. A handoff
-# comment starts with the line <!-- relay-handoff -->.
+# FILE may be - for stdin. Pickup order: a status/ready issue this checkout
+# reserved (create --next), else by priority/N, 1 first (no priority label
+# counts as 5; of several, the lowest counts); within a number a
+# status/in-progress issue without a live claim before a status/ready one,
+# oldest first. Issues with a live claim, or whose body says "Depends on #M"
+# while #M is open, are skipped. A handoff comment starts with the line
+# <!-- relay-handoff -->.
 #
 # The Kind cluster: agents never create, lease or deploy to one; Go tests,
 # validate-yaml, envtest and the local Gitea are the gate, and Kind is a tier
@@ -254,8 +254,16 @@ GH_LABELS=(
   'status/waiting|bfdadc|A plan'"'"'s parent, waiting on its steps, not on an agent'
   'status/needs-maintainer|e99695|An agent escalated it; the newest comment says what it needs'
   'status/needs-human|d93f0b|The maintainer sent it to the owner; only the maintainer sets it'
-  'priority/urgent|b60205|Picked before every other issue, in progress or ready'
-  'priority/velocity|b60205|Makes development itself faster (relay, land, checks, flakes, tooling); picked after urgent'
+  'priority/1|b60205|Picked first: something is broken now (a red main, a dead relay, a failed release check)'
+  'priority/2|d73a4a|Picked after 1, before the velocity work (3)'
+  'priority/3|e36209|Makes development itself faster (relay, land, checks, flakes, tooling); picked after 1 and 2'
+  'priority/4|f66a0a|Picked after 3, before the default (5)'
+  'priority/5|fbca04|The default: an issue with no priority label counts as 5'
+  'priority/6|e4e669|Picked after the default (5)'
+  'priority/7|c5def5|Picked after 6'
+  'priority/8|bfdadc|Picked after 7'
+  'priority/9|d4d4d4|Picked after 8'
+  'priority/10|ededed|Picked last'
   'kind/bug|d73a4a|Something is broken'
   'kind/feature|a2eeef|New behaviour'
   'kind/chore|ededed|Upkeep: operations, releases, tooling'
@@ -341,17 +349,18 @@ gh_recent_claims() {
 }
 
 # gh_pick: the issue to work next, as NUMBER TITLE URL STATUS (tab-separated),
-# STATUS being next, in-progress, ready-urgent, in-progress-velocity,
-# ready-velocity or ready. A ready issue this checkout reserved (create --next,
-# .relay/next) comes first, while its reservation is live: the session that
-# filed it decided it for this worker's next session. Then urgent, so a "main
-# is red" fix (the relay watch files it ready and urgent) is worked before an
-# in-progress issue that keeps failing; then velocity, what makes development
-# itself faster (docs/plans/velocity.md); then the rest. Within each, an
-# in-progress issue without a live claim comes before a ready one, oldest
-# first. GH_NEXT_FILES, one per line, adds other checkouts' .relay/next: the
-# relay watch counts every worker's reservations, so a reserved issue starts
-# the relay after its worker stopped. Exit 1: nothing to pick; exit 2: GitHub
+# STATUS being next, in-progress or ready. A ready issue this checkout
+# reserved (create --next, .relay/next) comes first, while its reservation is
+# live: the session that filed it decided it for this worker's next session.
+# Then by priority/N, 1 first (#1329): 1 is something broken now, so a "main
+# is red" fix (the relay watch files it ready and priority/1) is worked before
+# an in-progress issue that keeps failing; 3 is what makes development itself
+# faster (docs/plans/velocity.md); an issue with no priority label counts as
+# 5, and of several labels the lowest counts. Within a number, an in-progress
+# issue without a live claim comes before a ready one, oldest first.
+# GH_NEXT_FILES, one per line, adds other checkouts' .relay/next: the relay
+# watch counts every worker's reservations, so a reserved issue starts the
+# relay after its worker stopped. Exit 1: nothing to pick; exit 2: GitHub
 # could not be asked.
 gh_pick() {
   local ttl issues claims next row extra
@@ -363,6 +372,7 @@ gh_pick() {
   next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
   row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" --argjson next "$next" "$GH_CLAIM_JQ"'
     def has($l): .labels | any(. == $l);
+    def priority: [.labels[] | capture("^priority/(?<n>[0-9]+)$").n | tonumber | select(. >= 1 and . <= 10)] | min // 5;
     [.[][]] as $all
     | [$all[].number] as $open
     | [$next[] | select(.id as $i | $claims | any(.id == $i and reserved and live))] as $mine
@@ -373,12 +383,11 @@ gh_pick() {
             | any(. as $d | $open | any(. == $d)) | not)
         | {number, title, html_url, labels: [.labels[].name]}] as $free
     | [($mine[] as $r | $free[] | select(.number == $r.issue and has("status/ready")) | . + {how: "next"}),
-       ($free[] | select(has("status/in-progress") and has("priority/urgent")) | . + {how: "in-progress"}),
-       ($free[] | select(has("status/ready") and has("priority/urgent")) | . + {how: "ready-urgent"}),
-       ($free[] | select(has("status/in-progress") and has("priority/velocity")) | . + {how: "in-progress-velocity"}),
-       ($free[] | select(has("status/ready") and has("priority/velocity")) | . + {how: "ready-velocity"}),
-       ($free[] | select(has("status/in-progress")) | . + {how: "in-progress"}),
-       ($free[] | select(has("status/ready")) | . + {how: "ready"})]
+       ([$free | to_entries[] | .value + {age: .key}
+          | if has("status/in-progress") then . + {how: "in-progress", rank: 0}
+            elif has("status/ready") then . + {how: "ready", rank: 1}
+            else empty end]
+        | sort_by(priority, .rank, .age)[])]
     | first // empty | [.number, .title, .html_url, .how] | @tsv' <<<"$issues") || return 2
   [ -n "$row" ] || return 1
   echo "$row"

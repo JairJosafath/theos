@@ -10,9 +10,9 @@
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
 # (hack/lib/github.sh pick: a ready one this worker's last session filed with
-# create --next, which reserves it for this worktree, else urgent, then
-# velocity, then the rest; within each, an in-progress one nobody holds, else
-# the oldest ready one) and claims it (take); when another agent claims it
+# create --next, which reserves it for this worktree, else by priority/N, 1
+# first and no label counting as 5; within a number, an in-progress one nobody
+# holds, else the oldest ready one) and claims it (take); when another agent claims it
 # first, it picks again, up to 5 times. Claims keep the workers and
 # hand-started sessions off each other's issues. A session that ends still
 # holding its claim gets it released. With nothing ready, a worker stops,
@@ -361,10 +361,9 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (next, in-progress, ready-urgent,
-# in-progress-velocity, ready-velocity, ready) to the issue to work next; next
-# is one this worker's last session reserved (create --next, .relay/next in
-# its worktree).
+# pick: set ISSUE, TITLE, URL and HOW (next, in-progress or ready, at every
+# priority) to the issue to work next; next is one this worker's last session
+# reserved (create --next, .relay/next in its worktree).
 # Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc
