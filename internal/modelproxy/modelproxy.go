@@ -15,6 +15,8 @@ permission. See the LICENSE file.
 package modelproxy
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,15 +43,23 @@ const OAuthBeta = "oauth-2025-04-20"
 // and /readyz (200 once it has a credential, else 503) itself, and forwards
 // every other path to its upstream, or answers 503 while it has no credential.
 type Proxy struct {
-	dir   string
-	log   *slog.Logger
-	proxy *httputil.ReverseProxy
+	upstream *url.URL
+	dir      string
+	log      *slog.Logger
+	proxy    *httputil.ReverseProxy
 
 	mu      sync.Mutex
 	files   map[string]keyFile // by key name
 	using   string             // the key name in use, "" for none, to log a change once
 	checked bool               // whether using has been set yet
 }
+
+// credentialKey is the context key ServeHTTP hands the credential to rewrite
+// under, as a keyValue.
+type credentialKey struct{}
+
+// keyValue is a credential: the key file it came from and what it holds.
+type keyValue struct{ key, value string }
 
 // keyFile is what a key file held when it was last read.
 type keyFile struct {
@@ -63,11 +73,9 @@ func New(upstream *url.URL, credentialsDir string, log *slog.Logger) *Proxy {
 	if log == nil {
 		log = slog.Default()
 	}
-	p := &Proxy{dir: credentialsDir, log: log, files: map[string]keyFile{}}
+	p := &Proxy{upstream: upstream, dir: credentialsDir, log: log, files: map[string]keyFile{}}
 	p.proxy = &httputil.ReverseProxy{
-		// The path and query join onto the upstream's, and Host becomes the
-		// upstream's. ServeHTTP has set the credential on the request already.
-		Rewrite: func(pr *httputil.ProxyRequest) { pr.SetURL(upstream) },
+		Rewrite: p.rewrite,
 		// The API streams server-sent events; every write goes out at once.
 		FlushInterval: -1,
 		ErrorHandler:  p.upstreamFailed,
@@ -91,21 +99,36 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
-	out := r.Clone(r.Context())
-	out.Header.Del("Authorization")
-	out.Header.Del("X-Api-Key")
-	if name == OAuthTokenKey {
-		out.Header.Set("Authorization", "Bearer "+value)
-		out.Header.Set("Anthropic-Beta", withOAuthBeta(out.Header.Values("Anthropic-Beta")))
+	ctx := context.WithValue(r.Context(), credentialKey{}, keyValue{key: name, value: value})
+	p.proxy.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// rewrite points the request at the upstream, its path and query joined onto
+// the upstream's and its Host the upstream's, and swaps the client's
+// credential for the one ServeHTTP read. ReverseProxy calls it after it has
+// removed the hop-by-hop headers, so a client's Connection header can't name
+// the credential away.
+func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
+	pr.SetURL(p.upstream)
+	c, _ := pr.In.Context().Value(credentialKey{}).(keyValue)
+	h := pr.Out.Header
+	h.Del("Authorization")
+	h.Del("X-Api-Key")
+	if c.key == OAuthTokenKey {
+		h.Set("Authorization", "Bearer "+c.value)
+		h.Set("Anthropic-Beta", withOAuthBeta(h.Values("Anthropic-Beta")))
 	} else {
-		out.Header.Set("X-Api-Key", value)
+		h.Set("X-Api-Key", c.value)
 	}
-	p.proxy.ServeHTTP(w, out)
 }
 
 // upstreamFailed answers 502 when the upstream can't be reached. It logs the
-// request's method and path, never its headers.
+// request's method and path, never its headers. A client that went away
+// (Claude Code aborting a turn) is nobody's failure, and gets no answer.
 func (p *Proxy) upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
 	p.log.Error("Upstream request failed", "method", r.Method, "path", r.URL.Path, "error", err)
 	w.WriteHeader(http.StatusBadGateway)
 }

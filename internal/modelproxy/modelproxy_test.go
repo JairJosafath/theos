@@ -478,3 +478,38 @@ func TestLogsNoCredential(t *testing.T) {
 		}
 	}
 }
+
+// A client's Connection header names the headers a hop drops; naming the
+// credential's must not strip the one the proxy adds.
+func TestConnectionHeaderKeepsTheCredential(t *testing.T) {
+	token := rand.Text()
+	for _, tt := range []struct {
+		key          string
+		header, want string
+		wantBeta     []string
+	}{
+		{key: OAuthTokenKey, header: "Authorization", want: "Bearer " + token, wantBeta: []string{OAuthBeta}},
+		{key: APIKeyKey, header: "X-Api-Key", want: token},
+	} {
+		t.Run(tt.key, func(t *testing.T) {
+			dir := t.TempDir()
+			writeKey(t, dir, tt.key, token, then)
+			up := newUpstream(t)
+			proxy := newProxy(t, up.URL, dir, nil)
+
+			header := clientHeader()
+			header.Set("Connection", "Authorization, X-Api-Key, Anthropic-Beta")
+			header.Set("Anthropic-Beta", "client-1")
+			if status, body := send(t, proxy, "/v1/messages", header); status != http.StatusOK {
+				t.Fatalf("status = %d (%s); want 200", status, body)
+			}
+			got := up.last(t)
+			if v := got.Header.Values(tt.header); !slices.Equal(v, []string{tt.want}) {
+				t.Errorf("upstream got %s %q; want %q", tt.header, v, tt.want)
+			}
+			if beta := got.Header.Values("Anthropic-Beta"); !slices.Equal(beta, tt.wantBeta) {
+				t.Errorf("upstream got anthropic-beta %q; want %q", beta, tt.wantBeta)
+			}
+		})
+	}
+}

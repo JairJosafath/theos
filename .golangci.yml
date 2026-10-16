@@ -101,6 +101,12 @@ linters:
               desc: the model proxy must not depend on controllers (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
               desc: the model proxy talks to the Claude API only, never to the Git host (docs/architecture.md)
+        model-proxy-handler-is-a-leaf:
+          files:
+            - "**/internal/modelproxy/**"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/internal
+              desc: the model proxy's handler uses the standard library only (docs/architecture.md)
         api-stands-alone:
           files:
             - "**/api/**"

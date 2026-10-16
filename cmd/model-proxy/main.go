@@ -59,16 +59,17 @@ func main() {
 		// No WriteTimeout: a streamed response lasts as long as the model writes.
 		ReadHeaderTimeout: 30 * time.Second,
 	}
-	if err := serve(ctx, server); err != nil {
+	if err := serve(ctx, stop, server); err != nil {
 		log.Error("Model proxy stopped", "error", err)
 		os.Exit(1)
 	}
 	log.Info("Model proxy stopped")
 }
 
-// serve runs server until ctx is done, then shuts it down, letting open
-// requests finish for up to shutdownGrace.
-func serve(ctx context.Context, server *http.Server) error {
+// serve runs server until ctx is done, then stops the signals ctx was
+// waiting for and shuts the server down, letting open requests finish for up
+// to shutdownGrace.
+func serve(ctx context.Context, stop context.CancelFunc, server *http.Server) error {
 	errs := make(chan error, 1)
 	go func() { errs <- server.ListenAndServe() }()
 	select {
@@ -76,9 +77,16 @@ func serve(ctx context.Context, server *http.Server) error {
 		return err
 	case <-ctx.Done():
 	}
+	// A second signal stops the process at once.
+	stop()
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if err := server.Shutdown(shutdown); err != nil {
+	err := server.Shutdown(shutdown)
+	if errors.Is(err, context.DeadlineExceeded) {
+		// A stream outlasted the grace period: cut it, as the kubelet would.
+		err = server.Close()
+	}
+	if err != nil {
 		return err
 	}
 	if err := <-errs; !errors.Is(err, http.ErrServerClosed) {
