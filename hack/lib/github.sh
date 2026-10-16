@@ -88,13 +88,15 @@
 #                                        make main red together: land it instead. Refused as well while another
 #                                        pull request holds the merge turn (land), naming it, and when it closes a
 #                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts)
-#                                        and no line of its body says No test: <why>
+#                                        (a deleted one is none) and no line of its body says No test: <why>, a
+#                                        reason in place of <why>
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: wait for the merge turn (one pull request at a time,
 #                                        across every device, first come first served), then, in this checkout of
 #                                        PR's branch (a bug fix without a test is refused before it queues, as merge
 #                                        refuses it), git fetch (retried GH_LAND_FETCH_TRIES times) and merge
-#                                        origin/main, make check, push and merge PR,
+#                                        origin/main (when that changes this script, land goes on as the merged
+#                                        copy, whose refusals count), make check, push and merge PR,
 #                                        and give the turn up, merged or not (a conflict or a red check is said; make
 #                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
@@ -1674,7 +1676,7 @@ gh_merge() {
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
-      files(first: 100) { totalCount nodes { path } } commits(last: 100) { nodes { commit { message } } } } } }' \
+      files(first: 100) { totalCount nodes { path changeType } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
   body=$(jq -r '.body // ""' <<<"$view")
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
@@ -1730,8 +1732,9 @@ gh_merge() {
 
 # gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
 # pull request that closes a kind/bug issue but changes no test file
-# (*_test.go, *_test.sh, *.test.ts or .tsx), unless a line of its body is
-# "No test: <why>" (a docs-only or chart-only fix says so). VIEW is the pull
+# (*_test.go, *_test.sh, *.test.ts or .tsx; deleting one is no test), unless
+# a line of its body is "No test: <why>" (a docs-only or chart-only fix says
+# so) with a reason of its own words in place of <why>. VIEW is the pull
 # request as gh_merge's GraphQL query reads it: body, closingIssuesReferences
 # with their labels, and files. Bugs came back after fixes with no test that
 # would have caught them (#606 then #864, #835 then #1019). A pull request of
@@ -1740,8 +1743,10 @@ gh_bugfix_check() {
   local pr=$1 view=$2 bugs
   bugs=$(jq -r '.closingIssuesReferences.nodes[]? | select(any(.labels.nodes[]?; .name == "kind/bug")) | "#\(.number)"' <<<"$view" | paste -sd, - | sed 's/,/, /g')
   [ -n "$bugs" ] || return 0
-  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
-  grep -qiE '^[[:space:]]*No test:[[:space:]]*[^[:space:]]' <<<"$(jq -r '.body // ""' <<<"$view")" && return 0
+  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]? | select(.changeType != "DELETED") | .path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
+  # The reason is a line's own words: neither nothing nor the placeholder <why> copied as it stands (#1211).
+  jq -r '.body // ""' <<<"$view" | sed -nE 's/^[[:space:]]*[Nn][Oo] [Tt][Ee][Ss][Tt]:[[:space:]]*//p' | sed -E 's/[[:space:]]+$//' |
+    grep -qvE '^(<[^>]*>)?$' && return 0
   echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
   return 1
 }
@@ -1753,7 +1758,7 @@ gh_bugfix_pr() {
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
-      files(first: 100) { totalCount nodes { path } } } } }' \
+      files(first: 100) { totalCount nodes { path changeType } } } } }' \
     --jq .data.repository.pullRequest) || { echo "github: #$pr: could not ask GitHub what it closes and changes; land refused" >&2; return 1; }
   gh_bugfix_check "$pr" "$view"
 }
@@ -2176,6 +2181,11 @@ gh_review_check() {
 # base into this checkout's branch, run make check, push and merge PR (gh_merge),
 # then give the turn up, also when a step fails. Exit 0: merged. Exit 1: refused
 # or failed, the reason said. Exit 4: still not its turn after DURATION (default 2h).
+# The refusals and the merge are the base's: a branch cut before a gate landed
+# carries a github.sh without it (#1195 merged past #1196's). So when merging
+# the base in changes hack/lib/github.sh, land execs the merged copy, which
+# keeps the turn (GH_LAND_TURN, its comment's id) and refuses, checks and
+# merges from the top (#1211).
 gh_land() {
   local pr=${1:?usage: land PR [--wait DURATION]} wait=2h
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: land takes a pull request number" >&2; return 64; }
@@ -2189,7 +2199,7 @@ gh_land() {
 }
 
 gh_land_turn() {
-  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i try=1
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i try=1 self
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
@@ -2200,18 +2210,28 @@ gh_land_turn() {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
   [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
     echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
-  gh_bugfix_pr "$pr" || return 1
-  gh_review_check "$pr" || return 1
-  n=$(gh_report_issue) || return 1
-  id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
-  [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
+  # The turn the copy that exec'd this one holds; make check's land tests must not inherit it.
+  id=${GH_LAND_TURN:-}
+  unset GH_LAND_TURN
+  [ -z "$id" ] || [[ $id =~ ^[0-9]+$ ]] || { echo "github: GH_LAND_TURN is a merge-turn comment's id, not $id" >&2; return 64; }
   # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
   me=$BASHPID
   GH_LAND_BEATER=
-  trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
-    echo "github: could not delete the merge turn (comment '"$id"' on #'"$n"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
-  trap 'exit 130' INT TERM
+  gh_land_trap() {
+    trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
+      echo "github: could not delete the merge turn (comment '"$id"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
+    trap 'exit 130' INT TERM
+  }
+  [ -z "$id" ] || gh_land_trap
+  gh_bugfix_pr "$pr" || return 1
+  gh_review_check "$pr" || return 1
+  n=$(gh_report_issue) || return 1
+  if [ -z "$id" ]; then
+    id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
+      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+    [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
+    gh_land_trap
+  fi
   t0=$SECONDS beat=$SECONDS
   while :; do
     q=$(gh_land_queue "$n") || { echo "github: could not read the merge queue on #$n" >&2; return 1; }
@@ -2246,10 +2266,17 @@ gh_land_turn() {
     sleep "$GH_LAND_FETCH_PAUSE"
     ((try++))
   done
+  self=$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)
   if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
     git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
     echo "github: #$pr: merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again" >&2
     return 1
+  fi
+  # The tree was clean, so the copy at HEAD before the merge is the one running.
+  if [ "$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)" != "$self" ]; then
+    echo "github: #$pr: merging origin/$base changed hack/lib/github.sh; landing with the merged copy" >&2
+    trap - EXIT INT TERM
+    GH_LAND_TURN=$id exec bash "$GH_LIB_ROOT/hack/lib/github.sh" land "$pr" --wait "$2"
   fi
   mkdir -p "$GH_PENDING_DIR"
   log=$GH_PENDING_DIR/land-$pr.log

@@ -1087,6 +1087,12 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: No test: lets a bug fix through" $? 0
   PR=$(bugpr $'Closes #5\n\nNo test:' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
   check "merge: No test: with no reason refuses" $? 1
+  PR=$(bugpr $'Closes #5\n\nNo test: <why>' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
+  check "merge: No test: <why> copied as it stands refuses (#1211)" $? 1
+  PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "internal/model/old_test.go"]' | jq '.files.nodes[1].changeType = "DELETED"') gh_merge 17 >/dev/null 2>&1
+  check "merge: a deleted test file is no test (#1211)" $? 1
+  PR=$(bugpr 'Closes #5' kind/bug '["internal/model/old_test.go", "internal/model/new_test.go"]' | jq '.files.nodes[0].changeType = "DELETED"') gh_merge 17 >/dev/null 2>&1
+  check "merge: a test file added beside a deleted one is a test" $? 0
   PR=$(bugpr $'Closes #5\n\nWe wrote no test: none' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
   check "merge: No test: inside a line refuses" $? 1
   out=$(PR=$(bugpr 'Closes #5' kind/feature '["internal/model/brief.go"]') gh_merge 17 2>&1)
@@ -1232,6 +1238,32 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "land: a red check fails, merges nothing, gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue)" "1  | "
   grep -q '#40: make check failed (exit 1) with origin/main merged in' <<<"$out"; check "land: says the check failed" $? 0
   rm "$T/red"
+
+  # A branch cut before a gate lands by main's copy of github.sh (#1211): when
+  # merging main in changes it, land goes on as the merged copy, keeping its
+  # turn, and that copy's gate refuses.
+  mkdir -p "$T/other/hack/lib"
+  printf '#!/bin/bash\necho "$* turn=${GH_LAND_TURN:-}" >"%s/exec"\necho "github: #40: refused by a gate only main has" >&2\nexit 1\n' "$T" >"$T/other/hack/lib/github.sh"
+  git -C "$T/other" add hack && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m gate && git -C "$T/other" push -q origin main
+  rm -f "$T/landed" "$T/exec"
+  out=$(gh_land 40 2>&1); rc=$?
+  turn=$(queue)
+  check "land: main's gate refuses a branch cut before it (#1211)" "$rc $(cat "$T/landed" 2>/dev/null) | $(grep -c 'refused by a gate only main has' <<<"$out") | $(cat "$T/exec")" \
+    "1  | 1 | land 40 --wait 2h turn=${turn% }"
+  grep -q '#40: merging origin/main changed hack/lib/github.sh; landing with the merged copy' <<<"$out"; check "land: says it goes on as the merged copy" $? 0
+  rm -f "$Q"/*.json
+  g reset -q --hard origin/feat
+  git -C "$T/other" rm -q -r hack && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m ungate && git -C "$T/other" push -q origin main
+  # The merged copy takes the turn over: it posts none, lands, gives it up, and make check doesn't inherit it.
+  put 30 40
+  : >"$T/calls"; rm -f "$T/landed"
+  printf '#!/bin/sh\necho "${GH_LAND_TURN:-none}" >"%s/turn-env"\n' "$T" >"$T/bin/env-make"
+  chmod +x "$T/bin/env-make"
+  out=$(GH_LAND_TURN=30 C4_MAKE=$T/bin/env-make gh_land 40 2>&1)
+  check "land: the merged copy keeps the turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(grep -c '^POST ' "$T/calls") | $(queue) | $(cat "$T/turn-env")" "0 merge 40 | 0 |  | none"
+  out=$(GH_LAND_TURN=x gh_land 40 2>&1)
+  check "land: GH_LAND_TURN is a comment id" "$? $(queue)" "64 "
+  rm -f "$T/landed"
 
   # A conflict with main is aborted, gives the turn up and merges nothing.
   echo main >"$T/other/feat" && git -C "$T/other" add feat && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m clash && git -C "$T/other" push -q origin main
