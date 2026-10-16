@@ -308,10 +308,28 @@ enforces.
   Secret in the release namespace that the operator copies into project
   namespaces, so the fix reads one Secret; a namespace receives copies only
   with a label a namespace's own users can't set.
-  The Gitea CI runners run the agents' code in host mode on the cluster
-  network, outside the fence
-  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)). Until
-  both gaps close, one install is one trust domain; the user docs say so
+- **The CI fence.** CI runs the agents' code too. A job that runs code from a
+  Container repository runs in an environment made for that job and thrown
+  away after it; holds no credential beyond its own job token and the secrets
+  its repository gave it; shares nothing writable with another project's
+  jobs, nor with a release; and reaches only DNS, the Git host (and the
+  registries it serves) and public HTTPS. The rule is the CI port's: every CI
+  adapter meets it or says which part it can't
+  ([plan](plans/ci-runner-isolation.md)). The Gitea Actions runners meet the
+  network and the registration token: a NetworkPolicy on their pods (label
+  `app.kubernetes.io/component: ci-runner`) lets no traffic in and lets out
+  only DNS, Gitea's pod on port 3000 and HTTPS to public addresses, and
+  Gitea's instance-wide registration token goes only to the init container
+  that registers, never to the container the jobs run in. `make
+  validate-yaml` checks both, in the chart and in `config/runner/`. Still
+  open: each label has one long-lived runner in host mode that every
+  project's jobs and the releases share, one job after another, so a job can
+  leave a process or a file for the next, act with the runner's own token,
+  and write the `go` runner's build cache; a pool of single-job runner pods
+  per project closes it
+  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)). Until it
+  and the Claude token's gap close, one install is one trust domain; the
+  user docs say so
   ([getting-started](getting-started.md#what-the-factory-trusts)).
 - **App values are needs, not platform rules.** "Works offline, no login, no ads"
   is a need on a SoftwareSystem, not a rule of the platform; the agents get the
@@ -1673,7 +1691,7 @@ Go tests are the gate: each rule is verified at the lowest tier that can see it,
 | Tier | Verifies |
 | --- | --- |
 | Table tests (`make test`) | The decisions in `internal/model`, the rendering of every template in `internal/scaffold`, and the Agent Sandbox and pod specs the controllers build, the agent fence included. |
-| Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules. |
+| Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules; the CI runners' fence in the chart and `config/runner/`. |
 | envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, the admission policy, every CEL rule's failing case at create and on update, the reaction to faked Sandbox and pod status, and the generated RBAC role against the calls the controllers make. |
 | Components (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour, the seed and what Gitea shows of Actions, against the same Gitea binary the cluster runs, started per checkout. |
 | Kind (`make e2e`, only when a human asks) | The whole loop on stand-in agents with no model keys: a hello-world page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. |
