@@ -256,7 +256,7 @@ Crew picks the issue up. It plans in a minute or so:
 
 ```bash
 kubectl apply -f config/samples/brief/stand-in.yaml
-kubectl -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=10m
+kubectl -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=15m
 kubectl -n webshop get c4
 ```
 

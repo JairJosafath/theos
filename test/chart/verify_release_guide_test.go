@@ -37,19 +37,25 @@ const (
 func TestVerifyReleaseFollowsTheGuidesBrief(t *testing.T) {
 	root := filepath.Join("..", "..")
 	commands := guideCommands(t, readFile(t, root, "docs", "getting-started.md"), guideBriefSection)
-	step := workflowStep(t, readFile(t, root, ".github", "workflows", "verify-release.yml"), "verify-release", verifyBriefStep)
+	workflow := readFile(t, root, ".github", "workflows", "verify-release.yml")
+	step := workflowStep(t, workflow, "verify-release", verifyBriefStep)
 	if step.WorkingDirectory != "guide" {
-		t.Errorf("step %q runs in %q; want guide, the guide's clone, where its paths hold", verifyBriefStep, step.WorkingDirectory)
+		t.Errorf("step %q runs in %q; want guide, the guide's clone, where its paths hold",
+			verifyBriefStep, step.WorkingDirectory)
 	}
 
-	lines := strings.Split(step.Run, "\n")
+	// A line continued with a backslash is checked whole.
+	lines := strings.Split(strings.ReplaceAll(step.Run, "\\\n", " "), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimSpace(lines[i])
 	}
-	// runs reports whether line runs command, alone or with what to print
-	// when it fails.
+	// runs reports whether line runs command, kubectl as $KUBECTL, alone or
+	// with what to print when it fails.
 	runs := func(line, command string) bool {
-		rest, ok := strings.CutPrefix(line, "$KUBECTL"+strings.TrimPrefix(command, "kubectl"))
+		if rest, ok := strings.CutPrefix(command, "kubectl "); ok {
+			command = "$KUBECTL " + rest
+		}
+		rest, ok := strings.CutPrefix(line, command)
 		return ok && (rest == "" || strings.HasPrefix(rest, " ||"))
 	}
 	at := 0
@@ -144,7 +150,7 @@ func TestStandInReleasesOnTheChartsCatalog(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(readFile(t, root, "dist", "chart", "values.yaml")), &values); err != nil {
 		t.Fatal(err)
 	}
-	var catalog []model.CatalogEntry
+	catalog := make([]model.CatalogEntry, 0, len(values.Catalog.Entries))
 	for _, e := range values.Catalog.Entries {
 		catalog = append(catalog, model.CatalogEntry{Side: e.Kind, Name: e.Name, SupportedTypes: e.Spec.SupportedTypes,
 			SupportedFrameworks: e.Spec.SupportedFrameworks, DeploysItself: e.Spec.DeploysItself})
@@ -169,7 +175,8 @@ func TestStandInReleasesOnTheChartsCatalog(t *testing.T) {
 	container := plan.Objects[i]
 	if container.Deployment == "" || !slices.Contains(plan.Releases, container.Name) {
 		t.Fatalf("on the chart's catalog the stand-in adds %s on %s with Deployment %q and releases %v; "+
-			"want a Deployment and the Container released", container.Name, container.Framework, container.Deployment, plan.Releases)
+			"want a Deployment and the Container released",
+			container.Name, container.Framework, container.Deployment, plan.Releases)
 	}
 	section := guideSection(t, readFile(t, root, "docs", "getting-started.md"), guideBriefSection)
 	if says := "`" + container.Framework + "` with\n`" + container.Deployment + "`"; !strings.Contains(section, says) &&
@@ -180,12 +187,14 @@ func TestStandInReleasesOnTheChartsCatalog(t *testing.T) {
 }
 
 // curlWrite is a curl that sends something.
-var curlWrite = regexp.MustCompile(`\bcurl\b.*\s(-X|--request|-d|--data\S*|-F|--form|-T|--upload-file)\s`)
+var curlWrite = regexp.MustCompile(`\bcurl\b.*\s` +
+	`(-X\S*|--request|-d\S*|--data\S*|-F\S*|--form\S*|-T\S*|--upload-file)(\s|$)`)
 
 // kubectlWrites reports whether a $KUBECTL on line runs a verb that changes
 // the cluster.
 func kubectlWrites(line string) bool {
-	reads := []string{"get", "wait", "describe", "logs", "top", "diff", "explain", "api-resources", "version"}
+	reads := []string{"get", "wait", "describe", "logs", "top", "diff", "explain", "api-resources", "version",
+		"port-forward"}
 	_, after, found := strings.Cut(line, "$KUBECTL")
 	for found {
 		fields := strings.Fields(after)
@@ -208,24 +217,32 @@ func kubectlWrites(line string) bool {
 }
 
 // guideSection is the guide's section under heading, up to the next heading
-// of any level.
+// of any level outside a code block.
 func guideSection(t *testing.T, guide, heading string) string {
 	t.Helper()
 	_, section, ok := strings.Cut(guide, "\n"+heading+"\n")
 	if !ok {
 		t.Fatalf("docs/getting-started.md has no %q", heading)
 	}
-	if i := regexp.MustCompile(`(?m)^#`).FindStringIndex(section); i != nil {
-		section = section[:i[0]]
+	var kept []string
+	fenced := false
+	for line := range strings.SplitSeq(section, "\n") {
+		if strings.HasPrefix(line, "```") {
+			fenced = !fenced
+		} else if !fenced && strings.HasPrefix(line, "#") {
+			break
+		}
+		kept = append(kept, line)
 	}
-	return section
+	return strings.Join(kept, "\n")
 }
 
 // guideCommands are the lines of the section's bash blocks.
 func guideCommands(t *testing.T, guide, heading string) []string {
 	t.Helper()
 	var commands []string
-	for _, block := range regexp.MustCompile("(?s)```bash\n(.*?)```").FindAllStringSubmatch(guideSection(t, guide, heading), -1) {
+	blocks := regexp.MustCompile("(?s)```bash\n(.*?)```").FindAllStringSubmatch(guideSection(t, guide, heading), -1)
+	for _, block := range blocks {
 		for line := range strings.SplitSeq(strings.TrimSpace(block[1]), "\n") {
 			if line = strings.TrimSpace(line); line != "" {
 				commands = append(commands, line)

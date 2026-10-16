@@ -1039,8 +1039,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
-  the Brief on the first Framework a Deployment ships, with that Deployment
-  and released (else on the first Framework, unreleased), with an issue for
+  the Brief on the first Framework a Deployment ships and a Standard fits,
+  with both and released (else on the first Framework, unreleased), with an issue for
   it, and an issue for each follow-up prompt and each request it takes.
   `make e2e` takes a Brief through two rounds that way, with no token, and
   *Verify Release*, when a human dispatches it, follows

@@ -22,9 +22,9 @@ var (
 // StandInPlan is the stand-in planner's plan for the workspace the operator
 // wrote (BriefWorkspaceFiles), by path. It plans from the catalog alone: a
 // round that plans the idea adds one Container named after the Brief, on the
-// catalog's first Framework and type a Deployment ships, with that Deployment,
-// else on its first Framework and that Framework's first type, with the first
-// Standard that fits both, and files one issue for it; a Container with a
+// catalog's first Framework and type a Deployment ships and a Standard fits,
+// with both, else on its first Framework and that Framework's first type, with
+// the first Standard that fits both, and files one issue for it; a Container with a
 // Deployment is released (plan/releases.yaml), so its Crew prepares, tags and
 // ships a release once the issue is merged; each new prompt is one
 // issue for the Brief's Container, else the model's first, and so is each
@@ -191,19 +191,23 @@ func standInRequests(file, container string, issues *[][2]string) ([]RequestAnsw
 
 // standInCatalog picks the catalog's first Framework and type a Deployment
 // ships: a Framework that doesn't deploy itself, its first type a Deployment
-// supports, and the first such Deployment. With none, it picks the first
-// Framework that has a Container type, its first type and no Deployment.
-// Either way the Standard is the first that fits the Framework and the type,
-// if any.
+// supports and a Standard fits (gitea-release builds with the Standard's
+// make dist), the first such Deployment and Standard. With none, it picks the
+// first Framework that has a Container type, its first type, the first
+// Standard that fits both, if any, and no Deployment.
 func standInCatalog(catalog catalogOut) (framework, kind, standard, deployment string) {
 	for _, f := range catalog.Frameworks {
 		if f.DeploysItself {
 			continue
 		}
 		for _, t := range f.SupportedTypes {
+			standard := standInStandard(catalog, f.Name, t)
+			if standard == "" {
+				continue
+			}
 			for _, d := range catalog.Deployments {
 				if slices.Contains(d.SupportedTypes, t) {
-					return f.Name, t, standInStandard(catalog, f.Name, t), d.Name
+					return f.Name, t, standard, d.Name
 				}
 			}
 		}

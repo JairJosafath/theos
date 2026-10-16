@@ -409,15 +409,39 @@ jobs:
             report "Skipped: $TAG has no stand-in Brief."
             exit 0
           fi
+          get() { $KUBECTL -n webshop get "$1" -o jsonpath="$2"; }
+          # until OBJECT FIELD MINUTES WANT STOP...: polls FIELD until it is
+          # WANT or one of STOP, so a guide wait that would sit out its
+          # timeout on a failure ends at once.
+          until_field() {
+            local object=$1 field=$2 minutes=$3 want=$4 value
+            shift 4
+            for i in $(seq 1 $((minutes * 6))); do
+              value=$(get "$object" "$field")
+              [ "$value" = "$want" ] && return 0
+              for stop; do
+                [ "$value" = "$stop" ] && { echo "::error::$object is $value"; return 1; }
+              done
+              sleep 10
+            done
+            echo "::error::$object's $field is ${value:-unset}, not $want, after $minutes minutes"
+            return 1
+          }
           $KUBECTL apply -f config/samples/brief/stand-in.yaml
-          $KUBECTL -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=10m ||
+          until_field brief/stand-in-demo '{.status.phase}' 15 Planned Failed NeedsInput ||
+            { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
+          $KUBECTL -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=15m ||
             { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
           $KUBECTL -n webshop get c4
-          get() { $KUBECTL -n webshop get "$1" -o jsonpath="$2"; }
           get brief/stand-in-demo '{range .status.choices[*]}- {@}{"\n"}{end}'
           container=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Container")].name}')
           crew=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Crew")].name}')
           issue=$(get brief/stand-in-demo '{.status.issues[0].number}')
+          # The guide's commands name them after the Brief, as the stand-in does.
+          if [ "$container $crew" != "stand-in-demo stand-in-demo" ]; then
+            echo "::error::Brief stand-in-demo made Container $container and Crew $crew; the guide waits on stand-in-demo"
+            exit 1
+          fi
           $KUBECTL -n webshop wait "container/$container" --for=jsonpath='{.status.phase}'=Ready --timeout=5m ||
             { $KUBECTL -n webshop describe container "$container" | tail -30; exit 1; }
           # An older stand-in releases nothing: its Crew starting a Task for
@@ -435,6 +459,8 @@ jobs:
               "$TAG's stand-in releases nothing, so the check stops there."
             exit 0
           fi
+          until_field crew/stand-in-demo '{.status.lastRelease.run}' 60 Succeeded Failed ||
+            { $KUBECTL -n webshop get crew stand-in-demo -o yaml | tail -60; $KUBECTL -n webshop get tasks -o wide; exit 1; }
           $KUBECTL -n webshop wait crew/stand-in-demo --for=jsonpath='{.status.lastRelease.run}'=Succeeded --timeout=60m ||
             { $KUBECTL -n webshop get crew stand-in-demo -o yaml | tail -60; $KUBECTL -n webshop get tasks -o wide; exit 1; }
           $KUBECTL -n webshop get brief stand-in-demo
@@ -442,6 +468,12 @@ jobs:
           # The guide says the release run put the binaries and SHA256SUMS on
           # the tag's Gitea release.
           tag=$(get crew/stand-in-demo '{.status.lastRelease.tag}')
+          # Gitea's pod may have restarted in the hour, and the earlier
+          # port-forward with it.
+          echo "GITEA_PORT=3002" >>"$GITHUB_ENV"
+          GITEA_PORT=3002
+          $KUBECTL -n gitea port-forward service/gitea 3002:3000 >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:3002/api/v1/version >/dev/null 2>&1 && break; sleep 2; done
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
           echo "::add-mask::$pass"

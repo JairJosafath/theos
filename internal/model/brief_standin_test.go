@@ -18,10 +18,12 @@ func TestStandInPlan(t *testing.T) {
 		{Side: SideCompute, Name: "small", SupportedTypes: []string{TypeCLI}},
 	}
 	noStandard := []CatalogEntry{{Side: SideFramework, Name: "go-cli", SupportedTypes: []string{TypeCLI}}}
-	// A Deployment ships worker and service, but a-cloud deploys itself and
-	// c-tool's first type is cli: the stand-in takes c-tool as a worker.
+	// A Deployment ships worker and service, but a-cloud deploys itself, no
+	// Standard fits b-bare, and c-tool's first type is cli: the stand-in takes
+	// c-tool as a worker.
 	withDeployment := []CatalogEntry{
 		{Side: SideFramework, Name: "a-cloud", SupportedTypes: []string{TypeService}, DeploysItself: true},
+		{Side: SideFramework, Name: "b-bare", SupportedTypes: []string{TypeWorker}},
 		{Side: SideFramework, Name: "b-web", SupportedTypes: []string{TypeStaticSite}},
 		{Side: SideFramework, Name: "c-tool", SupportedTypes: []string{TypeWorker, TypeCLI}},
 		{Side: SideStandard, Name: "c-standard", SupportedTypes: []string{TypeWorker}, SupportedFrameworks: []string{"c-tool"}},
