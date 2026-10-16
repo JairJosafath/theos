@@ -1,0 +1,59 @@
+# make check in a scaffolded aws-static-site-ts v1.0.0 + aws-standard v1.7.0 Container (issue #1114)
+# go run ./hack/render -out /tmp/r-aws-static-site-ts -type static-site Framework=aws-static-site-ts Standard=aws-standard
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1:
+# env -i PATH=$PATH HOME=/tmp/ss-home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
+# on 2026-10-16. synth builds the site with Vite and writes both tiers,
+# cdk.out/production/ and cdk.out/development/, and cfn-lint lints both with
+# --include-checks I. Exit status 0.
+# A second render with -retention-days 90 -copy-to-region eu-west-1 -rpo 15m
+# -rto 2h -alert-email "o'neil@example.com" passed the same make check
+# (65 tests), its production bucket keeping earlier versions 90 days.
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 30s
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/r-aws-static-site-ts
+
+ ✓ src/greeting.test.ts (5 tests) 19ms
+Bundling asset test/Deploy/Asset1/Stage...
+Bundling asset sample-app/Deploy/Asset1/Stage...
+Bundling asset test/Deploy/Asset1/Stage...
+Bundling asset sample-app-development/Deploy/Asset1/Stage...
+Bundling asset test/Deploy/Asset1/Stage...
+ ✓ infra/site_stack.test.ts (13 tests) 9089ms
+   ✓ SiteStack (9)
+     ✓ keeps the site in a private, versioned bucket in production, earlier versions for a while 1665ms
+ ✓ infra/standard.test.ts (47 tests) 9293ms
+   ✓ the Standard, in production (9)
+     ✓ leaves no error or warning on any stack 412ms
+
+ Test Files  3 passed (3)
+      Tests  65 passed (65)
+   Start at  12:07:07
+   Duration  12.68s (tests 73%, import 16%, transform 11%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+Bundling asset sample-app/Deploy/Asset1/Stage...
+Bundling asset sample-app-development/Deploy/Asset1/Stage...
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Downloading networkx (2.0MiB)
+Downloading cfn-lint (5.4MiB)
+Downloading sympy (6.0MiB)
+ Downloaded networkx
+ Downloaded cfn-lint
+ Downloaded sympy
+Installed 9 packages in 37ms

@@ -315,6 +315,45 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 9, as built
+
+`aws-static-site-ts` v1.0.0 with `aws-standard` v1.7.0
+(`docs/screenshots/1114-aws-static-site-ts-check.txt` has the evidence).
+What it settled, which steps 8, 10 and 11 can reuse:
+
+- **A data bucket is told from a log bucket by who writes to it.** The
+  Standard's test calls every bucket a data bucket unless another resource
+  writes its logs there (a bucket's access logs, a distribution's, a load
+  balancer's). A data bucket is `RETAIN` where the tier keeps data and
+  `DESTROY` elsewhere, and where the tier keeps data it is versioned with a
+  rule expiring earlier versions. The site keeps them 35 days, as long as
+  point-in-time recovery reaches back, or `retentionDays` when longer.
+  Development doesn't version the site, and its files go with the stack, so
+  the stack deletes cleanly. The log bucket stays in both tiers and its
+  objects expire after the tier's log retention.
+- **The backup plan is only for what AWS Backup backs up.** The test
+  wants a plan, vault and selection only in a stack holding a table
+  (`BACKED_UP_TYPES`). A stack with none of that has no plan, and a copy
+  stack is expected only when one does. The site's source is in git, and
+  its built files' earlier versions are in the bucket.
+- **The stack is in us-east-1.** CloudFront takes its WAF web ACL and
+  certificate only from there, and reports its metrics only there, so
+  the 5xx alarm would fail anywhere else. `copyToRegion` copies nothing
+  for a site, and the runbook says so.
+- **TLS 1.2 needs a domain.** `DomainName` and `CertificateArn` are
+  parameters, both empty by default. With them the distribution uses the
+  certificate by SNI with `TLSv1.2_2021`, and a CloudFormation rule refuses a
+  domain without a certificate. Without them the distribution answers on
+  CloudFront's own domain, whose certificate CloudFront keeps at TLSv1;
+  `AwsSolutions-CFR4` is acknowledged with that reason.
+- **The site is built at synth.** `BucketDeployment`'s asset is bundled
+  locally by `vite build`, never with Docker. Its function has its own role,
+  log group, alarms and production tracing, like any function. Its wildcard
+  grants and runtime are acknowledged with reasons.
+- **The WAF is production's.** It has three AWS managed rule groups and a
+  rate limit per address. In development `AwsSolutions-CFR2` is
+  acknowledged, since a firewall costs a monthly fee per stack.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`

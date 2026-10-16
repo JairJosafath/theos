@@ -1,0 +1,87 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` static site of {{ .SoftwareSystem }}, in project {{ .Project }}: a page in
+TypeScript, built with Vite, served from a private S3 bucket through a
+CloudFront distribution, with its infrastructure as a CDK app. Scaffolded by
+C4 Factory.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci           # install the exact packages in package-lock.json
+npm run dev      # serve the page with hot reload on http://localhost:5173
+npm test         # unit tests and the stack's assertions, with vitest
+npm run build    # the site in dist/, as a deploy copies it
+npm run synth    # build the site and write the development templates into cdk.out/
+{{- if .Standard }}
+make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
+make help        # every target
+{{- end }}
+```
+
+Nothing here deploys or needs an AWS account: synth runs offline, builds the
+site with the installed Vite, and needs neither Docker nor credentials.
+
+## Tiers and operations
+
+The stack is built for a tier, `production` or `development`, which is the
+place it runs, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production. Both are in us-east-1, the only region where CloudFront takes a
+web application firewall and a certificate; the site is served from
+CloudFront's edge locations wherever its visitors are.
+
+Production keeps the site's bucket when the stack goes, versions it and
+keeps each file's earlier versions for 35 days (or the backups' retention,
+when longer), puts a web application firewall in front of the distribution,
+protects the stack from deletion, traces the deploy's copy with X-Ray and
+keeps logs a year; development deletes the bucket and its files with the
+stack and keeps logs a month. Both tiers log every request, alarm and have
+a dashboard. There is no AWS Backup plan: the site's source is in git.
+
+What the app promises whatever the tier, the recovery objectives and who the
+alarms tell, is in `infra/operations.ts`, which C4 Factory renders from the
+Container's `spec.operations`: change the block, and the file follows it.
+
+A deploy sets the stack's parameters per environment:
+
+| Parameter        | Default                       | What it is                                                        |
+| ---------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `DomainName`     | empty: CloudFront's own       | the domain the site answers on, such as `www.example.com`         |
+| `CertificateArn` | empty                         | an ACM certificate in us-east-1 for `DomainName`, which needs one |
+| `AlertEmail`     | `infra/operations.ts`'s email | the address the alarms notify; empty for none                     |
+
+The stack outputs `EntryPoint`, the site's URL, and `AlarmTopicArn`, the
+topic its alarms notify. Pointing the domain's DNS record at the
+distribution is done where the domain is hosted.
+
+Deploying (`cdk deploy`, after `cdk bootstrap` of the account in us-east-1)
+is for its owner, with their own credentials. Each deploy builds the site,
+copies it into the bucket, deletes the files the build lacks and clears
+CloudFront's cache.
+
+## Layout
+
+- `index.html` is the page Vite serves and builds; its `<title>` is the
+  site's name, which the page shows as its heading.
+- `src/main.ts` finds the page's elements and wires them to the logic;
+  `src/greeting.ts` is the logic, free of the DOM, tested by
+  `src/greeting.test.ts` in plain Node. `src/index.css` styles the page.
+- `public/` is copied into the site as is (the icon).
+- `infra/stacks.ts` defines the stack for a tier; `infra/site_stack.ts` is
+  the stack: the buckets, the distribution, the firewall, the deploy of the
+  built site and its alarms (`infra/alarms.ts`). The stack is named after
+  the package. `infra/operations.ts` holds what the Container promises.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to bring the site's files
+  back, roll a deployment back, and what to do when an alarm fires.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
