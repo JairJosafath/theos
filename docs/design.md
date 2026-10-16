@@ -893,7 +893,9 @@ model and context it needs.
   internal Application Load Balancer), also with no Compute or Deployment,
   and the `service` Framework `aws-fargate-ts` (a Node server in a container
   on ECS on Fargate behind an internet-facing Application Load Balancer
-  serving HTTPS, whose image synth only stages).
+  serving HTTPS, whose image synth only stages), and the `worker` Framework
+  `aws-queue-ts` (an SQS queue with a dead-letter queue, consumed in batches
+  by a TypeScript Lambda that reports only the messages that failed).
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
   its stacks for two tiers, and the place it is deployed to picks one: a
   deploy target says `production` or `development`, and a hand deploy that
