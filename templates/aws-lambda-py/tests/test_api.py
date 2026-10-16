@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from app.api import HttpApiEvent, Log, answer, route
+from app.api import PUT_ITEM, HttpApiEvent, Log, answer, route
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -63,7 +63,7 @@ def send(event: HttpApiEvent, store: ItemStore, log: Log = no_log) -> HttpRespon
 def test_puts_an_item_then_gets_it() -> None:
     store = MemoryStore()
 
-    put = send(request("PUT /items/{id}", "i1", '{"name":"Lamp","quantity":3}'), store)
+    put = send(request(PUT_ITEM, "i1", '{"name":"Lamp","quantity":3}'), store)
     got = send(request("GET /items/{id}", "i1"), store)
 
     assert put["statusCode"] == 200
@@ -77,7 +77,7 @@ def test_puts_an_item_then_gets_it() -> None:
 def test_reads_a_base64_encoded_body() -> None:
     body = base64.b64encode('{"name":"Zoë","quantity":1}'.encode()).decode()
 
-    put = send(request("PUT /items/{id}", "i1", body, base64_encoded=True), MemoryStore())
+    put = send(request(PUT_ITEM, "i1", body, base64_encoded=True), MemoryStore())
 
     assert put["body"] == '{"id":"i1","name":"Zoë","quantity":1}'
 
@@ -88,8 +88,8 @@ def test_reads_a_base64_encoded_body() -> None:
         (request("GET /items/{id}", "nope"), 404),
         (request("GET /items/{id}", "a b"), 400),
         (request("GET /items/{id}", None), 400),
-        (request("PUT /items/{id}", "i1", '{"name":""}'), 400),
-        (request("PUT /items/{id}", "i1", "not base64!", base64_encoded=True), 400),
+        (request(PUT_ITEM, "i1", '{"name":""}'), 400),
+        (request(PUT_ITEM, "i1", "not base64!", base64_encoded=True), 400),
         (request("DELETE /items/{id}", "i1"), 404),
     ],
     ids=["missing item", "bad id", "no id", "bad body", "bad base64", "unknown route"],

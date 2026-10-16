@@ -139,10 +139,12 @@ Task that reviews and merges it. Then:
 
 - The function is Python in `app/`, its tests pytest in `tests/`; the CDK
   app in `infra/` is TypeScript. Request handling is tested by calling
-  `answer` with an HTTP API event dict and a fake store, checking the status
-  code and the body; logic lives in modules that don't import boto3. Keep
-  `app/handler.py` to wiring: the boto3 resources at module scope, the
-  environment read once.
+  `answer` with an HTTP API event dict and `route` over a fake store,
+  checking the status code and the body; logic lives in modules that don't
+  import boto3. A `PUT` runs once per `Idempotency-Key` through
+  `app/once.py`, tested over an in-memory record store. Keep
+  `app/handler.py` to wiring: the boto3 resources and Powertools' Logger,
+  Metrics and records at module scope, the environment read once.
 - An AWS service is reached through one module that wraps boto3 behind a
   `Protocol`, typed with the `types-boto3` stubs; its tests pass a fake that
   implements the protocol and records the calls. No test calls AWS, opens a

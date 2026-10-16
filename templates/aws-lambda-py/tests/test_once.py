@@ -154,6 +154,19 @@ def test_a_refusal_keeps_no_record_so_a_corrected_retry_runs() -> None:
     assert api.store.writes == 1
 
 
+def test_a_refusal_the_route_answers_keeps_no_record_either() -> None:
+    # The route answers this refusal rather than raising it.
+    refusals = [problem(409, "Not yet.")]
+    api = Api(lambda event: refusals.pop() if refusals else route(event, api.store))
+
+    refused = api.send(put("i1", LAMP))
+    retried = api.send(put("i1", LAMP))
+
+    assert refused["statusCode"] == 409
+    assert retried["statusCode"] == 200
+    assert api.store.writes == 1
+
+
 def test_a_failure_keeps_no_record_so_a_retry_runs() -> None:
     api = Api()
     api.store.failing = True
