@@ -1,3 +1,5 @@
+{{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
+{{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
 {{ if eq .Framework "aws-fargate-ts" -}}
 # Sources
 
@@ -257,13 +259,13 @@ The versions pinned in the Framework's `package.json` and `package-lock.json`:
 TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
 ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
 vitest 5.0.3, @types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1,
-aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15. In `src/go.mod` and
-`src/go.sum`: Go 1.26, github.com/aws/aws-lambda-go 1.55.1,
-github.com/aws/aws-sdk-go-v2 1.47.3, its `config` 1.33.9 and
-`service/dynamodb` 1.70.3. golangci-lint is the runner's (v2.14). The
-`Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these docs name
-were read from cdk-nag 3.0.2's `RULES.md`, and `cdk.json`'s feature flags are
-the ones `cdk init` of aws-cdk 2.1145.0 writes.
+aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15, and for the alarms
+cdk-monitoring-constructs 10.3.2. In `src/go.mod` and `src/go.sum`: Go 1.26,
+github.com/aws/aws-lambda-go 1.55.1, github.com/aws/aws-sdk-go-v2 1.47.3, its
+`config` 1.33.9 and `service/dynamodb` 1.70.3. golangci-lint is the runner's
+(v2.14). The `Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these
+docs name were read from cdk-nag 3.0.2's `RULES.md`, and `cdk.json`'s feature
+flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
 {{- else if eq .Framework "aws-static-site-ts" -}}
 ## Tools
 
@@ -279,16 +281,17 @@ aws-cdk 2.1145.0 writes.
 {{- else if eq .Framework "aws-lambda-py" -}}
 ## Tools
 
-The versions pinned in the Framework's `pyproject.toml` and `uv.lock`: boto3
-1.43.112, ruff 0.16.10, mypy 2.4.0, pytest 9.1.1, types-boto3 1.43.112. In
-its `package.json` and `package-lock.json`: TypeScript 6.0.3, ESLint 10.11.0,
-@eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9, vitest 5.0.3,
-@types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1, aws-cdk (the
-CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15. The `Makefile` runs cfn-lint
-1.57.2 with uv, and the stack bundles the function with uv for Python 3.14
-on arm64. The CDK Nag rules these docs name were read from cdk-nag 3.0.2's
-`RULES.md`, and `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk
-2.1145.0 writes.
+The versions pinned in the Framework's `pyproject.toml` and `uv.lock`:
+aws-lambda-powertools 3.36.0 (Powertools' Logger, Metrics and Idempotency),
+boto3 1.43.112, ruff 0.16.10, mypy 2.4.0, pytest 9.1.1, types-boto3 1.43.112.
+In its `package.json` and `package-lock.json`: TypeScript 6.0.3, ESLint
+10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9, vitest
+5.0.3, @types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1, aws-cdk
+(the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15, and for the alarms
+cdk-monitoring-constructs 10.3.2. The `Makefile` runs cfn-lint 1.57.2 with
+uv, and the stack bundles the function with uv for Python 3.14 on arm64. The
+CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
+`cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
 {{- else -}}
 ## Tools
 
@@ -304,9 +307,11 @@ CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 {{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
 @aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
+{{- else if eq .Framework "aws-ec2-ts" }} The
+operations (the alarms) add cdk-monitoring-constructs 10.3.2.
 {{- end }}
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" }}
+{{- if or $lambda (eq .Framework "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") }}
 
 ## Operations (read 2026-10-16)
 
@@ -327,7 +332,13 @@ give none.
 | DynamoDB, point-in-time recovery — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html                                                                                                 | live           |
 | DynamoDB, restoring a table to a point in time — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery.Tutorial.html                                                                             | live           |
 | cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                  | 10.3.2         |
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}
 | Powertools for AWS Lambda (TypeScript), Idempotency — https://docs.aws.amazon.com/powertools/typescript/latest/features/idempotency/                                                                                            | 2.36.0         |
+{{- else if eq .Framework "aws-lambda-py" }}
+| Powertools for AWS Lambda (Python), Logger — https://docs.aws.amazon.com/powertools/python/latest/core/logger/                                                                                                                  | 3.36.0         |
+| Powertools for AWS Lambda (Python), Metrics — https://docs.aws.amazon.com/powertools/python/latest/core/metrics/                                                                                                                | 3.36.0         |
+| Powertools for AWS Lambda (Python), Idempotency — https://docs.aws.amazon.com/powertools/python/latest/utilities/idempotency/                                                                                                   | 3.36.0         |
+{{- end }}
 | cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                        | 1.57.2         |
 | Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/ | live           |
 {{- if eq .Framework "aws-queue-ts" }}
@@ -375,6 +386,29 @@ Read for the rule, its pattern, its target's retries and dead-letter queue, the 
 | Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html                 | live           |
 | Pricing: EventBridge — https://aws.amazon.com/eventbridge/pricing/                                                                                 | live           |
 {{- end }}
+{{- else if eq .Framework "aws-ec2-ts" }}
+
+## Operations (read 2026-10-16)
+
+Read for the tiers, the backups, the alarms, the rolling update's signals
+and `docs/runbook.md`. The pricing pages were read for what costs more, not
+for figures: the digests give none.
+
+| Source                                                                                                                                                                                                                                       | Version / date |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                                                                             | live           |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                                                                              | live           |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                                                                 | live           |
+| Operational excellence pillar, OPS08 workload observability (BP04 alerts, BP05 dashboards) — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html                  | live           |
+| AWS Backup, restoring a DynamoDB table — https://docs.aws.amazon.com/aws-backup/latest/devguide/restoring-dynamodb.html                                                                                                                      | live           |
+| AWS Backup, vault lock — https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html                                                                                                                                              | live           |
+| DynamoDB, point-in-time recovery — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html                                                                                                              | live           |
+| CloudFormation, cfn-signal — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/cfn-signal.html                                                                                                                          | live           |
+| CloudFormation, UpdatePolicy (AutoScalingRollingUpdate) — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-updatepolicy.html                                                                             | live           |
+| EC2 Auto Scaling, SNS notifications and the key policy of an encrypted topic — https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-sns-notifications.html                                                                 | live           |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                               | 10.3.2         |
+| cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                                     | 1.57.2         |
+| Pricing: DynamoDB, AWS Backup, CloudWatch, PrivateLink — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/privatelink/pricing/ | live           |
 {{- end }}
 
 ## Cross-language (read 2026-09-30)

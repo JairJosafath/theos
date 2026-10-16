@@ -71,6 +71,19 @@ wheels = [
 ]
 
 [[package]]
+name = "aws-lambda-powertools"
+version = "3.36.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/14/dc/7e2074bec768a7f84aedbec31a35c4978f10df0b9201b428cce373c5cd0f/aws_lambda_powertools-3.36.0.tar.gz", hash = "sha256:3931b362265b5bb6b5bc31dd8f8821cbfb3cfd0fd44df28749aff9547be00fe2", size = 821764, upload-time = "2026-10-15T09:25:34.694Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/76/cf2af10e086ec0e60aad4c727e47c90841bb7aa23d68b5a94269380bc2f2/aws_lambda_powertools-3.36.0-py3-none-any.whl", hash = "sha256:cc44418d9f7ba27b571a515a356206d2aeebc019871082467e88b2bff3e3bdb5", size = 992968, upload-time = "2026-10-15T09:25:32.77Z" },
+]
+
+[[package]]
 name = "boto3"
 version = "1.43.112"
 source = { registry = "https://pypi.org/simple" }
@@ -361,6 +374,7 @@ name = "{{ .Container }}"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [
+    { name = "aws-lambda-powertools" },
     { name = "boto3" },
 ]
 
@@ -373,7 +387,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "boto3", specifier = "==1.43.112" }]
+requires-dist = [
+    { name = "aws-lambda-powertools", specifier = "==3.36.0" },
+    { name = "boto3", specifier = "==1.43.112" },
+]
 
 [package.metadata.requires-dev]
 dev = [

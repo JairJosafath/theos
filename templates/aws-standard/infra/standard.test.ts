@@ -52,6 +52,8 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   'AWS::ElasticLoadBalancingV2::TargetGroup': ['UnHealthyHostCount'],
   // Container Insights counts the running tasks.
   'AWS::ECS::Service': ['CPUUtilization', 'MemoryUtilization', 'RunningTaskCount'],
+  // The group's CPU, and its instances in service against its minimum.
+  'AWS::AutoScaling::AutoScalingGroup': ['CPUUtilization', 'GroupInServiceInstances'],
   'AWS::CloudFront::Distribution': ['5xxErrorRate'],
   // The Scheduler's metrics are per schedule group: a run it dropped, or
   // couldn't put in the dead-letter queue, is lost.
@@ -63,6 +65,13 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   // in the dead-letter queue. On the default bus its Ref is its name.
   'AWS::Events::Rule': ['FailedInvocations', 'InvocationsFailedToBeSentToDlq'],
 };
+
+// What runs on an instance, whose volumes hold no data (docs/style/aws.md).
+const INSTANCE_TYPES = [
+  'AWS::AutoScaling::AutoScalingGroup',
+  'AWS::EC2::LaunchTemplate',
+  'AWS::EC2::Instance',
+];
 
 // Where a message or event that failed for good goes: a queue's redrive
 // policy, a function's or a schedule's or a rule target's dead-letter
@@ -178,6 +187,15 @@ function only<T>(items: readonly T[], what: string): T {
     throw new Error(`${what}: want exactly one, found ${String(items.length)}.`);
   }
   return item;
+}
+
+/**
+ * The resources a backup selection names one by one, by ARN: none when it
+ * takes every resource (`*`), as a selection by a tag condition does.
+ */
+function namedResources(selection: unknown): unknown[] {
+  const resources: unknown[] = isRecord(selection) ? [selection['Resources'] ?? []].flat() : [];
+  return resources.includes('*') ? [] : resources;
 }
 
 /**
@@ -690,16 +708,40 @@ describe.runIf(operations !== undefined).each(TIERS)(
               expect(JSON.stringify(copies), name).toContain(`:backup:${copyToRegion}:`);
             }
           }
-          // The plan backs up what carries the Container's tag, which the
-          // Standard puts on every resource: as a tag (`ListOfTags`), or as
-          // a condition on every resource, which can leave some out.
-          const container = STANDARD_TAGS['c4factory:container'];
+          // The plan backs up the stack's own tables, named by ARN, or what
+          // carries the Container's tag, which the Standard puts on every
+          // resource: as a tag (`ListOfTags`), or as a condition on every
+          // resource, which can leave some out.
           const selection = only(selections, `${name}'s backup selections`)[1];
           const backupSelection = selection.Properties?.['BackupSelection'];
-          expect(
-            selectsByTag(backupSelection, 'c4factory:container', container),
-            `${name}: ${JSON.stringify(backupSelection)}`,
-          ).toBe(true);
+          const named = namedResources(backupSelection);
+          if (named.length > 0) {
+            const tables = resourcesOf(template, 'AWS::DynamoDB::Table').map(([id]) => id);
+            for (const resource of named) {
+              expect(
+                tables.some((id) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`),
+                `${name}: ${JSON.stringify(resource)} is none of the stack's tables`,
+              ).toBe(true);
+            }
+            // And every table of the stack is named: a table left out
+            // would go unbacked.
+            for (const id of tables) {
+              expect(
+                named.some(
+                  (resource) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`,
+                ),
+                `${name}/${id} is in no backup selection`,
+              ).toBe(true);
+            }
+            expect(backupSelection, name).not.toHaveProperty('ListOfTags');
+            expect(backupSelection, name).not.toHaveProperty('Conditions');
+          } else {
+            const container = STANDARD_TAGS['c4factory:container'];
+            expect(
+              selectsByTag(backupSelection, 'c4factory:container', container),
+              `${name}: ${JSON.stringify(backupSelection)}`,
+            ).toBe(true);
+          }
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -726,16 +768,64 @@ describe.runIf(operations !== undefined).each(TIERS)(
               continue;
             }
             // Every resource carries the tag a selection backs up by, so a
-            // selection leaves the bucket out by name.
+            // selection by tag leaves the bucket out by name; one that names
+            // its resources by ARN leaves it out by not naming it.
             for (const [id, selection] of selections) {
-              const notResources = isRecord(selection.Properties?.['BackupSelection'])
-                ? selection.Properties['BackupSelection']['NotResources']
+              const backupSelection = selection.Properties?.['BackupSelection'];
+              const named = namedResources(backupSelection);
+              const notResources = isRecord(backupSelection)
+                ? backupSelection['NotResources']
                 : undefined;
               expect(
-                refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
+                named.length > 0
+                  ? !refersTo(JSON.stringify(named), bucket['Ref'])
+                  : refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
                 `${name}/${id} selects ${balancerId}'s log bucket ${bucket['Ref']}`,
               ).toBe(true);
             }
+          }
+        }
+      });
+    });
+
+    describe('the instances', () => {
+      it('hold no data: their volumes go with them, and no backup selects them by tag', () => {
+        for (const [name, template] of app(tier).templates) {
+          if (!INSTANCE_TYPES.some((type) => resourcesOf(template, type).length > 0)) {
+            continue;
+          }
+          expect(resourcesOf(template, 'AWS::EC2::Volume'), name).toEqual([]);
+          // A launch template's volumes, and a lone instance's.
+          const owners: [string, unknown][] = [
+            ...resourcesOf(template, 'AWS::EC2::LaunchTemplate').map(
+              ([id, launchTemplate]): [string, unknown] => [
+                id,
+                launchTemplate.Properties?.['LaunchTemplateData'],
+              ],
+            ),
+            ...resourcesOf(template, 'AWS::EC2::Instance').map(
+              ([id, instance]): [string, unknown] => [id, instance.Properties],
+            ),
+          ];
+          for (const [id, data] of owners) {
+            const devices: unknown[] = isRecord(data)
+              ? [data['BlockDeviceMappings'] ?? []].flat()
+              : [];
+            for (const device of devices) {
+              const ebs = isRecord(device) ? device['Ebs'] : undefined;
+              if (ebs !== undefined) {
+                expect(ebs, `${name}/${id}`).toMatchObject({ DeleteOnTermination: true });
+              }
+            }
+          }
+          // A tag selection, by `ListOfTags` or by a condition on every
+          // resource, would back up every instance and volume that carries
+          // the Container's tag: the plan names its tables instead.
+          for (const [id, selection] of resourcesOf(template, 'AWS::Backup::BackupSelection')) {
+            const chosen = selection.Properties?.['BackupSelection'];
+            expect(namedResources(chosen).length, `${name}/${id}`).toBeGreaterThan(0);
+            expect(chosen, `${name}/${id}`).not.toHaveProperty('ListOfTags');
+            expect(chosen, `${name}/${id}`).not.toHaveProperty('Conditions');
           }
         }
       });
@@ -753,7 +843,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table, API, load balancer, target group, service, distribution, schedule group and rule, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service, Auto Scaling group, distribution, schedule group and rule, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);

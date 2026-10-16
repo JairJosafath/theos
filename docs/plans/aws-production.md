@@ -315,6 +315,45 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 4, as built
+
+`aws-lambda-py` v1.1.0 and `aws-lambda-go` v1.1.0 with `aws-standard`
+v1.12.0: steps 5, 9, 8 and 10 merged first and took v1.7.0, v1.8.0, v1.9.0
+and v1.10.0, and step 6 (#1111) took v1.11.0, so step 4 takes v1.12.0
+(`docs/screenshots/1109-aws-lambda-py-go-check.txt` has the evidence):
+
+- **The infra is aws-lambda-ts's.** `infra/operations.ts.tmpl`,
+  `infra/alarms.ts`, `infra/backups.ts` and `infra/stacks.ts` are copies,
+  and `infra/api_stack.ts` is aws-lambda-ts's stack with the Framework's own
+  function code. The alarms, parameter and outputs have the same names in
+  all three, so the runbook's alarm table is one table.
+- **Python takes Powertools 3.36.0.** `app/once.py` wraps `PUT` in
+  Powertools' Idempotency with the same answers as `src/once.ts` (409, 422,
+  no record kept for a refusal). It calls `idempotent_function` as a plain
+  function, since Powertools types the decorator `Any` and strict mypy
+  refuses an untyped decorator. The tests fake the table with an in-memory
+  `BasePersistenceLayer`, so none calls AWS.
+- **Go keeps `slog` and one table.** No idempotency table, no custom
+  metrics: a `PUT` replaces the whole item, so repeating one is harmless,
+  and the digest says idempotency is by hand. X-Ray traces the function in
+  production without the SDK's subsegments.
+- **The Standard's Lambda branch covers the three.** Every `aws-lambda-ts`
+  branch takes the three Lambda Frameworks, with inner branches for the
+  language and for the idempotency table Go lacks: step 5's `$tiered`
+  (`AGENTS.md`, the role guides) now names all four Frameworks with
+  operations, and where `aws-fargate-ts` has a branch or a whole file of
+  its own (`docs/style/aws.md`, `SOURCES.md`, `docs/runbook.md`,
+  `docs/well-architected.md`), the Lambda branch is `$lambda` or names the
+  three. The implementer guide's tier notes are one `define`, which the Go
+  notes and the others both call. The digest's older serverless branch
+  served no Framework any more and was deleted. Nothing in
+  `infra/standard.test.ts`, `infra/standard.ts` or the Makefile assumed a
+  runtime, so step 4 left them as step 5 made them.
+- **A Python or Go build is slower than esbuild:** both `vitest.config.mts`
+  give the hooks 180 s.
+- **A v1.0.0 repository on v1.12.0** gets the tier docs and a runbook its
+  stack doesn't have yet, as aws-lambda-ts v1.0.0 did on v1.6.0 (#1249).
+
 ### Step 5, as built
 
 Step 5 is `aws-fargate-ts` v1.1.0 with `aws-standard` v1.7.0 (agent
@@ -583,9 +622,68 @@ it settled, which step 11 can copy:
 - **Outputs:** `EntryPoint` is the schedule's ARN; `FunctionName` is added,
   which a person invokes to run a dead-lettered run again.
 
+### Step 6, as built
+
+`aws-ec2-ts` v1.1.0 with `aws-standard` v1.11.0 (#1111; step 5 took v1.7.0,
+step 9 v1.8.0, step 8 v1.9.0 and step 10 v1.10.0), copying step 3's
+files (`infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
+`defineStacks(app, tier)`); `docs/screenshots/1111-aws-ec2-ts-check.txt` has
+the evidence. What it settled beyond step 3:
+
+- **The backup plan names the stack's table by ARN, not by the tag.** A tag
+  selection on an EC2 stack would back up the instances and their volumes,
+  which carry the Container's tag too and hold no data, and the development
+  stack's table (#1272). So `Backups` takes `tables` and selects them with
+  `BackupResource.fromDynamoDbTable`, as #1267 decided for the Lambda
+  Frameworks. The Standard's test accepts a selection naming only and all
+  of the stack's own tables, or else the tag in either of step 5's forms
+  (the Lambda Frameworks until #1267 and #1272 move them, and
+  `aws-fargate-ts`), and refuses a tag selection of either form in a stack
+  with an Auto Scaling group, a launch template or an instance, whose
+  volumes must be deleted with their instance; that is decision 3's "the
+  EBS root is not backed up", enforced. Step 5's check that a selection
+  leaves the load balancer's access-log bucket out holds for a selection by
+  ARN when it doesn't name the bucket, and for one by tag, as before, when
+  its `NotResources` does.
+- **`cfn-signal` through a CloudFormation endpoint.** The instances have no
+  way out, so the VPC gets a CloudFormation interface endpoint beside the
+  Logs one. `aws-cfn-bootstrap` is installed first (`INSTALL_COMMAND`), the
+  user data's exit trap (`addSignalOnExitCommand`) signals the script's
+  status, and the script's last command waits up to five minutes for the
+  server to answer `/health` on the instance. The group has a creation
+  policy for its two instances and a rolling update with
+  `waitOnResourceSignals`, `minInstancesInService` 2 (a replacement starts
+  before an old instance stops, so the in-service alarm stays quiet) and a
+  15-minute timeout; CDK grants `cloudformation:SignalResource` on the
+  stack. The group's health-check grace is 10 minutes, past the boot and
+  its health wait, so a slow boot isn't replaced before it signals.
+- **HTTPS only on the internal load balancer.** One listener on 443 with
+  the `CertificateArn` parameter (no default, the pattern `aws-fargate-ts`
+  uses) and the recommended TLS policy; no listener on 80, not even a
+  redirect, since nothing outside the VPC reaches it. `EntryPoint` is the
+  load balancer's DNS name, which the certificate's domain points at.
+- **Scaling notifications to the alarm topic.** The topic's key lets Auto
+  Scaling's service-linked role use it by an `aws:PrincipalArn` condition
+  on a `*` principal (with `kms:CallerAccount`), since a key policy can't
+  name a role that doesn't exist yet, and the role appears only with the
+  account's first group. `Alarms` exposes its `key` for that.
+- **The alarms** are `monitorCustom` groups (`cdk-monitoring-constructs`
+  has no alarms for an Auto Scaling group or a plain load balancer), named
+  as `aws-fargate-ts`'s (step 5) are: `LoadBalancer-5xx`, `Service-5xx`,
+  `Service-Latency-P99`, `Service-Unhealthy-Instances`, then
+  `Instances-CPU-Usage` and `Instances-In-Service`. Any 5xx is critical
+  here: no alarm rolls a deployment back (the signal does), so step 5's
+  5xx-share alarms have no use. The Standard's `ALARMED_METRICS` gains
+  `AWS::AutoScaling::AutoScalingGroup` beside step 5's entries.
+- **The access log bucket expires by the tier's log retention** (a year or
+  a month), as step 5's does; it stays `RETAIN` in both tiers.
+- **`$tiered`** names `aws-ec2-ts` after step 5's two, and
+  `docs/runbook.md` gives it a branch of its own after step 9's. Its table
+  is step 9's `BACKED_UP_TYPES`, so the plan's checks apply to it as before.
+
 ### Step 11, as built
 
-`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.11.0
+`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.13.0
 (`docs/screenshots/1116-aws-event-ts-check.txt` has the evidence). It
 copies step 10's two levels of retry and one dead-letter queue, and settled:
 

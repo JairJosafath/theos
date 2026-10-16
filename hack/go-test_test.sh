@@ -79,6 +79,17 @@ check "coverage" "$(run -coverprofile "$T/cover.out" -- a/b $CTRL)" 0
 check "coverage: the parts' mode line, every block" "$(LC_ALL=C sort "$T/cover.out" | paste -sd'|')" \
   "a/b/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|mode: set"
 
+# Many parts' profiles: a head -n 1 reading the first lines exits early, and
+# under pipefail the writer's SIGPIPE added a second mode line (#1378).
+# Three runs, since that race lost only most of the time.
+modes=
+for _ in 1 2 3; do
+  C4_TEST_PROCS=300 run -coverprofile "$T/cover.out" -- $CTRL >/dev/null
+  modes+="$(grep -c '^mode:' "$T/cover.out") $(head -n 1 "$T/cover.out") $(wc -l <"$T/cover.out");"
+done
+check "coverage, 300 parts: one mode line, first (#1378)" "$modes" \
+  "1 mode: set 301;1 mode: set 301;1 mode: set 301;"
+
 check "slowest specs" "$(C4_SLOWEST_SPECS=$T/slow C4_TEST_PROCS=3 run -- $CTRL)" 0
 check "slowest specs: merged" "$(cat "$T/slow")" "Controller Suite: 60 specs in 3 of 3 processes, the longest 103s; the 10 slowest:
   60.0s  spec 3-a  (a.go:1)
