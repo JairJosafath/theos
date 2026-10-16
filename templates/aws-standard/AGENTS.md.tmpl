@@ -1,5 +1,7 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
+{{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
@@ -63,10 +65,10 @@ machine.{{ end }}
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
-   `docs/well-architected.md`, {{ if eq .Framework "aws-lambda-ts" }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
+   `docs/well-architected.md`, {{ if $lambda }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
    to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
    what the checks check and which CDK behaviour the app gets: don't loosen them.
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $lambda }}
    `infra/operations.ts` is the factory's: it renders the file from the
    Container's `spec.operations`. Change it only to what that block says,
    when an issue changes the block, and never delete it; the stacks read it.
@@ -228,7 +230,7 @@ machine.{{ end }}
     secret in an environment variable or the template: secrets are read from
     Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $lambda }}
     The stacks are built for a tier, `production` or `development`, which a
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keep what `infra/operations.ts` promises: data
@@ -282,7 +284,7 @@ Offline digests (read the one for what you are touching):
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
   enforce each
-{{ if eq .Framework "aws-lambda-ts" -}}
+{{ if $lambda -}}
 - `docs/runbook.md`: restoring the data, rolling a deployment back, and what
   each alarm means
 {{ end -}}

@@ -1,4 +1,6 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
+{{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
 # Reviewer guide
 
 You review one pull request against the issue it closes: its acceptance
@@ -172,7 +174,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
   `env` taken from the environment or a context lookup, which would need an
   AWS account to synthesize.
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $lambda }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
   `RETAIN`, or never protected), a new function, table or API without its
   alarms on the stack's topic, a context value read but `tier`, and a

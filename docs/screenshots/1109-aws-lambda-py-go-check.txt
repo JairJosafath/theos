@@ -1,0 +1,225 @@
+# make check in scaffolded aws-lambda-py v1.1.0 and aws-lambda-go v1.1.0 Containers with aws-standard v1.7.0 (issue #1109)
+# go run ./hack/render -out /tmp/1109-std/py -type function Framework=aws-lambda-py Standard=aws-standard
+# go run ./hack/render -out /tmp/1109-std/go -type function Framework=aws-lambda-go Standard=aws-standard
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then in each, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23, Python 3.14.4,
+# Go 1.26.9 and golangci-lint 2.13.1 (in /tmp/1109-bin):
+# env -i "PATH=/tmp/1109-bin:$PATH" HOME=<an empty dir> NO_COLOR=1 npm_config_cache=/tmp/npm-cache \
+#   UV_CACHE_DIR=/tmp/uv-cache GOCACHE=/tmp/1109-gocache GOMODCACHE=/tmp/1109-gomodcache make check
+# on 2026-10-16. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
+# and cfn-lint lints both with --include-checks I. Trimmed: uv's package list, bundling lines.
+
+## aws-lambda-py, the defaults
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 12s
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 26 packages in 1ms
+Installed 24 packages in 33ms
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+collected 62 items
+
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 77%]
+tests/test_once.py ..............                                        [100%]
+
+============================== 62 passed in 0.55s ==============================
+node_modules/.bin/vitest run
+
+ ✓ infra/standard.test.ts (45 tests) 6208ms
+   ✓ the Standard, in production (9)
+     ✓ leaves no error or warning on any stack 512ms
+   ✓ the Standard, in development (9)
+     ✓ leaves no error or warning on any stack 532ms
+ ✓ infra/api_stack.test.ts (14 tests) 7178ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 838ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1745ms
+     ✓ copies the backups to the vault in copyToRegion 556ms
+
+ Test Files  2 passed (2)
+      Tests  59 passed (59)
+   Duration  8.66s (tests 83%, import 10%, transform 7%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+make check exit 0
+# the templates synth wrote:
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app.template.json
+
+# The same with every backups and alerts field set:
+# go run ./hack/render -out /tmp/1109-std/py-copy -type function -retention-days 7 \
+#   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-lambda-py Standard=aws-standard
+# make check (as above): the key lines, the templates synth wrote, and the exit status
+
+All matched files use Prettier code style!
+24 files already formatted
+All checks passed!
+Success: no issues found in 10 source files
+============================== 62 passed in 0.62s ==============================
+ ✓ infra/api_stack.test.ts (14 tests) 6666ms
+ ✓ infra/standard.test.ts (45 tests) 7010ms
+ Test Files  2 passed (2)
+      Tests  59 passed (59)
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app-backup-copy.template.json
+cdk.out/production/sample-app.template.json
+make check exit 0
+
+## aws-lambda-go, the defaults
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 6s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/sample-app	1.026s
+node_modules/.bin/vitest run
+
+ ✓ infra/standard.test.ts (45 tests) 4130ms
+ ✓ infra/api_stack.test.ts (15 tests) 5289ms
+   ✓ ApiStack (13)
+     ✓ defaults the alert email to alerts.email 885ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 607ms
+     ✓ copies the backups to the vault in copyToRegion 576ms
+
+ Test Files  2 passed (2)
+      Tests  60 passed (60)
+   Duration  6.55s (tests 81%, import 12%, transform 7%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+make check exit 0
+# the templates synth wrote:
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app.template.json
+
+# The same with every backups and alerts field set:
+# go run ./hack/render -out /tmp/1109-std/go-copy -type function -retention-days 7 \
+#   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-lambda-go Standard=aws-standard
+# make check (as above, run alone: two golangci-lint runs at once refuse each other with
+# "parallel golangci-lint is running", which a first try here hit): the key lines, the templates, the exit status
+
+All matched files use Prettier code style!
+cd src && golangci-lint run
+0 issues.
+ok  	c4factory.local/webshop/sample-app	1.030s
+ ✓ infra/standard.test.ts (45 tests) 4279ms
+ ✓ infra/api_stack.test.ts (15 tests) 5159ms
+ Test Files  2 passed (2)
+      Tests  60 passed (60)
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app-backup-copy.template.json
+cdk.out/production/sample-app.template.json
+make check exit 0
+
+## The Standard's test catches a stack that breaks infra/operations.ts's promises
+
+# aws-lambda-py: in /tmp/1109-std/py, the stack keeps its backups 30 days whatever
+# infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures, then reverted:
+
+--- a/py-api_stack.orig.ts
++++ b/py/infra/api_stack.ts
+@@ -226,7 +226,7 @@ export class ApiStack extends Stack {
+ 
+     if (rules.backups && backups.retentionDays > 0) {
+       new Backups(this, 'Backups', {
+-        retentionDays: backups.retentionDays,
++        retentionDays: 30,
+         copyToRegion: backups.copyToRegion,
+         tag: props.backupTag,
+       });
+
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 11ms
+     × backs up daily for retentionDays in production, and not at all in development 7ms
+     × copies the backups to the vault in copyToRegion 586ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  infra/api_stack.test.ts > ApiStack > backs up daily for retentionDays in production, and not at all in development
+AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
+!!           Expected 35 but received 30
+ FAIL  infra/api_stack.test.ts > ApiStack > copies the backups to the vault in copyToRegion
+AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
+!!               Expected 35 but received 30
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
+AssertionError: sample-app: expected { CopyActions: [], …(4) } to match object { …(3) }
+- Expected
+      Tests  3 failed | 56 passed (59)
+vitest exit 1
+
+# aws-lambda-go: in /tmp/1109-std/go, X-Ray is on in development too. vitest run, the failures, then reverted:
+
+--- a/go-api_stack.orig.ts
++++ b/go/infra/api_stack.ts
+@@ -132,7 +132,7 @@ export class ApiStack extends Stack {
+       logGroup: functionLogs,
+       loggingFormat: LoggingFormat.JSON,
+       // Lambda traces each call itself; the function adds no subsegments.
+-      tracing: rules.tracing ? Tracing.ACTIVE : Tracing.DISABLED,
++      tracing: Tracing.ACTIVE,
+       environment: { TABLE_NAME: table.tableName },
+     });
+     // Only the calls the handler makes.
+
+       × traces every function with X-Ray where the tier traces, and none elsewhere 6ms
+     × traces with X-Ray in production only 4ms
+     × lets the handler only get and put items, and write its logs 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  infra/api_stack.test.ts > ApiStack > traces with X-Ray in production only
+AssertionError: Template has 1 resources with type AWS::Lambda::Function, but none match as expected.
+ FAIL  infra/api_stack.test.ts > ApiStack > lets the handler only get and put items, and write its logs
+AssertionError: expected [ '"dynamodb:GetItem"', …(5) ] to deeply equal [ '"dynamodb:GetItem"', …(3) ]
+- Expected
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > traces every function with X-Ray where the tier traces, and none elsewhere
+AssertionError: sample-app-development/Handler886CB40B: expected true to be false // Object.is equality
+- Expected
+      Tests  3 failed | 57 passed (60)
+vitest exit 1
+
+## The other AWS Frameworks on aws-standard v1.7.0
+
+# Rendered with hack/render as above from the working tree (aws-lambda-ts v1.1.0, aws-fargate-ts
+# v1.0.0 and aws-ec2-ts v1.0.0 as in templates/versions.txt), each checked with make check:
+aws-lambda-ts v1.1.0: make check exit 0, Tests 103 passed (103)
+aws-fargate-ts v1.0.0: make check exit 0, Tests 78 passed | 24 skipped (102)
+aws-ec2-ts v1.0.0: make check exit 0, Tests 79 passed | 24 skipped (103)
+# and aws-lambda-py and aws-lambda-go v1.0.0 (origin/main's 27a2672, no infra/operations.ts), as a
+# Standard update leaves them: the old Frameworks and the working tree's aws-standard in one folder,
+#   git archive 27a2672 templates/aws-lambda-py templates/aws-lambda-go | tar -x -C /tmp/1109-std/old
+#   cp -r templates/aws-standard /tmp/1109-std/old/templates/
+#   go run ./hack/render -templates /tmp/1109-std/old/templates -out /tmp/1109-std/py-old \
+#     -type function Framework=aws-lambda-py Standard=aws-standard   (and the same for aws-lambda-go)
+# The Standard's test skips the per-tier checks of what infra/operations.ts promises:
+aws-lambda-py v1.0.0: make check exit 0, pytest 48 passed in 0.06s, vitest Tests 26 passed | 24 skipped (50)
+aws-lambda-go v1.0.0: make check exit 0, vitest Tests 27 passed | 24 skipped (51)
