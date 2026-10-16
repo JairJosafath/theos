@@ -379,6 +379,10 @@ envtest's once filled; and outside any git checkout, so a test that runs git in
 a `mktemp -d` directory finds no repository above it, as it would in the
 worktree. The relay empties it before the session starts and removes it when
 the session ends.
+Before the session, the relay also replaces a worktree's `.dev/` of its own,
+the caches `make check` left there before `hack/dev/env.sh` pointed worktrees
+at the main checkout's (#1132), with the link to the main checkout's `.dev/`,
+as `./dev setup` makes in a worktree, and logs what that freed (#1246).
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.

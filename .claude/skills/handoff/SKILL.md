@@ -70,8 +70,8 @@ Scratch goes under `$TMPDIR`: make it with `mktemp -d` (or `mktemp` for a
 file), never a literal `/tmp/...` path, and remove it before you land.
 `/tmp` is a small tmpfs every session on the device shares, and one
 session's copies and caches filled it and failed every `make check` (#1269).
-The relay points `$TMPDIR` at your worktree's `.dev/tmp` and removes it after
-the session.
+The relay points `$TMPDIR` at `~/.cache/c4factory/tmp/<worktree>`, outside any
+git checkout (#1307), and removes it after the session.
 
 ## Write a handoff
 
