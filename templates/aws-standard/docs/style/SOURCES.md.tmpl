@@ -301,12 +301,12 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }} The
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
 @aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
 {{- end }}
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}
 
 ## Operations (read 2026-10-16)
 
@@ -344,6 +344,20 @@ Read for the queue, its dead-letter queue, the event source and `docs/runbook.md
 | SQS, StartMessageMoveTask (redrive) — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_StartMessageMoveTask.html                | live           |
 | SQS, server-side encryption — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html                 | live           |
 | Powertools for AWS Lambda (TypeScript), Batch Processing — https://docs.aws.amazon.com/powertools/typescript/latest/features/batch/                      | 2.36.0         |
+{{- else if eq .Framework "aws-schedule-ts" }}
+
+## Schedules (read 2026-10-16)
+
+Read for the schedule, its retries, its role, its dead-letter queue, the function's asynchronous retries and `docs/runbook.md`'s re-runs.
+
+| Source                                                                                                                                           | Version / date |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| EventBridge Scheduler, retry policy and dead-letter queue — https://docs.aws.amazon.com/scheduler/latest/UserGuide/configuring-schedule-dlq.html | live           |
+| EventBridge Scheduler, context attributes — https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-schedule-context-attributes.html     | live           |
+| EventBridge Scheduler, execution role — https://docs.aws.amazon.com/scheduler/latest/UserGuide/setting-up.html#setting-up-execution-role         | live           |
+| EventBridge Scheduler, CloudWatch metrics — https://docs.aws.amazon.com/scheduler/latest/UserGuide/monitoring-cloudwatch.html                    | live           |
+| Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html               | live           |
+| Pricing: EventBridge Scheduler — https://aws.amazon.com/eventbridge/pricing/                                                                     | live           |
 {{- end }}
 {{- end }}
 

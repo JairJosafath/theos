@@ -102,7 +102,7 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret and the agents' token into it, and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
+pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `aws-standard`, `go-standard`,
 `go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four

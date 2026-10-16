@@ -48,6 +48,7 @@ var awsFrameworks = []side{
 	{model.TypeFunction, "aws-lambda-py"},
 	{model.TypeStaticSite, "aws-static-site-ts"},
 	{model.TypeWorker, "aws-queue-ts"},
+	{model.TypeJob, "aws-schedule-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -267,6 +268,8 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-static-site-ts", []string{"Vite", "CloudFront"}, []string{"go build", "bootstrap", "cold start"}},
 		{"aws-queue-ts", []string{"esbuild", "module scope", "dead-letter queue", "ReportBatchItemFailures"},
 			[]string{"go build", "bootstrap", "API Gateway"}},
+		{"aws-schedule-ts", []string{"esbuild", "module scope", "dead-letter queue", "EventBridge Scheduler"},
+			[]string{"go build", "bootstrap", "API Gateway", "ReportBatchItemFailures"}},
 	}
 	types := map[string]string{}
 	for _, f := range awsFrameworks {
