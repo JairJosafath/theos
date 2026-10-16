@@ -1,0 +1,234 @@
+# make check in a scaffolded aws-fargate-ts v1.1.0 + aws-standard v1.7.0 Container (issue #1110)
+# go run ./hack/render -out /tmp/aws-1110 -type service Framework=aws-fargate-ts Standard=aws-standard
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23:
+# env -i PATH=$PATH HOME=/tmp/aws-1110-home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
+# on 2026-10-16 (npm's update notices left out). synth writes both tiers, cdk.out/production/
+# and cdk.out/development/, and cfn-lint lints both with --include-checks I; the templates
+# synth wrote are listed after the exit status.
+
+npm ci --no-audit --no-fund
+
+added 194 packages in 11s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/aws-1110
+
+ ✓ src/api.test.ts (12 tests) 15ms
+ ✓ src/items.test.ts (25 tests) 15ms
+ ✓ src/server.test.ts (8 tests) 27ms
+ ✓ src/item_store.test.ts (4 tests) 9ms
+ ✓ src/tracing.test.ts (2 tests) 11ms
+ ✓ infra/service_stack.test.ts (21 tests) 2685ms
+   ✓ ServiceStack (19)
+     ✓ defaults the alert email to alerts.email 432ms
+ ✓ infra/standard.test.ts (49 tests) 2851ms
+
+ Test Files  7 passed (7)
+      Tests  121 passed (121)
+   Start at  09:53:18
+   Duration  4.31s (tests 62%, import 26%, transform 11%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+make check exit 0
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app.template.json
+
+# The same with every field of spec.operations set:
+# go run ./hack/render -out /tmp/aws-1110-ops -type service -retention-days 7 \
+#   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-fargate-ts Standard=aws-standard
+# make check (as above): the vitest summary, the exit status and the templates synth wrote
+
+ Test Files  7 passed (7)
+      Tests  121 passed (121)
+make check exit 0
+cdk.out/development/sample-app-development.template.json
+cdk.out/production/sample-app-backup-copy.template.json
+cdk.out/production/sample-app.template.json
+
+# What the production templates show (read with a short Python script from cdk.out/production/):
+
+sample-app: parameter AlertEmail default "ops@example.com"
+sample-app: AlarmsEmailSubscription71D15C2C under condition HasAlertEmail = {"Fn::Not": [{"Fn::Equals": [{"Ref": "AlertEmail"}, ""]}]}
+   {"Endpoint": {"Ref": "AlertEmail"}, "Protocol": "email", "TopicArn": {"Ref": "AlarmsTopic3A2DFEBA"}}
+sample-app: backup plan rule cron(0 5 * * ? *) keeps {'DeleteAfterDays': 7} copies to [{"DestinationBackupVaultArn": {"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"}, ":backup:eu-central-1:", {"Ref": "AWS::AccountId"}, ":backup-vault:sample-app-copies"]]}, "Lifecycle": {"DeleteAfterDays": 7}}]
+sample-app-backup-copy: VaultKey6B75F33E AWS::KMS::Key Retain, Vault23237E5B AWS::Backup::BackupVault Retain ; vault name sample-app-copies
+manifest: sample-app in aws://unknown-account/unknown-region, depends on ['sample-app-backup-copy'], termination protection True
+manifest: sample-app-backup-copy in aws://unknown-account/eu-central-1, depends on [], termination protection True
+sample-app: service DeploymentConfiguration {"Alarms": {"AlarmNames": ["sample-app-LoadBalancer-5xx-Critical", "sample-app-Service-5xx-Critical", "sample-app-Service-Unhealthy-Tasks-Critical"], "Enable": true, "Rollback": true}, "DeploymentCircuitBreaker": {"Enable": true, "Rollback": true}, "MaximumPercent": 200, "MinimumHealthyPercent": 100}
+sample-app: NAT gateways 2 ; alarms 10
+runbook names the copy region: True
+
+# It fails when infra/operations.ts and the stack disagree: in a copy of /tmp/aws-1110, the stack
+# keeps its backups 30 days whatever infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures:
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 7d6a4e2..1a35a86 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -391,7 +391,7 @@ export class ServiceStack extends Stack {
+ 
+     if (rules.backups && backups.retentionDays > 0) {
+       new Backups(this, 'Backups', {
+-        retentionDays: backups.retentionDays,
++        retentionDays: 30,
+         copyToRegion: backups.copyToRegion,
+         tag: props.backupTag,
+       });
+
+     × backs up daily for retentionDays in production, and not at all in development 7ms
+     × copies the backups to the vault in copyToRegion 355ms
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 14ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > backs up daily for retentionDays in production, and not at all in development
+AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
+ FAIL  infra/service_stack.test.ts > ServiceStack > copies the backups to the vault in copyToRegion
+AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
+AssertionError: sample-app: expected { CopyActions: [], …(4) } to match object { …(3) }
+      Tests  3 failed | 118 passed (121)
+vitest exit 1
+
+# And when the stack ignores the tier: the collector, its environment and X-Ray's grant in development too.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 7d6a4e2..1ecf6b8 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -187,7 +187,7 @@ export class ServiceStack extends Stack {
+       // SIGKILL after this: time for the requests still in flight to finish.
+       stopTimeout: Duration.seconds(30),
+     });
+-    if (rules.tracing) {
++    if (rules.tracing || props.tier === "development") {
+       this.traceThroughCollector(taskDefinition, app, rules.logRetention);
+     }
+     Validations.of(taskDefinition).acknowledge({
+
+     × runs the app alone, untraced, in development 16ms
+     × lets the tasks only get and put items, and write traces in production 11ms
+       × traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere 10ms
+       × grants no X-Ray writes where the tier does not trace 3ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > runs the app alone, untraced, in development
+AssertionError: expected [ 'App', 'Collector' ] to deeply equal [ 'App' ]
+ FAIL  infra/service_stack.test.ts > ServiceStack > lets the tasks only get and put items, and write traces in production
+AssertionError: expected [ '"dynamodb:GetItem"', …(3) ] to deeply equal [ '"dynamodb:GetItem"', …(1) ]
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere
+AssertionError: sample-app-development/Task79114B6B: expected [ [ { …(6) } ], [ { …(9) } ] ] to deeply equal [ [], [] ]
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > grants no X-Ray writes where the tier does not trace
+AssertionError: sample-app-development: expected [ 'xray:PutTelemetryRecords', …(1) ] to not include 'xray:PutTraceSegments'
+      Tests  4 failed | 117 passed (121)
+vitest exit 1
+
+# And when a resource has no alarm the Standard asks for: the service without its running-tasks alarm.
+# The Standard finds the service in the other alarms' dimensions by Fn::GetAtt, and misses RunningTaskCount.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 7d6a4e2..ebb68c6 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -329,30 +329,6 @@ export class ServiceStack extends Stack {
+               },
+             ],
+           },
+-          {
+-            title: 'Running tasks',
+-            metrics: [
+-              {
+-                // Container Insights' count, against the fewest the service runs.
+-                metric: new Metric({
+-                  namespace: 'ECS/ContainerInsights',
+-                  metricName: 'RunningTaskCount',
+-                  dimensionsMap: {
+-                    ClusterName: cluster.clusterName,
+-                    ServiceName: service.serviceName,
+-                  },
+-                  statistic: Stats.AVERAGE,
+-                }),
+-                alarmFriendlyName: 'Running-Tasks',
+-                addAlarm: {
+-                  Critical: {
+-                    threshold: MIN_TASKS,
+-                    comparisonOperator: ComparisonOperator.LESS_THAN_THRESHOLD,
+-                  },
+-                },
+-              },
+-            ],
+-          },
+         ],
+       })
+       .monitorFargateApplicationLoadBalancer({
+
+     × alarms on the load balancer, the service and the table, in either tier 3ms
+       × alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard 2ms
+       × alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard 1ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > alarms on the load balancer, the service and the table, in either tier
+AssertionError: Expected 10 resources of type AWS::CloudWatch::Alarm but found 9
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the alarms and topic > alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard
+AssertionError: sample-app/ServiceD69D759B RunningTaskCount: expected 0 to be greater than 0
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > the alarms and topic > alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard
+AssertionError: sample-app-development/ServiceD69D759B RunningTaskCount: expected 0 to be greater than 0
+      Tests  3 failed | 118 passed (121)
+vitest exit 1
+
+# And one NAT gateway in production (the stack's own test; the NAT gateways are not a TIER_RULES item).
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 7d6a4e2..bc97384 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -62,7 +62,7 @@ const ZONES = 2;
+ // NAT gateways per tier: one per zone in production, so the tasks in a zone
+ // keep their way out when the other zone fails; one in development, for half
+ // the price.
+-const NAT_GATEWAYS: Readonly<Record<Tier, number>> = { production: ZONES, development: 1 };
++const NAT_GATEWAYS: Readonly<Record<Tier, number>> = { production: 1, development: 1 };
+ // The fewest tasks the service runs, one per zone, and the most it scales to.
+ const MIN_TASKS = 2;
+ const MAX_TASKS = 4;
+
+     × has a NAT gateway in each zone in production, and one in development 3ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > has a NAT gateway in each zone in production, and one in development
+AssertionError: Expected 2 resources of type AWS::EC2::NatGateway but found 1
+      Tests  1 failed | 120 passed (121)
+vitest exit 1
+
+# The bundled service traced, by hand: npm run bundle in /tmp/aws-1110, then dist/main.cjs run with
+# OTEL_EXPORTER_OTLP_ENDPOINT at a stand-in for the collector's OTLP/HTTP receiver on localhost
+# (a 20-line Node server printing each span it gets), three requests, and SIGTERM. No AWS
+# credentials, so the item read fails (500) after the SDK's calls to the instance metadata
+# endpoint, which the client spans show; /health makes no span; the spans are sent when the
+# service stops.
+
+GET /health -> 200
+GET /items/lamp -> 500
+GET /nope -> 404
+service exit 0
+--- service log
+{"level":"INFO","message":"Listening.","port":18080}
+{"level":"ERROR","message":"The request failed.","requestId":"236f7f2b-7790-4358-b36f-fea55e124fbc","method":"GET","path":"/items/lamp","error":"Could not load credentials from any providers"}
+{"level":"INFO","message":"Stopping."}
+--- stand-in collector log
+got POST /v1/traces (application/json)
+  service sample-app: client span PUT  169.254.169.254 -> (no answer)
+  service sample-app: server span GET /items/lamp localhost -> 500
+  service sample-app: client span GET  169.254.169.254 -> (no answer)
+  service sample-app: server span GET /nope localhost -> 404
+
+# The other AWS Frameworks with aws-standard v1.7.0, each rendered with hack/render (their
+# templates are as pinned in templates/versions.txt; aws-lambda-go with golangci-lint 2.13.1 on
+# PATH) and checked with make check as above. The first run of aws-lambda-go and aws-ec2-ts
+# failed when /tmp, a memory-backed file system, filled up with the copies' node_modules (exit 2,
+# ENOSPC); both were run again, one at a time, with the copies removed, and these are those runs.
+aws-lambda-ts v1.1.0: make check exit 0, vitest: 107 passed (107)
+aws-lambda-py v1.0.0: make check exit 0, vitest: 26 passed | 28 skipped (54)
+aws-lambda-go v1.0.0: make check exit 0, vitest: 27 passed | 28 skipped (55)
+aws-ec2-ts v1.0.0: make check exit 0, vitest: 79 passed | 28 skipped (107)
+# and aws-fargate-ts v1.0.0 (the base commit's, no infra/operations.ts), as a Standard update leaves it:
+aws-fargate-ts v1.0.0: make check exit 0, vitest: 78 passed | 28 skipped (106)

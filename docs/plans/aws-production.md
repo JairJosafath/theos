@@ -315,6 +315,111 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 5, as built
+
+Step 5 is `aws-fargate-ts` v1.1.0 with `aws-standard` v1.7.0 (agent
+otter-1110; `docs/screenshots/1110-aws-fargate-ts-check.txt` has the
+evidence). It copies step 3: `infra/alarms.ts`, `infra/backups.ts` and
+`infra/operations.ts.tmpl` are aws-lambda-ts's, byte for byte, and
+`infra/stacks.ts` is its `defineStacks(app, tier)` with the copy-region
+stack. What it settled, and what step 6 copies:
+
+- **NAT gateways by tier.** Two in production, one per zone: a NAT gateway
+  is zonal, and the VPC guide says to put one in each zone so a zone's
+  failure leaves the others' way out. One in development, for half the
+  price. It is a constant per tier in `infra/service_stack.ts`, not a
+  `TIER_RULES` field: it belongs to a VPC with private subnets, which
+  aws-ec2-ts doesn't have. CDK's `Vpc` makes zonal gateways; AWS's newer
+  regional NAT gateway is not used.
+- **The deployment alarms.** The service names three alarms with
+  `enableDeploymentAlarms(..., { behavior: AlarmBehavior.ROLLBACK_ON_ALARM })`,
+  beside the circuit breaker: `LoadBalancer-5xx-Critical`,
+  `Service-5xx-Critical` and `Service-Unhealthy-Tasks-Critical`. Latency,
+  CPU, memory and running tasks don't roll a deployment back: a slow first
+  minute or a scale-out is no reason to, and the circuit breaker already
+  counts tasks that don't start. The names are written out as
+  `<stack>-<name>` and checked against the alarms the stack made, so a
+  renamed alarm fails synth; a reference to the alarm would `Ref` it from
+  the service while its metric names the service, a dependency cycle.
+  `cdk.json` keeps `@aws-cdk/aws-ecs:removeDefaultDeploymentAlarm: true`,
+  the `cdk init` flag every AWS Framework carries: it only decides whether
+  a service that names no alarm gets an empty, disabled alarm
+  configuration, and changes nothing for one that names alarms. The
+  runbook says what ECS does with them: it ignores an alarm already firing
+  when a deployment starts, and watches for a bake time after it.
+- **The alarms.** `cdk-monitoring-constructs` 10.3.2 has no monitoring of
+  an Application Load Balancer alone, so the load balancer's own 5xx
+  (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx (`HTTPCode_Target_5XX_Count`)
+  and their p99 latency (`TargetResponseTime` over a second) are
+  `monitorCustom` groups whose missing data is not breaching: the load
+  balancer reports nothing while no requests come. Unhealthy tasks, CPU and
+  memory (over 90 %) come from `monitorFargateApplicationLoadBalancer`,
+  unhealthy by the `Minimum` as the load balancer guide advises; running
+  tasks under the minimum of two from Container Insights' `RunningTaskCount`,
+  as a custom metric, since the library's running-task alarm only fires
+  above a maximum.
+- **The Standard sees load balancers and services.** `ALARMED_METRICS`
+  gains `AWS::ElasticLoadBalancingV2::LoadBalancer` (the two 5xx and
+  `TargetResponseTime`), `AWS::ElasticLoadBalancingV2::TargetGroup`
+  (`UnHealthyHostCount`) and `AWS::ECS::Service` (`CPUUtilization`,
+  `MemoryUtilization`, `RunningTaskCount`). An alarm watched a resource when
+  it held `{"Ref": id}`; a load balancer's and a target group's dimensions
+  are `Fn::GetAtt` of their full names and a service's of its `Name`, so
+  `refersTo` accepts `{"Fn::GetAtt": [id, ...]}` too. A `Ref` matches as
+  before, so no existing check got weaker. Step 6's load balancer and
+  target group are held to the same three and one; it adds the Auto
+  Scaling group's metrics (a `Ref` dimension).
+- **Tracing through an ADOT collector.** In production the task runs
+  `public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0` (2026-08-31;
+  its image index has arm64) with its image's `/etc/ecs/ecs-xray.yaml`:
+  OTLP in, X-Ray out. Not `ecs-default-config.yaml`, which also exports
+  metrics through EMF into a log group the collector makes itself, outside
+  the stack's retention and with permissions the task would need. The
+  collector is not essential (it loses traces, not requests), runs on a
+  read-only root file system (its image is `scratch` with a non-root user)
+  and logs to its own log group with the tier's retention. The app
+  container starts after it and gets `OTEL_EXPORTER_OTLP_ENDPOINT`
+  (`http://localhost:4318`) and `OTEL_SERVICE_NAME` (the stack's name); the
+  task role gets `xray:PutTraceSegments` and `xray:PutTelemetryRecords`,
+  which step 3's acknowledgement in `infra/standard.ts` already covers.
+  X-Ray takes W3C trace IDs from ADOT 0.34.0 on, so the app needs no X-Ray
+  ID generator. Development runs none of it.
+- **The app's spans.** OpenTelemetry JS v2.12.0 and experimental v0.223.0
+  (2026-10-06): `@opentelemetry/api` 1.9.1, `sdk-trace-node` and
+  `resources` 2.12.0, `exporter-trace-otlp-http` and `instrumentation-http`
+  0.223.0, exact, 22 packages in the lock with their dependencies.
+  `@opentelemetry/sdk-node` was left out: it brings every exporter (gRPC,
+  Prometheus, Zipkin) for the one this needs. `src/tracing.ts` starts the
+  provider only when the endpoint is set; `src/start_tracing.ts` calls it
+  and is `src/main.ts`'s first import, so the HTTP instrumentation's hook is
+  in place before anything loads `node:http` or `node:https`, which esbuild
+  leaves outside its CommonJS bundle. Health checks are not traced, and
+  `SIGTERM` sends the spans left once the server has closed. Checked by
+  hand on the bundle: run with the endpoint at a local listener, three
+  requests and a stop; the listener got one `POST /v1/traces` with the
+  requests' spans and none for `/health`.
+- **The Standard checks tracing in tasks.** Where the tier traces, every
+  `AWS::ECS::TaskDefinition` runs one container on the `aws-otel-collector`
+  image and one sending to it through `OTEL_EXPORTER_OTLP_ENDPOINT`;
+  elsewhere neither. And, for every Framework, no statement allows X-Ray's
+  writes where the tier doesn't trace.
+- **The access-log bucket is not data.** It is kept (`RETAIN`) in both
+  tiers: CloudFormation can't delete a bucket that holds objects, and
+  `autoDeleteObjects` takes a custom-resource Lambda without a log group of
+  its own. Its objects expire after the tier's log retention, a year or a
+  month, instead of a fixed 30 days. The Standard's per-tier removal checks
+  name tables and vaults, so a log bucket passes in either tier; the stack
+  test asserts it, and step 9, the first data bucket, adds the bucket rule.
+- **`EntryPoint` replaces `LoadBalancerDns`,** with the same value, the
+  load balancer's DNS name; nothing read the old output.
+- **`$tiered`.** The Standard's templates name the Frameworks with
+  operations once per file, `{{- $tiered := or (eq .Framework
+  "aws-lambda-ts") (eq .Framework "aws-fargate-ts") -}}`; steps 4 and 6 add
+  theirs there. `docs/runbook.md` and `docs/well-architected.md` give
+  `aws-fargate-ts` a branch of its own, so step 4's changes to the Lambda
+  branch meet this one only at the branch line.
+- **`vitest.config.mts`** gives aws-fargate-ts a `hookTimeout` of 120 s.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
