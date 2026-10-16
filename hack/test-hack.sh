@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs every shell test under hack/ (hack/**/*_test.sh) at once, each with its
-# output in a log, and prints one line per test; a failing test's log tail
-# follows its line. Exit 1 when any test fails. make test-hack runs it, and
+# output in a log, and prints one line per test; a failing test's line is
+# followed by every "FAIL " line of its log above its last 30 lines, then
+# those 30 lines, indented. Exit 1 when any test fails. make test-hack runs it, and
 # make check runs that. Every test fakes what it calls (docker, kind, kubectl,
 # gh, claude, curl), so none needs a cluster or the network.
 #
@@ -42,7 +43,7 @@ for i in "${!tests[@]}"; do
   else
     failed=$((failed + 1))
     echo "FAIL ${tests[$i]} (exit $rc, ${secs}s):"
-    tail -n 30 "$LOGS/$i.log" | sed 's/^/    /'
+    { head -n -30 "$LOGS/$i.log" | grep '^FAIL '; tail -n 30 "$LOGS/$i.log"; } | sed 's/^/    /'
   fi
 done
 if [ "$failed" -gt 0 ]; then
