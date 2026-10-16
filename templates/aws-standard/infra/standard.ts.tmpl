@@ -41,7 +41,11 @@ export interface TierRules {
    * in a vault with its own key, copied to `copyToRegion` when it is set.
    */
   readonly backups: boolean;
-  /** X-Ray tracing on every function. */
+  /**
+   * X-Ray tracing: active on every function, and an AWS Distro for
+   * OpenTelemetry collector beside the app in every task, which sends it the
+   * app's spans.
+   */
   readonly tracing: boolean;
   /** How long every log group keeps its entries. */
   readonly logRetention: RetentionDays;

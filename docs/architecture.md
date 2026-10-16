@@ -39,6 +39,7 @@ every scaffolded repository.
 | Ports (from #1094) | `internal/ports` and its `fake`, `contract` | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
 | Adapters (from #1094) | `internal/adapters/*` | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
 | Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
+| Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/gitprovider`; `internal/modelproxy` any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters (from #1094) | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |

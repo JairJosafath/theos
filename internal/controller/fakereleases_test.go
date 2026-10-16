@@ -43,11 +43,13 @@ type fakeReleaseState struct {
 	// module versions uploaded, by path@version (a repeat finds one there and
 	// uploads nothing), and moduleFailures how many PublishGoModule calls fail
 	// before one gets through, by owner/name. modulePublishes counts the
-	// PublishGoModule calls, by owner/name@tag.
+	// PublishGoModule calls, by owner/name@tag, and moduleDelays how long each
+	// call takes, by owner/name.
 	goMods          map[string]string
 	uploads         map[string]int
 	moduleFailures  map[string]int
 	modulePublishes map[string]int
+	moduleDelays    map[string]time.Duration
 	// sources is each repository's files at a tag, by owner/name@tag.
 	sources map[string][]fakeSourceFile
 }
@@ -65,7 +67,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			runs: map[string][]gitprovider.WorkflowRun{}, published: map[string]*gitprovider.Release{},
 			assets: map[string][]byte{}, created: map[string]gitprovider.Milestone{},
 			goMods: map[string]string{}, uploads: map[string]int{}, moduleFailures: map[string]int{},
-			modulePublishes: map[string]int{}, reruns: map[string]int{}, refused: map[string]bool{},
+			modulePublishes: map[string]int{}, moduleDelays: map[string]time.Duration{}, reruns: map[string]int{}, refused: map[string]bool{},
 			commitRuns: map[string][]gitprovider.WorkflowRun{}, sources: map[string][]fakeSourceFile{}}
 	}
 	return g.releases
@@ -299,11 +301,15 @@ func (p *fakeProvider) SetReleaseBody(_ context.Context, repo gitprovider.Reposi
 // would: no go.mod, a version Go refuses and one uploaded before are outcomes.
 func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repository, tag string) (
 	gitprovider.GoModule, error) {
+	key := repo.Owner + "/" + repo.Name
+	p.git.mu.Lock()
+	delay := p.git.releaseState().moduleDelays[key]
+	p.git.mu.Unlock()
+	time.Sleep(delay)
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.releaseState()
 	out := gitprovider.GoModule{Outcome: gitprovider.GoModuleNoGoMod, Version: tag}
-	key := repo.Owner + "/" + repo.Name
 	s.modulePublishes[key+"@"+tag]++
 	if s.moduleFailures[key] > 0 {
 		s.moduleFailures[key]--
@@ -364,6 +370,14 @@ func (g *fakeGit) failModulePublishes(owner, name string, n int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.releaseState().moduleFailures[owner+"/"+name] = n
+}
+
+// slowModulePublishes makes each PublishGoModule call of owner/name take d, as
+// a busy Gitea would.
+func (g *fakeGit) slowModulePublishes(owner, name string, d time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().moduleDelays[owner+"/"+name] = d
 }
 
 // modulePublishes is how many times the Crew asked to publish owner/name's
