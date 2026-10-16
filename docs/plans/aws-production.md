@@ -583,6 +583,36 @@ it settled, which step 11 can copy:
 - **Outputs:** `EntryPoint` is the schedule's ARN; `FunctionName` is added,
   which a person invokes to run a dead-lettered run again.
 
+### Step 11, as built
+
+`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.11.0
+(`docs/screenshots/1116-aws-event-ts-check.txt` has the evidence). It
+copies step 10's two levels of retry and one dead-letter queue, and settled:
+
+- **The rule is on the default event bus.** A rule on a custom bus has a
+  `Ref` of `<bus>|<rule>`, which is not the `RuleName` dimension of the
+  `AWS/Events` metrics, so its alarms would watch nothing; on the default
+  bus `Ref` is the rule's name. The pattern matches `source` = the
+  Container's name and `detail-type` `ItemSubmitted`, and a producer puts
+  its events there with `events:PutEvents`.
+- **Two levels of retry:** the rule's target retries handing an event to
+  Lambda (10 attempts within an hour), and Lambda retries an invocation
+  that threw (twice within an hour); the target's `DeadLetterConfig` and
+  the function's both name the one queue, so `AwsSolutions-SQS3` is
+  acknowledged as in step 10. CDK scopes the function's permission and the
+  queue's policy to the rule.
+- **The event's `id` is its key.** Powertools' Idempotency is keyed by
+  EventBridge's event id, which every retry at either level keeps; a
+  producer that puts the same item twice puts two events, and the item is
+  simply put twice, as step 8 says of messages.
+- **Two Standard rules, per resource type:** `AWS::Events::Rule` joins
+  `ALARMED_METRICS` with `FailedInvocations` and
+  `InvocationsFailedToBeSentToDlq`, an event lost; every Lambda target of a
+  rule has a retry policy and a dead-letter queue of its stack.
+- **Outputs:** `EntryPoint` is the rule's ARN; `EventPattern` is the
+  pattern a producer's events must match, and `FunctionName` the function
+  a person invokes to run a dead-lettered event again.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
