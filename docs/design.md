@@ -1775,6 +1775,8 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 - `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
 - `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
 
+An AWS data store is a DataStore too. The `dynamodb` Connector writes `infra/connector_dynamodb.ts`, which adds a DynamoDB table to the CDK stack of a Container on an AWS Framework, grants the function the item calls and hands it the table's name. The table follows the tier like the Framework's own tables: in production it is kept, deletion-protected, has point-in-time recovery and is picked up by the stack's backup plan. A Framework wires the Connectors it knows in its `infra/connectors.ts`, rendered from the Connector list; `aws-lambda-ts` does.
+
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 
 The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world page scaffolded from the templates `hello-html` (Framework) and `hello-html-standard` (Standard, the agents' role guides), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
