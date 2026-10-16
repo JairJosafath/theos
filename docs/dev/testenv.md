@@ -392,7 +392,13 @@ instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code. Every 30 minutes
+minutes and restarts itself when that changed its code. The watch and the
+workers run origin/main's scripts, whatever branch the main checkout has
+(#1126): from the worktree `.claude/worktrees/relay-code`, which each pull moves
+to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
+the main checkout. One started from the checkout moves there at its first pull,
+and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
+the code where they were started, to try relay changes from a branch. Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour.
 Busy or idle, with issues ready or not (#1191), it starts a triage of the

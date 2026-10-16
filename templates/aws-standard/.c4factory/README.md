@@ -55,14 +55,21 @@ byte for byte.
   pytest), and alone gets `ruff.toml`, `mypy.ini` and
   `docs/style/python.md`. Since v1.4.1 `docs/well-architected.md` gives
   `aws-lambda-go` cold-start advice for a `go build` binary instead of
-  esbuild's. A Framework added later gets its branches in the version that
-  adds it.
+  esbuild's. Since v1.6.0 `aws-lambda-ts` (from its v1.1.0) has its own
+  `docs/well-architected.md` (the tiers, `infra/operations.ts`, the alarms,
+  the backups and what production costs over development), `docs/runbook.md`,
+  which renders empty, and so is left out, for every other Framework, and
+  branches in `AGENTS.md`, the role guides, `docs/style/aws.md` and
+  `SOURCES.md` (the operations sources, read 2026-10-16); and the Go
+  digest's cold-start line is wrapped so Prettier keeps it. A Framework
+  added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
+  `aws-lambda-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -75,30 +82,70 @@ byte for byte.
   For `aws-lambda-go`, golangci-lint with go-standard's `.golangci.yml` (its
   formatters gofumpt and goimports, its linters) lints and formats `src/`,
   and Prettier skips `.golangci.yml`.
-- **CDK:** `infra/standard.ts` tags every stack, and every resource in it
-  that takes tags, with `c4factory:project`, `c4factory:system` and
+- **CDK:** `infra/standard.ts` names the tiers (`Tier`, `TIERS`:
+  `production` and `development`), what each means for every stack
+  (`TIER_RULES`: keeping and protecting data, point-in-time recovery, AWS
+  Backup, X-Ray, log retention one year or one month), the `Operations` type
+  a Framework's `infra/operations.ts` has, `tierOf(app)`, the app's
+  `tier` context value, `development` when it has none, refusing any other,
+  and `stackNameFor(name, tier)`, which adds `-development` to a
+  development stack's name.
+  `applyStandard(app, tier)` tags every stack, and every resource in it that
+  takes tags, with `c4factory:project`, `c4factory:system` and
   `c4factory:container` (the stack's own tags too, set explicitly, as the
-  `@aws-cdk/core:explicitStackTags` flag needs), and adds CDK Nag's
-  `AwsSolutionsChecks` to the app as a policy validation plugin
+  `@aws-cdk/core:explicitStackTags` flag needs), sets termination protection
+  where the tier keeps data, acknowledges `AwsSolutions-IAM5[Resource::*]` on
+  a policy whose only statements on the resource `*` are X-Ray's
+  `PutTraceSegments` and `PutTelemetryRecords`, and `AwsSolutions-DDB3` on
+  every table where the tier has no point-in-time recovery, and adds CDK
+  Nag's `AwsSolutions` to the app as a policy validation plugin
   (`Validations.of(app).addPlugins`, cdk-nag 3), so a finding not
   acknowledged with a reason fails synth. `infra/main.ts` makes the `App`,
-  calls the Framework's `defineStacks(app)`, then `applyStandard(app)`, then
+  reads the tier, calls the Framework's `defineStacks(app, tier)` (through a
+  type with both parameters, so a `stacks.ts` written before tiers, taking
+  the app alone, still fits), then `applyStandard(app, tier)`, then
   `app.synth()`. `infra/standard.test.ts`, not protected like ts-standard's
-  tests, builds the app the same way with `cdk.json`'s context and asserts on
-  every stack: synth passes CDK Nag; no error or warning annotation; the three
-  tags on the stack and on every resource with a `Tags` list; no IAM action
-  `*` or `service:*` in a statement that allows; every DynamoDB table (`SSESpecification`), S3 bucket,
-  SQS queue and SNS topic encrypted at rest; every log group with a retention
-  and every Lambda function logging to its own; every stateful resource
-  (tables, buckets, queues, topics, log groups, databases, file systems, KMS
-  keys) with an explicit `DeletionPolicy`. A type with no resource passes.
+  tests, builds the app the same way with `cdk.json`'s context, once per
+  tier, and asserts on every stack of both: `tierOf` defaults and refuses;
+  synth passes CDK Nag; no error or warning annotation; the three tags on
+  the stack and on every resource with a `Tags` list; no IAM action `*` or
+  `service:*` in a statement that allows, but a key's default policy (`kms:*`
+  to the account's root); every DynamoDB table (`SSESpecification`), S3
+  bucket, SQS queue and SNS topic encrypted at rest; every log group with a
+  retention and every Lambda function logging to its own; every stateful
+  resource (tables, buckets, queues, topics, log groups, databases, file
+  systems, KMS keys, backup vaults) with an explicit `DeletionPolicy`;
+  termination protection by tier. When the repository has
+  `infra/operations.ts`, it imports its `OPERATIONS` at run time, checks its
+  shape, and adds a `describe` per tier and item of what it promises: the
+  stack names (`stackNameFor`), the removal policies (tables `Retain` or
+  `Delete` by tier, every backup vault and its key `Retain`), deletion and
+  termination protection, point-in-time recovery (and on in production
+  when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
+  over 0: one plan whose rules are daily, keep `retentionDays` and copy to
+  `copyToRegion`'s vault when set, one vault with its own key, one selection
+  by the `c4factory:container` tag, and a copy stack in that region; else
+  none), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  the topic, alarms on every function's `Errors`, `Throttles` and
+  `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
+  `SystemErrors`, every HTTP API's `5xx`), the subscription (the
+  `AlertEmail` parameter defaulting to `alerts.email`, one email
+  subscription to it under a condition that it is not empty), tracing
+  (`Active` by tier), log retention (the tier's) and the two outputs
+  (`AlarmTopicArn`, the topic, and `EntryPoint`). A stack holding only a
+  backup vault and its key, the copy's, serves nothing and has no topic,
+  alarms or outputs. A repository with no `infra/operations.ts`, scaffolded
+  before it, skips those. A type with no resource passes.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, `cdk synth
-  --quiet` (from `node_modules/.bin`, with `--no-notices`,
+  --quiet -c tier=<tier> -o cdk.out/<tier>` for `production` and
+  `development` (from `node_modules/.bin`, with `--no-notices`,
   `CDK_DISABLE_CLI_TELEMETRY` and `CDK_DISABLE_VERSION_CHECK`, into a fresh
-  `cdk.out/`) and `uvx cfn-lint==1.57.2` on `cdk.out/*.template.json`,
-  ignoring only W3005 (the `DependsOn` CDK puts on a function's role, which
-  cfn-lint calls redundant). Synth needs no Docker, AWS account, credentials
+  `cdk.out/`) and `uvx cfn-lint==1.57.2 --include-checks I` on both
+  folders' `*.template.json` (I3011, a stateful resource without a deletion
+  policy; I3013, expiring content without a set retention), ignoring only
+  W3005 (the `DependsOn` CDK puts on a function's role, which cfn-lint calls
+  redundant). Synth needs no Docker, AWS account, credentials
   or network: stacks are environment-agnostic and esbuild bundles locally.
   For `aws-lambda-go`, `make check` = `npm ci`, `go mod download`,
   `go mod tidy -diff`, `prettier --check`, `golangci-lint fmt --diff`,
@@ -138,8 +185,12 @@ byte for byte.
   `typescript-eslint`, `prettier`, `typescript`, `vitest`, `aws-cdk-lib`,
   `constructs`, `aws-cdk`, `cdk-nag` and `tsx` (which runs `infra/main.ts`),
   and `esbuild` when it bundles a Node function. It owns `infra/stacks.ts`,
-  exporting `defineStacks(app: App): Stack[]`, which adds every stack to
-  `app` without an `env` from the environment or a context lookup;
+  exporting `defineStacks(app: App, tier: Tier): Stack[]` (one written
+  before tiers takes the app alone), which adds every stack for the tier to
+  `app` without an `env` from the environment or a context lookup; and,
+  from `aws-lambda-ts` v1.1.0 on, `infra/operations.ts`, rendered from
+  `.Operations`, exporting `OPERATIONS` of the `Operations` type, which its
+  stacks read;
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
   context holds the recommended feature flags; `tsconfig.json`, including
   `src`, `infra` and `vitest.config.mts`; and `vitest.config.mts`, running
@@ -177,12 +228,25 @@ byte for byte.
   `aws-ec2-ts`, and with ECS's best practices for `aws-fargate-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
-  does. It is self-contained: agents have no internet.
+  does. It is self-contained: agents have no internet. For `aws-lambda-ts`
+  it also says what each tier does per pillar and what `infra/operations.ts`
+  changes, its Reliability section names the RPO and RTO, the backup plan,
+  the copy and the restore procedure, its Cost section says in words what
+  production costs over development, and what stays by hand (a restore
+  drill, a game day, right-sizing from measured load) is listed with why.
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, renders the
+  Container's operations block and says how to restore the items to a point
+  in time, from the vault and from the copy, how to bring back a deleted
+  table, how to roll a deployment back, what each alarm means and what to do
+  first, which account-level services the account's owner provides
+  (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
+  allocation tags' activation), and how to drill a restore.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
-  `docs/agents/`, `docs/well-architected.md`, `infra/main.ts` and
-  `infra/standard.ts` in the catalog entry's `protectedPaths`, plus the
+  `docs/agents/`, `docs/well-architected.md`, `docs/runbook.md`,
+  `infra/main.ts` and `infra/standard.ts` in the catalog entry's
+  `protectedPaths`, plus the
   Framework's `tsconfig.json`, `vitest.config.mts` and `cdk.json`, which
   decide what the type check and tests cover and which CDK behaviour the app
   gets; `.gitea/` is always protected.
