@@ -351,7 +351,17 @@ or an open `Depends on #M`, and claims it (see
 [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
 to the issue's branch; uncommitted changes a dead session left there are
-stashed, not dropped. Claims keep workers and hand-started sessions off each
+stashed, not dropped. Before it claims anything, a worker checks that a
+session there could commit (#1289): `git -C <worktree> var
+GIT_COMMITTER_IDENT`, in the environment the session gets, which sees the
+global, `$XDG_CONFIG_HOME/git/config` and repository configs alike. When git
+has no committer identity there, the worker logs git's reason, starts no
+session and stops, and puts one line under the Maintainer report's *Needs
+you* naming the host and the worktree (`report-note ident-<host>-relay-k`),
+so the owner sets `user.name` and `user.email`; the line goes away at the
+first check that passes again. Triage and maintainer sessions commit nothing
+and skip the check. `land`'s own merge of main says what stopped it when it
+fails with no conflict, such as `fatal: empty ident name`. Claims keep workers and hand-started sessions off each
 other's issues, so the relay starts right away. A session that ends still
 holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
