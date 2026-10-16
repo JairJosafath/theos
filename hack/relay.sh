@@ -659,15 +659,17 @@ limit_name() {
 
 # limit_message OUT: the line that says session OUT ended on one of LIMITS.
 # It reads the CLI's own words only, never the agent's final message (#655):
-# the result when it is an error, or when the session exited non-zero (S_RC)
-# before any turn ran; and the tail of OUT.err when there is no result or the
-# session exited non-zero.
+# the result when it is an error, when the session exited non-zero (S_RC)
+# before any turn ran, or when it made no API call (duration_api_ms 0), as a
+# login failure ends with num_turns 1 and is_error false on some CLI versions
+# (#1396); and the tail of OUT.err when there is no result or the session
+# exited non-zero.
 limit_message() {
   local out=$1 l re=
   for l in "${LIMITS[@]}"; do re+=${re:+|}${l#*:}; done
   {
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
-      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
+      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or .duration_api_ms == 0 or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
       [ "${S_RC:-0}" = 0 ] || tail -n 20 "$out.err" 2>/dev/null
     else
       tail -n 20 "$out.err" 2>/dev/null
