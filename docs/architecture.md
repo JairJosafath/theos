@@ -104,6 +104,11 @@ it against this table. Where the code lives:
   the adapters a GitProvider names and gives each reconciler the ports it
   calls. A depguard rule denies `internal/adapters` and `internal/gitprovider`
   in `internal/controller`.
+- **A host's events reach the controllers through the operator's receiver**
+  (`internal/controller/git_events.go`, from #1084): the adapter checks a
+  delivery's signature and says what it concerns, the receiver finds the
+  GitProvider and its Secret, which needs Kubernetes, and each controller
+  maps the delivery to its own objects.
 - **The per-CI table** (`model.CI`: its name, which names the templates'
   `.c4factory/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
@@ -118,7 +123,7 @@ port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
-| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: webhooks (#1084) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only | `gitprovider.Provider` |
+| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `gitprovider.Provider` |
 | Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `Provider` and `IssueTracker` |
 | CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model` | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094) | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs with the GitProvider Secret | `Provider`; the per-CI table `model.CI` (`internal/model/ci.go`) |
 | AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `Provider` |
