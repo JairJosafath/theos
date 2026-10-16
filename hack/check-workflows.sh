@@ -11,8 +11,11 @@
 # Lint (lint.yml) and UI (ui.yml) run on pull requests to main with the same
 # paths as on pushes, Lint has a test-hack job running make test-hack, and
 # Tests (test.yml) runs on no pull request and groups by commit, so every
-# merge commit on main gets a verdict. Prints each job or workflow that
-# doesn't and exits 1. hack/check-workflows_test.sh runs it in make check.
+# merge commit on main gets a verdict. Release (release.yml) has a step that
+# dispatches verify-release.yml for a minor tag only, `if:`
+# endsWith(github.ref_name, '.0'), in a job granted actions: write (#1105).
+# Prints each job or workflow that doesn't and exits 1.
+# hack/check-workflows_test.sh runs it in make check.
 #
 #   hack/check-workflows.sh [DIR]   the workflows in DIR (default .github/workflows)
 set -euo pipefail
@@ -114,4 +117,34 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       ;;
   esac
 done
+
+# Release's dispatch of Verify Release: the step's if and run, and whether its
+# job may write actions.
+rel=$DIR/release.yml
+if [ -e "$rel" ]; then
+  IFS=$'\t' read -r found minor actions < <(awk '
+    function flush() {
+      if (run ~ /gh workflow run verify-release\.yml/) { found = 1; if (cond ~ /endsWith\(github\.ref_name, \x27\.0\x27\)/) { minor = 1; if (jobactions) actions = 1 } }
+      cond = ""; run = ""
+    }
+    /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); jobactions = 0; perms = 0; next }
+    /^    permissions:/ { perms = 1; next }
+    perms && /^      actions:[[:space:]]*write/ { jobactions = 1 }
+    /^    [^ ]/ { perms = 0 }
+    /^      - / { flush() }
+    /^      (- |  )if:/ { cond = $0 }
+    { run = run "\n" $0 }
+    END { flush(); print (found ? "yes" : "-") "\t" (minor ? "yes" : "-") "\t" (actions ? "yes" : "-") }
+  ' "$rel")
+  if [ "$found" != yes ]; then
+    echo "$rel: no step dispatches verify-release.yml" >&2
+    fail=1
+  elif [ "$minor" != yes ]; then
+    echo "$rel: the step that dispatches verify-release.yml doesn't run only for a minor, if: endsWith(github.ref_name, '.0')" >&2
+    fail=1
+  elif [ "$actions" != yes ]; then
+    echo "$rel: the job that dispatches verify-release.yml has no permission actions: write" >&2
+    fail=1
+  fi
+fi
 exit $fail

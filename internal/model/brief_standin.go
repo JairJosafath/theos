@@ -22,8 +22,11 @@ var (
 // StandInPlan is the stand-in planner's plan for the workspace the operator
 // wrote (BriefWorkspaceFiles), by path. It plans from the catalog alone: a
 // round that plans the idea adds one Container named after the Brief, on the
-// catalog's first Framework, that Framework's first type and the first
-// Standard that fits both, and files one issue for it; each new prompt is one
+// catalog's first Framework and type a Deployment ships and a Standard fits,
+// with both, else on its first Framework and that Framework's first type, with
+// the first Standard that fits both, and files one issue for it; a Container with a
+// Deployment is released (plan/releases.yaml), so its Crew prepares, tags and
+// ships a release once the issue is merged; each new prompt is one
 // issue for the Brief's Container, else the model's first, and so is each
 // request of model/requests.yaml, taken in plan/requests.yaml (a request it
 // has no room or no Container for is skipped). It changes nothing
@@ -72,7 +75,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	base := strings.TrimPrefix(name, BriefRepository(""))
 	container := standInContainer(objects, base)
 	if ideaNew {
-		framework, kind, standard := standInCatalog(catalog)
+		framework, kind, standard, deployment := standInCatalog(catalog)
 		if framework == "" {
 			return map[string]string{PlanNeedsInputFile: "The catalog has no Framework with a Container type, " +
 				"so the stand-in planner can't add a Container: install one.\n"}, nil
@@ -93,13 +96,24 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 		}
 		container = standInName(objects, base)
 		objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
-			SoftwareSystem: system, Type: kind, GitProvider: provider[1], Framework: framework, Standard: standard})
+			SoftwareSystem: system, Type: kind, GitProvider: provider[1], Framework: framework, Standard: standard,
+			Deployment: deployment})
 		with := ""
 		if standard != "" {
 			with = " with the Standard " + standard
 		}
-		choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s: "+
-			"it takes the catalog's first Framework and reads nothing else.", container, kind, framework, with))
+		if deployment == "" {
+			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s: "+
+				"no Deployment ships a Framework of the catalog, so it takes the first and reads nothing else.",
+				container, kind, framework, with))
+		} else {
+			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s and the "+
+				"Deployment %s: it takes the catalog's first Framework a Deployment ships and reads nothing else.",
+				container, kind, framework, with, deployment),
+				fmt.Sprintf("The stand-in planner releases %s: once its issue is merged, its Crew prepares and tags "+
+					"the release, and %s ships it.", container, deployment))
+			files[PlanReleasesFile] = fmt.Sprintf("containers: [%s]\n", container)
+		}
 		issues = append(issues, [2]string{"start " + name, fmt.Sprintf("Start %s as Brief %s's idea says.", container, name)})
 	}
 	switch {
@@ -175,22 +189,47 @@ func standInRequests(file, container string, issues *[][2]string) ([]RequestAnsw
 	return answers, nil
 }
 
-// standInCatalog picks the catalog's first Framework that has a Container
-// type, its first type, and the first Standard that fits both, if any.
-func standInCatalog(catalog catalogOut) (framework, kind, standard string) {
+// standInCatalog picks the catalog's first Framework and type a Deployment
+// ships: a Framework that doesn't deploy itself, its first type a Deployment
+// supports and a Standard fits (gitea-release builds with the Standard's
+// make dist), the first such Deployment and Standard. With none, it picks the
+// first Framework that has a Container type, its first type, the first
+// Standard that fits both, if any, and no Deployment.
+func standInCatalog(catalog catalogOut) (framework, kind, standard, deployment string) {
 	for _, f := range catalog.Frameworks {
-		if len(f.SupportedTypes) == 0 {
+		if f.DeploysItself {
 			continue
 		}
-		framework, kind = f.Name, f.SupportedTypes[0]
-		for _, s := range catalog.Standards {
-			if slices.Contains(s.SupportedFrameworks, framework) && slices.Contains(s.SupportedTypes, kind) {
-				return framework, kind, s.Name
+		for _, t := range f.SupportedTypes {
+			standard := standInStandard(catalog, f.Name, t)
+			if standard == "" {
+				continue
+			}
+			for _, d := range catalog.Deployments {
+				if slices.Contains(d.SupportedTypes, t) {
+					return f.Name, t, standard, d.Name
+				}
 			}
 		}
-		return framework, kind, ""
 	}
-	return "", "", ""
+	for _, f := range catalog.Frameworks {
+		if len(f.SupportedTypes) > 0 {
+			kind = f.SupportedTypes[0]
+			return f.Name, kind, standInStandard(catalog, f.Name, kind), ""
+		}
+	}
+	return "", "", "", ""
+}
+
+// standInStandard is the catalog's first Standard that fits framework and
+// kind, or none.
+func standInStandard(catalog catalogOut, framework, kind string) string {
+	for _, s := range catalog.Standards {
+		if slices.Contains(s.SupportedFrameworks, framework) && slices.Contains(s.SupportedTypes, kind) {
+			return s.Name
+		}
+	}
+	return ""
 }
 
 // standInContainer is the Container named base, the Brief's, else the model's

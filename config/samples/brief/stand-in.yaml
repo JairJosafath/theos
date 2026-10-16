@@ -1,10 +1,13 @@
 # A Brief the chart's stand-in Agent plans, implements and reviews: the whole
 # loop without a model or a Claude token. The stand-in reads only the catalog:
-# it adds Container stand-in-demo on the first Framework (go-cli, with
-# go-standard) and files one issue for it, which the Container's Crew picks up;
-# each follow-up prompt becomes one more issue. Needs the chart installed with
-# gitea.projects={webshop}, which makes the catalog, Agent stand-in and the
-# GitProvider. Verify Release runs it on every release.
+# it adds Container stand-in-demo on the first Framework a Deployment ships
+# (go-cli, with go-standard and gitea-release), releases it and files one
+# issue for it, which the Container's Crew picks up; once it is merged the
+# Crew prepares v0.1.0, tags it, and the release run puts the binaries on the
+# Gitea release. Each follow-up prompt becomes one more issue. Needs the chart
+# installed with gitea.projects={webshop}, which makes the catalog, Agent
+# stand-in and the GitProvider. Verify Release follows docs/getting-started.md
+# with it on every release, up to the Gitea release.
 # Apply with: kubectl apply -f config/samples/brief/stand-in.yaml
 apiVersion: c4.factory.io/v1alpha1
 kind: Brief
