@@ -24,7 +24,12 @@ GH_LIB_ROOT=$T/main
 GH_CLAIM_FILE=$T/main/.relay/claim
 GH_PENDING_DIR=$T/main/.relay
 GH_CLAIM_SETTLE=0
-now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# The clock heartbeats are written with and their age read from, pinned (#1194):
+# an age a case expects is the same however long the run takes. Cases write
+# their heartbeats from it; how long a wait lasted is timed with date.
+GH_NOW=$(date -d 2026-10-06T09:00:00Z +%s)
+export GH_NOW
+now=$(date -u -d "@$GH_NOW" +%Y-%m-%dT%H:%M:%SZ)
 gh_token() { :; }
 gh_api() {
   local url
@@ -102,7 +107,7 @@ check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file c4factory)
 check "second cluster's lease beside it" "$(as "$T/wt2" gh_lease_file c4factory-2)" "$LEASE2"
 as "$T/wt2" gh_cluster holder >/dev/null; check "holder, none" $? 1
 check "name, no lease: the default" "$(as "$T/wt2" gh_cluster name)" c4factory
-claim "$T/wt2" 50 "$(date +%s)"
+claim "$T/wt2" 50 "$GH_NOW"
 out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, no human opt-in: refused" "$?|$out|$([ -e "$LEASE" ] && echo leased)" "5||"
 grep -q "C4_HUMAN_CLUSTER=1" "$T/err"; check "acquire, no human opt-in: names it" $? 0
 C4_HUMAN_CLUSTER=0 as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null 2>&1; check "acquire, opt-in not 1: refused" $? 5
@@ -129,23 +134,27 @@ grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiti
 check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
 check "name, own lease" "$(gh_cluster name)" c4factory
 gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-lease "$T/wt2" 50 $(($(date +%s) - 3 * 3600))
+lease "$T/wt2" 50 $((GH_NOW - 3 * 3600))
 gh_cluster holder >/dev/null; check "stale lease: no holder" $? 1
 gh_cluster acquire --wait 0 >/dev/null 2>&1; check "stale lease taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
-lease "$T/gone" 50 "$(date +%s)"
+lease "$T/gone" 50 "$GH_NOW"
 gh_cluster acquire --wait 0 >/dev/null 2>&1; check "lease of a removed worktree taken over" "$? $(jq -r .worktree "$LEASE")" "0 $T/main"
-lease "$T/wt2" 50 "$(date +%s)"
+lease "$T/wt2" 50 "$GH_NOW"
 gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
-lease "$T/main" 50 $(($(date +%s) - 3600))
-gh_beat; check "beat refreshes the lease" "$(($(date +%s) - $(jq .beat "$LEASE") < 5))" 1
-lease "$T/wt2" 50 $(($(date +%s) - 3600)); b=$(jq .beat "$LEASE")
+lease "$T/main" 50 $((GH_NOW - 3600))
+gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
+lease "$T/wt2" 50 $((GH_NOW - 3600)); b=$(jq .beat "$LEASE")
 gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
+# A heartbeat 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
+lease "$T/wt2" 50 $((GH_NOW + 30))
+check "holder, 45 s on, past a minute boundary" "$(GH_NOW=$((GH_NOW + 75)) gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago"
+check "holder, 90 s on" "$(GH_NOW=$((GH_NOW + 120)) gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 1m ago"
 rm -f "$LEASE"
 
 # A pool of two: two leases at once get different clusters, a third waits, a
 # released cluster is reused, and a missing one is created on its first lease.
 export C4_CLUSTERS=2
-clear; rm -f "$T/made"; claim "$T/wt2" 50 "$(date +%s)"; claim "$T/wt3" 51 "$(date +%s)"
+clear; rm -f "$T/made"; claim "$T/wt2" 50 "$GH_NOW"; claim "$T/wt3" 51 "$GH_NOW"
 check "pool, c4factory-2 not created" "$(gh_cluster pool | tail -1)" "c4factory-2: free, not created yet (its first lease creates it)"
 check "two at once: the first gets c4factory" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" c4factory
 check "two at once: no cluster made for an existing one" "$(cat "$T/made" 2>/dev/null)" ""
@@ -173,7 +182,7 @@ gh_cluster release >/dev/null
 gh_cluster acquire --wait 0 >/dev/null 2>"$T/err"; check "create fails: exit 1" $? 1
 check "create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 rm -f "$T/make-fails"; echo c4factory >"$T/kind-clusters"
-lease "$T/main" 50 "$(date +%s)" "$LEASE2"
+lease "$T/main" 50 "$GH_NOW" "$LEASE2"
 check "pool shrunk: a lease outside it is dropped for one inside" "$(C4_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "c4factory gone"
 gh_cluster release >/dev/null
 
@@ -183,7 +192,7 @@ rm -f "$T/made"; echo c4factory >"$T/kind-clusters"
 out=$(gh_cluster acquire --wait 0 --fresh 2>"$T/err"); check "fresh: a not-yet-created cluster first" "$? $out" "0 c4factory-2"
 check "fresh, not created: created, nothing deleted" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
 gh_cluster release >/dev/null; rm -f "$T/made"
-lease "$T/wt2" 50 "$(date +%s)"
+lease "$T/wt2" 50 "$GH_NOW"
 out=$(gh_cluster acquire --fresh --wait 0 2>"$T/err"); check "fresh: an existing free cluster when all exist" "$? $out" "0 c4factory-2"
 check "fresh: recreates only the cluster it leased" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory-2
 -C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
@@ -226,7 +235,7 @@ gh_cluster release >/dev/null
 echo c4factory >"$T/kind-clusters"
 out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a cluster not created yet before a bare one" "$? $out $(cat "$T/made")" "0 c4factory-2 -C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
 gh_cluster release >/dev/null; rm -f "$T/made"
-lease "$T/wt2" 50 "$(date +%s)" "$LEASE2"
+lease "$T/wt2" 50 "$GH_NOW" "$LEASE2"
 out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, only a bare one free: it" "$? $out" "0 c4factory"
 check "plain, only a bare one free: recreated as a testenv one" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory
 -C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
@@ -242,7 +251,7 @@ gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluste
 rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo c4factory >"$T/kind-clusters"
 
 # take claims an issue without a cluster, and while another checkout holds the lease.
-clear; lease "$T/wt2" 50 "$(date +%s)"
+clear; lease "$T/wt2" 50 "$GH_NOW"
 rm -f "$T/posted"; out=$(C4_CLUSTER=none gh_take 60 2>/dev/null); check "take 60, no cluster" "$? $(cut -f1 <<<"$out" | grep -c .)" "0 1"
 rm -f "$T/main/.relay/claim"
 rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, lease held elsewhere" $? 0
@@ -250,24 +259,24 @@ rm -f "$T/main/.relay/claim"
 gh_label 61 kind/docs >/dev/null 2>&1; check "label" $? 0
 
 # release, handoff, close and needs-human drop this checkout's lease when it works on that issue.
-clear; claim "$T/main" 72 "$(date +%s)"; lease "$T/main" 72 "$(date +%s)"
+clear; claim "$T/main" 72 "$GH_NOW"; lease "$T/main" 72 "$GH_NOW"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-clear; claim "$T/main" 71 "$(date +%s)"; lease "$T/main" 71 "$(date +%s)"
+clear; claim "$T/main" 71 "$GH_NOW"; lease "$T/main" 71 "$GH_NOW"
 echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails, lease kept" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
-clear; lease "$T/main" 73 "$(date +%s)"
+clear; lease "$T/main" 73 "$GH_NOW"
 echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-clear; lease "$T/main" 77 "$(date +%s)"
+clear; lease "$T/main" 77 "$GH_NOW"
 echo h | gh_handoff 77 - >/dev/null 2>&1; check "handoff kept for later drops the lease" "$? $([ -e "$LEASE" ] && echo kept || echo gone)" "3 gone"
-clear; lease "$T/main" 73 "$(date +%s)"
+clear; lease "$T/main" 73 "$GH_NOW"
 gh_release >/dev/null 2>&1; check "release without a claim drops the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"; : >"$T/calls"
+clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"; : >"$T/calls"
 real_set_status 51 needs-maintainer >/dev/null 2>&1
 check "needs-maintainer drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
 check "needs-maintainer swaps the status" "$(cat "$T/calls")" \
   "DELETE repos/JairJosafath/c4factory/issues/51/labels/status%2Fin-progress
 POST repos/JairJosafath/c4factory/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
-clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" 51 "$(date +%s)"
+clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
@@ -279,19 +288,19 @@ clear; : >"$T/calls"
 real_set_status 72 ready >/dev/null 2>&1; rc=$?
 check "ready with a kind label" "$rc $(cat "$T/calls")" "0 DELETE repos/JairJosafath/c4factory/issues/72/labels/status%2Fin-progress"
 # Marking, handing off or closing another issue keeps this checkout's lease and claim.
-clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human on another issue keeps the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "kept kept"
-clear; lease "$T/main" 52 "$(date +%s)"
+clear; lease "$T/main" 52 "$GH_NOW"
 real_set_status 51 needs-maintainer >/dev/null 2>&1
 check "needs-maintainer on another issue, no claim, keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
-clear; claim "$T/main" 51 "$(date +%s)"; lease "$T/main" null "$(date +%s)"
+clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" null "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human, claim on it, lease taken before the claim: dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
-clear; claim "$T/main" 52 "$(date +%s)"; lease "$T/main" 52 "$(date +%s)"
+clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
 rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
@@ -318,16 +327,16 @@ gh_take 61 >/dev/null 2>&1
 check "take waits for another checkout's take" "$(( $(date +%s) - t0 >= 1 ))" 1
 wait
 rm -rf "$T"/{main,wt2,wt3}/.relay
-claim "$T/main" 71 "$(date +%s)"
+claim "$T/main" 71 "$GH_NOW"
 echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails" $? 1
 check "close fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 71
-claim "$T/main" 72 "$(date +%s)"; : >"$T/calls"
+claim "$T/main" 72 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
 check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
 R=repos/$C4_GITHUB_REPO
 check "close drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
 DELETE $R/issues/72/labels/status%2Fready"
-claim "$T/main" 75 "$(date +%s)"; lease "$T/main" 75 "$(date +%s)"; : >"$T/calls"
+claim "$T/main" 75 "$GH_NOW"; lease "$T/main" 75 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 75 - >/dev/null 2>&1; check "close, already closed" $? 0
 check "close, already closed, claim and lease released" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released gone"
@@ -346,12 +355,12 @@ DELETE $R/issues/73/labels/status%2Fready"
 gh_closed 74 >/dev/null 2>&1; check "closed, open issue" "$? $(cat "$T/calls")" "0 "
 gh_closed x 2>/dev/null; check "closed, not a number" $? 1
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
-claim "$T/main" 73 "$(date +%s)"
+claim "$T/main" 73 "$GH_NOW"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on a closed issue" $? 0
 check "take, closed issue's claim released" "$(jq -r .body "$T/edited" | grep -c 'heron-73\*\* released this issue: finished')" 1
 check "take, new claim" "$(jq .issue "$T/main/.relay/claim")" 61
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
-touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"
+touch "$T/hold74"; claim "$T/main" 74 "$GH_NOW"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on an open issue" $? 1
 check "take, open issue's claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
 rm -f "$T/hold74"
@@ -360,7 +369,7 @@ rm -f "$T/hold74"
 # issue as handed off, and leaves a claim on another issue alone.
 pending() { mkdir -p "$T/main/.relay"; echo handoff >"$T/main/.relay/pending-handoff-$1.md"; }
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
-claim "$T/main" 73 "$(date +%s)"; pending 73
+claim "$T/main" 73 "$GH_NOW"; pending 73
 out=$(gh_flush 2>&1); check "flush" $? 0
 check "flush prints the URL" "$(head -1 <<<"$out")" "posted the pending handoff on #73: 999"
 check "flush says it released" "$(sed -n 2p <<<"$out")" "released #73: handed off"
@@ -368,13 +377,13 @@ check "flush, claim released as handed off" "$(jq -r .body "$T/edited" | grep -c
 check "flush, claim file gone" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
 check "flush, pending file gone" "$([ -e "$T/main/.relay/pending-handoff-73.md" ] && echo kept || echo gone)" gone
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
-touch "$T/hold74"; claim "$T/main" 74 "$(date +%s)"; pending 73
+touch "$T/hold74"; claim "$T/main" 74 "$GH_NOW"; pending 73
 out=$(gh_flush 2>&1); check "flush, claim on another issue" "$? $out" "0 posted the pending handoff on #73: 999"
 check "flush, other claim kept" "$(jq .issue "$T/main/.relay/claim")" 74
 check "flush, other claim not edited" "$([ -e "$T/edited" ] && echo edited || echo untouched)" untouched
 rm -f "$T/hold74"
 rm -rf "$T"/{main,wt2,wt3}/.relay
-claim "$T/main" 77 "$(date +%s)"; pending 77
+claim "$T/main" 77 "$GH_NOW"; pending 77
 gh_flush >/dev/null 2>&1; check "flush fails" $? 1
 check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
@@ -851,11 +860,16 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   # While another pull request holds the merge turn, only that one merges.
   turn() { echo "{\"id\":$1,\"updated_at\":\"$3\",\"body\":\"<!-- c4-land -->\\n**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`\"}"; }
-  old=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
+  old=$(date -u -d "@$((GH_NOW - 3600))" +%Y-%m-%dT%H:%M:%SZ)
   rm -f "$T/merged"
   out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses while another pull request holds the merge turn" "$? $out $(cat "$T/merged" 2>/dev/null)" \
     '1 github: #16: it is #20'"'"'s turn to merge (heron-20 lands #20 (host h), heartbeat 0m ago); land with hack/lib/github.sh land 16, which waits for its turn '
+  # A turn 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
+  half=$(date -u -d "@$((GH_NOW + 30))" +%Y-%m-%dT%H:%M:%SZ)
+  age() { GH_NOW=$((GH_NOW + $1)) TURNS="[[$(turn 1 20 "$half"),$(turn 2 16 "$half")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1 |
+    grep -o 'heartbeat [0-9-]*m ago'; }
+  check "merge: a turn's age, 45 s on past a minute boundary, then 90 s on" "$(age 75) | $(age 120)" "heartbeat 0m ago | heartbeat 1m ago"
   out=$(TURNS="[[$(turn 1 20 "$old"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: its own turn merges, an abandoned one ahead is no turn" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
@@ -895,9 +909,10 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   Q=$T/q
   rm -rf "$Q" "$T/origin.git" "$T/land"
   mkdir -p "$Q"
-  stamp() { date -u -d "${1:-now}" +%Y-%m-%dT%H:%M:%SZ; }
-  # put ID PR [WHEN]: a merge-turn comment of heron-PR, edited WHEN (default now).
-  put() { jq -n --argjson id "$1" --arg u "$(stamp "${3:-now}")" --arg b "$GH_LAND_MARKER"$'\n'"**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`" \
+  # stamp [SECONDS]: the pinned clock, SECONDS on (default 0), as GitHub writes a time.
+  stamp() { date -u -d "@$((GH_NOW + ${1:-0}))" +%Y-%m-%dT%H:%M:%SZ; }
+  # put ID PR [SECONDS]: a merge-turn comment of heron-PR, edited SECONDS on from the clock (default 0).
+  put() { jq -n --argjson id "$1" --arg u "$(stamp "${3:-0}")" --arg b "$GH_LAND_MARKER"$'\n'"**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`" \
     '{id: $id, updated_at: $u, body: $b}' >"$Q/$1.json"; }
   gh_api() {
     local url= a m=GET q= data
@@ -958,20 +973,28 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "land: its turn named the agent, pull request and host" "$(grep -c '^POST .*/issues/7/comments' "$T/calls") $(grep -c '^DELETE ' "$T/calls")" "1 1"
 
   # Another holds it: wait, first come first served, until it is given up.
+  # Each turn ahead is given up only once land has read the queue with it in
+  # it and said so, however slow a loaded device makes land (#1194).
+  # reads N: wait (up to about 30 s) until land has read the queue N times.
+  reads() { for _ in $(seq 300); do (($(grep -cF "GET $R/issues/7/comments" "$T/calls") >= $1)) && return; sleep 0.1; done; }
   rm -f "$T/landed" "$T/checked"
   put 1 41; put 2 42
-  (sleep 1; rm "$Q/1.json"; sleep 1; rm "$Q/2.json") &
-  t0=$(date +%s)
+  : >"$T/calls"
+  (
+    reads 2; rm "$Q/1.json"
+    reads $(($(grep -cF "GET $R/issues/7/comments" "$T/calls") + 2))
+    echo "gone 42" >>"$T/landed"; rm "$Q/2.json"
+  ) &
   out=$(gh_land 40 2>&1); rc=$?
   wait
-  check "land: waits for those ahead" "$rc $(($(date +%s) - t0 >= 2)) $(cat "$T/landed" | cut -d' ' -f1-2)" "0 1 merge 40"
+  check "land: waits for those ahead" "$rc $(cut -d' ' -f1-2 "$T/landed" | paste -sd' ')" "0 gone 42 merge 40"
   grep -q '#40 waits for its turn to land: 2 ahead; heron-41 lands #41 (host h), heartbeat 0m ago' <<<"$out"; check "land: says who is ahead" $? 0
   grep -q '#40 waits for its turn to land: 1 ahead; heron-42 lands #42' <<<"$out"; check "land: says when the queue moves" $? 0
   check "land: gives the turn up after waiting" "$(queue)" ""
 
   # An abandoned turn (no heartbeat for C4_LAND_TTL) is dropped, not waited on.
   rm -f "$T/landed"
-  put 5 41 '-1 hour'
+  put 5 41 -3600
   out=$(gh_land 40 2>&1)
   check "land: takes over an abandoned turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(queue)" "0 merge 40 | "
   grep -q 'dropped an abandoned merge turn: heron-41 lands #41 (host h), heartbeat 60m ago' <<<"$out"; check "land: says it dropped it" $? 0
