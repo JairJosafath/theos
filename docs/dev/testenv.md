@@ -84,11 +84,16 @@ prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
 internal/model`, or `testing every package (21): <reason>`. It tests every
 package on `main`, without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
 after a change to a file a Go test may read without importing it: `go.mod`,
-`go.sum`, the `Makefile`, `hack/`, `config/` (the CRDs and RBAC envtest loads),
-`api/`, `dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+`go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
+`hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
+`hack/go-test.sh`), `config/` (the CRDs and RBAC envtest loads), `api/`,
+`dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
 Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
 A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
-`.github/` or a top-level `*.md` tests no package. `land`'s `make check` selects
+`.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
+tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
+that names a new `hack/` path fails `hack/test-packages_test.sh` until the
+path joins that list. `land`'s `make check` selects
 the same way; the *Tests* workflow sets `TEST_ALL=1`, so every merge to main
 still runs every package and catches what a selection missed. With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
