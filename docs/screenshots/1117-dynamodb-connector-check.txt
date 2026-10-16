@@ -1,32 +1,25 @@
-# make check in a scaffolded aws-lambda-ts v1.2.0 + aws-standard v1.10.0 Container with the dynamodb Connector v1.0.0 (issue #1117)
+# make check in a scaffolded aws-lambda-ts v1.2.0 + aws-standard v1.12.0 Container with the dynamodb Connector v1.0.0 (issue #1117)
 # go run ./hack/render -out DIR -type function Framework=aws-lambda-ts Standard=aws-standard Connector=dynamodb
-# then make check in DIR, on 2026-10-16, Node v24.22.0. Bundling lines are cut.
+# then make check in DIR, on 2026-10-17, Node v24.22.0. Bundling lines are cut.
 
 npm ci --no-audit --no-fund
-added 178 packages in 46s
+added 178 packages in 45s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
 node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
- RUN  v5.0.3 /home/math/.cache/c4factory/tmp/relay-2/tmp.ODJvHzZEBY/app
+ RUN  v5.0.3 /home/math/.cache/c4factory/tmp/relay-2/tmp.pGmsGg00QZ/app
  Test Files  7 passed (7)
-      Tests  122 passed (122)
-   Start at  23:51:18
-   Duration  89.96s (tests 77%, import 20%, transform 3%)
+      Tests  124 passed (124)
+   Start at  00:07:55
+   Duration  45.62s (tests 81%, import 13%, transform 6%)
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 AI agent detected
 AI agent detected
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
-Downloading sympy (6.0MiB)
-Downloading networkx (2.0MiB)
-Downloading cfn-lint (5.4MiB)
- Downloaded networkx
- Downloaded cfn-lint
- Downloaded sympy
-Installed 9 packages in 717ms
 
 # the production template: every table kept with point-in-time recovery and the tag the backup plan selects
 # jq over cdk.out/production/sample-app.template.json
