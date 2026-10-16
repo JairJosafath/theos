@@ -82,7 +82,11 @@ start() {
 
 say "the controller suite runs in $procs processes (C4_TEST_PROCS)"
 [ ${#rest[@]} -eq 0 ] || start rest -- "${rest[@]}"
-for i in $(seq "$procs"); do start "shard-$i" "C4_TEST_SHARD=$i/$procs" -- "$SHARDED"; done
+# A part an earlier run left must not be merged into this one's report.
+[ -z "${C4_SLOWEST_SPECS:-}" ] || rm -f "$C4_SLOWEST_SPECS".*
+# The package's plain Go tests run in the first part only.
+start shard-1 C4_TEST_SHARD=1/"$procs" -- "$SHARDED"
+for i in $(seq 2 "$procs"); do start "shard-$i" "C4_TEST_SHARD=$i/$procs" -- -run '^TestControllers$' "$SHARDED"; done
 
 rc=0
 while [ ${#names[@]} -gt 0 ]; do
@@ -97,25 +101,32 @@ done
 
 if [ -n "$cover" ]; then
   {
-    echo "mode: set"
-    cat "$work"/*.cover 2>/dev/null | grep -v '^mode:'
+    head -qn 1 "$work"/*.cover 2>/dev/null | head -n 1 | grep '^mode:' || echo "mode: set"
+    tail -qn +2 "$work"/*.cover 2>/dev/null
   } >"$cover"
 fi
 
 # The parts' slowest specs as one report: the specs and the longest part's
-# time from their first lines, the 10 slowest of their other lines.
-if [ -n "${C4_SLOWEST_SPECS:-}" ] && compgen -G "$C4_SLOWEST_SPECS.*" >/dev/null; then
-  parts=("$C4_SLOWEST_SPECS".*)
-  specs=0 secs=0
-  for f in "${parts[@]}"; do
+# time from their first lines, the 10 slowest of their other lines. A part
+# go test's cache answered ran nothing and wrote nothing; the report says so.
+if [ -n "${C4_SLOWEST_SPECS:-}" ]; then
+  parts=() missing=() specs=0 secs=0
+  for i in $(seq "$procs"); do
+    f=$C4_SLOWEST_SPECS.$i
+    if [ ! -f "$f" ]; then missing+=("$i"); continue; fi
+    parts+=("$f")
     read -r n t < <(sed -nE '1s/^.*: ([0-9]+) specs in ([0-9]+)s;.*$/\1 \2/p' "$f")
     specs=$((specs + ${n:-0}))
     [ "${t:-0}" -le "$secs" ] || secs=$t
   done
-  {
-    echo "Controller Suite: $specs specs in ${#parts[@]} processes, the longest ${secs}s; the 10 slowest:"
-    tail -q -n +2 "${parts[@]}" | sort -rn | head -n 10
-  } >"$C4_SLOWEST_SPECS"
-  rm -f "${parts[@]}"
+  if [ ${#parts[@]} -gt 0 ]; then
+    {
+      echo -n "Controller Suite: $specs specs in ${#parts[@]} of $procs processes, the longest ${secs}s"
+      [ ${#missing[@]} -eq 0 ] || echo -n " (parts ${missing[*]} cached, not here)"
+      echo "; the 10 slowest:"
+      tail -q -n +2 "${parts[@]}" | sort -rn | head -n 10
+    } >"$C4_SLOWEST_SPECS"
+    rm -f "${parts[@]}"
+  fi
 fi
 exit "$rc"

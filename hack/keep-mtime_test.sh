@@ -51,18 +51,18 @@ check "manifests: keeps the CRDs and the role" $? 0
 grep -q '^hack/keep-mtime.sh .*zz_generated\.deepcopy\.go -- .* object:' <<<"$gen"
 check "generate: keeps the DeepCopy code" $? 0
 
-# gotest VAR=VALUE...: the flags make test passes go test after the packages,
-# with TEST_TIMEOUT=7m.
+# gotest VAR=VALUE...: the flags make test passes go test (through
+# hack/go-test.sh, before the packages), with TEST_TIMEOUT=7m.
 gotest() {
   env -u COVER -u FORCE C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true \
-    TEST_TIMEOUT=7m "$@" 2>/dev/null | sed -n 's/.* go test .*$pkgs //p' | xargs
+    TEST_TIMEOUT=7m "$@" 2>/dev/null | sed -n 's/.* hack\/go-test\.sh -trimpath \(.*\) -- \$pkgs$/\1/p' | xargs
 }
 check "make test: TEST_TIMEOUT, no flag Go won't cache" "$(gotest)" "-timeout 7m"
 check "COVER=1: writes cover.out" "$(gotest COVER=1)" "-timeout 7m -coverprofile cover.out"
 check "FORCE=1: reruns every package" "$(gotest FORCE=1)" "-timeout 7m -count=1"
-line=$(C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null | grep ' go test ')
-[[ $line == *' go test -trimpath '* ]]; check "GO_TRIM still passed" $? 0
-[[ $line == KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=*' ETCD_ELECTION_TIMEOUT='*' ETCD_HEARTBEAT_INTERVAL='*' go test '* ]]
+line=$(C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null | grep ' hack/go-test.sh ')
+[[ $line == *' hack/go-test.sh -trimpath '* ]]; check "GO_TRIM still passed" $? 0
+[[ $line == KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=*' ETCD_ELECTION_TIMEOUT='*' ETCD_HEARTBEAT_INTERVAL='*' hack/go-test.sh '* ]]
 check "ENVTEST_ENV still set" $? 0
 # envtest's port files: a cache home outside the module, and Go's own cache kept.
 xdg=$(sed -n 's/.* XDG_CACHE_HOME="\([^"]*\)" .*/\1/p' <<<"$line")

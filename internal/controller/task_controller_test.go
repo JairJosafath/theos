@@ -383,10 +383,12 @@ var _ = Describe("Task", func() {
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
 		// The status is written before the note is posted, so the note may
 		// follow it; it is posted once all the same.
-		Eventually(func() int {
+		notes := func() int {
 			return countContaining(gitFake.pullComments(ns, "orders-api", int(task.Status.PullRequest)),
 				"`make check` fails in the agent's workspace on main too")
-		}).Should(Equal(1))
+		}
+		Eventually(notes).Should(Equal(1))
+		Consistently(notes, "2s").Should(Equal(1))
 		Consistently(func(g Gomega) {
 			var events eventsv1.EventList
 			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
