@@ -130,6 +130,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		// After the update's step, so it reads what the repository runs now.
 		r.reportChecksApplied(ctx, &container, status)
+		r.reportOperationsApplied(&container, status)
 		if err := r.writeStatus(ctx, &container, status); err != nil || !answered {
 			return result, err
 		}

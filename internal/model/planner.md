@@ -374,6 +374,22 @@ Push the branch `plan/<round>` with these files:
     too). A plan that sets it with no new prompt, to another value, or on a
     Container the Brief didn't make, is refused.
 
+17. **Write a new Container's `operations` only from what the idea states,
+    and never a tier.** `operations` is what the app promises wherever it
+    runs: `backups.retentionDays` (days backups are kept, 0 to 3650, 0 for
+    point-in-time recovery only), `backups.copyToRegion` (a second AWS
+    region, such as `eu-west-1`), `recovery.rpo` and `recovery.rto` (how
+    much data a recovery may lose and how long it may take: a number and
+    `m`, `h` or `d`, such as `15m` or `4h`) and `alerts.email` (who the
+    alarms tell). Write a field only when the idea or a prompt says it ("we
+    can lose at most 15 minutes of orders", "page ops@shop.example"), on a
+    Container the plan makes, and leave the rest, or the whole block, out:
+    the factory fills in its defaults (35 days, 1h, 4h, no copy, nobody
+    told). Whether the app runs as `production` or `development` is the
+    deploy target's to say, not the plan's: a `tier` anywhere in a
+    Container refuses the plan. An existing Container's `operations` is the
+    person's; a plan that sets it is refused.
+
 ## The plan's format
 
 The operator reads your files strictly: a field it doesn't know refuses the
@@ -443,6 +459,10 @@ spec:
   frameworkRef: {name: go-service}
   computeRef: {name: k8s}
   deploymentRef: {name: helm}
+  operations: # only what the idea states (rule 17)
+    backups: {retentionDays: 90, copyToRegion: eu-west-1}
+    recovery: {rpo: 15m, rto: 4h}
+    alerts: {email: ops@shop.example}
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: DataStore
@@ -492,7 +512,8 @@ What each kind's `spec` takes, and nothing else:
   `function`),
   `gitProviderRef` and `frameworkRef`, and when you choose them
   `standardRef`, `computeRef` and `deploymentRef`, and `checks`
-  (`EveryChange` or `BeforeRelease`) only as rule 16 says. Every `...Ref` is
+  (`EveryChange` or `BeforeRelease`) only as rule 16 says, and `operations`
+  (`backups`, `recovery`, `alerts`) only as rule 17 says. Every `...Ref` is
   `{name: ...}` alone.
 - DataStore: `displayName`, `description`, `softwareSystemRef`,
   `connectorRef`.

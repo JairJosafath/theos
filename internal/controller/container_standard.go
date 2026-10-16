@@ -260,7 +260,8 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), to.Checks)
+	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), to.Checks,
+		scaffoldedOperations(u.container, u.status))
 	render := func(v model.StandardVersion, files scaffold.Tree) (scaffold.Tree, bool) {
 		in := in
 		in.Checks = v.Checks
@@ -475,7 +476,8 @@ func (u *standardUpdate) renders(git *gitAccess, standard *c4v1alpha1.Standard) 
 		fetch: func(ctx context.Context, ref string) (scaffold.Tree, error) {
 			return u.r.Git.FetchTemplate(ctx, standard.Spec.Template.URL, ref, creds)
 		},
-		in:       scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status)),
+		in: scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status),
+			scaffoldedOperations(u.container, u.status)),
 		standard: standard.Name,
 		trees:    map[string]scaffold.Tree{},
 	}
@@ -864,7 +866,8 @@ func (u *standardUpdate) merged(ctx context.Context) {
 func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
-	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), recordedChecks(u.status))
+	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), recordedChecks(u.status),
+		scaffoldedOperations(u.container, u.status))
 	if update.Take {
 		taken := make([]model.TakenFile, 0, len(update.Paths))
 		for _, p := range update.Paths {
@@ -877,7 +880,8 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	}
 	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
 	title = model.StandardUpdateTitle(s.Name, from, to)
-	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), to.Checks), s.Name,
+	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), to.Checks,
+		scaffoldedOperations(u.container, u.status)), s.Name,
 		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message
