@@ -18,13 +18,13 @@ regeneration; `Chart.yaml` is never overwritten.
 One install is one trust domain: install it on a device you own, for people
 you would hand the Claude token to, and never on a shared or production
 cluster. Anyone who can create a Project or a Brief in the cluster, the UI's
-users included, can have the factory run code that holds the Claude token and
-reaches the cluster network, through an agent's sandbox or a CI job. The token
-is readable inside the sandbox
-([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closes it),
-and the `base` and `go` runners run every project's checks in host mode with
-no NetworkPolicy
-([#1076](https://github.com/JairJosafath/c4factory/issues/1076) closes it).
+users included, can have the factory run code: in an agent's sandbox, which
+holds the Claude token, and in a CI job. The token is readable inside the
+sandbox ([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closes
+it), and the `base` and `go` runners run every project's checks one after
+another in host mode, a NetworkPolicy keeping them to DNS, Gitea and public
+HTTPS ([#1076](https://github.com/JairJosafath/c4factory/issues/1076) gives
+each job a pod of its own).
 [docs/getting-started.md](../../docs/getting-started.md#what-the-factory-trusts)
 says more.
 

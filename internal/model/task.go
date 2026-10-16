@@ -733,7 +733,7 @@ func (j CIJob) Cancelled() bool { return j.Conclusion == checkCancelled }
 // ends a job's log the same way whoever cancelled it ("Job cancelled"), so it
 // reads the jobs' runners instead: a runner told to stop (its pod replaced,
 // say) cancels its job and goes away, and the factory's runner registers as a
-// new one each time it starts (hack/runner/entrypoint.sh), while a person's
+// new one each time its pod starts (hack/runner/register.sh), while a person's
 // cancel leaves the runner online, taking the next job. A job no runner started was cancelled by a person (or by Gitea,
 // past any of the Task's bounds). read false means the jobs couldn't be read:
 // the cancel counts as the runner's, MaxChecksReruns bounding what a person's

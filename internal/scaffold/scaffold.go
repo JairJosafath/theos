@@ -375,6 +375,35 @@ var funcs = template.FuncMap{
 	"upper": strings.ToUpper,
 	"lower": strings.ToLower,
 	"dart":  dartString,
+	"ts":    tsString,
+}
+
+// tsString quotes s as a TypeScript string literal the way Prettier, with
+// singleQuote, writes it: single quotes, or double quotes when s holds more
+// single quotes than double ones; with backslashes, the quote and control
+// characters escaped.
+func tsString(s string) string {
+	quote := "'"
+	if strings.Count(s, "'") > strings.Count(s, `"`) {
+		quote = `"`
+	}
+	var b strings.Builder
+	b.WriteString(quote)
+	for _, r := range s {
+		switch {
+		case r == '\\' || string(r) == quote:
+			b.WriteRune('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString(quote)
+	return b.String()
 }
 
 // dartString quotes s as a Dart string literal the way Effective Dart and the

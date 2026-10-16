@@ -1,9 +1,10 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { describe, expect, it } from 'vitest';
 
-import { answer } from './api';
+import { answer, route } from './api';
+import type { Log } from './api';
 import type { ItemStore } from './item_store';
-import type { Item } from './items';
+import type { HttpResponse, Item } from './items';
 
 /** An in-memory store; `failing` makes every call throw, as a DynamoDB outage would. */
 class MemoryStore implements ItemStore {
@@ -59,16 +60,21 @@ function request(
 
 const noLog = (): void => undefined;
 
+/** Answers `event` from `store`, as the handler does. */
+function send(
+  event: APIGatewayProxyEventV2,
+  store: ItemStore,
+  log: Log = noLog,
+): Promise<HttpResponse> {
+  return answer(event, (request) => route(request, store), log);
+}
+
 describe('answer', () => {
   it('puts an item, then gets it', async () => {
     const store = new MemoryStore();
 
-    const put = await answer(
-      request('PUT /items/{id}', 'i1', '{"name":"Lamp","quantity":3}'),
-      store,
-      noLog,
-    );
-    const got = await answer(request('GET /items/{id}', 'i1'), store, noLog);
+    const put = await send(request('PUT /items/{id}', 'i1', '{"name":"Lamp","quantity":3}'), store);
+    const got = await send(request('GET /items/{id}', 'i1'), store);
 
     expect(put.statusCode).toBe(200);
     expect(got).toEqual({
@@ -81,11 +87,7 @@ describe('answer', () => {
   it('reads a base64-encoded body', async () => {
     const body = Buffer.from('{"name":"Zoë","quantity":1}').toString('base64');
 
-    const put = await answer(
-      request('PUT /items/{id}', 'i1', body, true),
-      new MemoryStore(),
-      noLog,
-    );
+    const put = await send(request('PUT /items/{id}', 'i1', body, true), new MemoryStore());
 
     expect(put.body).toBe('{"id":"i1","name":"Zoë","quantity":1}');
   });
@@ -97,7 +99,7 @@ describe('answer', () => {
     { name: 'a bad body', event: request('PUT /items/{id}', 'i1', '{"name":""}'), status: 400 },
     { name: 'an unknown route', event: request('DELETE /items/{id}', 'i1'), status: 404 },
   ])('answers $status for $name', async ({ event, status }) => {
-    const response = await answer(event, new MemoryStore(), noLog);
+    const response = await send(event, new MemoryStore());
 
     expect(response.statusCode).toBe(status);
     expect(JSON.parse(response.body)).toHaveProperty('message');
@@ -106,16 +108,20 @@ describe('answer', () => {
   it('answers 500 without details when the store fails, and logs why', async () => {
     const logged: Readonly<Record<string, unknown>>[] = [];
 
-    const response = await answer(
+    const response = await send(
       request('GET /items/{id}', 'i1'),
       new MemoryStore(true),
-      (entry) => logged.push(entry),
+      (message, attributes) => logged.push({ message, ...attributes }),
     );
 
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain('timeout');
     expect(logged).toEqual([
-      expect.objectContaining({ level: 'ERROR', requestId: 'request-1', error: 'timeout' }),
+      expect.objectContaining({
+        message: 'The request failed.',
+        requestId: 'request-1',
+        error: 'timeout',
+      }),
     ]);
   });
 });
