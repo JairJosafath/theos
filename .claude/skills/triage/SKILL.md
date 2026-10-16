@@ -26,6 +26,13 @@ JairJosafath/c4factory --state open --limit 200 --json
 number,title,labels,milestone` (gh has the token). `hack/lib/github.sh
 milestones` lists the open milestones; ROADMAP.md says each one's outcome.
 
+What reaches you is an agent's follow-up that needs a decision. A decided one
+(a bug whose failing test its finder names, a chore or doc whose Done-when it
+states) is filed with `hack/lib/github.sh create --next`: ready at once and
+reserved for the finder's worktree, whose next relay session starts on it;
+every other worker's pick skips it for `C4_LEASE_TTL` (2h), then anyone picks
+it. It never passes through triage: leave it alone, as every ready issue.
+
 ## What you check, per issue
 
 - One piece of work, whose goal fits docs/design.md or says which part of the

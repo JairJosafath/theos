@@ -7,7 +7,8 @@
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
 # worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing; and idle workers,
+# session the relay ends when its transcript stops growing, and each session's
+# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -122,6 +123,15 @@ for c in unset none; do
   check "prompt, C4_CLUSTER $c: no cluster steps" "$(grep -cE 'cluster acquire|cluster release|make deploy|--fresh|needs/cluster' <<<"$out")" 0
   check "prompt, C4_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
 done
+
+# A follow-up (#1284): fixed in the pull request when it is already there,
+# filed --next when decided, proposed when it needs a decision; a session on
+# a --next issue is told where it came from.
+out=$(prompt 1 t u ready n b)
+check "prompt: a small follow-up goes in the pull request" "$(grep -c 'Also fixes:' <<<"$out")" 1
+check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.sh create --next TITLE FILE' <<<"$out")" 1
+check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
+check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
 
 # A session escalates to the maintainer, never to the user.
 out=$(prompt 1 t u ready n b)
@@ -271,6 +281,9 @@ case $(cat "$FAKE") in
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
+  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
+    d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
+    echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"tmp","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
   handoff) echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"handed off","num_turns":9}' ;;
   lease) sleep 3; cp "$LEASES" "$LEASES.during"; echo '{"is_error":false,"result":"swept","num_turns":9}' ;;
@@ -384,6 +397,19 @@ check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
+check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
+no_strikes
+
+# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
+# /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
+echo tmp >"$FAKE"
+mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+work
+check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
 # Failed sessions are strikes, comments on the issue: a handoff or a commit
@@ -396,7 +422,10 @@ check "fails: not yet the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 grep -q "^\*\*Strike:\*\* session .* exit 0 after 0m" "$T/comment"; check "fails: a strike names its session" $? 0
 check "fails: a strike has its stderr and account" "$(grep -c '^boom \|^gave up$' "$T/comment")" 2
 echo handoff >"$FAKE"
+pick() { ISSUE=175 TITLE=t URL=u HOW=next; }
 work
+pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
+check "next: the log names the issue a --next reserved (#1284)" "$(grep -c 'session 1 start: id .*, otter-175 on #175 (next) t' "$LOG")" 1
 check "fails: a handoff resets" "$(counted)" 0
 check "fails: the reset is a comment" "$(head -1 "$T/comment")" "$STRIKE_RESET_MARKER"
 echo fail >"$FAKE"

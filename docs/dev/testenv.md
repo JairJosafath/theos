@@ -111,6 +111,29 @@ sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) an
 `internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
 outside the package, so `//go:embed` can't reach them.
 
+In a checkout, `make test` answers each unchanged package from Go's test
+cache, `ok <package> (cached)`, in no time (#1282). Go keys a package's result
+on its test binary (the package and all it imports), the `go test` flags, the
+value of each environment variable the test read (`KUBEBUILDER_ASSETS`,
+`HELM`, the `ETCD_*` of `ENVTEST_ENV`) and the size and mtime of each file in
+the module it opened (the CRDs, the role, the admission policy, `templates/`).
+So a change to `hack/`, docs or the UI reruns no Go test, and a changed CRD
+reruns the suites that read it. controller-gen rewrites every file it
+generates, changed or not, so `manifests` and `generate` run it through
+`hack/keep-mtime.sh`, which gives a file rewritten with the same bytes its old
+mtime back. envtest reserves each port it hands out as a file in
+`$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
+`.dev/`, inside the module, where each envtest run changed a directory the
+other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
+(`$TMPDIR/c4factory-test-cache`, one per device) and keeps `GOCACHE`. A
+result is not cached when a file the test read changed in the 2 seconds
+before; the next run caches it. Coverage is collected only when
+asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
+To rerun what is cached, `FORCE=1 make test` (or `FORCE=1 make check`, which
+skips the check cache too) passes `-count=1`; `go clean -testcache` forgets
+every cached result. `hack/keep-mtime_test.sh` tests the script and the flags
+`make test` passes.
+
 The agents' Claude token lives in one file per device, outside git:
 `.dev/secrets/claude-token` in the main checkout (the `.dev/` every worktree
 shares), mode 0600. Make it once, from the main checkout:
@@ -279,7 +302,8 @@ hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cr
 touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
-The relay picks the oldest `status/in-progress` issue nobody holds, else the
+The relay picks the issue its worker's last session reserved (`create --next`,
+below), else the oldest `status/in-progress` issue nobody holds, else the
 oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
 one, skipping issues with a live claim or an open `Depends on #M`, and claims
 it (see [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
@@ -291,6 +315,25 @@ holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
 (`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
+A follow-up a session decided goes to the front of its own worker's queue:
+`hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
+`status/ready` and reserves it, with a claim comment that says "reserved this
+issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
+returns it before every other issue, urgent ones too, and its `take` turns
+the reservation into the claim; every other `pick` skips it and every other
+`take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
+which anyone picks it. The log shows such a session as `(next)`. The watch's
+`pick` counts every worker's `.relay/next`, so a reserved issue starts the
+relay after its worker stopped. Outside a worker's session (a hand-started
+one, the triage's, the maintainer's: `C4_RELAY_WORKER`, which the relay sets,
+is no number) `--next` files the issue ready and reserves nothing.
+Follow-ups that need a decision are still filed `status/proposed` for the
+triage.
+Each session, the triage's and the maintainer's too, gets
+`TMPDIR=<its worktree>/.dev/tmp` (#1269), on disk and gitignored, not the
+device's `/tmp`, a small tmpfs every session shares, which one session's
+scratch, Go's build dirs and envtest's once filled: the relay empties it before
+the session starts and removes it when the session ends.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -405,7 +448,7 @@ dropped: nine workers grow Go's build cache by gigabytes an hour.
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
 `status/proposed` issues: for a new one, for one that changed since the last
 triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
-in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
 `WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
 `WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
 `.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
@@ -450,6 +493,13 @@ long removes both lines. `make gh-runner-status` says why (below). A run
 GitHub made no jobs for stays queued for good, and GitHub won't cancel it
 (#1236): no runner can take it, so the watch logs it once, by id
 (`.relay/runs-without-jobs`), and never notes it.
+In the same round, when `/tmp` on the device is at least `WATCH_TMP_FULL`
+percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
+naming its three largest entries, under the Maintainer report's Health only,
+with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
+`.relay/tmp-full` holds the note while it lasts; the first round under the
+threshold removes it. Relay sessions keep their scratch in their worktree's
+`.dev/tmp`, so what fills `/tmp` is someone else's.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -682,6 +732,8 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
+  On a miss, Go's test cache (above) still answers each unchanged package: a
+  `hack/`-only change reruns the other tiers, not the envtest suites.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;

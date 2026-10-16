@@ -28,16 +28,21 @@ func renderOperations(t *testing.T, typ, framework string, c model.OperationsCho
 }
 
 // awsOperationsFrameworks is every AWS Framework that renders the block, with
-// the alarm its runbook branch must name and a line only that branch has.
+// the alarm its runbook branch must name and a line only that branch has, and
+// whether it keeps its data as a bucket's versions instead of in a backup plan.
 var awsOperationsFrameworks = []struct {
 	side
-	runbook []string
+	runbook  []string
+	versions bool
 }{
-	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}},
+	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}, false},
 	{side{model.TypeService, "aws-fargate-ts"}, []string{
 		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
 		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
-	}},
+	}, false},
+	{side{model.TypeStaticSite, "aws-static-site-ts"}, []string{
+		"Site-Fault-Rate-Critical", "Deploy-Fault-Count-Critical", "list-object-versions", "create-invalidation",
+	}, true},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
@@ -103,6 +108,26 @@ func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
 	}
 }
 
+// runbookSays is what each Framework with operations has its runbook say for
+// a Container whose block sets every field but retentionDays (35, the
+// default): the block's values and the steps its kind of data shares;
+// awsOperationsFrameworks adds the lines only its own branch has.
+var runbookSays = map[string][]string{
+	"aws-lambda-ts":  tableRunbookSays,
+	"aws-fargate-ts": tableRunbookSays,
+	"aws-static-site-ts": {
+		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
+		"continue-update-rollback", "GuardDuty",
+	},
+}
+
+// tableRunbookSays is what the runbook of a Framework keeping a table says.
+var tableRunbookSays = []string{
+	"(RPO): 15m", "(RTO): 2h", "kept 35 days, each copied to eu-west-1", "ops@example.com",
+	"restore-table-to-point-in-time", "continue-update-rollback", "GuardDuty",
+	"-backup-copy",
+}
+
 func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T) {
 	for _, f := range awsFrameworks {
 		t.Run(f.Name, func(t *testing.T) {
@@ -110,13 +135,11 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 				CopyToRegion: "eu-west-1", RPO: "15m", RTO: "2h", Email: "ops@example.com",
 			})
 			runbook, ok := r.Files["docs/runbook.md"]
-			var own []string
-			for _, o := range awsOperationsFrameworks {
-				if o.Name == f.Name {
-					own = o.runbook
-				}
+			wanted, has := runbookSays[f.Name]
+			if has != hasOperations(f.Name) {
+				t.Fatalf("runbookSays and awsOperationsFrameworks disagree on %s", f.Name)
 			}
-			if !hasOperations(f.Name) {
+			if !has {
 				// The other Frameworks' branches come with their own steps.
 				if ok {
 					t.Errorf("aws-standard writes docs/runbook.md for %s, which has no operations yet", f.Name)
@@ -126,22 +149,48 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 			if !ok {
 				t.Fatalf("aws-standard writes no docs/runbook.md for %s", f.Name)
 			}
-			for _, w := range append([]string{
-				"(RPO): 15m", "(RTO): 2h", "kept 35 days, each copied to eu-west-1", "ops@example.com",
-				"restore-table-to-point-in-time", "continue-update-rollback", "GuardDuty",
-				"-backup-copy",
-			}, own...) {
+			var own []string
+			for _, o := range awsOperationsFrameworks {
+				if o.Name == f.Name {
+					own = o.runbook
+				}
+			}
+			for _, w := range append(append([]string{}, wanted...), own...) {
 				if !strings.Contains(string(runbook.Data), w) {
 					t.Errorf("docs/runbook.md lacks %q", w)
 				}
 			}
+			if _, ok := r.Files["infra/operations.ts"]; !ok {
+				t.Errorf("%s writes no infra/operations.ts", f.Name)
+			}
 		})
+	}
+}
+
+// The static site keeps its files' earlier versions where a table would be
+// backed up: the runbook says for how long, and that there is no backup plan.
+func TestAWSStandardRunbookKeepsTheSitesVersions(t *testing.T) {
+	for _, tt := range []struct {
+		days int32
+		want string
+	}{{0, "35 days"}, {35, "35 days"}, {90, "90 days"}} {
+		r := renderOperations(t, model.TypeStaticSite, "aws-static-site-ts", model.OperationsChoices{RetentionDays: &tt.days})
+		runbook := string(r.Files["docs/runbook.md"].Data)
+		if !strings.Contains(runbook, "earlier versions for "+tt.want) {
+			t.Errorf("retentionDays %d: docs/runbook.md doesn't say it keeps earlier versions for %s", tt.days, tt.want)
+		}
+		if strings.Contains(runbook, "## Restore from a backup in the vault") {
+			t.Errorf("retentionDays %d: docs/runbook.md restores from a vault the site has none of", tt.days)
+		}
 	}
 }
 
 func TestAWSStandardRunbookSaysWhenThereAreNoBackups(t *testing.T) {
 	none := int32(0)
 	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // TestAWSStandardRunbookKeepsTheSitesVersions
+		}
 		t.Run(f.Name, func(t *testing.T) {
 			r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RetentionDays: &none})
 			runbook := string(r.Files["docs/runbook.md"].Data)

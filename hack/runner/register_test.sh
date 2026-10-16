@@ -32,8 +32,12 @@ check "  registers once, with the token, name and labels" "$(calls)" \
 check "  writes the runner file" "$(cat "$T/data/.runner")" '{"token":"runner-own"}'
 
 rm "$T/calls"
-register RUNNER_TOKEN=reg-token; check "register again" $? 0
-check "  keeps the runner file, registers nothing" "$(calls)" ""
+echo '{"token":"before-restart"}' >"$T/data/.runner"
+register RUNNER_TOKEN=reg-token; check "register again, the pod restarted" $? 0
+check "  registers a new runner, not the one that stopped (#1143)" "$(calls)" \
+	"register --no-interactive --config $T/config.yaml --instance http://gitea:3000 --token reg-token --name runner-1 --labels go:host"
+check "  replaces the runner file" "$(cat "$T/data/.runner")" '{"token":"runner-own"}'
+rm "$T/calls"
 
 # The runner writes the file its config names; both scripts look for it there.
 file=$(sed -n 's/^  file: //p' "$DIR/config.yaml")

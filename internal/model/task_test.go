@@ -1083,7 +1083,7 @@ func TestRunnerAbandoned(t *testing.T) {
 	}
 }
 
-func TestCancelledRun(t *testing.T) {
+func TestCancelledRuns(t *testing.T) {
 	cancelled := WorkflowRun{Workflow: "check.yaml", Event: "pull_request", Status: CIRunCompleted,
 		Conclusion: "cancelled"}
 	failed, passed := cancelled, cancelled
@@ -1099,8 +1099,8 @@ func TestCancelledRun(t *testing.T) {
 		{name: "a cancelled run whose rerun passed", runs: []WorkflowRun{passed, cancelled}},
 		{name: "no runs"},
 	} {
-		if got := CancelledRun(tc.runs); got != tc.want {
-			t.Errorf("%s: CancelledRun() = %v, want %v", tc.name, got, tc.want)
+		if got := len(CancelledRuns(tc.runs)) > 0; got != tc.want {
+			t.Errorf("%s: CancelledRuns() = %v, want some: %v", tc.name, CancelledRuns(tc.runs), tc.want)
 		}
 	}
 }
@@ -1116,8 +1116,8 @@ func TestAbandonedChecksRunAgain(t *testing.T) {
 		name string
 		f    TaskFacts
 	}{
-		{name: "a cancelled run", f: TaskFacts{CIRun: CIRun{State: CIRunCompleted, Cancelled: true},
-			ChecksLog: at + "Job cancelled\n"}},
+		{name: "a run its runner cancelled", f: TaskFacts{CIRun: CIRun{State: CIRunCompleted,
+			CancelledBy: CancelledByRunner}, ChecksLog: at + "Job cancelled\n"}},
 		{name: "no log", f: TaskFacts{ChecksNoLog: true}},
 		{name: "a lost runner's log", f: TaskFacts{ChecksLog: at + "go test ./...\n" + at + "=== RUN   TestA\n"}},
 	} {
@@ -1156,6 +1156,87 @@ func TestAbandonedChecksRunAgain(t *testing.T) {
 		ChecksLog: at + "--- FAIL: TestA (0.00s)\n" + at + "FAIL\n" + at + "Job failed\n"}
 	if got := NextTaskStep(failed); got.Action != ActionRetry {
 		t.Errorf("a run the change failed: NextTaskStep() = %+v, want ActionRetry, a fix round", got)
+	}
+}
+
+func TestCanceller(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	long, just := now.Add(-RunnerGoneAfter-time.Second), now.Add(-30*time.Second)
+	stayed := CIJob{Conclusion: "cancelled", Runner: 4, RunnerOnline: true, Ended: long}
+	gone := CIJob{Conclusion: "cancelled", Runner: 5, Ended: long}
+	passed := CIJob{Conclusion: "success", Runner: 6, Ended: just}
+	for _, tc := range []struct {
+		name string
+		jobs []CIJob
+		read bool
+		want string
+	}{
+		// #1143: a person's cancel in Gitea leaves its runner online, taking the next job.
+		{name: "a runner that stayed online", jobs: []CIJob{stayed}, read: true, want: CancelledByPerson},
+		{name: "a job no runner started", jobs: []CIJob{{Conclusion: "cancelled", Ended: just}}, read: true,
+			want: CancelledByPerson},
+		{name: "a job that passed, its runner gone since", jobs: []CIJob{stayed, passed}, read: true,
+			want: CancelledByPerson},
+		{name: "no cancelled job", read: true, want: CancelledByPerson},
+		// A runner told to stop cancels its job and goes away; its pod's
+		// successor registers as a new runner.
+		{name: "a runner gone offline", jobs: []CIJob{stayed, gone}, read: true, want: CancelledByRunner},
+		{name: "a runner gone offline just now", jobs: []CIJob{{Conclusion: "cancelled", Runner: 5, Ended: just}},
+			read: true, want: CancelledByRunner},
+		{name: "a runner the host doesn't say of", jobs: []CIJob{{Conclusion: "cancelled", Runner: 4,
+			RunnerUnknown: true, Ended: long}}, read: true, want: CancelledByRunner},
+		{name: "jobs that couldn't be read", read: false, want: CancelledByRunner},
+		{name: "a runner still online just after", jobs: []CIJob{stayed, {Conclusion: "cancelled", Runner: 6,
+			RunnerOnline: true, Ended: just}}, read: true, want: CancelledByUnsure},
+	} {
+		if got := Canceller(tc.jobs, tc.read, now); got != tc.want {
+			t.Errorf("%s: Canceller() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestPersonCancelledChecks walks a round whose CI run a person cancelled in
+// Gitea (#1143): it costs the round, with feedback saying so, as any failed
+// check does, while the same run cancelled by its runner runs again at no
+// round, and one whose canceller can't be told yet waits.
+func TestPersonCancelledChecks(t *testing.T) {
+	const at = "2026-10-16T12:00:00.1234567Z "
+	f := TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "failure", ChecksURL: "http://ci/1143",
+		CIRun:     CIRun{State: CIRunCompleted, CancelledBy: CancelledByPerson},
+		ChecksLog: at + "go test ./...\n" + at + "Job cancelled\n"}
+	got := NextTaskStep(f)
+	if got.Action != ActionRetry || !strings.Contains(got.Feedback, "The CI checks failed (http://ci/1143)") ||
+		!strings.Contains(got.Feedback, "Someone cancelled the checks before they ended") {
+		t.Errorf("a person's cancel: NextTaskStep() = %+v, want ActionRetry, a fix round saying so", got)
+	}
+	merged := f
+	merged.MergeWhenChecksPass = true
+	if got := NextTaskStep(merged); got.Action != ActionRetry || !strings.Contains(got.Feedback, "main moved") ||
+		!strings.Contains(got.Feedback, "Someone cancelled the checks") {
+		t.Errorf("a person's cancel with main merged in: NextTaskStep() = %+v, want both said", got)
+	}
+	// Another run's runner died at the same commit: its cut-off log still says so.
+	lost := f
+	lost.ChecksLog = at + "go test ./...\n" + at + "=== RUN   TestA\n"
+	if got := NextTaskStep(lost); got.Action != ActionRerunChecks {
+		t.Errorf("a person's cancel next to a lost runner's job: NextTaskStep() = %+v, want ActionRerunChecks", got)
+	}
+	last := f
+	last.Round = 3
+	if got := NextTaskStep(last); got.Action != ActionFail || got.Reason != "" || RunnerFault(got.Reason) {
+		t.Errorf("a person's cancel in the last round: NextTaskStep() = %+v, want ActionFail costing a try", got)
+	}
+
+	runner := f
+	runner.CIRun.CancelledBy = CancelledByRunner
+	if got := NextTaskStep(runner); got.Action != ActionRerunChecks || got.Feedback != "" {
+		t.Errorf("a runner's cancel: NextTaskStep() = %+v, want ActionRerunChecks at no round", got)
+	}
+
+	unsure := f
+	unsure.CIRun.CancelledBy = CancelledByUnsure
+	if got := NextTaskStep(unsure); got.Action != ActionWait || !strings.Contains(got.Message, "2 minutes") {
+		t.Errorf("a cancel not yet told: NextTaskStep() = %+v, want ActionWait", got)
 	}
 }
 
