@@ -107,8 +107,9 @@
 # branch this checkout has, and keep their state (.relay/) here (#1126,
 # hack/lib/relay-code.sh). RELAY_PULL=0 keeps it on the code where it was
 # started, to try relay changes from a branch. Every WATCH_TRIM_EVERY seconds
-# (default 1800) it runs hack/trim-go-cache.sh: nine workers' builds grow Go's
-# build cache by gigabytes an hour, faster than opening VS Code trims it.
+# (default 1800) it runs hack/prune-caches.sh: nine workers' builds grow Go's
+# build cache by gigabytes an hour, faster than opening VS Code trims it, and
+# the GH runners' cache volume and Docker's build cache grow too (#1343).
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
@@ -206,7 +207,7 @@ run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
-trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
+trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
 # tmp_use: the percent of /tmp's filesystem in use, a bare number.
 tmp_use() { df -P /tmp | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'; }

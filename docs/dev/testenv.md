@@ -496,8 +496,22 @@ to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
 the main checkout. One started from the checkout moves there at its first pull,
 and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
 the code where they were started, to try relay changes from a branch. Every 30 minutes
-(`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
-dropped: nine workers grow Go's build cache by gigabytes an hour.
+(`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
+dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
+Docker Desktop's disk images never shrink (#1343). It prunes:
+- with `hack/trim-go-cache.sh`, Go's build cache (`GOCACHE`), golangci-lint's
+  and Go's default cache `~/.cache/go-build`, which `go` runs outside `./dev`
+  fill, to `C4_GOCACHE_MAX_GB` (4) each; `C4_TRIM_GO=0` turns it off;
+- the GH runners' cache volume `c4factory-gh-runner-cache`: the same trim over
+  its `go-build` and `golangci-lint`, in a throwaway container of the runner
+  image, keeping what was used in the last two hours, so a running job keeps
+  its cache; skipped without the volume or the image,
+  `C4_PRUNE_RUNNER_CACHE=0` turns it off;
+- Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
+  builds stay warm) and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
+
+Without `docker` it skips the last two.
+
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
 `status/proposed` issues: for a new one, for one that changed since the last
 triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
