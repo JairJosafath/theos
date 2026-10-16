@@ -6,7 +6,7 @@
 import type { Agent, Task, TaskAgentRun, TokenUsage } from '../k8s/types'
 import { formatTokens } from './brief'
 import { plural } from './describe'
-import { taskHeadline, taskKey } from './factory'
+import { findAgent, median, taskHeadline, taskKey } from './factory'
 
 /** How a run's Task ended: merged, failed, or not yet. */
 export type Outcome = 'merged' | 'failed' | 'active'
@@ -161,7 +161,7 @@ export function agentTokens(tasks: Task[], agents: Agent[]): AgentTokens[] {
 }
 
 function newEntry(agents: Agent[], namespace: string, name: string): AgentTokens {
-  const agent = agents.find((a) => a.metadata.name === name && (a.metadata.namespace ?? '') === namespace)
+  const agent = findAgent(agents, namespace, name)
   return {
     key: `${namespace}/${name}`,
     name,
@@ -189,19 +189,13 @@ export function outcomeRows(points: RunPoint[], limit: number | undefined): Outc
       tasks: rounds.size,
       meanRounds: [...rounds.values()].reduce((a, b) => a + b, 0) / rounds.size,
       runs: runs.length,
-      medianLargest: median(runs.map((p) => p.largest)),
+      medianLargest: median(runs.map((p) => p.largest)) ?? 0,
       meanTotal: totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : undefined,
       pastLimit: limit === undefined ? 0 : runs.filter((p) => p.largest > limit).length,
       handedOff: runs.filter((p) => p.handoffs.length > 0).length,
     })
   }
   return rows
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
 /**

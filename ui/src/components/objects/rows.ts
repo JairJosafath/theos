@@ -112,7 +112,7 @@ export function agentRuns(task: Task): AgentRun[] {
   })
   const status = task.status
   if (status?.sandbox && !isFinal(status.phase)) {
-    const role = sandboxRole(status.sandbox) ?? (status.phase === 'Reviewing' ? 'review' : defaultRole(task))
+    const role = sandboxRole(status.sandbox) ?? (status.phase === 'Reviewing' ? 'review' : runRole(task, {}))
     const history = status.history ?? []
     const at = history[history.length - 1]?.at ?? status.phaseChangedAt ?? ''
     runs.push({
@@ -125,10 +125,6 @@ export function agentRuns(task: Task): AgentRun[] {
     })
   }
   return runs
-}
-
-function defaultRole(task: Task): RunRole {
-  return runRole(task, {})
 }
 
 /**

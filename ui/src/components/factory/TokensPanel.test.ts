@@ -2,7 +2,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { demoStory } from '../../demo/fixture'
-import type { Task } from '../../k8s/types'
+import type { Problem } from '../../k8s/sources'
+import type { Agent, Task } from '../../k8s/types'
 import { TokensPanel } from './TokensPanel'
 
 const text = (html: string) =>
@@ -13,13 +14,13 @@ const text = (html: string) =>
 
 const story = demoStory(Date.parse('2026-10-16T04:00:00Z'))
 
-function panel(tasks: Task[] = story.tasks, loaded = true) {
+function panel(tasks: Task[] = story.tasks, loaded = true, agents: Agent[] = story.agents, problems: Problem[] = []) {
   return renderToStaticMarkup(
     createElement(TokensPanel, {
       tasks,
-      agents: story.agents,
+      agents,
       loaded,
-      problems: [],
+      problems,
       pageHref: (ns: string, kind: string, name: string) => `/?ns=${ns}&kind=${kind}&name=${name}`,
     }),
   )
@@ -72,7 +73,25 @@ describe('What agent runs use (#1086)', () => {
     }))
     const html = panel(standIn)
     expect(html).not.toContain('tokens-chart')
-    expect(text(html)).toContain('None of the 12 agent runs that ended reported its tokens yet')
+    expect(text(html)).toContain('None of the 12 agent runs that ended reported how large it got')
     expect(text(panel([], false))).toContain('Loading the agent runs…')
+  })
+
+  it('tells an Agent it can’t read from one that is gone', () => {
+    const forbidden: Problem = { what: 'agents', code: 403, message: 'agents is forbidden', resource: 'agents' }
+    expect(text(panel(story.tasks, true, [], [forbidden]))).toContain(
+      'The Agents could not be read, so the limit of Agent claude-implementer is unknown.',
+    )
+    const gone = text(panel(story.tasks, true, []))
+    expect(gone).toContain('Agent claude-implementer is gone, so its limit is unknown.')
+    expect(gone).not.toContain('limit 130k')
+  })
+
+  it('numbers the rounds alone when the bands are too narrow to say "Round 10"', () => {
+    const [first] = story.tasks
+    const long = { ...first, status: { ...first.status, round: 10, runs: [{ ...first.status!.runs![0], round: 10 }] } }
+    const labels = [...panel([long]).matchAll(/text-anchor="middle">(.*?)<\/text>/g)].map((m) => m[1])
+    expect(labels).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+    expect(panel()).toContain('>Round 3</text>')
   })
 })

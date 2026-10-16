@@ -4,7 +4,7 @@
 
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import type { Problem } from '../../k8s/sources'
-import type { Agent, Task } from '../../k8s/types'
+import { RESOURCES, type Agent, type Task } from '../../k8s/types'
 import { formatTokens } from '../../model/brief'
 import { plural } from '../../model/describe'
 import {
@@ -40,6 +40,8 @@ export function TokensPanel({
   const [picked, setPicked] = useState<string>()
   const shown = charted.find((a) => a.key === picked) ?? charted[0]
   const id = useId()
+  // An Agent the panel can't find may only be unreadable: the Agents are an optional read.
+  const agentsUnread = problems.some((p) => p.resource === RESOURCES.agents)
   const namespaces = new Set(charted.map((a) => a.namespace))
   const label = (a: AgentTokens) =>
     `${a.title}${namespaces.size > 1 ? ` (${a.namespace})` : ''}${a.limit ? ` · limit ${formatTokens(a.limit)}` : ''}`
@@ -58,7 +60,7 @@ export function TokensPanel({
         loading="Loading the agent runs…"
         emptyText={
           unreported
-            ? `None of the ${plural(unreported, 'agent run')} that ended reported its tokens yet; the stand-in agent reports none.`
+            ? `None of the ${plural(unreported, 'agent run')} that ended reported how large it got; the stand-in agent reports none.`
             : 'No agent run has ended yet: each shows here once its Task records it.'
         }
         small
@@ -92,9 +94,9 @@ export function TokensPanel({
               <OutcomeTable agent={shown} />
             </div>
             <p className="panel-note">
-              {limitNote(shown)}
+              {limitNote(shown, agentsUnread)}
               {shown.unreported
-                ? ` ${plural(shown.unreported, 'more run')} of this Agent didn’t report ${shown.unreported > 1 ? 'their' : 'its'} tokens.`
+                ? ` ${plural(shown.unreported, 'more run')} of this Agent didn’t report how large ${shown.unreported > 1 ? 'they' : 'it'} got.`
                 : ''}
             </p>
           </>
@@ -104,12 +106,17 @@ export function TokensPanel({
   )
 }
 
-function limitNote(agent: AgentTokens): string {
-  if (!agent.found) return `Agent ${agent.name} is gone, so its limit is unknown.`
+function limitNote(agent: AgentTokens, agentsUnread: boolean): string {
+  if (!agent.found)
+    return agentsUnread
+      ? `The Agents could not be read, so the limit of Agent ${agent.name} is unknown.`
+      : `Agent ${agent.name} is gone, so its limit is unknown.`
   if (agent.limit === undefined) return `Agent ${agent.name} sets no session token limit.`
   return `A run past ${formatTokens(agent.limit)} hands off to a fresh session; spec.sessionTokenLimit on Agent ${agent.name} sets it.`
 }
 
+/** The narrowest band that fits "Round 10"; a narrower one says only the number. */
+const ROUND_LABEL_WIDTH = 64
 /** The width the chart draws at before it has measured its own, as on the server. */
 const WIDTH = 640
 const H = 220
@@ -156,7 +163,7 @@ function RunChart({ agent, pageHref }: { agent: AgentTokens; pageHref: ObjectHre
                 />
               ) : null}
               <text className="tokens-tick" x={LEFT + (r - 0.5) * band} y={H - 6} textAnchor="middle">
-                Round {r}
+                {band >= ROUND_LABEL_WIDTH ? `Round ${r}` : r}
               </text>
             </g>
           ))}
@@ -212,7 +219,7 @@ function Mark({ outcome, handedOff, x, y }: { outcome: Outcome; handedOff: boole
 
 function Legend({ limit }: { limit: boolean }) {
   return (
-    <div className="spark-legend tokens-legend">
+    <div className="tokens-legend">
       {OUTCOMES.map((o) => (
         <span key={o.key}>
           <LegendKey>
