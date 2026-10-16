@@ -1,6 +1,7 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
+{{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -363,7 +364,7 @@ says why each rule matters.
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
 Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
-handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
+handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else if $schedule }}its asynchronous invocation page, the EventBridge Scheduler user guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
 {{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -448,6 +449,11 @@ says why each rule matters.
 - `src/handler.ts` exports `handler`, which takes an `SQSEvent`, a batch of
   up to 10 messages, and returns an `SQSBatchResponse`: the ids of the
   messages that failed, which SQS delivers again. [review]
+{{- else if $schedule -}}
+- `src/handler.ts` exports `handler`, which takes the schedule's event,
+  `{"scheduledTime": ..., "attemptNumber": ...}`, and returns nothing: a
+  run that throws is retried by Lambda and then sent to the dead-letter
+  queue. [review]
 {{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
@@ -465,11 +471,30 @@ says why each rule matters.
   [lint: @typescript-eslint/no-floating-promises]
 - Never `process.exit()`: it kills the execution environment mid-invocation.
   [lint: no-restricted-properties]
-- Don't keep {{ if $queue }}message{{ else }}request{{ end }} data in module-scope variables: the next invocation in
+- Don't keep {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- end }}
 
-{{ end }}{{ if $queue }}## Messages
+{{ end }}{{ if $schedule }}## Runs
+
+- Validate every event at the boundary: its `scheduledTime` and
+  `attemptNumber`, narrowed from `unknown` with runtime checks. The schedule
+  fills them in, but anyone allowed to invoke the function can send
+  anything. [review]
+- The job's work goes in `runJob` in `src/job.ts`. The handler runs it
+  through `checkingFirst`, which refuses an event that names no run before
+  anything is recorded, and Powertools' Idempotency; never bypass them.
+  [review]
+- A run that fails throws: Lambda retries it twice within the hour, then
+  sends it to the dead-letter queue. [review]
+- Never catch a failure and carry on: a run the handler returns as done is
+  not retried, and its work is lost. [review]
+- A run is delivered at least once, by the schedule's retries or Lambda's:
+  the run is idempotent (Powertools' Idempotency, keyed by its
+  `scheduledTime`). [review]
+- When the job runs is `SCHEDULE` in `infra/job_stack.ts`, a cron or rate
+  expression with its time zone. [review]
+{{ else if $queue }}## Messages
 
 - Validate every message at the boundary: its body and the attributes the
   code reads, narrowed from `unknown` with runtime checks. The queue holds
@@ -509,7 +534,7 @@ says why each rule matters.
 {{- else if $py -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `print`. [lint: T201]
-{{- else if eq .Framework "aws-lambda-ts" "aws-queue-ts" -}}
+{{- else if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
   which `src/handler.ts` makes and hands to the code as its `Log`; never
   `console`. [lint: no-console]
@@ -519,7 +544,7 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
 {{- end }}
-- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else }}request id{{ end }}; errors say what
+- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else }}request id{{ end }}; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
@@ -535,7 +560,7 @@ says why each rule matters.
 {{ end }}
 ## DynamoDB
 
-- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else }}request{{ end }} path is
+- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
 {{ if $go -}}
 - Read and write items as `map[string]types.AttributeValue`, by hand or
@@ -561,10 +586,13 @@ says why each rule matters.
 {{- else if $queue }}
 - Each message runs through Powertools' Idempotency, keyed by its
   `messageId`: a message delivered again writes nothing twice. [review]
+{{- else if $schedule }}
+- Each run runs through Powertools' Idempotency, keyed by its
+  `scheduledTime`: a run delivered again writes nothing twice. [review]
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
@@ -575,7 +603,7 @@ says why each rule matters.
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -628,8 +656,9 @@ says why each rule matters.
 - Wrap each service in one module behind an interface the rest of the code
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
-  loop around it. Catch what you can answer (a failed condition is a 409),
-  let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500. [review]
+  loop around it. {{ if eq .Framework "aws-schedule-ts" }}Catch only what the run can finish without (an item
+  already there); throw the rest, and Lambda runs the run again.{{ else }}Catch what you can answer (a failed condition is a 409),
+  let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500.{{ end }} [review]
 {{- end }}
 
 {{ if eq .Framework "aws-ec2-ts" }}## The network and the load balancer
@@ -686,7 +715,32 @@ says why each rule matters.
   to anyone who can describe the launch template. Read them from Secrets
   Manager at start-up. [review]
 
-{{ else }}{{ if $queue }}## The queue and its event source
+{{ else }}{{ if $schedule }}## The schedule and its dead-letter queue
+
+- Every schedule is in a schedule group of its stack, never the default
+  one: the Scheduler's metrics are per group. [test: every schedule's
+  group]
+- Every schedule's target has a retry policy (`retryAttempts`,
+  `maxEventAge`) and a dead-letter queue; the function, invoked
+  asynchronously, has its own retries and `DeadLetterConfig` naming the
+  same queue. [test: every schedule is retried and dead-lettered]
+- Every schedule group alarms on `InvocationDroppedCount` and
+  `InvocationsFailedToBeSentToDeadLetterCount`, and every dead-letter queue
+  on its first message, from the stack's `Alarms`. [test: the alarms and
+  topic, the dead-letter queues]
+- The schedule has a role of its own, which only `scheduler.amazonaws.com`
+  may assume for this account and group, allowed only
+  `lambda:InvokeFunction` on the one function's ARN and `sqs:SendMessage`
+  on the dead-letter queue; the target takes it `withoutPolicyUpdates()`.
+  [review]
+- The dead-letter queue is encrypted (`QueueEncryption.SQS_MANAGED` or a
+  KMS key), refuses requests without TLS (`enforceSSL: true`) and keeps a
+  message 14 days, the longest SQS keeps one. [nag: AwsSolutions-SQS2,
+  AwsSolutions-SQS4; test: encrypts every queue]
+- The dead-letter queue holds the runs that failed, which are data: kept
+  with the stack in production, like the tables. [review]
+
+{{ else if $queue }}## The queue and its event source
 
 - Every queue has a dead-letter queue, after a set number of deliveries
   (`deadLetterQueue: { queue, maxReceiveCount }`), kept 14 days, the
@@ -744,7 +798,8 @@ says why each rule matters.
 {{- end }}
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
 - Memory and timeout set for the work, the timeout {{ if $queue }}at most a sixth of the queue's
-  visibility timeout{{ else }}under API Gateway's 30
+  visibility timeout{{ else if $schedule }}longer than a run takes, which
+  its p99 duration alarm watches{{ else }}under API Gateway's 30
   seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.
   [nag: AwsSolutions-IAM4]
@@ -775,7 +830,7 @@ says why each rule matters.
 - No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
-  issue needs ({{ if $queue }}a queue setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
+  issue needs ({{ if $queue }}a queue setting{{ else if $schedule }}a schedule setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
 {{ if $go -}}
 - Code that calls AWS is tested through its interface with a fake that
   records the calls and answers from memory. [review]
@@ -794,7 +849,9 @@ says why each rule matters.
 {{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and checking
   the status code and body; `src/server.ts` over HTTP on a loopback port the
   system picks. [review]{{ else if $queue }}- The work per message is tested with a fake store; the batch by building
-  an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else if $schedule }}- `runJob` is tested with an event and a fake store, checking what it
+  stored or that it threw; `checkingFirst` and `reporting` with fake work.
+  [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}
