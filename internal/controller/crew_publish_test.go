@@ -107,6 +107,13 @@ func publishFailedWith(ns, reason, message string) {
 	}, 3*time.Second).Should(Succeed())
 }
 
+// publishWait bounds the wait for a release to be published. Publishing is a
+// chain of Crew polls, one write each: the notes, a draft, each file, the
+// publish, and with its source a commit and a tag first, about ten in all. A
+// loaded device took over 30 s for that chain (#1264); a passing wait returns
+// as soon as the release is out.
+const publishWait = 90 * time.Second
+
 // publishedTo waits for the Crew's release to be published to repository with
 // the notes of its merged issue and files, checks GitHub holds it so, and
 // returns it.
@@ -126,7 +133,7 @@ func publishedTo(ns, repository string, files []fakeFile) fakeGitHubRelease {
 		g.Expect(cond.Reason).To(Equal("Published"))
 		g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
 			HaveField("Reason", "ReleasePublished"), HaveField("Note", "v0.1.0 is published at "+url))))
-	}, 20*time.Second).Should(Succeed())
+	}, publishWait).Should(Succeed())
 
 	releases := githubFake.releases(repository)
 	Expect(releases).To(HaveLen(1))
