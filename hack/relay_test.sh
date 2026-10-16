@@ -6,7 +6,11 @@
 # lease a session leaves behind, which the relay drops; the prompts, which
 # never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
-# worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
+# worktree and lock, which it starts in however many workers run; against a
+# fake origin, switch_branch's three ways to the issue's branch (the local one
+# fast-forwarded, origin's, a new one from origin/main), worktree()'s fetch,
+# creation and stash of what a session left, and update()'s restart when a
+# pull changes the relay's code; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
@@ -247,6 +251,90 @@ echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
+
+# switch_branch, worktree and update (#1129), in a scratch clone of a fake
+# origin, so no stash lands in the real checkout; another device, up, pushes to it.
+(
+  S=$T/sw
+  REPO=$S/repo WT=$S/wt LOG=$S/log GH_PENDING_DIR=$S/wt/.relay K=7 PULL=1 STOP=$S/stop CODE_SUM= DRY_RUN=
+  mkdir -p "$S"
+  # tip REPO REV MSG: a new commit on top of REV, with its tree.
+  tip() { git -C "$1" -c user.name=t -c user.email=t@t commit-tree -p "$2" -m "$3" "$2^{tree}"; }
+  at() { echo "$(git -C "$WT" rev-parse --abbrev-ref HEAD) $(git -C "$WT" rev-parse HEAD)"; }
+  sha() { git -C "$REPO" rev-parse "$1"; }
+  upstream() { git -C "$REPO" for-each-ref --format='%(upstream:short)' "refs/heads/$1"; }
+  git init -q --bare -b main "$S/origin.git"
+  git init -q -b main "$S/up"
+  echo 1 >"$S/up/f"
+  git -C "$S/up" add f
+  git -C "$S/up" -c user.name=t -c user.email=t@t commit -q -m first
+  git -C "$S/up" remote add origin "$S/origin.git"
+  git -C "$S/up" push -q origin main
+  git clone -q "$S/origin.git" "$REPO"
+  git -C "$S/up" push -q origin "$(tip "$S/up" main second):refs/heads/main"
+  # A missing worktree is created after the fetch, detached at origin/main, with .relay ignored.
+  worktree
+  check "worktree: created at the fetched origin/main" "$? $(at)" "0 HEAD $(git -C "$S/origin.git" rev-parse main)"
+  check "worktree: creation logged, .relay ignored" "$(grep -c "created the worktree $WT$" "$LOG") $(cat "$GH_PENDING_DIR/.gitignore")" "1 *"
+  # switch_branch, each way: up pushes a1 ahead of the local one, a2 apart
+  # from it and b, which only origin has; a3 is local only and checked out in
+  # the main checkout, so the switch ignores other worktrees; c is nowhere.
+  m=$(sha origin/main)
+  git -C "$REPO" branch -q a1 "$m"
+  git -C "$REPO" branch -q a2 "$(tip "$REPO" "$m" "local a2")"
+  git -C "$REPO" switch -q -c a3
+  git -C "$S/up" push -q origin "$(tip "$S/up" "$m" "origin a1"):refs/heads/a1" \
+    "$(tip "$S/up" "$m" "origin a2"):refs/heads/a2" "$(tip "$S/up" "$m" "origin b"):refs/heads/b"
+  git -C "$REPO" fetch -q origin
+  switch_branch a1; check "switch: local behind origin, fast-forwarded" "$? $(at)" "0 a1 $(sha origin/a1)"
+  l=$(sha a2)
+  switch_branch a2; check "switch: diverged, the local commit kept" "$? $(at)" "0 a2 $l"
+  check "switch: diverged, logged" "$(grep -c 'local a2 and origin/a2 have diverged; the session sorts it out$' "$LOG")" 1
+  l=$(sha a3)
+  switch_branch a3; check "switch: local only, checked out elsewhere, unchanged" "$? $(at)" "0 a3 $l"
+  switch_branch b; check "switch: origin only, tracking origin/b" "$? $(at) $(upstream b)" "0 b $(sha origin/b) origin/b"
+  switch_branch c; check "switch: neither, from origin/main, no upstream" "$? $(at) $(upstream c)" "0 c $m "
+  # A switch git refuses fails: a name it rejects, or d, whose f a local change would overwrite.
+  switch_branch 'c..d'; check "switch: a name git rejects" "$(($? != 0)) $(at)" "1 c $m"
+  git -C "$REPO" switch -q -c d
+  echo 2 >"$REPO/f"
+  git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -am d
+  echo 3 >"$WT/f"
+  switch_branch d; check "switch: refused over a local change" "$? $(at)" "1 c $m"
+  # What a dead session left uncommitted, a changed file and a new one, is
+  # stashed in the scratch clone, and the tree is clean.
+  echo new >"$WT/n"
+  worktree
+  check "worktree: stashed" "$? $(git -C "$WT" stash list | grep -c ': relay-7: left uncommitted on c, ') $(git -C "$WT" stash show --include-untracked --name-only | paste -sd,)" "0 1 f,n"
+  check "worktree: clean after, logged" "$(git -C "$WT" status --porcelain) $(grep -c "stashed uncommitted changes left in $WT " "$LOG")" " 1"
+  # A fetch that fails (origin gone) prepares nothing.
+  mv "$S/origin.git" "$S/gone.git"
+  worktree; check "worktree: the fetch fails" "$? $(grep -c 'git fetch failed$' "$LOG")" "1 1"
+  mv "$S/gone.git" "$S/origin.git"
+  # update: RELAY_PULL=0 pulls nothing; a pull that leaves the relay's code
+  # alone goes on; one that changes it restarts the worker with the sessions
+  # left, unless the stop file is there. Each runs in a subshell, for its exec.
+  cd "$REPO" || exit 1
+  mkdir -p hack
+  echo "echo \"\$MAX_SESSIONS \$C4_RELAY_RESTART\" >$S/restarted" >hack/relay.sh
+  cat >hack/pull.sh <<EOF
+#!/usr/bin/env bash
+echo pulled
+[ ! -e $S/change ] || echo '# changed' >>$REPO/hack/relay.sh
+EOF
+  chmod +x hack/pull.sh
+  CODE_SUM=$(code_sum)
+  : >"$LOG"
+  (PULL=0 update 5); check "update: RELAY_PULL=0 pulls nothing" "$? $(grep -c pulled "$LOG")" "0 0"
+  (update 5); check "update: no change, no restart" "$? $(grep -c pulled "$LOG") $(cat "$S/restarted" 2>/dev/null)" "0 1 "
+  touch "$S/change"
+  (update 5); check "update: a change restarts the worker" "$? $(cat "$S/restarted" 2>/dev/null) $(grep -c 'restarting with 5 sessions left$' "$LOG")" "0 5 1 1"
+  rm -f "$S/restarted"
+  CODE_SUM=$(code_sum)
+  touch "$STOP"
+  (update 4); check "update: the stop file stops it" "$? $(grep -c 'stop file found; stopping$' "$LOG") $(cat "$S/restarted" 2>/dev/null)" "0 1 "
+  exit $fail
+) || fail=1
 
 # The sessions, with claude faked (FAKE: limit, fail, handoff or commit) and
 # GitHub faked: one ready issue, #175 on branch b.
