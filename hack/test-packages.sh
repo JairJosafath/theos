@@ -7,7 +7,13 @@
 # A package is affected when a file in it changed (its directory, or one below
 # it, for embedded files) or its test binary links one that did, so its
 # dependents are tested too. The change is everything since the merge base:
-# commits, staged, unstaged and untracked files.
+# commits, staged, unstaged and untracked files. A changed non-Go file in a
+# package, or a changed //go:embed line, also tests cmd, whose
+# TestDockerContextHasEmbeddedFiles checks the embeds of every package a
+# Dockerfile builds without linking them (#1321).
+#
+# A file directly under test/e2e, the e2e suite, tests nothing; one in a
+# package below it (test/e2e/standin) tests that package (#1321).
 #
 # Every package is tested when:
 #   - TEST_ALL or FORCE is set (FORCE=1 make check reruns all of it),
@@ -62,6 +68,16 @@ for p in "${all[@]}"; do
   dirs[${d:-.}]=$p
 done
 
+# embeds FILE: a //go:embed line of the Go FILE changed since the merge base,
+# or FILE is new and has one.
+embeds() {
+  if git cat-file -e "$base:$1" 2>/dev/null; then
+    git diff "$base" -- "$1" | grep -q '^[-+][[:space:]]*//go:embed'
+  else
+    grep -q '^[[:space:]]*//go:embed' "$1" 2>/dev/null
+  fi
+}
+
 declare -A changed=()
 for f in "${files[@]}"; do
   case "$f" in
@@ -70,17 +86,21 @@ for f in "${files[@]}"; do
       */Dockerfile | *.Dockerfile | .dockerignore | docs/getting-started.md | README.md)
       full "$f changed, which a Go test may read without importing it"
       ;;
-    test/e2e/*) continue ;;
   esac
   # The nearest directory holding a package owns the file: a Go file, or one
-  # it embeds or its tests read.
+  # it embeds or its tests read. The e2e suite's directory owns what is
+  # directly under it, which tests nothing.
   d=$(dirname "$f")
-  while [ -z "${dirs[$d]:-}" ] && [ "$d" != . ]; do d=$(dirname "$d"); done
+  while [ -z "${dirs[$d]:-}" ] && [ "$d" != . ] && [ "$d" != test/e2e ]; do d=$(dirname "$d"); done
   if [ -n "${dirs[$d]:-}" ]; then
     changed[${dirs[$d]}]=1
+    if [ -n "${dirs[cmd]:-}" ] && { [[ "$f" != *.go ]] || embeds "$f"; }; then
+      changed[${dirs[cmd]}]=1
+    fi
     continue
   fi
   case "$f" in
+    test/e2e/*) continue ;;
     # A Go file in no package: a deleted package's, whose importers changed too.
     *.go) [ -e "$f" ] || continue ;;
     docs/* | .claude/* | .vscode/* | ui/* | .github/*) continue ;;
