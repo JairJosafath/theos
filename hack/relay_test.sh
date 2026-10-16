@@ -318,8 +318,17 @@ eval "$(declare -f gh_comments | sed '1s/^gh_comments/gh_comments_api/')"
 gh_comments() { if [ "$1" = 175 ]; then cat "$COMMENTS"; else gh_comments_api "$1"; fi; }
 gh_comment() { cat >"$T/comment"; add_comment "$(cat "$T/comment")"; jq -r 'last.html_url' "$COMMENTS"; }
 counted() { strikes 175 | grep -c .; }
-no_strikes() { echo '[]' >"$COMMENTS"; }
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+# #175's label events, in $EVENTS; a status swap adds one.
+EVENTS=$T/events.json
+echo '[]' >"$EVENTS"
+label_events() { cat "$EVENTS"; }
+no_strikes() { echo '[]' >"$COMMENTS"; echo '[]' >"$EVENTS"; }
+set_status() {
+  echo "$1 $2" >"$T/status"
+  jq --arg l "status/$2" --arg t "$(date -u +%FT%TZ)" '. + [{event: "labeled", created_at: $t, label: {name: $l}}]' \
+    "$EVENTS" >"$EVENTS.new" && mv "$EVENTS.new" "$EVENTS"
+}
+gh_set_status() { set_status "$@"; }
 takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
 : >"$LOG"
@@ -513,11 +522,32 @@ check "swap fails: one escalation comment" "$(jq --arg e "$STRIKE_ESCALATED_MARK
 grep -q "setting it to status/needs-maintainer failed; trying again after the next failed session" "$LOG"
 check "swap fails: logged" $? 0
 n=$(jq length "$COMMENTS")
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+gh_set_status() { set_status "$@"; }
 work
 check "swap retried: the maintainer's" "$(cat "$T/status")" "175 needs-maintainer"
 check "swap retried: no new comment" "$(jq length "$COMMENTS")" "$n"
-check "swap retried: done" "$(test -e "$DIR/escalated-175" && echo kept)" ""
+# Swapped, then set back to ready by the maintainer: a failed session is a
+# strike again, not another swap.
+rm -f "$T/status"
+work
+check "swap done: a strike, not a swap" "$(cat "$T/status" 2>/dev/null) $(counted)" " 1"
+
+# #1213: device A posts the escalation and its swap fails; device B, with
+# nothing of A's in .relay, fails a session on #175 and retries the swap
+# alone: it sets needs-maintainer and posts nothing.
+no_strikes; rm -f "$T/status"
+for i in 1 2 3; do add_comment "$STRIKE_MARKER
+**Strike:** session \`a$i\` on host \`a\`" $((400 - i))
+done
+add_comment "$STRIKE_ESCALATED_MARKER
+The relay stopped working #175" 300
+n=$(jq length "$COMMENTS")
+: >"$LOG"
+work
+check "swap elsewhere #1213: B sets needs-maintainer" "$(cat "$T/status" 2>/dev/null)" "175 needs-maintainer"
+check "swap elsewhere #1213: B posts nothing" "$(jq length "$COMMENTS")" "$n"
+grep -q "#175 reached 3 strikes; set it to status/needs-maintainer: https://github.com/x/issues/175#issuecomment-4" "$LOG"
+check "swap elsewhere #1213: logged" $? 0
 
 # A session whose transcript stops growing is ended and counted as failed; one
 # that keeps writing, or writes none, runs on.
