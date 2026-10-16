@@ -58,7 +58,8 @@ module=$(go list -m)
 declare -A dirs=()
 for p in "${all[@]}"; do
   d=${p#"$module"}
-  dirs[${d#/}]=$p
+  d=${d#/}
+  dirs[${d:-.}]=$p
 done
 
 declare -A changed=()
@@ -74,8 +75,8 @@ for f in "${files[@]}"; do
   # The nearest directory holding a package owns the file: a Go file, or one
   # it embeds or its tests read.
   d=$(dirname "$f")
-  while [ "$d" != . ] && [ -z "${dirs[$d]:-}" ]; do d=$(dirname "$d"); done
-  if [ "$d" != . ]; then
+  while [ -z "${dirs[$d]:-}" ] && [ "$d" != . ]; do d=$(dirname "$d"); done
+  if [ -n "${dirs[$d]:-}" ]; then
     changed[${dirs[$d]}]=1
     continue
   fi
