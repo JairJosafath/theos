@@ -1,0 +1,57 @@
+# make check in a scaffolded aws-schedule-ts v1.0.0 + aws-standard v1.10.0 Container (issue #1115)
+# go run ./hack/render -out $TMPDIR/aws-1115/app -type job -container nightly-report Framework=aws-schedule-ts Standard=aws-standard
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables and an empty HOME, Node v24:
+# env -i PATH=$PATH HOME=$TMPDIR/aws-1115/home NO_COLOR=1 make check
+# on 2026-10-16. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
+# and cfn-lint lints both with --include-checks I.
+
+npm ci --no-audit --no-fund
+
+added 178 packages in 27s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-2/tmp.Yeqlc9JFzV/app
+
+ ✓ src/job.test.ts (8 tests) 27ms
+ ✓ src/runs.test.ts (21 tests) 31ms
+ ✓ src/run_store.test.ts (1 test) 8ms
+
+
+
+
+
+
+
+
+
+
+ ✓ infra/standard.test.ts (59 tests) 6281ms
+
+
+
+
+ ✓ infra/job_stack.test.ts (17 tests) 7811ms
+   ✓ JobStack (15)
+     ✓ defaults the alert email to alerts.email 1223ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 858ms
+     ✓ copies the backups to the vault in copyToRegion 785ms
+
+ Test Files  5 passed (5)
+      Tests  106 passed (106)
+   Start at  22:38:33
+   Duration  10.56s (tests 71%, import 23%, transform 5%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+
+
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit=0

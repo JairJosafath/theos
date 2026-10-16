@@ -41,7 +41,7 @@ function synth(
 function allowedActions(template: Template, role: RegExp): string[] {
   return Object.values(template.findResources('AWS::IAM::Policy'))
     .filter((policy: unknown) =>
-      role.test(JSON.stringify(policy).match(/"Roles":\[\{"Ref":"([^"]+)"/)?.[1] ?? ''),
+      role.test(/"Roles":\[\{"Ref":"([^"]+)"/.exec(JSON.stringify(policy))?.[1] ?? ''),
     )
     .flatMap((policy: unknown) => JSON.stringify(policy).match(/"[a-z0-9]+:[A-Za-z]+"/g) ?? [])
     .sort();
