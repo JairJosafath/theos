@@ -22,14 +22,18 @@
 #   {"number":N,"title":"...","branch":"...","labels":[...],"files":[...],"body":"..."}
 #
 # Where a pull request goes:
-#   - left out when every file it touches is under hack/, .claude/, .relay/ or docs/dev/;
+#   - left out when every file it touches is the developers' own: under hack/,
+#     .claude/, .relay/, docs/dev/, docs/plans/ or docs/screenshots/, or one of
+#     docs/design.md, docs/architecture.md, AGENTS.md, CLAUDE.md, DEVELOPMENT.md,
+#     GOVERNANCE.md and ROADMAP.md (a plan's pull request, #1270);
 #   - Security when a label or its title says security;
 #   - Changed, marked **Breaking**, when its type ends in ! or its body says BREAKING CHANGE;
 #   - left out when its type is chore, ci, test or docs;
 #   - Added for feat, Fixed for fix, Changed for any other type.
 # Its type is the title's conventional-commit prefix (feat(12)!: ...), else the
-# branch's first segment (feat/12-...). Each line is the title without that
-# prefix, then (#N).
+# branch's first segment (feat/12-...). A prefix counts only when it names a
+# Conventional Commits type; "AWS: ..." or "Plan: ..." is part of the title
+# (#1270). Each line is the title without a counted prefix, then (#N).
 #
 #   VERSION   the version the image list and install command name (default TO without its v)
 #   REGISTRY  the images' registry (default ghcr.io/jairjosafath/c4factory)
@@ -73,10 +77,14 @@ collect() {
 # sort: each pull request as "SECTION<TAB>line", or nothing when it's left out.
 sort_prs() {
   jq -r '
-    ([.title | capture("^(?<type>[a-zA-Z]+)(\\([^)]*\\))?(?<bang>!?): *(?<rest>.*)$")] | first // {}) as $cc
+    ([.title | capture("^(?<type>[a-zA-Z]+)(\\([^)]*\\))?(?<bang>!?): *(?<rest>.*)$")
+      | select(.type | ascii_downcase
+          | IN("feat", "fix", "docs", "chore", "ci", "test", "refactor", "perf", "build", "style", "revert"))]
+      | first // {}) as $cc
     | ($cc.type // (.branch | split("/")[0]) | ascii_downcase) as $type
     | ($cc.rest // .title) as $text
-    | select(any(.files[]; test("^(hack|\\.claude|\\.relay|docs/dev)/") | not) or (.files | length == 0))
+    | select(any(.files[]; test("^(hack|\\.claude|\\.relay|docs/dev|docs/plans|docs/screenshots)/|^docs/(design|architecture)\\.md$|^(AGENTS|CLAUDE|DEVELOPMENT|GOVERNANCE|ROADMAP)\\.md$") | not)
+        or (.files | length == 0))
     | if (any(.labels[]; test("security"; "i")) or (.title | test("security"; "i"))) then
         "Security\t- \($text) (#\(.number))"
       elif ($cc.bang == "!" or (.body | test("BREAKING[ -]CHANGE"))) then
