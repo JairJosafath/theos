@@ -111,6 +111,24 @@ sources `typeneutral_test.go` reads), `internal/sessionclient` (envtest CRDs) an
 `internal/scaffold` (`templates_test.go` reads `templates/`). Those files sit
 outside the package, so `//go:embed` can't reach them.
 
+In a checkout, `make test` answers each unchanged package from Go's test
+cache, `ok <package> (cached)`, in no time (#1282). Go keys a package's result
+on its test binary (the package and all it imports), the `go test` flags, the
+value of each environment variable the test read (`KUBEBUILDER_ASSETS`,
+`HELM`, the `ETCD_*` of `ENVTEST_ENV`) and the size and mtime of each file in
+the module it opened (the CRDs, the role, the admission policy, `templates/`).
+So a change to `hack/`, docs or the UI reruns no Go test, and a changed CRD
+reruns the suites that read it. controller-gen rewrites every file it
+generates, changed or not, so `manifests` and `generate` run it through
+`hack/keep-mtime.sh`, which gives a file rewritten with the same bytes its old
+mtime back. A result is not cached when a file the test read changed in the
+2 seconds before; the next run caches it. Coverage is collected only when
+asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
+To rerun what is cached, `FORCE=1 make test` (or `FORCE=1 make check`, which
+skips the check cache too) passes `-count=1`; `go clean -testcache` forgets
+every cached result. `hack/keep-mtime_test.sh` tests the script and the flags
+`make test` passes.
+
 The agents' Claude token lives in one file per device, outside git:
 `.dev/secrets/claude-token` in the main checkout (the `.dev/` every worktree
 shares), mode 0600. Make it once, from the main checkout:
@@ -675,6 +693,8 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
+  On a miss, Go's test cache (above) still answers each unchanged package: a
+  `hack/`-only change reruns the other tiers, not the envtest suites.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;

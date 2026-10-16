@@ -48,13 +48,19 @@ help: ## Display this help.
 # go.mod below the folder, and the module cache in .dev/ (./dev) holds thousands.
 CONTROLLER_GEN_PATHS ?= ./api/...;./cmd/...;./internal/...
 
+# controller-gen rewrites every file it generates, changed or not; a test's
+# result in Go's cache is keyed on the mtime of each file it read, so a file
+# rewritten with the same bytes gets its old mtime back (hack/keep-mtime.sh).
+MANIFEST_FILES = $(wildcard config/crd/bases/*.yaml config/rbac/role.yaml)
+GENERATED_GO = $(shell find api cmd internal -name 'zz_generated.*.go')
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	hack/keep-mtime.sh $(MANIFEST_FILES) -- "$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
+	hack/keep-mtime.sh $(GENERATED_GO) -- "$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -110,9 +116,18 @@ ENVTEST_ETCD_HEARTBEAT_INTERVAL ?= 1000
 ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
 	ETCD_ELECTION_TIMEOUT=$(ENVTEST_ETCD_ELECTION_TIMEOUT) ETCD_HEARTBEAT_INTERVAL=$(ENVTEST_ETCD_HEARTBEAT_INTERVAL)
 
+# Go answers an unchanged package's tests from its test cache, "(cached)": the
+# same test binary, flags and environment variables, and the same size and
+# mtime of every file in the module the test read (the CRDs, templates/). So a
+# change to hack/, docs or the UI reruns no Go test. Coverage is collected only
+# when asked, COVER=1 (CI asks): its instrumented builds are not the ones vet
+# made, and locally nobody reads cover.out. FORCE=1 reruns every package
+# (-count=1); go clean -testcache forgets every result.
+TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(if $(FORCE),-count=1)
+
 .PHONY: test
-test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
-	$(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -timeout $(TEST_TIMEOUT) -coverprofile cover.out
+test: manifests generate fmt vet setup-envtest install-helm ## Run tests; Go's test cache answers unchanged packages (FORCE=1 reruns them, COVER=1 writes cover.out).
+	$(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') $(TEST_FLAGS)
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
