@@ -87,11 +87,15 @@
 # (.relay/paused-until, which hack/relay.sh writes), the watch starts nothing,
 # not even a triage or the maintainer, and logs the pause once.
 #
-# Every 5 minutes it runs
-# hack/pull.sh, so pick never reads stale rules, and restarts itself when that
-# changed this script. Every WATCH_TRIM_EVERY seconds (default 1800) it runs
-# hack/trim-go-cache.sh: nine workers' builds grow Go's build cache by gigabytes
-# an hour, faster than opening VS Code trims it.
+# Every 5 minutes it runs hack/pull.sh, so pick never reads stale rules, moves
+# the worktree .claude/worktrees/relay-code to origin/main, and restarts itself
+# on relay-code's copy when it runs from elsewhere or when that changed this
+# script: the watch, and the relay it starts, run origin/main's code whatever
+# branch this checkout has, and keep their state (.relay/) here (#1126,
+# hack/lib/relay-code.sh). RELAY_PULL=0 keeps it on the code where it was
+# started, to try relay changes from a branch. Every WATCH_TRIM_EVERY seconds
+# (default 1800) it runs hack/trim-go-cache.sh: nine workers' builds grow Go's
+# build cache by gigabytes an hour, faster than opening VS Code trims it.
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
@@ -117,9 +121,13 @@
 # .relay/relay-<k>.log.
 set -uo pipefail
 
-REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+CODE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+REPO=${C4_RELAY_REPO:-$CODE}
+unset C4_RELAY_REPO
 # shellcheck source=hack/lib/session-env.sh
-. "$REPO/hack/lib/session-env.sh"
+. "$CODE/hack/lib/session-env.sh"
+# shellcheck source=hack/lib/relay-code.sh
+. "$CODE/hack/lib/relay-code.sh"
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 LOG="$DIR/watch.log"
@@ -134,6 +142,7 @@ MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 PARENTS_EVERY=${WATCH_PARENTS:-600}
 FLAKE_DAYS=${WATCH_FLAKE_DAYS:-7}
 QUEUED_MINUTES=${WATCH_QUEUED:-30}
+PULL=${RELAY_PULL:-1}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -167,18 +176,18 @@ triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain, trim_caches and report_note:
 # what the watch asks and starts (faked in the tests).
-pick_next() { "$REPO/hack/lib/github.sh" pick; }
-blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
-cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
-parents() { "$REPO/hack/lib/github.sh" parents --apply; }
-proposed() { "$REPO/hack/lib/github.sh" proposed; }
-run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
-run_triage() { "$REPO/hack/relay.sh" --triage; }
-activity() { "$REPO/hack/lib/github.sh" activity; }
-escalated() { "$REPO/hack/lib/github.sh" escalated; }
-run_maintain() { "$REPO/hack/relay.sh" --maintain; }
-trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
-report_note() { "$REPO/hack/lib/github.sh" report-note "$@"; }
+pick_next() { github pick; }
+blocked() { github blocked --unworked; }
+cycles() { github cycles --report; }
+parents() { github parents --apply; }
+proposed() { github proposed; }
+run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
+run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
+activity() { github activity; }
+escalated() { github escalated; }
+run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
+trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
+report_note() { github report-note "$@"; }
 
 # trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
 # and log what it dropped (it says nothing when a cache is under its limit).
@@ -212,12 +221,13 @@ tend() {
   [ -z "$out" ] || log "plans' parents: ${out//$'\n'/; }"
 }
 
-github() { "$REPO/hack/lib/github.sh" "$@"; }
+# github: hack/lib/github.sh, keeping its local state in this checkout's .relay/.
+github() { GH_PENDING_DIR=$DIR "$CODE/hack/lib/github.sh" "$@"; }
 
 # ci_workflows: FILE<tab>NAME of each workflow that runs on a push to main.
 ci_workflows() {
   local f
-  for f in "$REPO"/.github/workflows/*.yml "$REPO"/.github/workflows/*.yaml; do
+  for f in "$CODE"/.github/workflows/*.yml "$CODE"/.github/workflows/*.yaml; do
     [ -f "$f" ] || continue
     awk -v file="${f##*/}" '
       /^name:/ { n = $0; sub(/^name:[ \t]*/, "", n); gsub(/["\047]/, "", n) }
@@ -596,12 +606,34 @@ round() {
   esac
 }
 
-code_sum() { cat "$REPO/hack/relay-watch.sh" "$REPO/hack/lib/session-env.sh" 2>/dev/null | cksum; }
+code_sum() { cat "$CODE/hack/relay-watch.sh" "$CODE/hack/lib/session-env.sh" "$CODE/hack/lib/relay-code.sh" 2>/dev/null | cksum; }
+
+# update: run origin/main's hack/pull.sh on this checkout, move relay-code to
+# origin/main, and restart the watch on relay-code's copy when it runs from
+# elsewhere or that changed the watch's code (see the header).
+update() {
+  local out key
+  out=$(C4_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
+  # A reason pull.sh repeats (its lines start with the time) is logged once.
+  key=$(sed 's/^[0-9][0-9]:[0-9][0-9] //' <<<"$out")
+  [ -n "$out" ] && [ "$key" != "$PULLED" ] && log "${out//$'\n'/; }"
+  PULLED=$key
+  [ "$PULL" = 0 ] && return 0
+  relay_code_stale || return 0
+  if [ "$CODE" = "$(relay_code)" ]; then
+    log "the watch's code changed ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)); restarting"
+  else
+    log "moving to origin/main's code ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)) from $CODE; restarting"
+  fi
+  # The new watch keeps this one's lock on fd 8.
+  exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 C4_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay-watch.sh" \
+    --workers "$WORKERS" $([ "$MODE" = foreground ] && echo --foreground)
+}
 
 # --install and --uninstall. The unit goes to the user's own systemd folder,
 # not $XDG_CONFIG_HOME, which the project shell points into .dev/.
 UNIT=c4factory-relay-watch.service
-TEMPLATE="$REPO/hack/relay-watch.service"
+TEMPLATE="$CODE/hack/relay-watch.service"
 unit_file() { echo "$HOME/.config/systemd/user/$UNIT"; }
 cron_tag() { echo "# c4factory relay watch: $REPO"; }
 
@@ -796,7 +828,7 @@ fi
 # The workers and their sessions don't need to know they were started by a watch.
 unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
-log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), HEAD $(git rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
+log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 own_groups
 PULL_T=0 PULLED= CI_T=0
 while :; do
@@ -810,17 +842,7 @@ while :; do
   fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now
-    out=$("$REPO/hack/pull.sh" 2>&1)
-    # A reason pull.sh repeats (its lines start with the time) is logged once.
-    key=$(sed 's/^[0-9][0-9]:[0-9][0-9] //' <<<"$out")
-    [ -n "$out" ] && [ "$key" != "$PULLED" ] && log "${out//$'\n'/; }"
-    PULLED=$key
-    if [ "$(code_sum)" != "$CODE_SUM" ]; then
-      log "the watch's code changed (HEAD $(git rev-parse --short HEAD)); restarting"
-      # The new watch keeps this one's lock on fd 8.
-      exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 bash "$REPO/hack/relay-watch.sh" --workers "$WORKERS" \
-        $([ "$MODE" = foreground ] && echo --foreground)
-    fi
+    update
   fi
   trim "$now"
   round
