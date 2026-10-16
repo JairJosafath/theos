@@ -457,7 +457,7 @@ in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
 as the maintainer does: it needs no free worker, doesn't count against
 `RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
 goes through `admit` like any session and logs to `.relay/relay-triage.log`.
-To triage now, say after a plan files its steps `status/proposed`, run
+To triage now, say after a session files follow-ups `status/proposed`, run
 `./dev run hack/relay.sh --triage`: it starts one triage session unless one
 runs, and records its time and issues in `.relay/triaged`, as every triage
 session does (the watch only reads that file), so the watch starts no second
