@@ -163,7 +163,7 @@ STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
-SCRATCH=${RELAY_SCRATCH:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307)
+SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own

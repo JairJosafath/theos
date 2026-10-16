@@ -16,6 +16,8 @@
 # another branch, against a scratch origin.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
+# $T may lie inside a checkout (the relay's TMPDIR, #1326): git stops at it.
+export GIT_CEILING_DIRECTORIES=$T
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT

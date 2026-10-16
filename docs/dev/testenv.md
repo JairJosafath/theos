@@ -163,7 +163,7 @@ mtime back. envtest reserves each port it hands out as a file in
 `$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
 `.dev/`, inside the module, where each envtest run changed a directory the
 other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
-(`$TMPDIR/c4factory-test-cache`, one per device) and keeps `GOCACHE`. A
+(`~/.cache/c4factory/test-cache`, one per device, outside any checkout, #1326) and keeps `GOCACHE`. A
 result is not cached when a file the test read changed in the 2 seconds
 before; the next run caches it. Coverage is collected only when
 asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
