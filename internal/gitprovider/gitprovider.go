@@ -221,6 +221,12 @@ type Provider interface {
 	// RunnersOnline returns how many CI runners the instance has online, idle
 	// or busy; known is false when the provider doesn't say.
 	RunnersOnline(ctx context.Context) (online int, known bool)
+	// RunnerOnline reports whether CI runner id is online, idle or busy: false
+	// for one that is offline or no longer registered. known is false when the
+	// provider doesn't say.
+	RunnerOnline(ctx context.Context, id int64) (online, known bool)
+	// RunJobs returns the jobs of workflow run id, of its newest attempt.
+	RunJobs(ctx context.Context, repo Repository, id int64) ([]WorkflowJob, error)
 	// RerunFailedJobs runs the failed jobs of workflow run id again, as a new
 	// attempt of the same run.
 	RerunFailedJobs(ctx context.Context, repo Repository, id int64) error

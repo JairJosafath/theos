@@ -405,7 +405,7 @@ func (r *TaskReconciler) rerunState(ctx context.Context, provider gitprovider.Pr
 	if model.RerunEnded(seen, status.ChecksRerunAt.Time) {
 		return model.CIRun{}, true
 	}
-	return r.runState(ctx, provider, status.Commit, seen), false
+	return r.runState(ctx, provider, repo, status.Commit, seen), false
 }
 
 // workflowRuns is the model's view of the Git host's runs.
@@ -430,17 +430,19 @@ func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provide
 		ci.State = model.CIRunUnknown
 		return ci
 	}
-	return r.runState(ctx, provider, commit, workflowRuns(runs))
+	return r.runState(ctx, provider, repo, commit, workflowRuns(runs))
 }
 
-// runState sums up the runs at commit, and whether a runner is online while
-// one is queued.
-func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Provider, commit string,
-	seen []model.WorkflowRun) model.CIRun {
+// runState sums up the runs at commit, whether a runner is online while one is
+// queued, and who cancelled a failed one that ended cancelled.
+func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	commit string, seen []model.WorkflowRun) model.CIRun {
 	ci := model.CIRun{Commit: commit}
 	state, run := model.CommitRunState(seen)
 	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
-	ci.Cancelled = model.CancelledRun(seen)
+	if cancelled := model.CancelledRuns(seen); len(cancelled) > 0 {
+		ci.CancelledBy = r.canceller(ctx, provider, repo, cancelled)
+	}
 	switch state {
 	case model.CIRunRunning:
 		if !run.Started.IsZero() {
@@ -451,6 +453,30 @@ func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Prov
 		ci.NoRunnerOnline = known && online == 0
 	}
 	return ci
+}
+
+// canceller tells who cancelled the cancelled runs at a Task's commit: whether
+// the runners of their cancelled jobs stayed online (model.Canceller).
+func (r *TaskReconciler) canceller(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+	cancelled []model.WorkflowRun) string {
+	var jobs []model.CIJob
+	for _, run := range cancelled {
+		found, err := provider.RunJobs(ctx, repo, run.ID)
+		if err != nil {
+			logf.FromContext(ctx).Info("Could not read the jobs of a cancelled CI run", "run", run.URL,
+				"error", err.Error())
+			return model.Canceller(nil, false, r.now())
+		}
+		for _, j := range found {
+			job := model.CIJob{Conclusion: j.Conclusion, Runner: j.RunnerID, Ended: j.Completed}
+			if job.Cancelled() && job.Runner != 0 {
+				online, known := provider.RunnerOnline(ctx, job.Runner)
+				job.RunnerOnline, job.RunnerUnknown = online, !known
+			}
+			jobs = append(jobs, job)
+		}
+	}
+	return model.Canceller(jobs, true, r.now())
 }
 
 // noFreeSlot reports whether the Task must wait for an agent slot: all are taken,

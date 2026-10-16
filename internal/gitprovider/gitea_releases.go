@@ -338,6 +338,88 @@ func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
 	return online, true
 }
 
+// RunnerOnline reports whether runner id, global, organisation or repository,
+// is online, idle or busy: false for one that is offline or no longer
+// registered. known is false when Gitea doesn't say: an older Gitea without
+// the call, a token that isn't an admin's, or a failed call.
+func (g *gitea) RunnerOnline(ctx context.Context, id int64) (online, known bool) {
+	status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners/"+strconv.FormatInt(id, 10), nil)
+	switch {
+	case err != nil:
+		return false, false
+	case status == http.StatusNotFound && strings.Contains(strings.ToLower(apiMessage(data)), "runner"):
+		// Gitea says "runner with id N: resource does not exist", of a deleted
+		// runner too; a bare 404 is an older Gitea without the call.
+		return false, true
+	case status != http.StatusOK:
+		return false, false
+	}
+	var runner struct {
+		Status string `json:"status"`
+		Busy   bool   `json:"busy"`
+	}
+	if json.Unmarshal(data, &runner) != nil {
+		return false, false
+	}
+	return runner.Busy || runner.Status == "online" || runner.Status == "idle" || runner.Status == "active", true
+}
+
+// WorkflowJob is a job of a CI workflow run.
+type WorkflowJob struct {
+	ID int64
+	// Status is queued, waiting, in_progress or completed, and Conclusion how a
+	// completed job ended.
+	Status     string
+	Conclusion string
+	// RunnerID is the runner that ran it, zero when none started it.
+	RunnerID int64
+	// Completed is when it ended, zero while it runs.
+	Completed time.Time
+}
+
+// jobPages bounds the jobs RunJobs reads.
+const jobPages = 3
+
+// RunJobs returns the jobs of workflow run id, of its newest attempt.
+func (g *gitea) RunJobs(ctx context.Context, repo Repository, id int64) ([]WorkflowJob, error) {
+	var out []WorkflowJob
+	for page := 1; page <= jobPages; page++ {
+		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
+		path := "/api/v1/repos/" + repoPath(repo) + "/actions/runs/" + strconv.FormatInt(id, 10) + "/jobs?" +
+			query.Encode()
+		status, data, err := g.do(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, err
+		}
+		var jobs struct {
+			Jobs []struct {
+				ID          int64     `json:"id"`
+				Status      string    `json:"status"`
+				Conclusion  string    `json:"conclusion"`
+				RunnerID    int64     `json:"runner_id"`
+				CompletedAt time.Time `json:"completed_at"`
+			} `json:"jobs"`
+		}
+		if status != http.StatusOK || json.Unmarshal(data, &jobs) != nil {
+			return nil, fmt.Errorf("gitea: listing the jobs of run %d of %s failed (HTTP %d): %s", id,
+				repoPath(repo), status, apiMessage(data))
+		}
+		for _, j := range jobs.Jobs {
+			completed := j.CompletedAt
+			// Gitea writes a job that hasn't ended as ending at the epoch.
+			if completed.Unix() <= 0 {
+				completed = time.Time{}
+			}
+			out = append(out, WorkflowJob{ID: j.ID, Status: j.Status, Conclusion: j.Conclusion,
+				RunnerID: j.RunnerID, Completed: completed})
+		}
+		if len(jobs.Jobs) < issuePageSize {
+			break
+		}
+	}
+	return out, nil
+}
+
 // RerunFailedJobs runs the failed jobs of workflow run id again, as a new
 // attempt of the same run.
 func (g *gitea) RerunFailedJobs(ctx context.Context, repo Repository, id int64) error {
