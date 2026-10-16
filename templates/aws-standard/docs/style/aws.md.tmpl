@@ -1,5 +1,6 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -218,12 +219,151 @@ says why each rule matters.
 - Requests are tested by calling `answer` with a request, or the server's
   listener with an in-memory stream and a recorded response, and checking
   the status code and body; no test starts the server. [review]
+{{- else if eq .Framework "aws-static-site-ts" -}}
+# AWS static site digest
+
+Distilled from Vite's guide, the Amazon CloudFront developer guide (origin
+access control, viewer HTTPS, standard logging, response headers), the
+Amazon S3 user guide's security best practices and versioning pages, the
+AWS WAF developer guide, the CDK developer guide and its assertions module,
+and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
+`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
+stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
+says why each rule matters.
+
+## The page
+
+- `index.html` is the entry Vite builds; `src/main.ts` finds the page's
+  elements and wires their events to pure functions in `src/`, which never
+  touch the DOM. [review]
+- The page runs in the browser: no Node global or module in `src/`.
+  [lint: no-restricted-globals, no-restricted-imports]
+- Write what a visitor typed or a request returned as text
+  (`textContent`), never as HTML (`innerHTML`, `insertAdjacentHTML`). [review]
+- Visitors see the page, never the console: an error they must know of is
+  shown on the page. [lint: no-console]
+- Nothing secret in `src/`, `index.html` or `public/`: everything the site
+  holds is public. [review]
+
+## The build
+
+- Vite builds the site at synth, through the asset's local bundling
+  (`vite build` into the asset's folder); never Docker, which CI and agents
+  lack. `npm run build` writes the same into `dist/`, and `npm run dev`
+  serves it with hot reload. [review]
+- What the page imports from `src/` is bundled and minified under hashed
+  names; `public/` is copied as it is, so a file there is referenced by its
+  path from the root (`/favicon.svg`). [review]
+- A deploy copies the build into the bucket (`BucketDeployment`) beside
+  earlier builds' files, so a browser holding an earlier `index.html` still
+  finds its hashed assets, and clears CloudFront's cache (`/*`). Nothing
+  else writes to the bucket. [review]
+
+## The S3 buckets
+
+- The site's bucket is private: public access blocked, no website hosting,
+  read only by the distribution. [nag: AwsSolutions-S2, AwsSolutions-S5]
+- Requests without TLS are refused. [nag: AwsSolutions-S10]
+- Encrypted at rest with S3-managed keys. [test: encrypts every bucket]
+- Its access is logged to the `Logs` bucket (`s3/`). [nag: AwsSolutions-S1]
+- In production versioned, kept when the stack goes (`RemovalPolicy.RETAIN`),
+  and each earlier version expires after `versionsKeptDays`: 35 days, or
+  `retentionDays` when longer. In development unversioned, `DESTROY`, its
+  files deleted with the stack. Build it with the tier's `TIER_RULES`.
+  [test: the removal policies, the versions of data buckets]
+- The `Logs` bucket holds only logs: each expires after the tier's log
+  retention, and the bucket, `RETAIN` in both tiers, empties itself.
+  CloudFront writes its logs with ACLs, so its objects are the writer's
+  (`ObjectOwnership.OBJECT_WRITER`). [review]
+- Never change a bucket's logical id: the deploy makes a new, empty bucket
+  and keeps the old one outside the stack. [review]
+
+## CloudFront
+
+- The distribution reads the bucket through origin access control
+  (`S3BucketOrigin.withOriginAccessControl`). [nag: AwsSolutions-CFR7]
+- HTTP is redirected to HTTPS, and every answer carries AWS's managed
+  `SECURITY_HEADERS` policy (HSTS, no sniffing, no framing, a strict
+  referrer policy). [review]
+- With the `DomainName` and `CertificateArn` parameters, the site answers on
+  that domain with that ACM certificate (in us-east-1), by SNI, TLS 1.2 or
+  later; without them, on CloudFront's own domain. The rule
+  `DomainNeedsCertificate` refuses a domain without a certificate.
+  [nag: AwsSolutions-CFR4, acknowledged for CloudFront's own domain]
+- Standard logs go to the `Logs` bucket (`cloudfront/`).
+  [nag: AwsSolutions-CFR3]
+- `index.html` is the default root object; HTTP/2 and HTTP/3; the
+  cheapest price class (`PRICE_CLASS_100`). [review]
+- No geographic restriction: the site is for anyone.
+  [nag: AwsSolutions-CFR1, acknowledged]
+
+## The firewall
+
+- In production, an AWS WAF web ACL (scope `CLOUDFRONT`, made in us-east-1)
+  in front of the distribution: AWS's managed rule groups for addresses
+  with a bad reputation, common attacks and known bad inputs, and a limit of
+  2,000 requests in five minutes per address. In development none.
+  [nag: AwsSolutions-CFR2, acknowledged in development]
+- A rule that blocks visitors the site wants is changed in the stack, with
+  the reason, never switched off in the console. [review]
+
+## The copying function
+
+- `BucketDeployment` makes the function that copies the site; it runs only
+  on a deploy. Its own role is allowed to write only its log group,
+  `DeployLogs`, kept for the tier's log retention, never AWS's managed
+  `AWSLambdaBasicExecutionRole`. [nag: AwsSolutions-IAM4; test: log groups
+  keep logs for a set time]
+- Its wildcard permissions, granted by `BucketDeployment`, are acknowledged
+  one by one with the reason; never add another. [nag: AwsSolutions-IAM5;
+  test: no wildcard action]
+- X-Ray traces it in production. [review]
+
+## Alarms
+
+- The stack's `Alarms` builds every alarm with `cdk-monitoring-constructs`,
+  to the stack's one encrypted topic, with a dashboard: the distribution's
+  5xx error rate and the copying function's errors, throttles and p99
+  duration. A new resource gets its alarms from `alarms.monitoring`.
+  [test: the alarms and topic]
+- What each alarm means and what to do first is in `docs/runbook.md`;
+  a new alarm adds its row there, as a Standard change. [review]
+
+## The CDK app
+
+- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+  Framework's stack is in `infra/stacks.ts`, which `defineStacks` returns.
+  [review]
+- No account in `env`, no `fromLookup`, so synth needs no account. The
+  stack's region is us-east-1, because CloudFront takes its firewall and
+  certificate only there. [review]
+- Every stack carries the Standard's tags (`c4factory:project`,
+  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stateful resource says its removal policy. [test]
+- A CDK Nag finding is fixed in the resource. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
+  the finding's path names or an ancestor of it, names one finding
+  on one construct, with a reason specific to this system. [review]
+- `cdk.json`'s feature flags are the ones `cdk init` recommends for the
+  pinned CDK; a task never turns one off. [review]
+
+## Tests
+
+- No test calls AWS, opens a socket or needs credentials. [review]
+- The page's logic is tested with plain vitest in Node, through the pure
+  modules `src/main.ts` wires; a test that needs the DOM brings its own
+  environment. [review]
+- The stack is tested with `Template.fromStack` from
+  `aws-cdk-lib/assertions`: `hasResourceProperties`, `resourceCountIs`,
+  `Match`. Assert what the issue needs (a header, a rule, a setting), not
+  the whole template. Synthesizing it builds the site with Vite. [review]
 {{- else -}}
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
 Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
-handler pages, API Gateway's HTTP API docs{{ end }}, DynamoDB's developer guide, the
+handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
 {{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -304,9 +444,15 @@ says why each rule matters.
 - Don't keep request data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- else -}}
+{{ if $queue -}}
+- `src/handler.ts` exports `handler`, which takes an `SQSEvent`, a batch of
+  up to 10 messages, and returns an `SQSBatchResponse`: the ids of the
+  messages that failed, which SQS delivers again. [review]
+{{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
   Gateway's HTTP API sends payload format 2.0. [review]
+{{- end }}
 - Create SDK clients and read configuration at module scope, once per
   execution environment; warm invocations reuse them and their connections.
   Never create a client inside the handler. [review]
@@ -319,11 +465,28 @@ says why each rule matters.
   [lint: @typescript-eslint/no-floating-promises]
 - Never `process.exit()`: it kills the execution environment mid-invocation.
   [lint: no-restricted-properties]
-- Don't keep request data in module-scope variables: the next invocation in
+- Don't keep {{ if $queue }}message{{ else }}request{{ end }} data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- end }}
 
-{{ end }}## Requests and responses
+{{ end }}{{ if $queue }}## Messages
+
+- Validate every message at the boundary: its body and the attributes the
+  code reads, narrowed from `unknown` with runtime checks. The queue holds
+  whatever a producer sent. [review]
+- A message that fails throws, inside the work Powertools' batch processing
+  runs per message: the batch reports it in `batchItemFailures`, SQS
+  delivers it alone again, and after the queue's last delivery it waits in
+  the dead-letter queue. [test: every SQS source reports batch item
+  failures]
+- Never catch a failure and carry on: a message the handler returns as
+  done is deleted, and lost. [review]
+- A message is delivered at least once and in no set order: the work per
+  message is idempotent (Powertools' Idempotency, keyed by its `messageId`)
+  and never depends on another message coming first. [review]
+- Never log a message's body: it may hold user data. Log its `messageId`
+  and what failed. [review]
+{{ else }}## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
   headers and the body, {{ if $go }}decoded into typed values and checked{{ else if $py }}narrowed from `object` with `isinstance` checks{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
@@ -336,7 +499,7 @@ says why each rule matters.
 - Never return a stack trace, an SDK error's text or an internal name to a
   client; log it instead, with the request id. [review]
 - Set `content-type` on every response. [review]
-
+{{ end }}
 ## Logs
 
 {{ if $go -}}
@@ -346,7 +509,7 @@ says why each rule matters.
 {{- else if $py -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `print`. [lint: T201]
-{{- else if eq .Framework "aws-lambda-ts" -}}
+{{- else if eq .Framework "aws-lambda-ts" "aws-queue-ts" -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
   which `src/handler.ts` makes and hands to the code as its `Log`; never
   `console`. [lint: no-console]
@@ -356,7 +519,7 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
 {{- end }}
-- Each entry has a `level`, a `message` and the request id; errors say what
+- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else }}request id{{ end }}; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
@@ -372,7 +535,7 @@ says why each rule matters.
 {{ end }}
 ## DynamoDB
 
-- Model the table for its access patterns: every read on a request path is
+- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else }}request{{ end }} path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
 {{ if $go -}}
 - Read and write items as `map[string]types.AttributeValue`, by hand or
@@ -395,10 +558,13 @@ says why each rule matters.
 - A route that changes data runs through Powertools' Idempotency, keyed by
   the request's `Idempotency-Key` header, as `PUT /items/{id}` does: a
   retry with the same key gets the first answer back. [review]
+{{- else if $queue }}
+- Each message runs through Powertools' Idempotency, keyed by its
+  `messageId`: a message delivered again writes nothing twice. [review]
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
@@ -409,7 +575,7 @@ says why each rule matters.
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -520,6 +686,30 @@ says why each rule matters.
   to anyone who can describe the launch template. Read them from Secrets
   Manager at start-up. [review]
 
+{{ else }}{{ if $queue }}## The queue and its event source
+
+- Every queue has a dead-letter queue, after a set number of deliveries
+  (`deadLetterQueue: { queue, maxReceiveCount }`), kept 14 days, the
+  longest SQS keeps a message. [nag: AwsSolutions-SQS3]
+- Every dead-letter queue alarms on its first message: from the stack's
+  `Alarms`, `monitorSqsQueueWithDlq` with `addDeadLetterQueueMaxSizeAlarm`.
+  [test: the dead-letter queues]
+- Queues are encrypted (`QueueEncryption.SQS_MANAGED` or a KMS key) and
+  refuse requests without TLS (`enforceSSL: true`). [nag: AwsSolutions-SQS2,
+  AwsSolutions-SQS4; test: encrypts every queue]
+- The event source reports batch item failures
+  (`reportBatchItemFailures: true`), and the handler answers them through
+  Powertools' batch processing. [test: every SQS source reports batch item
+  failures]
+- The queue's visibility timeout is at least six times the function's
+  timeout plus the batching window, so a message is not delivered again
+  while a batch holds it.
+  [review]
+- The event source has a maximum concurrency, so a flood of messages
+  can't take the account's concurrency from its other functions. [review]
+- A queue holds messages not yet consumed, which are data: kept with the
+  stack in production, like the tables. [review]
+
 {{ else }}## API Gateway HTTP API
 
 - Every route is authorized: IAM (`HttpIamAuthorizer`), a JWT authorizer or a
@@ -531,7 +721,7 @@ says why each rule matters.
 - Routes name their method and path (`GET /items/{id}`); no `ANY /{proxy+}`
   that hands routing to the function. [review]
 
-## Lambda configuration in the stack
+{{ end }}## Lambda configuration in the stack
 
 {{ if $go -}}
 - A `Function` whose code is `Code.fromAsset` of `src/`, built by the
@@ -553,8 +743,9 @@ says why each rule matters.
 - The newest Node.js runtime. [nag: AwsSolutions-L1]
 {{- end }}
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
-- Memory and timeout set for the work, the timeout under API Gateway's 30
-  seconds. [review]
+- Memory and timeout set for the work, the timeout {{ if $queue }}at most a sixth of the queue's
+  visibility timeout{{ else }}under API Gateway's 30
+  seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.
   [nag: AwsSolutions-IAM4]
 - No wildcard permissions: grants (`table.grant(fn, 'dynamodb:GetItem')`),
@@ -584,7 +775,7 @@ says why each rule matters.
 - No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
-  issue needs (a route, a grant, a setting), not the whole template. [review]
+  issue needs ({{ if $queue }}a queue setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
 {{ if $go -}}
 - Code that calls AWS is tested through its interface with a fake that
   records the calls and answers from memory. [review]
@@ -602,7 +793,8 @@ says why each rule matters.
   records commands and answers from memory. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and checking
   the status code and body; `src/server.ts` over HTTP on a loopback port the
-  system picks. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  system picks. [review]{{ else if $queue }}- The work per message is tested with a fake store; the batch by building
+  an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}

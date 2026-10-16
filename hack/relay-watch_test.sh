@@ -6,7 +6,8 @@
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, and when a flake round records a failed spec
 # and files a "Flaky:" bug, and when a runner round notes runs queued too long
-# in the Maintainer report (report_note faked), with gh faked under the real hack/lib/github.sh;
+# in the Maintainer report (report_note faked), with gh faked under the real hack/lib/github.sh,
+# and when a /tmp at 90% goes under its Health only (how full /tmp is faked);
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
@@ -25,6 +26,19 @@ DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600 TRIAGE_EVERY=1800
 mkdir -p "$DIR"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+
+# pick_next counts every worker's reservations (create --next, #1284).
+(
+  REPO=$T/repo
+  mkdir -p "$REPO"/.claude/worktrees/relay-{1,2,triage}/.relay
+  touch "$REPO"/.claude/worktrees/relay-{2,triage}/.relay/next
+  github() { echo "$GH_NEXT_FILES"; }
+  touch "$REPO"/.claude/worktrees/relay-1/.relay/next
+  check "pick_next: every worker's .relay/next, not the triage's" "$(pick_next)" \
+    "$REPO/.claude/worktrees/relay-1/.relay/next
+$REPO/.claude/worktrees/relay-2/.relay/next"
+  exit $fail
+) || fail=1
 
 PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0 BLOCKED= BLOCKED_RC=0 CYCLES=
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
@@ -788,14 +802,14 @@ flake_round
 check "flake: a run's log is read once" "$(wc -l <"$T/log-reads")" 1
 check "flake: a run is recorded once" "$(wc -l <"$DIR/flakes.tsv")" 1
 
-# The same spec in a second run within seven days: one bug, not urgent.
+# The same spec in a second run within seven days: one bug, velocity, not urgent.
 sed 's/\^\[/\x1b/g' "$HERE/testdata/ginkgo-fail.log" >"$T/log-802.txt"
 failed 802 '1 hour'
 flake_round
 check "flake: the escape byte is read like its text" "$(cut -f1-2 "$DIR/flakes.tsv" | tail -1)" "$SPEC	802"
 check "flake: a second failure files one bug" "$(filed)" 1
 check "flake: its title" "$(jq -r '.[0].title' "$T/issues.json")" "Flaky: $SPEC"
-check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready kind/bug source/dev"
+check "flake: its labels" "$(jq -r '.[0].labels | join(" ")' "$T/issues.json")" "status/ready priority/velocity kind/bug source/dev"
 check "flake: the body names both runs" "$(jq -r '.[0].body' "$T/issues.json" | grep -c '^- https://github.com/.*/actions/runs/80[12] at ')" 2
 check "flake: logged with the issue" "$(logged "a spec failed on main 2 times in 7 days: $SPEC; issue #100$")" 1
 
@@ -941,6 +955,42 @@ runner_round
 check "runners: only a run with no jobs left clears the note" "$(notes | tail -1)|$(ls "$DIR/runners-offline" 2>/dev/null)|$(logged 'run 701')" "runners||1"
 runners 0 3
 rm -f "$T/runs-.json" "$T/notes" "$T/runners.json" "$T"/jobs-7*.json "$DIR/runners-offline" "$DIR/runs-without-jobs"
+
+# /tmp at 90% (#1269): its three largest entries go under the Maintainer
+# report's Health only, an empty NEEDS (each argument recorded in brackets),
+# logged once while it lasts; under 90% takes the note out. A failure is
+# logged once.
+check "tmp #1269: 90% by default, a line per host" "$TMP_FULL $TMP_KEY" "90 tmp-$(hostname -s)"
+report_note() { printf '[%s]' "$@" >>"$T/notes"; echo >>"$T/notes"; return "$NOTE_RC"; }
+TMP_USE=89 TMP_HOST=h TMP_KEY=tmp-h
+tmp_use() { echo "$TMP_USE"; }
+tmp_largest() { printf '1.5G\t/tmp/1109-std\n629M\t/tmp/1109-gocache\n464M\t/tmp/1109-py\n'; }
+: >"$LOG"
+tmp_round
+check "tmp #1269: 89% says nothing" "$(notes)|$(cat "$LOG")|$(ls "$DIR/tmp-full" 2>/dev/null)" "||"
+TMP_USE=93
+tmp_round
+note="/tmp on h is 93% full; largest: /tmp/1109-std (1.5G), /tmp/1109-gocache (629M), /tmp/1109-py (464M)"
+check "tmp #1269: 93% notes it under Health only" "$(notes)" "[tmp-h][$note][]"
+check "tmp #1269: logged" "$(logged "^.* $note; said under the Maintainer report's Health$")" 1
+tmp_round
+check "tmp #1269: still full, kept current, logged once" "$(notes | wc -l | tr -d ' ')|$(logged 'said under')|$(cat "$DIR/tmp-full")" "2|1|$note"
+rm -f "$T/notes"
+TMP_USE=80
+tmp_round
+check "tmp #1269: under 90% takes it out" "$(notes)|$(ls "$DIR/tmp-full" 2>/dev/null)|$(logged '/tmp on h is back under 90%; the note left the Maintainer report$')" "[tmp-h]||1"
+tmp_round
+check "tmp #1269: under 90%, the report is left alone" "$(notes)" "[tmp-h]"
+TMP_USE=95 NOTE_RC=1
+tmp_round
+tmp_round
+check "tmp #1269: a report that can't be edited is logged once" "$(logged 'could not say it in the Maintainer report')|$(ls "$DIR/tmp-full" 2>/dev/null)" "1|"
+NOTE_RC=0
+TMP_USE=x
+tmp_round
+tmp_round
+check "tmp #1269: no number is logged once, nothing noted" "$(logged 'could not read how full /tmp is: x$')|$(notes | wc -l | tr -d ' ')" "1|3"
+rm -f "$T/notes" "$DIR/tmp-full"
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.

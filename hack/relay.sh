@@ -9,13 +9,15 @@
 # origin/main's code (see below) and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
-# (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
-# ready + urgent one, else the oldest ready one) and claims it (take); when
-# another agent claims it first, it picks again, up to 5 times. Claims keep the
-# workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim gets it released. With nothing
-# ready, a worker stops, without waiting in admit: it asks (pick is read-only)
-# before admit as well as after, so an idle worker takes no session-start slot.
+# (hack/lib/github.sh pick: a ready one this worker's last session filed with
+# create --next, which reserves it for this worktree, else urgent, then
+# velocity, then the rest; within each, an in-progress one nobody holds, else
+# the oldest ready one) and claims it (take); when another agent claims it
+# first, it picks again, up to 5 times. Claims keep the workers and
+# hand-started sessions off each other's issues. A session that ends still
+# holding its claim gets it released. With nothing ready, a worker stops,
+# without waiting in admit: it asks (pick is read-only) before admit as well
+# as after, so an idle worker takes no session-start slot.
 #
 # Triage: hack/relay-watch.sh starts one triage session (--triage) on the
 # open status/proposed issues, which relay sessions file their follow-ups as,
@@ -80,6 +82,11 @@
 # Started from a Claude Code or VS Code session or not, the relay and its
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
+#
+# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
+# gitignored, not the device's /tmp: a small tmpfs every session shares, which
+# one session's scratch, Go's build dirs and envtest's filled. The relay
+# empties it before the session starts and removes it when the session ends.
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
@@ -181,11 +188,11 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # N, worked by agent NAME on BRANCH.
 prompt() {
   local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
-  if [ "$how" = in-progress ]; then
-    start="A session worked on it before you: continue from its newest handoff comment."
-  else
-    start="No session has worked on it yet: the issue body is the goal."
-  fi
+  case $how in
+    in-progress) start="A session worked on it before you: continue from its newest handoff comment." ;;
+    next) start="The session before you in this worktree found it and filed it with create --next: the issue body is the goal." ;;
+    *) start="No session has worked on it yet: the issue body is the goal." ;;
+  esac
   cat <<EOF
 You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
@@ -245,9 +252,14 @@ Rules for this headless run:
   gate, and Kind is a tier only a human runs. When only a real node would show
   something, land the code with the tests the lower tiers can give and say in
   the pull request what a human run of Kind would check.
-- Work you find outside #$n: file it with
-  \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
-  start it.
+- Work you find outside #$n: under about 30 lines, in a file your pull
+  request already changes and inside #$n's scope, fix it in the pull request
+  and name it under \`Also fixes:\` in its body. Else, when it is decided (a
+  bug whose failing test you can name, a chore or doc whose Done-when you can
+  state), file it with \`hack/lib/github.sh create --next TITLE FILE
+  kind/<bug|chore|docs>\`: it is ready and this worktree's next session starts
+  on it. Anything that needs a decision: \`hack/lib/github.sh create TITLE
+  FILE status/proposed kind/<kind>\`. Don't start either.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
 EOF
@@ -344,8 +356,11 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (in-progress, ready-urgent, ready) to the
-# issue to work next. Exit 1: nothing to pick; exit 2: GitHub could not be asked.
+# pick: set ISSUE, TITLE, URL and HOW (next, in-progress, ready-urgent,
+# in-progress-velocity, ready-velocity, ready) to the issue to work next; next
+# is one this worker's last session reserved (create --next, .relay/next in
+# its worktree).
+# Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc
   row=$(gh_pick 2>"$DIR/pick.err")
@@ -660,11 +675,20 @@ idle_watch() {
   done
 }
 
+# scratch_clear DIR: remove DIR, a session's TMPDIR. A Go module cache in it
+# is read-only (go mod download makes its directories so), so it is made
+# writable first. What can't be removed is logged, and the session goes on.
+scratch_clear() {
+  [ -e "$1" ] || return 0
+  chmod -R u+w "$1" 2>/dev/null
+  rm -rf "$1" 2>/dev/null || log "could not remove all of $1"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
@@ -677,8 +701,13 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645).
-  (cd "$WT" && drop_session_env && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  # environment (#645). Its TMPDIR is in its worktree, not the shared /tmp
+  # (#1269), and starts empty: what a dead session left there goes first.
+  # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
+  # --next reserves only for a numbered one's next session.
+  scratch_clear "$tmp"
+  mkdir -p "$tmp"
+  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -692,6 +721,7 @@ session() {
     kill "$watch" 2>/dev/null
     wait "$watch" 2>/dev/null
   fi
+  scratch_clear "$tmp"
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))

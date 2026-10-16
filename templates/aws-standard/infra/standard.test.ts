@@ -52,7 +52,12 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   'AWS::ElasticLoadBalancingV2::TargetGroup': ['UnHealthyHostCount'],
   // Container Insights counts the running tasks.
   'AWS::ECS::Service': ['CPUUtilization', 'MemoryUtilization', 'RunningTaskCount'],
+  'AWS::CloudFront::Distribution': ['5xxErrorRate'],
 };
+
+// What AWS Backup's plan backs up; a stack holding none of it has no plan.
+// A data bucket keeps its earlier versions instead.
+const BACKED_UP_TYPES = ['AWS::DynamoDB::Table'];
 
 // The image of the AWS Distro for OpenTelemetry collector, which a task
 // runs beside its app to send the app's traces to X-Ray.
@@ -221,6 +226,36 @@ function holdsOnlyACopyVault(template: Template): boolean {
   );
 }
 
+/** Whether `template` holds a resource AWS Backup's plan backs up. */
+function holdsBackedUpData(template: Template): boolean {
+  return BACKED_UP_TYPES.some((type) => resourcesOf(template, type).length > 0);
+}
+
+/**
+ * The buckets in `template` that hold data: every bucket but those another
+ * resource writes its logs to (a bucket's access logs, a distribution's, a
+ * load balancer's), which are not data and expire.
+ */
+function dataBuckets(template: Template): [string, Resource][] {
+  const logging = resourcesOf(template).flatMap(([, resource]) => {
+    const properties = resource.Properties ?? {};
+    const distribution = properties['DistributionConfig'];
+    const attributes = properties['LoadBalancerAttributes'];
+    return [
+      properties['LoggingConfiguration'],
+      isRecord(distribution) ? distribution['Logging'] : undefined,
+      Array.isArray(attributes)
+        ? (attributes as unknown[]).filter(
+            (attribute) => isRecord(attribute) && attribute['Key'] === 'access_logs.s3.bucket',
+          )
+        : undefined,
+    ].map((value: unknown) => JSON.stringify(value ?? null));
+  });
+  return resourcesOf(template, 'AWS::S3::Bucket').filter(
+    ([id]) => !logging.some((json) => refersTo(json, id)),
+  );
+}
+
 /** One tier's app, as `cdk synth -c tier=<tier>` builds it. */
 interface Built {
   readonly stacks: Stack[];
@@ -359,6 +394,22 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     }
   });
 
+  it('delivers again only the messages that failed, from every queue a function consumes', () => {
+    for (const [name, template] of app(tier).templates) {
+      const queues = resourcesOf(template, 'AWS::SQS::Queue').map(([id]) => `"${id}"`);
+      for (const [id, mapping] of resourcesOf(template, 'AWS::Lambda::EventSourceMapping')) {
+        // A source without an ARN (a self-managed Kafka cluster) is no queue.
+        const source = JSON.stringify(mapping.Properties?.['EventSourceArn'] ?? '');
+        if (source.includes(':sqs:') || queues.some((queue) => source.includes(queue))) {
+          // Without it one bad message fails its whole batch, again and again.
+          expect(mapping.Properties?.['FunctionResponseTypes'], `${name}/${id}`).toContain(
+            'ReportBatchItemFailures',
+          );
+        }
+      }
+    }
+  });
+
   it('says what happens to the data of every stateful resource when it is removed', () => {
     for (const [name, template] of app(tier).templates) {
       for (const [id, resource] of resourcesOf(template)) {
@@ -405,11 +456,14 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the removal policies', () => {
-      it('keep every table, backup vault and vault key where the tier keeps data, else delete them', () => {
+      it('keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them', () => {
         const policy = rules.keepData ? 'Retain' : 'Delete';
         for (const [name, template] of app(tier).templates) {
-          for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
-            expect([table.DeletionPolicy, table.UpdateReplacePolicy], `${name}/${id}`).toEqual([
+          for (const [id, data] of [
+            ...resourcesOf(template, 'AWS::DynamoDB::Table'),
+            ...dataBuckets(template),
+          ]) {
+            expect([data.DeletionPolicy, data.UpdateReplacePolicy], `${name}/${id}`).toEqual([
               policy,
               policy,
             ]);
@@ -470,6 +524,35 @@ describe.runIf(operations !== undefined).each(TIERS)(
       });
     });
 
+    describe('the versions of data buckets', () => {
+      it('are kept where the tier keeps data, the earlier ones as long as a table recovers or the backups last', () => {
+        if (!rules.keepData) {
+          return;
+        }
+        // Point-in-time recovery's 35 days, or retentionDays when longer.
+        const days = Math.max(35, promised().backups.retentionDays);
+        for (const [name, template] of app(tier).templates) {
+          for (const [id, bucket] of dataBuckets(template)) {
+            expect(bucket.Properties?.['VersioningConfiguration'], `${name}/${id}`).toEqual({
+              Status: 'Enabled',
+            });
+            const lifecycle = bucket.Properties?.['LifecycleConfiguration'];
+            const lifecycleRules: unknown[] = isRecord(lifecycle)
+              ? [lifecycle['Rules']].flat()
+              : [];
+            const kept = lifecycleRules.flatMap((rule) => {
+              const expiry = isRecord(rule) ? rule['NoncurrentVersionExpiration'] : undefined;
+              return isRecord(rule) && rule['Status'] === 'Enabled' && isRecord(expiry)
+                ? [expiry['NoncurrentDays']]
+                : [];
+            });
+            expect(kept, `${name}/${id}: the days earlier versions are kept`).toHaveLength(1);
+            expect(kept[0], `${name}/${id}`).toBeGreaterThanOrEqual(days);
+          }
+        }
+      });
+    });
+
     describe('the backup plan and vault', () => {
       it('back up daily for retentionDays in a vault with its own key, copied to copyToRegion', () => {
         const { retentionDays, copyToRegion } = promised().backups;
@@ -478,7 +561,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
           const plans = resourcesOf(template, 'AWS::Backup::BackupPlan');
           const vaults = resourcesOf(template, 'AWS::Backup::BackupVault');
           const selections = resourcesOf(template, 'AWS::Backup::BackupSelection');
-          if (!backedUp) {
+          if (!backedUp || !holdsBackedUpData(template)) {
             expect([plans, vaults, selections], name).toEqual([[], [], []]);
             continue;
           }
@@ -521,7 +604,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
         );
-        if (backedUp && copyToRegion !== '') {
+        if (backedUp && copyToRegion !== '' && serving().some(([, t]) => holdsBackedUpData(t))) {
           expect(copyStacks.map((stack) => stack.region)).toEqual([copyToRegion]);
         } else {
           expect(copyStacks).toEqual([]);
@@ -570,7 +653,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service and distribution, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
@@ -588,6 +671,31 @@ describe.runIf(operations !== undefined).each(TIERS)(
                 expect(watching.length, `${name}/${watchedId} ${metric}`).toBeGreaterThan(0);
               }
             }
+          }
+        }
+      });
+    });
+
+    describe('the dead-letter queues', () => {
+      it('alarm on the first message in every dead-letter queue', () => {
+        for (const [name, template] of serving()) {
+          const alarms = resourcesOf(template, 'AWS::CloudWatch::Alarm');
+          for (const [, queue] of resourcesOf(template, 'AWS::SQS::Queue')) {
+            const redrive = JSON.stringify(queue.Properties?.['RedrivePolicy'] ?? {});
+            const target = /"Fn::GetAtt":\["([^"]+)","Arn"\]/.exec(redrive)?.[1];
+            if (target === undefined) {
+              continue;
+            }
+            const watching = alarms.filter(([, alarm]) => {
+              const json = JSON.stringify(alarm.Properties);
+              return (
+                json.includes('"MetricName":"ApproximateNumberOfMessagesVisible"') &&
+                json.includes(`"${target}"`) &&
+                alarm.Properties?.['Threshold'] === 0 &&
+                alarm.Properties['ComparisonOperator'] === 'GreaterThanThreshold'
+              );
+            });
+            expect(watching.length, `${name}/${target} depth`).toBeGreaterThan(0);
           }
         }
       });

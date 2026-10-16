@@ -1,4 +1,4 @@
-// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's{{ else if eq .Framework "aws-fargate-ts" }}service's{{ else if eq .Framework "aws-lambda-py" }}Python function's CDK app, in{{ else }}function's{{ end }} TypeScript{{ if ne .Framework "aws-lambda-py" }} and its CDK app{{ end }}: typescript-eslint's strictest
+// Lint config for the {{ if eq .Framework "aws-ec2-ts" }}server's{{ else if eq .Framework "aws-fargate-ts" }}service's{{ else if eq .Framework "aws-lambda-py" }}Python function's CDK app, in{{ else if eq .Framework "aws-static-site-ts" }}site's{{ else }}function's{{ end }} TypeScript{{ if ne .Framework "aws-lambda-py" }} and its CDK app{{ end }}: typescript-eslint's strictest
 // type-checked presets, plus the rules below. `make lint` runs ESLint with
 // --max-warnings 0, so any finding fails `make check`. Every rule turned off
 // or changed here says why. Changing this file is the Standard's job, not a
@@ -11,6 +11,10 @@ export default defineConfig(
 {{- if eq .Framework "aws-fargate-ts" }}
   // What cdk synth writes (templates, the image's staged context) and what
   // npm run bundle writes.
+  globalIgnores(['cdk.out/', 'dist/']),
+{{- else if eq .Framework "aws-static-site-ts" }}
+  // What cdk synth writes (templates, the built site) and what npm run
+  // build writes.
   globalIgnores(['cdk.out/', 'dist/']),
 {{- else }}
   // What cdk synth writes: templates and the bundled {{ if eq .Framework "aws-ec2-ts" }}server{{ else }}function{{ end }}{{ if eq .Framework "aws-lambda-py" }};
@@ -47,25 +51,52 @@ export default defineConfig(
       '@typescript-eslint/prefer-readonly': 'error',
       // Array#sort without a compare function sorts numbers as strings.
       '@typescript-eslint/require-array-sort-compare': ['error', { ignoreStringArrays: true }],
+{{- if eq .Framework "aws-static-site-ts" }}
+      // Visitors see the page, never the browser's console; the CDK app
+      // reports what is wrong by throwing, which fails synth.
+{{- else }}
       // The code logs structured JSON through the Log it is given, so
       // tests see what it logs and every entry is one parseable line.
+{{- end }}
       'no-console': 'error',
 {{ if eq .Framework "aws-ec2-ts" }}      // process.exit() ends the server mid-request; throw, return an error
       // response, or on SIGTERM close the server and let the process end.{{ else if eq .Framework "aws-fargate-ts" }}      // process.exit() drops the requests in flight; on SIGTERM the server
-      // closes and the process ends when they are done.{{ else }}      // process.exit() in a Lambda function kills the execution environment
+      // closes and the process ends when they are done.{{ else if eq .Framework "aws-queue-ts" }}      // process.exit() in a Lambda function kills the execution environment
+      // mid-batch; throw, and the batch reports the message failed.{{ else if eq .Framework "aws-static-site-ts" }}      // The page has no process; in the CDK app, process.exit() ends synth
+      // without saying what failed. Throw, and synth fails with the error.{{ else }}      // process.exit() in a Lambda function kills the execution environment
       // mid-invocation; throw, or return an error response.{{ end }}
       'no-restricted-properties': [
         'error',
         {
           object: 'process',
           property: 'exit',
-          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else if eq .Framework "aws-fargate-ts" }}'Close the server and let the process end; never drop the requests in flight.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
+          message: {{ if eq .Framework "aws-ec2-ts" }}'Throw, or return an error response; never end the server mid-request.'{{ else if eq .Framework "aws-fargate-ts" }}'Close the server and let the process end; never drop the requests in flight.'{{ else if eq .Framework "aws-queue-ts" }}'Throw: the batch reports the failed message; never end the environment.'{{ else if eq .Framework "aws-static-site-ts" }}'Throw, so synth fails with the error.'{{ else }}'Throw, or return an error response; never end the execution environment.'{{ end }},
         },
       ],
       eqeqeq: ['error', 'always'],
       curly: ['error', 'all'],
     },
   },
+{{- if eq .Framework "aws-static-site-ts" }}
+  {
+    // The page runs in the browser, where Node's globals and modules don't
+    // exist; tsconfig.json has Node's types for the CDK app and the configs.
+    files: ['src/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['process', 'Buffer', 'global', '__dirname', '__filename', 'require'].map((name) => ({
+          name,
+          message: 'The page runs in the browser, not Node.',
+        })),
+      ],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['node:*'], message: 'The page runs in the browser, not Node.' }] },
+      ],
+    },
+  },
+{{- end }}
   {
     // Build and config scripts are plain JavaScript, outside tsconfig.json.
     files: ['**/*.mjs'],

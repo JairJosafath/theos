@@ -1,0 +1,5 @@
+node_modules/
+# What cdk synth writes: the templates and the built site
+cdk.out/
+# What npm run build writes
+dist/

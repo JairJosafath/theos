@@ -20,7 +20,7 @@
 # free worker): it reads each proposed issue against docs/design.md and the
 # open issues, readies the sound ones, comments on the others what they lack
 # and closes duplicates. It takes no issue and changes no code. Triage runs
-# again, at most every WATCH_TRIAGE seconds (default 1800) and never while one
+# again, at most every WATCH_TRIAGE seconds (default 600) and never while one
 # runs (.relay/triage.lock), when a proposed issue it hasn't seen appears, when
 # one changed after it (its body, title, labels or a comment that isn't the
 # triage's own), when one waits on an issue that closed after it (Depends on
@@ -58,9 +58,9 @@
 #
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
-# bug, status/ready and not urgent, when one failed in two runs within
-# WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
-# so it never turns main red. An open one is not filed again.
+# bug, status/ready and priority/velocity, not urgent, when one failed in two
+# runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
+# twice in a row, so it never turns main red. An open one is not filed again.
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -75,6 +75,14 @@
 # they are busy, or none has the labels the jobs ask for. A run GitHub made
 # no jobs for waits for good, as no runner can take it: the watch logs it once
 # and never notes it (#1236).
+#
+# In the same round it notes when /tmp on this device is at least
+# WATCH_TMP_FULL percent full (default 90), naming its three largest entries,
+# under the Maintainer report's Health only (hack/lib/github.sh report-note
+# tmp-<host>, with no Needs you line), kept current while it lasts
+# (.relay/tmp-full), and removes it when /tmp drops back. Relay sessions keep
+# their scratch in their worktree's .dev/tmp (#1269), so what fills /tmp is
+# someone else's.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
@@ -138,7 +146,7 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
-TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
+TRIAGE_EVERY=${WATCH_TRIAGE:-600}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}
@@ -147,6 +155,10 @@ MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 PARENTS_EVERY=${WATCH_PARENTS:-600}
 FLAKE_DAYS=${WATCH_FLAKE_DAYS:-7}
 QUEUED_MINUTES=${WATCH_QUEUED:-30}
+TMP_FULL=${WATCH_TMP_FULL:-90}
+# The report is every device's: each device's /tmp has its own line.
+TMP_HOST=$(hostname -s)
+TMP_KEY=tmp-$TMP_HOST
 PULL=${RELAY_PULL:-1}
 
 WORKERS=1 MODE=start
@@ -179,9 +191,12 @@ maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" t
 triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
-# run_triage, run_maintain, trim_caches and report_note:
+# run_triage, run_maintain, trim_caches, report_note, tmp_use and tmp_largest:
 # what the watch asks and starts (faked in the tests).
-pick_next() { github pick; }
+# pick_next counts every worker's reservations (create --next, .relay/next in
+# its worktree) as its own, so an issue a worker reserved starts the relay
+# after that worker stopped; only that worker's pick takes it first.
+pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9]*/.relay/next) github pick; }
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }
@@ -193,6 +208,10 @@ escalated() { github escalated; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
 trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
 report_note() { github report-note "$@"; }
+# tmp_use: the percent of /tmp's filesystem in use, a bare number.
+tmp_use() { df -P /tmp | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'; }
+# tmp_largest: /tmp's three largest entries, SIZE<tab>PATH, largest first.
+tmp_largest() { du -sxh /tmp/* /tmp/.[!.]* 2>/dev/null | sort -rh | head -n 3; }
 
 # trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
 # and log what it dropped (it says nothing when a cache is under its limit).
@@ -385,6 +404,45 @@ runner_round() {
   RUNNERS_SAID=$said
 }
 
+# tmp_round: say under the Maintainer report's Health, and not under Needs
+# you, when /tmp on this device is TMP_FULL percent full or more, with its
+# three largest entries (see the top), and take it out again when it drops
+# back. The report is asked each round while /tmp is full, as runner_round
+# does. $DIR/tmp-full holds the note the report carries. A failure is logged
+# once until it works again.
+TMP_SAID=
+tmp_round() {
+  local use out size path largest= note was= said=
+  [ -r "$DIR/tmp-full" ] && was=$(cat "$DIR/tmp-full")
+  if ! use=$(tmp_use 2>&1) || ! [[ $use =~ ^[0-9]+$ ]]; then
+    [ "$TMP_SAID" = err ] || log "could not read how full /tmp is: ${use//$'\n'/; }"
+    TMP_SAID=err
+    return 0
+  fi
+  if [ "$use" -ge "$TMP_FULL" ]; then
+    while IFS=$'\t' read -r size path; do
+      [ -n "$path" ] && largest+="${largest:+, }$path ($size)"
+    done < <(tmp_largest)
+    note="/tmp on $TMP_HOST is $use% full${largest:+; largest: $largest}"
+    if out=$(report_note "$TMP_KEY" "$note" "" 2>&1); then
+      [ -n "$was" ] || log "$note; said under the Maintainer report's Health"
+      echo "$note" >"$DIR/tmp-full"
+    else
+      said=note
+      [ "$TMP_SAID" = note ] || log "$note; could not say it in the Maintainer report: ${out//$'\n'/; }"
+    fi
+  elif [ -n "$was" ]; then
+    if out=$(report_note "$TMP_KEY" 2>&1); then
+      log "/tmp on $TMP_HOST is back under $TMP_FULL%; the note left the Maintainer report"
+      rm -f "$DIR/tmp-full"
+    else
+      said=clear
+      [ "$TMP_SAID" = clear ] || log "/tmp on $TMP_HOST is back under $TMP_FULL%; could not take the note out of the Maintainer report: ${out//$'\n'/; }"
+    fi
+  fi
+  TMP_SAID=$said
+}
+
 # flake_round: record each spec that failed on main (hack/lib/github.sh
 # flakes, which reads each failed run's log once: $DIR/flakes-runs) in
 # $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME, and file a "Flaky: <spec>" bug,
@@ -428,7 +486,7 @@ $(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4fac
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
-    out=$(github create "$title" - status/ready kind/bug source/dev <<<"$body" 2>&1)
+    out=$(github create "$title" - status/ready priority/velocity kind/bug source/dev <<<"$body" 2>&1)
     rc=$?
     if [ "$rc" = 0 ]; then
       log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"
@@ -862,6 +920,7 @@ while :; do
     ci_round
     flake_round
     runner_round
+    tmp_round
   fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now
