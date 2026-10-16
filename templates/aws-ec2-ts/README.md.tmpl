@@ -8,7 +8,8 @@ its infrastructure as a CDK app. Scaffolded by C4 Factory.
 ## The API
 
 The load balancer is internal: it answers only from inside the service's
-VPC, on port 80.
+VPC, over HTTPS on port 443, with the ACM certificate a deploy names in the
+stack's `CertificateArn` parameter; there is no plain HTTP.
 
 | Route             | Body                                | Answers                                    |
 | ----------------- | ----------------------------------- | ------------------------------------------ |
@@ -40,20 +41,52 @@ it); it needs AWS credentials for a real table.
 
 Nothing here deploys or needs an AWS account: synth runs offline, bundles the
 server with the installed esbuild, and needs neither Docker nor credentials.
-Deploying the stack (`cdk deploy`, after `cdk bootstrap` of the account) is
-for its owner, with their own credentials.
+
+## Tiers and operations
+
+The stacks are built for a tier, `production` or `development`, which is the
+place they run, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production.
+Production keeps the table when the stack goes, protects it and the stack
+from deletion, recovers it to any second of the last 35 days, backs it up
+daily with AWS Backup and keeps logs a year; development throws its data
+away with the stack and keeps logs a month. Both tiers alarm and have a
+dashboard; neither traces. The instances hold no data, so their disks are
+never backed up.
+
+What the app promises whatever the tier, the backups' retention and copy
+region, the recovery objectives and who the alarms tell, is in
+`infra/operations.ts`, which C4 Factory renders from the Container's
+`spec.operations`: change the block, and the file follows it. A deploy sets
+two parameters per environment: `CertificateArn`, the load balancer's
+certificate, which it needs, and `AlertEmail`, who the alarms tell. Each
+stack outputs `EntryPoint`, the load balancer's DNS name, and
+`AlarmTopicArn`, the topic its alarms and the group's scaling events
+notify.
+
+Deploying (`cdk deploy -c tier=production --parameters CertificateArn=<arn>`,
+after `cdk bootstrap` of the account) is for its owner, with their own
+credentials.
 
 ## How it runs
 
 Each instance runs Amazon Linux 2023 on Graviton (`t4g.small`). At its first
-boot it downloads the bundled server (`server.mjs`) from the CDK asset
-bucket, installs Node.js 22 and the CloudWatch agent from the Amazon Linux
-repositories, and runs the server under systemd as its own user; the agent
-ships the server's log to CloudWatch Logs. The instances sit in isolated
-subnets in two zones with no route to the internet: they reach S3, DynamoDB
-and CloudWatch Logs through VPC endpoints. The group keeps two to four
-instances, scales on CPU, replaces one that fails the load balancer's
-`GET /health` check, and on a change replaces them one at a time.
+boot it installs Node.js 22, the CloudWatch agent and `cfn-signal` from the
+Amazon Linux repositories, downloads the bundled server (`server.mjs`) from
+the CDK asset bucket, and runs the server under systemd as its own user; the
+agent ships the server's log to CloudWatch Logs. Once the server answers
+`GET /health`, the instance signals CloudFormation that it is ready. The
+instances sit in isolated subnets in two zones with no route to the
+internet: they reach S3, DynamoDB, CloudWatch Logs and CloudFormation
+through VPC endpoints. The group keeps two to four instances, scales on
+CPU, and replaces one that fails the load balancer's `GET /health` check.
+On a change it replaces them one at a time, starting each new one before
+stopping an old one and waiting for its signal: when a new instance fails
+to come up healthy, the update stops and CloudFormation rolls back.
 
 ## Layout
 
@@ -64,14 +97,18 @@ instances, scales on CPU, replaces one that fails the load balancer's
   `src/api.ts`, which routes it, checks its input and answers with a status
   code; `src/items.ts` holds the rules, free of AWS; `src/item_store.ts`
   keeps items in DynamoDB behind the `ItemStore` interface tests fake.
-- `infra/stacks.ts` defines the stacks; `infra/service_stack.ts` is the one
-  stack: the table, the VPC and its endpoints, the instances' role, launch
-  template and Auto Scaling group, and the load balancer with its access log
-  bucket. `infra/server_asset.ts` bundles the server for it. The stack is
-  named after the package.
+- `infra/stacks.ts` defines the stacks for a tier; `infra/service_stack.ts`
+  is the main one: the table, the VPC and its endpoints, the instances' role,
+  launch template and Auto Scaling group, the load balancer with its access
+  log bucket, the alarms (`infra/alarms.ts`) and, in production, the backups
+  (`infra/backups.ts`). `infra/server_asset.ts` bundles the server for it.
+  The stack is named after the package. `infra/operations.ts` holds what the
+  Container promises.
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
-  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to restore the data, roll a
+  deployment back, and what to do when an alarm fires.
 
 Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
 {{- end }}

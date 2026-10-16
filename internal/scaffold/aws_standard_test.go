@@ -259,7 +259,8 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-lambda-ts", []string{"esbuild", "module scope"}, []string{"go build", "bootstrap"}},
 		{"aws-lambda-go", []string{"go build", "provided.al2023", "arm64", "package scope"},
 			[]string{"esbuild", "module scope", "npm", "bundle"}},
-		{"aws-ec2-ts", []string{"esbuild"}, []string{"go build"}},
+		{"aws-ec2-ts", []string{"esbuild", "cfn-signal", "CertificateArn", "Instances hold no data", "AwsSolutions-AS3"},
+			[]string{"go build", "sends no resource signals", "the load balancer speaks HTTP", "X-Ray tracing |"}},
 		{"aws-fargate-ts", nil, []string{"go build", "bootstrap"}},
 		{"aws-lambda-py", []string{"uv.lock", "module scope"}, []string{"esbuild", "go build", "bootstrap"}},
 	}

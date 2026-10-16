@@ -19,46 +19,83 @@ CloudFormation offline.
   (`src/memory_store.fake.ts`) and a fake document client, and test the
   server over HTTP on a loopback port; none calls AWS. On `SIGTERM` the
   server finishes its requests and the process ends.
-- **Infrastructure:** `infra/stacks.ts` exports `defineStacks(app: App):
-  Stack[]`, which adds one stack named after the package (the Container):
-  `infra/service_stack.ts`, with an on-demand DynamoDB table (KMS-encrypted,
-  point-in-time recovery, deletion protection, `RETAIN`); a VPC
-  (`10.0.0.0/16`, isolated subnets in two zones, no NAT or internet
-  gateway, a flow log of rejected traffic kept one month) with gateway
-  endpoints for S3 and DynamoDB and an interface endpoint for CloudWatch
-  Logs; the instances' own role, granted only `GetItem` and `PutItem` on the
-  table, writes to the server's log group (kept one month) and
-  `s3:GetObject` on the server's asset; a launch template (Amazon Linux
-  2023, `t4g.small`, IMDSv2 required, an encrypted 8 GiB gp3 root volume,
-  detailed monitoring) whose user data `bootCommands` writes; an Auto
-  Scaling group of two to four instances with ELB health checks, a cooldown,
-  CPU target tracking at 60 % and a rolling update of one instance at a
-  time (with no resource signals, so it waits five minutes per instance
-  rather than for a healthy one); and an internal Application Load Balancer (HTTP on 80 from the VPC
-  only, invalid headers dropped, access logs to an SSE-S3 bucket kept 90
-  days, `RETAIN`) forwarding to port 8080 with a `GET /health` check. It
-  passes CDK Nag's `AwsSolutions` checks with two acknowledgements, each
-  with its reason: `AwsSolutions-AS3` (no scaling notifications) on the
-  group and `AwsSolutions-S1` (no server access log) on the access log
-  bucket. `infra/service_stack.test.ts` asserts it with `Template.fromStack`.
-- **Boot:** the user data downloads the server, installs `nodejs22` and
-  `amazon-cloudwatch-agent` from the Amazon Linux repositories (in S3,
-  through the gateway endpoint), runs `node server.mjs` under systemd as the
+- **Operations:** `infra/operations.ts`, rendered from `.Operations` (the
+  Container's `spec.operations` with the factory's defaults), exports one
+  frozen `OPERATIONS` of the Standard's `Operations` type: `backups`
+  (`retentionDays`, `copyToRegion`), `recovery` (`rpo`, `rto`) and `alerts`
+  (`email`), each string rendered with `ts`. The factory overwrites it when
+  the block changes; it is not a protected path.
+- **Infrastructure:** `infra/stacks.ts` exports `defineStacks(app: App, tier:
+  Tier): Stack[]`, which adds one stack named after the package (the
+  Container, and `<name>-development` in development, the Standard's
+  `stackNameFor`), `infra/service_stack.ts`, built for the tier with the
+  Standard's `TIER_RULES`, and in production with `copyToRegion` and backups
+  set a second, `<name>-backup-copy` in that region (`infra/backups.ts`'s
+  `BackupCopyStack`, the copy vault and its key). The service stack has an
+  on-demand DynamoDB table (KMS-encrypted; in production point-in-time
+  recovery, deletion protection and `RETAIN`, in development none and
+  `DESTROY`); a VPC (`10.0.0.0/16`, isolated subnets in two zones, no NAT or
+  internet gateway, a flow log of rejected traffic) with gateway endpoints
+  for S3 and DynamoDB and interface endpoints for CloudWatch Logs and
+  CloudFormation; the instances' own role, granted only `GetItem` and
+  `PutItem` on the table, writes to the server's log group,
+  `s3:GetObject` on the server's asset and `cloudformation:SignalResource`
+  on its stack; a launch template (Amazon Linux 2023, `t4g.small`, IMDSv2
+  required, an encrypted 8 GiB gp3 root volume deleted with its instance,
+  detailed monitoring) whose user data is `INSTALL_COMMAND`, the download
+  and `bootCommands`, with an exit trap that runs `cfn-signal` with the
+  script's status; an Auto Scaling group of two to four instances with ELB
+  health checks, a cooldown, CPU target tracking at 60 %, a creation policy
+  waiting for two signals and a rolling update of one instance at a time
+  that keeps two in service and waits for each new one's signal (15
+  minutes, `SIGNAL_TIMEOUT`), so a failed or missing signal fails the update
+  and CloudFormation rolls back, and scaling notifications to the alarm
+  topic; and an internal Application Load Balancer serving HTTPS on 443
+  only, from the VPC only, with the certificate of the `CertificateArn`
+  parameter and the recommended TLS policy (invalid headers dropped, access
+  logs to an SSE-S3 bucket expiring after the tier's log retention,
+  `RETAIN`), forwarding to port 8080 with a `GET /health` check. Log groups
+  keep a year in production, a month in development. `infra/alarms.ts`
+  (an encrypted topic whose key CloudWatch and Auto Scaling's
+  service-linked role may use, the `AlertEmail` parameter and its
+  conditional subscription, `cdk-monitoring-constructs`' `MonitoringFacade`
+  and dashboard, the `AlarmTopicArn` output) builds the alarms, the same in
+  both tiers: the load balancer's own 5xx, the instances' 5xx, p99 latency
+  over a second and unhealthy targets, the group's CPU over 90 % and fewer
+  than two instances in service, and the table's read and write throttles
+  and system errors. In production with `retentionDays` over 0,
+  `infra/backups.ts`'s `Backups` keeps daily AWS Backup backups of the
+  stack's table, named by ARN (never by the Container's tag, which the
+  instances, their volumes and the development stack's table carry too),
+  for `retentionDays` in a vault with its own key, copied to `copyToRegion`.
+  No X-Ray in either tier. The stack outputs `EntryPoint` (the load
+  balancer's DNS name). It passes CDK Nag's `AwsSolutions` checks with one
+  acknowledgement of its own, with its reason: `AwsSolutions-S1` (no server
+  access log) on the access log bucket; `infra/backups.ts` acknowledges AWS
+  Backup's managed policy (`AwsSolutions-IAM4`). `infra/service_stack.test.ts`
+  asserts it for both tiers with `Template.fromStack`.
+- **Boot:** the user data installs `nodejs22`, `amazon-cloudwatch-agent`,
+  `logrotate` and `aws-cfn-bootstrap` from the Amazon Linux repositories (in
+  S3, through the gateway endpoint), downloads the server, runs `node server.mjs` under systemd as the
   `server` user with `NoNewPrivileges` and a read-only system, restarting it
   however often it stops, ships `/var/log/server/server.log` to the log
   group, one stream per instance, and rotates it with logrotate
-  (`copytruncate`, daily or past 100 MB, three kept).
+  (`copytruncate`, daily or past 100 MB, three kept). Its last command waits
+  up to five minutes for the server to answer `/health` on the instance, so
+  the exit trap signals success only for a healthy server.
 - **Server:** a request target that isn't a path (`//x`, `*`) is answered
   400, a client that hangs up mid-body is dropped, and a bug in serving one
   request is logged and closes its connection; none ends the process.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
   `infra/service_stack.ts`, `infra/service_stack.test.ts`,
-  `infra/server_asset.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
+  `infra/server_asset.ts`, `infra/alarms.ts`, `infra/backups.ts`,
+  `infra/operations.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients are
   `dependencies`, which esbuild bundles into the server; the CDK, CDK Nag,
-  tsx and the Standard's tools are `devDependencies`. `npm start` runs the
+  `cdk-monitoring-constructs` 10.3.2, tsx and the Standard's tools are
+  `devDependencies`. `npm start` runs the
   server with tsx.
 - **Build:** `infra/server_asset.ts` makes an S3 asset whose local bundling
   runs the installed esbuild on `src/main.ts` into one ESM file,
@@ -67,8 +104,9 @@ CloudFormation offline.
   `infra/main.ts` with tsx, and its context holds the feature flags `cdk
   init` of aws-cdk 2.1145.0 recommends.
 - **Tests:** vitest runs `src/**/*.test.ts` and `infra/**/*.test.ts` in
-  Node, with a 60-second timeout for tests and hooks, since the Standard's
-  test synthesizes the stack and runs CDK Nag in its `beforeAll`.
+  Node, with a 60-second timeout for tests and 120 seconds for hooks, since
+  the Standard's test synthesizes the app for both tiers and runs CDK Nag in
+  its `beforeAll`.
 - **Type check:** `tsconfig.json` is `strict` with `noUncheckedIndexedAccess`
   and the other strict flags, Node's types and `resolveJsonModule`;
   `noEmit`. It includes `src`, `infra` and `vitest.config.mts`.
@@ -77,17 +115,28 @@ CloudFormation offline.
 - **Lockfile:** `package-lock.json` was generated by npm 11 on Node 24; only its
   two `name` fields are templated, so `npm ci` installs exactly the versions
   in `package.json`. `allowScripts` lets esbuild's install script run.
-- **Standard:** made for `aws-standard` (v1.2.0 or later, which has this
-  Framework's branch), which owns `infra/main.ts`, `infra/standard.ts` and
+- **Standard:** made for `aws-standard` (v1.7.0 or later, which has this
+  Framework's tiers, the load balancer's and group's alarms in its test, and
+  its runbook), which owns `infra/main.ts`, `infra/standard.ts` (the tiers,
+  `TIER_RULES`, the `Operations` type this Framework imports) and
   `infra/standard.test.ts`. Lists its tools in `devDependencies` with exact
   versions, the same as aws-lambda-ts: `eslint` 10.11.0, `@eslint/js`
   10.0.1, `typescript-eslint` 8.71.0, `prettier` 3.9.9, `typescript` 6.0.3,
   `vitest` 5.0.3, `esbuild` 0.28.2, `aws-cdk-lib` 2.273.0, `constructs`
   10.8.1, `aws-cdk` 2.1145.0, `cdk-nag` 3.0.2 and `tsx` 4.23.15.
-- **Not checked before release:** nothing boots an instance. That the Amazon
-  Linux repositories carry `nodejs22` and the CloudWatch agent, that they
-  are reachable through the S3 endpoint, and that the server answers
-  through the load balancer can only be seen in an AWS account.
+- **Not checked before release:** nothing boots an instance or deploys.
+  That the Amazon Linux repositories carry `nodejs22`, the CloudWatch agent
+  and `aws-cfn-bootstrap`, that they are reachable through the S3 endpoint,
+  that `cfn-signal` reaches CloudFormation through its endpoint and a
+  rolling update stops on a failed signal, that Auto Scaling may publish to
+  the encrypted topic, that the server answers through the load balancer,
+  and that a backup restores can only be seen in an AWS account.
+- **History:** v1.1.0 (with `aws-standard` v1.7.0) builds for a tier, renders
+  `infra/operations.ts`, keeps and backs up the table in production, alarms
+  to a topic with a dashboard, serves HTTPS with `CertificateArn` instead of
+  HTTP, waits for `cfn-signal` in a rolling update, and sends the group's
+  scaling notifications to the alarm topic instead of acknowledging
+  `AwsSolutions-AS3`.
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 
@@ -101,9 +150,12 @@ byte for byte. Paths are never rendered, only contents.
 
 Data: `.Project`, `.SoftwareSystem`, `.Container`, `.DisplayName`, `.Type`, the chosen
 `.Framework`, `.Standard`, `.Compute` and `.Deployment` (empty when none is chosen),
-and `.Connectors` (sorted names). Functions: `has`, `snake`, `upper`, `lower`, `dart`,
-plus the `text/template` builtins. No TypeScript file is rendered: the CDK app
-reads the stack's name and description from `package.json`.
+`.Connectors` (sorted names) and `.Operations` (the Container's
+`spec.operations`, defaults filled in). Functions: `has`, `snake`, `upper`,
+`lower`, `dart`, `ts` (a TypeScript string literal, quoted as Prettier quotes
+it), plus the `text/template` builtins. `infra/operations.ts.tmpl` is the one
+TypeScript file rendered: the CDK app reads the stack's name and description
+from `package.json`.
 
 Each path belongs to exactly one layer; `.devcontainer/**` and `.c4factory.yaml`
 belong to the operator. Release a change by tagging a new version and bumping it in

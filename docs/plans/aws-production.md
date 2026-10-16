@@ -315,6 +315,55 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 6, as built
+
+`aws-ec2-ts` v1.1.0 with `aws-standard` v1.7.0 (#1111), copying step 3's
+files (`infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
+`defineStacks(app, tier)`); `docs/screenshots/1111-aws-ec2-ts-check.txt` has
+the evidence. What it settled beyond step 3:
+
+- **The backup plan names the stack's table by ARN, not by the tag.** A tag
+  selection on an EC2 stack would back up the instances and their volumes,
+  which carry the Container's tag too and hold no data, and the development
+  stack's table (#1272). So `Backups` takes `tables` and selects them with
+  `BackupResource.fromDynamoDbTable`, as #1267 decided for the Lambda
+  Frameworks. The Standard's test accepts a selection naming only the
+  stack's own tables, or else the tag (the Lambda Frameworks until #1267
+  and #1272 move them), and refuses a tag selection in a stack with an
+  Auto Scaling group, a launch template or an instance, whose launch
+  template volumes must be deleted with their instance; that is decision
+  3's "the EBS root is not backed up", enforced.
+- **`cfn-signal` through a CloudFormation endpoint.** The instances have no
+  way out, so the VPC gets a CloudFormation interface endpoint beside the
+  Logs one. `aws-cfn-bootstrap` is installed first (`INSTALL_COMMAND`), the
+  user data's exit trap (`addSignalOnExitCommand`) signals the script's
+  status, and the script's last command waits up to five minutes for the
+  server to answer `/health` on the instance. The group has a creation
+  policy for its two instances and a rolling update with
+  `waitOnResourceSignals`, `minInstancesInService` 2 (a replacement starts
+  before an old instance stops, so the in-service alarm stays quiet) and a
+  15-minute timeout; CDK grants `cloudformation:SignalResource` on the
+  stack.
+- **HTTPS only on the internal load balancer.** One listener on 443 with
+  the `CertificateArn` parameter (no default, the pattern `aws-fargate-ts`
+  uses) and the recommended TLS policy; no listener on 80, not even a
+  redirect, since nothing outside the VPC reaches it. `EntryPoint` is the
+  load balancer's DNS name, which the certificate's domain points at.
+- **Scaling notifications to the alarm topic.** The topic's key lets Auto
+  Scaling's service-linked role use it by an `aws:PrincipalArn` condition
+  on a `*` principal (with `kms:CallerAccount`), since a key policy can't
+  name a role that doesn't exist yet, and the role appears only with the
+  account's first group. `Alarms` exposes its `key` for that.
+- **The alarms** are `monitorCustom` groups (`cdk-monitoring-constructs`
+  has no alarms for an Auto Scaling group or a plain load balancer), named
+  as `aws-fargate-ts`'s (#1110) are: `LoadBalancer-5xx`, `Service-5xx`,
+  `Service-Latency-P99`, `Service-Unhealthy-Instances`, then
+  `Instances-CPU-Usage` and `Instances-In-Service`. The Standard's
+  `ALARMED_METRICS` gains #1110's load balancer, target group and service
+  entries, written the same way, and `AWS::AutoScaling::AutoScalingGroup`.
+- **The access log bucket expires by the tier's log retention** (a year or
+  a month), as #1110's does; it stays `RETAIN` in both tiers.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`

@@ -43,7 +43,25 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   'AWS::Lambda::Function': ['Errors', 'Throttles', 'Duration'],
   'AWS::DynamoDB::Table': ['ReadThrottleEvents', 'WriteThrottleEvents', 'SystemErrors'],
   'AWS::ApiGatewayV2::Api': ['5xx'],
+  // A load balancer's own 5xx, its targets' 5xx and how long they take.
+  'AWS::ElasticLoadBalancingV2::LoadBalancer': [
+    'HTTPCode_ELB_5XX_Count',
+    'HTTPCode_Target_5XX_Count',
+    'TargetResponseTime',
+  ],
+  'AWS::ElasticLoadBalancingV2::TargetGroup': ['UnHealthyHostCount'],
+  // Container Insights counts the running tasks.
+  'AWS::ECS::Service': ['CPUUtilization', 'MemoryUtilization', 'RunningTaskCount'],
+  // The group's CPU, and its instances in service against its minimum.
+  'AWS::AutoScaling::AutoScalingGroup': ['CPUUtilization', 'GroupInServiceInstances'],
 };
+
+// What runs on an instance, whose volumes hold no data (docs/style/aws.md).
+const INSTANCE_TYPES = [
+  'AWS::AutoScaling::AutoScalingGroup',
+  'AWS::EC2::LaunchTemplate',
+  'AWS::EC2::Instance',
+];
 
 /** The feature flags `cdk synth` reads from cdk.json, so the tests build the same app. */
 function cdkContext(): Record<string, unknown> {
@@ -145,9 +163,16 @@ function only<T>(items: readonly T[], what: string): T {
   return item;
 }
 
-/** A JSON reference to the resource `id`, as a template writes it. */
-function ref(id: string): string {
-  return JSON.stringify({ Ref: id });
+/**
+ * Whether `json`, a part of a template, refers to the resource `id`: by
+ * `Ref`, as a table's or function's name, or by `Fn::GetAtt`, as a load
+ * balancer's or target group's full name and a service's name.
+ */
+function refersTo(json: string, id: string): boolean {
+  return (
+    json.includes(JSON.stringify({ Ref: id })) ||
+    json.includes(`{"Fn::GetAtt":[${JSON.stringify(id)},`)
+  );
 }
 
 /** A stack that holds only the vault a backup is copied to, and its key: it serves nothing. */
@@ -446,19 +471,33 @@ describe.runIf(operations !== undefined).each(TIERS)(
               expect(JSON.stringify(copies), name).toContain(`:backup:${copyToRegion}:`);
             }
           }
-          // The plan backs up what carries the Container's tag, which the
-          // Standard puts on every resource.
-          const container = STANDARD_TAGS['c4factory:container'];
+          // The plan backs up the stack's own tables, named by ARN, or what
+          // carries the Container's tag, which the Standard puts on every
+          // resource of every stack of the Container.
           const selection = only(selections, `${name}'s backup selections`)[1];
-          expect(selection.Properties?.['BackupSelection'], name).toMatchObject({
-            ListOfTags: [
-              {
-                ConditionKey: 'c4factory:container',
-                ConditionType: 'STRINGEQUALS',
-                ConditionValue: container,
-              },
-            ],
-          });
+          const chosen = selection.Properties?.['BackupSelection'];
+          const named: unknown[] = isRecord(chosen) ? [chosen['Resources'] ?? []].flat() : [];
+          if (named.length > 0) {
+            const tables = resourcesOf(template, 'AWS::DynamoDB::Table').map(([id]) => id);
+            for (const resource of named) {
+              expect(
+                tables.some((id) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`),
+                `${name}: ${JSON.stringify(resource)} is none of the stack's tables`,
+              ).toBe(true);
+            }
+            expect(chosen, name).not.toHaveProperty('ListOfTags');
+            expect(chosen, name).not.toHaveProperty('Conditions');
+          } else {
+            expect(chosen, name).toMatchObject({
+              ListOfTags: [
+                {
+                  ConditionKey: 'c4factory:container',
+                  ConditionType: 'STRINGEQUALS',
+                  ConditionValue: STANDARD_TAGS['c4factory:container'],
+                },
+              ],
+            });
+          }
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -467,6 +506,38 @@ describe.runIf(operations !== undefined).each(TIERS)(
           expect(copyStacks.map((stack) => stack.region)).toEqual([copyToRegion]);
         } else {
           expect(copyStacks).toEqual([]);
+        }
+      });
+    });
+
+    describe('the instances', () => {
+      it('hold no data: their volumes go with them, and no backup selects them by tag', () => {
+        for (const [name, template] of app(tier).templates) {
+          if (!INSTANCE_TYPES.some((type) => resourcesOf(template, type).length > 0)) {
+            continue;
+          }
+          expect(resourcesOf(template, 'AWS::EC2::Volume'), name).toEqual([]);
+          for (const [id, launchTemplate] of resourcesOf(template, 'AWS::EC2::LaunchTemplate')) {
+            const data = launchTemplate.Properties?.['LaunchTemplateData'];
+            const devices: unknown[] = isRecord(data)
+              ? [data['BlockDeviceMappings'] ?? []].flat()
+              : [];
+            for (const device of devices) {
+              const ebs = isRecord(device) ? device['Ebs'] : undefined;
+              if (ebs !== undefined) {
+                expect(ebs, `${name}/${id}`).toMatchObject({ DeleteOnTermination: true });
+              }
+            }
+          }
+          // A tag selection would back up every instance and volume that
+          // carries the Container's tag.
+          for (const [id, selection] of resourcesOf(template, 'AWS::Backup::BackupSelection')) {
+            const chosen = selection.Properties?.['BackupSelection'];
+            expect(
+              isRecord(chosen) ? chosen['ListOfTags'] : undefined,
+              `${name}/${id}`,
+            ).toBeUndefined();
+          }
         }
       });
     });
@@ -483,7 +554,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table and API, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service and Auto Scaling group, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
@@ -496,7 +567,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
               for (const metric of metrics) {
                 const watching = alarms.filter(([, alarm]) => {
                   const json = JSON.stringify(alarm.Properties);
-                  return json.includes(`"MetricName":"${metric}"`) && json.includes(ref(watchedId));
+                  return json.includes(`"MetricName":"${metric}"`) && refersTo(json, watchedId);
                 });
                 expect(watching.length, `${name}/${watchedId} ${metric}`).toBeGreaterThan(0);
               }

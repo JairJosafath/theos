@@ -213,6 +213,8 @@ CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 {{- if eq .Framework "aws-lambda-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
 @aws-lambda-powertools/logger, metrics and idempotency 2.36.0.
+{{- else if eq .Framework "aws-ec2-ts" }} The
+operations (the alarms) add cdk-monitoring-constructs 10.3.2.
 {{- end }}
 {{- end }}
 {{- if eq .Framework "aws-lambda-ts" }}
@@ -239,6 +241,29 @@ give none.
 | Powertools for AWS Lambda (TypeScript), Idempotency — https://docs.aws.amazon.com/powertools/typescript/latest/features/idempotency/                                                                                            | 2.36.0         |
 | cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                        | 1.57.2         |
 | Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/ | live           |
+{{- else if eq .Framework "aws-ec2-ts" }}
+
+## Operations (read 2026-10-16)
+
+Read for the tiers, the backups, the alarms, the rolling update's signals
+and `docs/runbook.md`. The pricing pages were read for what costs more, not
+for figures: the digests give none.
+
+| Source                                                                                                                                                                                                                                       | Version / date |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                                                                             | live           |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                                                                              | live           |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                                                                 | live           |
+| Operational excellence pillar, OPS08 workload observability (BP04 alerts, BP05 dashboards) — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html                  | live           |
+| AWS Backup, restoring a DynamoDB table — https://docs.aws.amazon.com/aws-backup/latest/devguide/restoring-dynamodb.html                                                                                                                      | live           |
+| AWS Backup, vault lock — https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html                                                                                                                                              | live           |
+| DynamoDB, point-in-time recovery — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html                                                                                                              | live           |
+| CloudFormation, cfn-signal — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/cfn-signal.html                                                                                                                          | live           |
+| CloudFormation, UpdatePolicy (AutoScalingRollingUpdate) — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-updatepolicy.html                                                                             | live           |
+| EC2 Auto Scaling, SNS notifications and the key policy of an encrypted topic — https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-sns-notifications.html                                                                 | live           |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                               | 10.3.2         |
+| cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                                     | 1.57.2         |
+| Pricing: DynamoDB, AWS Backup, CloudWatch, PrivateLink — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/privatelink/pricing/ | live           |
 {{- end }}
 
 ## Cross-language (read 2026-09-30)

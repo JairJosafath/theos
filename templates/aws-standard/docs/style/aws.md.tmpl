@@ -320,8 +320,9 @@ says why each rule matters.
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
-  the log group the stack creates, with a retention, one stream per
-  instance. [test: log groups keep logs for a set time]
+  the log group the stack creates, one stream per instance, kept for the
+  tier's time: a year in production, a month in development. [test: log
+  retention]
 - The load balancer writes access logs to an S3 bucket, and the VPC's
   rejected traffic goes to a flow log. [nag: AwsSolutions-ELB2,
   AwsSolutions-VPC7]
@@ -358,18 +359,18 @@ says why each rule matters.
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-ec2-ts") }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
-  tier's `TIER_RULES`, as the stack's tables are. [test: the removal
+  tier's `TIER_RULES`, as the stack's {{ if eq .Framework "aws-ec2-ts" }}table is{{ else }}tables are{{ end }}. [test: the removal
   policies, deletion protection, point-in-time recovery]
 {{- else }}
 - Point-in-time recovery on. [nag: AwsSolutions-DDB3]
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-ec2-ts") }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -430,29 +431,46 @@ says why each rule matters.
 
 - The VPC has isolated subnets in two zones and no NAT gateway or internet
   gateway: the instances reach S3 (their code, the operating system's
-  packages), DynamoDB and CloudWatch Logs through VPC endpoints, and nothing
-  else. A new AWS service the code calls needs its endpoint. [test; review]
+  packages), DynamoDB, CloudWatch Logs and CloudFormation (`cfn-signal`)
+  through VPC endpoints, and nothing else. A new AWS service the code calls
+  needs its endpoint. [test; review]
 - The VPC's CIDR is written out (`VPC_CIDR`), so security group rules name
   it and CDK Nag can read them. [nag: AwsSolutions-EC23]
-- Flow logs record rejected traffic to a log group with a retention.
-  [nag: AwsSolutions-VPC7]
-- The load balancer is internal, its security group open only to the VPC on
-  its listener's port, and the instances' only to the load balancer on the
-  server's port. Making it internet-facing is an issue's decision: it then
-  needs HTTPS with a certificate and an authorizer in front of the routes.
-  [nag: AwsSolutions-EC23; review]
+- Flow logs record rejected traffic to a log group kept for the tier's
+  time. [nag: AwsSolutions-VPC7; test: log retention]
+- The load balancer is internal and serves HTTPS only, even inside the VPC:
+  one listener on 443 with the certificate the `CertificateArn` parameter
+  names (the deployer's ACM certificate, so synth needs no account) and the
+  recommended TLS policy, no listener on plain HTTP. Its security group is
+  open only to the VPC on 443, and the instances' only to the load balancer
+  on the server's port. Making it internet-facing is an issue's decision:
+  it then needs an authorizer in front of the routes. [nag:
+  AwsSolutions-EC23; test]
 - It drops invalid header fields and writes access logs to an S3 bucket
-  (SSE-S3, TLS only, public access blocked, kept 90 days) that the log
-  delivery service may write to. [nag: AwsSolutions-ELB2, AwsSolutions-S10;
-  test]
+  (SSE-S3, TLS only, public access blocked) that the log delivery service
+  may write to. They are logs, not data: they expire after the tier's log
+  retention, and the bucket is kept in either tier, since CloudFormation
+  can't delete one that holds objects. [nag: AwsSolutions-ELB2,
+  AwsSolutions-S10; test]
 - The target group checks `GET /health` and gives a stopping instance 30
   seconds to finish its requests. [test]
+- Alarms on its own 5xx (`HTTPCode_ELB_5XX_Count`), the instances' 5xx
+  (`HTTPCode_Target_5XX_Count`), their p99 latency (`TargetResponseTime`)
+  and unhealthy targets (`UnHealthyHostCount`), from the stack's `Alarms`.
+  [test: the alarms and topic]
 
 ## EC2 instances and the Auto Scaling group
 
 - A launch template, never a launch configuration: Amazon Linux 2023 on
   `arm64` (Graviton: cheaper and lower energy), resolved at deploy time from
   the public SSM parameter, so synth needs no lookup. [review]
+- Instances hold no data: what the service keeps is in the table, and an
+  instance's disk holds only the system, the server's code and logs not yet
+  shipped. The root volume is deleted with its instance and never backed
+  up, and the backup plan names the stack's tables by ARN, never by a tag
+  the instances and their volumes carry too. A feature that needs to keep a
+  file keeps it in S3 or DynamoDB, never on the instance. [test: the
+  instances; review]
 - IMDSv2 required, the root volume gp3 and encrypted, detailed monitoring
   on. [nag: AwsSolutions-EC26, AwsSolutions-EC28; test]
 - The instances' own role, granted only what the server calls and the
@@ -461,19 +479,29 @@ says why each rule matters.
   AwsSolutions-IAM5; test]
 - The server ships as an S3 asset: `infra/server_asset.ts` bundles
   `src/main.ts` with the installed esbuild into one `server.mjs` during
-  synth; never Docker. The user data downloads it, installs Node.js and the
-  CloudWatch agent from the Amazon Linux repositories, and runs it under
-  systemd as its own user. A change to the boot is a change to
-  `bootCommands` and its test. [review]
+  synth; never Docker. The user data installs Node.js, the CloudWatch agent
+  and `cfn-signal` from the Amazon Linux repositories, downloads it, and
+  runs it under systemd as its own user. A change to the boot is a change
+  to `INSTALL_COMMAND` or `bootCommands` and its test. [review]
 - At least two instances in two zones, a maximum set, a cooldown, a
   target-tracking scaling policy, and the load balancer's health check
   replacing an instance that fails it. [nag: AwsSolutions-AS1,
   AwsSolutions-AS2; test]
-- A rolling update replaces one instance at a time and keeps one in
-  service. It sends no resource signals (that would need a CloudFormation
-  endpoint), so it waits a fixed time per instance and doesn't see whether
-  the new one is healthy: a release that can't start replaces every
-  instance. Test the boot before a release. [test; review]
+- A rolling update replaces one instance at a time, starting the new one
+  first so two stay in service, and waits for its resource signal: the boot
+  script ends by waiting for the server to answer `/health`, and its exit
+  trap runs `cfn-signal` with its exit status. A step that fails, or a
+  server that doesn't answer within five minutes, signals a failure, and a
+  missing signal times out (`SIGNAL_TIMEOUT`); either fails the update, and
+  CloudFormation rolls back to the instances it had. The group's creation
+  waits for its first two signals the same way. Keep the health wait the
+  boot's last command. [test]
+- The group sends its scaling events (launches, terminations and their
+  failures) to the stack's alarm topic; its key lets Auto Scaling's
+  service-linked role publish. [nag: AwsSolutions-AS3; test]
+- The group has alarms on its CPU and on fewer instances in service than
+  its minimum (`GroupInServiceInstances`, from the group metrics it
+  publishes). [test: the alarms and topic]
 - systemd restarts the server whenever it stops, and logrotate keeps its
   log file small on the disk; a change to the boot keeps both. [test]
 - No secrets in the user data or the unit's environment: they are visible
@@ -529,6 +557,12 @@ says why each rule matters.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
   `fromLookup`, so synth needs no account. [review]
+{{- if eq .Framework "aws-ec2-ts" }}
+- `defineStacks(app, tier)` builds the stacks for the tier the deploy names,
+  with the tier's `TIER_RULES` and what `infra/operations.ts` promises; no
+  other context value or environment variable is read at synth. [test: the
+  Standard's per-tier checks]
+{{- end }}
 - Every stack carries the Standard's tags (`c4factory:project`,
   `c4factory:system`, `c4factory:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]

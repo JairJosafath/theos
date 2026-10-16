@@ -1,4 +1,5 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-ec2-ts") -}}
 # Reviewer guide
 
 You review one pull request against the issue it closes: its acceptance
@@ -172,9 +173,9 @@ yourself; the full `make check` runs on the release's commit before its tag.
   `env` taken from the environment or a context lookup, which would need an
   AWS account to synthesize.
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $tiered }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
-  `RETAIN`, or never protected), a new function, table or API without its
+  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-ec2-ts" }}load balancer, group or table{{ else }}function, table or API{{ end }} without its
   alarms on the stack's topic, a context value read but `tier`, and a
   change to `infra/operations.ts` that its issue's change to the
   Container's `spec.operations` doesn't ask for. A change

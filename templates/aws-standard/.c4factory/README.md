@@ -61,15 +61,22 @@ byte for byte.
   which renders empty, and so is left out, for every other Framework, and
   branches in `AGENTS.md`, the role guides, `docs/style/aws.md` and
   `SOURCES.md` (the operations sources, read 2026-10-16); and the Go
-  digest's cold-start line is wrapped so Prettier keeps it. A Framework
-  added later gets its branches in the version that adds it.
+  digest's cold-start line is wrapped so Prettier keeps it. Since v1.7.0
+  `aws-ec2-ts` (from its v1.1.0) has the same: its `docs/well-architected.md`
+  branch rewritten for the tiers (no tracing in either), the HTTPS listener,
+  the rolling update that waits for `cfn-signal`, the scaling notifications
+  and instances that hold no data; a `docs/runbook.md` branch; and its
+  branches in `AGENTS.md`, the role guides and `docs/style/aws.md`, which
+  makes it a rule that instances hold no data and their volumes are never
+  backed up. A Framework added later gets its branches in the version that
+  adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts` and `aws-ec2-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -124,11 +131,21 @@ byte for byte.
   when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
   over 0: one plan whose rules are daily, keep `retentionDays` and copy to
   `copyToRegion`'s vault when set, one vault with its own key, one selection
-  by the `c4factory:container` tag, and a copy stack in that region; else
-  none), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  naming only the stack's own tables by ARN, or else by the
+  `c4factory:container` tag, and a copy stack in that region; else none),
+  the instances (since v1.7.0: in a stack with an Auto Scaling group, a
+  launch template or an instance, no EBS volume of its own, every launch
+  template volume deleted with its instance, and no backup selection by
+  tag, which would back the instances up), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
-  `SystemErrors`, every HTTP API's `5xx`), the subscription (the
+  `SystemErrors`, every HTTP API's `5xx`, and since v1.7.0 every load
+  balancer's `HTTPCode_ELB_5XX_Count`, `HTTPCode_Target_5XX_Count` and
+  `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
+  ECS service's `CPUUtilization`, `MemoryUtilization` and
+  `RunningTaskCount`, and every Auto Scaling group's `CPUUtilization` and
+  `GroupInServiceInstances`, an alarm naming its resource by `Ref` or
+  `Fn::GetAtt`), the subscription (the
   `AlertEmail` parameter defaulting to `alerts.email`, one email
   subscription to it under a condition that it is not empty), tracing
   (`Active` by tier), log retention (the tier's) and the two outputs
@@ -188,7 +205,7 @@ byte for byte.
   exporting `defineStacks(app: App, tier: Tier): Stack[]` (one written
   before tiers takes the app alone), which adds every stack for the tier to
   `app` without an `env` from the environment or a context lookup; and,
-  from `aws-lambda-ts` v1.1.0 on, `infra/operations.ts`, rendered from
+  from `aws-lambda-ts` v1.1.0 and `aws-ec2-ts` v1.1.0 on, `infra/operations.ts`, rendered from
   `.Operations`, exporting `OPERATIONS` of the `Operations` type, which its
   stacks read;
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
@@ -229,15 +246,16 @@ byte for byte.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For `aws-lambda-ts`
-  it also says what each tier does per pillar and what `infra/operations.ts`
+  and `aws-ec2-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
   drill, a game day, right-sizing from measured load) is listed with why.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, renders the
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts` and `aws-ec2-ts`, renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
-  table, how to roll a deployment back, what each alarm means and what to do
+  table, how to roll a deployment back (for `aws-ec2-ts`, how a rolling
+  update stops on a failed or missing signal and where to look), what each alarm means and what to do
   first, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
   allocation tags' activation), and how to drill a restore.
