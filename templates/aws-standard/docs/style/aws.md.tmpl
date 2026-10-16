@@ -1,5 +1,7 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
+{{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
@@ -531,13 +533,13 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `*slog.Logger` the
   code is given (`slog.NewJSONHandler` on stderr, made in `main`); never
   `fmt.Print` or the `log` package. [review]
-{{- else if $py -}}
-- Log structured JSON, one entry per line, through the `Log` the code is
-  given; never `print`. [lint: T201]
-{{- else if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+- There is no Powertools for Go: the logs are `slog`'s, and the function
+  sends no metrics of its own; the alarms read what Lambda, API Gateway and
+  DynamoDB report. [review]
+{{- else if or $lambda $queue $schedule -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
-  which `src/handler.ts` makes and hands to the code as its `Log`; never
-  `console`. [lint: no-console]
+  which `{{ if $py }}app/handler.py{{ else }}src/handler.ts{{ end }}` makes and hands to the code as its `Log`; never
+  `{{ if $py }}print{{ else }}console{{ end }}`. [lint: {{ if $py }}T201{{ else }}no-console{{ end }}]
 - Count what matters with Powertools' Metrics, written into the logs in
   the embedded metric format: no API call, no permission. [review]
 {{- else -}}
@@ -580,10 +582,14 @@ says why each rule matters.
 - Writes are idempotent: a `PutItem` of the whole item, or a conditional
   write (`ConditionExpression`) that refuses a second apply. Never a blind
   `ADD` on a retried request. [review]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $go }}
+- Idempotency is by hand, as above: there is no Powertools for Go, and no
+  idempotency table. `PUT /items/{id}` replaces the whole item, so a retry
+  writes the same item again. [review]
+{{- else if $lambda }}
 - A route that changes data runs through Powertools' Idempotency, keyed by
-  the request's `Idempotency-Key` header, as `PUT /items/{id}` does: a
-  retry with the same key gets the first answer back. [review]
+  the request's `Idempotency-Key` header, as `PUT /items/{id}` does in
+  {{ if $py }}`app/once.py`{{ else }}`src/once.ts`{{ end }}: a retry with the same key gets the first answer back. [review]
 {{- else if $queue }}
 - Each message runs through Powertools' Idempotency, keyed by its
   `messageId`: a message delivered again writes nothing twice. [review]
@@ -593,7 +599,7 @@ says why each rule matters.
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-ec2-ts" }}
+{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
@@ -604,7 +610,7 @@ says why each rule matters.
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-ec2-ts" }}
+{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}

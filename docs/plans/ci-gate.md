@@ -4,9 +4,9 @@ Parent issue: #1379. Agent: otter-1379. Written 2026-10-16.
 
 ## Goal
 
-Merging a pull request waits on its own CI run, and on nothing else: no local
-`make check` in `land`, no merge turn shared across devices. A green pull
-request merges within a minute of its last run finishing.
+Merging a pull request waits on nothing: no local
+`make check` in `land`, no merge turn, no CI run. The heavy checks run once,
+on a batch from `dev` to `main`.
 
 ## What was found
 
@@ -27,44 +27,58 @@ request merges within a minute of its last run finishing.
 
 ## Decisions
 
-1. **The pull request's CI is the check.** `test.yml` and `ui.yml` run on
-   pull requests with their push path filters, one cancel-in-progress group
-   per pull request. The jobs get distinct names, listed in one place that
-   `land` reads.
-2. **`land` waits on CI, then merges.** It merges `origin/main` in, pushes,
-   waits for the required checks on that head SHA and merges. It runs no
-   local check and takes no turn. A red check fails it, and a hand merge
-   finishes it (#1369).
-3. **Main may move between the run and the merge.** Two pull requests green
-   alone can make main red together. This needs two small pull requests that
-   conflict in meaning but not in text, which is rare. The run on main after
-   every merge and `github.sh red` (a red main is `priority/1`) catch it
-   within one run. Today every pull request pays about an hour to rule it
-   out. GitHub's merge queue would close this gap, but it isn't available on
-   a personal repository.
-4. **Device CPU drops.** Per pull request there is one CI run plus main's
-   run, and no local check or recheck. The runs are spread over the runners
-   of every device, not pinned to the worker's device.
-5. **Owner acts.** A main ruleset requiring the pull-request checks makes a
-   hand merge wait for them too. The repository's auto-merge setting lets a
-   later step have `land` arm GitHub's auto-merge and exit at once, instead
-   of waiting. Both are repository settings, so they are the owner's to set.
+Revised 2026-10-16 by the owner: waiting on a pull request's CI is still too
+slow. Merges go optimistic onto a `dev` branch, and only the batch from `dev`
+to `main` pays for the heavy checks. A red `main` gets fixed after the fact;
+the owner takes that risk for speed.
 
-This supersedes decision 2 of [velocity.md](velocity.md) and its "Not done:
-skipping the land check when CI is green". That note's reason, a merge ref
-tested at an earlier main, is accepted as the cost in decision 3.
+1. **Work merges into `dev`, at once.** `take` branches from `origin/dev`,
+   pull requests target `dev`, and `land` merges `origin/dev` in, pushes and
+   merges with a merge commit. It runs no `make check`, takes no turn and
+   waits on no CI. The bug-fix-needs-a-test, review and closes refusals stay.
+2. **Workers run no heavy checks.** No `make check`, `make test`, `make lint`
+   or `vulncheck` in a worker session; the targeted tests of what the change
+   touches (`go test ./internal/<pkg>/...`, `make test-hack`, the UI's tests)
+   are still the author's to run. The heavy-job slots stay for humans and CI.
+3. **`dev` gets one light check.** A `Build` workflow (`go build ./...`) runs
+   on each push to `dev`. Nobody waits on it; a red one is a `priority/1`
+   issue, because every new branch starts from `dev`. GitGuardian stays on
+   every pull request; it runs on GitHub, not on the devices.
+4. **A batch from `dev` to `main` is the gate.** `github.sh promote` opens or
+   refreshes the one pull request `dev` → `main` when `dev` is ahead, and
+   merges it (merge commit, never squash) when the required checks of its
+   head SHA are green. The maintainer session runs it each cycle; a human may
+   run it too. The heavy checks (Lint, Tests, UI, Vulnerabilities, Shell
+   tests: #1380's list in `.github/required-checks`) run only on pull
+   requests to `main` and, as today, on `main` after the merge. They do not
+   run on pull requests to `dev`, so nothing runs twice before `main`.
+5. **A red batch is fixed on `dev`.** When the promotion's checks fail,
+   `promote` files one `priority/1` issue naming the failed check and its run
+   (or comments on the open one), and the batch waits. The fix lands on `dev`
+   like any other work and the next `promote` picks it up. A red `main` is
+   handled by `github.sh red` as today.
+6. **Releases stay on `main`.** Tags are cut from a green `main`; `dev` is
+   never tagged. `hack/pull.sh` fast-forwards local `dev` as it does `main`.
+7. **Owner acts.** Make `dev` the default branch, so a hand-opened pull
+   request targets it, and require #1380's checks on `main` in a ruleset.
+   Both are repository settings.
+
+This supersedes decision 2 of [velocity.md](velocity.md) and this plan's
+first version (`land` waiting on the pull request's CI).
 
 ## Steps
 
 | Step | Issue | How we know |
 | --- | --- | --- |
 | This plan | #1379 | merged |
-| Tests and UI run on pull requests, stable job names | #1380 | `make test-hack` (`check-workflows.sh`); the step's own pull request shows a Tests run |
-| `land` waits on the pull request's CI, no check, no turn | #1381 | `make test-hack`: green merges without make or a turn; red names the check; a stale SHA isn't counted; a hand merge exits 0 |
+| Heavy checks run on pull requests to `main`, stable job names | #1380 | `make test-hack` (`check-workflows.sh`); the promotion pull request shows a Tests run |
+| `dev` branch; `take`, `land` and `pull.sh` work against it; `land` merges at once | #1381 | `make test-hack`: land merges into dev without make, a turn or a CI wait; take branches from dev |
+| `promote` and the `Build` workflow on `dev` | #1388 | `make test-hack`: promote opens, refreshes, merges green, files one priority/1 on red |
+| Docs: no worker runs `make check` | #1389 | no doc tells an agent to run `make check` or that `land` runs it |
 
 ## Done when
 
-Both steps are closed; a green pull request merges within a minute of its
-last run; no doc says `land` runs `make check`. Record the median time from
-a pull request's last push to its merge over ten landings, before (1 to 4
-hours on 2026-10-16, `velocity.md`) and after, here.
+Every step is closed; a worker's pull request merges into `dev` within a
+minute of `land`; `main` moves by promotion only. Record the median time from
+a pull request's last push to its merge into `dev` over ten landings, before
+(1 to 4 hours on 2026-10-16, `velocity.md`) and after, here.

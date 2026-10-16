@@ -1,6 +1,9 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
-{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-ec2-ts") (eq .Framework "aws-queue-ts") (eq .Framework "aws-schedule-ts") -}}
+{{- /* The Frameworks built for a tier from infra/operations.ts: the three
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
+     aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}

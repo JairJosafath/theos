@@ -1,8 +1,32 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
-{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-ec2-ts") (eq .Framework "aws-queue-ts") (eq .Framework "aws-schedule-ts") -}}
+{{- /* The Frameworks built for a tier from infra/operations.ts: the three
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
+     aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- /* The tiers and the runbook, for every tiered Framework: the Go notes and the others both say it. */ -}}
+{{- define "operations" }}
+- The stacks take the tier from `defineStacks(app, tier)` and the
+  Container's promises from `infra/operations.ts`. A new resource follows
+  `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
+  protection and point-in-time recovery by tier, its alarms from the
+  stack's `Alarms`{{ if eq .Framework "aws-queue-ts" }}, a queue's dead-letter queue and its depth alarm{{ else if eq .Framework "aws-schedule-ts" }}, a schedule's retry policy, dead-letter queue and group{{ end }}. `infra/standard.test.ts` checks both tiers. Never read
+  another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
+  that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
+  `infra/service_stack.ts` by its name, never by a reference to the alarm,
+  which would make it and the service depend on each other.{{ else if eq .Framework "aws-ec2-ts" }} The
+  instances hold no data: a feature that keeps a file keeps it in S3 or
+  DynamoDB, and the boot script keeps its health wait last, since the
+  instance's `cfn-signal` follows it.{{ end }} The factory
+  renders `infra/operations.ts` from the Container's `spec.operations`:
+  change it only when your issue changes that block, to what the block
+  says, and never delete it.
+- A change to what the stacks keep, or how (a new table or bucket, a new
+  key, another backup), updates `docs/runbook.md`'s steps in the same work,
+  as a Standard change: the runbook is how the data comes back.
+{{- end -}}
 # Implementer guide
 
 You implement one Gitea issue in this repository, as one pull request.
@@ -99,6 +123,7 @@ Task that reviews and merges it. Then:
 - Permissions come from CDK grants, narrowed to the calls the code makes. A
   new resource is encrypted at rest, its logs kept for a set time, its
   removal policy explicit (`RETAIN` for data).
+{{- template "operations" . }}
 - When CDK Nag reports a finding, fix the resource. Acknowledge it only when
   the fix is wrong for this system, on the one construct and the one
   finding, with a reason the reviewer can check, and list it in your
@@ -125,10 +150,12 @@ Task that reviews and merges it. Then:
 
 - The function is Python in `app/`, its tests pytest in `tests/`; the CDK
   app in `infra/` is TypeScript. Request handling is tested by calling
-  `answer` with an HTTP API event dict and a fake store, checking the status
-  code and the body; logic lives in modules that don't import boto3. Keep
-  `app/handler.py` to wiring: the boto3 resources at module scope, the
-  environment read once.
+  `answer` with an HTTP API event dict and `route` over a fake store,
+  checking the status code and the body; logic lives in modules that don't
+  import boto3. A `PUT` runs once per `Idempotency-Key` through
+  `app/once.py`, tested over an in-memory record store. Keep
+  `app/handler.py` to wiring: the boto3 resources and Powertools' Logger,
+  Metrics and records at module scope, the environment read once.
 - An AWS service is reached through one module that wraps boto3 behind a
   `Protocol`, typed with the `types-boto3` stubs; its tests pass a fake that
   implements the protocol and records the calls. No test calls AWS, opens a
@@ -199,26 +226,7 @@ Task that reviews and merges it. Then:
   versions kept longer), updates `docs/runbook.md`'s steps in the same
   work, as a Standard change: the runbook is how the site comes back.
 {{- end }}
-{{- if $tiered }}
-- The stacks take the tier from `defineStacks(app, tier)` and the
-  Container's promises from `infra/operations.ts`. A new resource follows
-  `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
-  protection and point-in-time recovery by tier, its alarms from the
-  stack's `Alarms`{{ if $queue }}, a queue's dead-letter queue and its depth alarm{{ else if $schedule }}, a schedule's retry policy, dead-letter queue and group{{ end }}. `infra/standard.test.ts` checks both tiers. Never read
-  another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
-  that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
-  `infra/service_stack.ts` by its name, never by a reference to the alarm,
-  which would make it and the service depend on each other.{{ else if eq .Framework "aws-ec2-ts" }} The
-  instances hold no data: a feature that keeps a file keeps it in S3 or
-  DynamoDB, and the boot script keeps its health wait last, since the
-  instance's `cfn-signal` follows it.{{ end }} The factory
-  renders `infra/operations.ts` from the Container's `spec.operations`:
-  change it only when your issue changes that block, to what the block
-  says, and never delete it.
-- A change to what the stacks keep, or how (a new table or bucket, a new
-  key, another backup), updates `docs/runbook.md`'s steps in the same work,
-  as a Standard change: the runbook is how the data comes back.
-{{- end }}
+{{- if $tiered }}{{ template "operations" . }}{{ end }}
 - When CDK Nag reports a finding, fix the resource. Acknowledge it only when
   the fix is wrong for this system, on the one construct and the one
   finding, with a reason the reviewer can check, and list it in your

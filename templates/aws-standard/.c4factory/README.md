@@ -124,14 +124,28 @@ byte for byte.
   an Auto Scaling group's alarms, accepts a backup selection naming every
   one of the stack's tables by ARN and nothing else, and refuses a selection
   by tag in a stack with instances.
-  A Framework added later gets its branches in the version that adds it.
+  Since v1.12.0 `aws-lambda-py` and `aws-lambda-go` (from their v1.1.0) take
+  the `aws-lambda-ts` branches too, widened to the three Lambda Frameworks
+  (`$lambda` where `aws-fargate-ts` has a whole file of its own; `$tiered`
+  names them too) with small inner branches where they differ: Powertools for Python (its Logger, Metrics,
+  and Idempotency in `app/once.py`) for `aws-lambda-py`; for
+  `aws-lambda-go`, no Powertools (there is none for Go), `slog` JSON logs,
+  idempotency by hand, and no `Idempotency` table in the runbook.
+  The serverless `docs/well-architected.md` the two had before is gone: no
+  Framework renders it. A v1.0.0 of either, with no `infra/operations.ts`,
+  still passes `make check` on v1.12.0. `SOURCES.md` adds Powertools for
+  Python 3.36.0's Logger, Metrics and Idempotency pages (read 2026-10-16),
+  and cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions. A
+  Framework added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`,
+  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts`
+  also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -295,7 +309,8 @@ byte for byte.
   exporting `defineStacks(app: App, tier: Tier): Stack[]` (one written
   before tiers takes the app alone), which adds every stack for the tier to
   `app` without an `env` from the environment or a context lookup; and,
-  from `aws-lambda-ts` v1.1.0, `aws-fargate-ts` v1.1.0 and `aws-ec2-ts` v1.1.0 on, `infra/operations.ts`, rendered from
+  from `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`
+  and `aws-ec2-ts` v1.1.0 on, `infra/operations.ts`, rendered from
   `.Operations`, exporting `OPERATIONS` of the `Operations` type, which its
   stacks read;
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
@@ -341,7 +356,8 @@ byte for byte.
   `aws-ec2-ts`, and with ECS's best practices for `aws-fargate-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
-  does. It is self-contained: agents have no internet. For `aws-lambda-ts`,
+  does. It is self-contained: agents have no internet. For the Lambda
+  Frameworks (`aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`),
   `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
@@ -351,10 +367,11 @@ byte for byte.
   origin access control, TLS, the firewall and the security headers, the
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`,
-  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` (a branch
-  each, but `aws-queue-ts` and `aws-schedule-ts` share `aws-lambda-ts`'s),
-  renders the
+- **Runbook:** `docs/runbook.md`, for the three Lambda Frameworks,
+  `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and
+  `aws-schedule-ts` (a branch each: one for the Lambda Frameworks, which
+  `aws-queue-ts` and `aws-schedule-ts` share, one each for
+  `aws-fargate-ts`, `aws-ec2-ts` and `aws-static-site-ts`), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the
@@ -365,6 +382,8 @@ byte for byte.
   costs over development, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
   allocation tags' activation), and how to drill a restore. For
+  `aws-lambda-go` it names no `Idempotency` table, which Go lacks.
+  For
   `aws-static-site-ts` it renders the same block and says the bucket keeps
   its files' earlier versions for 35 days, or `retentionDays` when longer,
   with no AWS Backup plan; how to restore a file's earlier version
