@@ -1222,7 +1222,15 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
         rm "$Q/$a.json" ;;
       "GET $R/pulls/40/files"*) data=$(cat "$T/files-40" 2>/dev/null || echo '[{"filename":"a.go","additions":3,"deletions":1}]') ;;
       "GET $R/issues/40/comments"*) data='[[]]' ;;
-      "GET $R/pulls/40") data=$(jq -nc --arg s "$(git -C "$T/origin.git" rev-parse feat)" '{state: "open", base: {ref: "main"}, head: {ref: "feat", sha: $s}}') ;;
+      "GET $R/pulls/40")
+        # Merged by hand (#1369) once $T/pr-merged is there, or from the Nth look at its state on ($T/merged-at);
+        # closed without a merge while $T/pr-closed is.
+        [[ $q != *merged* ]] || echo $(($(cat "$T/state-reads" 2>/dev/null || echo 0) + 1)) >"$T/state-reads"
+        [ ! -e "$T/merged-at" ] || (($(cat "$T/state-reads" 2>/dev/null || echo 0) < $(cat "$T/merged-at"))) || touch "$T/pr-merged"
+        data=$(jq -nc --arg s "$(git -C "$T/origin.git" rev-parse feat)" --argjson m "$([ -e "$T/pr-merged" ] && echo true || echo false)" \
+          --argjson c "$([ -e "$T/pr-closed" ] && echo true || echo false)" \
+          '{state: (if $m or $c then "closed" else "open" end), merged: $m, merged_at: (if $m then "2026-10-16T19:58:00Z" else null end),
+            merged_by: (if $m then {login: "JairJosafath"} else null end), base: {ref: "main"}, head: {ref: "feat", sha: $s}}') ;;
       *) return 1 ;;
     esac
     [ -n "${data:-}" ] || return 0
@@ -1252,6 +1260,11 @@ echo "\$*\${C4_HEAVY_FIRST:+ (first)}" >>"$T/checked"
 if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
   echo \$((\$(cat "$T/move") - 1)) >"$T/move"
   git -C "$T/other" pull -q --no-rebase origin main && git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
+elif [ -n "\${CHECK_MERGE:-}" ]; then
+  # Merged by hand while it runs (#1369): wait (up to about 30 s) for land to stop it.
+  touch "$T/pr-merged"
+  i=0; while [ "\$i" -lt 300 ]; do sleep 0.1; i=\$((i + 1)); done
+  echo "not stopped" >>"$T/checked"
 elif [ -n "\${CHECK_BEATS:-}" ]; then
   b0=\$(grep -c '^PATCH ' "$T/calls") i=0
   while n=\$((\$(grep -c '^PATCH ' "$T/calls") - b0)); [ "\$n" -lt "\$CHECK_BEATS" ] && [ "\$i" -lt 300 ]; do
@@ -1413,6 +1426,40 @@ MAKE
   check "land: gives up after --wait" "$? $(queue)" "4 8 "
   grep -q '#40 gave up its place after 1s: still 1 ahead; heron-41 lands #41' <<<"$out"; check "land: says it gave up" $? 0
   rm "$Q/8.json"
+
+  # Merged by hand (#1369): finished work, exit 0, the merger named, no turn left.
+  merged() { rm -f "$T/landed" "$T/checked" "$T/pr-merged" "$T/merged-at" "$T/state-reads"; : >"$T/calls"; }
+  merged; touch "$T/pr-merged"
+  out=$(gh_land 40 2>&1)
+  check "land: a pull request merged before it starts is done (#1369)" "$? $(cat "$T/landed" "$T/checked" 2>/dev/null) | $(queue) | $(grep -c '^POST ' "$T/calls")" "0  |  | 0"
+  check "land: names who merged it and when (#1369)" "$out" "github: #40 was merged by JairJosafath at 2026-10-16T19:58:00Z, outside land: nothing left to land"
+  merged; touch "$T/pr-closed"
+  out=$(gh_land 40 2>&1)
+  check "land: a pull request closed without a merge still fails (#1369)" "$? $out" "1 github: #40 was closed without a merge; nothing to land"
+  rm "$T/pr-closed"
+  # Merged while it waits in the queue: the place is given up at the next look.
+  merged; put 1 41
+  ( reads 2; touch "$T/pr-merged" ) &
+  out=$(gh_land 40 2>&1); rc=$?
+  wait
+  check "land: merged while it waits in the queue is done (#1369)" "$rc $(cat "$T/landed" 2>/dev/null) | $(queue) | $(grep -c '^POST ' "$T/calls")" "0  | 1  | 1"
+  grep -q '#40 was merged by JairJosafath at 2026-10-16T19:58:00Z, outside land' <<<"$out"; check "land: names the merger after waiting (#1369)" $? 0
+  rm "$Q/1.json"
+  # Merged while main moved (the hand merge itself): no check under the turn.
+  g push -q origin HEAD
+  merged; echo 1 >"$T/move"; echo 3 >"$T/merged-at"
+  out=$(gh_land 40 2>&1)
+  check "land: merged before a check under the turn is done (#1369)" "$? $(cat "$T/landed" 2>/dev/null) | $(wc -l <"$T/checked") | $(queue) | $(cat "$T/state-reads")" "0  | 1 |  | 3"
+  grep -q '#40 was merged by JairJosafath' <<<"$out"; check "land: names the merger under the turn (#1369)" $? 0
+  rm -f "$T/move"
+  g reset -q --hard origin/feat
+  # Merged during the check before it queues: the watcher stops make check.
+  merged
+  out=$(GH_LAND_BEAT=0.2 CHECK_MERGE=1 gh_land 40 2>&1)
+  check "land: merged during the check stops it and is done (#1369)" "$? $(cat "$T/landed" 2>/dev/null) | $(cat "$T/checked") | $(queue) | $(grep -c '^POST ' "$T/calls")" "0  | -C $T/land check |  | 0"
+  grep -q '#40: stopped make check: the pull request was merged meanwhile' <<<"$out"; check "land: says it stopped the check (#1369)" $? 0
+  merged
+  g reset -q --hard origin/feat
 
   # Refusals before it queues.
   g checkout -q -b elsewhere
