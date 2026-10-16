@@ -1,3 +1,5 @@
+{{- $go := eq .Framework "aws-lambda-go" -}}
+{{- $py := eq .Framework "aws-lambda-py" -}}
 {{ if eq .Framework "aws-fargate-ts" -}}
 # Well-Architected
 
@@ -610,7 +612,7 @@ _Minimize the environmental impact of the workload._
   start-up.
 - No rule enforces these: review them.
 
-{{ else if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}{{ $queue := eq .Framework "aws-queue-ts" }}{{ $schedule := eq .Framework "aws-schedule-ts" }}# Well-Architected
+{{ else if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" "aws-schedule-ts" }}{{ $queue := eq .Framework "aws-queue-ts" }}{{ $schedule := eq .Framework "aws-schedule-ts" }}# Well-Architected
 
 A digest of the AWS Well-Architected Framework and its Serverless Applications
 Lens, for this repository: one section per pillar, what the pillar asks of a
@@ -671,11 +673,20 @@ _Run and monitor the system, and improve it in small, reversible changes._
   made. No change by hand in the console.
 - Changes are small, frequent and checked: `make check` synthesizes and
   lints every change for both tiers; nothing here deploys.
+{{- if $go }}
+- Observe (OPS08, REL06): structured JSON logs through `log/slog`, with the
+  request id, the route and the error; a log group per function and an
+  access log per API stage; X-Ray traces in production, Lambda's own
+  segments. There is no Powertools for Go: the function sends no metrics of
+  its own, and the alarms read what Lambda, API Gateway and DynamoDB
+  report.
+{{- else }}
 - Observe (OPS08, REL06): structured JSON logs through Powertools' Logger,
   with the {{ if $queue }}message id{{ else if $schedule }}run's event{{ else }}request id{{ end }} and the Lambda context; metrics through Powertools'
   Metrics, written into the logs ({{ if $queue }}`ConsumedMessages`, `FailedMessages`{{ else if $schedule }}`CompletedRuns`, `FailedRuns`{{ else }}`AnsweredRequests`, `FailedRequests`{{ end }}, the
   cold start); a log group per function{{ if or $queue $schedule }}{{ else }} and an access log per API stage{{ end }};
   X-Ray traces in production.
+{{- end }}
 {{- if not (or $queue $schedule) }}
   - `AwsSolutions-APIG1`: the API has access logging.
 {{- end }}
@@ -875,12 +886,21 @@ fails._
   functions; the queue holds what waits. Serverless
   `LambdaFunctionDefaultTimeout`: by hand.
 {{- else }}
+{{- if $go }}
+- Idempotency, by hand: a retried request changes nothing twice. There is
+  no Powertools for Go, and no idempotency table: a `PUT` replaces the whole
+  item, so repeating one leaves the same item. A new route that changes data
+  keeps that true, or makes its write conditional (`ConditionExpression`);
+  never a blind increment.
+{{- else }}
 - Idempotency: a retried request changes nothing twice. A `PUT` replaces
   the whole item, and one sent again with the same `Idempotency-Key` header
-  gets the first answer back: Powertools' Idempotency keeps it for an hour
-  in the stack's idempotency table. A refusal or a failure keeps nothing,
-  so a corrected retry runs again; the key sent with another path or body
-  is refused (422), and a retry while the first still runs too (409).
+  gets the first answer back: Powertools' Idempotency{{ if $py }}, in `app/once.py`,{{ end }}
+  keeps it for an hour in the stack's idempotency table. A refusal or a
+  failure keeps nothing, so a corrected retry runs again; the key sent with
+  another path or body is refused (422), and a retry while the first still
+  runs too (409).
+{{- end }}
 - Limits: timeouts on every function, below the caller's (API Gateway: 30
   seconds); throttling on every API stage, so a burst can't exhaust the
   account's concurrency. Serverless `LambdaFunctionDefaultTimeout`,
@@ -898,8 +918,20 @@ _Use resources efficiently as demand changes and technology evolves._
 - The newest runtime: `AwsSolutions-L1`.
 - Size memory to the work (Lambda gives CPU in proportion); measure before
   raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
+{{- if $go }}
+- Cold starts: one static binary (`go build`, `CGO_ENABLED=0`,
+  `-ldflags '-s -w'`, `-tags lambda.norpc`) named `bootstrap` on
+  `provided.al2023` for `arm64`; SDK clients made once in `main` or at
+  package scope, before `lambda.Start`, never per request; only the service
+  packages used (`service/dynamodb`), and no heavy work in `init`.
+{{- else if $py }}
+- Cold starts: boto3 clients and resources and Powertools at module scope,
+  small bundles (only the packages `uv.lock` pins, no dev group), no heavy
+  work at import.
+{{- else }}
 - Cold starts: SDK clients and Powertools at module scope, small bundles
   (esbuild, minified, only the clients used), no heavy work at import.
+{{- end }}
 - Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
   never on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path.{{ if $queue }}
 - Batches: up to 10 messages per invocation, gathered for up to 5 seconds,
@@ -958,7 +990,7 @@ _Minimize the environmental impact of the workload._
   `retentionDays`, development keeping no backups, and no data stored that
   the system's needs don't ask for.
 - Efficient code: no polling{{ if $queue }} of its own (the event source polls){{ else if $schedule }} (the function runs only when a run is due){{ end }}, no work per {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} that can be done once at
-  start-up, small bundles.
+  start-up, {{ if $go }}a small static binary{{ else }}small bundles{{ end }}.
 - No rule enforces these: review them.
 
 {{ else if eq .Framework "aws-static-site-ts" }}# Well-Architected
@@ -1199,158 +1231,6 @@ _Minimize the environmental impact of the workload._
 - Small files: Vite's minified bundles, and CloudFront's compression.
 - Keep what is needed, no longer: log retention by tier, the files' earlier
   versions for a set time, and development keeping none.
-- No rule enforces these: review them.
-
-{{ else }}# Well-Architected
-
-A digest of the AWS Well-Architected Framework and its Serverless Applications
-Lens, for this repository: one section per pillar, what the pillar asks of a
-serverless API, the CDK Nag rules (`AwsSolutions` pack) that enforce it when
-`cdk synth` runs, and what you do by hand where no rule does. Sources and the
-date they were read are in `docs/style/SOURCES.md`. This file belongs to the
-Standard: a task never changes it.
-
-`make check` runs CDK Nag's `AwsSolutions` checks on every stack
-(`infra/standard.ts`): a finding fails synth unless it is acknowledged, on
-one construct, with a reason. `infra/standard.test.ts` checks what CDK Nag
-doesn't: tags, wildcard actions, encryption, log retention, removal policies.
-The Serverless pack's rules are named below where they apply; it is not run,
-so they are review items.
-
-## Operational excellence
-
-_Run and monitor the system, and improve it in small, reversible changes._
-
-- Everything is code: the stacks in `infra/` are the only way resources are
-  made. No change by hand in the console.
-- Changes are small, frequent and checked: `make check` synthesizes and
-  lints every change; nothing here deploys.
-- Observe: structured JSON logs with the request id, a log group per function
-  and an access log per API stage, each with a retention.
-  - `AwsSolutions-APIG1`: the API has access logging.
-  - Serverless `CloudWatchLogGroupRetentionPeriod`, `APIGWStructuredLogging`:
-    by hand; `infra/standard.test.ts` checks that every log group has a
-    retention.
-- Trace when the issue asks for it: X-Ray tracing (`tracing: Tracing.ACTIVE`)
-  costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
-  (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
-- Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
-  (`infra/standard.ts`, tested).
-- By hand: alarms on errors, throttles and duration, and a runbook, when the
-  system's needs ask for them.
-
-## Security
-
-_Protect data, systems and assets: identity, least privilege, encryption,
-traceability, and protection at every layer._
-
-- Least privilege: each function has its own role, granted through CDK
-  grants (`table.grant(fn, 'dynamodb:GetItem')`) only the calls its code
-  makes.
-  - `AwsSolutions-IAM4`: no AWS managed policies on a role.
-  - `AwsSolutions-IAM5`: no wildcard actions or resources without an
-    acknowledgement naming the one finding and why.
-  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere.
-- Authenticate every request: every route has an authorizer (IAM, JWT or a
-  Lambda authorizer).
-  - `AwsSolutions-APIG4`: the API implements authorization.
-  - `AwsSolutions-COG4`: a REST API method uses a Cognito authorizer.
-- Encrypt at rest and in transit.
-  - `AwsSolutions-S10`, `AwsSolutions-SQS4`, `AwsSolutions-SNS3`: requests
-    must use TLS.
-  - `AwsSolutions-SQS2`, `AwsSolutions-EFS1`: encryption at rest; DynamoDB
-    is always encrypted, and `infra/standard.test.ts` requires a KMS key
-    (`SSESpecification`) on every table, encryption on every bucket, queue
-    and topic.
-  - `AwsSolutions-KMS5`: customer-managed keys rotate.
-- Protect data from the public: `AwsSolutions-S2` (bucket public access
-  blocked), `AwsSolutions-S5`, `AwsSolutions-EVB1` (no open event bus
-  policy). `AwsSolutions-APIG3` and `AwsSolutions-CFR2` warn when a REST API
-  or a distribution has no WAF.
-- Secrets live in Secrets Manager, rotated (`AwsSolutions-SMG4`), read at
-  start-up; never in an environment variable, the template, a log or the
-  repository.
-- By hand: validate all input at the boundary; never log user data or
-  tokens; never return internal errors to a client.
-
-## Reliability
-
-_Recover from failure, scale with demand, and keep working when a part
-fails._
-
-- Managed, multi-AZ services: Lambda, API Gateway and DynamoDB spread over
-  Availability Zones on their own.
-- Back up data and recover it: point-in-time recovery on every table, and
-  data that outlives its stack.
-  - `AwsSolutions-DDB3`: point-in-time recovery.
-  - `AwsSolutions-RDS10`: deletion protection on databases; set it on tables
-    too (`deletionProtection: true`).
-  - `infra/standard.test.ts`: every stateful resource states its removal
-    policy; data is `RETAIN`.
-- Handle failures in asynchronous work: a queue or event source has a
-  dead-letter queue.
-  - `AwsSolutions-SQS3`: a queue has a DLQ or is one.
-  - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`,
-    `SQSRedrivePolicy`, `EventBusDLQ`: by hand, for asynchronous invocations;
-    an API Gateway call is synchronous, and its client retries.
-- Idempotency: a retried request changes nothing twice (whole-item puts,
-  conditional writes, idempotency keys).
-- Limits: timeouts on every function, below the caller's (API Gateway: 30
-  seconds); throttling on every API stage, so a burst can't exhaust the
-  account's concurrency. Serverless `LambdaFunctionDefaultTimeout`,
-  `APIGWDefaultThrottling`: by hand.
-
-## Performance efficiency
-
-_Use resources efficiently as demand changes and technology evolves._
-
-- The newest runtime: `AwsSolutions-L1`.
-- Size memory to the work (Lambda gives CPU in proportion); measure before
-  raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
-{{- if eq .Framework "aws-lambda-go" }}
-- Cold starts: one static binary (`go build`, `CGO_ENABLED=0`,
-  `-ldflags '-s -w'`, `-tags lambda.norpc`) named `bootstrap` on
-  `provided.al2023` for `arm64`; SDK clients made once in `main` or at package scope, before
-  `lambda.Start`, never per request; only the service packages used
-  (`service/dynamodb`), and no heavy work in `init`.
-{{- else if eq .Framework "aws-lambda-py" }}
-- Cold starts: boto3 clients and resources at module scope, small bundles
-  (only the packages `uv.lock` pins, no dev group), no heavy work at import.
-{{- else }}
-- Cold starts: SDK clients at module scope, small bundles (esbuild,
-  minified, only the clients used), no heavy work at import.
-{{- end }}
-- Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
-  never on a request path.
-- By hand: measure a stated budget with a benchmark, and say what only a
-  deployed function can show (cold start, latency in AWS).
-
-## Cost optimization
-
-_Deliver value at the lowest price: pay only for what you use, and know
-where the money goes._
-
-- Pay per use: on-demand DynamoDB, Lambda and the HTTP API, which costs
-  less than a REST API.
-- `arm64` (Graviton) functions: cheaper per millisecond than x86.
-- Log retention limits what storage costs grow to (`infra/standard.test.ts`).
-- Tags attribute every cost to its project, system and container.
-- Throttling caps what a runaway client can spend.
-- By hand: right-size memory and timeouts; no provisioned concurrency or
-  capacity unless the issue states the load that needs it.
-
-## Sustainability
-
-_Minimize the environmental impact of the workload._
-
-- Serverless and managed services run only while there is work, on shared
-  infrastructure.
-- `arm64` (Graviton) uses less energy for the same work.
-- Keep what is needed, no longer: log retention, and no data stored that
-  the system's needs don't ask for.
-- Efficient code: no polling, no work per request that can be done once at
-  start-up, {{ if eq .Framework "aws-lambda-go" }}a small static binary{{ else }}small bundles{{ end }}.
 - No rule enforces these: review them.
 
 {{ end }}## Acknowledging a finding

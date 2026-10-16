@@ -1,9 +1,9 @@
 # {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
 
 The `{{ .Container }}` function of {{ .SoftwareSystem }}, in project {{ .Project }}: an AWS
-Lambda function in Python (boto3) behind an API Gateway HTTP API, keeping
-items in a DynamoDB table, with its infrastructure as a CDK app in
-TypeScript. Scaffolded by C4 Factory.
+Lambda function in Python (boto3 and Powertools for AWS Lambda) behind an API
+Gateway HTTP API, keeping items in a DynamoDB table, with its infrastructure
+as a CDK app in TypeScript. Scaffolded by C4 Factory.
 
 ## The API
 
@@ -17,7 +17,10 @@ authorization, and a caller needs `execute-api:Invoke` on them.
 
 An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
 a quantity a whole number from 0 to 2⁵³ − 1. Every error is JSON with a `message`.
-A `PUT` replaces the whole item, so repeating it is harmless.
+A `PUT` replaces the whole item, so repeating it is harmless; a `PUT` sent
+again with the same `Idempotency-Key` header within an hour gets the first
+answer back and writes nothing. The same key with another path or body is
+answered 422, and a retry while the first is still running 409.
 
 ## Develop
 
@@ -29,7 +32,7 @@ uv sync --locked # install the exact Python packages in uv.lock
 npm ci           # install the exact CDK packages in package-lock.json
 uv run pytest    # the function's tests
 npm test         # the stacks' assertions, with vitest
-npm run synth    # write the CloudFormation templates into cdk.out/
+npm run synth    # write the development CloudFormation templates into cdk.out/
 {{- if .Standard }}
 make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
 make help        # every target
@@ -38,25 +41,56 @@ make help        # every target
 
 Nothing here deploys or needs an AWS account: synth needs neither Docker nor
 credentials. It bundles the function with uv: the packages `uv.lock` pins, as
-wheels for arm64 Linux, from uv's cache or, for a wheel the cache lacks, PyPI. Deploying the stack (`cdk deploy`, after
-`cdk bootstrap` of the account) is for its owner, with their own credentials.
+wheels for arm64 Linux, from uv's cache or, for a wheel the cache lacks, PyPI.
+
+## Tiers and operations
+
+The stacks are built for a tier, `production` or `development`, which is the
+place they run, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production.
+Production keeps the tables when the stack goes, protects them and the stack
+from deletion, recovers them to any second of the last 35 days, backs them up
+daily with AWS Backup, traces with X-Ray and keeps logs a year; development
+throws its data away with the stack and keeps logs a month. Both tiers alarm
+and have a dashboard.
+
+What the app promises whatever the tier, the backups' retention and copy
+region, the recovery objectives and who the alarms tell, is in
+`infra/operations.ts`, which C4 Factory renders from the Container's
+`spec.operations`: change the block, and the file follows it. The alert email is the
+stack's `AlertEmail` parameter, which a deploy can set per environment. Each
+stack outputs `EntryPoint`, the API's URL, and `AlarmTopicArn`, the topic its
+alarms notify.
+
+Deploying (`cdk deploy`, after `cdk bootstrap` of the account) is for its
+owner, with their own credentials.
 
 ## Layout
 
 - `app/handler.py` is the Lambda entry point (`app.handler.handler`): it
-  creates the DynamoDB table resource once, at module scope, reads
-  `TABLE_NAME` and hands each request to `answer` in `app/api.py`.
+  creates the DynamoDB table resource and Powertools' Logger and Metrics
+  once, at module scope, reads `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`,
+  and hands each request to `answer` in `app/api.py`, a `PUT` through
+  Powertools' Idempotency (`app/once.py`).
 - `app/api.py` routes a request, checks its input and answers with a status
   code; `app/items.py` holds the rules, free of AWS; `app/item_store.py`
   keeps items in DynamoDB behind the `ItemStore` protocol tests fake.
 - `tests/` holds the function's pytest tests; none calls AWS.
-- `infra/stacks.ts` defines the stacks; `infra/api_stack.ts` is the one
-  stack: the table, the function with its log group and role, and the API
-  with its access log. The stack is named after the package in
-  `package.json`.
+- `infra/stacks.ts` defines the stacks for a tier; `infra/api_stack.ts` is
+  the main one: the tables, the function with its log group and role, the
+  API with its access log, the alarms (`infra/alarms.ts`) and, in
+  production, the backups (`infra/backups.ts`). The stack is named after the
+  package in `package.json`. `infra/operations.ts` holds what the Container
+  promises.
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
-  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to restore the data, roll a
+  deployment back, and what to do when an alarm fires.
 
 Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
 {{- end }}

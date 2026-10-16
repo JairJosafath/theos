@@ -315,6 +315,45 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 4, as built
+
+`aws-lambda-py` v1.1.0 and `aws-lambda-go` v1.1.0 with `aws-standard`
+v1.12.0: steps 5, 9, 8 and 10 merged first and took v1.7.0, v1.8.0, v1.9.0
+and v1.10.0, and step 6 (#1111) took v1.11.0, so step 4 takes v1.12.0
+(`docs/screenshots/1109-aws-lambda-py-go-check.txt` has the evidence):
+
+- **The infra is aws-lambda-ts's.** `infra/operations.ts.tmpl`,
+  `infra/alarms.ts`, `infra/backups.ts` and `infra/stacks.ts` are copies,
+  and `infra/api_stack.ts` is aws-lambda-ts's stack with the Framework's own
+  function code. The alarms, parameter and outputs have the same names in
+  all three, so the runbook's alarm table is one table.
+- **Python takes Powertools 3.36.0.** `app/once.py` wraps `PUT` in
+  Powertools' Idempotency with the same answers as `src/once.ts` (409, 422,
+  no record kept for a refusal). It calls `idempotent_function` as a plain
+  function, since Powertools types the decorator `Any` and strict mypy
+  refuses an untyped decorator. The tests fake the table with an in-memory
+  `BasePersistenceLayer`, so none calls AWS.
+- **Go keeps `slog` and one table.** No idempotency table, no custom
+  metrics: a `PUT` replaces the whole item, so repeating one is harmless,
+  and the digest says idempotency is by hand. X-Ray traces the function in
+  production without the SDK's subsegments.
+- **The Standard's Lambda branch covers the three.** Every `aws-lambda-ts`
+  branch takes the three Lambda Frameworks, with inner branches for the
+  language and for the idempotency table Go lacks: step 5's `$tiered`
+  (`AGENTS.md`, the role guides) now names all four Frameworks with
+  operations, and where `aws-fargate-ts` has a branch or a whole file of
+  its own (`docs/style/aws.md`, `SOURCES.md`, `docs/runbook.md`,
+  `docs/well-architected.md`), the Lambda branch is `$lambda` or names the
+  three. The implementer guide's tier notes are one `define`, which the Go
+  notes and the others both call. The digest's older serverless branch
+  served no Framework any more and was deleted. Nothing in
+  `infra/standard.test.ts`, `infra/standard.ts` or the Makefile assumed a
+  runtime, so step 4 left them as step 5 made them.
+- **A Python or Go build is slower than esbuild:** both `vitest.config.mts`
+  give the hooks 180 s.
+- **A v1.0.0 repository on v1.12.0** gets the tier docs and a runbook its
+  stack doesn't have yet, as aws-lambda-ts v1.0.0 did on v1.6.0 (#1249).
+
 ### Step 5, as built
 
 Step 5 is `aws-fargate-ts` v1.1.0 with `aws-standard` v1.7.0 (agent

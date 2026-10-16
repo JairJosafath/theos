@@ -1,9 +1,10 @@
-import { AssetHashType, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { AssetHashType, CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, LogGroupLogDestination } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpIamAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
+import type { TableProps } from 'aws-cdk-lib/aws-dynamodb';
 import { Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import {
   Architecture,
@@ -11,18 +12,27 @@ import {
   Function as LambdaFunction,
   LoggingFormat,
   Runtime,
+  Tracing,
 } from 'aws-cdk-lib/aws-lambda';
-import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { LogGroup } from 'aws-cdk-lib/aws-logs';
 import type { Construct } from 'constructs';
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { Alarms } from './alarms';
+import { Backups } from './backups';
+import { TIER_RULES } from './standard';
+import type { Operations, Tier } from './standard';
+
 // The repository root: the function's package app/, pyproject.toml and uv.lock
 // are there.
 const ROOT = path.join(import.meta.dirname, '..');
 const RUNTIME = Runtime.PYTHON_3_14;
+
+// The function's time limit, which its duration alarm is a share of.
+const TIMEOUT = Duration.seconds(10);
 
 /**
  * The function's code: the package `app/` and the packages uv.lock pins for
@@ -64,30 +74,56 @@ function bundle(outputDir: string): boolean {
   return true;
 }
 
+/** What the stack is built for. */
+export interface ApiStackProps extends StackProps {
+  /** Where it runs, which decides what it keeps, backs up and traces. */
+  readonly tier: Tier;
+  /** What the Container promises whatever the tier: `OPERATIONS`. */
+  readonly operations: Operations;
+  /** The tag, key and value, every resource of the stack carries: what its backups select. */
+  readonly backupTag: readonly [string, string];
+}
+
 /**
  * The Container's one stack: an HTTP API whose routes call a Lambda function
  * that keeps items in a DynamoDB table. Callers sign their requests with IAM
- * (SigV4); the API refuses everyone else.
+ * (SigV4); the API refuses everyone else. Every part has alarms, to a topic
+ * the stack outputs with its URL; production keeps and backs up the data.
  */
 export class ApiStack extends Stack {
   /** The API's URL, `https://<id>.execute-api.<region>.amazonaws.com/`. */
   readonly url: string;
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
+    const rules = TIER_RULES[props.tier];
+    const { backups, alerts } = props.operations;
 
-    const table = new Table(this, 'Items', {
-      partitionKey: { name: 'id', type: AttributeType.STRING },
+    // Every table holds data: kept, protected and recoverable where the tier
+    // keeps data, thrown away with the stack where it doesn't.
+    const tableProps: Omit<TableProps, 'partitionKey'> = {
       billingMode: BillingMode.PAY_PER_REQUEST,
       encryption: TableEncryption.AWS_MANAGED,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-      deletionProtection: true,
-      // The data outlives the stack: deleting the stack keeps the table.
-      removalPolicy: RemovalPolicy.RETAIN,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: rules.pointInTimeRecovery,
+      },
+      deletionProtection: rules.keepData,
+      removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+    };
+    const table = new Table(this, 'Items', {
+      ...tableProps,
+      partitionKey: { name: 'id', type: AttributeType.STRING },
+    });
+    // Where Powertools' Idempotency records the requests it has answered, so
+    // a request sent again with the same Idempotency-Key writes nothing twice.
+    const idempotency = new Table(this, 'Idempotency', {
+      ...tableProps,
+      partitionKey: { name: 'id', type: AttributeType.STRING },
+      timeToLiveAttribute: 'expiration',
     });
 
     const functionLogs = new LogGroup(this, 'HandlerLogs', {
-      retention: RetentionDays.ONE_MONTH,
+      retention: rules.logRetention,
       removalPolicy: RemovalPolicy.DESTROY,
     });
     // The function's own role, allowed only to write its log group: the
@@ -108,16 +144,31 @@ export class ApiStack extends Stack {
       runtime: RUNTIME,
       architecture: Architecture.ARM_64,
       memorySize: 256,
-      timeout: Duration.seconds(10),
+      timeout: TIMEOUT,
       logGroup: functionLogs,
       loggingFormat: LoggingFormat.JSON,
-      environment: { TABLE_NAME: table.tableName },
+      tracing: rules.tracing ? Tracing.ACTIVE : Tracing.DISABLED,
+      environment: {
+        TABLE_NAME: table.tableName,
+        IDEMPOTENCY_TABLE_NAME: idempotency.tableName,
+        // Powertools' Logger and Metrics name the service, and Metrics
+        // writes its metrics under this namespace.
+        POWERTOOLS_SERVICE_NAME: id,
+        POWERTOOLS_METRICS_NAMESPACE: id,
+      },
     });
     // Only the calls the handler makes.
     table.grant(handler, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    idempotency.grant(
+      handler,
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+      'dynamodb:DeleteItem',
+    );
 
     const accessLogs = new LogGroup(this, 'ApiAccessLogs', {
-      retention: RetentionDays.ONE_MONTH,
+      retention: rules.logRetention,
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const api = new HttpApi(this, 'Api', {
@@ -136,5 +187,54 @@ export class ApiStack extends Stack {
       integration: new HttpLambdaIntegration('Items', handler),
     });
     this.url = api.apiEndpoint;
+
+    // Each alarm fires on the first bad five minutes: a server error, a
+    // failed or throttled call, or calls near their time limit.
+    // docs/runbook.md says what each means and what to do first.
+    // tsconfig's exactOptionalPropertyTypes keeps a HttpApi or Table from
+    // passing as the IHttpApi or ITable the monitoring takes (an optional
+    // property they leave undefined), so it gets a reference by id or name.
+    const alarms = new Alarms(this, 'Alarms', alerts.email);
+    alarms.monitoring
+      .monitorApiGatewayV2HttpApi({
+        api: HttpApi.fromHttpApiAttributes(this, 'MonitoredApi', { httpApiId: api.apiId }),
+        alarmFriendlyName: 'Api',
+        add5xxCountAlarm: { Critical: { maxErrorCount: 0 } },
+      })
+      .monitorLambdaFunction({
+        lambdaFunction: handler,
+        alarmFriendlyName: 'Handler',
+        addFaultCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addThrottlesCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addLatencyP99Alarm: {
+          Warning: { maxLatency: Duration.millis(TIMEOUT.toMilliseconds() * 0.8) },
+        },
+      });
+    for (const [name, monitored] of [
+      ['Items', table],
+      ['Idempotency', idempotency],
+    ] as const) {
+      alarms.monitoring.monitorDynamoTable({
+        table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
+        alarmFriendlyName: name,
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+      });
+    }
+
+    if (rules.backups && backups.retentionDays > 0) {
+      new Backups(this, 'Backups', {
+        retentionDays: backups.retentionDays,
+        copyToRegion: backups.copyToRegion,
+        tag: props.backupTag,
+      });
+    }
+
+    new CfnOutput(this, 'EntryPoint', {
+      value: this.url,
+      description: 'The URL of the HTTP API.',
+    });
   }
 }

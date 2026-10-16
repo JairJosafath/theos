@@ -1,5 +1,7 @@
-{{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+{{ if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $ops := .Operations -}}
+{{- /* Powertools' idempotency records: none in Go, which has no Powertools. */ -}}
+{{- $idempotency := ne .Framework "aws-lambda-go" -}}
 {{- $deploy := "cdk deploy -c tier=production --all" -}}
 {{- /* A queue consumer: an SQS queue and its dead-letter queue, no API. */ -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
@@ -76,7 +78,9 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 | Resource                | Holds                                         | When the stack is deleted         |
 | ----------------------- | --------------------------------------------- | --------------------------------- |
 | `Items` table           | the items                                     | kept; deletion protection is on   |
+{{- if $idempotency }}
 | `Idempotency` table     | the answers to `PUT`s, for an hour each       | kept; deletion protection is on   |
+{{- end }}
 {{- if ne $ops.Backups.RetentionDays 0 }}
 | backup vault and key    | the daily backups                             | kept, with every backup in it     |
 {{- end }}
@@ -86,10 +90,12 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 {{ end -}}
 The physical names are in the stack:
 `aws cloudformation describe-stack-resources --stack-name {{ .Container }}`.
+{{- if $idempotency }}
 The `Idempotency` table needs no restore: its records expire within the
 hour, and an empty one only means {{ if $queue }}a message delivered again is stored again, which
 puts the same item{{ else if $schedule }}a run delivered again runs again, which
-puts the same record{{ else }}a repeated `PUT` runs again{{ end }}.{{ if $queue }} The queues are not backed up: a message lives
+puts the same record{{ else }}a repeated `PUT` runs again{{ end }}.
+{{- end }}{{ if $queue }} The queues are not backed up: a message lives
 days, not months, and its producer holds what it sent.{{ else if $schedule }} The dead-letter queue is not backed up: a run
 waits there 14 days at most, and its scheduled time is all it holds.{{ end }}
 
@@ -150,14 +156,14 @@ account owner turns it on (AWS Backup's _Settings_, or
 
 ## The table is gone
 
-The stack refers to its tables by name. If a table was deleted by hand
+The stack refers to its {{ if $idempotency }}tables{{ else }}table{{ end }} by name. If a table was deleted by hand
 (after deletion protection was turned off), restore it under its own name:
 point-in-time recovery from the deleted table's system backup
 (`<name>$DeletedTableBackup`, kept 35 days){{ if ne $ops.Backups.RetentionDays 0 }} or a backup from the vault{{ end }},
 with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
-(`aws dynamodb update-continuous-backups`), deletion protection, time to
-live (`expiration`, for the `Idempotency` table) and the three
+(`aws dynamodb update-continuous-backups`), deletion protection,{{ if $idempotency }} time to
+live (`expiration`, for the `Idempotency` table){{ end }} and the three
 `c4factory:` tags, which the backup plan selects by. Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
 {{- if $queue }}
@@ -327,12 +333,14 @@ one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name 
 | Alarm                                             | Means                                                                            | First                                                                                                           |
 | ------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `Api-Fault-Count-Critical`                        | the API answered 5xx: the function failed or timed out                           | read the function's logs for `The request failed.` and the request id; roll back if a deploy just went out      |
-| `Handler-Fault-Count-Critical`                    | the function threw or timed out, outside `answer`'s handling                     | read the function's logs around the time; an error at start-up (a missing variable) means a broken deploy       |
+| `Handler-Fault-Count-Critical`                    | the function failed or timed out, outside `answer`'s handling                    | read the function's logs around the time; an error at start-up (a missing variable) means a broken deploy       |
 | `Handler-Throttled-Count-Critical`                | Lambda refused calls: the account's or function's concurrency is used up         | check the account's concurrent executions; a burst from one client is the stage's throttle's to stop            |
 | `Handler-Latency-P99-Warning`                     | the slowest calls take over 8 of their 10 seconds                                | check DynamoDB's latency on the dashboard and the function's duration in its logs; a timeout is next            |
 | `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design           |
 | `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                             | check the AWS Health Dashboard for DynamoDB in the region; the SDK retries, so watch whether clients see errors |
+{{- if $idempotency }}
 | `Idempotency-...`                                 | the same, for the idempotency records                                            | as for `Items`; while it lasts, repeated `PUT`s may run again                                                   |
+{{- end }}
 
 {{ end -}}
 When an alarm fires, note the time, what you saw and what you did; when it
