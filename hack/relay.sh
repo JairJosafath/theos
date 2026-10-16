@@ -707,8 +707,9 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645).
-  (cd "$WT" && drop_session_env && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  # environment (#645). C4_RELAY_WORKER names the worker (1, 2, ..., triage,
+  # maintainer): create --next reserves only for a numbered one's next session.
+  (cd "$WT" && drop_session_env && C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"

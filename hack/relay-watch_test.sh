@@ -26,6 +26,19 @@ mkdir -p "$DIR"
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
+# pick_next counts every worker's reservations (create --next, #1284).
+(
+  REPO=$T/repo
+  mkdir -p "$REPO"/.claude/worktrees/relay-{1,2,triage}/.relay
+  touch "$REPO"/.claude/worktrees/relay-{2,triage}/.relay/next
+  github() { echo "$GH_NEXT_FILES"; }
+  touch "$REPO"/.claude/worktrees/relay-1/.relay/next
+  check "pick_next: every worker's .relay/next, not the triage's" "$(pick_next)" \
+    "$REPO/.claude/worktrees/relay-1/.relay/next
+$REPO/.claude/worktrees/relay-2/.relay/next"
+  exit $fail
+) || fail=1
+
 PICKED= PICK_RC=1 RELAY_RC=0 PROPOSED= PROPOSED_RC=0 TRIAGE_RC=0 BLOCKED= BLOCKED_RC=0 CYCLES=
 pick_next() { [ -n "$PICKED" ] && printf '%s\n' "$PICKED"; return "$PICK_RC"; }
 proposed() { echo "$*" >"$T/proposed-args"; [ -n "$PROPOSED" ] && printf '%s\n' $PROPOSED; return "$PROPOSED_RC"; }

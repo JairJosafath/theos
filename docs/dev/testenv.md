@@ -299,10 +299,13 @@ issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
 returns it before every other issue, urgent ones too, and its `take` turns
 the reservation into the claim; every other `pick` skips it and every other
 `take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
-which anyone picks it. The log shows such a session as `(next)`. Outside a
-relay session (`C4_HEADLESS` unset) `--next` files the issue ready and
-reserves nothing. Follow-ups that need a decision are still filed
-`status/proposed` for the triage.
+which anyone picks it. The log shows such a session as `(next)`. The watch's
+`pick` counts every worker's `.relay/next`, so a reserved issue starts the
+relay after its worker stopped. Outside a worker's session (a hand-started
+one, the triage's, the maintainer's: `C4_RELAY_WORKER`, which the relay sets,
+is no number) `--next` files the issue ready and reserves nothing.
+Follow-ups that need a decision are still filed `status/proposed` for the
+triage.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.

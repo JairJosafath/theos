@@ -1221,7 +1221,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
 (
   NX=$T/nx
   mkdir -p "$NX"
-  unset C4_HEADLESS # the relay's sessions run these tests too
+  unset C4_RELAY_WORKER # the relay's sessions run these tests too
   export C4_HOST=h
   rm -rf "$T"/{main,wt2,wt3}/.relay
   echo '[{"number": 150, "title": "Older", "body": "", "state": "open", "html_url": "u150",
@@ -1281,22 +1281,22 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # wt2's session works #150 and files its follow-ups.
   claim "$T/wt2" 150 "$GH_NOW"
 
-  out=$(C4_HEADLESS=1 as "$T/wt2" gh_create --next "No kind" "$NX/body" 2>&1)
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "No kind" "$NX/body" 2>&1)
   check "create --next, no kind/*: refused" "$? $(issues) $out" \
     "1 1 github: create --next needs a kind/* label: kind/bug, kind/chore or kind/docs"
-  out=$(C4_HEADLESS=1 as "$T/wt2" gh_create --next "A feature" "$NX/body" kind/feature 2>&1)
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "A feature" "$NX/body" kind/feature 2>&1)
   check "create --next, a feature: refused, to be proposed" "$? $(issues) $(grep -c 'file a kind/feature status/proposed' <<<"$out")" "1 1 1"
-  out=$(C4_HEADLESS=1 as "$T/wt2" gh_create --next "Proposed" "$NX/body" status/proposed kind/bug 2>&1)
+  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Proposed" "$NX/body" status/proposed kind/bug 2>&1)
   check "create --next, another status: refused" "$? $(issues) $out" "1 1 github: create --next files the issue status/ready; leave out status/proposed"
 
-  b=$(C4_HEADLESS=1 as "$T/wt2" gh_create --next "Fix the retry" "$NX/body" kind/bug 2>"$T/err")
+  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Fix the retry" "$NX/body" kind/bug 2>"$T/err")
   check "create --next: filed ready" "$? $b $(labels "$b")" "0 151 status/ready kind/bug source/dev"
   check "create --next: one reservation comment" "$(comments "$b")" "1
 **heron-150** reserved this issue for the next session in \`wt2\` · host \`h\` · from #150"
   check "create --next: .relay/next names it" "$(next "$T/wt2")" "[151,1000] "
   check "create --next: says so" "$(cat "$T/err")" "github: reserved #151 for this checkout's next session, for 2h"
   check "create --next, status/ready given: one status" \
-    "$(C4_HEADLESS=1 as "$T/wt3" gh_create --next "Doc it" "$NX/body" status/ready kind/docs 2>/dev/null; labels 152)" "152
+    "$(C4_RELAY_WORKER=2 as "$T/wt3" gh_create --next "Doc it" "$NX/body" status/ready kind/docs 2>/dev/null; labels 152)" "152
 status/ready kind/docs source/dev"
   rm -rf "$T/wt3/.relay"
   jq 'map(if .number == 152 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
@@ -1306,6 +1306,8 @@ status/ready kind/docs source/dev"
   gh_create Urgent "$NX/body" status/ready priority/urgent kind/bug >/dev/null # 153
   check "pick, another checkout: the urgent one" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
   check "pick, this checkout: its reservation first, before urgent" "$(as "$T/wt2" gh_pick | cut -f1,4)" "151	next"
+  check "pick, the watch: every worker's reservations count (GH_NEXT_FILES)" \
+    "$(GH_NEXT_FILES="$T/none/.relay/next"$'\n'"$T/wt2/.relay/next" gh_pick | cut -f1,4)" "151	next"
   out=$(as "$T/wt3" gh_take 151 2>&1); check "take, another checkout: refused" "$? $(cut -d, -f1 <<<"$out")" "4 github: #151 is claimed by heron-150 on host h"
 
   rm -f "$T/wt2/.relay/claim" # the relay released the last session's claim
@@ -1319,7 +1321,7 @@ status/ready kind/docs source/dev"
   check "pick, another checkout, after: still skips it" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
 
   # The reservation expires: after C4_LEASE_TTL anyone picks and takes it.
-  b=$(C4_HEADLESS=1 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
+  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
   jq 'map(if .number == 151 or .number == 153 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
   later=$((GH_NOW + 2 * 3600 + 60))
   gh_pick >/dev/null; check "expiry: skipped before the TTL" $? 1
@@ -1330,11 +1332,14 @@ status/ready kind/docs source/dev"
   GH_NOW=$later as "$T/wt2" gh_next_drop 0 7200
   check "expiry: .relay/next drops it" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
 
-  # Outside a relay session there is no next session: filed ready, not reserved.
+  # Outside a relay worker's session there is no next session: filed ready,
+  # not reserved. The triage's and the maintainer's sessions run no pick.
   rm -rf "$T/wt2/.relay"
   b=$(as "$T/wt2" gh_create --next "Hand filed" "$NX/body" kind/chore 2>"$T/err")
   check "create --next, no relay session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/chore source/dev 0 "
-  check "create --next, no relay session: says so" "$(cat "$T/err")" "github: #$b is ready and not reserved: only a relay session has a next session to reserve it for"
+  check "create --next, no relay session: says so" "$(cat "$T/err")" "github: #$b is ready and not reserved: only a relay worker's session has a next session to reserve it for"
+  b=$(C4_RELAY_WORKER=maintainer as "$T/wt2" gh_create --next "Maintainer filed" "$NX/body" kind/bug 2>/dev/null)
+  check "create --next, the maintainer's session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/bug source/dev 0 "
   exit $fail
 ) || fail=1
 

@@ -181,7 +181,10 @@ triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain, trim_caches and report_note:
 # what the watch asks and starts (faked in the tests).
-pick_next() { github pick; }
+# pick_next counts every worker's reservations (create --next, .relay/next in
+# its worktree) as its own, so an issue a worker reserved starts the relay
+# after that worker stopped; only that worker's pick takes it first.
+pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9]*/.relay/next) github pick; }
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }

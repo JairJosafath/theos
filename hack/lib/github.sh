@@ -117,8 +117,8 @@
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
 #   hack/lib/github.sh create --next TITLE FILE kind/bug|kind/chore|kind/docs [LABEL...]
-#                                        a follow-up you decided: filed status/ready and, in a relay session,
-#                                        reserved for this worktree's next session (.relay/next): its pick
+#                                        a follow-up you decided: filed status/ready and, in a relay worker's
+#                                        session, reserved for this worktree's next session (.relay/next): its pick
 #                                        returns it first, every other pick skips it for C4_LEASE_TTL. Refused
 #                                        without one of those kinds or with a status other than ready
 #   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
@@ -333,14 +333,18 @@ gh_recent_claims() {
 # next session. Then urgent, so a "main is red" fix (the relay watch files it
 # ready and urgent) is worked before an in-progress issue that keeps failing;
 # within each, an in-progress issue without a live claim comes before a ready
-# one, oldest first. Exit 1: nothing to pick; exit 2: GitHub could not be asked.
+# one, oldest first. GH_NEXT_FILES, one per line, adds other checkouts'
+# .relay/next: the relay watch counts every worker's reservations, so a
+# reserved issue starts the relay after its worker stopped. Exit 1: nothing to
+# pick; exit 2: GitHub could not be asked.
 gh_pick() {
-  local ttl issues claims next row
+  local ttl issues claims next row extra
   ttl=$(gh_ttl) || return 2
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  next=$(gh_next_read)
+  mapfile -t extra <<<"${GH_NEXT_FILES:-}"
+  next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
   row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" --argjson next "$next" "$GH_CLAIM_JQ"'
     def has($l): .labels | any(. == $l);
     [.[][]] as $all
@@ -787,12 +791,15 @@ gh_claim_body() {
   printf '%s\n%s\nHeartbeat: %s\n' "$GH_CLAIM_MARKER" "$line" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
-# gh_next_read: this checkout's reservations, .relay/next (one JSON line
-# {issue, id, at} per create --next, id being the reservation comment's), as
-# one JSON array, oldest first; [] when there are none or the file is unreadable.
+# gh_next_read [FILE...]: the reservations in FILEs, by default this
+# checkout's .relay/next (one JSON line {issue, id, at} per create --next, id
+# being the reservation comment's), as one JSON array, oldest first; [] when
+# there are none or a file is unreadable.
 gh_next_read() {
-  local f=$GH_PENDING_DIR/next
-  [ -s "$f" ] && jq -sc . "$f" 2>/dev/null || echo '[]'
+  local f all=
+  [ $# -gt 0 ] || set -- "$GH_PENDING_DIR/next"
+  for f; do [ -s "$f" ] && all+=$(cat "$f")$'\n'; done
+  jq -sc . <<<"$all" 2>/dev/null || echo '[]'
 }
 
 # gh_next_drop N TTL: drop N's reservation from .relay/next, and every one
@@ -1796,12 +1803,13 @@ gh_next_labels() {
 # reservation comment (a claim that says "reserved this issue"), which every
 # other checkout's pick skips and take refuses for C4_LEASE_TTL, and a line in
 # .relay/next, which this checkout's pick reads first and its take turns into
-# the claim. Only a relay session (C4_HEADLESS=1) has a next session: in any
-# other, N is left ready for any worker.
+# the claim. Only a relay worker's session (C4_RELAY_WORKER=1, 2, ...) has a
+# next session: in any other, the triage's and the maintainer's too, N is
+# left ready for any worker.
 gh_reserve() {
   local n=${1:?usage: gh_reserve N} c_issue c_id c_name c_branch who from= id
-  if [ "${C4_HEADLESS:-}" != 1 ]; then
-    echo "github: #$n is ready and not reserved: only a relay session has a next session to reserve it for" >&2
+  if ! [[ ${C4_RELAY_WORKER:-} =~ ^[0-9]+$ ]]; then
+    echo "github: #$n is ready and not reserved: only a relay worker's session has a next session to reserve it for" >&2
     return 0
   fi
   if gh_claim_read; then
@@ -1814,7 +1822,11 @@ gh_reserve() {
     jq -Rs '{body: .}' | gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
   mkdir -p "$GH_PENDING_DIR"
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
-  jq -nc --argjson n "$n" --argjson id "$id" --argjson at "$(gh_now)" '{issue: $n, id: $id, at: $at}' >>"$GH_PENDING_DIR/next"
+  # Without the local half not even this checkout picks it: drop the comment.
+  if ! jq -nc --argjson n "$n" --argjson id "$id" --argjson at "$(gh_now)" '{issue: $n, id: $id, at: $at}' >>"$GH_PENDING_DIR/next"; then
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+    return 1
+  fi
   echo "github: reserved #$n for this checkout's next session, for $C4_LEASE_TTL" >&2
 }
 

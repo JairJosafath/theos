@@ -188,7 +188,7 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   - *Decided:* a `kind/bug` whose body names its failing test, or a
     `kind/chore` or `kind/docs` whose Done-when you can state:
     `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>`. It is
-    filed `status/ready` and, in a relay session, reserved for your worktree:
+    filed `status/ready` and, in a relay worker's session, reserved for your worktree:
     the relay starts your worker's next session on it (`.relay/next`, read
     before `pick`), and every other worker's `pick` skips it for
     `C4_LEASE_TTL` (2h), after which anyone picks it. `--next` refuses
