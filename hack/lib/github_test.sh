@@ -1076,13 +1076,14 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   rm -f "$T/merged"
   out=$(PR=$(bugpr 'Closes #5' kind/bug '["hack/lib/github.sh", "hack/lib/github_test.sh"]') gh_merge 17 2>&1)
   check "merge: a bug fix touching a test file merges" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
-  for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx; do
+  # The UI's node tests count too (#1203).
+  for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx ui/test/vite-config.test.mjs ui/src/brief.test.js; do
     PR=$(bugpr 'Closes #5' kind/bug "[\"$f\"]") gh_merge 17 >/dev/null 2>&1; check "merge: $f is a test file" $? 0
   done
   rm -f "$T/merged"
-  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "docs/latest_test.md"]') gh_merge 17 2>&1)
+  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "docs/latest_test.md", "ui/test/fixture.mjs"]') gh_merge 17 2>&1)
   check "merge: a bug fix touching no test file refuses, naming the rule" "$? $out | $(cat "$T/merged" 2>/dev/null)" \
-    '1 github: #17 closes #5, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why> | '
+    '1 github: #17 closes #5, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts, *.test.mjs): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why> | '
   PR=$(bugpr $'Closes #5\n\nNo test: a docs-only fix' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
   check "merge: No test: lets a bug fix through" $? 0
   PR=$(bugpr $'Closes #5\n\nNo test:' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
