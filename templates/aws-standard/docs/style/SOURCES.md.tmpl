@@ -185,7 +185,21 @@ it alone gives.
 | AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                              | live                                 |
 | AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                             | aws-cdk-lib 2.273.0                  |
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                | cdk-nag 3.0.2, read from the package |
-| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-static-site-ts" }}| Source                                                                                                                                                                                       | Version / date                       |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-queue-ts" }}| Source                                                                                                                      | Version / date                       |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                  | November 6, 2024                     |
+| Serverless Applications Lens — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html | July 14, 2022                        |
+| Lambda, best practices — https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html                                   | live                                 |
+| Lambda, Node.js handler and its best practices — https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html           | live                                 |
+| Lambda, JSON log format — https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-logformat.html             | live                                 |
+| Lambda, using Lambda with Amazon SQS — https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html                           | live                                 |
+| Lambda, configuring an SQS event source — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html          | live; read 2026-10-16                |
+| DynamoDB, best practices — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html             | live                                 |
+| AWS SDK for JavaScript v3, developer guide — https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/             | live                                 |
+| AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                   | live                                 |
+| AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                  | aws-cdk-lib 2.273.0                  |
+| CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md     | cdk-nag 3.0.2, read from the package |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                   | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-static-site-ts" }}| Source                                                                                                                                                                                       | Version / date                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                                                   | November 6, 2024                     |
 | Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                             | live, read 2026-10-16                |
@@ -287,14 +301,14 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
-{{- if eq .Framework "aws-lambda-ts" }} The
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
-@aws-lambda-powertools/logger, metrics and idempotency 2.36.0.
+@aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
 {{- else if eq .Framework "aws-ec2-ts" }} The
 operations (the alarms) add cdk-monitoring-constructs 10.3.2.
 {{- end }}
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}
 
 ## Operations (read 2026-10-16)
 
@@ -318,6 +332,35 @@ give none.
 | Powertools for AWS Lambda (TypeScript), Idempotency — https://docs.aws.amazon.com/powertools/typescript/latest/features/idempotency/                                                                                            | 2.36.0         |
 | cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                        | 1.57.2         |
 | Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/ | live           |
+{{- if eq .Framework "aws-queue-ts" }}
+
+## Queues (read 2026-10-16)
+
+Read for the queue, its dead-letter queue, the event source and `docs/runbook.md`'s redrive.
+
+| Source                                                                                                                                                   | Version / date |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Lambda, handling errors for an SQS event source (partial batch responses) — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html | live           |
+| Lambda, maximum concurrency for SQS event sources — https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-scaling.html                               | live           |
+| SQS, dead-letter queues — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html                         | live           |
+| SQS, StartMessageMoveTask (redrive) — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_StartMessageMoveTask.html                | live           |
+| SQS, server-side encryption — https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html                 | live           |
+| Powertools for AWS Lambda (TypeScript), Batch Processing — https://docs.aws.amazon.com/powertools/typescript/latest/features/batch/                      | 2.36.0         |
+{{- else if eq .Framework "aws-schedule-ts" }}
+
+## Schedules (read 2026-10-16)
+
+Read for the schedule, its retries, its role, its dead-letter queue, the function's asynchronous retries and `docs/runbook.md`'s re-runs.
+
+| Source                                                                                                                                           | Version / date |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| EventBridge Scheduler, retry policy and dead-letter queue — https://docs.aws.amazon.com/scheduler/latest/UserGuide/configuring-schedule-dlq.html | live           |
+| EventBridge Scheduler, context attributes — https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-schedule-context-attributes.html     | live           |
+| EventBridge Scheduler, execution role — https://docs.aws.amazon.com/scheduler/latest/UserGuide/setting-up.html#setting-up-execution-role         | live           |
+| EventBridge Scheduler, CloudWatch metrics — https://docs.aws.amazon.com/scheduler/latest/UserGuide/monitoring-cloudwatch.html                    | live           |
+| Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html               | live           |
+| Pricing: EventBridge Scheduler — https://aws.amazon.com/eventbridge/pricing/                                                                     | live           |
+{{- end }}
 {{- else if eq .Framework "aws-ec2-ts" }}
 
 ## Operations (read 2026-10-16)

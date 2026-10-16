@@ -47,6 +47,8 @@ var awsFrameworks = []side{
 	{model.TypeService, "aws-fargate-ts"},
 	{model.TypeFunction, "aws-lambda-py"},
 	{model.TypeStaticSite, "aws-static-site-ts"},
+	{model.TypeWorker, "aws-queue-ts"},
+	{model.TypeJob, "aws-schedule-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -265,6 +267,10 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-fargate-ts", []string{"one per zone", "collector", "deployment alarm"}, []string{"go build", "bootstrap"}},
 		{"aws-lambda-py", []string{"uv.lock", "module scope"}, []string{"esbuild", "go build", "bootstrap"}},
 		{"aws-static-site-ts", []string{"Vite", "CloudFront"}, []string{"go build", "bootstrap", "cold start"}},
+		{"aws-queue-ts", []string{"esbuild", "module scope", "dead-letter queue", "ReportBatchItemFailures"},
+			[]string{"go build", "bootstrap", "API Gateway"}},
+		{"aws-schedule-ts", []string{"esbuild", "module scope", "dead-letter queue", "EventBridge Scheduler"},
+			[]string{"go build", "bootstrap", "API Gateway", "ReportBatchItemFailures"}},
 	}
 	types := map[string]string{}
 	for _, f := range awsFrameworks {

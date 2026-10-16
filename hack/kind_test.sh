@@ -3,6 +3,8 @@
 # keep-context, with kind, docker and kubectl faked.
 # Run: hack/kind_test.sh
 T=$(mktemp -d)
+# $T may lie inside a checkout (the relay's TMPDIR, #1326): git stops at it.
+export GIT_CEILING_DIRECTORIES=$T
 trap 'rm -rf "$T"' EXIT
 # shellcheck source=hack/kind.sh
 . "$(dirname "$0")/kind.sh"

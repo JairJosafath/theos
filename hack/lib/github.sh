@@ -6,7 +6,7 @@
 #
 # Source it for the gh_* functions (hack/relay.sh), or run it:
 #
-#   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
+#   hack/lib/github.sh labels            create the labels below, update their descriptions, delete the retired ones (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
 #   hack/lib/github.sh blocked [--unworked]
 #                                        what holds back each ready or in-progress issue pick skips: N waits on M
@@ -87,23 +87,33 @@
 #                                        when its head is behind its base (main): two pull requests green alone can
 #                                        make main red together: land it instead. Refused as well while another
 #                                        pull request holds the merge turn (land), naming it, and when it closes a
-#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts)
-#                                        and no line of its body says No test: <why>
+#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts,
+#                                        *.test.mjs; a deleted one is none) and no line of its body says
+#                                        No test: <why>, a reason in place of <why>
 #   hack/lib/github.sh land PR [--wait DURATION]
-#                                        the way to merge PR: wait for the merge turn (one pull request at a time,
-#                                        across every device, first come first served), then, in this checkout of
-#                                        PR's branch (a bug fix without a test is refused before it queues, as merge
-#                                        refuses it), git fetch (retried GH_LAND_FETCH_TRIES times) and merge
-#                                        origin/main, make check, push and merge PR,
-#                                        and give the turn up, merged or not (a conflict or a red check is said; make
-#                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
+#                                        the way to merge PR: in this checkout of PR's branch (a bug fix without a
+#                                        test is refused before it queues, as merge refuses it), git fetch (retried
+#                                        GH_LAND_FETCH_TRIES times) and merge origin/main (when that changes this
+#                                        script, land goes on as the merged copy, whose refusals count), make
+#                                        check and push; then
+#                                        wait for the merge turn (one pull request at a time, across every device,
+#                                        first come first served) and merge PR at once when origin/main is still what
+#                                        was checked, else merge it in and check again under the turn (at most
+#                                        GH_LAND_RECHECKS times; that check takes the device's next free heavy-job
+#                                        slot ahead of the waiters); give the turn up, merged or not (a conflict or a
+#                                        red check is said; make check's output, the path taken and how long the turn
+#                                        was held are kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
 #                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
 #                                        dropped. Exit 4: not its turn within DURATION (default 2h); its place is
 #                                        given up. Refused before it queues when PR changes more than
 #                                        GH_REVIEW_LINES (400) lines in hand-written files and carries no review
-#                                        pass (review-check)
-#   hack/lib/github.sh review-check PR   whether PR may land as reviewed: the lines it changes in hand-written
+#                                        pass (review-check). A PR merged outside land (by hand) is finished
+#                                        work: land looks at its state at the start, every GH_LAND_BEAT seconds
+#                                        of a make check (stopping it), on every look at the queue and before each
+#                                        check under the turn, and exits 0 naming who merged it (#1369); one
+#                                        closed without a merge exits 1
+#   hack/lib/github.sh review-check PR  whether PR may land as reviewed: the lines it changes in hand-written
 #                                        files (zz_generated.*, config/crd/bases/, config/rbac/role.yaml,
 #                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
 #                                        needs a comment that starts with Review:, by the owner's account (an
@@ -116,6 +126,11 @@
 #   hack/lib/github.sh create TITLE FILE LABEL...
 #                                        file an issue, FILE as its body; prints its number. An open
 #                                        issue with the same title is left as it is.
+#   hack/lib/github.sh create --next TITLE FILE kind/bug|kind/chore|kind/docs [LABEL...]
+#                                        a follow-up you decided: filed status/ready and, in a relay worker's
+#                                        session, reserved for this worktree's next session (.relay/next): its pick
+#                                        returns it first, every other pick skips it for C4_LEASE_TTL. Refused
+#                                        without one of those kinds or with a status other than ready
 #   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
 #                                        finished runs there failed (cancelled and skipped runs, and runs its
 #                                        runner lost, don't count: see gh_lost)
@@ -126,8 +141,9 @@
 #                                        started none of the newest run's failed jobs (failed payments, a
 #                                        spending limit); prints an issue body with their annotation
 #   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count]
-#                                        the Ginkgo specs that failed on main in the last N days (default 7):
-#                                        SPEC<tab>RUN<tab>TIME for each [FAIL] line of each failed run's log.
+#                                        the Ginkgo specs and shell test cases (TEST FILE: CASE) that failed on
+#                                        main in the last N days (default 7): SPEC<tab>RUN<tab>TIME for each
+#                                        [FAIL] line, and each FAIL line test-hack.sh shows, of each failed run's log.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
 #   hack/lib/github.sh queued [--minutes M]
@@ -144,7 +160,8 @@
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
 #                                        maintainer/report, no status), creating and pinning it the first time;
-#                                        prints its URL
+#                                        prints its URL. The watch's notes (report-note) the old body has and
+#                                        FILE lacks are kept
 #   hack/lib/github.sh report-note KEY [HEALTH [NEEDS]]
 #                                        put the line HEALTH under the Maintainer report's Health and NEEDS
 #                                        (default HEALTH) as a task under its Needs you, each marked
@@ -156,11 +173,12 @@
 #                                        status/proposed when it has no status. Only for issues from the
 #                                        owner, members and collaborators; safe to repeat
 #
-# FILE may be - for stdin. Pickup order, oldest first: a priority/urgent issue
-# (a status/in-progress one without a live claim, else a status/ready one),
-# else a status/in-progress issue without a live claim, else a status/ready
-# one; issues with a live claim, or whose body says "Depends on #M" while #M is
-# open, are skipped. A handoff comment starts with the line
+# FILE may be - for stdin. Pickup order: a status/ready issue this checkout
+# reserved (create --next), else by priority/N, 1 first (no priority label
+# counts as 5; of several, the lowest counts); within a number a
+# status/in-progress issue without a live claim before a status/ready one,
+# oldest first. Issues with a live claim, or whose body says "Depends on #M"
+# while #M is open, are skipped. A handoff comment starts with the line
 # <!-- relay-handoff -->.
 #
 # The Kind cluster: agents never create, lease or deploy to one; Go tests,
@@ -182,6 +200,10 @@
 # C4_LEASE_TTL (2h; 90m, 300s and plain seconds work too). The local half is
 # .relay/claim; a checkout holds one claim at a time. C4_HOST names the host
 # (default: hostname), C4_SESSION_ID the session (default: CLAUDE_CODE_SESSION_ID).
+# A reservation (create --next) is a claim comment that says "reserved this
+# issue" instead: live for C4_LEASE_TTL from when it was posted, so every other
+# checkout's pick skips it and take refuses it, while the checkout that posted
+# it, whose .relay/next names it, picks it first and takes it.
 #
 # Auth: GH_TOKEN, else the git credential helper's github.com password, kept in
 # the environment and never printed. Needs gh and jq. C4_GITHUB_REPO overrides
@@ -229,7 +251,8 @@ GH_MARKED_JQ=$GH_NOW_JQ'
 GH_CLAIM_JQ=$GH_MARKED_JQ'
   def claim: marked;
   def held: .body | test("\\*\\* works on this issue");
-  def live: claim and held and fresh;
+  def reserved: .body | test("\\*\\* reserved this issue");
+  def live: claim and (held or reserved) and fresh;
 '
 
 # name|color|description, the same words the factory uses in Gitea. GitHub
@@ -241,7 +264,16 @@ GH_LABELS=(
   'status/waiting|bfdadc|A plan'"'"'s parent, waiting on its steps, not on an agent'
   'status/needs-maintainer|e99695|An agent escalated it; the newest comment says what it needs'
   'status/needs-human|d93f0b|The maintainer sent it to the owner; only the maintainer sets it'
-  'priority/urgent|b60205|Picked before every other issue, in progress or ready'
+  'priority/1|b60205|Picked first: something is broken now (a red main, a dead relay, a failed release check)'
+  'priority/2|d73a4a|Picked after 1, before the velocity work (3)'
+  'priority/3|e36209|Makes development itself faster (relay, land, checks, flakes, tooling); picked after 1 and 2'
+  'priority/4|f66a0a|Picked after 3, before the default (5)'
+  'priority/5|fbca04|The default: an issue with no priority label counts as 5'
+  'priority/6|e4e669|Picked after the default (5)'
+  'priority/7|c5def5|Picked after 6'
+  'priority/8|bfdadc|Picked after 7'
+  'priority/9|d4d4d4|Picked after 8'
+  'priority/10|ededed|Picked last'
   'kind/bug|d73a4a|Something is broken'
   'kind/feature|a2eeef|New behaviour'
   'kind/chore|ededed|Upkeep: operations, releases, tooling'
@@ -251,6 +283,9 @@ GH_LABELS=(
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
 )
+# Labels gh_labels deletes from the repository when present: the old priority
+# words the 1-10 scale replaced (#1329).
+GH_RETIRED_LABELS=(priority/urgent priority/velocity)
 GH_REPORT_LABEL=maintainer/report
 GH_REPORT_TITLE='Maintainer report'
 
@@ -298,6 +333,11 @@ gh_labels() {
       -f name="$name" -f color="$color" -f description="$desc" >/dev/null || return 1
     echo "label $name: created"
   done
+  for name in "${GH_RETIRED_LABELS[@]}"; do
+    grep -q -- "^$name"$'\t' <<<"$have" || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null || return 1
+    echo "label $name: retired"
+  done
 }
 
 # gh_seconds VALUE NAME: VALUE (1d, 2h, 90m, 300s or 300) in seconds; NAME is
@@ -327,31 +367,47 @@ gh_recent_claims() {
 }
 
 # gh_pick: the issue to work next, as NUMBER TITLE URL STATUS (tab-separated),
-# STATUS being in-progress, ready-urgent or ready. Urgent comes first, so a
-# "main is red" fix (the relay watch files it ready and urgent) is worked
-# before an in-progress issue that keeps failing; within each, an in-progress
-# issue without a live claim comes before a ready one, oldest first. Exit 1:
-# nothing to pick; exit 2: GitHub could not be asked.
+# STATUS being next, in-progress or ready. A ready issue this checkout
+# reserved (create --next, .relay/next) comes first, while its reservation is
+# live: the session that filed it decided it for this worker's next session.
+# Then by priority/N, 1 first (#1329): 1 is something broken now, so a "main
+# is red" fix (the relay watch files it ready and priority/1) is worked before
+# an in-progress issue that keeps failing; 3 is what makes development itself
+# faster (docs/plans/velocity.md); an issue with no priority label counts as
+# 5, and of several labels the lowest counts. Within a number, an in-progress
+# issue without a live claim comes before a ready one, oldest first.
+# GH_NEXT_FILES, one per line, adds other checkouts' .relay/next: the relay
+# watch counts every worker's reservations, so a reserved issue starts the
+# relay after its worker stopped. Exit 1: nothing to pick; exit 2: GitHub
+# could not be asked.
 gh_pick() {
-  local ttl issues claims row
+  local ttl issues claims next row extra
   ttl=$(gh_ttl) || return 2
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" "$GH_CLAIM_JQ"'
-    def has($l): .labels | any(. == $l);
+  mapfile -t extra <<<"${GH_NEXT_FILES:-}"
+  next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
+  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
+    --slurpfile next <(printf '%s' "$next") "$GH_CLAIM_JQ"'
+    $claims[0] as $claims | $next[0] as $next
+    | def has($l): .labels | any(. == $l);
+    def priority: [.labels[] | capture("^priority/(?<n>[0-9]+)$").n | tonumber | select(. >= 1 and . <= 10)] | min // 5;
     [.[][]] as $all
     | [$all[].number] as $open
-    | [$claims[] | select(live) | .issue] as $taken
+    | [$next[] | select(.id as $i | $claims | any(.id == $i and reserved and live))] as $mine
+    | [$claims[] | select(live) | select(.id as $i | $mine | any(.id == $i) | not) | .issue] as $taken
     | [$all[] | select(.pull_request | not)
         | select(.number as $n | $taken | any(. == $n) | not)
         | select([(.body // "") | scan("[Dd]epends on #([0-9]+)") | .[0] | tonumber]
             | any(. as $d | $open | any(. == $d)) | not)
         | {number, title, html_url, labels: [.labels[].name]}] as $free
-    | [($free[] | select(has("status/in-progress") and has("priority/urgent")) | . + {how: "in-progress"}),
-       ($free[] | select(has("status/ready") and has("priority/urgent")) | . + {how: "ready-urgent"}),
-       ($free[] | select(has("status/in-progress")) | . + {how: "in-progress"}),
-       ($free[] | select(has("status/ready")) | . + {how: "ready"})]
+    | [($mine[] as $r | $free[] | select(.number == $r.issue and has("status/ready")) | . + {how: "next"}),
+       ([$free | to_entries[] | .value + {age: .key}
+          | if has("status/in-progress") then . + {how: "in-progress", rank: 0}
+            elif has("status/ready") then . + {how: "ready", rank: 1}
+            else empty end]
+        | sort_by(priority, .rank, .age)[])]
     | first // empty | [.number, .title, .html_url, .how] | @tsv' <<<"$issues") || return 2
   [ -n "$row" ] || return 1
   echo "$row"
@@ -388,9 +444,10 @@ gh_blocked() {
   ttl=$(gh_ttl) || return 2
   issues=$(gh_open_issues) || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
     --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
-    def has($l): .labels | any(.name == $l);
+    $claims[0] as $claims
+    | def has($l): .labels | any(.name == $l);
     def isopen($n): any(.[]; .number == $n);
     . as $all
     | def holder($n): [$claims[] | select(live and .issue == $n)] | last | if . then cname else null end;
@@ -600,12 +657,15 @@ gh_proposed() {
   if [ "$closed" != '[]' ]; then
     for n in $(jq -r '.[].number' <<<"$issues"); do
       t=$(gh_comments "$n") || return 2
-      triage=$(jq -c --argjson n "$n" --argjson c "$t" \
-        '. + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
+      triage=$(jq -c --argjson n "$n" --slurpfile c <(printf '%s' "$t") \
+        '$c[0] as $c | . + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
     done
   fi
-  jq -r --arg s "$since" --argjson comments "$comments" --argjson closed "$closed" --argjson triage "$triage" '
-    def ep: fromdateiso8601;
+  # Through files, not argv: a busy evening's listings pass Linux's 128 KiB per argument (#1359).
+  jq -r --arg s "$since" --slurpfile comments <(printf '%s' "$comments") --slurpfile closed <(printf '%s' "$closed") \
+    --slurpfile triage <(printf '%s' "$triage") '
+    $comments[0] as $comments | $closed[0] as $closed | $triage[0] as $triage
+    | def ep: fromdateiso8601;
     def mine: .body | startswith("<!-- relay-triage -->");
     [$comments[][] | select(.updated_at > $s) | . + {n: (.issue_url | sub(".*/"; "") | tonumber)}] as $since
     | .[] | .number as $n
@@ -791,6 +851,27 @@ gh_claim_body() {
   printf '%s\n%s\nHeartbeat: %s\n' "$GH_CLAIM_MARKER" "$line" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
+# gh_next_read [FILE...]: the reservations in FILEs, by default this
+# checkout's .relay/next (one JSON line {issue, id, at} per create --next, id
+# being the reservation comment's), as one JSON array, oldest first; [] when
+# there are none or a file is unreadable.
+gh_next_read() {
+  local f all=
+  [ $# -gt 0 ] || set -- "$GH_PENDING_DIR/next"
+  for f; do [ -s "$f" ] && all+=$(cat "$f")$'\n'; done
+  jq -sc . <<<"$all" 2>/dev/null || echo '[]'
+}
+
+# gh_next_drop N TTL: drop N's reservation from .relay/next, and every one
+# older than TTL seconds, which nobody honours any more.
+gh_next_drop() {
+  local f=$GH_PENDING_DIR/next keep
+  [ -e "$f" ] || return 0
+  keep=$(gh_next_read | jq -c --argjson n "$1" --argjson ttl "$2" --argjson now "$(gh_now)" \
+    '.[] | select(.issue != $n and .at > $now - $ttl)')
+  if [ -n "$keep" ]; then echo "$keep" >"$f"; else rm -f "$f"; fi
+}
+
 # gh_branch_name: the branch for the issue JSON on stdin, <type>/<N>-<slug>, the
 # type from its kind/* label (bug is fix, feature and improvement are feat).
 gh_branch_name() {
@@ -827,11 +908,12 @@ gh_take() { gh_device_locked gh_take_locked "$@"; }
 
 # gh_take_locked N: claim N for this checkout and print NAME BRANCH (tab-separated).
 # A claim this checkout already holds on N is printed again; one it holds on a
-# closed issue is released first. Exit 4: someone
-# else holds N, or won the race to it; exit 1: this checkout holds another
-# issue, or GitHub could not be asked.
+# closed issue is released first; its live reservation on N (create --next)
+# becomes the claim. Exit 4: someone else holds or reserved N, or won the race
+# to it; exit 1: this checkout holds another issue, or GitHub could not be
+# asked.
 gh_take_locked() {
-  local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc state issue all holder used w name branch stale id winner
+  local n=${1:?usage: take N} ttl c_issue c_id c_name c_branch rc state issue all holder used w name branch stale id winner rid
   ttl=$(gh_ttl) || return 1
   if gh_claim_read; then
     gh_claim_held >/dev/null
@@ -855,11 +937,17 @@ gh_take_locked() {
 
   issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
   all=$(gh_comments "$n") || return 1
+  # This checkout's live reservation on N (create --next), which it turns
+  # into its claim.
   local q=(--arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
+  rid=$(gh_next_read | jq -r --argjson n "$n" '[.[] | select(.issue == $n) | .id] | last // empty')
+  [ -z "$rid" ] || rid=$(jq -r "${q[@]}" --arg rid "$rid" "$GH_CLAIM_JQ"'
+    [.[] | select((.id | tostring) == $rid and reserved and live) | .id] | first // empty' <<<"$all")
+  q+=(--arg rid "$rid")
 
-  # 1. Someone else holds it.
+  # 1. Someone else holds it, or reserved it.
   holder=$(jq -r "${q[@]}" "$GH_CLAIM_JQ"'
-    [.[] | select(live)] | first // empty
+    [.[] | select(live and (.id | tostring) != $rid)] | first // empty
     | "\(cname) on host \(cfield("host")), heartbeat \(age)"' <<<"$all")
   if [ -n "$holder" ]; then
     echo "github: #$n is claimed by $holder" >&2
@@ -867,7 +955,7 @@ gh_take_locked() {
   fi
 
   # The next unused name, and the branch of the newest claim (else a new one).
-  used=$(jq -r "${q[@]}" "$GH_CLAIM_JQ"'.[] | select(claim) | cname' <<<"$all")
+  used=$(jq -r "${q[@]}" "$GH_CLAIM_JQ"'.[] | select(claim and (reserved | not)) | cname' <<<"$all")
   name=
   for w in "${GH_NAMES[@]}"; do
     grep -qxF -- "$w-$n" <<<"$used" || { name=$w-$n; break; }
@@ -877,17 +965,31 @@ gh_take_locked() {
     [.[] | select(claim) | cfield("branch") | select(. != "")] | last // empty' <<<"$all")
   [ -n "$branch" ] || branch=$(gh_branch_name <<<"$issue")
 
-  # 2. Expire the claims past the TTL.
-  while IFS=$'\t' read -r id w stale; do
+  # 2. Expire the claims and reservations past the TTL. Each keeps the host it
+  # was held on, so whoever reads it knows which device's sessions stopped.
+  while IFS=$'\t' read -r id w host stale; do
     [ -n "$id" ] || continue
-    gh_edit_comment "$id" "$(printf '%s\n**%s** expired, taken over by %s · branch `%s`' \
-      "$GH_CLAIM_MARKER" "$w" "$name" "$stale")" || return 1
+    if [ "$stale" = reserved ]; then
+      gh_edit_comment "$id" "$(printf '%s\n**%s**'"'"'s reservation expired, taken over by %s · host `%s`' \
+        "$GH_CLAIM_MARKER" "$w" "$name" "$host")" || return 1
+      continue
+    fi
+    gh_edit_comment "$id" "$(printf '%s\n**%s** expired, taken over by %s · host `%s` · branch `%s`' \
+      "$GH_CLAIM_MARKER" "$w" "$name" "$host" "$stale")" || return 1
   done < <(jq -r "${q[@]}" "$GH_CLAIM_JQ"'
-    .[] | select(claim and held and (fresh | not)) | [.id, cname, cfield("branch")] | @tsv' <<<"$all")
+    .[] | select(claim and (held or reserved) and (fresh | not))
+    | [.id, cname, (cfield("host") | select(. != "") // "unknown"), if reserved then "reserved" else cfield("branch") end]
+    | @tsv' <<<"$all")
 
-  # 3. Claim, wait, and keep it only if it is the oldest live claim.
-  id=$(gh_claim_body "$name" "$branch" | jq -Rs '{body: .}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  # 3. Claim, wait, and keep it only if it is the oldest live claim. This
+  # checkout's reservation becomes the claim: it is already the oldest.
+  if [ -n "$rid" ]; then
+    id=$rid
+    gh_edit_comment "$id" "$(gh_claim_body "$name" "$branch")" || return 1
+  else
+    id=$(gh_claim_body "$name" "$branch" | jq -Rs '{body: .}' |
+      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  fi
   sleep "$GH_CLAIM_SETTLE"
   if ! all=$(gh_comments "$n"); then
     gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
@@ -906,6 +1008,7 @@ gh_take_locked() {
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
   jq -n --argjson n "$n" --argjson id "$id" --arg name "$name" --arg branch "$branch" --argjson beat "$(gh_now)" \
     '{issue: $n, id: $id, name: $name, branch: $branch, beat: $beat}' >"$GH_CLAIM_FILE"
+  gh_next_drop "$n" "$ttl"
   gh_set_status "$n" in-progress || echo "github: claimed #$n but could not label it status/in-progress" >&2
   printf '%s\t%s\n' "$name" "$branch"
 }
@@ -1306,17 +1409,19 @@ gh_cluster() {
 
 # gh_release [REASON]: release this checkout's claim, and its cluster lease
 # (gh_headless); the claim's comment then says "**NAME** released this issue:
-# REASON". Without a claim there is nothing more to do.
+# REASON" and keeps the host it was held on. Without a claim there is nothing
+# more to do.
 gh_release() {
-  local reason=${1:-released} c_issue c_id c_name c_branch rc
+  local reason=${1:-released} c_issue c_id c_name c_branch rc c host
   if ! gh_headless; then gh_lease_release; fi
   gh_claim_read || return 0
-  gh_claim_held >/dev/null
+  c=$(gh_claim_held)
   rc=$?
   [ "$rc" = 2 ] && return 1
   if [ "$rc" = 0 ]; then
-    gh_edit_comment "$c_id" "$(printf '%s\n**%s** released this issue: %s · branch `%s`' \
-      "$GH_CLAIM_MARKER" "$c_name" "$reason" "$c_branch")" || return 1
+    host=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'cfield("host")' <<<"$c")
+    gh_edit_comment "$c_id" "$(printf '%s\n**%s** released this issue: %s · host `%s` · branch `%s`' \
+      "$GH_CLAIM_MARKER" "$c_name" "$reason" "${host:-${C4_HOST:-$(hostname)}}" "$c_branch")" || return 1
     echo "released #$c_issue ($c_name): $reason"
   else
     echo "github: $c_name's claim on #$c_issue was already released or taken over" >&2
@@ -1362,7 +1467,8 @@ EOF
 }
 
 # gh_claims: the newest unreleased claim on each open issue, edited in the last
-# 7 days: ISSUE NAME live|stale HOST HEARTBEAT BRANCH, tab-separated.
+# 7 days, or its live reservation: ISSUE NAME live|stale|reserved HOST
+# HEARTBEAT BRANCH, tab-separated.
 gh_claims() {
   local ttl claims open
   ttl=$(gh_ttl) || return 1
@@ -1370,9 +1476,9 @@ gh_claims() {
   open=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" |
     jq -c '[.[][].number]') || return 1
   jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson open "$open" "$GH_CLAIM_JQ"'
-    [group_by(.issue)[] | max_by(.id) | select(.issue as $i | $open | any(. == $i)) | select(held)]
+    [group_by(.issue)[] | max_by(.id) | select(.issue as $i | $open | any(. == $i)) | select(held or (reserved and fresh))]
     | sort_by(.issue)[]
-    | ["#\(.issue)", cname, (if fresh then "live" else "stale" end), cfield("host"), "heartbeat \(age)", cfield("branch")]
+    | ["#\(.issue)", cname, (if reserved then "reserved" elif fresh then "live" else "stale" end), cfield("host"), "heartbeat \(age)", cfield("branch")]
     | @tsv' <<<"$claims"
 }
 
@@ -1608,7 +1714,7 @@ gh_merge() {
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
-      files(first: 100) { totalCount nodes { path } } commits(last: 100) { nodes { commit { message } } } } } }' \
+      files(first: 100) { totalCount nodes { path changeType } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
   body=$(jq -r '.body // ""' <<<"$view")
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
@@ -1655,7 +1761,7 @@ gh_merge() {
   behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
     echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
   if [ "$behind" != 0 ]; then
-    echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, reruns make check and merges in its turn" >&2
+    echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, runs make check and merges in its turn" >&2
     return 1
   fi
   gh_token || return 1
@@ -1664,8 +1770,10 @@ gh_merge() {
 
 # gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
 # pull request that closes a kind/bug issue but changes no test file
-# (*_test.go, *_test.sh, *.test.ts or .tsx), unless a line of its body is
-# "No test: <why>" (a docs-only or chart-only fix says so). VIEW is the pull
+# (*_test.go, *_test.sh, *.test.ts or .tsx, and the UI's node tests,
+# *.test.mjs or .js, #1203; deleting one is no test), unless a line of its
+# body is "No test: <why>" (a docs-only or chart-only fix says so) with a
+# reason of its own words in place of <why>. VIEW is the pull
 # request as gh_merge's GraphQL query reads it: body, closingIssuesReferences
 # with their labels, and files. Bugs came back after fixes with no test that
 # would have caught them (#606 then #864, #835 then #1019). A pull request of
@@ -1674,9 +1782,11 @@ gh_bugfix_check() {
   local pr=$1 view=$2 bugs
   bugs=$(jq -r '.closingIssuesReferences.nodes[]? | select(any(.labels.nodes[]?; .name == "kind/bug")) | "#\(.number)"' <<<"$view" | paste -sd, - | sed 's/,/, /g')
   [ -n "$bugs" ] || return 0
-  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
-  grep -qiE '^[[:space:]]*No test:[[:space:]]*[^[:space:]]' <<<"$(jq -r '.body // ""' <<<"$view")" && return 0
-  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
+  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]? | select(.changeType != "DELETED") | .path; test("(_test\\.(go|sh)|\\.test\\.(tsx?|m?js))$"))' <<<"$view" >/dev/null && return 0
+  # The reason is a line's own words: neither nothing nor the placeholder <why> copied as it stands (#1211).
+  jq -r '.body // ""' <<<"$view" | sed -nE 's/^[[:space:]]*[Nn][Oo] [Tt][Ee][Ss][Tt]:[[:space:]]*//p' | sed -E 's/[[:space:]]+$//' |
+    grep -qvE '^(<[^>]*>)?$' && return 0
+  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts, *.test.mjs): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
   return 1
 }
 
@@ -1687,7 +1797,7 @@ gh_bugfix_pr() {
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
-      files(first: 100) { totalCount nodes { path } } } } }' \
+      files(first: 100) { totalCount nodes { path changeType } } } } }' \
     --jq .data.repository.pullRequest) || { echo "github: #$pr: could not ask GitHub what it closes and changes; land refused" >&2; return 1; }
   gh_bugfix_check "$pr" "$view"
 }
@@ -1705,25 +1815,94 @@ gh_duplicate() {
   gh_unstatus "$n"
 }
 
-# gh_create TITLE FILE LABEL...: file an issue and print its number. An open
+# gh_create [--next] TITLE FILE LABEL...: file an issue and print its number. An open
 # issue with exactly this title is left as it is, and its number printed.
+# --next is for a follow-up its finder decided (a kind/bug whose body names
+# its failing test, a kind/chore or kind/docs whose Done-when it can state):
+# the issue is filed status/ready and reserved for this checkout's next
+# session (gh_reserve). It refuses another kind or status, or no kind at all.
 gh_create() {
-  local title=${1:?usage: create TITLE FILE LABEL...} file=${2:?usage: create TITLE FILE LABEL...} body found
+  local next=
+  [ "${1:-}" = --next ] && { next=1; shift; }
+  local title=${1:?usage: create [--next] TITLE FILE LABEL...} file=${2:?usage: create [--next] TITLE FILE LABEL...} body found n a l=()
   shift 2
+  if [ -n "$next" ]; then
+    gh_next_labels "$@" || return 1
+    for a in "$@"; do [ "$a" = status/ready ] || l+=("$a"); done
+    set -- status/ready "${l[@]}"
+  fi
   found=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
     --jq ".[] | select((.pull_request | not) and .title == $(jq -n --arg t "$title" '$t')) | .number" |
     head -1) || return 1
   if [ -n "$found" ]; then
-    echo "github: an open issue with this title exists: #$found" >&2
+    echo "github: an open issue with this title exists: #$found${next:+; not reserved}" >&2
     echo "$found"
     return 0
   fi
   body=$(gh_read "$file") || return 1
-  local a has_source=
+  local has_source=
   for a in "$@"; do [[ $a == source/* ]] && has_source=1; done
   [ -n "$has_source" ] || set -- "$@" source/dev
-  jq -n --arg t "$title" --arg b "$body" '{title: $t, body: $b, labels: $ARGS.positional}' --args "$@" |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number
+  n=$(jq -n --arg t "$title" --arg b "$body" '{title: $t, body: $b, labels: $ARGS.positional}' --args "$@" |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number) || return 1
+  [ -z "$next" ] || gh_reserve "$n" ||
+    echo "github: filed #$n ready but could not reserve it; any worker picks it" >&2
+  echo "$n"
+}
+
+# gh_next_labels LABEL...: exit 1, saying why, unless the labels suit
+# create --next: one kind/bug, kind/chore or kind/docs, and no status but
+# status/ready, which --next adds.
+gh_next_labels() {
+  local a kind=
+  for a in "$@"; do
+    case $a in
+      kind/bug | kind/chore | kind/docs) kind=$a ;;
+      kind/*)
+        echo "github: create --next is for a decided follow-up: a kind/bug whose body names its failing test, or a kind/chore or kind/docs whose Done-when you can state; file a $a status/proposed" >&2
+        return 1
+        ;;
+      status/ready) ;;
+      status/*)
+        echo "github: create --next files the issue status/ready; leave out $a" >&2
+        return 1
+        ;;
+    esac
+  done
+  [ -n "$kind" ] && return 0
+  echo "github: create --next needs a kind/* label: kind/bug, kind/chore or kind/docs" >&2
+  return 1
+}
+
+# gh_reserve N: reserve ready issue N for this checkout's next session: a
+# reservation comment (a claim that says "reserved this issue"), which every
+# other checkout's pick skips and take refuses for C4_LEASE_TTL, and a line in
+# .relay/next, which this checkout's pick reads first and its take turns into
+# the claim. Only a relay worker's session (C4_RELAY_WORKER=1, 2, ...) has a
+# next session: in any other, the triage's and the maintainer's too, N is
+# left ready for any worker.
+gh_reserve() {
+  local n=${1:?usage: gh_reserve N} c_issue c_id c_name c_branch who from= id
+  if ! [[ ${C4_RELAY_WORKER:-} =~ ^[0-9]+$ ]]; then
+    echo "github: #$n is ready and not reserved: only a relay worker's session has a next session to reserve it for" >&2
+    return 0
+  fi
+  if gh_claim_read; then
+    who=$c_name from=" · from #$c_issue"
+  else
+    who=$(basename "$(gh_checkout)")
+  fi
+  id=$(printf '%s\n**%s** reserved this issue for the next session in `%s` · host `%s`%s\nAnyone may take it once this comment is %s old.\n' \
+    "$GH_CLAIM_MARKER" "$who" "$(basename "$(gh_checkout)")" "${C4_HOST:-$(hostname)}" "$from" "$C4_LEASE_TTL" |
+    jq -Rs '{body: .}' | gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+  mkdir -p "$GH_PENDING_DIR"
+  [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
+  # Without the local half not even this checkout picks it: drop the comment.
+  if ! jq -nc --argjson n "$n" --argjson id "$id" --argjson at "$(gh_now)" '{issue: $n, id: $id, at: $at}' >>"$GH_PENDING_DIR/next"; then
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+    return 1
+  fi
+  echo "github: reserved #$n for this checkout's next session, for $C4_LEASE_TTL" >&2
 }
 
 # gh_activity: one line, UPDATED SHA: the newest updated_at among the issues
@@ -1750,11 +1929,13 @@ gh_report_find() {
 # it (and the label) and pin it; a pin that fails is said, not fatal. The issue
 # carries no status, so nothing picks or triages it.
 gh_report() {
-  local body n url id line color desc
+  local body n url id line color desc old
   body=$(gh_read "${1:?usage: report FILE}") || return 1
   [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
   n=$(gh_report_find) || return 1
   if [ -n "$n" ]; then
+    old=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    body=$(gh_keep_watch "$old" <<<"$body") || return 1
     jq -n --arg b "$body" '{body: $b}' |
       gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
     return
@@ -1773,6 +1954,26 @@ gh_report() {
   gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
     -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
   echo "$url"
+}
+
+# gh_keep_watch OLD: the report body on stdin with every note of the watch
+# that OLD, the body it replaces, has and it lacks put back in its section
+# (#1212): a sweep's report doesn't drop the watch's lines.
+gh_keep_watch() {
+  local new key line sec health needs
+  new=$(cat)
+  while IFS= read -r key; do
+    [ -n "$key" ] && [[ $new != *"<!-- watch:$key -->"* ]] || continue
+    health= needs= sec=
+    while IFS= read -r line; do
+      [[ $line != "## "* ]] || sec=$line
+      [[ $line == *" <!-- watch:$key -->" ]] || continue
+      line=${line%" <!-- watch:$key -->"}
+      if [ "$sec" = "## Needs you" ]; then needs=${line#"- [ ] "}; else health=$line; fi
+    done <<<"$1"
+    new=$(gh_note_body "$key" "${health:-$needs}" "$needs" <<<"$new") || return 1
+  done < <(grep -o '<!-- watch:[^ ]* -->' <<<"$1" | sed 's/^<!-- watch://; s/ -->$//' | awk '!seen[$0]++')
+  printf '%s\n' "$new"
 }
 
 # gh_note_body KEY [HEALTH [NEEDS]]: the report body on stdin with the lines
@@ -1826,15 +2027,23 @@ gh_note_body() {
 }
 
 # gh_report_note KEY [HEALTH [NEEDS]]: see the usage above. The report is
-# edited only when the note changes it; exit 1 when there is no report.
+# edited only when the note changes it; exit 1 when there is no report. The
+# body is read again just before the edit, and a body that changed in between
+# (a sweep's report) starts the note over, up to three tries (#1212).
 gh_report_note() {
-  local n body new
+  local n body new try
   n=$(gh_report_find) || return 1
   [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
-  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
-  new=$(gh_note_body "$@" <<<"$body") || return 1
-  [ "$new" != "$body" ] || return 0
-  jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+  for try in 1 2 3; do
+    body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    new=$(gh_note_body "$@" <<<"$body") || return 1
+    [ "$new" != "$body" ] || return 0
+    [ "$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""')" = "$body" ] || continue
+    jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+    return
+  done
+  echo "github: report-note: the Maintainer report kept changing; try again" >&2
+  return 1
 }
 
 # The maintainer lease (#526): the maintainer runs once per project, not once
@@ -1919,7 +2128,8 @@ gh_maint_beat() { gh_edit_comment "${1:?usage: gh_maint_beat ID}" "$(gh_maint_bo
 # The merge turn (#1037): merge refuses a pull request behind main, so with
 # several agents landing at once a branch's make check is outrun by the next
 # merge to main, over and over. So one pull request at a time, across every
-# device, merges main in, runs make check and merges. land PR queues for that
+# device, merges: land checks with main merged in before it queues, and under
+# the turn checks again only when main moved since (#1281). land PR queues for that
 # turn with a comment on the Maintainer report issue that starts with
 # <!-- c4-land -->, names the agent, the pull request, the host and the pid,
 # and is refreshed every GH_LAND_BEAT seconds. The oldest fresh one holds the
@@ -1935,6 +2145,8 @@ GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw th
 # so a fetch in another one at the same moment fails this one's ref update.
 GH_LAND_FETCH_TRIES=${GH_LAND_FETCH_TRIES:-5}
 GH_LAND_FETCH_PAUSE=${GH_LAND_FETCH_PAUSE:-5} # seconds between those tries
+# checks under the turn when main moved since the last one, before land gives the turn up
+GH_LAND_RECHECKS=${GH_LAND_RECHECKS:-4}
 # GH_MARKED_JQ with --arg m "$GH_LAND_MARKER".
 GH_LAND_JQ=$GH_MARKED_JQ'
   def turn: marked;
@@ -2037,10 +2249,17 @@ gh_review_check() {
   return 1
 }
 
-# gh_land PR [--wait DURATION]: wait for the merge turn, take it, merge the
-# base into this checkout's branch, run make check, push and merge PR (gh_merge),
-# then give the turn up, also when a step fails. Exit 0: merged. Exit 1: refused
-# or failed, the reason said. Exit 4: still not its turn after DURATION (default 2h).
+# gh_land PR [--wait DURATION]: merge the base into this checkout's branch, run
+# make check and push; then wait for the merge turn, take it and, when the base
+# has not moved since, merge PR (gh_merge) at once; when it has, merge it in and
+# check again under the turn. Give the turn up however it ends. Exit 0: merged.
+# Exit 1: refused or failed, the reason said. Exit 4: still not its turn after
+# DURATION (default 2h).
+# The refusals and the merge are the base's: a branch cut before a gate landed
+# carries a github.sh without it (#1195 merged past #1196's). So when merging
+# the base in changes hack/lib/github.sh, land execs the merged copy, which
+# refuses, checks and merges from the top, keeping the turn if it was held
+# (GH_LAND_TURN, its comment's id; #1211).
 gh_land() {
   local pr=${1:?usage: land PR [--wait DURATION]} wait=2h
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: land takes a pull request number" >&2; return 64; }
@@ -2053,10 +2272,118 @@ gh_land() {
   ( gh_land_turn "$pr" "$wait" )
 }
 
+# gh_land_say PR MESSAGE: say MESSAGE, and keep it in PR's land log.
+gh_land_say() {
+  echo "github: #$1$2" >&2
+  [ -z "${GH_LAND_LOG:-}" ] || echo "land: #$1$2" >>"$GH_LAND_LOG"
+}
+
+# gh_land_done PR: whether PR is finished without land (#1369): the owner
+# merges a green pull request by hand, and a land that went on would check,
+# queue and check again under the turn for an hour before merge said so.
+# Exit 0: merged, who merged it and when said. Exit 1: closed without a
+# merge, said. Exit 2: open, or GitHub could not be asked.
+gh_land_done() {
+  local out state merged by at
+  out=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$1" \
+    --jq '"\(.state)\t\(.merged)\t\(.merged_by.login // "someone")\t\(.merged_at // "")"') || return 2
+  IFS=$'\t' read -r state merged by at <<<"$out"
+  if [ "$merged" = true ]; then
+    gh_land_say "$1" " was merged by $by at $at, outside land: nothing left to land"
+    return 0
+  fi
+  [ "$state" = closed ] || return 2
+  echo "github: #$1 was closed without a merge; nothing to land" >&2
+  return 1
+}
+
+# gh_land_fetch PR: git fetch origin, retried GH_LAND_FETCH_TRIES times.
+gh_land_fetch() {
+  local try=1
+  until git -C "$GH_LIB_ROOT" fetch -q origin; do
+    ((try >= GH_LAND_FETCH_TRIES)) && { echo "github: #$1: git fetch origin failed $try times" >&2; return 1; }
+    echo "github: #$1: git fetch origin failed; trying again in ${GH_LAND_FETCH_PAUSE}s" >&2
+    sleep "$GH_LAND_FETCH_PAUSE"
+    ((try++))
+  done
+}
+
+# gh_land_sync PR BASE BRANCH [ID]: merge origin/BASE (as fetched) into BRANCH,
+# run make check, push, and wait until GitHub shows the push. With ID, the
+# merge-turn comment ID is heartbeaten while make check runs, and make check
+# goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
+# device's lands wait on it, and only the turn's one holder may. Exit 3: PR
+# was merged outside land meanwhile, make check stopped (#1369).
+gh_land_sync() {
+  local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self out
+  # The tree is clean, so the copy at HEAD before the merge is the one running.
+  self=$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)
+  if ! out=$(git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" 2>&1); then
+    echo "$out" >&2
+    # A merge that stops on no conflict (no committer identity, #1289) says
+    # what stopped it, not "conflicts".
+    if [ -z "$(git -C "$GH_LIB_ROOT" diff --name-only --diff-filter=U)" ]; then
+      git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
+      gh_land_say "$pr" ": merging origin/$base into $branch failed, with no conflict: $(grep -m1 '^fatal' <<<"$out" || tail -n1 <<<"$out")"
+      return 1
+    fi
+    git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
+    gh_land_say "$pr" ": merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again"
+    return 1
+  fi
+  if [ "$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)" != "$self" ]; then
+    gh_land_say "$pr" ": merging origin/$base changed hack/lib/github.sh; landing with the merged copy"
+    trap - EXIT INT TERM
+    GH_LAND_TURN=$id exec bash "$GH_LIB_ROOT/hack/lib/github.sh" land "$pr" --wait "${wait}s"
+  fi
+  # The watcher: every GH_LAND_BEAT seconds it heartbeats the turn (with ID)
+  # and looks whether PR got merged or closed meanwhile; then it stops make
+  # check, this shell's other child (#1369). Its sleep is killed with it, and it
+  # holds no pipe of the caller's open.
+  local parent=$BASHPID done=$GH_PENDING_DIR/land-$pr.done
+  rm -f "$done"
+  (
+    trap 'kill "$s" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_LAND_BEAT" &
+      s=$!
+      wait "$s"
+      [ -z "$id" ] || gh_edit_comment "$id" "$(gh_land_body "$pr")"
+      GH_LAND_LOG= gh_land_done "$pr" && { : >"$done"; pgrep -P "$parent" | grep -vx "$BASHPID" | xargs -r kill; exit 0; }
+    done
+  ) >/dev/null 2>&1 &
+  GH_LAND_BEATER=$!
+  C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
+  rc=$?
+  kill "$GH_LAND_BEATER" 2>/dev/null
+  wait "$GH_LAND_BEATER" 2>/dev/null
+  GH_LAND_BEATER=
+  if [ -e "$done" ]; then
+    rm -f "$done"
+    gh_land_say "$pr" ": stopped make check: the pull request was merged meanwhile"
+    gh_land_done "$pr" && return 3
+  fi
+  if [ "$rc" != 0 ]; then
+    tail -40 "$GH_LAND_LOG" >&2
+    gh_land_say "$pr" ": make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $GH_LAND_LOG); fix it, push and land again"
+    return 1
+  fi
+  git -C "$GH_LIB_ROOT" push -q origin HEAD || { gh_land_say "$pr" ": git push failed"; return 1; }
+  # merge reads the head from GitHub: wait until it shows the push.
+  local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    [ "$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
+    sleep "$GH_LAND_SETTLE"
+  done
+}
+
 gh_land_turn() {
-  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat rc log local_head s who i try=1
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat s who checked now t1 rechecks=0
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
+  gh_land_done "$pr"
+  s=$?
+  ((s == 2)) || return "$s"
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
   read -r state base head <<<"$info"
   [ "$state" = open ] || { echo "github: #$pr is $state; nothing to land" >&2; return 1; }
@@ -2065,20 +2392,45 @@ gh_land_turn() {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
   [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
     echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
+  # The turn of the copy that exec'd this one (gh_land_sync); make check's land tests must not inherit it.
+  id=${GH_LAND_TURN:-}
+  unset GH_LAND_TURN
+  [ -z "$id" ] || [[ $id =~ ^[0-9]+$ ]] || { echo "github: GH_LAND_TURN is a merge-turn comment's id, not $id" >&2; return 64; }
+  # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
+  me=$BASHPID GH_LAND_BEATER=
+  gh_land_trap() {
+    trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
+      echo "github: could not delete the merge turn (comment '"$id"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
+    trap 'exit 130' INT TERM
+  }
+  [ -z "$id" ] || gh_land_trap
   gh_bugfix_pr "$pr" || return 1
   gh_review_check "$pr" || return 1
   n=$(gh_report_issue) || return 1
-  id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
-  [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
-  # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
-  me=$BASHPID
-  GH_LAND_BEATER=
-  trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
-    echo "github: could not delete the merge turn (comment '"$id"' on #'"$n"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
-  trap 'exit 130' INT TERM
+  mkdir -p "$GH_PENDING_DIR"
+  GH_LAND_LOG=$GH_PENDING_DIR/land-$pr.log
+  [ -n "$id" ] || : >"$GH_LAND_LOG"
+  # The check before the turn (#1281): the turn is held for seconds when main
+  # has not moved by the time it comes.
+  gh_land_say "$pr" ": merging origin/$base, then make check, before queuing for the merge turn"
+  gh_land_fetch "$pr" || return 1
+  checked=$(git -C "$GH_LIB_ROOT" rev-parse "origin/$base") || return 1
+  gh_land_sync "$pr" "$base" "$branch" "$id"
+  s=$?
+  ((s == 3)) && return 0
+  ((s == 0)) || return 1
+  if [ -z "$id" ]; then
+    id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
+      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+    [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
+    gh_land_trap
+  fi
   t0=$SECONDS beat=$SECONDS
   while :; do
+    # Merged by hand while it checked or waited: done, its place given up (#1369).
+    gh_land_done "$pr"
+    s=$?
+    ((s == 2)) || return "$s"
     q=$(gh_land_queue "$n") || { echo "github: could not read the merge queue on #$n" >&2; return 1; }
     while IFS=$'\t' read -r s who; do
       [ -n "$s" ] || continue
@@ -2103,50 +2455,37 @@ gh_land_turn() {
     fi
     sleep "$GH_LAND_POLL"
   done
-  echo "github: #$pr's turn to land: merging origin/$base, then make check" >&2
+  t1=$SECONDS
   gh_edit_comment "$id" "$(gh_land_body "$pr")" || true
-  until git -C "$GH_LIB_ROOT" fetch -q origin; do
-    ((try >= GH_LAND_FETCH_TRIES)) && { echo "github: #$pr: git fetch origin failed $try times" >&2; return 1; }
-    echo "github: #$pr: git fetch origin failed; trying again in ${GH_LAND_FETCH_PAUSE}s" >&2
-    sleep "$GH_LAND_FETCH_PAUSE"
-    ((try++))
+  # Under the turn nobody else lands, so main moves only by a merge outside
+  # land; each move costs one more check, GH_LAND_RECHECKS at most.
+  while :; do
+    gh_land_fetch "$pr" || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return 1; }
+    now=$(git -C "$GH_LIB_ROOT" rev-parse "origin/$base") || return 1
+    [ "$now" = "$checked" ] && break
+    if ((rechecks >= GH_LAND_RECHECKS)); then
+      gh_land_say "$pr" ": origin/$base moved again after $rechecks checks under the turn (something merges without land); gave the turn up after $((SECONDS - t1))s: land again"
+      return 1
+    fi
+    # main moves under the turn mostly by a merge outside land, maybe this one's (#1369).
+    gh_land_done "$pr"
+    s=$?
+    ((s == 2)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return "$s"; }
+    ((rechecks++))
+    ((rechecks > 2)) && gh_land_say "$pr" ": origin/$base moved under the turn again: check $rechecks of at most $GH_LAND_RECHECKS (over 2: something merges without land)"
+    gh_land_say "$pr" ": its turn; origin/$base moved since the check (${checked:0:12} -> ${now:0:12}): merging it in and checking again, holding the turn"
+    checked=$now
+    gh_land_sync "$pr" "$base" "$branch" "$id"
+    s=$?
+    ((s == 0)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return $((s == 3 ? 0 : 1)); }
   done
-  if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
-    git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
-    echo "github: #$pr: merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again" >&2
-    return 1
+  if ((rechecks == 0)); then
+    gh_land_say "$pr" ": its turn; origin/$base is still ${checked:0:12}, as checked: merging at once"
   fi
-  mkdir -p "$GH_PENDING_DIR"
-  log=$GH_PENDING_DIR/land-$pr.log
-  # The heartbeat; its sleep is killed with it, and holds no pipe of the caller's open.
-  (
-    trap 'kill "$s" 2>/dev/null; exit 0' TERM
-    while :; do
-      sleep "$GH_LAND_BEAT" &
-      s=$!
-      wait "$s"
-      gh_edit_comment "$id" "$(gh_land_body "$pr")"
-    done
-  ) >/dev/null 2>&1 &
-  GH_LAND_BEATER=$!
-  "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >"$log" 2>&1
-  rc=$?
-  kill "$GH_LAND_BEATER" 2>/dev/null
-  wait "$GH_LAND_BEATER" 2>/dev/null
-  GH_LAND_BEATER=
-  if [ "$rc" != 0 ]; then
-    tail -40 "$log" >&2
-    echo "github: #$pr: make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $log); fix it, push and land again" >&2
-    return 1
-  fi
-  git -C "$GH_LIB_ROOT" push -q origin HEAD || { echo "github: #$pr: git push failed" >&2; return 1; }
-  # merge reads the head from GitHub: wait until it shows the push.
-  local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    [ "$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
-    sleep "$GH_LAND_SETTLE"
-  done
   gh_merge "$pr"
+  s=$?
+  gh_land_say "$pr" ": $( ((s == 0)) && echo merged || echo "merge failed (exit $s)"); held the turn $((SECONDS - t1))s, $rechecks check(s) under it"
+  return "$s"
 }
 
 # gh_red WORKFLOW: print an issue body when WORKFLOW's two newest finished runs
@@ -2240,9 +2579,10 @@ gh_queued() {
   done
   [[ $minutes =~ ^[0-9]+$ ]] || { echo "usage: queued [--minutes M]" >&2; return 64; }
   gh_token || return 2
-  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
-    --json databaseId,status,createdAt) || return 2
-  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
+  # Every page: the list comes newest first, and a cut one loses the oldest (#1212).
+  runs=$(gh_api --paginate "repos/$C4_GITHUB_REPO/actions/runs?branch=main&status=queued&per_page=100" \
+    --jq '.workflow_runs[] | {databaseId: .id, status, createdAt: .created_at}') || return 2
+  runs=$(jq -sr --argjson m "$minutes" "$GH_NOW_JQ"'[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
     "\(.databaseId)\t\(.createdAt)\t\((now - (.createdAt | fromdateiso8601)) > $m * 60)"' <<<"$runs") || return 2
   while IFS=$'\t' read -r id at old; do
     [ -n "$id" ] || continue
@@ -2263,13 +2603,21 @@ gh_queued() {
 }
 
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
-# "[FAIL] <spec>" summary lines, once each, colour codes, carriage returns
-# and "[It] " dropped and tabs made spaces (the spec is a column of a TSV).
-# gh run view --log-failed writes a colour code's escape as the text "^[" when
-# its output isn't a terminal, and as the byte when it is: both go.
+# "[FAIL] <spec>" summary lines, and the shell test cases hack/test-hack.sh
+# names under a failing test's "FAIL <test file> (exit N, Ns):" line in its
+# indented "FAIL <case>: got [...] want [...]" lines, as "<test file>: <case>"
+# (#1208). Once each, colour codes, carriage returns and "[It] " dropped and
+# tabs made spaces (the spec is a column of a TSV). gh run view --log-failed
+# writes a colour code's escape as the text "^[" when its output isn't a
+# terminal, and as the byte when it is: both go.
 gh_fail_specs() {
-  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | sed -nE 's/^.*\[FAIL\] +(.*[^ ])[ ]*$/\1/p' |
-    sed 's/\[It\] //g; s/\t/ /g' | awk '!seen[$0]++'
+  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | awk '
+    function emit(s) { gsub(/\t/, " ", s); sub(/ +$/, "", s); if (s != "" && !seen[s]++) print s }
+    /\[FAIL\] +[^ ]/ { s = $0; sub(/^.*\[FAIL\] +/, "", s); gsub(/\[It\] /, "", s); emit(s); next }
+    file != "" && /    FAIL [^ ]/ { s = $0; sub(/^.*    FAIL /, "", s); sub(/: got \[.*$/, "", s); emit(file ": " s); next }
+    /FAIL [^ ]+_test\.sh \(exit [0-9]+, [0-9]+s\):$/ { file = $0; sub(/^.*FAIL /, "", file); sub(/ \(exit [0-9]+, [0-9]+s\):$/, "", file); next }
+    /test-hack: / { file = "" }
+  '
 }
 
 # gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run

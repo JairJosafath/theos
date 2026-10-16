@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2, a container service on Fargate or a static site on S3 and CloudFront) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda or a scheduled job on EventBridge Scheduler and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -22,9 +22,10 @@ python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
-- **Supports:** `function`, `service`, `static-site` (since v1.8.0);
-  Frameworks: `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`,
-  `aws-fargate-ts`, `aws-lambda-py`, `aws-static-site-ts`
+- **Supports:** `function`, `service`, `static-site` (since v1.8.0),
+  `worker` (since v1.9.0), `job` (since v1.10.0); Frameworks:
+  `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`,
+  `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -89,8 +90,31 @@ byte for byte.
   S3, AWS WAF and Vite references; Vite in the tools), the issue template
   and `eslint.config.mjs` (`dist/` ignored, `no-console` because visitors
   see the page, `process.exit` refused in the CDK app, and Node's globals
-  and modules refused in `src/`).
-  Since v1.9.0 `aws-ec2-ts` (from its v1.1.0) has what v1.6.0 gave
+  and modules refused in `src/`). `aws-queue-ts` (since v1.9.0), a
+  `worker`, is in `$tiered` and shares `aws-lambda-ts`'s branches; a
+  `$queue` variable says queue where those say API: the message boundary,
+  the queues it keeps, its alarms and the dead-letter redrive in the
+  runbook, the queue and its event source in `docs/style/aws.md`, the SQS
+  sources in `SOURCES.md`, and `eslint.config.mjs`'s `process.exit`
+  message. `infra/standard.test.ts` checks two rules for every Framework:
+  an event source mapping from SQS reports batch item failures, and every
+  dead-letter queue has an alarm on its first message. `aws-schedule-ts`
+  (since v1.10.0), a `job`, is in `$tiered` and shares `aws-lambda-ts`'s
+  branches too; a `$schedule` variable says scheduled run where those say
+  API: the event boundary, the scheduled time as the idempotency key,
+  `runJob` in `src/job.ts` as where the work goes, the schedule's own role,
+  the tables and dead-letter queue it keeps, its alarms, re-running
+  dead-lettered runs, lost runs and pausing the job in the runbook, the
+  schedule and its dead-letter queue in `docs/style/aws.md`, the
+  EventBridge Scheduler and asynchronous invocation sources in
+  `SOURCES.md`, the issue template's example and `eslint.config.mjs`'s
+  `process.exit` message. v1.10.0 adds that Framework and three rules to
+  `infra/standard.test.ts`, for every Framework: every schedule group
+  alarms on the runs the Scheduler lost; a dead-letter queue is any queue
+  a `RedrivePolicy`, a `DeadLetterConfig` or an `OnFailure` names, and
+  each has its alarm; and every schedule is retried, dead-lettered and in a
+  group of its stack.
+  Since v1.11.0 `aws-ec2-ts` (from its v1.1.0) has what v1.6.0 gave
   `aws-lambda-ts`: its `docs/well-architected.md` branch rewritten for the tiers (no tracing in
   either), the HTTPS listener, the rolling update that waits for
   `cfn-signal`, the scaling notifications and instances that hold no data;
@@ -107,7 +131,7 @@ byte for byte.
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts` and `aws-ec2-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -169,12 +193,12 @@ byte for byte.
   `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
   with its own key, one selection naming every one of the stack's own
-  tables by ARN and nothing else (since v1.9.0), or else of exactly what
+  tables by ARN and nothing else (since v1.11.0), or else of exactly what
   carries the `c4factory:container` tag, as `ListOfTags` or as one
   `aws:ResourceTag` condition on `*`, and a copy stack in that region; else
   none; and no load balancer's access-log bucket in any selection's reach:
   a selection by ARN doesn't name it, one by tag names it in
-  `NotResources`), the instances (since v1.9.0: in a stack with an Auto
+  `NotResources`), the instances (since v1.11.0: in a stack with an Auto
   Scaling group, a launch template or an instance, no EBS volume of its
   own, every launch template's or instance's volume deleted with its
   instance, and no backup selection by tag, which would back the instances
@@ -185,11 +209,15 @@ byte for byte.
   `HTTPCode_ELB_5XX_Count`, `HTTPCode_Target_5XX_Count` and
   `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
   ECS service's `CPUUtilization`, `MemoryUtilization` and
-  `RunningTaskCount`, and since v1.9.0 every Auto Scaling group's
-  `CPUUtilization` and `GroupInServiceInstances`; an alarm watches a
-  resource when its definition refers to it by `Ref` or by `Fn::GetAtt`, as
-  a load balancer's and target group's full names and a service's name
-  are; every CloudFront distribution's `5xxErrorRate`), the subscription (the
+  `RunningTaskCount`, since v1.11.0 every Auto Scaling group's
+  `CPUUtilization` and `GroupInServiceInstances`, every schedule group's `InvocationDroppedCount` and
+  `InvocationsFailedToBeSentToDeadLetterCount`; an alarm watches a resource
+  when its definition refers to it by `Ref` or by `Fn::GetAtt`, as a load
+  balancer's and target group's full names and a service's name are, or by
+  the `Name` it has in the template, as a schedule group's, which CDK makes
+  at synth; every CloudFront distribution's `5xxErrorRate`; every
+  dead-letter queue, a queue a `RedrivePolicy`, a `DeadLetterConfig` or an
+  `OnFailure` names, its depth), the subscription (the
   `AlertEmail` parameter defaulting to `alerts.email`, one email
   subscription to it under a condition that it is not empty), tracing
   (`Active` by tier on a function; on a task definition, one container on
@@ -208,7 +236,12 @@ byte for byte.
   plan only in a stack holding a resource of `BACKED_UP_TYPES` (so a
   static site, holding none, has no plan or copy stack), and the
   distribution's `5xxErrorRate` to `ALARMED_METRICS`; a repository of
-  another Framework passes it unchanged.
+  another Framework passes it unchanged. v1.10.0 added the schedule
+  group's two metrics to `ALARMED_METRICS`, the dead-letter queues found by
+  `DeadLetterConfig` and `OnFailure` as well as `RedrivePolicy`, and a test
+  that every schedule's target has a `RetryPolicy` and a `DeadLetterConfig`
+  naming a queue of its stack, and its `GroupName` a group of its stack; a
+  repository with no schedule passes them unchanged.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, `cdk synth
   --quiet -c tier=<tier> -o cdk.out/<tier>` for `production` and
@@ -309,7 +342,7 @@ byte for byte.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For `aws-lambda-ts`,
-  `aws-fargate-ts` and `aws-ec2-ts` it also says what each tier does per pillar and what `infra/operations.ts`
+  `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
@@ -319,7 +352,9 @@ byte for byte.
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
 - **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`,
-  `aws-static-site-ts` and `aws-ec2-ts` (a branch each), renders the
+  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` (a branch
+  each, but `aws-queue-ts` and `aws-schedule-ts` share `aws-lambda-ts`'s),
+  renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the

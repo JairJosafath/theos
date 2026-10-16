@@ -1,14 +1,19 @@
-# make check in a scaffolded aws-ec2-ts v1.1.0 + aws-standard v1.7.0 Container (issue #1111)
-# go run ./hack/render -out /tmp/ec2 -type service Framework=aws-ec2-ts Standard=aws-standard
+# make check in a scaffolded aws-ec2-ts v1.1.0 + aws-standard v1.11.0 Container (issue #1111)
+# go run ./hack/render -out $TMPDIR/ec2 -type service Framework=aws-ec2-ts Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
-# then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23:
-# env -i PATH=$PATH HOME=/tmp/home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
-# on 2026-10-16. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
+# then, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1 (x86_64-unknown-linux-gnu):
+# env -i PATH=$PATH HOME=$TMPDIR/home NO_COLOR=1 npm_config_cache=$TMPDIR/npm-cache UV_CACHE_DIR=$TMPDIR/uv-cache make check
+# on 2026-10-16, after merging main (aws-standard v1.10.0) in. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
 # and cfn-lint lints both with --include-checks I.
 
 npm ci --no-audit --no-fund
 
-added 172 packages in 25s
+added 172 packages in 45s
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -16,30 +21,30 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /tmp/ec2
+ RUN  v5.0.3 $TMPDIR/ec2
 
- ✓ src/items.test.ts (25 tests) 13ms
- ✓ src/api.test.ts (13 tests) 16ms
- ✓ src/item_store.test.ts (4 tests) 11ms
- ✓ src/server.test.ts (6 tests) 83ms
+ ✓ src/items.test.ts (25 tests) 28ms
+ ✓ src/api.test.ts (13 tests) 23ms
+ ✓ src/item_store.test.ts (4 tests) 19ms
+ ✓ src/server.test.ts (6 tests) 141ms
 Bundling asset test/Server/Stage...
 Bundling asset sample-app/Server/Stage...
 Bundling asset test/Server/Stage...
-Bundling asset test/Server/Stage...
-Bundling asset test/Server/Stage...
 Bundling asset sample-app-development/Server/Stage...
 Bundling asset test/Server/Stage...
- ✓ infra/service_stack.test.ts (22 tests) 4395ms
+Bundling asset test/Server/Stage...
+Bundling asset test/Server/Stage...
+ ✓ infra/standard.test.ts (61 tests) 4468ms
+ ✓ infra/service_stack.test.ts (22 tests) 4597ms
    ✓ ServiceStack (16)
-     ✓ defaults the alert email to alerts.email 389ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 453ms
-     ✓ copies the backups to the vault in copyToRegion 458ms
- ✓ infra/standard.test.ts (47 tests) 4805ms
+     ✓ defaults the alert email to alerts.email 608ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 458ms
+     ✓ copies the backups to the vault in copyToRegion 303ms
 
  Test Files  6 passed (6)
-      Tests  117 passed (117)
-   Start at  12:37:01
-   Duration  6.67s (tests 65%, import 17%, transform 17%)
+      Tests  131 passed (131)
+   Start at  23:38:04
+   Duration  6.97s (tests 62%, import 25%, transform 12%, worker 1%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
@@ -52,164 +57,5 @@ Downloading cfn-lint (5.4MiB)
  Downloaded networkx
  Downloaded cfn-lint
  Downloaded sympy
-Installed 9 packages in 64ms
-make check exit 0
-
-# The same with every field of spec.operations set:
-# go run ./hack/render -out /tmp/ec2-copy -type service -retention-days 7 \
-#   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-ec2-ts Standard=aws-standard
-# make check (as above): the vitest summary, the templates synth wrote, and the exit status
-
- Test Files  6 passed (6)
-      Tests  117 passed (117)
-cdk.out/development/sample-app-development.template.json
-cdk.out/production/sample-app-backup-copy.template.json
-cdk.out/production/sample-app.template.json
-make check exit 0
-
-# It fails when infra/operations.ts and a stack disagree: in /tmp/ec2, the stack keeps
-# its backups 30 days whatever infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures:
-
---- a/infra/service_stack.ts
-+++ b/infra/service_stack.ts
-@@ -491,7 +491,7 @@
- 
-     if (rules.backups && backups.retentionDays > 0) {
-       new Backups(this, 'Backups', {
--        retentionDays: backups.retentionDays,
-+        retentionDays: 30,
-         copyToRegion: backups.copyToRegion,
-         tables: [table],
-       });
-
-     × backs up its own table daily for retentionDays in production, and nothing in development 49ms
-     × copies the backups to the vault in copyToRegion 410ms
-       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 12ms
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
- FAIL  infra/service_stack.test.ts > ServiceStack > backs up its own table daily for retentionDays in production, and nothing in development
-AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
-!!           Expected 35 but received 30
- FAIL  infra/service_stack.test.ts > ServiceStack > copies the backups to the vault in copyToRegion
-AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
-!!               Expected 35 but received 30
- FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
-AssertionError: sample-app: expected { CopyActions: [], …(4) } to match object { …(3) }
-      Tests  3 failed | 114 passed (117)
-
-# And when the backups go back to step 3's selection by the Container's tag, which would back up
-# the instances and their volumes (and the development stack's table, #1272):
-
---- a/infra/backups.ts
-+++ b/infra/backups.ts
-@@ -79,7 +79,7 @@
-       }),
-     );
-     const selection = this.plan.addSelection('Tables', {
--      resources: props.tables.map((table) => BackupResource.fromDynamoDbTable(table)),
-+      resources: [BackupResource.fromTag('c4factory:container', 'sample-app')],
-     });
-     Validations.of(selection).acknowledge({
-       id: 'AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]',
-
-       × hold no data: their volumes go with them, and no backup selects them by tag 14ms
-     × backs up its own table daily for retentionDays in production, and nothing in development 15ms
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
- FAIL  infra/service_stack.test.ts > ServiceStack > backs up its own table daily for retentionDays in production, and nothing in development
-AssertionError: expected { BackupPlanId: { …(1) }, …(1) } to deeply equal { BackupPlanId: Anything, …(1) }
- FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the instances > hold no data: their volumes go with them, and no backup selects them by tag
-AssertionError: sample-app/BackupsPlanTables8D417F20: expected [ { …(3) } ] to be undefined
-      Tests  2 failed | 115 passed (117)
-
-# And when the stack has a table the backup plan doesn't name (an Orders table beside Items):
-# vitest run infra/standard.test.ts (NO_COLOR=1), the failures:
-
---- a/infra/service_stack.ts
-+++ b/infra/service_stack.ts
-@@ -130,6 +130,15 @@
-       removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-     });
- 
-+    const orders = new Table(this, 'Orders', {
-+      partitionKey: { name: 'id', type: AttributeType.STRING },
-+      billingMode: BillingMode.PAY_PER_REQUEST,
-+      encryption: TableEncryption.AWS_MANAGED,
-+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: rules.pointInTimeRecovery },
-+      deletionProtection: rules.keepData,
-+      removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-+    });
-+
-     // Two zones of isolated subnets and no NAT gateway: what the instances
-     // need from AWS comes through endpoints, and nothing else gets out.
-     const vpc = new Vpc(this, 'Network', {
-@@ -494,6 +503,14 @@
-         billingMode: BillingMode.PAY_PER_REQUEST,
-         addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
-         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
-+        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
-+      })
-+      .monitorDynamoTable({
-+        table: orders,
-+        alarmFriendlyName: 'Orders',
-+        billingMode: BillingMode.PAY_PER_REQUEST,
-+        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
-+        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
-         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
-       });
- 
-
-       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 4ms
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
- FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
-AssertionError: sample-app/OrdersA9B65338 is in no backup selection: expected false to be true // Object.is equality
-      Tests  1 failed | 46 passed (47)
-
-# The other AWS Frameworks at their versions in this tree (templates/versions.txt) with aws-standard
-# v1.7.0, each rendered with hack/render and checked with make check:
-aws-lambda-ts v1.1.0: make check exit 0, Tests  105 passed (105)
-aws-fargate-ts v1.0.0: make check exit 0, Tests  78 passed | 26 skipped (104)
-aws-lambda-py v1.0.0: make check exit 0, Tests  26 passed | 26 skipped (52)
-aws-lambda-go v1.0.0: golangci-lint is not on this device, so make test synth cfn-lint instead: exit 0, Tests  27 passed | 26 skipped (53)
-
-# ---------------------------------------------------------------------------
-# After merging main (#1274: aws-fargate-ts v1.1.0, aws-standard v1.7.0) on 2026-10-16:
-# aws-standard is now v1.8.0. Each Framework rendered with go run ./hack/render as above
-# (defaults), then make check in the copy, as above. Agent: heron-1111.
-
-## aws-ec2-ts: make check exit 0
-   ✓ src/items.test.ts (25 tests) 27ms
-   ✓ src/api.test.ts (13 tests) 27ms
-   ✓ src/item_store.test.ts (4 tests) 18ms
-   ✓ src/server.test.ts (6 tests) 178ms
-   ✓ infra/standard.test.ts (53 tests) 6853ms
-   ✓ infra/service_stack.test.ts (22 tests) 7028ms
-   Test Files  6 passed (6)
-        Tests  123 passed (123)
-  CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
-  uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
-  Downloading cfn-lint (5.4MiB)
-   Downloaded cfn-lint
-
-## aws-fargate-ts: make check exit 0
-   Test Files  7 passed (7)
-        Tests  132 passed (132)
-
-## aws-lambda-ts: make check exit 0
-   Test Files  6 passed (6)
-        Tests  111 passed (111)
-
-## aws-lambda-py: make check exit 0
-  ============================== 48 passed in 0.14s ==============================
-   Test Files  2 passed (2)
-        Tests  26 passed | 32 skipped (58)
-
-## aws-lambda-go: make test synth cfn-lint exit 0 (golangci-lint isn't on this device, so make check stops at go-fmt-check)
-   Test Files  2 passed (2)
-        Tests  27 passed | 32 skipped (59)
-
-## aws-ec2-ts with its selection changed to #1274's tag condition on * (no NotResources):
-## vitest run infra/standard.test.ts fails the two checks the merge combined
-  × leave every load balancer's log bucket out: logs, not data
-  × hold no data: their volumes go with them, and no backup selects them by tag
-  AssertionError: sample-app/BackupsPlanTables8D417F20 selects LoadBalancerBE9EEC3A's log bucket AccessLogs8B620ECA: expected false to be true
-  AssertionError: sample-app/BackupsPlanTables8D417F20: expected 0 to be greater than 0
-        Tests  2 failed | 51 passed (53)
+Installed 9 packages in 147ms
+exit 0

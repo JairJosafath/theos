@@ -473,6 +473,42 @@ task size, as said here):
   branch meet this one only at the branch line.
 - **`vitest.config.mts`** gives aws-fargate-ts a `hookTimeout` of 120 s.
 
+### Step 8, as built
+
+`aws-queue-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.9.0. What it
+settled, which steps 10 and 11 can copy:
+
+- **The work per message is a function, the batch is Powertools'.**
+  `src/consume.ts` checks one message and stores its item, throwing
+  `Malformed` for a body that is no item; `src/batch.ts` runs Powertools'
+  `BatchProcessor` and `processPartialResponse` over the batch, answering
+  the messages that threw as `batchItemFailures` and throwing
+  `FullBatchFailureError` when all did, so a broken deploy fires the
+  function's error alarm and not only the dead-letter queue's. A malformed
+  message is not dropped: it fails like any other and reaches the
+  dead-letter queue after five deliveries, where a person sees it.
+- **One message at a time:** the processor runs with `processInParallel:
+  false`, since Powertools' default runs a batch's messages at once and two
+  for one item would race; a malformed message is refused
+  (`checkingFirst`) before the idempotent store records it.
+- **Idempotency is keyed by `messageId`,** which SQS keeps across
+  redeliveries of one message; a producer that sends the same item twice
+  sends two messages, and the item is simply put twice.
+- **Queues follow the tier like tables:** `RETAIN` in production, `DESTROY`
+  in development, since a message not yet consumed is data. Both queues use
+  SQS-managed encryption and `enforceSSL`; the visibility timeout is six
+  times the function's 30 s plus the 5 s batching window, AWS's advice for
+  a Lambda source.
+- **Two Standard rules, per resource type:** every event source mapping
+  from SQS sets `ReportBatchItemFailures`, and every dead-letter queue (a
+  queue another one's `RedrivePolicy` names) has an alarm on its first
+  visible message. A later Framework with a queue gets both without a
+  Standard change.
+- **Outputs:** `EntryPoint` is the queue's URL, and `QueueArn` is added,
+  which a producer's `sqs:SendMessage` names.
+- **The runbook's queue branch** says how to send dead-lettered messages
+  back (`aws sqs start-message-move-task`) once the cause is fixed.
+
 ### Step 9, as built
 
 `aws-static-site-ts` v1.0.0 with `aws-standard` v1.8.0
@@ -512,10 +548,45 @@ What it settled, which steps 8, 10 and 11 can reuse:
   rate limit per address. In development `AwsSolutions-CFR2` is
   acknowledged, since a firewall costs a monthly fee per stack.
 
+### Step 10, as built
+
+`aws-schedule-ts` v1.0.0, a `job` Framework under `aws-standard` v1.10.0
+(`docs/screenshots/1115-aws-schedule-ts-check.txt` has the evidence). What
+it settled, which step 11 can copy:
+
+- **Two levels of retry, one dead-letter queue.** The Scheduler invokes the
+  function asynchronously, so its retry policy (10 attempts within an hour)
+  covers only handing the run to Lambda; a run that throws is retried by
+  Lambda's own `EventInvokeConfig` (twice within an hour). The schedule
+  target's `DeadLetterConfig` and the function's both name the one queue.
+  No redrive policy names it, so `AwsSolutions-SQS3` is acknowledged.
+- **The scheduled time is the run's key.** The target's input is
+  `{"scheduledTime": <aws.scheduler.scheduled-time>, "attemptNumber":
+  <aws.scheduler.attempt-number>}`, and Powertools' Idempotency is keyed by
+  `scheduledTime`, which every retry of a run, at either level, keeps.
+- **The schedule's role is the stack's own.** `LambdaInvoke` would make one
+  granting `lambda:InvokeFunction` on `<arn>` and `<arn>:*`; the stack's
+  role grants the function's ARN only, and `sqs:SendMessage` on the
+  dead-letter queue, and only `scheduler.amazonaws.com` for this account
+  and this schedule group may assume it. The target gets it
+  `withoutPolicyUpdates()`.
+- **A schedule group per stack.** The Scheduler's metrics are per group,
+  so the stack's schedule is in its own; its alarms are
+  `InvocationDroppedCount` and `InvocationsFailedToBeSentToDeadLetterCount`,
+  a run lost. CDK names the group at synth, so the Standard's
+  `refersTo` also matches a resource's literal `Name`.
+- **Three Standard rules, per resource type:** `AWS::Scheduler::ScheduleGroup`
+  joins `ALARMED_METRICS`; a dead-letter queue is any queue a
+  `RedrivePolicy`, `DeadLetterConfig` or `OnFailure` names (step 11's rule
+  target gets the depth alarm without a change); every schedule has a
+  retry policy, a dead-letter queue and a group of its stack.
+- **Outputs:** `EntryPoint` is the schedule's ARN; `FunctionName` is added,
+  which a person invokes to run a dead-lettered run again.
+
 ### Step 6, as built
 
-`aws-ec2-ts` v1.1.0 with `aws-standard` v1.9.0 (#1111; step 5 took v1.7.0 and
-step 9 v1.8.0), copying step 3's
+`aws-ec2-ts` v1.1.0 with `aws-standard` v1.11.0 (#1111; step 5 took v1.7.0,
+step 9 v1.8.0, step 8 v1.9.0 and step 10 v1.10.0), copying step 3's
 files (`infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
 `defineStacks(app, tier)`); `docs/screenshots/1111-aws-ec2-ts-check.txt` has
 the evidence. What it settled beyond step 3:

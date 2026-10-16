@@ -27,7 +27,15 @@ Size it for one pull request: a few files, one concern.
 <!--
 Observable, testable outcomes, one unchecked checklist item each. Each becomes
 a test, and the reviewer reports each one as met or not met. For example:
-{{ if eq .Framework "aws-static-site-ts" -}}
+{{ if eq .Framework "aws-queue-ts" -}}
+a message `{"id": "lamp-1", "delete": true}` deletes the item, a later message
+for `lamp-1` stores it again, and the function's role may delete items but
+still not scan the table.
+{{- else if eq .Framework "aws-schedule-ts" -}}
+a run at 03:00 UTC records its scheduled time and when it finished, a
+run delivered twice for the same scheduled time is recorded once, and the
+function's role may put runs but still not delete them.
+{{- else if eq .Framework "aws-static-site-ts" -}}
 a name of only spaces gets the plain greeting, and the page says so in its
 `aria-live` paragraph.
 {{- else -}}

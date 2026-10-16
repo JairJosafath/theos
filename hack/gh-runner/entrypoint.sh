@@ -10,10 +10,10 @@
 #   registered   exit 0 when the volume holds a registration
 set -euo pipefail
 
-state=/runner-state
+state=${GH_RUNNER_STATE:-/runner-state}
 # What config.sh writes; the runner may write the *_migrated ones later.
 files=(.runner .credentials .credentials_rsaparams .runner_migrated .credentials_migrated)
-cd /home/runner
+cd "${GH_RUNNER_HOME:-/home/runner}"
 
 # restore: the volume's registration into the runner's directory. The
 # container's own copy, if it has one, is at least as new, so it stays.
@@ -40,6 +40,13 @@ case "${1:-run}" in
       exit 1
     fi
     save
+    # The job-started hook once before the first job too: the runner makes
+    # _temp in the work directory before any hook runs, and Docker makes a
+    # missing bind mount root's, as it does when it restarts the container
+    # after the host lost the directory (#1351). The hook makes it the runner's.
+    if [ -n "${ACTIONS_RUNNER_HOOK_JOB_STARTED:-}" ]; then
+      bash -e "$ACTIONS_RUNNER_HOOK_JOB_STARTED" || echo "gh-runner: the job-started hook failed at start" >&2
+    fi
     ./env.sh
     # run.sh in the background, so a docker stop reaches it and the runner
     # shuts down cleanly, and anything it rewrote is saved afterwards. Job

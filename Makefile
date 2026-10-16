@@ -77,23 +77,26 @@ vet: ## Run go vet against code.
 
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
-# held while this make runs; its sub-makes don't take another.
+# held while this make runs; its sub-makes don't take another. With
+# C4_HEAVY_FIRST set (land's make check under the merge turn, #1290) it takes
+# the next free slot ahead of the waiters; the recipes don't inherit it.
 # A plain `make check` on a tree that already passed on this device, in any
 # checkout, is answered from the cache (hack/check-cache.sh) without a slot;
 # FORCE=1 runs it anyway.
 ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
-HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e test-templates-operator
+HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
-$(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
+$(shell hack/heavy-slot.sh acquire $(if $(C4_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
 export C4_HEAVY_SLOT := 1
 endif
 endif
+unexport C4_HEAVY_FIRST
 
 # TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
-# envtest suite, whose specs run one after another: 286 specs in 557 s on the CI
+# envtest suite, whose specs ran one after another: 286 specs in 557 s on the CI
 # runner in October 2026, and 665 s in a make check beside another one, as
 # HEAVY_JOBS allows (#843). 15m left that loaded run under 1.3 times its
 # runtime; 20m leaves it 1.75 times, and the CI run 2 times, and still ends a
@@ -129,11 +132,22 @@ TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(i
 # read, so every envtest run made the other suites' cached results stale. The
 # tests get a cache home outside the module, one per device, so envtest runs in
 # every checkout see each other's ports; GOCACHE stays where go env puts it.
-TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
+# Under $HOME, not $TMPDIR: the relay's TMPDIR lies inside a checkout (#1326).
+TEST_CACHE_HOME ?= $(HOME)/.cache/c4factory/test-cache
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest install-helm ## Run tests; Go's test cache answers unchanged packages (FORCE=1 reruns them, COVER=1 writes cover.out).
-	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') $(TEST_FLAGS)
+# make test tests only the packages the change since origin/main can affect,
+# and every package on main, after a change to go.mod, hack/, config/, api/ and
+# the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
+# and why. Go's test cache still answers the unchanged ones among them. With
+# COVER=1, cover.out covers the packages that ran, and is empty when none did.
+# The controller envtest suite runs in C4_TEST_PROCS processes at once (default
+# 2, 1 when memory is short), each a go test of part of it (hack/go-test.sh).
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
+	@pkgs="$$(hack/test-packages.sh)" || exit; \
+	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
+	set -x; \
+	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" hack/go-test.sh $(GO_TRIM) $(TEST_FLAGS) -- $$pkgs
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
@@ -205,6 +219,14 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
+
+# govulncheck reads the Go vulnerability database over the network, so it stays
+# out of make check; the Vulnerabilities workflow runs it on changes to the Go
+# code and the modules, and weekly. It fails on a vulnerability the code
+# reaches, in the modules or in the standard library of go.mod's toolchain.
+.PHONY: vulncheck
+vulncheck: govulncheck ## Check the modules and the Go toolchain for known vulnerabilities the code reaches (needs the network, not in make check).
+	"$(GOVULNCHECK)" ./...
 
 # The YAML checks of make check run offline, without a cluster
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
@@ -326,6 +348,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+GOVULNCHECK_VERSION ?= v1.9.0
 # The kubebuilder that make template-go-kubebuilder runs.
 KUBEBUILDER_VERSION ?= v4.16.0
 
@@ -341,6 +364,7 @@ GOLANGCI_LINT_BASE = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.yml | cut -d' ' -f1)
 KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder-$(KUBEBUILDER_VERSION)
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck-$(GOVULNCHECK_VERSION)
 GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
 
 # setup-envtest under a lock, so worktrees don't download the same Kubernetes
@@ -402,6 +426,11 @@ $(GOLANGCI_LINT): | $(GOLANGCI_LINT_BASE)
 	$(call install-tool,$@,echo "Building custom golangci-lint with plugins..."; \
 		"$(GOLANGCI_LINT_BASE)" custom --destination "$$tmp" --name golangci-lint)
 endif
+
+.PHONY: govulncheck
+govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
+$(GOVULNCHECK):
+	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 
 # install-tool makes the binary $(1) unless it exists: the shell commands $(2)
 # write it alone into the directory $$tmp, and it moves under its final name
