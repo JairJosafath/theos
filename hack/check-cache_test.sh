@@ -106,6 +106,12 @@ rm ui/new.ts
 # CI's shell-test job has no Node, and the key of ui-test failed there (#1285).
 mkdir -p "$T/bin" && printf '#!/bin/sh\nexit 127\n' >"$T/bin/node" && chmod +x "$T/bin/node"
 PATH=$T/bin:$PATH "$CACHE" key ui-test >/dev/null; check "key: a missing tool still keys" $? 0
+# A tool not on PATH keys the same however the script is called: make calls
+# hack/check-cache.sh, the tests a full path, and CI's cached tier missed (#1399).
+mkdir -p "$T/nonode" && for t in git bash sh cp mktemp rm head; do ln -sf "$(command -v "$t")" "$T/nonode/$t"; done
+ln -s "$CACHE" "$T/check-cache.sh"
+check "key: a tool not on PATH keys the same by any path" \
+  "$(PATH=$T/nonode ../check-cache.sh key ui-test)" "$(PATH=$T/nonode "$CACHE" key ui-test)"
 
 # run: a miss runs and records, a hit doesn't run, FORCE=1 runs, a failure
 # records nothing and keeps its exit code.
