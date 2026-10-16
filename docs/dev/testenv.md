@@ -634,6 +634,11 @@ queue:
   (`ENVTEST_ETCD_ELECTION_TIMEOUT`, in ms), which makes its request timeout
   25 s instead of 7 s. Running a spec outside `make test` (an IDE) uses
   envtest's defaults.
+- The UI's unit tests run on three Vitest workers (`ui/vite.config.ts`),
+  not one per core but one: on a busy device eleven workers, each spawning a
+  process per file, stalled tests that take milliseconds past Vitest's 5 s
+  timeout (#1193). Three take half the memory and finish sooner on a busy
+  device, a few seconds later on a quiet one.
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,

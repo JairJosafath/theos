@@ -35,5 +35,11 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // Three workers, not Vitest's one per core but one: make check runs these
+    // tests in one of the device's heavy-job slots, beside Go builds and envtest,
+    // and eleven workers each spawning a process per file stalled tests that
+    // take milliseconds past the 5 s timeout (#1193). Files stay isolated: some
+    // stub `window` for the whole file, and Account.tsx reads it.
+    maxWorkers: 3,
   },
 })
