@@ -63,7 +63,7 @@ byte for byte.
   branches in `AGENTS.md`, the role guides, `docs/style/aws.md` and
   `SOURCES.md` (the operations sources, read 2026-10-16); and the Go
   digest's cold-start line is wrapped so Prettier keeps it. Since
-  @@AWS_STANDARD@@ `aws-queue-ts`, a `worker`, shares `aws-lambda-ts`'s branches
+  v1.7.0 `aws-queue-ts`, a `worker`, shares `aws-lambda-ts`'s branches
   (`docs/runbook.md`, the operations in `AGENTS.md`, the role guides and
   the digests) and, through a `$queue` variable, says queue where those say
   API: the message boundary, the dead-letter queue and its redrive in the

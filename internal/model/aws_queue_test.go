@@ -89,7 +89,7 @@ func TestWorkerPlansOnAWSQueueTS(t *testing.T) {
 	}
 	for name, c := range map[string]struct{ model, names string }{
 		"a function": {strings.Replace(queuePlan, "type: worker", "type: function", 1), "aws-queue-ts"},
-		"a Compute": {queuePlan + "  computeRef: {name: small}\n", "aws-queue-ts deploys itself"},
+		"a Compute":  {queuePlan + "  computeRef: {name: small}\n", "aws-queue-ts deploys itself"},
 		"a Deployment": {queuePlan + "  deploymentRef: {name: k8s-manifests}\n",
 			"aws-queue-ts deploys itself"},
 		"ts-standard": {strings.Replace(queuePlan, "standardRef: {name: aws-standard}",

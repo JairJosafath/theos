@@ -27,7 +27,7 @@ func renderOperations(t *testing.T, typ, framework string, c model.OperationsCho
 	return result
 }
 
-func TestAWSLambdaTSRendersTheOperationsBlock(t *testing.T) {
+func TestAWSFrameworksRenderTheOperationsBlock(t *testing.T) {
 	week := int32(7)
 	tests := []struct {
 		name   string
@@ -48,20 +48,32 @@ func TestAWSLambdaTSRendersTheOperationsBlock(t *testing.T) {
 			`email: "o'neil@example.com",`,
 		}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := renderOperations(t, model.TypeFunction, "aws-lambda-ts", tt.block)
-			f, ok := r.Files["infra/operations.ts"]
-			if !ok {
-				t.Fatal("aws-lambda-ts writes no infra/operations.ts")
-			}
-			for _, w := range tt.wanted {
-				if !strings.Contains(string(f.Data), w) {
-					t.Errorf("infra/operations.ts lacks %q:\n%s", w, f.Data)
+	for _, fw := range []side{{model.TypeFunction, "aws-lambda-ts"}, {model.TypeWorker, "aws-queue-ts"}} {
+		for _, tt := range tests {
+			t.Run(fw.Name+"/"+tt.name, func(t *testing.T) {
+				r := renderOperations(t, fw.Side, fw.Name, tt.block)
+				f, ok := r.Files["infra/operations.ts"]
+				if !ok {
+					t.Fatalf("%s writes no infra/operations.ts", fw.Name)
 				}
-			}
-		})
+				for _, w := range tt.wanted {
+					if !strings.Contains(string(f.Data), w) {
+						t.Errorf("infra/operations.ts lacks %q:\n%s", w, f.Data)
+					}
+				}
+			})
+		}
 	}
+}
+
+// runbookLines names, per Framework with operations, lines its runbook must
+// hold beyond the shared ones.
+var runbookLines = map[string][]string{
+	"aws-lambda-ts": {"Api-Fault-Count-Critical", "the longest the API may be"},
+	"aws-queue-ts": {
+		"Messages-DLQ-Queue-Message-Count-Max-Critical", "Messages-Queue-Message-Age-Max-Warning",
+		"aws sqs start-message-move-task", "`DeadLetters` queue", "the longest the worker may be",
+	},
 }
 
 func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T) {
@@ -71,7 +83,8 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 				CopyToRegion: "eu-west-1", RPO: "15m", RTO: "2h", Email: "ops@example.com",
 			})
 			runbook, ok := r.Files["docs/runbook.md"]
-			if f.Name != "aws-lambda-ts" {
+			own, hasOperations := runbookLines[f.Name]
+			if !hasOperations {
 				// The other Frameworks' branches come with their own steps.
 				if ok {
 					t.Errorf("aws-standard writes docs/runbook.md for %s, which has no operations yet", f.Name)
@@ -79,15 +92,25 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 				return
 			}
 			if !ok {
-				t.Fatal("aws-standard writes no docs/runbook.md for aws-lambda-ts")
+				t.Fatalf("aws-standard writes no docs/runbook.md for %s", f.Name)
 			}
-			for _, w := range []string{
+			for _, w := range append([]string{
 				"(RPO): 15m", "(RTO): 2h", "kept 35 days, each copied to eu-west-1", "ops@example.com",
 				"restore-table-to-point-in-time", "continue-update-rollback", "GuardDuty",
-				"Api-Fault-Count-Critical",
-			} {
+			}, own...) {
 				if !strings.Contains(string(runbook.Data), w) {
 					t.Errorf("docs/runbook.md lacks %q", w)
+				}
+			}
+			// One Framework's lines never reach another's runbook.
+			for other, lines := range runbookLines {
+				if other == f.Name {
+					continue
+				}
+				for _, never := range lines[:1] {
+					if strings.Contains(string(runbook.Data), never) {
+						t.Errorf("docs/runbook.md for %s says %q, %s's", f.Name, never, other)
+					}
 				}
 			}
 		})
