@@ -368,11 +368,16 @@ without kubectl, and cheaply: it lives on a laptop.
   64): its round and role, what it cost and used, and the sizes its sessions
   handed off at, so the Task page names the run that handed off ("Run 3
   (round 2, implement) handed off 2 times, at 131k and 138k tokens") without
-  reading Events.
+  reading Events. The Work area charts those records, one Agent at a time:
+  each run's largest session in its Task's round against the Agent's
+  `sessionTokenLimit`, marked by how its Task ended and whether it handed
+  off, with a table of the same by outcome (rounds used, runs past the limit),
+  so a reporter can judge the limit
+  ([plan](plans/done/token-chart.md)).
 - **The UI shows the factory at work,** across all projects (*The UI* below):
   component health with CPU and memory, the last hour, the Tasks on a board by
-  stage with their timelines, where the time goes, agent slots, and what needs
-  a look.
+  stage with their timelines, where the time goes, what agent runs use against
+  their Agent's session token limit, agent slots, and what needs a look.
 - **The UI server reads the factory's health itself** (`GET /factory/health`):
   pods, nodes and metrics-server, summarized; pod specs never reach the browser,
   which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
@@ -1187,8 +1192,8 @@ only when `status` carries the effective one. The plan behind it is
     system's containers (level 2), with the project's story in one line from
     its Briefs to its releases.
   - *Work*: across projects, the Tasks on a board by stage, the Crews and
-    their releases, where the time goes, and what needs a look; beside
-    them, the factory's health and agent slots.
+    their releases, where the time goes, what agent runs use, and what needs
+    a look; beside them, the factory's health and agent slots.
   - *Factory*: the factory's health (`GET /factory/health`) and the agent
     slots.
   - *About*: the versions running, and links to the running release's docs

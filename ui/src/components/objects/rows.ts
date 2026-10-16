@@ -3,9 +3,9 @@
 // Task's agent runs, and a Brief's planner limit.
 
 import { LABEL_CREW, type Agent, type Brief, type Crew, type Relationship, type Task } from '../../k8s/types'
-import { formatTokens } from '../../model/brief'
 import { describeTaskPhase } from '../../model/describe'
 import { isFinal, taskHeadline } from '../../model/factory'
+import { runAgentName, runRole, type RunRole } from '../../model/tokens'
 import type { ChildRef, TimelineEntry } from '../ObjectHeader'
 import { pageHref } from './links'
 
@@ -71,7 +71,7 @@ export interface AgentRun {
   /** 1 for the first run. */
   n: number
   round: number
-  role: 'implement' | 'review' | 'plan'
+  role: RunRole
   /** The Agent that ran it. */
   agent: string
   /** When it started, or, for a run the Task recorded, when it ended. */
@@ -98,12 +98,12 @@ export function agentRuns(task: Task): AgentRun[] {
   const recorded = task.status?.runs ?? []
   if (!recorded.length) return historyRuns(task)
   const runs: AgentRun[] = recorded.map((r, i) => {
-    const role = r.role === 'review' || r.role === 'plan' || r.role === 'implement' ? r.role : defaultRole(task)
+    const role = runRole(task, r)
     return {
       n: i + 1,
       round: r.round,
       role,
-      agent: runAgent(task, role),
+      agent: runAgentName(task, role),
       at: r.endedAt,
       current: false,
       recorded: true,
@@ -115,20 +115,20 @@ export function agentRuns(task: Task): AgentRun[] {
     const role = sandboxRole(status.sandbox) ?? (status.phase === 'Reviewing' ? 'review' : defaultRole(task))
     const history = status.history ?? []
     const at = history[history.length - 1]?.at ?? status.phaseChangedAt ?? ''
-    runs.push({ n: runs.length + 1, round: status.round ?? 0, role, agent: runAgent(task, role), at, current: true })
+    runs.push({
+      n: runs.length + 1,
+      round: status.round ?? 0,
+      role,
+      agent: runAgentName(task, role),
+      at,
+      current: true,
+    })
   }
   return runs
 }
 
-/** When a run's sessions handed off: "handed off 2 times, at 134k and 141k tokens". */
-export function describeHandoffs(sizes: number[]): string {
-  const at = sizes.map(formatTokens)
-  const list = at.length > 1 ? `${at.slice(0, -1).join(', ')} and ${at[at.length - 1]}` : at[0]
-  return `handed off${sizes.length > 1 ? ` ${sizes.length} times,` : ''} at ${list} tokens`
-}
-
-function defaultRole(task: Task): AgentRun['role'] {
-  return task.spec.kind === 'Plan' ? 'plan' : 'implement'
+function defaultRole(task: Task): RunRole {
+  return runRole(task, {})
 }
 
 /**
@@ -138,10 +138,6 @@ function defaultRole(task: Task): AgentRun['role'] {
 function sandboxRole(sandbox: string): AgentRun['role'] | undefined {
   const m = /-r\d+-(implement|review|plan)(?:-[ax]\d+)?$/.exec(sandbox)
   return m ? (m[1] as AgentRun['role']) : undefined
-}
-
-function runAgent(task: Task, role: AgentRun['role']): string {
-  return role === 'review' ? (task.spec.reviewerRef?.name ?? task.spec.agentRef.name) : task.spec.agentRef.name
 }
 
 function historyRuns(task: Task): AgentRun[] {
@@ -158,7 +154,7 @@ function historyRuns(task: Task): AgentRun[] {
     const key = `${role}|${round}`
     if (key === last) continue
     last = key
-    runs.push({ n: runs.length + 1, round, role, agent: runAgent(task, role), at: h.at, current: false })
+    runs.push({ n: runs.length + 1, round, role, agent: runAgentName(task, role), at: h.at, current: false })
   }
   // The run the newest step belongs to runs now, unless the Task has ended.
   const end = runs[runs.length - 1]

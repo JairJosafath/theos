@@ -15,6 +15,7 @@ import { TaskCard } from './factory/TaskBoard'
 import { CrewsPanel } from './factory/Crews'
 import { ReleasesPanel } from './factory/Releases'
 import { TimePanel } from './factory/TimePanel'
+import { TokensPanel } from './factory/TokensPanel'
 import { HealthPanel } from './factory/Health'
 import { PanelState } from './PanelState'
 import { SlotsPanel } from './factory/Slots'
@@ -172,6 +173,14 @@ export function FactoryPage({
           />
 
           <TimePanel stats={stats} />
+
+          <TokensPanel
+            tasks={data.tasks}
+            agents={data.agents}
+            loaded={read(RESOURCES.tasks, RESOURCES.agents)}
+            problems={problems(RESOURCES.tasks, RESOURCES.agents)}
+            pageHref={pageHref}
+          />
         </section>
 
         <aside className="side">
