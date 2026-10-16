@@ -2242,7 +2242,7 @@ gh_queued() {
   gh_token || return 2
   runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
     --json databaseId,status,createdAt) || return 2
-  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
+  runs=$(jq -r --argjson m "$minutes" "$GH_NOW_JQ"'[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
     "\(.databaseId)\t\(.createdAt)\t\((now - (.createdAt | fromdateiso8601)) > $m * 60)"' <<<"$runs") || return 2
   while IFS=$'\t' read -r id at old; do
     [ -n "$id" ] || continue
