@@ -189,6 +189,11 @@ var _ = Describe("Brief", func() {
 			Eventually(func() string { return gitFake.agentUser(ns, repo) }).ShouldNot(BeEmpty())
 
 			Expect(k8sClient.Delete(ctx, &c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea")})).To(Succeed())
+			// The reconciler reads GitProviders from the cache, which may lag the
+			// delete; with the GitProvider still in view, deleting the bot is right (#1300).
+			Eventually(func() bool {
+				return apierrors.IsNotFound(managerClient.Get(ctx, key(ns, "gitea"), &c4v1alpha1.GitProvider{}))
+			}).Should(BeTrue(), "the cache still holds the GitProvider")
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
