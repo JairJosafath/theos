@@ -60,5 +60,9 @@ gotest() {
 check "make test: TEST_TIMEOUT, no flag Go won't cache" "$(gotest)" "-timeout 7m"
 check "COVER=1: writes cover.out" "$(gotest COVER=1)" "-timeout 7m -coverprofile cover.out"
 check "FORCE=1: reruns every package" "$(gotest FORCE=1)" "-timeout 7m -count=1"
+line=$(C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null | grep ' go test ')
+[[ $line == *' go test -trimpath '* ]]; check "GO_TRIM still passed" $? 0
+[[ $line == KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=*' ETCD_ELECTION_TIMEOUT='*' ETCD_HEARTBEAT_INTERVAL='*' go test '* ]]
+check "ENVTEST_ENV still set" $? 0
 
 exit $fail
