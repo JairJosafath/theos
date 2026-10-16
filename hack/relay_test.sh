@@ -8,7 +8,7 @@
 # worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
-# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
+# TMPDIR, outside any checkout, emptied before and removed after it; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -29,6 +29,7 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
+check "defaults: scratch in the user's cache (#1307)" "$(unset XDG_CACHE_HOME RELAY_SCRATCH; HOME=/h; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
 
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
 # shellcheck source=hack/relay.sh
@@ -281,7 +282,8 @@ case $(cat "$FAKE") in
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
-  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
+  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; (cd "$TMPDIR" && GIT_CEILING_DIRECTORIES=${FAKE%/*} git rev-parse --show-toplevel) >"$FAKE.repo" 2>/dev/null
+     if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
     d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
     echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"tmp","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
@@ -400,15 +402,19 @@ check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=ke
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 no_strikes
 
-# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
-# /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
+# Each session's TMPDIR is SCRATCH/<its worktree>, not the device's shared
+# /tmp tmpfs (#1269) nor inside a git checkout, where git in a test's scratch
+# would find the worktree (#1307): emptied before it starts and removed after
+# it ends.
 echo tmp >"$FAKE"
-mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+SCRATCH=$T/cache/c4factory/tmp
+mkdir -p "$SCRATCH/wt" && echo old >"$SCRATCH/wt/left"
 work
-check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: TMPDIR is SCRATCH/<worktree>" "$(cat "$FAKE.tmpdir")" "$SCRATCH/wt"
+check "tmp #1307: TMPDIR is in no git checkout" "$(cat "$FAKE.repo")" ""
 check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
-check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
-check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$SCRATCH/wt/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SCRATCH/wt" && echo left)" ""
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
