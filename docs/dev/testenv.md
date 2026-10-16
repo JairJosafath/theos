@@ -570,9 +570,11 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/3`,
-when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
-while it is open, a third failure files nothing.
+time and red streak, and files `Flaky: <spec>`, a ready `kind/bug` with
+`priority/3`, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7)
+with a pass of the workflow between them; failures in a row (a cancelled run
+between them counts as neither) are main being red, which `main is red`
+tracks, and count once (#1398). While it is open, a third failure files nothing.
 `hack/lib/github.sh flakes --count` lists the specs that failed on main this
 week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is
