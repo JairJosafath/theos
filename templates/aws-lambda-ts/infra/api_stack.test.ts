@@ -1,9 +1,12 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiStack } from './api_stack';
 import { copyVaultName } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import type { Operations, Tier } from './standard';
 
 const OPERATIONS: Operations = {
@@ -12,11 +15,15 @@ const OPERATIONS: Operations = {
   alerts: { email: '' },
 };
 
-/** The stack's template for `tier`, with `operations` changed as given. */
+/**
+ * The stack's template for `tier`, with `operations` changed as given, and
+ * `dataStores` in place of the Connectors' (none, unless a test names them).
+ */
 function synth(
   tier: Tier,
   backups: Partial<Operations['backups']> = {},
   alerts: Partial<Operations['alerts']> = {},
+  dataStores: readonly (readonly [string, Connect])[] = [],
 ): Template {
   const operations: Operations = {
     ...OPERATIONS,
@@ -28,6 +35,7 @@ function synth(
       tier,
       operations,
       backupTag: ['c4factory:container', 'test'],
+      dataStores,
     }),
   );
 }
@@ -217,6 +225,34 @@ describe('ApiStack', () => {
         },
       },
     );
+  });
+});
+
+describe('ApiStack data stores', () => {
+  it("connects the function to each Connector's data store and alarms on its table", () => {
+    const connected: string[] = [];
+    const connect: Connect = (scope, fn, rules) => {
+      connected.push(fn.node.id);
+      return new Table(scope, 'Store', {
+        partitionKey: { name: 'pk', type: AttributeType.STRING },
+        deletionProtection: rules.keepData,
+      });
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    expect(connected).toEqual(['Handler']);
+    template.resourceCountIs('AWS::DynamoDB::Table', 3);
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 3 * 3);
+  });
+
+  it('connects the data stores of the rendered infra/connectors.ts by default', () => {
+    const template = Template.fromStack(
+      new ApiStack(new App(), 'test', {
+        tier: 'production',
+        operations: OPERATIONS,
+        backupTag: ['c4factory:container', 'test'],
+      }),
+    );
+    template.resourceCountIs('AWS::DynamoDB::Table', 2 + DATA_STORES.length);
   });
 });
 
