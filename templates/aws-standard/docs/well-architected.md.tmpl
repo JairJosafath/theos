@@ -860,6 +860,246 @@ _Minimize the environmental impact of the workload._
   start-up, small bundles.
 - No rule enforces these: review them.
 
+{{ else if eq .Framework "aws-static-site-ts" }}# Well-Architected
+
+A digest of the AWS Well-Architected Framework, for this repository: one
+section per pillar, what the pillar asks of a static site served by
+CloudFront from an S3 bucket, what each tier does about it, what
+`infra/operations.ts` changes, the CDK Nag rules (`AwsSolutions` pack) and
+the Standard's checks that enforce it, and what stays by hand, with the
+reason. Sources and the date they were read are in `docs/style/SOURCES.md`.
+This file belongs to the Standard: a task never changes it.
+
+`make check` builds the site with Vite and synthesizes the stack for both
+tiers, into `cdk.out/production/` and `cdk.out/development/`, and runs CDK
+Nag's `AwsSolutions` checks on both (`infra/standard.ts`): a finding fails
+synth unless it is acknowledged, on one construct, with a reason.
+`infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
+wildcard actions, encryption, log retention, removal policies, the versions
+of the site's bucket, and every promise below. `cfn-lint --include-checks I`
+lints both, with I3011 (a stateful resource without a deletion policy) and
+I3013 (content that expires without a set retention).
+
+## Tiers and the operations block
+
+The tier is where the stack runs, and a deploy names it:
+`cdk deploy -c tier=production`, or `development` when it names none. The
+code never picks one, and nothing else is read at synth: a synth of a tier is
+the same on every machine. A development stack's name ends in
+`-development`, so a deploy that names no tier never changes a production
+stack. Both are in us-east-1, the only region where CloudFront takes a web
+application firewall and a certificate. `infra/standard.ts` (`TIER_RULES`)
+says what each tier means:
+
+| The stack                                        | `production`                             | `development`          |
+| ------------------------------------------------ | ---------------------------------------- | ---------------------- |
+| The site's bucket                                | kept when the stack goes (`RETAIN`)      | deleted with its files |
+| Earlier versions of the site's files             | kept 35 days, or `retentionDays` if more | none                   |
+| Termination protection on the stack              | on                                       | off                    |
+| A web application firewall (AWS WAF)             | on                                       | none                   |
+| X-Ray tracing of the function that copies a site | on                                       | off                    |
+| Log retention, access logs included              | one year                                 | one month              |
+| Alarms, their topic and a dashboard              | on                                       | on                     |
+
+No tier has an AWS Backup plan: nothing in the stack is what AWS Backup
+backs up. The site's source is in git, and the bucket's versions keep its
+files' history in production.
+
+What the Container promises in either tier is `infra/operations.ts`, which
+the factory renders from its `spec.operations`; a change to the block is
+written into the file, never the other way.
+
+- `backups.retentionDays`: days the bucket keeps a file's earlier versions
+  in production, when more than 35.
+- `backups.copyToRegion`: nothing is copied for a static site. CloudFront is
+  global, and the files are built again from git; `docs/runbook.md` says
+  what a lost us-east-1 means.
+- `recovery.rpo` and `recovery.rto`: the most of the site's files a restore
+  may lose and the longest it may take, which `docs/runbook.md` is written
+  to.
+- `alerts.email`: the default of the stack's `AlertEmail` parameter, which
+  a deploy sets per environment; empty tells nobody.
+
+## Operational excellence
+
+_Run and monitor the system, and improve it in small, reversible changes._
+
+- Everything is code: the stack in `infra/` is the only way resources are
+  made, and the site in the bucket is only ever what a deploy copied there.
+  No change by hand in the console or the bucket.
+- Changes are small, frequent and checked: `make check` builds the site and
+  synthesizes and lints every change for both tiers; nothing here deploys.
+- One deploy, one version of the site: Vite builds it at synth, through CDK's
+  local bundling (never Docker), and the deploy copies the build into the
+  bucket beside earlier builds' files and clears CloudFront's cache (`/*`).
+  A deploy that fails rolls back, earlier files included.
+- Observe (OPS08): the distribution's standard logs and the bucket's server
+  access logs go to the `Logs` bucket (`cloudfront/`, `s3/`); the copying
+  function logs to its own log group, and is traced with X-Ray in
+  production; the firewall keeps sampled requests and metrics.
+  - `AwsSolutions-CFR3`: the distribution has access logging.
+  - `AwsSolutions-S1`: the site's bucket has server access logs. The `Logs`
+    bucket's own is acknowledged: its access would need yet another bucket.
+  - `infra/standard.test.ts` checks every log group keeps the tier's time;
+    the `Logs` bucket expires each log after the same time.
+- Alarms are code (OPS08-BP04, REL06-BP03), the same in both tiers:
+  `cdk-monitoring-constructs` builds them on the distribution's 5xx error
+  rate (over 1 %) and the copying function's errors, throttles and p99
+  duration (over 12 of its 15 minutes), each firing on one bad five-minute
+  period. Every alarm notifies the stack's one SNS topic, encrypted with its
+  own key, and a dashboard shows them, with the firewall's allowed and
+  blocked requests (OPS08-BP05). `infra/standard.test.ts` checks that every
+  function and distribution has its alarms and that every alarm notifies
+  the topic.
+- Nobody is told without asking: the `AlertEmail` parameter subscribes one
+  address to the topic, and an empty one none. The topic's ARN is the
+  stack's `AlarmTopicArn` output and the site's URL `EntryPoint`, so a
+  deploy target can subscribe its own channel and find the site.
+- A runbook: `docs/runbook.md` says what each alarm means and what to do
+  first, how to bring a file's earlier version back and how to roll a
+  deployment back. A change to what the stack keeps updates it, as a
+  Standard change.
+- Tag everything so cost and ownership are traceable: every stack carries
+  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  (`infra/standard.ts`, tested).
+- By hand, and why: whether the alarms fire for the right reasons, and
+  which are missing (REL06-BP06), only a deployed stack's history shows;
+  review it after every incident.
+
+## Security
+
+_Protect data, systems and assets: identity, least privilege, encryption,
+traceability, and protection at every layer._
+
+- Only the distribution reads the bucket: origin access control signs its
+  requests, the bucket's policy allows only that distribution, and the
+  bucket blocks every public access.
+  - `AwsSolutions-CFR7`: the distribution uses origin access control.
+  - `AwsSolutions-S2`, `AwsSolutions-S5`: no public bucket, no open policy.
+- Encrypt in transit: the distribution redirects HTTP to HTTPS, and with a
+  `DomainName` answers with its `CertificateArn`'s certificate (ACM, in
+  us-east-1) by SNI, TLS 1.2 or later (`TLSv1.2_2021`). Without a domain it
+  answers on CloudFront's own, whose certificate CloudFront keeps at TLSv1
+  whatever is set.
+  - `AwsSolutions-CFR4`: acknowledged, with that reason.
+  - `AwsSolutions-S10`, `AwsSolutions-SNS3`: the buckets and the alarm topic
+    refuse requests without TLS.
+- Encrypt at rest: both buckets with S3-managed keys, the alarm topic with
+  its own KMS key, which CloudWatch may use to publish.
+  `infra/standard.test.ts` requires encryption on every bucket and topic.
+  - `AwsSolutions-KMS5`: customer-managed keys rotate.
+- Headers every answer carries: AWS's managed `SECURITY_HEADERS` policy
+  (HSTS, no sniffing, no framing, a strict referrer policy). A content
+  security policy is the site's to add, when it knows what it loads.
+- A web application firewall in production (AWS WAF, scope `CLOUDFRONT`):
+  AWS's managed rules for addresses with a bad reputation, common attacks
+  and known bad inputs, and a limit of 2,000 requests in five minutes per
+  address. It logs sampled requests, not every request.
+  - `AwsSolutions-CFR2`: acknowledged in development only, which has no
+    firewall.
+  - `AwsSolutions-CFR1`: acknowledged; the site is for anyone, anywhere.
+- Least privilege: the function that copies the site has its own role,
+  allowed to write only its own log group (not AWS's managed
+  `AWSLambdaBasicExecutionRole`) and what the copy needs.
+  - `AwsSolutions-IAM4`: no AWS managed policies on a role.
+  - `AwsSolutions-IAM5`: no wildcard actions or resources without an
+    acknowledgement naming the one finding and why; each of the copy's is
+    acknowledged on its role, and X-Ray's write actions, which take no
+    resource but `*`, too.
+  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere, but a
+    key's default policy, which hands the key's use to the account's IAM.
+- The page holds no secret: everything Vite builds is public. A key, a
+  token or a password never goes into `src/`, `index.html` or `public/`.
+- The account's own guards (GuardDuty, Security Hub, CloudTrail, AWS Config)
+  are its owner's, not a stack's: `docs/runbook.md` lists them.
+- By hand: treat whatever the page reads (the URL, a form, a fetched
+  answer) as untrusted; write it into the page as text, never as HTML.
+
+## Reliability
+
+_Recover from failure, scale with demand, and keep working when a part
+fails._
+
+- Managed, global services: CloudFront serves from edge locations, and S3
+  keeps the bucket's files across the region's Availability Zones. Nothing
+  runs between deploys.
+- Recovery objectives (REL13-BP01): `recovery.rpo` and `recovery.rto` say
+  what a restore in production may lose and how long it may take;
+  `docs/runbook.md` is written to them.
+- Back up data (REL09): the site's files are built from git, so any commit
+  is a backup a deploy restores. In production the bucket is versioned and
+  keeps each file's earlier versions for 35 days, or `retentionDays` when
+  that is longer, so a file changed by hand comes back too.
+- Nothing of value is deleted by accident, in production: the bucket is
+  `RETAIN`, and the stack has termination protection. A change that
+  replaces the bucket (a new logical id) keeps the old one outside the
+  stack and serves a new, empty one: never rename it.
+  - `infra/standard.test.ts`: per tier, the removal policies, the
+    protection, and the versions of every data bucket (every bucket no
+    other resource writes its logs to) and their expiry.
+  - cfn-lint I3011: every stateful resource has a deletion policy.
+- Restore by a written procedure (REL09-BP04, REL13-BP05):
+  `docs/runbook.md` brings a file's earlier version back, rolls a
+  deployment back, and says what a lost us-east-1 means: the edge serves
+  what it has cached, and the distribution is changed only from there.
+- By hand, and why: a restore drill (REL09-BP04, REL13-BP03), at least a
+  quarter apart, and a game day once a year; only an account shows that a
+  restore works and how long it takes, so the RTO is a promise until a drill
+  measures it. `docs/runbook.md` says how.
+
+## Performance efficiency
+
+_Use resources efficiently as demand changes and technology evolves._
+
+- Serve from the edge: CloudFront caches the files near the visitor, with
+  HTTP/2 and HTTP/3, and compresses what it serves. Its North America and
+  Europe edge locations serve everyone (`PriceClass_100`); a visitor
+  elsewhere waits longer.
+- Build small: Vite bundles and minifies `src/` into hashed files, so a
+  page loads only what it imports.
+- Every deploy clears CloudFront's cache, so the edge serves the new files
+  at once; a browser holding an earlier `index.html` still finds its assets,
+  since a deploy keeps earlier builds' files.
+- By hand: measure a stated budget (the page's size, its load time) on the
+  built site, `npm run build` then `dist/`, and say what only a deployed site
+  shows (load time from the edge, in a real browser).
+
+## Cost optimization
+
+_Deliver value at the lowest price: pay only for what you use, and know
+where the money goes._
+
+- Pay per use: CloudFront per request and per byte served, S3 per byte
+  stored and per request, and the copying function only while a deploy
+  runs.
+- `PriceClass_100`: the cheapest edge locations.
+- What production costs over development: the web application firewall (a
+  monthly fee for the web ACL and each of its rules, and a fee per million
+  requests); the storage of the files' earlier versions; twelve months of
+  access logs and the copy's logs instead of one; and X-Ray for each
+  deploy's copy. The alarms (each per month) and the dashboard cost the same
+  in both tiers.
+- Log retention limits what storage costs grow to: the `Logs` bucket
+  expires each log after the tier's time, as every log group does
+  (`infra/standard.test.ts`, cfn-lint I3013).
+- Tags attribute every cost to its project, system and container, once the
+  account activates them as cost allocation tags.
+- The firewall's limit per address caps what one client can make the site
+  serve.
+- By hand, and why: the price class and the firewall's rules from measured
+  traffic, which only a deployed site's metrics show.
+
+## Sustainability
+
+_Minimize the environmental impact of the workload._
+
+- Nothing runs but on a request or a deploy: CloudFront serves from its
+  cache on shared infrastructure, and the copy runs once per deploy.
+- Small files: Vite's minified bundles, and CloudFront's compression.
+- Keep what is needed, no longer: log retention by tier, the files' earlier
+  versions for a set time, and development keeping none.
+- No rule enforces these: review them.
+
 {{ else }}# Well-Architected
 
 A digest of the AWS Well-Architected Framework and its Serverless Applications
@@ -1016,7 +1256,7 @@ _Minimize the environmental impact of the workload._
 
 Fix the resource first. When the fix is wrong for this system, acknowledge
 the one finding on the construct the finding's path names (or its nearest
-ancestor you own): a finding on `{{ if eq .Framework "aws-ec2-ts" }}InstanceRole{{ else }}HandlerRole{{ end }}/DefaultPolicy/Resource`
+ancestor you own): a finding on `{{ if eq .Framework "aws-ec2-ts" }}InstanceRole{{ else if eq .Framework "aws-static-site-ts" }}DeployRole{{ else }}HandlerRole{{ end }}/DefaultPolicy/Resource`
 is acknowledged on the role, not on the {{ if eq .Framework "aws-ec2-ts" }}launch template{{ else }}function{{ end }} beside it.
 
 ```ts

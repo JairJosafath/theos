@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2 or a container service on Fargate) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate or a static site on S3 and CloudFront) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -22,8 +22,9 @@ python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
-- **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
-  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-py`
+- **Supports:** `function`, `service`, `static-site` (since v1.8.0);
+  Frameworks: `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`,
+  `aws-fargate-ts`, `aws-lambda-py`, `aws-static-site-ts`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -76,8 +77,21 @@ byte for byte.
   and no load balancer's access-log bucket left in a selection; and both
   runbook branches say that AWS Backup's advanced DynamoDB features, which
   a cross-region copy needs, are a setting of the account in each region.
-  Since v1.8.0 `aws-ec2-ts` (from its v1.1.0) has the same: its
-  `docs/well-architected.md` branch rewritten for the tiers (no tracing in
+  `aws-static-site-ts` (since v1.8.0), a Vite site in an S3 bucket behind
+  CloudFront, has its own whole `docs/style/aws.md` (the page, the build,
+  the buckets, CloudFront, the firewall, the copying function),
+  `docs/well-architected.md` (no Serverless Lens: the tiers, origin access
+  control, TLS, the firewall, the versions, what production costs over
+  development) and `docs/runbook.md` (an object's earlier versions, a
+  rollback by deploy, a lost us-east-1, no backup vault), and branches in
+  `AGENTS.md` (its own review rules 1 to 9), the role guides (their own
+  checklist items 2 to 8), `principles.md`, `SOURCES.md` (the CloudFront,
+  S3, AWS WAF and Vite references; Vite in the tools), the issue template
+  and `eslint.config.mjs` (`dist/` ignored, `no-console` because visitors
+  see the page, `process.exit` refused in the CDK app, and Node's globals
+  and modules refused in `src/`).
+  Since v1.9.0 `aws-ec2-ts` (from its v1.1.0) has what v1.6.0 gave
+  `aws-lambda-ts`: its `docs/well-architected.md` branch rewritten for the tiers (no tracing in
   either), the HTTPS listener, the rolling update that waits for
   `cfn-signal`, the scaling notifications and instances that hold no data;
   a `docs/runbook.md` branch; and its branches in `AGENTS.md`, the role
@@ -93,7 +107,7 @@ byte for byte.
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts`, `aws-fargate-ts` and `aws-ec2-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts` and `aws-ec2-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -105,7 +119,9 @@ byte for byte.
   the platform's files, the lockfile and `cdk.out/`, which ESLint ignores too.
   For `aws-lambda-go`, golangci-lint with go-standard's `.golangci.yml` (its
   formatters gofumpt and goimports, its linters) lints and formats `src/`,
-  and Prettier skips `.golangci.yml`.
+  and Prettier skips `.golangci.yml`. For `aws-static-site-ts`, `no-console`
+  because visitors see the page, and `src/` may use no Node global
+  (`process`, `Buffer`, ...) or `node:` module, as ts-standard's react-vite.
 - **CDK:** `infra/standard.ts` names the tiers (`Tier`, `TIERS`:
   `production` and `development`), what each means for every stack
   (`TIER_RULES`: keeping and protecting data, point-in-time recovery, AWS
@@ -143,20 +159,24 @@ byte for byte.
   termination protection by tier. When the repository has
   `infra/operations.ts`, it imports its `OPERATIONS` at run time, checks its
   shape, and adds a `describe` per tier and item of what it promises: the
-  stack names (`stackNameFor`), the removal policies (tables `Retain` or
-  `Delete` by tier, every backup vault and its key `Retain`), deletion and
-  termination protection, point-in-time recovery (and on in production
-  when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
-  over 0: one plan whose rules are daily, keep `retentionDays` and copy to
-  `copyToRegion`'s vault when set, one vault with its own key, one selection
-  naming every one of the stack's own tables by ARN and nothing else (since
-  v1.8.0), or else of exactly what carries the `c4factory:container` tag, as
-  `ListOfTags` or as one `aws:ResourceTag` condition on `*`, and a copy
-  stack in that region; else none; and no load balancer's access-log bucket
-  in any selection's reach: a selection by ARN doesn't name it, one by tag
-  names it in `NotResources`), the instances (since v1.8.0: in a stack with
-  an Auto Scaling group, a launch template or an instance, no EBS volume of
-  its own, every launch template's or instance's volume deleted with its
+  stack names (`stackNameFor`), the removal policies (tables and data
+  buckets `Retain` or `Delete` by tier, every backup vault and its key
+  `Retain`), deletion and termination protection, point-in-time recovery
+  (and on in production when `rpo` is under a day), the versions of data
+  buckets (where the tier keeps data, versioning `Enabled` and a lifecycle
+  rule expiring noncurrent versions), the backup plan and vault (in
+  production with `retentionDays` over 0, in a stack holding a resource of
+  `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
+  `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
+  with its own key, one selection naming every one of the stack's own
+  tables by ARN and nothing else (since v1.9.0), or else of exactly what
+  carries the `c4factory:container` tag, as `ListOfTags` or as one
+  `aws:ResourceTag` condition on `*`, and a copy stack in that region; else
+  none; and no load balancer's access-log bucket in any selection's reach:
+  a selection by ARN doesn't name it, one by tag names it in
+  `NotResources`), the instances (since v1.9.0: in a stack with an Auto
+  Scaling group, a launch template or an instance, no EBS volume of its
+  own, every launch template's or instance's volume deleted with its
   instance, and no backup selection by tag, which would back the instances
   up), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
@@ -165,11 +185,11 @@ byte for byte.
   `HTTPCode_ELB_5XX_Count`, `HTTPCode_Target_5XX_Count` and
   `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
   ECS service's `CPUUtilization`, `MemoryUtilization` and
-  `RunningTaskCount`, and since v1.8.0 every Auto Scaling group's
+  `RunningTaskCount`, and since v1.9.0 every Auto Scaling group's
   `CPUUtilization` and `GroupInServiceInstances`; an alarm watches a
   resource when its definition refers to it by `Ref` or by `Fn::GetAtt`, as
   a load balancer's and target group's full names and a service's name
-  are), the subscription (the
+  are; every CloudFront distribution's `5xxErrorRate`), the subscription (the
   `AlertEmail` parameter defaulting to `alerts.email`, one email
   subscription to it under a condition that it is not empty), tracing
   (`Active` by tier on a function; on a task definition, one container on
@@ -179,8 +199,16 @@ byte for byte.
   tier's) and the two outputs
   (`AlarmTopicArn`, the topic, and `EntryPoint`). A stack holding only a
   backup vault and its key, the copy's, serves nothing and has no topic,
-  alarms or outputs. A repository with no `infra/operations.ts`, scaffolded
-  before it, skips those. A type with no resource passes.
+  alarms or outputs. A data bucket is every bucket no other resource writes
+  its logs to (a bucket's server access logs, a distribution's logging, a
+  load balancer's `access_logs.s3.bucket`): a log bucket is not data and
+  expires. A repository with no `infra/operations.ts`, scaffolded
+  before it, skips those. A type with no resource passes. v1.8.0 added the
+  data buckets to the removal policies, the versions of data buckets, the
+  plan only in a stack holding a resource of `BACKED_UP_TYPES` (so a
+  static site, holding none, has no plan or copy stack), and the
+  distribution's `5xxErrorRate` to `ALARMED_METRICS`; a repository of
+  another Framework passes it unchanged.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, `cdk synth
   --quiet -c tier=<tier> -o cdk.out/<tier>` for `production` and
@@ -191,7 +219,8 @@ byte for byte.
   policy; I3013, expiring content without a set retention), ignoring only
   W3005 (the `DependsOn` CDK puts on a function's role, which cfn-lint calls
   redundant). Synth needs no Docker, AWS account, credentials
-  or network: stacks are environment-agnostic and esbuild bundles locally.
+  or network: stacks are environment-agnostic, and esbuild, or for
+  `aws-static-site-ts` Vite, bundles locally.
   For `aws-lambda-go`, `make check` = `npm ci`, `go mod download`,
   `go mod tidy -diff`, `prettier --check`, `golangci-lint fmt --diff`,
   `eslint`, `go vet`, `golangci-lint run`, `tsc --noEmit`,
@@ -248,6 +277,10 @@ byte for byte.
   (the function's packages in `dependencies`, `ruff`, `mypy`, `pytest` and
   `types-boto3` exact in the `dev` group, pytest reading `tests/`,
   `[tool.uv] package = false`), `uv.lock`, the package `app/` and `tests/`.
+  `aws-static-site-ts` does the same with `vite` instead of `esbuild`, the
+  page in `index.html`, `src/` and `public/`, built by Vite through its
+  stack's asset bundling, and `infra/operations.ts`; its one stack names
+  us-east-1 as its region, and no account.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
   They say no test calls AWS (stacks are checked with `Template.fromStack`,
@@ -264,7 +297,9 @@ byte for byte.
   Lambda, API Gateway, DynamoDB, SDK and CDK guides and CDK Nag's rules, or
   for `aws-ec2-ts` the EC2 Auto Scaling, Application Load Balancer, VPC,
   DynamoDB, SDK v3 and CDK guides, or for `aws-fargate-ts` ECS's best
-  practices and the Application Load Balancer's guides. Every rule is marked `[lint]`, `[nag]`,
+  practices and the Application Load Balancer's guides, or for
+  `aws-static-site-ts` Vite's guide and the CloudFront, S3 and AWS WAF
+  guides. Every rule is marked `[lint]`, `[nag]`,
   `[test]` or `[review]`;
   `docs/style/SOURCES.md` lists the sources with dates and the pinned
   versions.
@@ -279,8 +314,12 @@ byte for byte.
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
   drill, a game day, right-sizing from measured load) is listed with why.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts` and
-  `aws-ec2-ts` (a branch each), renders the
+  For `aws-static-site-ts` it does the same for a site: no Serverless Lens,
+  origin access control, TLS, the firewall and the security headers, the
+  bucket's versions instead of a backup plan, and the firewall, the
+  versions and a year of logs as what production costs more.
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`,
+  `aws-static-site-ts` and `aws-ec2-ts` (a branch each), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the
@@ -290,7 +329,15 @@ byte for byte.
   the traces are, what the NAT gateways do per tier and what production
   costs over development, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
-  allocation tags' activation), and how to drill a restore.
+  allocation tags' activation), and how to drill a restore. For
+  `aws-static-site-ts` it renders the same block and says the bucket keeps
+  its files' earlier versions for 35 days, or `retentionDays` when longer,
+  with no AWS Backup plan; how to restore a file's earlier version
+  (`list-object-versions`, `copy-object`, `create-invalidation`), how to roll
+  a deployment back, what a lost us-east-1 means (and that `copyToRegion`
+  holds nothing of the site), what each of its four alarms means, the same
+  account-level services and the domain's certificate and DNS record, and
+  how to drill.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,

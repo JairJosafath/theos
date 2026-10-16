@@ -470,6 +470,161 @@ table; write down how long it took. Once a year, a game day on the
 development stack: stop a task (`aws ecs stop-task`) and watch the service
 replace it, deploy an image that fails its health check and watch the
 deployment roll back, and answer what fires with this runbook alone.
+{{- else if eq .Framework "aws-static-site-ts" -}}
+{{- $ops := .Operations -}}
+{{- $versions := 35 -}}
+{{- if gt $ops.Backups.RetentionDays 35 }}{{ $versions = $ops.Backups.RetentionDays }}{{ end -}}
+# Runbook
+
+What to do when `{{ .Container }}` goes wrong in AWS: bring the site's files
+back, roll a deployment back, and answer an alarm. It is written for the
+production tier (`cdk deploy -c tier=production`): a development stack keeps
+no earlier versions of its files, and only its alarms and the rollback
+apply. This file belongs to the Standard; a change to what the stack keeps
+or how changes it too, through a Standard change.
+
+Everything below is done by a person with the account's credentials, in
+us-east-1, where the stack is. Nothing in this repository calls AWS, and no
+agent runs these commands.
+
+## What the Container promises
+
+`infra/operations.ts` holds the Container's `spec.operations`; when it and
+this list differ, it is right.
+
+- Recovery point objective (RPO): {{ $ops.Recovery.RPO }}, the most of the site's files a restore may lose.
+- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the site may be down or wrong.
+- Backups: no AWS Backup plan, as nothing in the stack is what AWS Backup
+  backs up. The site's source is in git, and the bucket keeps every file's
+  earlier versions for {{ $versions }} days.
+- Alarms tell: {{ if $ops.Alerts.Email }}{{ $ops.Alerts.Email }}, by default{{ else }}nobody by default; a deploy sets the `AlertEmail` parameter{{ end }}.
+
+The site holds no data of its own: every file in the bucket is built from a
+commit, so a deploy of the last good commit restores the site whatever the
+bucket holds. The earlier versions undo what a deploy doesn't: a file
+changed or deleted in the bucket by hand.{{ if $ops.Backups.CopyToRegion }} Nothing is copied to
+{{ $ops.Backups.CopyToRegion }}, the `copyToRegion`: see [us-east-1 is lost](#us-east-1-is-lost).{{ end }}
+Whether a restore fits the RTO only a drill shows: see [Drills](#drills).
+
+## What the stack keeps
+
+| Resource                | Holds                                                 | When the stack is deleted               |
+| ----------------------- | ----------------------------------------------------- | --------------------------------------- |
+| `Site` bucket           | the site's files and their earlier versions           | kept, with every version in it          |
+| `Logs` bucket           | the access logs of the distribution and of `Site`     | kept; empties itself as its logs expire |
+| `Distribution`          | nothing: it serves `Site`'s files from its edge cache | deleted                                 |
+| `Firewall` web ACL      | nothing: it screens the requests                      | deleted                                 |
+| `DeployLogs` log group  | the logs of the function that copies the site         | deleted; kept one year until then       |
+| alarm topic and its key | nothing                                               | deleted                                 |
+
+The physical names, and the distribution's id, are in the stack:
+`aws cloudformation describe-stack-resources --stack-name {{ .Container }}`. The
+`Logs` bucket keeps each log a year (`cloudfront/` for the distribution,
+`s3/` for the `Site` bucket); the distribution delivers its logs within the
+hour.
+
+## Restore the site's files (earlier versions)
+
+When: a file in the `Site` bucket was changed or deleted outside a deploy,
+within the last {{ $versions }} days. A bad deploy is rolled back by a deploy instead:
+see [Roll a deployment back](#roll-a-deployment-back).
+
+1. List the file's versions:
+   `aws s3api list-object-versions --bucket <site bucket> --prefix <path>`.
+   The one to restore is the newest whose `LastModified` is before the
+   damage; a deleted file's newest entry is under `DeleteMarkers`.
+2. Copy it over the current one:
+   `aws s3api copy-object --bucket <site bucket> --key <path> --copy-source '<site bucket>/<path>?versionId=<version id>'`.
+   The copy becomes the current version, and the bad one an earlier
+   version, so the step can be undone the same way.
+3. Clear the distribution's cache, so the edge serves the restored file:
+   `aws cloudfront create-invalidation --distribution-id <id> --paths '/*'`.
+   It takes minutes; `aws cloudfront get-invalidation` says `Completed`.
+4. Open the site (the stack's `EntryPoint` output) and check it.
+5. Write down what happened and when. The next deploy replaces the bucket's
+   files with the build of the commit it deploys: a fix made only in the
+   bucket lasts until then, so make it in git too.
+
+## Roll a deployment back
+
+- A deploy that fails rolls back by itself: CloudFormation returns the
+  stack to its last good state (`UPDATE_ROLLBACK_COMPLETE`), and the copy of
+  the earlier build with it. If it stops in `UPDATE_ROLLBACK_FAILED`, fix
+  what it names and run
+  `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
+- A deploy that succeeded but misbehaves: deploy the last good commit.
+  Check out its tag or commit, run `make check`, then
+  `cdk deploy -c tier=production`. The deploy copies that commit's build
+  into the bucket, beside the files earlier builds had, and clears the cache.
+- Never change the `Site` bucket's logical id, or anything that replaces the
+  bucket: the deploy makes a new, empty bucket and keeps the old one outside
+  the stack, with every earlier version in it. If it happened by mistake,
+  deploy the last good commit.
+- Termination protection refuses `cdk destroy` in production. Turning it
+  off is the account owner's decision; both buckets stay anyway.
+
+## us-east-1 is lost
+
+CloudFront, its firewall and its certificates are global services
+controlled from us-east-1, where the stack and its bucket are. While the
+region is down, the edge keeps serving what it has cached, and a request it
+hasn't cached fails: the distribution reads the bucket there, and a change
+to the distribution (another origin) is made there too. No file is lost:
+the source is in git, and S3 keeps the bucket's files in more than one of
+the region's Availability Zones.{{ if $ops.Backups.CopyToRegion }} Nothing of this site is in
+{{ $ops.Backups.CopyToRegion }}, the `copyToRegion`: CloudFront is global, and the files are
+built again from git, so there is nothing to copy or restore there.{{ end }}
+
+Watch the AWS Health Dashboard. When the region is back, open the site
+(`EntryPoint`), and deploy the last good commit if it isn't right.
+
+## Alarms
+
+Every alarm notifies the stack's alarm topic (the output `AlarmTopicArn`);
+the `AlertEmail` parameter subscribes an address, which must confirm the
+email AWS sends it. The dashboard `{{ .Container }}` shows each alarm's metric, and in
+production the firewall's allowed and blocked requests, which have no
+alarm. Each alarm fires on one bad five-minute period and clears itself when
+the next one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name
+below.
+
+| Alarm                             | Means                                                                    | First                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Site-Fault-Rate-Critical`        | over 1% of the distribution's answers were 5xx: it couldn't serve a file | check the AWS Health Dashboard for CloudFront and S3; read the distribution's logs (`cloudfront/`) for the edge's result type |
+| `Deploy-Fault-Count-Critical`     | the function that copies the build into the bucket failed on a deploy    | read `DeployLogs` for the error; the deploy rolls back, so check the site serves the earlier build                            |
+| `Deploy-Throttled-Count-Critical` | Lambda refused to run the copying function: no concurrency was left      | check the account's concurrent executions, then deploy again                                                                  |
+| `Deploy-Latency-P99-Warning`      | the copy took over 12 of its 15 minutes                                  | check the build's size (`npm run build`, then `dist/`); a copy past 15 minutes fails the deploy                               |
+
+When an alarm fires, note the time, what you saw and what you did; when it
+has fired before for the same cause, that cause needs a fix, not another
+note.
+
+## What the account provides
+
+The stacks hold only this Container's resources. These are set once per
+account, by its owner, and never by a stack here:
+
+- GuardDuty, for threat detection in the account.
+- Security Hub, for the account's security findings in one place.
+- CloudTrail, recording every API call to an S3 bucket kept apart.
+- AWS Config, recording how resources change.
+- AWS Budgets, with an alert on what the account spends.
+- The cost allocation tags' activation: `c4factory:project`,
+  `c4factory:system` and `c4factory:container` attribute costs only once the
+  account activates them in Billing.
+
+A domain is the deploy's: its certificate, in ACM in us-east-1, is the
+`CertificateArn` parameter, and the DNS record that points the domain at
+the distribution is made where the domain is hosted.
+
+## Drills
+
+Only a drill shows that a restore works and fits the RTO ({{ $ops.Recovery.RTO }}). At least
+once a quarter, and after a change to the bucket or the distribution:
+restore one file's earlier version as above, and time a deploy of the last
+good commit until the site serves it; write down how long each took. Once a
+year, a game day: break the development stack the way an incident would
+(delete its `index.html`, say), and answer it with this runbook alone.
 {{- else if eq .Framework "aws-ec2-ts" -}}
 {{- $ops := .Operations -}}
 {{- $deploy := printf "cdk deploy -c tier=production --all --parameters %s:CertificateArn=<arn>" .Container -}}

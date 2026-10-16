@@ -473,9 +473,49 @@ task size, as said here):
   branch meet this one only at the branch line.
 - **`vitest.config.mts`** gives aws-fargate-ts a `hookTimeout` of 120 s.
 
+### Step 9, as built
+
+`aws-static-site-ts` v1.0.0 with `aws-standard` v1.8.0
+(`docs/screenshots/1114-aws-static-site-ts-check.txt` has the evidence).
+What it settled, which steps 8, 10 and 11 can reuse:
+
+- **A data bucket is told from a log bucket by who writes to it.** The
+  Standard's test calls every bucket a data bucket unless another resource
+  writes its logs there (a bucket's access logs, a distribution's, a load
+  balancer's). A data bucket is `RETAIN` where the tier keeps data and
+  `DESTROY` elsewhere, and where the tier keeps data it is versioned with a
+  rule expiring earlier versions. The site keeps them 35 days, as long as
+  point-in-time recovery reaches back, or `retentionDays` when longer.
+  Development doesn't version the site, and its files go with the stack, so
+  the stack deletes cleanly. The log bucket stays in both tiers and its
+  objects expire after the tier's log retention.
+- **The backup plan is only for what AWS Backup backs up.** The test
+  wants a plan, vault and selection only in a stack holding a table
+  (`BACKED_UP_TYPES`). A stack with none of that has no plan, and a copy
+  stack is expected only when one does. The site's source is in git, and
+  its built files' earlier versions are in the bucket.
+- **The stack is in us-east-1.** CloudFront takes its WAF web ACL and
+  certificate only from there, and reports its metrics only there, so
+  the 5xx alarm would fail anywhere else. `copyToRegion` copies nothing
+  for a site, and the runbook says so.
+- **TLS 1.2 needs a domain.** `DomainName` and `CertificateArn` are
+  parameters, both empty by default. With them the distribution uses the
+  certificate by SNI with `TLSv1.2_2021`, and a CloudFormation rule refuses a
+  domain without a certificate. Without them the distribution answers on
+  CloudFront's own domain, whose certificate CloudFront keeps at TLSv1;
+  `AwsSolutions-CFR4` is acknowledged with that reason.
+- **The site is built at synth.** `BucketDeployment`'s asset is bundled
+  locally by `vite build`, never with Docker. Its function has its own role,
+  log group, alarms and production tracing, like any function. Its wildcard
+  grants and runtime are acknowledged with reasons.
+- **The WAF is production's.** It has three AWS managed rule groups and a
+  rate limit per address. In development `AwsSolutions-CFR2` is
+  acknowledged, since a firewall costs a monthly fee per stack.
+
 ### Step 6, as built
 
-`aws-ec2-ts` v1.1.0 with `aws-standard` v1.8.0 (#1111; step 5 took v1.7.0), copying step 3's
+`aws-ec2-ts` v1.1.0 with `aws-standard` v1.9.0 (#1111; step 5 took v1.7.0 and
+step 9 v1.8.0), copying step 3's
 files (`infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
 `defineStacks(app, tier)`); `docs/screenshots/1111-aws-ec2-ts-check.txt` has
 the evidence. What it settled beyond step 3:
@@ -528,7 +568,8 @@ the evidence. What it settled beyond step 3:
 - **The access log bucket expires by the tier's log retention** (a year or
   a month), as step 5's does; it stays `RETAIN` in both tiers.
 - **`$tiered`** names `aws-ec2-ts` after step 5's two, and
-  `docs/runbook.md` gives it a branch of its own after Fargate's.
+  `docs/runbook.md` gives it a branch of its own after step 9's. Its table
+  is step 9's `BACKED_UP_TYPES`, so the plan's checks apply to it as before.
 
 ## Design
 

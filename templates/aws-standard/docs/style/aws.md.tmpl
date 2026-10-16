@@ -218,6 +218,145 @@ says why each rule matters.
 - Requests are tested by calling `answer` with a request, or the server's
   listener with an in-memory stream and a recorded response, and checking
   the status code and body; no test starts the server. [review]
+{{- else if eq .Framework "aws-static-site-ts" -}}
+# AWS static site digest
+
+Distilled from Vite's guide, the Amazon CloudFront developer guide (origin
+access control, viewer HTTPS, standard logging, response headers), the
+Amazon S3 user guide's security best practices and versioning pages, the
+AWS WAF developer guide, the CDK developer guide and its assertions module,
+and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
+`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
+stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
+says why each rule matters.
+
+## The page
+
+- `index.html` is the entry Vite builds; `src/main.ts` finds the page's
+  elements and wires their events to pure functions in `src/`, which never
+  touch the DOM. [review]
+- The page runs in the browser: no Node global or module in `src/`.
+  [lint: no-restricted-globals, no-restricted-imports]
+- Write what a visitor typed or a request returned as text
+  (`textContent`), never as HTML (`innerHTML`, `insertAdjacentHTML`). [review]
+- Visitors see the page, never the console: an error they must know of is
+  shown on the page. [lint: no-console]
+- Nothing secret in `src/`, `index.html` or `public/`: everything the site
+  holds is public. [review]
+
+## The build
+
+- Vite builds the site at synth, through the asset's local bundling
+  (`vite build` into the asset's folder); never Docker, which CI and agents
+  lack. `npm run build` writes the same into `dist/`, and `npm run dev`
+  serves it with hot reload. [review]
+- What the page imports from `src/` is bundled and minified under hashed
+  names; `public/` is copied as it is, so a file there is referenced by its
+  path from the root (`/favicon.svg`). [review]
+- A deploy copies the build into the bucket (`BucketDeployment`) beside
+  earlier builds' files, so a browser holding an earlier `index.html` still
+  finds its hashed assets, and clears CloudFront's cache (`/*`). Nothing
+  else writes to the bucket. [review]
+
+## The S3 buckets
+
+- The site's bucket is private: public access blocked, no website hosting,
+  read only by the distribution. [nag: AwsSolutions-S2, AwsSolutions-S5]
+- Requests without TLS are refused. [nag: AwsSolutions-S10]
+- Encrypted at rest with S3-managed keys. [test: encrypts every bucket]
+- Its access is logged to the `Logs` bucket (`s3/`). [nag: AwsSolutions-S1]
+- In production versioned, kept when the stack goes (`RemovalPolicy.RETAIN`),
+  and each earlier version expires after `versionsKeptDays`: 35 days, or
+  `retentionDays` when longer. In development unversioned, `DESTROY`, its
+  files deleted with the stack. Build it with the tier's `TIER_RULES`.
+  [test: the removal policies, the versions of data buckets]
+- The `Logs` bucket holds only logs: each expires after the tier's log
+  retention, and the bucket, `RETAIN` in both tiers, empties itself.
+  CloudFront writes its logs with ACLs, so its objects are the writer's
+  (`ObjectOwnership.OBJECT_WRITER`). [review]
+- Never change a bucket's logical id: the deploy makes a new, empty bucket
+  and keeps the old one outside the stack. [review]
+
+## CloudFront
+
+- The distribution reads the bucket through origin access control
+  (`S3BucketOrigin.withOriginAccessControl`). [nag: AwsSolutions-CFR7]
+- HTTP is redirected to HTTPS, and every answer carries AWS's managed
+  `SECURITY_HEADERS` policy (HSTS, no sniffing, no framing, a strict
+  referrer policy). [review]
+- With the `DomainName` and `CertificateArn` parameters, the site answers on
+  that domain with that ACM certificate (in us-east-1), by SNI, TLS 1.2 or
+  later; without them, on CloudFront's own domain. The rule
+  `DomainNeedsCertificate` refuses a domain without a certificate.
+  [nag: AwsSolutions-CFR4, acknowledged for CloudFront's own domain]
+- Standard logs go to the `Logs` bucket (`cloudfront/`).
+  [nag: AwsSolutions-CFR3]
+- `index.html` is the default root object; HTTP/2 and HTTP/3; the
+  cheapest price class (`PRICE_CLASS_100`). [review]
+- No geographic restriction: the site is for anyone.
+  [nag: AwsSolutions-CFR1, acknowledged]
+
+## The firewall
+
+- In production, an AWS WAF web ACL (scope `CLOUDFRONT`, made in us-east-1)
+  in front of the distribution: AWS's managed rule groups for addresses
+  with a bad reputation, common attacks and known bad inputs, and a limit of
+  2,000 requests in five minutes per address. In development none.
+  [nag: AwsSolutions-CFR2, acknowledged in development]
+- A rule that blocks visitors the site wants is changed in the stack, with
+  the reason, never switched off in the console. [review]
+
+## The copying function
+
+- `BucketDeployment` makes the function that copies the site; it runs only
+  on a deploy. Its own role is allowed to write only its log group,
+  `DeployLogs`, kept for the tier's log retention, never AWS's managed
+  `AWSLambdaBasicExecutionRole`. [nag: AwsSolutions-IAM4; test: log groups
+  keep logs for a set time]
+- Its wildcard permissions, granted by `BucketDeployment`, are acknowledged
+  one by one with the reason; never add another. [nag: AwsSolutions-IAM5;
+  test: no wildcard action]
+- X-Ray traces it in production. [review]
+
+## Alarms
+
+- The stack's `Alarms` builds every alarm with `cdk-monitoring-constructs`,
+  to the stack's one encrypted topic, with a dashboard: the distribution's
+  5xx error rate and the copying function's errors, throttles and p99
+  duration. A new resource gets its alarms from `alarms.monitoring`.
+  [test: the alarms and topic]
+- What each alarm means and what to do first is in `docs/runbook.md`;
+  a new alarm adds its row there, as a Standard change. [review]
+
+## The CDK app
+
+- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+  Framework's stack is in `infra/stacks.ts`, which `defineStacks` returns.
+  [review]
+- No account in `env`, no `fromLookup`, so synth needs no account. The
+  stack's region is us-east-1, because CloudFront takes its firewall and
+  certificate only there. [review]
+- Every stack carries the Standard's tags (`c4factory:project`,
+  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stateful resource says its removal policy. [test]
+- A CDK Nag finding is fixed in the resource. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
+  the finding's path names or an ancestor of it, names one finding
+  on one construct, with a reason specific to this system. [review]
+- `cdk.json`'s feature flags are the ones `cdk init` recommends for the
+  pinned CDK; a task never turns one off. [review]
+
+## Tests
+
+- No test calls AWS, opens a socket or needs credentials. [review]
+- The page's logic is tested with plain vitest in Node, through the pure
+  modules `src/main.ts` wires; a test that needs the DOM brings its own
+  environment. [review]
+- The stack is tested with `Template.fromStack` from
+  `aws-cdk-lib/assertions`: `hasResourceProperties`, `resourceCountIs`,
+  `Match`. Assert what the issue needs (a header, a rule, a setting), not
+  the whole template. Synthesizing it builds the site with Vite. [review]
 {{- else -}}
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 
