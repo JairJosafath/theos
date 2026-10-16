@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -812,6 +812,7 @@ PUT $R/issues/123/labels"
     case "$m $url" in
       "GET $R/issues/467") printf 'Plan: docs/plans/x.md\nDepends on #472\nDepends on #473\r\n- depends on #474, the docs\nDepends on #475\n' ;;
       "GET $R/issues/468") printf 'Depends on #472\nDepends on #473\n' ;;
+      "GET $R/issues/469") return 1 ;;
       "GET $R/issues/486") echo 'The plan is #510.' ;;
       "GET $R/issues/474") [ -e "$T/474-open" ] && echo open || echo closed ;;
       "GET $R/issues/475") echo open ;;
@@ -864,6 +865,18 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(echo landed | gh_close 468 - 2>&1)
   check "close: a parent whose steps are all closed closes" "$? $(grep -E '^(POST|PATCH)' "$T/calls" | tr '\n' ,)" \
     "0 POST $R/issues/468/comments,PATCH $R/issues/468,"
+  : >"$T/calls"
+  out=$(gh_duplicate 467 9 2>&1)
+  check "duplicate: a parent with an open step is refused as close is, naming it (#1127)" \
+    "$? $(grep -c '^github: refused to close #467: its step #475 is open' <<<"$out") $(grep -cE '^(POST|PATCH)' "$T/calls")" "1 1 0"
+  : >"$T/calls"
+  out=$(gh_duplicate 468 9 2>&1)
+  check "duplicate: a parent whose steps are all closed closes" "$? $(grep -E '^(POST|PATCH)' "$T/calls" | tr '\n' ,)" \
+    "0 POST $R/issues/468/comments,PATCH $R/issues/468,"
+  out=$(gh_close_check 467 474 475 2>&1)
+  check "close-check: steps the same command closes count as closed" "$? $out" "0 "
+  out=$(gh_close_check 469 2>&1)
+  check "close-check: GitHub can't be asked, exit 2" "$? $out" "2 github: could not read #469's steps from GitHub"
   exit $fail
 ) || fail=1
 

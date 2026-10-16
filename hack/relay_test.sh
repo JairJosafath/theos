@@ -10,8 +10,9 @@
 # session the relay ends when its transcript stops growing; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
-# maintainer from starting while one runs; and a maintainer sweep, which
-# records the activity it saw.
+# maintainer from starting while one runs; a maintainer sweep, which
+# records the activity it saw; and the move to origin/main's code in
+# relay-code from a checkout on another branch, against a scratch origin.
 # Run: hack/relay_test.sh
 T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
@@ -679,5 +680,82 @@ echo crash >"$FAKE"
 ADMIT_GAP=0 maintain
 check "maintain: a crash records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
 check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 2
+
+# The relay runs origin/main's code whatever branch the checkout it was started
+# from has (#1126). A scratch origin whose main has the relay's scripts, and a
+# clone on a feature branch that edits them: the worker moves to relay-code at
+# its first pull, a worktree at origin/main, and the restarted worker runs
+# main's scripts there, with its state still in the clone; from relay-code it
+# restarts only when origin/main's code changes, and an edit made there is
+# undone. update 0 restarts it with no sessions left, so the real worker
+# starts, logs and finishes without asking GitHub.
+H=$(cd "$(dirname "$0")" && pwd)
+G=(env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git)
+"${G[@]}" init -q -b main "$T/code-src"
+mkdir -p "$T/code-src/hack/lib"
+cp "$H/relay.sh" "$H/pull.sh" "$T/code-src/hack/"
+cp "$H/lib/github.sh" "$H/lib/session-env.sh" "$H/lib/relay-code.sh" "$T/code-src/hack/lib/"
+"${G[@]}" -C "$T/code-src" add -A && "${G[@]}" -C "$T/code-src" commit -qm main
+"${G[@]}" clone -q --bare "$T/code-src" "$T/code-origin.git"
+"${G[@]}" -C "$T/code-src" remote add origin "$T/code-origin.git"
+C=$T/checkout
+"${G[@]}" clone -q "$T/code-origin.git" "$C"
+"${G[@]}" -C "$C" switch -qc feature
+echo '# the feature branch' >>"$C/hack/relay.sh"
+echo '# the feature branch' >>"$C/hack/lib/github.sh"
+"${G[@]}" -C "$C" commit -qam feature
+RC=$C/.claude/worktrees/relay-code
+# move SUM: run the real update 0 (the sessions' tests above fake it) as
+# worker 1 started from CODE_AT (default the clone) with the code checksum SUM
+# (default CODE_AT's), holding its lock as the real worker does; prints
+# "stayed" when it didn't restart.
+move() {
+  (
+    sum=${1:-}
+    set --
+    export C4_RELAY_CHILD=1 C4_RELAY_WORKER=1 GH_TOKEN=x
+    # shellcheck source=hack/relay.sh
+    . "$H/relay.sh"
+    CODE=${CODE_AT:-$C} REPO=$C DIR=$C/.relay STOP=$C/.relay/stop LOG=$C/.relay/relay-1.log K=1 PULL=1
+    CODE_SUM=${sum:-$(code_sum)}
+    mkdir -p "$DIR"
+    exec 9>"$DIR/lock-1"
+    flock -n 9 || exit 1
+    update 0
+    echo stayed
+  ) 2>>"$T/move.err"
+}
+main=$(git -C "$T/code-src" rev-parse --short HEAD)
+check "relay code: from a branch, restarts" "$(move)" ""
+check "relay code: relay-code at origin/main" "$(git -C "$RC" rev-parse --short HEAD)" "$main"
+check "relay code: relay-code has main's scripts, not the branch's" \
+  "$(cmp -s "$RC/hack/relay.sh" "$H/relay.sh" && cmp -s "$RC/hack/lib/github.sh" "$H/lib/github.sh" && echo main)" main
+check "relay code: the clone stays on its branch, edits and all" \
+  "$(git -C "$C" rev-parse --abbrev-ref HEAD) $(grep -c 'the feature branch' "$C/hack/relay.sh")" "feature 1"
+check "relay code: says it moves" \
+  "$(grep -c "moving to origin/main's code ($RC at $main) from $C; restarting with 0 sessions left" "$C/.relay/relay-1.log")" 1
+check "relay code: the restarted worker runs relay-code's code, its state in the clone" \
+  "$(grep -c "worker 1 started: .*, worktree $C/.claude/worktrees/relay-1, code $RC at $main, at most 0 sessions" "$C/.relay/relay-1.log")" 1
+check "relay code: the restarted worker finishes" "$(grep -c 'worker 1 finished' "$C/.relay/relay-1.log")" 1
+: >"$C/.relay/relay-1.log"
+CODE_AT=$RC
+check "relay code: in relay-code, nothing new on main: stays" "$(move)" stayed
+sum=$(CODE=$RC code_sum)
+echo '# an edit by hand' >>"$RC/hack/relay.sh"
+check "relay code: an edit in relay-code is undone, no restart" \
+  "$(move "$sum") $(grep -c 'an edit by hand' "$RC/hack/relay.sh")" "stayed 0"
+echo '# a fix on main' >>"$T/code-src/hack/relay.sh"
+"${G[@]}" -C "$T/code-src" commit -qam fix
+"${G[@]}" -C "$T/code-src" push -q origin main
+main=$(git -C "$T/code-src" rev-parse --short HEAD)
+check "relay code: main's code changed: restarts" "$(move "$sum")" ""
+check "relay code: relay-code moved to the new main" "$(git -C "$RC" rev-parse --short HEAD)" "$main"
+check "relay code: says why" \
+  "$(grep -c "the relay's code changed ($RC at $main); restarting with 0 sessions left" "$C/.relay/relay-1.log")" 1
+check "relay code: the restarted worker runs the new main" \
+  "$(grep -c "worker 1 started: .*, code $RC at $main," "$C/.relay/relay-1.log")" 1
+check "relay code: nothing on stderr" "$(cat "$T/move.err")" ""
+unset CODE_AT
 
 exit $fail

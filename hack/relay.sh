@@ -6,7 +6,7 @@
 # Product work stays in Gitea, where the Crews work it.
 #
 # It runs N workers side by side (docs/plans/done/parallel-agents.md). Worker k runs
-# from this checkout and starts its sessions, one after another, in its own git
+# origin/main's code (see below) and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
 # (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
@@ -67,11 +67,15 @@
 # C4_HUMAN_CLUSTER=1, which the relay never sets). No prompt here tells a
 # session to use one, and every issue is any worker's.
 #
-# Workers load their code once, from this checkout. Before each pick a worker
-# runs hack/pull.sh here, and when that changed hack/relay.sh,
-# hack/lib/github.sh or hack/lib/session-env.sh it restarts itself on the new
-# code, so a relay that runs for hours never picks by stale rules. RELAY_PULL=0
-# turns this off, to try relay changes from a branch.
+# Workers run origin/main's code, whatever branch this checkout has (#1126):
+# before each pick a worker runs hack/pull.sh on this checkout, moves the
+# worktree .claude/worktrees/relay-code to origin/main, and restarts itself on
+# relay-code's copy when it runs from elsewhere or when that changed
+# hack/relay.sh, hack/lib/github.sh, hack/lib/session-env.sh or
+# hack/lib/relay-code.sh, so a relay that runs for hours never picks by stale
+# rules, nor by a branch's (hack/lib/relay-code.sh). Its state (.relay/, the
+# workers' worktrees) stays in this checkout. RELAY_PULL=0 turns this off and
+# runs the code where it was started, to try relay changes from a branch.
 #
 # Started from a Claude Code or VS Code session or not, the relay and its
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
@@ -114,7 +118,9 @@
 # from the worker's worktree.
 set -uo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+CODE=$(cd "$(dirname "$0")/.." && pwd)
+REPO=${C4_RELAY_REPO:-$CODE}
+unset C4_RELAY_REPO
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
@@ -161,9 +167,11 @@ LOCK="$DIR/lock-$K"
 [ -n "$MAINTAIN" ] && LOCK="$DIR/maintain.lock"
 
 # shellcheck source=hack/lib/github.sh
-. "$REPO/hack/lib/github.sh"
+. "$CODE/hack/lib/github.sh"
 # shellcheck source=hack/lib/session-env.sh
-. "$REPO/hack/lib/session-env.sh"
+. "$CODE/hack/lib/session-env.sh"
+# shellcheck source=hack/lib/relay-code.sh
+. "$CODE/hack/lib/relay-code.sh"
 # The worker's claim and unposted handoffs live in its worktree, where its
 # sessions' hack/lib/github.sh and heartbeat hook look for them.
 GH_PENDING_DIR="$WT/.relay"
@@ -366,21 +374,26 @@ worktree() {
 
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
 code_sum() {
-  cat "$REPO/hack/relay.sh" "$REPO/hack/lib/github.sh" "$REPO/hack/lib/session-env.sh" 2>/dev/null | cksum
+  cat "$CODE/hack/relay.sh" "$CODE/hack/lib/github.sh" "$CODE/hack/lib/session-env.sh" "$CODE/hack/lib/relay-code.sh" 2>/dev/null | cksum
 }
 
-# update LEFT: run hack/pull.sh in this checkout, and restart the worker with
-# LEFT sessions when that changed the relay's code.
+# update LEFT: run origin/main's hack/pull.sh on this checkout, move
+# relay-code to origin/main, and restart the worker on relay-code's copy, with
+# LEFT sessions, when it runs from elsewhere or that changed the relay's code.
 update() {
   local left=$1 out
   [ "$PULL" = 0 ] && return 0
-  out=$("$REPO/hack/pull.sh" 2>&1)
+  out=$(C4_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
   [ -n "$out" ] && log "${out//$'\n'/; }"
-  [ "$(code_sum)" = "$CODE_SUM" ] && return 0
+  relay_code_stale || return 0
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
-  log "the relay's code changed (HEAD $(git rev-parse --short HEAD)); restarting with $left sessions left"
+  if [ "$CODE" = "$(relay_code)" ]; then
+    log "the relay's code changed ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)); restarting with $left sessions left"
+  else
+    log "moving to origin/main's code ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)) from $CODE; restarting with $left sessions left"
+  fi
   # The new worker keeps this one's lock on fd 9.
-  exec env MAX_SESSIONS="$left" C4_RELAY_RESTART=1 bash "$REPO/hack/relay.sh"
+  exec env MAX_SESSIONS="$left" C4_RELAY_RESTART=1 C4_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay.sh"
 }
 
 # switch_branch BRANCH: switch the worktree to BRANCH: the local branch
@@ -854,7 +867,7 @@ start_triage() {
   [ -e "$STOP" ] && { echo "the stop file is there; no triage"; return 0; }
   flock -n "$LOCK" true || { echo "relay: a triage runs already; no second one: tail -f $LOG" >&2; return 1; }
   gh_token || { untriaged; return 1; }
-  C4_RELAY_CHILD=1 C4_RELAY_TRIAGE=1 setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  C4_RELAY_CHILD=1 C4_RELAY_TRIAGE=1 C4_RELAY_REPO="$REPO" setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
   echo "triage started (pid $!): tail -f $LOG"
 }
 
@@ -1057,7 +1070,7 @@ if [ -n "$MAINTAIN" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; th
   [ -e "$STOP" ] && { echo "the stop file is there; no sweep"; exit 0; }
   flock -n "$LOCK" true || { echo "the maintainer is already running: tail -f $LOG"; exit 0; }
   gh_token || exit 1
-  C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 setsid nohup bash "$0" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 C4_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
   echo "maintainer started (pid $!): tail -f $LOG"
   exit 0
 fi
@@ -1079,7 +1092,7 @@ if [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
       echo "worker $k is already running; see $DIR/relay-$k.log"
       continue
     fi
-    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
+    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k C4_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
     echo "worker $k started (pid $!): tail -f $DIR/relay-$k.log"
   done
   echo "stop: touch $STOP"
@@ -1097,7 +1110,7 @@ if [ -z "$DRY_RUN" ]; then
 fi
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
-log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
   maintain
   log "the maintainer finished its sweep"

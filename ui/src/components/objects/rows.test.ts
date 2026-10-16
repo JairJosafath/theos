@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Brief, Crew, Relationship, Task, TaskTransition } from '../../k8s/types'
-import { agentRuns, briefTimeline, describeHandoffs, crewTasks, relationshipsOf, taskTimeline } from './rows'
+import { describeHandoffs } from '../../model/tokens'
+import { agentRuns, briefTimeline, crewTasks, relationshipsOf, taskTimeline } from './rows'
 
 describe('briefTimeline', () => {
   it('turns each round into an entry, with the question when it asked one', () => {
