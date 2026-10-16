@@ -531,10 +531,10 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-ec2-ts
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: Service on AWS EC2 (TypeScript)
-        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer, items in DynamoDB through the AWS SDK v3, and its CDK stack in infra/, which is its deployment."
+        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development."
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -640,7 +640,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.10.0
+      ref: v1.11.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."

@@ -1,6 +1,6 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
-{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-queue-ts") (eq .Framework "aws-schedule-ts") -}}
+{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-ec2-ts") (eq .Framework "aws-queue-ts") (eq .Framework "aws-schedule-ts") -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 # Implementer guide
@@ -208,7 +208,10 @@ Task that reviews and merges it. Then:
   another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
   that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
   `infra/service_stack.ts` by its name, never by a reference to the alarm,
-  which would make it and the service depend on each other.{{ end }} The factory
+  which would make it and the service depend on each other.{{ else if eq .Framework "aws-ec2-ts" }} The
+  instances hold no data: a feature that keeps a file keeps it in S3 or
+  DynamoDB, and the boot script keeps its health wait last, since the
+  instance's `cfn-signal` follows it.{{ end }} The factory
   renders `infra/operations.ts` from the Container's `spec.operations`:
   change it only when your issue changes that block, to what the block
   says, and never delete it.

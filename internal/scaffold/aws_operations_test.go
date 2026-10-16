@@ -36,6 +36,10 @@ var awsOperationsFrameworks = []struct {
 	versions bool
 }{
 	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}, false},
+	{side{model.TypeService, "aws-ec2-ts"}, []string{
+		"LoadBalancer-5xx-Critical", "Service-Unhealthy-Instances-Critical", "Instances-In-Service-Critical",
+		"resource signal", "never backed up", "CertificateArn", "terminate-instance-in-auto-scaling-group",
+	}, false},
 	{side{model.TypeService, "aws-fargate-ts"}, []string{
 		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
 		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
@@ -122,6 +126,7 @@ func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
 // awsOperationsFrameworks adds the lines only its own branch has.
 var runbookSays = map[string][]string{
 	"aws-lambda-ts":   tableRunbookSays,
+	"aws-ec2-ts":      tableRunbookSays,
 	"aws-fargate-ts":  tableRunbookSays,
 	"aws-queue-ts":    tableRunbookSays,
 	"aws-schedule-ts": tableRunbookSays,
