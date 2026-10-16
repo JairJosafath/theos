@@ -137,8 +137,9 @@
 #                                        started none of the newest run's failed jobs (failed payments, a
 #                                        spending limit); prints an issue body with their annotation
 #   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count]
-#                                        the Ginkgo specs that failed on main in the last N days (default 7):
-#                                        SPEC<tab>RUN<tab>TIME for each [FAIL] line of each failed run's log.
+#                                        the Ginkgo specs and shell test cases (TEST FILE: CASE) that failed on
+#                                        main in the last N days (default 7): SPEC<tab>RUN<tab>TIME for each
+#                                        [FAIL] line, and each FAIL line test-hack.sh shows, of each failed run's log.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
 #   hack/lib/github.sh queued [--minutes M]
@@ -2533,13 +2534,21 @@ gh_queued() {
 }
 
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
-# "[FAIL] <spec>" summary lines, once each, colour codes, carriage returns
-# and "[It] " dropped and tabs made spaces (the spec is a column of a TSV).
-# gh run view --log-failed writes a colour code's escape as the text "^[" when
-# its output isn't a terminal, and as the byte when it is: both go.
+# "[FAIL] <spec>" summary lines, and the shell test cases hack/test-hack.sh
+# names under a failing test's "FAIL <test file> (exit N, Ns):" line in its
+# indented "FAIL <case>: got [...] want [...]" lines, as "<test file>: <case>"
+# (#1208). Once each, colour codes, carriage returns and "[It] " dropped and
+# tabs made spaces (the spec is a column of a TSV). gh run view --log-failed
+# writes a colour code's escape as the text "^[" when its output isn't a
+# terminal, and as the byte when it is: both go.
 gh_fail_specs() {
-  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | sed -nE 's/^.*\[FAIL\] +(.*[^ ])[ ]*$/\1/p' |
-    sed 's/\[It\] //g; s/\t/ /g' | awk '!seen[$0]++'
+  tr -d '\r' | LC_ALL=C sed -E "s/("$'\e'"|\\^\\[)\\[[0-9;]*m//g" | awk '
+    function emit(s) { gsub(/\t/, " ", s); sub(/ +$/, "", s); if (s != "" && !seen[s]++) print s }
+    /\[FAIL\] +[^ ]/ { s = $0; sub(/^.*\[FAIL\] +/, "", s); gsub(/\[It\] /, "", s); emit(s); next }
+    file != "" && /    FAIL [^ ]/ { s = $0; sub(/^.*    FAIL /, "", s); sub(/: got \[.*$/, "", s); emit(file ": " s); next }
+    /FAIL [^ ]+_test\.sh \(exit [0-9]+, [0-9]+s\):$/ { file = $0; sub(/^.*FAIL /, "", file); sub(/ \(exit [0-9]+, [0-9]+s\):$/, "", file); next }
+    /test-hack: / { file = "" }
+  '
 }
 
 # gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run

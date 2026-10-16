@@ -27,6 +27,16 @@ check "one fails: names it with its exit code" "$(grep -c "^FAIL $T/bad/c_test.s
 check "one fails: shows its output" "$(grep -c '^    FAIL something broke$' <<<"$out")" 1
 check "one fails: counts it" "$(tail -n 1 <<<"$out")" "test-hack: 1 of 3 shell tests failed"
 
+# A FAIL line more than 30 lines from the end of a long log is still shown,
+# once, above the log's last 30 lines (#1208).
+mkdir -p "$T/long"
+printf 'echo "ok   first"\necho "FAIL early case: got [a] want [b]"\nseq -f "ok   case %%g" 1 40\nexit 1\n' >"$T/long/d_test.sh"
+out=$("$RUN" "$T/long")
+check "long log: names the early FAIL line" "$(grep -c '^    FAIL early case: got \[a\] want \[b\]$' <<<"$out")" 1
+check "long log: it comes first" "$(sed -n 2p <<<"$out")" "    FAIL early case: got [a] want [b]"
+check "long log: then the last 30 lines" "$(grep -c '^    ok   case ' <<<"$out")" 30
+check "long log: not the lines between" "$(grep -c '^    ok   first$' <<<"$out")" 0
+
 # The tests run at once, not one after another.
 mkdir -p "$T/slow"
 for n in 1 2 3; do printf 'sleep 2\n' >"$T/slow/s${n}_test.sh"; done

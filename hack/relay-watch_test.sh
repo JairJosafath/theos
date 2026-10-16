@@ -862,6 +862,24 @@ check "flake: CR and backslashes: one name" "$(cut -f1 "$DIR/flakes.tsv" | sort 
 check "flake: the next round files it" "$(jq -r '.[].title' "$T/issues.json")" 'Flaky: Parse matches \d+ and a\nb'
 flake_round
 check "flake: filed once" "$(filed)" 1
+
+# A shell test that fails on main counts as its file and case: the FAIL line
+# test-hack.sh shows under the test's own, not its ok lines, nor a Go
+# "--- FAIL" after test-hack's summary (#1208).
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/runs-.json"
+{
+  printf 'Lint\tRun make check\t2026-10-16T03:12:40.1Z ok   hack/a_test.sh (2s)\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z FAIL hack/lib/github_test.sh (exit 1, 135s):\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     FAIL take: claims it: got [x] want [y]\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     ok   take: names the branch\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.2Z test-hack: 1 of 29 shell tests failed\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:45.1Z     --- FAIL: TestNothing (0.00s)\n'
+} >"$T/log-821.txt"
+failed 821 '1 hour'
+flake_round
+check "flake: a shell test's case is recorded" "$(cut -f1-2 "$DIR/flakes.tsv")" "hack/lib/github_test.sh: take: claims it	821"
+check "flake: --count lists it" "$("$HERE/lib/github.sh" flakes --count)" "1	hack/lib/github_test.sh: take: claims it"
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 
