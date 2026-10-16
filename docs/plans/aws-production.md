@@ -709,7 +709,11 @@ the evidence. What it settled beyond step 3:
   mapping) or CloudFormation for a custom resource, and never when a
   permission names another principal or an event rule, pipe, schedule, SNS
   subscription or `EventInvokeConfig` names the function;
-  `LambdaEventSourceMappingDestination` on an SQS event source;
+  `LambdaEventSourceMappingDestination` on an SQS event source (what the
+  template can't show, code that invokes a function with
+  `InvocationType: 'Event'` through an IAM grant, is the reviewer's to see;
+  a caller the Standard doesn't know, such as a permission on an alias or a
+  function URL, leaves the finding standing, which fails closed);
   `LambdaAsyncFailureDestination` on an `EventInvokeConfig` whose function
   has a `DeadLetterConfig` (aws-schedule-ts); `SNSRedrivePolicy` on an
   email subscription (an alarm email the inbox refused, kept where nobody

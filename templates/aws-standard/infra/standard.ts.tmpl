@@ -179,11 +179,11 @@ const SERVERLESS_DUPLICATES: Readonly<Record<string, string>> = {
 const SYNCHRONOUS_PRINCIPALS = ['apigateway.amazonaws.com', 'elasticloadbalancing.amazonaws.com'];
 
 /**
- * The resources that call a function asynchronously without a permission,
+ * The resources that call a function asynchronously through a role, not a
+ * permission (an event rule's or a topic's permission names its principal),
  * and the property of each that names the function.
  */
 const ASYNCHRONOUS_CALLERS: Readonly<Record<string, string>> = {
-  'AWS::Events::Rule': 'Targets',
   'AWS::Lambda::EventInvokeConfig': 'FunctionName',
   'AWS::Pipes::Pipe': 'Target',
   'AWS::Scheduler::Schedule': 'Target',
@@ -273,10 +273,10 @@ function synchronousCallersOf(id: string, declared: Map<string, Declared>): stri
 
 /** Whether an API stage's `AccessLogSettings` write each request as a JSON object. */
 function logsJson(settings: unknown): boolean {
-  const format =
-    typeof settings === 'object' && settings !== null && 'Format' in settings
-      ? settings.Format
-      : undefined;
+  // A typed stage keys its settings in camel case.
+  const record =
+    typeof settings === 'object' && settings !== null ? (settings as Record<string, unknown>) : {};
+  const format = record['format'] ?? record['Format'];
   return typeof format === 'string' && format.trimStart().startsWith('{');
 }
 
@@ -357,6 +357,7 @@ function acknowledgeServerless(stack: Stack, tier: Tier): void {
  * where the repository has `infra/operations.ts`.
  */
 export function applyStandard(app: App, tier: Tier): void {
+  const serverless = carriesOperations();
   for (const stack of app.node.findAll().filter((node) => Stack.isStack(node))) {
     for (const [key, value] of Object.entries(STANDARD_TAGS)) {
       // The stack's own tags, which CloudFormation copies to what it creates,
@@ -382,10 +383,12 @@ export function applyStandard(app: App, tier: Tier): void {
         });
       }
     }
-    acknowledgeServerless(stack, tier);
+    if (serverless) {
+      acknowledgeServerless(stack, tier);
+    }
   }
   Validations.of(app).addPlugins(
     new AwsSolutionsChecks(app),
-    ...(carriesOperations() ? [new ServerlessChecks(app)] : []),
+    ...(serverless ? [new ServerlessChecks(app)] : []),
   );
 }

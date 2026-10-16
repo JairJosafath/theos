@@ -976,19 +976,24 @@ describe.runIf(operations !== undefined).each(TIERS)(
 function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[] {
   const outdir = mkdtempSync(path.join(tmpdir(), 'standard-'));
   try {
-    const probe = new App({ outdir, context: { tier } });
-    define(new Stack(probe, 'probe'));
+    const probe = new App({ outdir, context: { ...cdkContext(), tier } });
+    const stack = new Stack(probe, 'probe');
+    define(stack);
+    // Called by nobody, so never acknowledged: its finding shows the pack ran.
+    probeFunction(stack, 'Canary');
     applyStandard(probe, tier);
     try {
       probe.synth();
     } catch {
       // Every finding fails synth; the report says which.
     }
-    const report = path.join(outdir, 'validation-report.json');
-    const parsed: unknown = existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : {};
+    // The canary is a finding, so synth writes a report.
+    const parsed: unknown = JSON.parse(
+      readFileSync(path.join(outdir, 'validation-report.json'), 'utf8'),
+    );
     const plugins =
       isRecord(parsed) && Array.isArray(parsed['pluginReports']) ? parsed['pluginReports'] : [];
-    return (plugins as unknown[])
+    const findings = (plugins as unknown[])
       .filter((plugin) => isRecord(plugin) && plugin['pluginName'] === 'Serverless')
       .flatMap((plugin) =>
         isRecord(plugin) && Array.isArray(plugin['violations'])
@@ -1004,6 +1009,11 @@ function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[
           : [],
       )
       .sort();
+    const canary = 'Serverless-LambdaDLQ probe/Canary/Resource';
+    if (!findings.includes(canary)) {
+      throw new Error(`The Serverless pack did not find ${canary}: did it run?`);
+    }
+    return findings.filter((finding) => !finding.includes('/Canary/'));
   } finally {
     rmSync(outdir, { recursive: true, force: true });
   }
