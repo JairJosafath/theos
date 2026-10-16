@@ -1,0 +1,95 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` scheduled job of {{ .SoftwareSystem }}, in project {{ .Project }}:
+an EventBridge Scheduler schedule that runs an AWS Lambda function in
+TypeScript, keeping a record of each run in a DynamoDB table, with its
+infrastructure as a CDK app. Scaffolded by C4 Factory.
+
+## The schedule
+
+The job runs every day at 03:00 UTC: `SCHEDULE` in `infra/job_stack.ts`
+says when, as a `cron` or `rate` expression of EventBridge Scheduler. Each
+run gets the time it was scheduled for and which delivery it is:
+
+```json
+{ "scheduledTime": "2026-10-16T03:00:00Z", "attemptNumber": "1" }
+```
+
+The scheduled time is the run's key. The schedule and Lambda deliver a run
+at least once; a run delivered again with the same scheduled time does
+nothing twice. Here a run keeps a record of itself under that key: put the
+job's own work in `runJob` in `src/job.ts`.
+
+The schedule tries to hand a run to Lambda for an hour, 10 times at most.
+A run that throws is run again by Lambda twice, a minute and then two
+apart. A run that still fails, or that the schedule could not hand over,
+waits 14 days in the dead-letter queue, where an alarm tells you;
+`docs/runbook.md` says how to run it again. To run the job by hand, invoke
+the function (the stack's `FunctionName`) with the same event.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci           # install the exact packages in package-lock.json
+npm test         # unit tests and the stacks' assertions, with vitest
+npm run synth    # write the development CloudFormation templates into cdk.out/
+{{- if .Standard }}
+make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
+make help        # every target
+{{- end }}
+```
+
+Nothing here deploys or needs an AWS account: synth runs offline, bundles the
+function with the installed esbuild, and needs neither Docker nor credentials.
+
+## Tiers and operations
+
+The stacks are built for a tier, `production` or `development`, which is the
+place they run, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production. Both run on the schedule.
+Production keeps the tables and the dead-letter queue when the stack goes,
+protects the tables and the stack from deletion, recovers them to any second
+of the last 35 days, backs them up daily with AWS Backup, traces with X-Ray
+and keeps logs a year; development throws its data away with the stack and
+keeps logs a month. Both tiers alarm and have a dashboard.
+
+What the app promises whatever the tier, the backups' retention and copy
+region, the recovery objectives and who the alarms tell, is in
+`infra/operations.ts`, which C4 Factory renders from the Container's
+`spec.operations`: change the block, and the file follows it. The alert email is the
+stack's `AlertEmail` parameter, which a deploy can set per environment. Each
+stack outputs `EntryPoint`, the schedule's ARN, `FunctionName`, the function
+it runs, and `AlarmTopicArn`, the topic its alarms notify.
+
+Deploying (`cdk deploy`, after `cdk bootstrap` of the account) is for its
+owner, with their own credentials.
+
+## Layout
+
+- `src/handler.ts` is the Lambda entry point: it creates the DynamoDB client
+  and Powertools' Logger and Metrics once, at module scope, reads
+  `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and runs `runJob` once per
+  scheduled time through Powertools' Idempotency, after checking the event.
+- `src/job.ts` checks the event and does the run's work; `src/runs.ts` holds
+  the rules, free of AWS; `src/run_store.ts` keeps runs in DynamoDB behind
+  the `RunStore` interface tests fake.
+- `infra/stacks.ts` defines the stacks for a tier; `infra/job_stack.ts` is
+  the main one: the schedule, its group and role, the function with its log
+  group and role, the dead-letter queue, the tables, the alarms
+  (`infra/alarms.ts`) and, in production, the backups (`infra/backups.ts`).
+  The stack is named after the package. `infra/operations.ts` holds what
+  the Container promises.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to restore the data, roll a
+  deployment back, and what to do when an alarm fires.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
