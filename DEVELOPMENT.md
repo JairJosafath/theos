@@ -75,6 +75,7 @@ runner itself) is not tested before release.
 | `.dev/claude/` | Claude Code login, settings and history for this project |
 | `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, and the operator shares it with every project namespace ([docs/dev/testenv.md](docs/dev/testenv.md)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
+| `.dev/tmp/` | In a relay worktree, its session's `TMPDIR`, which the relay empties before and removes after each session (#1269) |
 | `bin/` | What `make build` writes (`bin/manager`) |
 
 `hack/dev/env.sh` sets the variables that point every tool at `.dev/`, and
@@ -123,8 +124,9 @@ What lives outside the folder belongs to the machine, not the project:
   They stop when it stops and come back when it starts, and GitHub has no other
   runner to fall back on: a queued run never fails, it waits. The relay watch
   says "Runners offline since T: N runs queued" in the Maintainer report once
-  a run on main has waited 30 minutes. Run `make gh-runner-status`. It says
-  whether Docker answers from this distro, whether each container is up, and
+  a run on main has waited 30 minutes with no runner online ("N runs queued
+  since T with M runners online" when some are). Run `make gh-runner-status`.
+  It says whether Docker answers from this distro, whether each container is up, and
   whether GitHub sees each runner online, and what to do: start Docker
   Desktop, or run `make gh-runner RUNNERS=N` to start the containers that are
   down. Switching `RUNS_ON` back to GitHub's runners is the owner's call.

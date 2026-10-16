@@ -13,7 +13,7 @@
 # ready + urgent one, else the oldest ready one) and claims it (take); when
 # another agent claims it first, it picks again, up to 5 times. Claims keep the
 # workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim or the cluster lease gets them released. With nothing
+# still holding its claim gets it released. With nothing
 # ready, a worker stops, without waiting in admit: it asks (pick is read-only)
 # before admit as well as after, so an idle worker takes no session-start slot.
 #
@@ -81,6 +81,11 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
+# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
+# gitignored, not the device's /tmp: a small tmpfs every session shares, which
+# one session's scratch, Go's build dirs and envtest's filled. The relay
+# empties it before the session starts and removes it when the session ends.
+#
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
 #   hack/relay.sh --triage         start one triage session, unless one runs
@@ -138,7 +143,6 @@ while [ $# -gt 0 ]; do
     --workers=*) WORKERS=${1#*=}; shift ;;
     --triage) TRIAGE=1; shift ;;
     --maintain) MAINTAIN=1; shift ;;
-    --now) shift ;; # the relay no longer waits for a handoff; kept for old habits
     *) echo "usage: hack/relay.sh [--triage | --maintain] [--workers N]" >&2; exit 64 ;;
   esac
 done
@@ -414,14 +418,6 @@ switch_branch() {
   fi
 }
 
-# drop_lease WHEN: release the cluster lease a session of this worker left
-# behind, and log it.
-drop_lease() {
-  local out
-  out=$(gh_lease_release)
-  [ -z "$out" ] || log "$out $1"
-}
-
 # handoff_id N: the id of N's newest handoff comment, or nothing.
 handoff_id() {
   local json
@@ -624,18 +620,6 @@ admit_wait() {
   done
 }
 
-# seconds DURATION: DURATION (45, 45s, 45m, 2h, 1d) in seconds; exit 1 if it
-# isn't a whole number with one of those units.
-seconds() {
-  [[ $1 =~ ^([0-9]+)([smhd]?)$ ]] || return 1
-  case ${BASH_REMATCH[2]} in
-    m) echo $((BASH_REMATCH[1] * 60)) ;;
-    h) echo $((BASH_REMATCH[1] * 3600)) ;;
-    d) echo $((BASH_REMATCH[1] * 86400)) ;;
-    *) echo "${BASH_REMATCH[1]}" ;;
-  esac
-}
-
 # transcript ID: the file claude writes session ID's transcript to, as it works
 # in the worktree: under projects/, the worktree's path with each character
 # other than a letter or digit as -. Its subagents write theirs in the
@@ -681,15 +665,24 @@ idle_watch() {
   done
 }
 
+# scratch_clear DIR: remove DIR, a session's TMPDIR. A Go module cache in it
+# is read-only (go mod download makes its directories so), so it is made
+# writable first. What can't be removed is logged, and the session goes on.
+scratch_clear() {
+  [ -e "$1" ] || return 0
+  chmod -R u+w "$1" 2>/dev/null
+  rm -rf "$1" 2>/dev/null || log "could not remove all of $1"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
-  if ! idle=$(seconds "$IDLE") || ! kill_after=$(seconds "$IDLE_KILL"); then
+  if ! idle=$(gh_seconds "$IDLE" RELAY_IDLE 2>/dev/null) || ! kill_after=$(gh_seconds "$IDLE_KILL" RELAY_IDLE_KILL 2>/dev/null); then
     log "RELAY_IDLE ($IDLE) or RELAY_IDLE_KILL ($IDLE_KILL) isn't like 45m; $what runs until the $SESSION_TIMEOUT timeout"
     idle=
   fi
@@ -698,8 +691,11 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645).
-  (cd "$WT" && drop_session_env && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  # environment (#645). Its TMPDIR is in its worktree, not the shared /tmp
+  # (#1269), and starts empty: what a dead session left there goes first.
+  scratch_clear "$tmp"
+  mkdir -p "$tmp"
+  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -713,6 +709,7 @@ session() {
     kill "$watch" 2>/dev/null
     wait "$watch" 2>/dev/null
   fi
+  scratch_clear "$tmp"
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))
@@ -839,13 +836,15 @@ forget_fails() {
   fi
 }
 
-# untriaged: tell the watch the triage session never ran: keep only the time
-# in .relay/triaged, so it starts one again after WATCH_TRIAGE.
+# .relay/triaged: the last triage's time and the issues it saw, which the
+# watch reads; only these two write it, for a triage the watch started or one
+# started from a terminal alike.
+# untriaged: tell the watch the triage session never ran: keep only the time,
+# so the same issues start one again after WATCH_TRIAGE.
 untriaged() { [ -n "$DRY_RUN" ] || date +%s >"$DIR/triaged"; }
 
 # triaged LIST: tell the watch a triage session starts now on LIST (#1 #2 ...),
-# as its own triage does, so a triage started from a terminal keeps the watch
-# from starting another on the same issues.
+# so it starts no other on the same issues.
 triaged() { [ -n "$DRY_RUN" ] || echo "$(date +%s) ${1//#/}" >"$DIR/triaged"; }
 
 # triage: one triage session on the open proposed issues (see the header).
@@ -879,12 +878,13 @@ triage() {
 
 # start_triage SCRIPT: start one triage session, detached, by running SCRIPT
 # (hack/relay.sh) in the background, in its own worktree under its own lock,
-# however many workers run (see the header); exit 1 when one runs already, so
-# the watch tries again for its issues after WATCH_TRIAGE.
+# however many workers run (see the header). Exit 1 when one runs already (its
+# record in .relay/triaged stands), or with no GitHub token (untriaged, so the
+# watch tries again for its issues after WATCH_TRIAGE).
 start_triage() {
   [ -e "$STOP" ] && { echo "the stop file is there; no triage"; return 0; }
   flock -n "$LOCK" true || { echo "relay: a triage runs already; no second one: tail -f $LOG" >&2; return 1; }
-  gh_token || return 1
+  gh_token || { untriaged; return 1; }
   C4_RELAY_CHILD=1 C4_RELAY_TRIAGE=1 C4_RELAY_REPO="$REPO" setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
   echo "triage started (pid $!): tail -f $LOG"
 }
@@ -939,7 +939,7 @@ maintain() {
   rc=$?
   kill "$beat" 2>/dev/null
   wait "$beat" 2>/dev/null
-  if gh_maint_release "$lease" 2>>"$LOG"; then
+  if gh_delete_comment "$lease" 2>>"$LOG"; then
     log "released the maintainer lease $lease"
   else
     log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
@@ -961,7 +961,6 @@ work() {
     if [ -z "$DRY_RUN" ]; then
       update $((MAX_SESSIONS - i + 1))
       worktree || { log "could not prepare the worktree $WT; stopping"; break; }
-      [ "$i" = 1 ] && drop_lease "when worker $K restarted"
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
@@ -1020,7 +1019,6 @@ work() {
     session "session $i" "$out" "$id" "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
     limited=$?
 
-    drop_lease "that session $i left behind"
     flush || { log "GitHub can't be reached; stopping"; break; }
     result=$(outcome "$ISSUE" "$before") || result=unknown
     if gh_claim_read; then
@@ -1077,6 +1075,8 @@ work() {
 # Sourced (hack/relay_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 drop_session_env
+# Headless, and its sessions too: no cluster lease code (gh_headless).
+export C4_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
@@ -1127,7 +1127,7 @@ if [ -z "$DRY_RUN" ]; then
   fi
 fi
 CODE_SUM=$(code_sum)
-gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
+gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
   maintain
