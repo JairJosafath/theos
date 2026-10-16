@@ -13,7 +13,7 @@
 # ready + urgent one, else the oldest ready one) and claims it (take); when
 # another agent claims it first, it picks again, up to 5 times. Claims keep the
 # workers and hand-started sessions off each other's issues. A session that ends
-# still holding its claim or the cluster lease gets them released. With nothing
+# still holding its claim gets it released. With nothing
 # ready, a worker stops, without waiting in admit: it asks (pick is read-only)
 # before admit as well as after, so an idle worker takes no session-start slot.
 #
@@ -132,7 +132,6 @@ while [ $# -gt 0 ]; do
     --workers=*) WORKERS=${1#*=}; shift ;;
     --triage) TRIAGE=1; shift ;;
     --maintain) MAINTAIN=1; shift ;;
-    --now) shift ;; # the relay no longer waits for a handoff; kept for old habits
     *) echo "usage: hack/relay.sh [--triage | --maintain] [--workers N]" >&2; exit 64 ;;
   esac
 done
@@ -399,14 +398,6 @@ switch_branch() {
   else
     "${g[@]}" switch -q -c "$b" --no-track origin/main 2>>"$LOG"
   fi
-}
-
-# drop_lease WHEN: release the cluster lease a session of this worker left
-# behind, and log it.
-drop_lease() {
-  local out
-  out=$(gh_lease_release)
-  [ -z "$out" ] || log "$out $1"
 }
 
 # handoff_id N: the id of N's newest handoff comment, or nothing.
@@ -948,7 +939,6 @@ work() {
     if [ -z "$DRY_RUN" ]; then
       update $((MAX_SESSIONS - i + 1))
       worktree || { log "could not prepare the worktree $WT; stopping"; break; }
-      [ "$i" = 1 ] && drop_lease "when worker $K restarted"
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
@@ -1007,7 +997,6 @@ work() {
     session "session $i" "$out" "$id" "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "$name" "$branch")"
     limited=$?
 
-    drop_lease "that session $i left behind"
     flush || { log "GitHub can't be reached; stopping"; break; }
     result=$(outcome "$ISSUE" "$before") || result=unknown
     if gh_claim_read; then
