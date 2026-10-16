@@ -7,6 +7,7 @@ dependencies may point.
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
 cmd/c4session/                     Session client CLI, run in devcontainers
 cmd/c4agent/                       Task runner, run in agent sandboxes
+cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 api/v1alpha1/*_types.go            CRD schemas for all seventeen kinds (+kubebuilder markers)
 api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
 api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
@@ -16,6 +17,7 @@ internal/scaffold/                 Pure rendering: layers, conflicts, devcontain
 internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
+internal/modelproxy/               The model proxy's handler: drop the client's credential, add the Secret's, forward unbuffered
 internal/buildinfo/                What a build stamps into the binary: the release Version (-ldflags -X)
 features/src/c4session/            The c4session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)

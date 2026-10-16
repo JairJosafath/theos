@@ -43,6 +43,7 @@ type fakeGit struct {
 	agent     *fakeAgentState
 	issues    *fakeIssueState
 	releases  *fakeReleaseState
+	runners   *fakeRunnerState
 }
 
 type fakeRepo struct {

@@ -302,7 +302,7 @@ func (g *gitea) listRuns(ctx context.Context, repo Repository, commit string, qu
 	return out, nil
 }
 
-// runnerPages bounds the runners RunnersOnline reads.
+// runnerPages bounds the pages of runners RunnersOnline and Runners read.
 const runnerPages = 10
 
 // RunnersOnline returns how many of the instance's runners, global,
@@ -310,29 +310,13 @@ const runnerPages = 10
 // when Gitea doesn't say: an older Gitea without the call, a token that isn't
 // an admin's, or a failed call.
 func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
-	for page := 1; page <= runnerPages; page++ {
-		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
-		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners?"+query.Encode(), nil)
-		if err != nil || status != http.StatusOK {
-			return 0, false
-		}
-		var runners struct {
-			Runners []struct {
-				Status string `json:"status"`
-				Busy   bool   `json:"busy"`
-			} `json:"runners"`
-		}
-		if json.Unmarshal(data, &runners) != nil {
-			return 0, false
-		}
-		for _, r := range runners.Runners {
-			switch {
-			case r.Busy, r.Status == "online", r.Status == "idle", r.Status == "active":
-				online++
-			}
-		}
-		if len(runners.Runners) < issuePageSize {
-			break
+	runners, err := g.listRunners(ctx, "/api/v1/admin/actions/runners", "the instance")
+	if err != nil {
+		return 0, false
+	}
+	for _, r := range runners {
+		if r.Busy || r.online() {
+			online++
 		}
 	}
 	return online, true

@@ -1,0 +1,39 @@
+# The CI fence (docs/design.md), as the chart's (dist/chart/templates/gitea/runners.yaml):
+# a job runs the agents' code, so the runner pods take no traffic in and reach
+# only DNS, Gitea (its pod's port 3000: Git, the API and the package
+# registries) and HTTPS to public addresses (the Go proxy, npm, PyPI), as the
+# agent sandboxes do. The Kubernetes API and every other in-cluster service
+# on a private address stay out of reach. `make runner-base` and `make
+# runner-go` apply it; make validate-yaml checks it (hack/runner-fence).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ci-runner
+  namespace: gitea
+  labels:
+    app.kubernetes.io/part-of: c4factory-testenv
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ci-runner
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: gitea}
+      ports:
+        - {protocol: TCP, port: 3000}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
