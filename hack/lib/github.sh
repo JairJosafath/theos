@@ -376,8 +376,10 @@ gh_pick() {
   claims=$(gh_recent_claims "$ttl") || return 2
   mapfile -t extra <<<"${GH_NEXT_FILES:-}"
   next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
-  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" --argjson next "$next" "$GH_CLAIM_JQ"'
-    def has($l): .labels | any(. == $l);
+  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
+    --slurpfile next <(printf '%s' "$next") "$GH_CLAIM_JQ"'
+    $claims[0] as $claims | $next[0] as $next
+    | def has($l): .labels | any(. == $l);
     def priority: [.labels[] | capture("^priority/(?<n>[0-9]+)$").n | tonumber | select(. >= 1 and . <= 10)] | min // 5;
     [.[][]] as $all
     | [$all[].number] as $open
@@ -430,9 +432,10 @@ gh_blocked() {
   ttl=$(gh_ttl) || return 2
   issues=$(gh_open_issues) || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
     --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
-    def has($l): .labels | any(.name == $l);
+    $claims[0] as $claims
+    | def has($l): .labels | any(.name == $l);
     def isopen($n): any(.[]; .number == $n);
     . as $all
     | def holder($n): [$claims[] | select(live and .issue == $n)] | last | if . then cname else null end;
@@ -642,12 +645,15 @@ gh_proposed() {
   if [ "$closed" != '[]' ]; then
     for n in $(jq -r '.[].number' <<<"$issues"); do
       t=$(gh_comments "$n") || return 2
-      triage=$(jq -c --argjson n "$n" --argjson c "$t" \
-        '. + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
+      triage=$(jq -c --argjson n "$n" --slurpfile c <(printf '%s' "$t") \
+        '$c[0] as $c | . + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
     done
   fi
-  jq -r --arg s "$since" --argjson comments "$comments" --argjson closed "$closed" --argjson triage "$triage" '
-    def ep: fromdateiso8601;
+  # Through files, not argv: a busy evening's listings pass Linux's 128 KiB per argument (#1359).
+  jq -r --arg s "$since" --slurpfile comments <(printf '%s' "$comments") --slurpfile closed <(printf '%s' "$closed") \
+    --slurpfile triage <(printf '%s' "$triage") '
+    $comments[0] as $comments | $closed[0] as $closed | $triage[0] as $triage
+    | def ep: fromdateiso8601;
     def mine: .body | startswith("<!-- relay-triage -->");
     [$comments[][] | select(.updated_at > $s) | . + {n: (.issue_url | sub(".*/"; "") | tonumber)}] as $since
     | .[] | .number as $n

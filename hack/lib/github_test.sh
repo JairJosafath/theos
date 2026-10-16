@@ -528,6 +528,20 @@ check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"
 check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
 gh_proposed --since soon 2>/dev/null
 check "proposed --since takes epoch seconds" $? 1
+# #1359: a busy evening's listings pass Linux's 128 KiB per-argument limit;
+# jq reads them from files, not argv.
+pad=$(head -c 200000 /dev/zero | tr '\0' x)
+padded() { jq -Rc --argjson c "$(claimed "$1")" '. as $p | $c | .[0][0].body += $p' <<<"$pad"; }
+check "proposed --since, listings over 128 KiB (#1359)" "$(
+  gh_api() {
+    case $* in
+      *issues\?state=open*) jq -c '.[0][0] += {updated_at: "2026-10-06T07:00:00Z"}' <<<"$(issues <<<'[[81, ["status/proposed"], "Depends on #9"]]')" ;;
+      *issues\?state=closed*) echo '[[{"number": 9, "closed_at": "2026-10-06T08:30:00Z"}]]' ;;
+      *issues/comments\?since*) jq -Rc '[[{issue_url: "x/issues/81", updated_at: "2026-10-06T08:20:00Z", body: .}]]' <<<"$pad" ;;
+      */issues/81/comments*) jq -Rc '[[{body: "<!-- relay-triage -->\n\(.)"}]]' <<<"$pad" ;;
+    esac
+  }
+  gh_proposed --since $((GH_NOW - 3600)) 2>&1)" "81 $(date -d 2026-10-06T08:20:00Z +%s) $(date -d 2026-10-06T08:30:00Z +%s)"
 
 # Blocked: what holds back each ready or in-progress issue that pick skips for
 # an open dependency, with the blocker's status, claim and own dependencies;
@@ -553,6 +567,11 @@ check "blocked --unworked" "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 104 107)
 check "blocked, a claimed blocker not in progress is unworked" \
   "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 101) gh_blocked --unworked | head -1)" "100 waits on 101 (status/proposed, claimed by otter-101)"
 check "blocked, none" "$(OPEN=$(issues <<<"$all") gh_blocked)" "83 waits on 81 (status/proposed, no claim)"
+# Not exported: jq would get it in its environment, as long a string.
+check "pick, claims over 128 KiB (#1359)" "$(OPEN=$(issues <<<'[[82, ["status/ready"]]]') CLAIMS=$(padded 83)
+  gh_pick 2>&1 | cut -f1)" "82"
+check "blocked, claims over 128 KiB (#1359)" "$(OPEN=$(issues <<<'[[82, ["status/ready"], "Depends on #83"], [83, ["status/in-progress"]]]') CLAIMS=$(padded 83)
+  gh_blocked 2>&1)" "82 waits on 83 (status/in-progress, claimed by otter-83)"
 check "blocked, the blocker closed" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_blocked)" ""
 gh_blocked --bogus 2>/dev/null
 check "blocked, unknown flag" $? 1
