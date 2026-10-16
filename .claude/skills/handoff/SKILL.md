@@ -123,13 +123,18 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   run from the branch's checkout with everything committed and pushed, and
   over 400 changed lines, reviewed first ("Review before landing"). Two
   pull requests that each passed `make check` alone can still break main
-  together, so `merge` refuses a branch behind main, and `land` takes the
-  merge turn: it waits until the pull requests queued before it have landed
-  or failed, then merges `origin/main` in, reruns `make check`, pushes and
-  merges, and gives the turn up. The wait and the check can take an hour:
-  run it in the background and follow its output (it says its place in the
-  queue every few minutes; `make check`'s output goes to
-  `.relay/land-PR.log`). A conflict or a red check ends the turn with exit 1
+  together, so `merge` refuses a branch behind main, and `land` merges
+  `origin/main` in, runs `make check` and pushes, then queues for the merge
+  turn: it waits until the pull requests queued before it have landed or
+  failed, and when main is still what it checked, merges at once, holding
+  the turn for seconds; when main moved, it merges it in and checks again
+  under the turn. `land`'s check is the check: while you work, run the
+  targeted tests (`make test-hack`, `go test ./internal/...`,
+  `make ui-test`) and land; run `make check` by hand only when `land` failed
+  and you need the whole output. The check takes 15 to 25 minutes, more
+  when main moved: run it in the background and follow its output (it says
+  its place in the queue every few minutes; `make check`'s output, the path
+  taken and how long the turn was held go to `.relay/land-PR.log`). A conflict or a red check ends the turn with exit 1
   and says so: fix it on the branch, push and `land` again. Don't merge main
   in and `merge` by hand: `merge` refuses while another pull request holds the
   turn. If N is still open: `hack/lib/github.sh close N FILE`,

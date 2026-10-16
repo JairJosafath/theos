@@ -225,8 +225,10 @@ Rules for this headless run:
   - Hand off: the handoff skill posts a handoff comment on #$n
     (\`hack/lib/github.sh handoff $n FILE\`). The next session continues #$n.
   - Finished: open a pull request to main whose body says \`Closes #$n\`, merge
-    it with a merge commit once \`make check\` passes (\`hack/lib/github.sh land PR\`: it waits for the
-    merge turn, merges main in, reruns make check and merges; run it in the background and follow it; over 400
+    it with a merge commit (\`hack/lib/github.sh land PR\`: it merges main in and runs make check, then
+    takes the merge turn and merges, checking again only when main moved; its check is the check, so
+    while you work run the targeted tests and run make check by hand only when land failed and you
+    need the whole output; run land in the background and follow it; over 400
     changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
