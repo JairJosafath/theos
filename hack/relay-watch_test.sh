@@ -37,7 +37,15 @@ PARENTS= PARENTS_RC=0
 parents() { echo x >>"$T/tends"; [ -n "$PARENTS" ] && printf '%s\n' "$PARENTS"; return "$PARENTS_RC"; }
 tends() { cat "$T/tends" 2>/dev/null | wc -l | tr -d ' '; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
-run_triage() { echo triage >>"$T/triages"; echo "triage started (pid 1)"; return "$TRIAGE_RC"; }
+# run_triage records the triage in .relay/triaged as hack/relay.sh --triage
+# does, the only writer: the issues (the watch's list) as its session starts,
+# only the time when it fails to start one.
+run_triage() {
+  echo triage >>"$T/triages"
+  if [ "$TRIAGE_RC" = 0 ]; then echo "$(date +%s) $list" >"$DIR/triaged"; else date +%s >"$DIR/triaged"; fi
+  echo "triage started (pid 1)"
+  return "$TRIAGE_RC"
+}
 # The watch asks for the proposed issues every round here; its WATCH_RETRY
 # between asks has its own tests below.
 TRIAGE_ASK=0
@@ -574,6 +582,7 @@ case "$1 $2 $* " in
   *"/check-runs/"*)
     for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
     jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
+  *"/actions/runners"*) jq -r "$q" "$FAKE/runners.json" ;;
   *" --method POST "*)
     [ -f "$FAKE/post.fail" ] && { echo "HTTP 502" >&2; exit 1; }
     n=$(($(jq length "$FAKE/issues.json") + 100))
@@ -845,15 +854,25 @@ echo '[]' >"$T/issues.json"
 NOTE_RC=0
 report_note() { printf '%s\n' "$*" >>"$T/notes"; return "$NOTE_RC"; }
 notes() { cat "$T/notes" 2>/dev/null; }
-# queued AGE...: the runs queued on main, created AGE ago each, beside one in progress.
+# queued AGE...: the runs queued on main, 701 on, created AGE ago each and
+# each with a job queued, beside one in progress. nojobs RUN: GitHub made no
+# jobs for RUN. runners ON OFF: the repository's runners online and offline.
 queued() {
   local a i=0
+  rm -f "$T"/jobs-7*.json
   for a in "$@"; do
     i=$((i + 1))
+    echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","status":"queued","steps":[]}]}' >"$T/jobs-$((700 + i)).json"
     jq -n --argjson id "$((700 + i))" --arg at "$(date -u -d "$a ago" +%Y-%m-%dT%H:%M:%SZ)" \
       '{databaseId: $id, status: "queued", createdAt: $at}'
   done | jq -s '. + [{databaseId: 1, status: "in_progress", createdAt: "2026-10-01T00:00:00Z"}]' >"$T/runs-.json"
 }
+nojobs() { echo '{"jobs":[]}' >"$T/jobs-$1.json"; }
+runners() {
+  jq -n --argjson on "$1" --argjson off "$2" \
+    '{runners: ([range($on) | {id: ., status: "online"}] + [range($off) | {id: (100 + .), status: "offline"}])}' >"$T/runners.json"
+}
+runners 0 3
 : >"$LOG"
 rm -f "$T/notes"
 queued '10 minutes'
@@ -884,7 +903,44 @@ NOTE_RC=0
 runner_round
 check "runners: and noted once it can" "$(logged 'said in the Maintainer report')|$(cat "$DIR/runners-offline")" \
   "2|Runners offline since $(date -d "1 hour ago" '+%Y-%m-%d %H:%M %Z'): 1 run queued"
-rm -f "$T/runs-.json" "$T/notes" "$DIR/runners-offline"
+# A run GitHub made no jobs for waits for good (#1236): no note, logged once by
+# id, and the run after it that waits is noted without it.
+queued
+runner_round
+rm -f "$T/notes"
+: >"$LOG"
+queued '9 days' '10 minutes'
+nojobs 701
+runner_round
+runner_round
+check "runners: a run with no jobs is never noted (#1236)" "$(notes)|$(ls "$DIR/runners-offline" 2>/dev/null)" "|"
+check "runners: a run with no jobs is logged once, by id" \
+  "$(logged "run 701 on main, queued since $(date -d "9 days ago" '+%Y-%m-%d %H:%M %Z'), has no jobs: no runner can take it")|$(cat "$LOG" | wc -l | tr -d ' ')" "1|1"
+queued '9 days' '40 minutes' '5 minutes'
+nojobs 701
+since=$(TZ=UTC date -d "40 minutes ago" '+%Y-%m-%d %H:%M UTC')
+TZ=UTC runner_round
+check "runners: the run with no jobs isn't counted" "$(notes | tail -1 | sed "s/ queued .*/ queued/")|$(logged 'run 701')" \
+  "runners Runners offline since $since: 2 runs queued|1"
+# With runners online, the note says how many and drops Docker Desktop: they
+# are busy, or none has the labels the jobs ask for.
+runners 2 1
+TZ=UTC runner_round
+check "runners: online, the note says how many" "$(notes | tail -1)" \
+  "runners 2 runs queued since $since with 2 runners online 2 runs queued since $since with 2 runners online: they are busy, or none has the labels the jobs ask for. Look at the oldest run's jobs, and \`make gh-runner-status\` on the runners' devices (DEVELOPMENT.md)."
+check "runners: online, the note is kept" "$(cat "$DIR/runners-offline")" "2 runs queued since $since with 2 runners online"
+queued '9 days' '40 minutes'
+nojobs 701
+runners 1 0
+TZ=UTC runner_round
+check "runners: one online, one queued" "$(notes | tail -1 | sed 's/ online .*/ online/')" \
+  "runners 1 run queued since $since with 1 runner online"
+queued '9 days'
+nojobs 701
+runner_round
+check "runners: only a run with no jobs left clears the note" "$(notes | tail -1)|$(ls "$DIR/runners-offline" 2>/dev/null)|$(logged 'run 701')" "runners||1"
+runners 0 3
+rm -f "$T/runs-.json" "$T/notes" "$T/runners.json" "$T"/jobs-7*.json "$DIR/runners-offline" "$DIR/runs-without-jobs"
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.
