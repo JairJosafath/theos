@@ -156,11 +156,11 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &crew, labels); err != nil {
 		return ctrl.Result{}, err
 	}
-	for _, ref := range []c4v1alpha1.LocalRef{crew.Spec.Implementer, crew.Spec.Reviewer} {
+	for _, name := range crewAgentNames(&crew.Spec) {
 		var agent c4v1alpha1.Agent
-		err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: ref.Name}, &agent)
+		err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: name}, &agent)
 		if apierrors.IsNotFound(err) {
-			r.wait(&crew, status, "AgentNotFound", "Agent "+ref.Name+" not found")
+			r.wait(&crew, status, "AgentNotFound", "Agent "+name+" not found")
 			return ctrl.Result{}, r.writeStatus(ctx, &crew, status)
 		}
 		if err != nil {
@@ -169,7 +169,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
-		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady}
+		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady, Routes: crewRoutes(&crew.Spec)}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1alpha1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -230,13 +230,20 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	status.ActiveTasks = slices.Clone(step.Active)
 	for _, s := range step.Start {
+		implementer, reviewer := crew.Spec.Implementer.Name, crew.Spec.Reviewer.Name
+		if s.Implementer != "" {
+			implementer = s.Implementer
+		}
+		if s.Reviewer != "" {
+			reviewer = s.Reviewer
+		}
 		task := &c4v1alpha1.Task{
 			ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
 				LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
 			Spec: c4v1alpha1.TaskSpec{
 				ContainerRef: c4v1alpha1.LocalRef{Name: container.Name},
-				AgentRef:     crew.Spec.Implementer,
-				ReviewerRef:  &c4v1alpha1.LocalRef{Name: crew.Spec.Reviewer.Name},
+				AgentRef:     c4v1alpha1.LocalRef{Name: implementer},
+				ReviewerRef:  &c4v1alpha1.LocalRef{Name: reviewer},
 				Issue:        int32(s.Issue),
 				// Set only for a Standard change, from the Task that filed it.
 				AllowedProtectedPaths: s.AllowedPaths,
@@ -246,7 +253,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{}, err
 		}
 		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt,
-			"allowedPaths", s.AllowedPaths)
+			"allowedPaths", s.AllowedPaths, "implementer", implementer, "reviewer", reviewer)
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 
@@ -299,6 +306,40 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 	return filed, preparing
 }
 
+// crewAgentNames names every Agent a Crew may start a Task with: its own two
+// and those its routes name, each once.
+func crewAgentNames(spec *c4v1alpha1.CrewSpec) []string {
+	names := make([]string, 0, 2+2*len(spec.Routes))
+	add := func(ref *c4v1alpha1.LocalRef) {
+		if ref != nil && !slices.Contains(names, ref.Name) {
+			names = append(names, ref.Name)
+		}
+	}
+	add(&spec.Implementer)
+	add(&spec.Reviewer)
+	for _, route := range spec.Routes {
+		add(route.Implementer)
+		add(route.Reviewer)
+	}
+	return names
+}
+
+// crewRoutes are a Crew's routes as the model reads them.
+func crewRoutes(spec *c4v1alpha1.CrewSpec) []model.AgentRoute {
+	out := make([]model.AgentRoute, 0, len(spec.Routes))
+	for _, route := range spec.Routes {
+		r := model.AgentRoute{Label: route.Label}
+		if route.Implementer != nil {
+			r.Implementer = route.Implementer.Name
+		}
+		if route.Reviewer != nil {
+			r.Reviewer = route.Reviewer.Name
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
 // a Standard change, and the Standard change it filed, which alone grants an
 // allowance.
@@ -330,7 +371,8 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 		}
 		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
 			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i),
-			Urgent: slices.Contains(i.Labels, model.LabelUrgent), Prepare: slices.Contains(i.Labels, model.LabelRelease)})
+			Urgent: slices.Contains(i.Labels, model.LabelUrgent), Prepare: slices.Contains(i.Labels, model.LabelRelease),
+			Labels: slices.Clone(i.Labels)})
 	}
 	return out, nil
 }
@@ -445,7 +487,7 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				var reqs []reconcile.Request
 				for _, c := range crews.Items {
-					if c.Spec.Implementer.Name == obj.GetName() || c.Spec.Reviewer.Name == obj.GetName() {
+					if slices.Contains(crewAgentNames(&c.Spec), obj.GetName()) {
 						reqs = append(reqs, requestFor(c.Namespace, c.Name))
 					}
 				}

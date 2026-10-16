@@ -434,6 +434,19 @@ model and context it needs.
   pull request, a round with no commit has nothing to review
   ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
+- **A Crew routes issues by label** (#1085). `spec.routes` sends the issues
+  with a label to another implementer, reviewer or both, such as `kind/docs`
+  to a cheaper model or a security label to a stronger reviewer. Each role is
+  decided on its own: the first route in the list whose label the issue has
+  and that names an Agent for the role wins, else the Crew's own Agent; an
+  issue labelled `kind/docs` and `security` so gets the docs route's
+  implementer and the security route's reviewer. Labels match exactly; the
+  CRD allows one route per label and refuses a route that names no Agent.
+  The labels are read as the Task starts, and its immutable `agentRef` and
+  `reviewerRef` record the Agents it got: a label changed later moves no
+  Task, and the next try reads them again. Every Agent a route names must
+  exist, as the Crew's own must; until it does the Crew waits (`Ready=False`,
+  reason `AgentNotFound`) and its creation wakes the Crew.
 - **Releases go in order.** A milestone with a due date is a release. The Crew
   starts ready issues release by release, the one due first first: the release
   in progress (the first that still has work: a ready issue, one waiting on
