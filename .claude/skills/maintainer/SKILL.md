@@ -53,8 +53,8 @@ unanswered for 14 days.
    *Needs you* carries, and check those issues for an owner answer. Act on
    each answer, and drop the items that no longer apply.
 2. **Escalations:** issues in `status/needs-maintainer`
-   (`hack/lib/github.sh escalated`; sessions, triage, three failed sessions
-   in a row and dependency cycles all land there), and issues in
+   (`hack/lib/github.sh escalated`; sessions, triage, three strikes (failed
+   sessions within a day) and dependency cycles all land there), and issues in
    `status/needs-human` whose newest comment came from an agent (a relay
    marker or an `Agent:` line), not from the owner. For each:
    - If the decision is yours, make it. Comment with the decision and your
@@ -115,9 +115,11 @@ unanswered for 14 days.
      allocate memory`, or whose runner went offline during the run, is the
      device's, not the code's: file no bug; say it under Health with the
      device's name.
-   - Runs queued with no runner online: say so under Health, and once under
-     *Needs you* (the runners are the owner's device), kept until they are
-     back.
+   - Runs queued with no runner online: the relay watch says so under Health
+     and once under *Needs you* (the runners are the owner's device), in
+     lines ending `<!-- watch:runners -->`, and removes them when runs start
+     again. Copy them into your rewrite as they are; never write your own
+     line about it.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
@@ -247,7 +249,9 @@ The *Milestones* line comes from `hack/lib/github.sh milestones`: each open
 milestone, a short form of its title, and its open and closed issue counts.
 
 An item stays under *Needs you* until the owner answers it or it no longer
-applies.
+applies. Lines ending in a `<!-- watch:KEY -->` marker are the relay
+watch's (`hack/lib/github.sh report-note`): keep each in its section, word
+for word, marker included. The watch updates and removes them itself.
 
 ## Standards behind this
 

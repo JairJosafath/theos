@@ -536,6 +536,7 @@ check "intake leaves the report issue alone" "$(calls)" ""
       "POST $R/labels") touch "$T/report-label" ;;
       "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; echo "N7 https://x/issues/7" ;;
       "PATCH $R/issues/7") jq -r .body "$T/in" >"$T/body7"; echo https://x/issues/7 ;;
+      "GET $R/issues/7") cat "$T/body7" ;;
       "POST graphql") ;;
       "GET $R/issues?state=all"*) jq -r '[.[] | select(.labels | any(.name == "maintainer/report") | not) | .updated_at] | first // "none"' <<<'[{"updated_at":"2026-10-06T09:00:00Z","labels":[{"name":"maintainer/report"}]},{"updated_at":"2026-10-06T08:00:00Z","labels":[]}]' ;;
       "GET $R/commits/main") echo abc123 ;;
@@ -549,6 +550,49 @@ check "intake leaves the report issue alone" "$(calls)" ""
   echo "second" | gh_report - >"$T/out" 2>&1
   check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
+
+  # report-note: the watch's line under Health and Needs you (Nothing. goes),
+  # replaced, not added, by a new count, an edit only when it changes the
+  # body, and its removal giving the report back as it was.
+  printf '%s\n' '<!-- relay-maintainer -->' 'Updated 03:10' '' '## Needs you' '' "$GH_NOTHING" '' \
+    '## Health' 'Relay: 9 workers · main: green' '' '## Since 01:10' '- Decided: #1' >"$T/body7"
+  cp "$T/body7" "$T/sweep"
+  : >"$T/calls"
+  gh_report_note runners 'Runners offline since T: 2 runs queued' 'Runners offline since T: 2 runs queued. Start Docker.'
+  check "report-note: the lines in Health and Needs you" "$(cat "$T/body7")" "<!-- relay-maintainer -->
+Updated 03:10
+
+## Needs you
+
+- [ ] Runners offline since T: 2 runs queued. Start Docker. <!-- watch:runners -->
+
+## Health
+Runners offline since T: 2 runs queued <!-- watch:runners -->
+Relay: 9 workers · main: green
+
+## Since 01:10
+- Decided: #1"
+  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7,"
+  gh_report_note runners 'Runners offline since T: 3 runs queued'
+  check "report-note: a new count replaces the lines" "$(grep -c 'watch:runners' "$T/body7") $(grep -c '3 runs queued' "$T/body7")" "2 2"
+  : >"$T/calls"
+  gh_report_note runners 'Runners offline since T: 3 runs queued'
+  check "report-note: the same note edits nothing" "$(calls | grep -c PATCH)" 0
+  gh_report_note runners
+  check "report-note: removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  rm -f "$T/report"
+  check "report-note: no report fails" "$(gh_report_note runners x 2>&1; echo $?)" "github: no Maintainer report issue to note in
+1"
+  printf 'Just text\n' | gh_note_body runners A >"$T/out"
+  check "report-note: missing headings are added" "$(cat "$T/out")" "Just text
+
+## Needs you
+
+- [ ] A <!-- watch:runners -->
+
+## Health
+
+A <!-- watch:runners -->"
   exit $fail
 ) || fail=1
 
