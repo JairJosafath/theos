@@ -298,12 +298,17 @@ the limit resets (`.relay/paused-until`): every worker waits, and the watch
 starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
 without a new commit on the issue's branch, or on `<branch>-2` or
-`<branch>-<name>` (local or pushed), is a failed one; at `RELAY_MAX_FAILS`
-(3) in a row the relay sets the issue to `status/needs-maintainer` with a
-comment naming each session, and a handoff or a commit resets the count. One
-that leaves the issue in `status/waiting` (a plan's parent) has finished, like
-a handoff; one that sets it back to `status/ready` or `status/proposed` isn't
-counted either way.
+`<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
+the issue naming the session, its host and the last lines of its stderr and
+account. The count is read from the issue, so every device's strikes add up;
+one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
+(3) the relay posts one comment linking them and sets the issue to
+`status/needs-maintainer`; when only that status swap fails, the next failed
+session retries it without a new comment (`.relay/escalated-<issue>`). A
+handoff, a commit or a finish on any device resets the count: the relay posts
+a reset comment when any strike counts. One that leaves the issue in
+`status/waiting` (a plan's parent) has finished, like a handoff; one that sets
+it back to `status/ready` or `status/proposed` isn't counted either way.
 
 ### Sharing the Kind clusters between checkouts
 

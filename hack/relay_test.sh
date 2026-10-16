@@ -266,7 +266,19 @@ pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
 gh_take() { echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
 handoff_id() { cat "$HANDOFF"; }
 gh_api() { cat "$STATE"; }
-gh_comment() { cat >"$T/comment"; echo "https://github.com/x/issues/$1#issuecomment-9"; }
+# #175's comments, in $COMMENTS; add_comment BODY [AGE] adds one AGE seconds old.
+COMMENTS=$T/comments.json
+echo '[]' >"$COMMENTS"
+add_comment() {
+  jq --arg b "$1" --arg t "$(date -u -d "@$(($(date +%s) - ${2:-0}))" +%FT%TZ)" \
+    '. + [{id: (length + 1), created_at: $t, html_url: "https://github.com/x/issues/175#issuecomment-\(length + 1)", user: "relay", body: $b}]' \
+    "$COMMENTS" >"$COMMENTS.new" && mv "$COMMENTS.new" "$COMMENTS"
+}
+eval "$(declare -f gh_comments | sed '1s/^gh_comments/gh_comments_api/')"
+gh_comments() { if [ "$1" = 175 ]; then cat "$COMMENTS"; else gh_comments_api "$1"; fi; }
+gh_comment() { cat >"$T/comment"; add_comment "$(cat "$T/comment")"; jq -r 'last.html_url' "$COMMENTS"; }
+counted() { strikes 175 | grep -c .; }
+no_strikes() { echo '[]' >"$COMMENTS"; }
 gh_set_status() { echo "$1 $2" >"$T/status"; }
 takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
@@ -280,7 +292,7 @@ want=$(TZ=UTC date -d 3am +%s)
 [ "$want" -le "$(date +%s)" ] && want=$((want + 86400))
 check "limit: paused until the reset" "$(cut -d' ' -f1 "$DIR/paused-until")" "$want"
 grep -q "paused the relay until .*: You've hit your session limit" "$LOG"; check "limit: logged" $? 0
-check "limit: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "limit: not counted" "$(counted)" 0
 check "limit: one claim" "$(takes)" 1
 # While paused, every worker waits in admit and claims nothing; then goes on.
 echo "$(($(date +%s) + 3)) limit" >"$DIR/paused-until"
@@ -292,43 +304,43 @@ check "paused: logged once" "$(grep -c 'paused until .*(limit); picking nothing'
 wait
 check "pause over: claims" "$(takes)" 2
 grep -q "the pause is over" "$LOG"; check "pause over: logged" $? 0
-rm -f "$DIR/fails-175"
+no_strikes
 # A failed login, with no result, pauses for RELAY_LIMIT_WAIT.
 echo login >"$FAKE"
 LIMIT_WAIT=10m work
 check "login: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
-check "login: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "login: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
 # An expired OAuth session, in an error result, pauses too and isn't counted.
 echo oauth >"$FAKE"
 LIMIT_WAIT=10m work
 check "oauth: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 grep -q "paused the relay until .*: Failed to authenticate: OAuth session expired" "$LOG"; check "oauth: logged" $? 0
-check "oauth: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "oauth: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
 # A session that ends well and only mentions a login failure pauses nothing.
 echo oauth-ok >"$FAKE"
 work
 check "oauth-ok: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
-rm -f "$DIR/fails-175"
+no_strikes
 # A session that exits non-zero and whose final message only quotes a login
 # failure pauses nothing either (#655): the agent's words aren't the CLI's.
 echo oauth-quoted >"$FAKE"
 work
 check "oauth-quoted: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
-check "oauth-quoted: counted" "$(wc -l <"$DIR/fails-175")" 1
-rm -f "$DIR/fails-175"
+check "oauth-quoted: counted" "$(counted)" 1
+no_strikes
 # The CLI's login error as a non-error result before any turn still pauses.
 echo oauth-noturn >"$FAKE"
 LIMIT_WAIT=10m work
 check "oauth-noturn: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
-check "oauth-noturn: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "oauth-noturn: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
 # So does the CLI's login error on stderr of a session that exited non-zero.
 echo login-err >"$FAKE"
 LIMIT_WAIT=10m work
 check "login-err: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
-check "login-err: not counted" "$(test -e "$DIR/fails-175" && echo counted)" ""
+check "login-err: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
 
 # A relay started from a Claude Code session in VS Code gives its sessions none
@@ -343,78 +355,123 @@ echo env >"$FAKE"
 check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
-rm -f "$DIR/fails-175"
+no_strikes
 
-# Failed sessions in a row: a handoff or a commit resets the count; the third
-# escalates the issue to the maintainer, with a comment naming each session.
+# Failed sessions are strikes, comments on the issue: a handoff or a commit
+# resets the count; the third escalates the issue to the maintainer, with one
+# comment linking each strike.
 echo fail >"$FAKE"
 work; work
-check "fails: two counted" "$(wc -l <"$DIR/fails-175")" 2
+check "fails: two counted" "$(counted)" 2
 check "fails: not yet the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
+grep -q "^\*\*Strike:\*\* session .* exit 0 after 0m" "$T/comment"; check "fails: a strike names its session" $? 0
+check "fails: a strike has its stderr and account" "$(grep -c '^boom \|^gave up$' "$T/comment")" 2
 echo handoff >"$FAKE"
 work
-check "fails: a handoff resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+check "fails: a handoff resets" "$(counted)" 0
+check "fails: the reset is a comment" "$(head -1 "$T/comment")" "$STRIKE_RESET_MARKER"
 echo fail >"$FAKE"
 work
 echo commit >"$FAKE"
 work
-check "fails: a commit resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+check "fails: a commit resets" "$(counted)" 0
+n=$(jq length "$COMMENTS")
+echo commit >"$FAKE"
+work
+check "fails: nothing to reset, no comment" "$(jq length "$COMMENTS")" "$n"
 # A commit on <branch>-2, or a push to <branch>-<name> after a takeover, is a
 # commit too (#1122).
 echo fail >"$FAKE"
 work
 echo commit-2 >"$FAKE"
 work
-check "fails: a commit on b-2 resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+check "fails: a commit on b-2 resets" "$(counted)" 0
 grep -q "committed on b or a copy of it" "$LOG"; check "fails: b-2 logged as a commit" $? 0
 echo fail >"$FAKE"
 work
 echo push-name >"$FAKE"
 work
-check "fails: a push to b-otter-175 resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+check "fails: a push to b-otter-175 resets" "$(counted)" 0
 # A plan's parent left status/waiting is a success, like a handoff; one set
 # back to ready isn't a strike, and leaves the count as it was (#1122).
 echo fail >"$FAKE"
 work
 echo waiting >"$FAKE"
 work
-check "fails: waiting resets" "$(test -e "$DIR/fails-175" && echo kept)" ""
+check "fails: waiting resets" "$(counted)" 0
 grep -q "session 1 left #175 waiting on its steps" "$LOG"; check "fails: waiting logged" $? 0
 echo 'open status/in-progress' >"$STATE"
 echo fail >"$FAKE"
 work
 echo ready >"$FAKE"
 work
-check "fails: ready is no strike" "$(wc -l <"$DIR/fails-175")" 1
+check "fails: ready is no strike" "$(counted)" 1
 grep -q "session 1 set #175 back to ready or proposed without a handoff; not counted" "$LOG"; check "fails: ready logged" $? 0
 echo 'open status/in-progress' >"$STATE"
-rm -f "$DIR/fails-175"
+no_strikes
 : >"$LOG"
 echo fail >"$FAKE"
 work; work
 check "fails: two, still not the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 work
 check "fails: the third sets needs-maintainer" "$(cat "$T/status")" "175 needs-maintainer"
-check "fails: count cleared" "$(test -e "$DIR/fails-175" && echo kept)" ""
-for id in $(sed -n 's/.*session 1 start: id \([^,]*\),.*/\1/p' "$LOG"); do
-  grep -q "^### Session \`$id\`: exit 0 after 0m$" "$T/comment"; check "fails: comment names $id" $? 0
-done
-check "fails: comment has each stderr" "$(grep -c '^boom ' "$T/comment")" 3
-check "fails: comment has each account" "$(grep -c '^gave up$' "$T/comment")" 3
-grep -q "#175 failed 3 sessions in a row; set it to status/needs-maintainer: https://github.com/x/issues/175#issuecomment-9" "$LOG"
+check "fails: count cleared" "$(counted)" 0
+check "fails: the comment links each strike" "$(grep -c '^- https://github.com/x/issues/175#issuecomment-' "$T/comment")" 3
+url=$(jq -r 'last.html_url' "$COMMENTS")
+grep -q "#175 reached 3 strikes; set it to status/needs-maintainer: $url" "$LOG"
 check "fails: logged" $? 0
+
+# Strikes add up across devices, read from the issue; one older than
+# RELAY_STRIKE_TTL doesn't count; a handoff posted anywhere resets them.
+no_strikes; rm -f "$T/status"
+add_comment "$STRIKE_MARKER
+**Strike:** session \`s1\` on host \`other\`" $((25 * 3600))
+add_comment "$STRIKE_MARKER
+**Strike:** session \`s2\` on host \`other\`" 600
+add_comment "$STRIKE_MARKER
+**Strike:** session \`s3\` on host \`other\`" 300
+check "strikes: one older than 24h doesn't count" "$(counted)" 2
+add_comment "$GH_HANDOFF_MARKER
+handed off elsewhere" 200
+check "strikes: a handoff elsewhere resets" "$(counted)" 0
+add_comment "$STRIKE_MARKER
+**Strike:** session \`s4\` on host \`other\`" 100
+add_comment "$STRIKE_MARKER
+**Strike:** session \`s5\` on host \`other\`" 50
+echo fail >"$FAKE"
+work
+check "strikes: another device's add up" "$(cat "$T/status")" "175 needs-maintainer"
+check "strikes: the comment links theirs" "$(grep -c '^- ' "$T/comment")" 3
+check "strikes: an old one out" "$(grep -c 'issuecomment-1$' "$T/comment")" 0
+
+# A failed status swap keeps the posted comment and retries the swap alone
+# after the next failed session, with no new comment.
+no_strikes; rm -f "$T/status"
+gh_set_status() { return 1; }
+: >"$LOG"
+work; work; work
+check "swap fails: not the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
+check "swap fails: one escalation comment" "$(jq --arg e "$STRIKE_ESCALATED_MARKER" '[.[] | select(.body | startswith($e))] | length' "$COMMENTS")" 1
+grep -q "setting it to status/needs-maintainer failed; trying again after the next failed session" "$LOG"
+check "swap fails: logged" $? 0
+n=$(jq length "$COMMENTS")
+gh_set_status() { echo "$1 $2" >"$T/status"; }
+work
+check "swap retried: the maintainer's" "$(cat "$T/status")" "175 needs-maintainer"
+check "swap retried: no new comment" "$(jq length "$COMMENTS")" "$n"
+check "swap retried: done" "$(test -e "$DIR/escalated-175" && echo kept)" ""
 
 # A session whose transcript stops growing is ended and counted as failed; one
 # that keeps writing, or writes none, runs on.
 IDLE=2s IDLE_KILL=2s IDLE_POLL=1
 : >"$LOG"
-rm -f "$DIR/fails-175" "$T/status"
+no_strikes; rm -f "$T/status"
 echo hang >"$FAKE"
 t0=$(date +%s)
 work
 check "idle: ended early" "$(($(date +%s) - t0 < 20))" 1
 grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
-check "idle: counted" "$(wc -l <"$DIR/fails-175")" 1
+check "idle: counted" "$(counted)" 1
 check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""
 : >"$LOG"
 echo busy >"$FAKE"
@@ -458,7 +515,7 @@ echo commit >"$FAKE"
 pick() { [ -s "$T/ready" ] || return 1; ISSUE=$(cat "$T/ready") TITLE=t URL=u HOW=ready; }
 gh_take() { [ -s "$T/ready" ] || return 4; : >"$T/ready"; echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
 : >"$LOG"
-rm -f "$T/takes" "$DIR/admitted" "$DIR/fails-175"
+rm -f "$T/takes" "$DIR/admitted"; no_strikes
 echo 175 >"$T/ready"
 ADMIT_GAP=300
 work
