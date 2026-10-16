@@ -6,7 +6,8 @@
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, and when a flake round records a failed spec
 # and files a "Flaky:" bug, and when a runner round notes runs queued too long
-# in the Maintainer report (report_note faked), with gh faked under the real hack/lib/github.sh;
+# in the Maintainer report (report_note faked), with gh faked under the real hack/lib/github.sh,
+# and when a /tmp at 90% goes under its Health only (how full /tmp is faked);
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
@@ -941,6 +942,42 @@ runner_round
 check "runners: only a run with no jobs left clears the note" "$(notes | tail -1)|$(ls "$DIR/runners-offline" 2>/dev/null)|$(logged 'run 701')" "runners||1"
 runners 0 3
 rm -f "$T/runs-.json" "$T/notes" "$T/runners.json" "$T"/jobs-7*.json "$DIR/runners-offline" "$DIR/runs-without-jobs"
+
+# /tmp at 90% (#1269): its three largest entries go under the Maintainer
+# report's Health only, an empty NEEDS (each argument recorded in brackets),
+# logged once while it lasts; under 90% takes the note out. A failure is
+# logged once.
+check "tmp #1269: 90% by default, a line per host" "$TMP_FULL $TMP_KEY" "90 tmp-$(hostname -s)"
+report_note() { printf '[%s]' "$@" >>"$T/notes"; echo >>"$T/notes"; return "$NOTE_RC"; }
+TMP_USE=89 TMP_HOST=h TMP_KEY=tmp-h
+tmp_use() { echo "$TMP_USE"; }
+tmp_largest() { printf '1.5G\t/tmp/1109-std\n629M\t/tmp/1109-gocache\n464M\t/tmp/1109-py\n'; }
+: >"$LOG"
+tmp_round
+check "tmp #1269: 89% says nothing" "$(notes)|$(cat "$LOG")|$(ls "$DIR/tmp-full" 2>/dev/null)" "||"
+TMP_USE=93
+tmp_round
+note="/tmp on h is 93% full; largest: /tmp/1109-std (1.5G), /tmp/1109-gocache (629M), /tmp/1109-py (464M)"
+check "tmp #1269: 93% notes it under Health only" "$(notes)" "[tmp-h][$note][]"
+check "tmp #1269: logged" "$(logged "^.* $note; said under the Maintainer report's Health$")" 1
+tmp_round
+check "tmp #1269: still full, kept current, logged once" "$(notes | wc -l | tr -d ' ')|$(logged 'said under')|$(cat "$DIR/tmp-full")" "2|1|$note"
+rm -f "$T/notes"
+TMP_USE=80
+tmp_round
+check "tmp #1269: under 90% takes it out" "$(notes)|$(ls "$DIR/tmp-full" 2>/dev/null)|$(logged '/tmp on h is back under 90%; the note left the Maintainer report$')" "[tmp-h]||1"
+tmp_round
+check "tmp #1269: under 90%, the report is left alone" "$(notes)" "[tmp-h]"
+TMP_USE=95 NOTE_RC=1
+tmp_round
+tmp_round
+check "tmp #1269: a report that can't be edited is logged once" "$(logged 'could not say it in the Maintainer report')|$(ls "$DIR/tmp-full" 2>/dev/null)" "1|"
+NOTE_RC=0
+TMP_USE=x
+tmp_round
+tmp_round
+check "tmp #1269: no number is logged once, nothing noted" "$(logged 'could not read how full /tmp is: x$')|$(notes | wc -l | tr -d ' ')" "1|3"
+rm -f "$T/notes" "$DIR/tmp-full"
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.

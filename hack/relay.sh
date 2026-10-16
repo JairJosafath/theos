@@ -81,6 +81,11 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
+# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
+# gitignored, not the device's /tmp: a small tmpfs every session shares, which
+# one session's scratch, Go's build dirs and envtest's filled. The relay
+# empties it before the session starts and removes it when the session ends.
+#
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
 #   hack/relay.sh --triage         start one triage session, unless one runs
@@ -660,11 +665,20 @@ idle_watch() {
   done
 }
 
+# scratch_clear DIR: remove DIR, a session's TMPDIR. A Go module cache in it
+# is read-only (go mod download makes its directories so), so it is made
+# writable first. What can't be removed is logged, and the session goes on.
+scratch_clear() {
+  [ -e "$1" ] || return 0
+  chmod -R u+w "$1" 2>/dev/null
+  rm -rf "$1" 2>/dev/null || log "could not remove all of $1"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
@@ -677,8 +691,11 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645).
-  (cd "$WT" && drop_session_env && C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  # environment (#645). Its TMPDIR is in its worktree, not the shared /tmp
+  # (#1269), and starts empty: what a dead session left there goes first.
+  scratch_clear "$tmp"
+  mkdir -p "$tmp"
+  (cd "$WT" && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -692,6 +709,7 @@ session() {
     kill "$watch" 2>/dev/null
     wait "$watch" 2>/dev/null
   fi
+  scratch_clear "$tmp"
   S_IDLE=
   [ -e "$out.idle" ] && S_IDLE=1
   mins=$((($(date +%s) - t0) / 60))
