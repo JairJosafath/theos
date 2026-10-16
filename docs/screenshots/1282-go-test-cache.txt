@@ -1,0 +1,99 @@
+# #1282: make check after a hack/-only change, Go's test cache answering
+# Device Skinny-vivobook, 2026-10-16, relay checks running beside it; agent otter-1282.
+# Wall time includes any wait for a heavy-job slot.
+
+## Check 1: the branch's first check, nothing cached (what every check cost before: main reruns every package)
+heavy-slot: got slot 2 after 110s; `make check` starts
+rc=0 wall=1253s
+ok  	cmd	1.002s
+ok  	cmd/model-proxy	0.006s
+ok  	features	0.005s
+ok  	hack/runner-fence	0.058s
+ok  	hack/template-go-kubebuilder	0.017s
+ok  	internal/agentrunner	9.129s
+ok  	internal/buildinfo	0.333s
+ok  	internal/controller	738.457s
+ok  	internal/gitprovider	1.258s
+ok  	internal/model	0.346s
+ok  	internal/modelproxy	0.122s
+ok  	internal/scaffold	1.117s
+ok  	internal/sessionclient	24.670s
+ok  	test/chart	50.831s
+ok  	test/compat	0.110s
+ok  	test/e2e/standin	0.016s
+
+## Check 2: one comment line appended to hack/lib/github.sh, before the port-file fix (internal/sessionclient reran: envtest's port files in .dev/)
+rc=0 wall=133s
+ok  	cmd	0.814s
+ok  	cmd/model-proxy	(cached)
+ok  	features	(cached)
+ok  	hack/runner-fence	(cached)
+ok  	hack/template-go-kubebuilder	(cached)
+ok  	internal/agentrunner	(cached)
+ok  	internal/buildinfo	(cached)
+ok  	internal/controller	(cached)
+ok  	internal/gitprovider	(cached)
+ok  	internal/model	(cached)
+ok  	internal/modelproxy	(cached)
+ok  	internal/scaffold	(cached)
+ok  	internal/sessionclient	24.380s
+ok  	test/chart	(cached)
+ok  	test/compat	(cached)
+ok  	test/e2e/standin	(cached)
+
+## Check 3: after moving envtest's port files out of the module (XDG_CACHE_HOME changed, so its readers reran once)
+rc=0 wall=858s
+ok  	cmd	1.179s
+ok  	cmd/model-proxy	(cached)
+ok  	features	(cached)
+ok  	hack/runner-fence	(cached)
+ok  	hack/template-go-kubebuilder	(cached)
+ok  	internal/agentrunner	(cached)
+ok  	internal/buildinfo	(cached)
+ok  	internal/controller	727.733s
+ok  	internal/gitprovider	(cached)
+ok  	internal/model	(cached)
+ok  	internal/modelproxy	(cached)
+ok  	internal/scaffold	(cached)
+ok  	internal/sessionclient	23.956s
+ok  	test/chart	36.464s
+ok  	test/compat	(cached)
+ok  	test/e2e/standin	(cached)
+
+## Check 4: one comment line appended to hack/lib/github.sh (a different one each time)
+rc=0 wall=104s
+ok  	cmd	3.379s
+ok  	cmd/model-proxy	(cached)
+ok  	features	(cached)
+ok  	hack/runner-fence	(cached)
+ok  	hack/template-go-kubebuilder	(cached)
+ok  	internal/agentrunner	(cached)
+ok  	internal/buildinfo	(cached)
+ok  	internal/controller	(cached)
+ok  	internal/gitprovider	(cached)
+ok  	internal/model	(cached)
+ok  	internal/modelproxy	(cached)
+ok  	internal/scaffold	(cached)
+ok  	internal/sessionclient	(cached)
+ok  	test/chart	(cached)
+ok  	test/compat	(cached)
+ok  	test/e2e/standin	(cached)
+
+## Check 5: one comment line appended to hack/lib/github.sh (a different one each time)
+rc=0 wall=227s
+ok  	cmd	0.873s
+ok  	cmd/model-proxy	(cached)
+ok  	features	(cached)
+ok  	hack/runner-fence	(cached)
+ok  	hack/template-go-kubebuilder	(cached)
+ok  	internal/agentrunner	(cached)
+ok  	internal/buildinfo	(cached)
+ok  	internal/controller	(cached)
+ok  	internal/gitprovider	(cached)
+ok  	internal/model	(cached)
+ok  	internal/modelproxy	(cached)
+ok  	internal/scaffold	(cached)
+ok  	internal/sessionclient	(cached)
+ok  	test/chart	(cached)
+ok  	test/compat	(cached)
+ok  	test/e2e/standin	(cached)

@@ -833,6 +833,9 @@ var _ = Describe("Brief apps", func() {
 			repoURL = c.Status.RepositoryURL
 			g.Expect(repoURL).NotTo(BeEmpty())
 		}).Should(Succeed())
+		// A busy Gitea: the Crew's poll still publishes a release's module when
+		// the spec moves on (#1202).
+		gitFake.slowModulePublishes(ns, "linter", time.Second)
 		setLinterRelease(ns, "v0.1.0")
 		Eventually(func(g Gomega) {
 			release := briefApp(g, ns, "linter").LastRelease
@@ -841,8 +844,16 @@ var _ = Describe("Brief apps", func() {
 			g.Expect(release.URL).To(Equal(repoURL + "/releases/tag/v0.1.0"))
 			g.Expect(release.Time).NotTo(BeNil())
 		}).Should(Succeed())
+		// The spec tags the next release once the Crew has decided this one's
+		// module: the poll still deciding it would patch it onto v0.2.0, where
+		// a NotGo stays (#1202).
+		Eventually(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Status.LastRelease.GoModule).NotTo(BeNil())
+		}).Should(Succeed())
 
 		By("following the Crew's next release")
+		// Its go.mod names a v2 module, which Go can't take at v0.2.0.
+		gitFake.setGoMod(ns, "linter", "github.com/acme/cel-lens/v2")
 		setLinterRelease(ns, "v0.2.0")
 		Eventually(func(g Gomega) {
 			app := briefApp(g, ns, "linter")
@@ -853,22 +864,16 @@ var _ = Describe("Brief apps", func() {
 		}).Should(Succeed())
 
 		By("carrying the module's state and message, so the Brief points at a module nobody can fetch (#1015)")
-		// Invalid is settled at the upload, so the Crew's own module poll keeps it;
-		// a Waiting one it decides again, and may rewrite before the Brief copies it.
-		module := &c4v1alpha1.CrewReleaseGoModule{State: model.ModuleStateInvalid,
-			Path: "github.com/acme/cel-lens/engine", Version: "v0.2.0",
-			Message: "Did not publish github.com/acme/cel-lens/engine v0.2.0: go.mod names another module"}
 		Eventually(func(g Gomega) {
-			crew := linterCrew(g, ns)
-			crew.Status.LastRelease.GoModule = module
-			g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
-		}).Should(Succeed())
-		Eventually(func(g Gomega) {
+			module := linterCrew(g, ns).Status.LastRelease.GoModule
+			g.Expect(module).NotTo(BeNil())
+			g.Expect(module.State).To(Equal(model.ModuleStateInvalid))
 			release := briefApp(g, ns, "linter").LastRelease
 			g.Expect(release).NotTo(BeNil())
 			g.Expect(release.ModuleState).To(Equal(model.ModuleStateInvalid))
-			g.Expect(release.ModulePath).To(Equal(module.Path))
+			g.Expect(release.ModulePath).To(Equal("github.com/acme/cel-lens/v2"))
 			g.Expect(release.ModuleMessage).To(Equal(module.Message))
+			g.Expect(release.ModuleMessage).To(HavePrefix("Did not publish github.com/acme/cel-lens/v2 v0.2.0: "))
 		}).Should(Succeed())
 	})
 

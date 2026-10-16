@@ -48,13 +48,19 @@ help: ## Display this help.
 # go.mod below the folder, and the module cache in .dev/ (./dev) holds thousands.
 CONTROLLER_GEN_PATHS ?= ./api/...;./cmd/...;./internal/...
 
+# controller-gen rewrites every file it generates, changed or not; a test's
+# result in Go's cache is keyed on the mtime of each file it read, so a file
+# rewritten with the same bytes gets its old mtime back (hack/keep-mtime.sh).
+MANIFEST_FILES = $(wildcard config/crd/bases/*.yaml config/rbac/role.yaml)
+GENERATED_GO = $(shell find api cmd internal -name 'zz_generated.*.go')
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	hack/keep-mtime.sh $(MANIFEST_FILES) -- "$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
+	hack/keep-mtime.sh $(GENERATED_GO) -- "$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -110,15 +116,32 @@ ENVTEST_ETCD_HEARTBEAT_INTERVAL ?= 1000
 ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
 	ETCD_ELECTION_TIMEOUT=$(ENVTEST_ETCD_ELECTION_TIMEOUT) ETCD_HEARTBEAT_INTERVAL=$(ENVTEST_ETCD_HEARTBEAT_INTERVAL)
 
+# Go answers an unchanged package's tests from its test cache, "(cached)": the
+# same test binary, flags and environment variables, and the same size and
+# mtime of every file in the module the test read (the CRDs, templates/). So a
+# change to hack/, docs or the UI reruns no Go test. Coverage is collected only
+# when asked, COVER=1 (CI asks); locally nobody reads cover.out. FORCE=1 reruns
+# every package (-count=1); go clean -testcache forgets every result.
+TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(if $(FORCE),-count=1)
+# envtest reserves each port it hands out as a file in
+# $XDG_CACHE_HOME/kubebuilder-envtest. ./dev puts XDG_CACHE_HOME in .dev/,
+# inside the module, and Go tracks the listing of each directory there a test
+# read, so every envtest run made the other suites' cached results stale. The
+# tests get a cache home outside the module, one per device, so envtest runs in
+# every checkout see each other's ports; GOCACHE stays where go env puts it.
+TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
+
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
 # and every package on main, after a change to go.mod, hack/, config/, api/ and
 # the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
-# and why. cover.out covers the packages that ran, and is empty when none did.
-test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package).
+# and why. Go's test cache still answers the unchanged ones among them. With
+# COVER=1, cover.out covers the packages that ran, and is empty when none did.
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
 	@pkgs="$$(hack/test-packages.sh)" || exit; \
-	if [ -z "$$pkgs" ]; then echo 'mode: set' >cover.out; exit 0; fi; \
-	set -x; $(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$pkgs -timeout $(TEST_TIMEOUT) -coverprofile cover.out
+	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
+	set -x; \
+	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$pkgs $(TEST_FLAGS)
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.

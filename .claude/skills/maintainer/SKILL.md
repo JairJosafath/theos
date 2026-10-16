@@ -120,6 +120,10 @@ unanswered for 14 days.
      lines ending `<!-- watch:runners -->`, and removes them when runs start
      again. Copy them into your rewrite as they are; never write your own
      line about it.
+   - A device's `/tmp` at 90% or more: the relay watch says so under Health
+     only, with its three largest entries, in a line ending
+     `<!-- watch:tmp-<host> -->`, and removes it when `/tmp` drops back.
+     Copy it as it is.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress

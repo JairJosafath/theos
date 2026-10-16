@@ -51,6 +51,45 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 `Dockerfile` builds on `node:24-alpine`. The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+The operations add cdk-monitoring-constructs 10.3.2 (the alarms and the
+dashboard); OpenTelemetry JS's `api` 1.9.1, `sdk-trace-node` 2.12.0,
+`resources` 2.12.0, `exporter-trace-otlp-http` 0.223.0 and
+`instrumentation-http` 0.223.0 (releases v2.12.0 and experimental/v0.223.0,
+2026-10-06); and the AWS Distro for OpenTelemetry collector v0.50.0
+(2026-08-31), whose image has arm64 and holds `/etc/ecs/ecs-xray.yaml`.
+
+## Operations (read 2026-10-16)
+
+Read for the tiers, the backups, the alarms, the deployment alarms, the
+tracing, the NAT gateways and `docs/runbook.md`. The pricing pages were read
+for what costs more, not for figures: the digests give none.
+
+| Source                                                                                                                                                                                                                                                                             | Version / date                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                                                                                                                   | live                           |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                                                                                                                    | live                           |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                                                                                                       | live                           |
+| Operational excellence pillar, OPS08 workload observability (BP04 alerts, BP05 dashboards) — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html                                                        | live                           |
+| AWS Backup, advanced DynamoDB backup — https://docs.aws.amazon.com/aws-backup/latest/devguide/advanced-ddb-backup.html                                                                                                                                                             | live                           |
+| AWS Backup, restoring a DynamoDB table — https://docs.aws.amazon.com/aws-backup/latest/devguide/restoring-dynamodb.html                                                                                                                                                            | live                           |
+| AWS Backup, vault lock — https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html                                                                                                                                                                                    | live                           |
+| DynamoDB, point-in-time recovery — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html                                                                                                                                                    | live                           |
+| DynamoDB, restoring a table to a point in time — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery.Tutorial.html                                                                                                                                | live                           |
+| Amazon ECS, deployment failure detection with CloudWatch alarms — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-alarm-failure.html                                                                                                                        | live                           |
+| Amazon ECS, the deployment circuit breaker — https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html                                                                                                                                           | live                           |
+| Container Insights, Amazon ECS metrics — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Container-Insights-metrics-ECS.html                                                                                                                                        | live                           |
+| Application Load Balancer, CloudWatch metrics — https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-cloudwatch-metrics.html                                                                                                                          | live                           |
+| CloudWatch, metric math (the 5xx share, a division by zero dropping the point) — https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html                                                                                                             | live                           |
+| AWS Backup, `BackupSelection` (`Conditions`, `NotResources`) — https://docs.aws.amazon.com/aws-backup/latest/devguide/API_BackupSelection.html                                                                                                                                     | live                           |
+| AWS Backup, assigning resources with the CLI — https://docs.aws.amazon.com/aws-backup/latest/devguide/assigning-resources-json.html                                                                                                                                                | live                           |
+| Amazon VPC, NAT gateway basics — https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html                                                                                                                                                                          | live                           |
+| AWS Distro for OpenTelemetry, the collector on Amazon ECS — https://aws-otel.github.io/docs/setup/ecs                                                                                                                                                                              | live                           |
+| aws-otel-collector, `config/ecs/ecs-xray.yaml` and the image's `Dockerfile` — https://github.com/aws-observability/aws-otel-collector/tree/v0.50.0                                                                                                                                 | v0.50.0                        |
+| AWS X-Ray accepts W3C trace IDs (ADOT collector 0.34.0 or later) — https://aws.amazon.com/about-aws/whats-new/2023/10/aws-x-ray-w3c-format-trace-ids-distributed-tracing                                                                                                           | October 27, 2023               |
+| OpenTelemetry JS — https://github.com/open-telemetry/opentelemetry-js/releases                                                                                                                                                                                                     | v2.12.0, experimental/v0.223.0 |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                                                                     | 10.3.2                         |
+| cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                                                                           | 1.57.2                         |
+| Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray, NAT gateways — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/, https://aws.amazon.com/vpc/pricing/ | live                           |
 
 ## Cross-language (read 2026-09-30)
 
@@ -73,7 +112,8 @@ Standard was copied from ts-standard v1.5.0: its TypeScript rules
 ts-standard's, and a test in C4 Factory keeps them equal. The TypeScript
 sources were read on 2026-10-02 for ts-standard. Of the AWS sources, the
 {{ if eq .Framework "aws-ec2-ts" }}Well-Architected Framework was read on 2026-10-13, and the Application Load
-Balancer's access log page on 2026-10-13 for the aws-ec2-ts Framework,{{ else }}Well-Architected Framework, its Serverless Applications Lens and Lambda's best
+Balancer's access log page on 2026-10-13 for the aws-ec2-ts Framework,{{ else if eq .Framework "aws-static-site-ts" }}Well-Architected Framework was read on 2026-10-13, its pillars' pages on
+backups, recovery and alarms on 2026-10-16 for aws-lambda-ts,{{ else }}Well-Architected Framework, its Serverless Applications Lens and Lambda's best
 practices were read on 2026-10-13,{{ end }} and CDK Nag's rules from the installed
 package; the other AWS pages are the references the digests follow, not
 fetched again for them: check one before relying on a detail it alone gives.
@@ -87,6 +127,12 @@ read again. Lambda's Python pages and the boto3 guide are references the
 digests follow, not fetched again for them.
 {{- end }}
 Version or date as shown on the page; "live" when the page shows none.
+{{- if eq .Framework "aws-static-site-ts" }}
+
+For the static site, the CloudFront, S3, AWS WAF and Vite pages below are
+the references the digests follow, not fetched for them: check one before
+relying on a detail it alone gives.
+{{- end }}
 {{- if eq .Framework "aws-lambda-go" }}
 
 For the Go function, `go.md` and `.golangci.yml` are go-standard's, copied
@@ -139,7 +185,26 @@ it alone gives.
 | AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                              | live                                 |
 | AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                             | aws-cdk-lib 2.273.0                  |
 | CDK Nag README and RULES.md (AwsSolutions and Serverless packs) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                | cdk-nag 3.0.2, read from the package |
-| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else }}| Source                                                                                                                                                           | Version / date                       |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                              | 1.57.2 (PyPI, 2026-10-13)            |{{ else if eq .Framework "aws-static-site-ts" }}| Source                                                                                                                                                                                       | Version / date                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                                                   | November 6, 2024                     |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                             | live, read 2026-10-16                |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                              | live, read 2026-10-16                |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                 | live, read 2026-10-16                |
+| Operational excellence pillar, OPS08 workload observability — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html | live, read 2026-10-16                |
+| CloudFront, restricting access to an S3 origin — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html                            | live                                 |
+| CloudFront, protocols and ciphers for viewers — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html                | live                                 |
+| CloudFront, standard logging — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/AccessLogs.html                                                                            | live                                 |
+| CloudFront, managed response headers policies — https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-response-headers-policies.html                              | live                                 |
+| Amazon S3, security best practices — https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html                                                                      | live                                 |
+| Amazon S3, versioning — https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html                                                                                                | live                                 |
+| AWS WAF, AWS managed rule groups — https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html                                                                   | live                                 |
+| Vite, building for production — https://vite.dev/guide/build                                                                                                                                 | Vite 8.3.3                           |
+| AWS CDK v2 developer guide, best practices — https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html                                                                                    | live                                 |
+| AWS CDK assertions module — https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.assertions-readme.html                                                                                   | aws-cdk-lib 2.273.0                  |
+| CDK Nag README and RULES.md (AwsSolutions pack) — https://github.com/cdklabs/cdk-nag/blob/main/RULES.md                                                                                      | cdk-nag 3.0.2, read from the package |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                               | 10.3.2                               |
+| cfn-lint — https://github.com/aws-cloudformation/cfn-lint                                                                                                                                    | 1.57.2 (PyPI, 2026-10-13)            |{{ else }}| Source                                                                                                                                                           | Version / date                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | AWS Well-Architected Framework — https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html                                                       | November 6, 2024                     |
 | Serverless Applications Lens — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html                                      | July 14, 2022                        |
@@ -185,6 +250,18 @@ github.com/aws/aws-sdk-go-v2 1.47.3, its `config` 1.33.9 and
 `Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these docs name
 were read from cdk-nag 3.0.2's `RULES.md`, and `cdk.json`'s feature flags are
 the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- else if eq .Framework "aws-static-site-ts" -}}
+## Tools
+
+The versions pinned in the Framework's `package.json` and `package-lock.json`:
+TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
+ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
+vitest 5.0.3, Vite 8.3.3, @types/node 24.19.1, aws-cdk-lib 2.273.0,
+constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2,
+cdk-monitoring-constructs 10.3.2, tsx 4.23.15. The `Makefile` runs cfn-lint
+1.57.2 with uv. The CDK Nag rules these docs name were read from cdk-nag
+3.0.2's `RULES.md`, and `cdk.json`'s feature flags are the ones `cdk init` of
+aws-cdk 2.1145.0 writes.
 {{- else if eq .Framework "aws-lambda-py" -}}
 ## Tools
 

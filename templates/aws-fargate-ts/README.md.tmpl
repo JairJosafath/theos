@@ -29,7 +29,7 @@ Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
 npm ci           # install the exact packages in package-lock.json
 npm test         # unit tests and the stacks' assertions, with vitest
 npm run bundle   # bundle the service into dist/main.cjs with esbuild
-npm run synth    # write the CloudFormation templates into cdk.out/
+npm run synth    # write the development CloudFormation templates into cdk.out/
 {{- if .Standard }}
 make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
 make help        # every target
@@ -38,33 +38,70 @@ make help        # every target
 
 Run it locally with `TABLE_NAME=<table> node dist/main.cjs` after
 `npm run bundle`; it listens on `PORT`, 8080 by default, and reads AWS
-credentials and the region the SDK's usual way.
+credentials and the region the SDK's usual way. It traces only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` names an OpenTelemetry collector.
 
 Nothing here deploys or needs an AWS account: synth runs offline and only
 stages the image's build context in `cdk.out/`, so it needs neither Docker
-nor credentials. Deploying is for the stack's owner, with their own
-credentials and Docker: `cdk bootstrap` once per account and region, then
-`cdk deploy --parameters CertificateArn=<arn>` with an ACM certificate for
-the service's domain, and a DNS record pointing that domain at the
-`LoadBalancerDns` output.
+nor credentials.
+
+## Tiers and operations
+
+The stacks are built for a tier, `production` or `development`, which is the
+place they run, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production.
+Production keeps the table when the stack goes, protects it and the stack
+from deletion, recovers it to any second of the last 35 days, backs it up
+daily with AWS Backup, traces every request through an AWS Distro for
+OpenTelemetry collector beside the app into X-Ray, keeps logs a year and has
+a NAT gateway in each of its two zones; development throws its data away
+with the stack, traces nothing, keeps logs a month and has one NAT gateway.
+Both tiers alarm, have a dashboard, and roll back a deployment whose answers
+are over 5 % 5xx for three minutes, or whose tasks fail their health check.
+The app has the same CPU and memory in both; production adds the
+collector's to the task.
+
+What the app promises whatever the tier, the backups' retention and copy
+region, the recovery objectives and who the alarms tell, is in
+`infra/operations.ts`, which C4 Factory renders from the Container's
+`spec.operations`: change the block, and the file follows it. The alert email is the
+stack's `AlertEmail` parameter, which a deploy can set per environment. Each
+stack outputs `EntryPoint`, the load balancer's DNS name, and
+`AlarmTopicArn`, the topic its alarms notify.
+
+Deploying is for the stack's owner, with their own credentials and Docker:
+`cdk bootstrap` once per account and region, then
+`cdk deploy -c tier=production --parameters CertificateArn=<arn>` with an
+ACM certificate for the service's domain, and a DNS record pointing that
+domain at the `EntryPoint` output.
 
 ## Layout
 
-- `src/main.ts` is the entry point the image runs: it reads `TABLE_NAME` and
-  `PORT`, creates the DynamoDB client once, starts the HTTP server and stops
-  it on `SIGTERM`.
+- `src/main.ts` is the entry point the image runs: it starts tracing first
+  (`src/start_tracing.ts`, `src/tracing.ts`: OpenTelemetry, only when the
+  stack names a collector), reads `TABLE_NAME` and `PORT`, creates the
+  DynamoDB client once, starts the HTTP server and stops it on `SIGTERM`.
 - `src/server.ts` reads each request (at most 64 KiB) and writes the answer;
   `src/api.ts` routes a request, checks its input and answers with a status
   code; `src/items.ts` holds the rules, free of AWS; `src/item_store.ts`
   keeps items in DynamoDB behind the `ItemStore` interface tests fake.
 - `Dockerfile` bundles the service with esbuild and runs it on Node as the
   `node` user; `.dockerignore` keeps everything else out of the image.
-- `infra/stacks.ts` defines the stacks; `infra/service_stack.ts` is the one
-  stack: the VPC, the table, the cluster, the task and its service, and the
-  load balancer with its access logs. The stack is named after the package.
+- `infra/stacks.ts` defines the stacks for a tier; `infra/service_stack.ts`
+  is the main one: the VPC, the table, the cluster, the task (with the
+  collector in production) and its service, the load balancer with its
+  access logs, the alarms (`infra/alarms.ts`) and, in production, the
+  backups (`infra/backups.ts`). The stack is named after the package.
+  `infra/operations.ts` holds what the Container promises.
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
-  `infra/standard.ts` tags every stack and adds CDK Nag's checks.
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to restore the data, roll a
+  deployment back, and what to do when an alarm fires.
 
 Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
 {{- end }}

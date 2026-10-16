@@ -26,6 +26,13 @@ JairJosafath/c4factory --state open --limit 200 --json
 number,title,labels,milestone` (gh has the token). `hack/lib/github.sh
 milestones` lists the open milestones; ROADMAP.md says each one's outcome.
 
+What reaches you is an agent's follow-up that needs a decision. A decided one
+(a bug whose failing test its finder names, a chore or doc whose Done-when it
+states) is filed with `hack/lib/github.sh create --next`: ready at once and
+reserved for the finder's worktree, whose next relay session starts on it;
+every other worker's pick skips it for `C4_LEASE_TTL` (2h), then anyone picks
+it. It never passes through triage: leave it alone, as every ready issue.
+
 ## What you check, per issue
 
 - One piece of work, whose goal fits docs/design.md or says which part of the
@@ -38,6 +45,10 @@ milestones` lists the open milestones; ROADMAP.md says each one's outcome.
   and a `source/*` one. Give the one that fits (`gh issue edit N --add-label
   kind/bug`, `--remove-label` for a second kind; `hack/lib/github.sh intake N`
   for its source). `status N ready` refuses an issue with no kind.
+- `priority/velocity` when it makes development itself faster: the relay,
+  `land`, `make check`, a flake, the device or the scripts and skills agents
+  work with (`gh issue edit N --add-label priority/velocity`). The relay picks
+  it after urgent, before the rest.
 - Its milestone, when a user of the release would notice the change (CRDs,
   operator, UI, chart, templates, docs a user reads): the open milestone
   whose outcome it serves, `hack/lib/github.sh milestone N "TITLE"`, the

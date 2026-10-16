@@ -64,8 +64,8 @@ says why each rule matters.
 - Each entry has a `level`, a `message` and the request id; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 - The container logs through the `awslogs` driver to a log group the stack
-  creates, with a retention. [nag: AwsSolutions-ECS7; test: log groups keep
-  logs for a set time]
+  creates, kept for the tier's time: a year in production, a month in
+  development. [nag: AwsSolutions-ECS7; test: log retention]
 - Write entries to stderr, one JSON object a line; ECS sends each line to
   CloudWatch Logs as one event. [review]
 
@@ -81,11 +81,15 @@ says why each rule matters.
   `ADD` on a retried request. [review]
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-- Point-in-time recovery on. [nag: AwsSolutions-DDB3]
+- In production, point-in-time recovery on, the table kept when the stack
+  goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
+  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  tier's `TIER_RULES`, as the stack's table is. [test: the removal
+  policies, deletion protection, point-in-time recovery]
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-- The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
-  protection. [test: says what happens to stateful resources; review]
+- Every table has its alarms: read and write throttles and system errors,
+  from the stack's `Alarms`. [test: the alarms and topic]
 
 ## The AWS SDK v3
 
@@ -112,13 +116,23 @@ says why each rule matters.
   acknowledged `AwsSolutions-EC23`, on the load balancer. [nag:
   AwsSolutions-EC23]
 - Access logs go to an S3 bucket with S3-managed keys (the only encryption
-  Elastic Load Balancing writes with), TLS only, objects expiring, through
-  the log delivery service principal so the stack keeps no region.
+  Elastic Load Balancing writes with), TLS only, through the log delivery
+  service principal so the stack keeps no region. They are logs, not data:
+  they expire after the tier's log retention, and the bucket is kept in
+  either tier, since CloudFormation can't delete one that holds objects.
   [nag: AwsSolutions-ELB2, AwsSolutions-S10]
 - Invalid header fields are dropped (`dropInvalidHeaderFields`). [review]
 - The target group checks `/health`, and its deregistration delay fits the
   longest request: ECS stops a task only after the load balancer has
   drained it. [review]
+- Alarms on its own 5xx (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx
+  (`HTTPCode_Target_5XX_Count`), each also as a share of `RequestCount`,
+  their p99 latency (`TargetResponseTime`) and unhealthy targets
+  (`UnHealthyHostCount`), from the stack's `Alarms`. [test: the alarms and
+  topic]
+- Its access-log bucket carries the Container's tag like every resource,
+  and the backup plan leaves it out (`Backups`' `exclude`): logs, not
+  data. [test: the backup plan and vault]
 
 ## The task and the service in the stack
 
@@ -129,8 +143,11 @@ says why each rule matters.
 - The `Dockerfile` pins the Node major (`node:24-alpine`), builds with
   `npm ci` and esbuild, and runs the bundle alone as the `node` user. [review]
 - `arm64` (Graviton): cheaper per vCPU-hour and lower energy. [review]
-- CPU and memory set for the work; a read-only root file system; a stop
-  timeout that lets requests in flight finish. [review]
+- CPU and memory set for the work, the app's the same in every tier: a
+  container beside it where the tier runs one, such as the collector, adds
+  its own share to the task, with a hard memory limit so it never takes the
+  app's. A read-only root file system; a stop timeout that lets requests in
+  flight finish. [review]
 - The task role is granted only what the code calls; the execution role
   only what CDK grants it to pull the image and write logs. No AWS managed
   policies. [nag: AwsSolutions-IAM4]
@@ -147,8 +164,27 @@ says why each rule matters.
 - The service keeps at least two tasks in two zones, deploys with the
   circuit breaker and rollback, and scales between bounds the issue's load
   sets. [review]
+- A deployment also rolls back on its alarms (`enableDeploymentAlarms` with
+  `AlarmBehavior.ROLLBACK_ON_ALARM`): the share of 5xx over a few percent
+  for minutes, never a single 5xx, and unhealthy targets by the minute,
+  named in `DEPLOYMENT_ALARMS` by their names, never by a reference to the
+  alarm, whose metric names the service, so the two would depend on each
+  other. `cdk.json`'s `removeDefaultDeploymentAlarm` only governs a service
+  that names none. [review]
+- The service has alarms on CPU and memory and on running fewer tasks than
+  its minimum (Container Insights' `RunningTaskCount`). [test: the alarms
+  and topic]
+- Tracing follows the tier: in production the task runs the AWS Distro for
+  OpenTelemetry collector (its image pinned by tag, not essential, its own
+  log group), the app container starts after it and sends its spans to
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, and the task role may write to X-Ray;
+  `infra/standard.ts` acknowledges X-Ray's `*`. In development none of it.
+  [test: tracing]
 - The VPC logs rejected traffic to a log group with a retention, and reaches
-  DynamoDB through a gateway endpoint. [nag: AwsSolutions-VPC7; review]
+  DynamoDB through a gateway endpoint. It has a NAT gateway in each zone in
+  production, so a zone's failure leaves the other's tasks their way to
+  ECR, CloudWatch and X-Ray, and one in development. [nag: AwsSolutions-VPC7;
+  review]
 
 ## The CDK app
 
@@ -157,6 +193,10 @@ says why each rule matters.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
   `fromLookup`, so synth needs no account. [review]
+- `defineStacks(app, tier)` builds the stacks for the tier the deploy names,
+  with the tier's `TIER_RULES` and what `infra/operations.ts` promises; no
+  other context value or environment variable is read at synth. [test: the
+  Standard's per-tier checks]
 - Every stack carries the Standard's tags (`c4factory:project`,
   `c4factory:system`, `c4factory:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]
@@ -178,6 +218,145 @@ says why each rule matters.
 - Requests are tested by calling `answer` with a request, or the server's
   listener with an in-memory stream and a recorded response, and checking
   the status code and body; no test starts the server. [review]
+{{- else if eq .Framework "aws-static-site-ts" -}}
+# AWS static site digest
+
+Distilled from Vite's guide, the Amazon CloudFront developer guide (origin
+access control, viewer HTTPS, standard logging, response headers), the
+Amazon S3 user guide's security best practices and versioning pages, the
+AWS WAF developer guide, the CDK developer guide and its assertions module,
+and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
+`make check`: an ESLint rule or the compiler; `[nag: x]` = a CDK Nag rule that
+fails `cdk synth`; `[test]` = an assertion in `infra/standard.test.ts` or a
+stack's own test; `[review]` = check it yourself. `docs/well-architected.md`
+says why each rule matters.
+
+## The page
+
+- `index.html` is the entry Vite builds; `src/main.ts` finds the page's
+  elements and wires their events to pure functions in `src/`, which never
+  touch the DOM. [review]
+- The page runs in the browser: no Node global or module in `src/`.
+  [lint: no-restricted-globals, no-restricted-imports]
+- Write what a visitor typed or a request returned as text
+  (`textContent`), never as HTML (`innerHTML`, `insertAdjacentHTML`). [review]
+- Visitors see the page, never the console: an error they must know of is
+  shown on the page. [lint: no-console]
+- Nothing secret in `src/`, `index.html` or `public/`: everything the site
+  holds is public. [review]
+
+## The build
+
+- Vite builds the site at synth, through the asset's local bundling
+  (`vite build` into the asset's folder); never Docker, which CI and agents
+  lack. `npm run build` writes the same into `dist/`, and `npm run dev`
+  serves it with hot reload. [review]
+- What the page imports from `src/` is bundled and minified under hashed
+  names; `public/` is copied as it is, so a file there is referenced by its
+  path from the root (`/favicon.svg`). [review]
+- A deploy copies the build into the bucket (`BucketDeployment`) beside
+  earlier builds' files, so a browser holding an earlier `index.html` still
+  finds its hashed assets, and clears CloudFront's cache (`/*`). Nothing
+  else writes to the bucket. [review]
+
+## The S3 buckets
+
+- The site's bucket is private: public access blocked, no website hosting,
+  read only by the distribution. [nag: AwsSolutions-S2, AwsSolutions-S5]
+- Requests without TLS are refused. [nag: AwsSolutions-S10]
+- Encrypted at rest with S3-managed keys. [test: encrypts every bucket]
+- Its access is logged to the `Logs` bucket (`s3/`). [nag: AwsSolutions-S1]
+- In production versioned, kept when the stack goes (`RemovalPolicy.RETAIN`),
+  and each earlier version expires after `versionsKeptDays`: 35 days, or
+  `retentionDays` when longer. In development unversioned, `DESTROY`, its
+  files deleted with the stack. Build it with the tier's `TIER_RULES`.
+  [test: the removal policies, the versions of data buckets]
+- The `Logs` bucket holds only logs: each expires after the tier's log
+  retention, and the bucket, `RETAIN` in both tiers, empties itself.
+  CloudFront writes its logs with ACLs, so its objects are the writer's
+  (`ObjectOwnership.OBJECT_WRITER`). [review]
+- Never change a bucket's logical id: the deploy makes a new, empty bucket
+  and keeps the old one outside the stack. [review]
+
+## CloudFront
+
+- The distribution reads the bucket through origin access control
+  (`S3BucketOrigin.withOriginAccessControl`). [nag: AwsSolutions-CFR7]
+- HTTP is redirected to HTTPS, and every answer carries AWS's managed
+  `SECURITY_HEADERS` policy (HSTS, no sniffing, no framing, a strict
+  referrer policy). [review]
+- With the `DomainName` and `CertificateArn` parameters, the site answers on
+  that domain with that ACM certificate (in us-east-1), by SNI, TLS 1.2 or
+  later; without them, on CloudFront's own domain. The rule
+  `DomainNeedsCertificate` refuses a domain without a certificate.
+  [nag: AwsSolutions-CFR4, acknowledged for CloudFront's own domain]
+- Standard logs go to the `Logs` bucket (`cloudfront/`).
+  [nag: AwsSolutions-CFR3]
+- `index.html` is the default root object; HTTP/2 and HTTP/3; the
+  cheapest price class (`PRICE_CLASS_100`). [review]
+- No geographic restriction: the site is for anyone.
+  [nag: AwsSolutions-CFR1, acknowledged]
+
+## The firewall
+
+- In production, an AWS WAF web ACL (scope `CLOUDFRONT`, made in us-east-1)
+  in front of the distribution: AWS's managed rule groups for addresses
+  with a bad reputation, common attacks and known bad inputs, and a limit of
+  2,000 requests in five minutes per address. In development none.
+  [nag: AwsSolutions-CFR2, acknowledged in development]
+- A rule that blocks visitors the site wants is changed in the stack, with
+  the reason, never switched off in the console. [review]
+
+## The copying function
+
+- `BucketDeployment` makes the function that copies the site; it runs only
+  on a deploy. Its own role is allowed to write only its log group,
+  `DeployLogs`, kept for the tier's log retention, never AWS's managed
+  `AWSLambdaBasicExecutionRole`. [nag: AwsSolutions-IAM4; test: log groups
+  keep logs for a set time]
+- Its wildcard permissions, granted by `BucketDeployment`, are acknowledged
+  one by one with the reason; never add another. [nag: AwsSolutions-IAM5;
+  test: no wildcard action]
+- X-Ray traces it in production. [review]
+
+## Alarms
+
+- The stack's `Alarms` builds every alarm with `cdk-monitoring-constructs`,
+  to the stack's one encrypted topic, with a dashboard: the distribution's
+  5xx error rate and the copying function's errors, throttles and p99
+  duration. A new resource gets its alarms from `alarms.monitoring`.
+  [test: the alarms and topic]
+- What each alarm means and what to do first is in `docs/runbook.md`;
+  a new alarm adds its row there, as a Standard change. [review]
+
+## The CDK app
+
+- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+  Framework's stack is in `infra/stacks.ts`, which `defineStacks` returns.
+  [review]
+- No account in `env`, no `fromLookup`, so synth needs no account. The
+  stack's region is us-east-1, because CloudFront takes its firewall and
+  certificate only there. [review]
+- Every stack carries the Standard's tags (`c4factory:project`,
+  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stateful resource says its removal policy. [test]
+- A CDK Nag finding is fixed in the resource. An acknowledgement
+  (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
+  the finding's path names or an ancestor of it, names one finding
+  on one construct, with a reason specific to this system. [review]
+- `cdk.json`'s feature flags are the ones `cdk init` recommends for the
+  pinned CDK; a task never turns one off. [review]
+
+## Tests
+
+- No test calls AWS, opens a socket or needs credentials. [review]
+- The page's logic is tested with plain vitest in Node, through the pure
+  modules `src/main.ts` wires; a test that needs the DOM brings its own
+  environment. [review]
+- The stack is tested with `Template.fromStack` from
+  `aws-cdk-lib/assertions`: `hasResourceProperties`, `resourceCountIs`,
+  `Match`. Assert what the issue needs (a header, a rule, a setting), not
+  the whole template. Synthesizing it builds the site with Vite. [review]
 {{- else -}}
 # AWS {{ if eq .Framework "aws-ec2-ts" }}EC2{{ else }}serverless{{ end }} digest
 

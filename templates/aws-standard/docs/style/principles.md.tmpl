@@ -80,12 +80,15 @@ bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specif
   request is closed before it is answered.{{ else if eq .Framework "aws-fargate-ts" }}in the service,
   `src/main.ts` owns the server and the SDK clients, which live as long as
   the process, and closes the server on `SIGTERM`; anything opened for a
-  request is closed before its response ends.{{ else }}in a Lambda
+  request is closed before its response ends.{{ else if eq .Framework "aws-static-site-ts" }}in the page,
+  `src/main.ts` owns the listeners it adds, which live as long as the page;
+  anything started for an event (a timer, a request) is stopped or aborted
+  when its answer is no longer wanted.{{ else }}in a Lambda
   function, the handler owns nothing global but the SDK clients it creates at
   module scope, which live as long as the execution environment; anything
   opened during an invocation is closed before it returns.{{ end }} In the CDK app,
   every AWS resource belongs to one stack, which says what happens to it on
-  removal. [CppCG R.1, P.8]{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}, [ECS]{{ else }}, [Lambda]{{ end }}
+  removal. [CppCG R.1, P.8]{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}, [ECS]{{ else if eq .Framework "aws-static-site-ts" }}{{ else }}, [Lambda]{{ end }}
 - **Acquire and hand to the owner in one step:** create a client where the
   module that owns it is wired, and an AWS resource in the stack that owns
   it, with its grants next to it. [CppCG R.12]
@@ -100,7 +103,7 @@ bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specif
 - **"Impossible" branches are bugs**: throw, don't return a fake value.
   [GNU 4.2], [LLVM `llvm_unreachable`]
 - **Useful error messages**: what happened, with which input, what to do next.
-  [GNU 4.2, 4.4], [LLVM]{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}, [ECS]{{ else }}, [Lambda]{{ end }}
+  [GNU 4.2, 4.4], [LLVM]{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}, [ECS]{{ else if eq .Framework "aws-static-site-ts" }}{{ else }}, [Lambda]{{ end }}
 - **Handle all input**: empty, huge, unicode, malformed. No arbitrary limits;
   never silently truncate. [GNU 4.2]
 - **Log only actionable messages**; never log user data. [review]
@@ -113,7 +116,8 @@ bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specif
   remembers. [review; lint: tsc noUnusedLocals, noUnusedParameters]
 - **Don't reinvent helpers**; use the platform's. [Kernel §18], [CppCG P.13]
 - **Encapsulate messy code** behind one clean interface. [CppCG P.11]
-- **Respect layering**: pure modules import neither the AWS SDK nor {{ if eq .Framework "aws-ec2-ts" }}`node:http`;
+- **Respect layering**: {{ if eq .Framework "aws-static-site-ts" }}pure modules don't touch the DOM; `main.ts` wires them to the
+  page.{{ else }}pure modules import neither the AWS SDK nor {{ if eq .Framework "aws-ec2-ts" }}`node:http`;
   one module wraps each AWS service behind an interface; `server.ts` adapts
   HTTP to them and `main.ts` wires them to the clients.{{ else if eq .Framework "aws-fargate-ts" }}Node's
   HTTP server; one module wraps each AWS service behind an interface;
@@ -122,7 +126,7 @@ bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specif
   Lambda event types; one module wraps each AWS service behind a protocol;
   `handler.py` wires them to the event and the clients.{{ else }}the
   `aws-lambda` types; one module wraps each AWS service behind an interface;
-  `handler.ts` wires them to the event and the clients.{{ end }} [LLVM "Library layering"]
+  `handler.ts` wires them to the event and the clients.{{ end }}{{ end }} [LLVM "Library layering"]
 
 ## Tests
 
@@ -142,6 +146,6 @@ bottom). {{ if eq .Framework "aws-lambda-py" }}Python, TypeScript and AWS specif
 - [Rust] https://rust-lang.github.io/api-guidelines/naming.html
 - [GNU] https://www.gnu.org/prep/standards/standards.html
 - [GoogleTS] https://google.github.io/styleguide/tsguide.html
-- [TSHandbook] https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}
+- [TSHandbook] https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html{{ if eq .Framework "aws-ec2-ts" }}{{ else if eq .Framework "aws-static-site-ts" }}{{ else if eq .Framework "aws-fargate-ts" }}
 - [ECS] https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html{{ else }}
 - [Lambda] https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html{{ end }}
