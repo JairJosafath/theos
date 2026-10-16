@@ -102,6 +102,10 @@ echo x >ui/new.ts
 check "untracked file under ui/: ui-test" "$([ "$("$CACHE" key ui-test)" != "$(head -1 <<<"$k0")" ] && echo moved)" moved
 rm ui/new.ts
 "$CACHE" key nope >/dev/null 2>&1; check "key: unknown tier fails" $? 64
+# A tool a tier runs that the device lacks is part of its key, not a failure:
+# CI's shell-test job has no Node, and the key of ui-test failed there (#1285).
+mkdir -p "$T/bin" && printf '#!/bin/sh\nexit 127\n' >"$T/bin/node" && chmod +x "$T/bin/node"
+PATH=$T/bin:$PATH "$CACHE" key ui-test >/dev/null; check "key: a missing tool still keys" $? 0
 
 # run: a miss runs and records, a hit doesn't run, FORCE=1 runs, a failure
 # records nothing and keeps its exit code.
