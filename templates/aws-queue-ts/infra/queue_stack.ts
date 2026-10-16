@@ -24,6 +24,9 @@ const ROOT = path.join(import.meta.dirname, '..');
 // share of.
 const TIMEOUT = Duration.seconds(30);
 
+// How long the event source gathers messages into a batch.
+const BATCHING_WINDOW = Duration.seconds(5);
+
 // How often a message is delivered before it goes to the dead-letter queue.
 export const MAX_RECEIVE_COUNT = 5;
 
@@ -97,9 +100,10 @@ export class QueueStack extends Stack {
     const queue = new Queue(this, 'Messages', {
       ...queueProps,
       retentionPeriod: Duration.days(4),
-      // AWS's advice for a Lambda source: six times the function's timeout,
-      // so a message is never delivered again while a batch still holds it.
-      visibilityTimeout: Duration.seconds(TIMEOUT.toSeconds() * 6),
+      // AWS's advice for a Lambda source: six times the function's timeout
+      // and the batching window, so a message is never delivered again while
+      // a batch still holds it, and a throttled batch has time to retry.
+      visibilityTimeout: Duration.seconds(TIMEOUT.toSeconds() * 6 + BATCHING_WINDOW.toSeconds()),
       deadLetterQueue: { queue: deadLetters, maxReceiveCount: MAX_RECEIVE_COUNT },
     });
 
@@ -157,7 +161,7 @@ export class QueueStack extends Stack {
     handler.addEventSource(
       new SqsEventSource(queue, {
         batchSize: 10,
-        maxBatchingWindow: Duration.seconds(5),
+        maxBatchingWindow: BATCHING_WINDOW,
         // The handler answers the messages that failed, and only those are
         // delivered again; without it one bad message fails its batch.
         reportBatchItemFailures: true,

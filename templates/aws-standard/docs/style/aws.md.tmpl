@@ -523,7 +523,8 @@ says why each rule matters.
   Powertools' batch processing. [test: every SQS source reports batch item
   failures]
 - The queue's visibility timeout is at least six times the function's
-  timeout, so a message is not delivered again while a batch holds it.
+  timeout plus the batching window, so a message is not delivered again
+  while a batch holds it.
   [review]
 - The event source has a maximum concurrency, so a flood of messages
   can't take the account's concurrency from its other functions. [review]
@@ -563,7 +564,7 @@ says why each rule matters.
 - The newest Node.js runtime. [nag: AwsSolutions-L1]
 {{- end }}
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
-- Memory and timeout set for the work, the timeout {{ if $queue }}a sixth of the queue's
+- Memory and timeout set for the work, the timeout {{ if $queue }}at most a sixth of the queue's
   visibility timeout{{ else }}under API Gateway's 30
   seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.

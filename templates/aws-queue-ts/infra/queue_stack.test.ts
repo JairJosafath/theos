@@ -147,7 +147,7 @@ describe('QueueStack', () => {
 
   it('moves a message to the dead-letter queue after its last delivery', () => {
     production.hasResourceProperties('AWS::SQS::Queue', {
-      VisibilityTimeout: 180,
+      VisibilityTimeout: 6 * 30 + 5,
       MessageRetentionPeriod: 4 * 24 * 3600,
       RedrivePolicy: {
         deadLetterTargetArn: { 'Fn::GetAtt': [Match.stringLikeRegexp('^DeadLetters'), 'Arn'] },

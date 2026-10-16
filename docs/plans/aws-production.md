@@ -335,7 +335,8 @@ settled, which steps 10 and 11 can copy:
 - **Queues follow the tier like tables:** `RETAIN` in production, `DESTROY`
   in development, since a message not yet consumed is data. Both queues use
   SQS-managed encryption and `enforceSSL`; the visibility timeout is six
-  times the function's 30 s, AWS's advice for a Lambda source.
+  times the function's 30 s plus the 5 s batching window, AWS's advice for
+  a Lambda source.
 - **Two Standard rules, per resource type:** every event source mapping
   from SQS sets `ReportBatchItemFailures`, and every dead-letter queue (a
   queue another one's `RedrivePolicy` names) has an alarm on its first

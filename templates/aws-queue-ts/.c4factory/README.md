@@ -37,7 +37,7 @@ synthesizes the CloudFormation offline.
   set a second, `<name>-backup-copy` in that region (`infra/backups.ts`'s
   `BackupCopyStack`, as `aws-lambda-ts` has it), which the first depends on.
   The stack has two SQS queues, the messages (kept 4 days, a visibility
-  timeout six times the function's 30 s) and their dead-letter queue (kept
+  timeout six times the function's 30 s and the 5 s batching window) and their dead-letter queue (kept
   14 days, after 5 deliveries), both with SQS-managed encryption, a queue
   policy refusing requests without TLS (`enforceSSL`) and `RETAIN` in
   production, `DESTROY` in development; two on-demand DynamoDB tables, the

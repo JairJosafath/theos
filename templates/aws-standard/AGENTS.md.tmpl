@@ -176,7 +176,7 @@ machine.{{ end }}
    limit; keep-alive outlasts the load balancer's idle timeout, and the
    container's stop timeout leaves the requests in flight time to finish.{{ else if $queue }}4. **Limits are set:** the function's timeout and memory, the batch size,
    the event source's maximum concurrency, and the queue's visibility
-   timeout (six times the function's) and redrive count are set in the
+   timeout (six times the function's, plus the batching window) and redrive count are set in the
    stack; SDK calls stay within the timeout.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.{{ end }}

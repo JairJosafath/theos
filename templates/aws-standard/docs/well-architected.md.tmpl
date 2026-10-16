@@ -550,8 +550,9 @@ fails._
     event source sets it. Serverless `LambdaEventSourceMappingDestination`
     asks for an on-failure destination, which SQS sources don't take: their
     dead-letter queue is the queue's.
-  - The queue's visibility timeout is six times the function's timeout, so
-    a message is not delivered again while a slow batch still holds it.
+  - The queue's visibility timeout is six times the function's timeout
+    plus the batching window, so a message is not delivered again while a
+    slow batch still holds it.
 {{- else }}
   - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`,
     `SQSRedrivePolicy`, `EventBusDLQ`: by hand, for asynchronous invocations;

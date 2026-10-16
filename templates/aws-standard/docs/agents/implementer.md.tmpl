@@ -1,4 +1,5 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
 # Implementer guide
 
 You implement one Gitea issue in this repository, as one pull request.
@@ -31,7 +32,7 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 - **Keep the change focused:** one issue, one pull request, small Conventional
   Commits.
 - **Update what users read** in the same change when behaviour they see
-  changes: `README.md` (routes, request and response shapes, status codes)
+  changes: `README.md` ({{ if $queue }}the message's shape, what fails it and what is retried{{ else }}routes, request and response shapes, status codes{{ end }})
   and a `CHANGELOG.md` entry under "Unreleased".
 - **`make check` green before every commit.** When a rule fires, fix the code.
 - **Protected files** (the Standard's and the platform's, listed in
@@ -143,7 +144,12 @@ Task that reviews and merges it. Then:
   server. Logic lives in modules that import neither the AWS SDK nor Node's
   HTTP server, tested with plain vitest. Keep `src/main.ts` to wiring: the
   SDK clients created once, the environment read once, the server closed on
-  `SIGTERM`.{{ else }}- Request handling is tested by calling it with an
+  `SIGTERM`.{{ else if $queue }}- The work per message is tested by calling it with a message and a fake
+  store, checking what it stored or that it threw; the batch by calling
+  `consumeBatch` with an `SQSEvent`, checking its `batchItemFailures`.
+  Logic lives in modules that import neither the AWS SDK nor the
+  `aws-lambda` types, tested with plain vitest. Keep `src/handler.ts` to
+  wiring: the SDK clients at module scope, the environment read once.{{ else }}- Request handling is tested by calling it with an
   `APIGatewayProxyEventV2` and a fake store, checking the status code and the
   body; logic lives in modules that import neither the AWS SDK nor the
   `aws-lambda` types, tested with plain vitest. Keep `src/handler.ts` to
@@ -161,12 +167,12 @@ Task that reviews and merges it. Then:
 - Permissions come from CDK grants, narrowed to the calls the code makes. A
   new resource is encrypted at rest, its logs kept for a set time, its
   removal policy explicit (`RETAIN` for data).
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - The stacks take the tier from `defineStacks(app, tier)` and the
   Container's promises from `infra/operations.ts`. A new resource follows
   `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
   protection and point-in-time recovery by tier, its alarms from the
-  stack's `Alarms`. `infra/standard.test.ts` checks both tiers. Never read
+  stack's `Alarms`{{ if $queue }}, a queue's dead-letter queue and its depth alarm{{ end }}. `infra/standard.test.ts` checks both tiers. Never read
   another context value or an environment variable at synth. The factory
   renders `infra/operations.ts` from the Container's `spec.operations`:
   change it only when your issue changes that block, to what the block

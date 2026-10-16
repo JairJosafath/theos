@@ -1,4 +1,5 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
 # Reviewer guide
 
 You review one pull request against the issue it closes: its acceptance
@@ -11,11 +12,19 @@ says what to check.
 1. **Acceptance criteria.** Report each one as met or not met, naming the test
    that proves it. A criterion is met only when a test would fail without the
    change. Missing or untested is not met.
+{{ if $queue -}}
+2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
+   message bodies; a message delivered twice, or out of order (idempotency);
+   a batch where one message fails and the rest pass, which must report that
+   one alone; a batch where all fail; SDK calls that fail or are throttled;
+   a failure never swallowed, so no message is lost.
+{{- else -}}
 2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
    bodies, paths and query strings; {{ if eq .Framework "aws-fargate-ts" }}bodies over the limit; percent-encoded paths{{ else }}base64-encoded bodies{{ end }}; a missing item; a
    request retried after a timeout (idempotency); SDK calls that fail or are
    throttled; every error answered with the right HTTP status and a JSON
    message, never a stack trace.
+{{- end }}
 {{ if $py -}}
 3. **Tests.** They test behaviour through the handler's logic and other
    functions, check the status code and the body, would fail without the
@@ -24,8 +33,8 @@ says what to check.
    (boto3 faked behind its `Protocol`, never `moto` or a patched boto3).
    Infrastructure changes have `Template.fromStack` assertions.
 {{- else -}}
-3. **Tests.** They test behaviour through the request handling and other
-   exports, check the status code and the body, would fail without the
+3. **Tests.** They test behaviour through the {{ if $queue }}work per message, the batch{{ else }}request handling{{ end }} and other
+   exports, check {{ if $queue }}what is stored and which messages fail{{ else }}the status code and the body{{ end }}, would fail without the
    change, cover the edge cases above, and are deterministic: no real timers
    or real-time bounds (fake timers instead), no network{{ if eq .Framework "aws-fargate-ts" }} or server started{{ end }}, no call to AWS (SDK
    clients faked behind their interface). Infrastructure changes have
@@ -60,9 +69,10 @@ says what to check.
    {{ if eq .Framework "aws-ec2-ts" }}SDK clients are created once in `src/main.ts`, never per request; the
    server stops cleanly on `SIGTERM`;{{ else if eq .Framework "aws-fargate-ts" }}SDK clients are created once in `src/main.ts`, never per request; the
    server closes on `SIGTERM` and finishes what is in flight;{{ else if $py }}boto3 clients and resources are created once at module scope, never per invocation;{{ else }}SDK clients are created once at module scope, never per invocation;{{ end }} a
-   failure is logged once as structured JSON with the request id and
+   failure is logged once as structured JSON with the {{ if $queue }}message id and thrown, so
+   the batch reports it{{ else }}request id and
    answered with a status code; no stack trace or SDK error text reaches a
-   client.
+   client{{ end }}.
 {{- end }}
 {{ if eq .Framework "aws-ec2-ts" }}6. **Performance and cost.** The instance type and the Auto Scaling group's
    size and scaling policy are set and fit the work; nothing is added that
@@ -71,17 +81,18 @@ says what to check.
    task's CPU and memory and the service's scaling bounds are set and fit
    the work, every body has a limit;{{ else }}6. **Performance and cost.** Nothing heavy at import beyond the clients; the
    function's memory and timeout are set and fit the work;{{ end }} DynamoDB is read
-   by key or query, never a scan on a request path; budgets from the issue or
+   by key or query, never a scan on a {{ if $queue }}message's{{ else }}request{{ end }} path; budgets from the issue or
    the system's needs are measured by a bench, never by a test with a time
    bound.
-7. **Docs and DX.** The README (routes, shapes, status codes) and the
-   CHANGELOG match the behaviour; messages tell a client what happened and
-   what to do.
+7. **Docs and DX.** The README ({{ if $queue }}the message's shape, what fails it{{ else }}routes, shapes, status codes{{ end }}) and the
+   CHANGELOG match the behaviour; {{ if $queue }}logs tell a person why a message failed{{ else }}messages tell a client what happened and
+   what to do{{ end }}.
 8. **Security.** Permissions through CDK grants narrowed to the calls the
    code makes, never `*` actions or AWS managed policies; data encrypted at
    rest; {{ if eq .Framework "aws-ec2-ts" }}the load balancer reachable only from inside the VPC, and
    instances only from the load balancer, unless the issue says otherwise;{{ else if eq .Framework "aws-fargate-ts" }}the tasks reachable only through the load balancer, which serves
-   HTTPS; every route authenticated that the issue says must be;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
+   HTTPS; every route authenticated that the issue says must be;{{ else if $queue }}the queues refusing requests without TLS, and no one granted
+   `sqs:SendMessage` by the stack that the issue doesn't name;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
    or a log; no secret in an environment variable, the template, a log or a
    response; new install scripts justified.
 9. **CDK Nag acknowledgements.** Check each
@@ -172,9 +183,9 @@ yourself; the full `make check` runs on the release's commit before its tag.
   `env` taken from the environment or a context lookup, which would need an
   AWS account to synthesize.
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
-  `RETAIN`, or never protected), a new function, table or API without its
+  `RETAIN`, or never protected), a new function, table or {{ if $queue }}dead-letter queue{{ else }}API{{ end }} without its
   alarms on the stack's topic, a context value read but `tier`, and a
   change to `infra/operations.ts` that its issue's change to the
   Container's `spec.operations` doesn't ask for. A change

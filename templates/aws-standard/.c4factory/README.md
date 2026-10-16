@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2 or a container service on Fargate) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate or a queue consumer on SQS and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -22,8 +22,9 @@ python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
-- **Supports:** `function`, `service`; Frameworks: `aws-lambda-ts`,
-  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-py`
+- **Supports:** `function`, `service`, `worker`; Frameworks: `aws-lambda-ts`,
+  `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-py`,
+  `aws-queue-ts`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -61,15 +62,23 @@ byte for byte.
   which renders empty, and so is left out, for every other Framework, and
   branches in `AGENTS.md`, the role guides, `docs/style/aws.md` and
   `SOURCES.md` (the operations sources, read 2026-10-16); and the Go
-  digest's cold-start line is wrapped so Prettier keeps it. A Framework
-  added later gets its branches in the version that adds it.
+  digest's cold-start line is wrapped so Prettier keeps it. Since
+  @@AWS_STANDARD@@ `aws-queue-ts`, a `worker`, shares `aws-lambda-ts`'s branches
+  (`docs/runbook.md`, the operations in `AGENTS.md`, the role guides and
+  the digests) and, through a `$queue` variable, says queue where those say
+  API: the message boundary, the dead-letter queue and its redrive in the
+  runbook, the queue and its event source in `docs/style/aws.md`, the SQS
+  sources in `SOURCES.md`. `infra/standard.test.ts` checks two rules for
+  every Framework: an event source mapping from SQS reports batch item
+  failures, and every dead-letter queue has an alarm on its first message.
+  A Framework added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts` and `aws-queue-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -229,18 +238,20 @@ byte for byte.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For `aws-lambda-ts`
-  it also says what each tier does per pillar and what `infra/operations.ts`
+  and `aws-queue-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
   drill, a game day, right-sizing from measured load) is listed with why.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, renders the
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts` and `aws-queue-ts`, renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back, what each alarm means and what to do
   first, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
-  allocation tags' activation), and how to drill a restore.
+  allocation tags' activation), and how to drill a restore; for
+  `aws-queue-ts` also what the queues keep and how to send dead-lettered
+  messages back.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
