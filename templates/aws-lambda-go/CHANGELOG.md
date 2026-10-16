@@ -9,4 +9,5 @@ Every user-visible change, newest first. The format follows
 ### Added
 
 - The function, scaffolded by C4 Factory: an HTTP API in Go that stores and
-  returns items (`PUT` and `GET /items/{id}`) in a DynamoDB table.
+  returns items (`PUT` and `GET /items/{id}`) in a DynamoDB table, with
+  alarms and a dashboard, and in production backups and tracing.
