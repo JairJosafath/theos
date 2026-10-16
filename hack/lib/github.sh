@@ -87,8 +87,8 @@
 #                                        when its head is behind its base (main): two pull requests green alone can
 #                                        make main red together: land it instead. Refused as well while another
 #                                        pull request holds the merge turn (land), naming it, and when it closes a
-#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts)
-#                                        and no line of its body says No test: <why>
+#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts,
+#                                        *.test.mjs) and no line of its body says No test: <why>
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: in this checkout of PR's branch (a bug fix without a
 #                                        test is refused before it queues, as merge refuses it), git fetch (retried
@@ -1732,8 +1732,9 @@ gh_merge() {
 
 # gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
 # pull request that closes a kind/bug issue but changes no test file
-# (*_test.go, *_test.sh, *.test.ts or .tsx), unless a line of its body is
-# "No test: <why>" (a docs-only or chart-only fix says so). VIEW is the pull
+# (*_test.go, *_test.sh, *.test.ts or .tsx, and the UI's node tests,
+# *.test.mjs or .js, #1203), unless a line of its body is "No test: <why>"
+# (a docs-only or chart-only fix says so). VIEW is the pull
 # request as gh_merge's GraphQL query reads it: body, closingIssuesReferences
 # with their labels, and files. Bugs came back after fixes with no test that
 # would have caught them (#606 then #864, #835 then #1019). A pull request of
@@ -1742,9 +1743,9 @@ gh_bugfix_check() {
   local pr=$1 view=$2 bugs
   bugs=$(jq -r '.closingIssuesReferences.nodes[]? | select(any(.labels.nodes[]?; .name == "kind/bug")) | "#\(.number)"' <<<"$view" | paste -sd, - | sed 's/,/, /g')
   [ -n "$bugs" ] || return 0
-  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
+  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.(tsx?|m?js))$"))' <<<"$view" >/dev/null && return 0
   grep -qiE '^[[:space:]]*No test:[[:space:]]*[^[:space:]]' <<<"$(jq -r '.body // ""' <<<"$view")" && return 0
-  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
+  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts, *.test.mjs): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
   return 1
 }
 

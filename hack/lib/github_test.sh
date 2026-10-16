@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -1076,13 +1076,14 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   rm -f "$T/merged"
   out=$(PR=$(bugpr 'Closes #5' kind/bug '["hack/lib/github.sh", "hack/lib/github_test.sh"]') gh_merge 17 2>&1)
   check "merge: a bug fix touching a test file merges" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
-  for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx; do
+  # The UI's node tests count too (#1203).
+  for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx ui/test/vite-config.test.mjs ui/src/brief.test.js; do
     PR=$(bugpr 'Closes #5' kind/bug "[\"$f\"]") gh_merge 17 >/dev/null 2>&1; check "merge: $f is a test file" $? 0
   done
   rm -f "$T/merged"
-  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "docs/latest_test.md"]') gh_merge 17 2>&1)
+  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "docs/latest_test.md", "ui/test/fixture.mjs"]') gh_merge 17 2>&1)
   check "merge: a bug fix touching no test file refuses, naming the rule" "$? $out | $(cat "$T/merged" 2>/dev/null)" \
-    '1 github: #17 closes #5, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why> | '
+    '1 github: #17 closes #5, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts, *.test.mjs): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why> | '
   PR=$(bugpr $'Closes #5\n\nNo test: a docs-only fix' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
   check "merge: No test: lets a bug fix through" $? 0
   PR=$(bugpr $'Closes #5\n\nNo test:' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
@@ -1515,6 +1516,168 @@ status/ready kind/docs source/dev"
   check "review-check: GitHub failing refuses" "$? $out" "1 github: #50: could not ask GitHub how many lines it changes"
   rm "$RV/fail"
   gh_review_check x 2>/dev/null; check "review-check: bad argument" $? 64
+  exit $fail
+) || fail=1
+
+# take, beat, claims, show and labels against one stub (#1129). $T/tk/comments
+# is the issue's comments, $T/tk/issue the issue, $T/tk/calls what was asked
+# (METHOD URL, then the --input JSON or the -f fields). take's POST adds its
+# comment as id 500, and $T/tk/rival: a claim another device posted meanwhile.
+(
+  TK=$T/tk
+  mkdir -p "$TK"
+  gh_api() {
+    local url= m=GET q= in= f= a
+    for a in "$@"; do case $a in repos/*) url=$a ;; POST | PATCH | DELETE) m=$a ;; esac; done
+    while [ $# -gt 0 ]; do
+      case $1 in --jq) q=$2 ;; --input) in=" $(jq -c . </dev/stdin)" ;; -f) f+=" $2" ;; esac
+      shift
+    done
+    echo "$m $url$in$f" >>"$TK/calls"
+    case "$m $url" in
+      "GET $R/issues/comments?since="*) cat "$TK/claims" ;;
+      "GET $R/issues?state=open"*) cat "$TK/open" ;;
+      "GET $R/issues/comments/"*)
+        [ -e "$TK/down" ] && { echo "HTTP 502" >&2; return 1; }
+        a=$(jq -c --argjson id "${url##*/}" '.[] | select(.id == $id)' "$TK/comments")
+        [ -n "$a" ] || { echo "HTTP 404" >&2; return 1; }
+        jq -c "${q:-.}" <<<"$a" ;;
+      "PATCH $R/issues/comments/"* | "DELETE $R/issues/comments/"* | "PATCH $R/labels/"*) : ;;
+      "GET $R/issues/"*/comments*) [ -e "$TK/posted" ] && [ -e "$TK/reread-fails" ] && return 1; jq -c '[.]' "$TK/comments" ;;
+      "POST $R/issues/"*/comments)
+        touch "$TK/posted"
+        { jq -c '.[]' "$TK/comments"; cm 500 0 "$(jq -r .body <<<"$in")"; cat "$TK/rival" 2>/dev/null; } | comments
+        echo 500 ;;
+      "GET $R/issues/"*) cat "$TK/issue" ;;
+      "GET $R/labels?"*) [ ! -e "$TK/labels-fail" ] && cat "$TK/labels" ;;
+      "POST $R/labels") [ ! -e "$TK/post-fails" ] ;;
+      *) return 1 ;;
+    esac
+  }
+  gh_set_status() { echo "status $*" >>"$TK/calls"; }
+  # cm ID AGE BODY [USER]: a comment edited AGE seconds before the clock; cl ID ISSUE AGE BODY: one on ISSUE, as the repository's comment list has it.
+  cm() { jq -nc --argjson id "$1" --arg u "$(date -u -d "@$((GH_NOW - $2))" +%Y-%m-%dT%H:%M:%SZ)" --arg b "$3" --arg who "${4:-x}" \
+    '{id: $id, created_at: $u, updated_at: $u, html_url: "u\($id)", user: {login: $who}, body: $b}'; }
+  cl() { cm "$1" "$3" "$4" | jq -c --arg n "$2" '.issue_url = "https://api.github.com/repos/o/r/issues/\($n)"'; }
+  comments() { jq -s . >"$TK/comments.new" && mv "$TK/comments.new" "$TK/comments"; }
+  # holds NAME [BRANCH] [HOST]: a claim's body; gone NAME BRANCH: a released one's.
+  holds() { printf '<!-- c4-claim -->\n**%s** works on this issue · host `%s` · branch `%s`\nHeartbeat: x' "$1" "${3:-h1}" "${2:-b}"; }
+  gone() { printf '<!-- c4-claim -->\n**%s** released this issue: handed off · branch `%s`' "$1" "$2"; }
+  again() { clear; rm -f "$TK"/{posted,rival,reread-fails,down}; : >"$TK/calls"; }
+  calls() { grep -c -- "$1" "$TK/calls"; }
+  claimfile() { [ -e "$GH_CLAIM_FILE" ] && echo kept || echo none; }
+  echo '{"number":120,"title":"Some title","html_url":"u","labels":[{"name":"kind/chore"}]}' >"$TK/issue"
+
+  # take's race: a claim with a smaller id shows up on the re-read after the
+  # POST, so the other device won; take deletes its own comment and gives up.
+  again; echo '[]' >"$TK/comments"; cm 400 0 "$(holds heron-120)" >"$TK/rival"
+  out=$(gh_take 120 2>"$TK/err")
+  check "take, race lost: exit 4, names the winner" "$?|$out|$(cat "$TK/err")" "4||github: #120 was claimed at the same time by heron-120, who won"
+  check "take, race lost: deletes its own comment" "$(grep '^DELETE ' "$TK/calls")" "DELETE $R/issues/comments/500"
+  check "take, race lost: no claim, no status" "$(claimfile) $(calls '^status ')" "none 0"
+  again; echo '[]' >"$TK/comments"; cm 600 0 "$(holds heron-120)" >"$TK/rival"
+  out=$(gh_take 120 2>/dev/null)
+  check "take, a later claim beside its own: wins" "$?|$(tr '\t' ' ' <<<"$out")|$(calls '^DELETE ')|$(claimfile)" "0|otter-120 chore/120-some-title|0|kept"
+  again; echo '[]' >"$TK/comments"; touch "$TK/reread-fails"
+  gh_take 120 >/dev/null 2>&1
+  check "take, re-read fails: exit 1, deletes its own comment" "$? $(grep '^DELETE ' "$TK/calls") $(claimfile)" "1 DELETE $R/issues/comments/500 none"
+  # Someone else holds a live claim: take posts nothing.
+  again; cm 1 300 "$(holds heron-120)" | comments
+  out=$(gh_take 120 2>"$TK/err")
+  check "take, held by another: exit 4, names the holder" "$?|$out|$(cat "$TK/err")" "4||github: #120 is claimed by heron-120 on host h1, heartbeat 5m ago"
+  check "take, held by another: posts nothing" "$(calls '^POST ')" 0
+  # A held claim past C4_LEASE_TTL (2h) is marked expired, and take goes on its branch.
+  again; cm 1 $((3 * 3600)) "$(holds heron-120 chore/120-old)" | comments
+  out=$(gh_take 120 2>/dev/null)
+  check "take, stale claim: taken over" "$?|$(tr '\t' ' ' <<<"$out")" "0|otter-120 chore/120-old"
+  check "take, stale claim: marked expired" "$(grep "^PATCH $R/issues/comments/1 " "$TK/calls" | cut -d' ' -f3- | jq -r .body)" \
+    "$(printf '<!-- c4-claim -->\n**heron-120** expired, taken over by otter-120 · branch `chore/120-old`')"
+  check "take, stale claim: claim file and status" "$(jq -c '[.issue, .id, .name, .branch]' "$GH_CLAIM_FILE") $(grep '^status ' "$TK/calls")" '[120,500,"otter-120","chore/120-old"] status 120 in-progress'
+  # The name: the next word of GH_NAMES no claim on the issue used, then
+  # agentK-N. The branch: the newest earlier claim's, else one from the issue.
+  again; { cm 1 900 "$(gone otter-120 chore/120-first)"; cm 2 600 "$(gone heron-120 chore/120-second)"; } | comments
+  check "take, otter and heron used: lynx, the newest claim's branch" "$(gh_take 120 2>/dev/null | tr '\t' ' ')" "lynx-120 chore/120-second"
+  again; { cm 1 900 "$(gone otter-120 chore/120-first)"; cm 2 600 "$(gone heron-120 chore/120-second)"; } | comments
+  check "take, every name of GH_NAMES used: agent3" "$(GH_NAMES=(otter); gh_take 120 2>/dev/null | cut -f1)" agent3-120
+  again; cm 1 600 "$(gone heron-120 chore/120-earlier)" | comments
+  check "take, one earlier claim: its branch" "$(gh_take 120 2>/dev/null | tr '\t' ' ')" "otter-120 chore/120-earlier"
+  again; cm 1 600 'not a claim · branch `feat/elsewhere`' | comments
+  check "take, no earlier claim: the branch from kind and title" "$(gh_take 120 2>/dev/null | tr '\t' ' ')" "otter-120 chore/120-some-title"
+
+  # beat, past GH_BEAT_EVERY: a claim comment that still names this agent gets
+  # a new Heartbeat line; one naming another, or released, is a takeover: exit
+  # 2, the claim dropped, where to push and comment on stderr. Within
+  # GH_BEAT_EVERY it asks nothing; GitHub failing waits for the next beat.
+  again; claim "$T/main" 121 $((GH_NOW - 1000)); cm 1 1000 "$(holds heron-121)" | comments
+  gh_beat 2>/dev/null; check "beat, held: exit 0, beat set" "$? $(jq .beat "$GH_CLAIM_FILE")" "0 $GH_NOW"
+  check "beat, held: the Heartbeat line rewritten" \
+    "$(grep "^PATCH $R/issues/comments/1 " "$TK/calls" | cut -d' ' -f3- | jq -r .body | sed 's/^Heartbeat: 20[0-9-]*T[0-9:]*Z$/Heartbeat: NOW/')" \
+    "$(holds heron-121 | sed 's/^Heartbeat: x$/Heartbeat: NOW/')"
+  again; claim "$T/main" 121 $((GH_NOW - 100))
+  gh_beat; check "beat, within GH_BEAT_EVERY: asks GitHub nothing" "$? $(cat "$TK/calls")" "0 "
+  again; claim "$T/main" 121 $((GH_NOW - 1000)); touch "$TK/down"
+  gh_beat 2>/dev/null; check "beat, GitHub failing: exit 0, claim kept as it was" "$? $(jq .beat "$GH_CLAIM_FILE")" "0 $((GH_NOW - 1000))"
+  again; claim "$T/main" 121 $((GH_NOW - 1000)); cm 1 0 "$(holds otter-121)" | comments
+  gh_beat 2>"$TK/err"; check "beat, taken over: exit 2, claim dropped, nothing edited" "$? $(claimfile) $(calls '^PATCH ')" "2 none 0"
+  check "beat, taken over: says where to push and comment" "$(grep -cF -e 'heron-121 no longer holds #121' \
+    -e 'push what you have to b-heron-121 (git push origin HEAD:refs/heads/b-heron-121)' -e 'comment that branch on #121 (hack/lib/github.sh comment 121 -)' "$TK/err")" 3
+  again; claim "$T/main" 121 $((GH_NOW - 1000)); cm 1 0 "$(gone heron-121 b)" | comments
+  gh_beat 2>/dev/null; check "beat, released: exit 2, claim dropped" "$? $(claimfile)" "2 none"
+  clear
+
+  # claims: the newest claim on each open issue, live or stale; released ones,
+  # closed issues and other comments left out; by issue number.
+  { cl 21 131 $((3 * 3600)) "$(holds heron-131 fix/131-b h2)"; cl 20 130 0 "$(holds otter-130 feat/130-a)"
+    cl 22 132 3600 "$(holds otter-132 feat/132-old)"; cl 23 132 0 "$(holds lynx-132 feat/132-c)"
+    cl 24 133 600 "$(holds otter-133 x)"; cl 25 133 0 "$(gone otter-133 x)"; cl 26 134 0 "$(holds otter-134 x)"; cl 27 135 0 'not a claim'
+  } | jq -sc '[.[:4], .[4:]]' >"$TK/claims"
+  echo '[[{"number":130},{"number":131},{"number":132}],[{"number":133},{"number":135}]]' >"$TK/open"
+  check "claims" "$(gh_claims | tr '\t' ' ')" "#130 otter-130 live h1 heartbeat 0m ago feat/130-a
+#131 heron-131 stale h2 heartbeat 180m ago fix/131-b
+#132 lynx-132 live h1 heartbeat 0m ago feat/132-c"
+
+  # show: the issue, then every comment while there is no handoff; else the
+  # newest handoff and the comments after it only.
+  echo '{"number":140,"title":"Show me","html_url":"u140","state":"open","labels":[{"name":"kind/docs"},{"name":"status/ready"}],"body":"The body."}' >"$TK/issue"
+  { cm 1 600 first ann; cm 2 300 second bob; } | comments
+  out=$(gh_show 140)
+  check "show: the issue" "$(head -5 <<<"$out")" "#140 Show me
+u140
+open; labels: kind/docs, status/ready
+
+The body."
+  check "show, no handoff: every comment" "$(tail -n +7 <<<"$out")" "--- no handoff comment yet; 2 other comment(s) ---
+
+--- comment by ann, 2026-10-06T08:50:00Z ---
+first
+
+--- comment by bob, 2026-10-06T08:55:00Z ---
+second"
+  { cm 1 900 before ann; cm 2 800 $'<!-- relay-handoff -->\nold' bob; cm 3 700 between cat
+    cm 4 600 $'<!-- relay-handoff -->\nnew' dee; cm 5 500 after eve; cm 6 400 later fay; } | comments
+  check "show, two handoffs: the newest and the comments after it" "$(gh_show 140 | tail -n +7)" "--- newest handoff comment, 2026-10-06T08:50:00Z, u4 ---
+<!-- relay-handoff -->
+new
+
+--- comment after it, by eve, 2026-10-06T08:51:40Z ---
+after
+
+--- comment after it, by fay, 2026-10-06T08:53:20Z ---
+later"
+
+  # labels: one with the same description exists, one with another gets it
+  # (PATCH, the slash escaped), the rest are created; GitHub failing stops it.
+  printf 'status/proposed\t%s\nstatus/ready\tOld words\nuser/ann\tx\n' "${GH_LABELS[0]##*|}" >"$TK/labels"
+  IFS='|' read -r ln lc ld <<<"${GH_LABELS[2]}"
+  again; out=$(gh_labels)
+  check "labels: the same description exists, another is updated" "$?|$(head -2 <<<"$out" | paste -sd'|')" "0|label status/proposed: exists|label status/ready: description updated"
+  check "labels: the description PATCHed, the slash escaped" "$(grep '^PATCH ' "$TK/calls")" "PATCH $R/labels/status%2Fready description=${GH_LABELS[1]##*|}"
+  check "labels: the rest created with name, color and description" "$(calls '^POST ') $(grep -c ': created$' <<<"$out") $(grep -m1 '^POST ' "$TK/calls")" \
+    "$((${#GH_LABELS[@]} - 2)) $((${#GH_LABELS[@]} - 2)) POST $R/labels name=$ln color=$lc description=$ld"
+  again; touch "$TK/labels-fail"
+  gh_labels >/dev/null 2>&1; check "labels: listing fails: exit 1, creates nothing" "$? $(calls '^POST ')" "1 0"
+  rm "$TK/labels-fail"; again; touch "$TK/post-fails"
+  gh_labels >/dev/null 2>&1; check "labels: a failing POST: exit 1, stops there" "$? $(calls '^POST ')" "1 1"
   exit $fail
 ) || fail=1
 exit $fail

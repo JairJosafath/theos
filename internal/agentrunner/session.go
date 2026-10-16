@@ -276,7 +276,7 @@ func guardSession(stdin io.Reader, stdout io.Writer, limit int64, handoff string
 // newestTurn is the prompt of the main session's newest turn in a Claude Code
 // transcript; a subagent's turns are sidechains.
 func newestTurn(transcript string) (int64, error) {
-	f, err := os.Open(transcript)
+	f, err := os.Open(transcript) //nolint:gosec // the transcript Claude Code names in its hook input
 	if err != nil {
 		return 0, err
 	}

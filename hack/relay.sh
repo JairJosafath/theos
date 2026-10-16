@@ -83,10 +83,12 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
-# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
-# gitignored, not the device's /tmp: a small tmpfs every session shares, which
-# one session's scratch, Go's build dirs and envtest's filled. The relay
-# empties it before the session starts and removes it when the session ends.
+# Each session gets TMPDIR=~/.cache/c4factory/tmp/<its worktree> (#1269,
+# #1307): on disk, not the device's /tmp, a small tmpfs every session shares,
+# which one session's scratch, Go's build dirs and envtest's filled; and outside
+# any git checkout, so a test that runs git in a mktemp -d directory finds no
+# repository above it. The relay empties it before the session starts and
+# removes it when the session ends.
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
@@ -161,6 +163,7 @@ STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
+SCRATCH=${RELAY_SCRATCH:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307)
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own
@@ -690,7 +693,7 @@ scratch_clear() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$SCRATCH/${WT##*/}
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.
@@ -703,8 +706,9 @@ session() {
   # the session leaves behind would hold it after the worker exits, and the
   # watch would see the worker as running.
   # Started from a Claude Code session or not, the session gets the same
-  # environment (#645). Its TMPDIR is in its worktree, not the shared /tmp
-  # (#1269), and starts empty: what a dead session left there goes first.
+  # environment (#645). Its TMPDIR is under SCRATCH, not the shared /tmp
+  # (#1269) nor in a checkout (#1307), and starts empty: what a dead session
+  # left there goes first.
   # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
   # --next reserves only for a numbered one's next session.
   scratch_clear "$tmp"

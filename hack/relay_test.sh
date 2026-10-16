@@ -5,10 +5,14 @@
 # session's claim so the relay has none left to release; the prompts, which
 # never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
-# worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
+# worktree and lock, which it starts in however many workers run; against a
+# fake origin, switch_branch's three ways to the issue's branch (the local one
+# fast-forwarded, origin's, a new one from origin/main), worktree()'s fetch,
+# creation and stash of what a session left, and update() pulling nothing
+# under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
-# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
+# TMPDIR, outside any checkout, emptied before and removed after it; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -29,6 +33,7 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
+check "defaults: scratch in the user's cache (#1307)" "$(unset XDG_CACHE_HOME RELAY_SCRATCH; HOME=/h; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
 
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
 # shellcheck source=hack/relay.sh
@@ -251,6 +256,81 @@ rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
 
+# switch_branch, worktree and update (#1129), in a scratch clone of a fake
+# origin, so no stash lands in the real checkout; another device, up, pushes to it.
+(
+  S=$T/sw
+  REPO=$S/repo WT=$S/wt LOG=$S/log GH_PENDING_DIR=$S/wt/.relay K=7 PULL=1 STOP=$S/stop CODE_SUM= DRY_RUN=
+  mkdir -p "$S"
+  # tip REPO REV MSG: a new commit on top of REV, with its tree.
+  tip() { git -C "$1" -c user.name=t -c user.email=t@t commit-tree -p "$2" -m "$3" "$2^{tree}"; }
+  at() { echo "$(git -C "$WT" rev-parse --abbrev-ref HEAD) $(git -C "$WT" rev-parse HEAD)"; }
+  sha() { git -C "$REPO" rev-parse "$1"; }
+  upstream() { git -C "$REPO" for-each-ref --format='%(upstream:short)' "refs/heads/$1"; }
+  git init -q --bare -b main "$S/origin.git"
+  git init -q -b main "$S/up"
+  echo 1 >"$S/up/f"
+  git -C "$S/up" add f
+  git -C "$S/up" -c user.name=t -c user.email=t@t commit -q -m first
+  git -C "$S/up" remote add origin "$S/origin.git"
+  git -C "$S/up" push -q origin main
+  git clone -q "$S/origin.git" "$REPO"
+  git -C "$S/up" push -q origin "$(tip "$S/up" main second):refs/heads/main"
+  # A missing worktree is created after the fetch, detached at origin/main, with .relay ignored.
+  worktree
+  check "worktree: created at the fetched origin/main" "$? $(at)" "0 HEAD $(git -C "$S/origin.git" rev-parse main)"
+  check "worktree: creation logged, .relay ignored" "$(grep -c "created the worktree $WT$" "$LOG") $(cat "$GH_PENDING_DIR/.gitignore")" "1 *"
+  # switch_branch, each way: up pushes a1 ahead of the local one, a2 apart
+  # from it and b, which only origin has; a3 is local only and checked out in
+  # the main checkout, so the switch ignores other worktrees; c is nowhere.
+  m=$(sha origin/main)
+  git -C "$REPO" branch -q a1 "$m"
+  git -C "$REPO" branch -q a2 "$(tip "$REPO" "$m" "local a2")"
+  git -C "$REPO" switch -q -c a3
+  git -C "$S/up" push -q origin "$(tip "$S/up" "$m" "origin a1"):refs/heads/a1" \
+    "$(tip "$S/up" "$m" "origin a2"):refs/heads/a2" "$(tip "$S/up" "$m" "origin b"):refs/heads/b"
+  git -C "$REPO" fetch -q origin
+  switch_branch a1; check "switch: local behind origin, fast-forwarded" "$? $(at)" "0 a1 $(sha origin/a1)"
+  l=$(sha a2)
+  switch_branch a2; check "switch: diverged, the local commit kept" "$? $(at)" "0 a2 $l"
+  check "switch: diverged, logged" "$(grep -c 'local a2 and origin/a2 have diverged; the session sorts it out$' "$LOG")" 1
+  l=$(sha a3)
+  switch_branch a3; check "switch: local only, checked out elsewhere, unchanged" "$? $(at)" "0 a3 $l"
+  switch_branch b; check "switch: origin only, tracking origin/b" "$? $(at) $(upstream b)" "0 b $(sha origin/b) origin/b"
+  switch_branch c; check "switch: neither, from origin/main, no upstream" "$? $(at) $(upstream c)" "0 c $m "
+  # A switch git refuses fails: a name it rejects, or d, whose f a local change would overwrite.
+  switch_branch 'c..d'; check "switch: a name git rejects" "$(($? != 0)) $(at)" "1 c $m"
+  git -C "$REPO" switch -q -c d
+  echo 2 >"$REPO/f"
+  git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -am d
+  echo 3 >"$WT/f"
+  switch_branch d; check "switch: refused over a local change" "$? $(at)" "1 c $m"
+  # What a dead session left uncommitted, a changed file and a new one, is
+  # stashed in the scratch clone, and the tree is clean.
+  echo new >"$WT/n"
+  worktree
+  check "worktree: stashed" "$? $(git -C "$WT" stash list | grep -c ': relay-7: left uncommitted on c, ') $(git -C "$WT" stash show --include-untracked --name-only | paste -sd,)" "0 1 f,n"
+  check "worktree: clean after, logged" "$(git -C "$WT" status --porcelain) $(grep -c "stashed uncommitted changes left in $WT " "$LOG")" " 1"
+  # A fetch that fails (origin gone) prepares nothing.
+  mv "$S/origin.git" "$S/gone.git"
+  worktree; check "worktree: the fetch fails" "$? $(grep -c 'git fetch failed$' "$LOG")" "1 1"
+  mv "$S/gone.git" "$S/origin.git"
+  # update: RELAY_PULL=0 pulls nothing; a worker due to restart on
+  # relay-code's copy (it runs from the clone, not from relay-code) stops
+  # instead when the stop file is there. Each runs in a subshell, for its
+  # exit; the restart itself is "relay code" below.
+  CODE=$REPO
+  mkdir -p "$REPO/hack"
+  printf '#!/usr/bin/env bash\necho pulled\n' >"$REPO/hack/pull.sh"
+  chmod +x "$REPO/hack/pull.sh"
+  : >"$LOG"
+  (PULL=0 update 5); check "update: RELAY_PULL=0 pulls nothing" "$? $(grep -c pulled "$LOG")" "0 0"
+  touch "$STOP"
+  (update 4); check "update: the stop file stops it, no restart" \
+    "$? $(grep -c pulled "$LOG") $(grep -c 'stop file found; stopping$' "$LOG") $(grep -c restarting "$LOG")" "0 1 1 0"
+  exit $fail
+) || fail=1
+
 # The sessions, with claude faked (FAKE: limit, fail, handoff or commit) and
 # GitHub faked: one ready issue, #175 on branch b.
 WT=$T/wt
@@ -281,7 +361,8 @@ case $(cat "$FAKE") in
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   env) env >"$FAKE.env"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
-  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
+  tmp) echo "$TMPDIR" >"$FAKE.tmpdir"; (cd "$TMPDIR" && GIT_CEILING_DIRECTORIES=${FAKE%/*} git rev-parse --show-toplevel) >"$FAKE.repo" 2>/dev/null
+     if [ -e "$TMPDIR/left" ]; then echo kept; else echo gone; fi >"$FAKE.left"
     d=$(mktemp -d); echo "$d" >"$FAKE.scratch"; mkdir "$d/ro" && touch "$d/ro/f" && chmod a-w "$d/ro"
     echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"tmp","num_turns":1}' ;;
   fail) echo "boom $RANDOM" >&2; echo '{"is_error":false,"result":"gave up","num_turns":3}' ;;
@@ -400,15 +481,19 @@ check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=ke
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 no_strikes
 
-# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
-# /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
+# Each session's TMPDIR is SCRATCH/<its worktree>, not the device's shared
+# /tmp tmpfs (#1269) nor inside a git checkout, where git in a test's scratch
+# would find the worktree (#1307): emptied before it starts and removed after
+# it ends.
 echo tmp >"$FAKE"
-mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+SCRATCH=$T/cache/c4factory/tmp
+mkdir -p "$SCRATCH/wt" && echo old >"$SCRATCH/wt/left"
 work
-check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: TMPDIR is SCRATCH/<worktree>" "$(cat "$FAKE.tmpdir")" "$SCRATCH/wt"
+check "tmp #1307: TMPDIR is in no git checkout" "$(cat "$FAKE.repo")" ""
 check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
-check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
-check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$SCRATCH/wt/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SCRATCH/wt" && echo left)" ""
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
