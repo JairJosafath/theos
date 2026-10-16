@@ -198,7 +198,7 @@ toolchain-go: ## Build the Go, Node and uv toolchain (Go and Python Containers, 
 .PHONY: runner-go
 runner-go: ## Build the Go and Node CI runner (label go), load it into Kind and run it.
 	$(call build-load,$(RUNNER_GO_IMG),--build-arg BASE=$(GO_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .)
-	$(TESTENV_KUBECTL) apply -f config/runner/go.yaml
+	$(TESTENV_KUBECTL) apply -f config/runner/network-policy.yaml -f config/runner/go.yaml
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-go
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-go --timeout=600s
 
@@ -213,7 +213,7 @@ toolchain-base: ## Build the minimal toolchain (Node, uv, bash, git, make) the e
 .PHONY: runner-base
 runner-base: ## Build the minimal CI runner (label base), load it into Kind and run it.
 	$(call build-load,$(RUNNER_BASE_IMG),--build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/runner/Dockerfile .)
-	$(TESTENV_KUBECTL) apply -f config/runner/base.yaml
+	$(TESTENV_KUBECTL) apply -f config/runner/network-policy.yaml -f config/runner/base.yaml
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-base
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-base --timeout=600s
 

@@ -1,7 +1,9 @@
 # The minimal runner: the Gitea runner on the minimal toolchain (hack/toolchain-base),
 # labelled base, for the e2e hello-world Container and Python projects (uv).
 # `make runner-base` builds it and applies this, it is applied by that target alone.
-# It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+# Its init container registers with the token the seed Job stores in Secret
+# gitea/gitea-runner; the runner container, where jobs run, never gets it.
+# config/runner/network-policy.yaml fences it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,12 +23,18 @@ spec:
       labels:
         app.kubernetes.io/name: gitea-runner-base
         app.kubernetes.io/part-of: c4factory-testenv
+        # The CI fence selects it: config/runner/network-policy.yaml.
+        app.kubernetes.io/component: ci-runner
     spec:
       automountServiceAccountToken: false
-      containers:
-        - name: runner
+      initContainers:
+        # Registers the runner, writing /data/.runner: the only container given
+        # the registration token, which the jobs in the runner container must
+        # not read (hack/runner/register.sh).
+        - name: register
           image: c4factory/gitea-runner-base:dev
           imagePullPolicy: Never
+          command: [c4-runner-register]
           env:
             - name: GITEA_INSTANCE
               value: http://gitea.gitea.svc.cluster.local:3000
@@ -34,6 +42,16 @@ spec:
               valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
             - name: RUNNER_LABELS
               value: base:host
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner-base:dev
+          imagePullPolicy: Never
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 1Gi}
