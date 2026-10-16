@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tests for hack/gh-runner/gh-runner.sh: N runners up, fewer up, down, and the
-# single runner from before there were several, with docker, gh and stat
+# Tests for hack/gh-runner/gh-runner.sh: N runners up, fewer up, down, the
+# single runner from before there were several, and status with Docker
+# unreachable, a container down and a runner offline, with docker, gh and stat
 # faked. The fake Docker keeps its containers, volumes and registrations as
 # files; the fake GitHub lists the registrations, each online.
 # Run: hack/gh-runner/gh-runner_test.sh
@@ -11,6 +12,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
 export S=$T/state
+unset WSL_DISTRO_NAME # each test names its own distro
 mkdir -p "$T/bin" "$S/containers" "$S/volumes" "$S/reg"
 
 cat >"$T/bin/docker" <<'FAKE'
@@ -18,6 +20,7 @@ cat >"$T/bin/docker" <<'FAKE'
 # The fake Docker: what gh-runner.sh calls, on files under $S.
 arg() { local want=$1; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
 case "$1" in
+  info) [ ! -e "$S/no-docker" ] ;;
   build) rev=$(arg --label "$@"); echo "${rev#*=}" >"$S/image" ;;
   image) [ -s "$S/image" ] || exit 1; [ "$3" = -f ] && cat "$S/image"; exit 0 ;;
   volume)
@@ -27,7 +30,8 @@ case "$1" in
       inspect) [ -e "$S/volumes/$3" ] ;;
       ls) ls "$S/volumes" ;;
     esac ;;
-  ps) for c in "$S"/containers/*; do [ -e "$c" ] && printf '%s\tUp 1 minute\tc4factory/gh-runner:dev\n' "${c##*/}"; done | if [[ $* == *Status* ]]; then cat; else cut -f1; fi ;;
+  ps) for c in "$S"/containers/*; do [ -e "$c" ] || continue; st='Up 1 minute'; [ -e "$S/exited-${c##*/}" ] && st='Exited (0) 2 hours ago'
+      printf '%s\t%s\tc4factory/gh-runner:dev\n' "${c##*/}" "$st"; done | if [[ $* == *Status* ]]; then cat; else cut -f1; fi ;;
   inspect)
     c=${*: -1}; [ -e "$S/containers/$c" ] || exit 1
     case "$3" in *rev*) cat "$S/containers/$c" ;; *StartedAt*) echo 2026-10-07T00:00:00Z ;; esac ;;
@@ -75,7 +79,8 @@ case "$*" in
     for r in "$S"/reg/*; do
       [ -e "$r" ] || continue
       read -r n l <"$r"
-      jq -n --arg n "$n" --arg l "$l" '{id: 7, name: $n, status: "online", busy: false,
+      st=online; [ -e "$S/offline-$n" ] && st=offline
+      jq -n --arg n "$n" --arg l "$l" --arg st "$st" '{id: 7, name: $n, status: $st, busy: false,
         labels: ((["self-hosted", "Linux", "X64"] | map({id: 0, name: ., type: "read-only"}))
           + ($l | split(",") | map({id: 0, name: ., type: "custom"})))}'
     done | jq -s '{runners: .}' | jq -r "$jq_expr" ;;
@@ -117,8 +122,27 @@ check "up 1 after 3: registration volumes" "$(configs)" "c4factory-gh-runner-1-c
 check "up 1 after 3: registrations" "$(regs)" "c4factory-dev-1 c4factory,c4factory-kind"
 check "up 1 after 3: their tool caches go" "$(ls "$S/volumes" | grep -c toolcache)" 1
 
-gh_runner status >/dev/null 2>&1
-check "status: online" "$?" 0
+gh_runner status >"$T/out" 2>&1
+check "status: online" "$? | $(cat "$T/out")" "0 | docker: reachable from this host
+container: c4factory-gh-runner-1 up (Up 1 minute, c4factory/gh-runner:dev)
+github: c4factory-dev-1 online busy=false labels=self-hosted,Linux,X64,c4factory,c4factory-kind"
+
+# Docker not reachable (Docker Desktop stopped): said, with what GitHub sees
+# and the fix, from the distro WSL names.
+touch "$S/no-docker" "$S/offline-c4factory-dev-1"
+WSL_DISTRO_NAME=Ubuntu gh_runner status >"$T/out" 2>&1
+check "status: no Docker" "$? | $(cat "$T/out")" "1 | docker: not reachable from WSL distro Ubuntu; the runners stop with it
+github: c4factory-dev-1 offline busy=false
+fix: start Docker Desktop, with WSL integration on for Ubuntu (Settings > Resources > WSL integration); the runners restart with it. Then make gh-runner-status again (DEVELOPMENT.md)."
+rm "$S/no-docker"
+
+# A container stopped, GitHub seeing its runner offline: both said, and the fix.
+touch "$S/exited-c4factory-gh-runner-1"
+gh_runner status >"$T/out" 2>&1
+check "status: a container down" "$? | $(sed -n '2p;4p' "$T/out")" "1 | container: c4factory-gh-runner-1 down (Exited (0) 2 hours ago, c4factory/gh-runner:dev)
+fix: make gh-runner RUNNERS=1 starts the containers that are down and registers again the runners GitHub lost; a container that is up while GitHub sees it offline says why in docker logs --tail 50 NAME (DEVELOPMENT.md)."
+check "status: GitHub sees it offline" "$(grep -c '^github: c4factory-dev-1 offline' "$T/out")" 1
+rm "$S/exited-c4factory-gh-runner-1" "$S/offline-c4factory-dev-1"
 
 # Down removes them all; the shared cache stays.
 RUNNERS=3 gh_runner up >/dev/null 2>&1

@@ -126,11 +126,22 @@
 #                                        SPEC<tab>RUN<tab>TIME for each [FAIL] line of each failed run's log.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
+#   hack/lib/github.sh queued [--minutes M]
+#                                        whether runs on main wait for a runner: when the oldest run queued on
+#                                        main was queued more than M minutes ago (default 30), prints
+#                                        OLDEST<tab>COUNT, its createdAt and how many runs are queued there.
+#                                        Exit 1: none waits that long. A queued run never fails, so red can't
+#                                        see runners that are all offline; the relay watch asks this
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
 #                                        maintainer/report, no status), creating and pinning it the first time;
 #                                        prints its URL
+#   hack/lib/github.sh report-note KEY [HEALTH [NEEDS]]
+#                                        put the line HEALTH under the Maintainer report's Health and NEEDS
+#                                        (default HEALTH) as a task under its Needs you, each marked
+#                                        <!-- watch:KEY --> and replacing the lines KEY marked before; with no
+#                                        text, remove them. The relay watch's notes; the maintainer keeps them
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -1648,6 +1659,66 @@ gh_report() {
   echo "$url"
 }
 
+# gh_note_body KEY [HEALTH [NEEDS]]: the report body on stdin with the lines
+# marked <!-- watch:KEY --> replaced by HEALTH, first under "## Health", and
+# "- [ ] NEEDS", first under "## Needs you" (see the usage above). A heading
+# the body lacks is added at its end. Needs you's "Nothing." line goes while
+# a note is there, and comes back when removing the note empties it.
+GH_NOTHING='Nothing. The project runs without you.'
+gh_note_body() {
+  local key="<!-- watch:${1:?usage: report-note KEY [HEALTH [NEEDS]]} -->" health=${2:-} needs=${3:-${2:-}}
+  H=$health N=$needs awk -v key="$key" -v nothing="$GH_NOTHING" '
+    { l[++n] = $0 }
+    # empty(J): whether the section after line J has no line but blank ones.
+    function empty(j) {
+      for (j++; j <= m && o[j] !~ /^## /; j++) if (o[j] !~ /^[ \t]*$/) return 0
+      return 1
+    }
+    # put(J, LINE): print heading J, its blank line, then LINE; return the last line printed.
+    function put(j, line) {
+      print o[j]
+      if (j < m && o[j + 1] ~ /^[ \t]*$/) print o[++j]
+      print line
+      return j
+    }
+    END {
+      h = ENVIRON["H"]; nd = ENVIRON["N"]
+      for (i = 1; i <= n; i++) {
+        if (index(l[i], key)) continue
+        if (l[i] ~ /^## /) sec = l[i]
+        if (h != "" && sec == "## Needs you" && index(l[i], nothing) == 1) continue
+        o[++m] = l[i]
+      }
+      while (m > 0 && o[m] ~ /^[ \t]*$/) m--
+      for (j = 1; j <= m; j++) {
+        if (h != "" && o[j] == "## Needs you" && !needs_done) { j = put(j, "- [ ] " nd " " key); needs_done = 1; continue }
+        if (h != "" && o[j] == "## Health" && !health_done) { j = put(j, h " " key); health_done = 1; continue }
+        if (h == "" && o[j] == "## Needs you" && empty(j)) {
+          print o[j]; print ""; print nothing
+          for (j++; j <= m && o[j] !~ /^## /; j++) ;
+          if (j <= m) { print ""; j-- }
+          continue
+        }
+        print o[j]
+      }
+      if (h != "" && !needs_done) { if (m) print ""; print "## Needs you"; print ""; print "- [ ] " nd " " key; m++ }
+      if (h != "" && !health_done) { if (m) print ""; print "## Health"; print ""; print h " " key }
+    }'
+}
+
+# gh_report_note KEY [HEALTH [NEEDS]]: see the usage above. The report is
+# edited only when the note changes it; exit 1 when there is no report.
+gh_report_note() {
+  local n body new
+  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
+  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+  new=$(gh_note_body "$@" <<<"$body") || return 1
+  [ "$new" != "$body" ] || return 0
+  jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+}
+
 # The maintainer lease (#526): the maintainer runs once per project, not once
 # per device. Before hack/relay.sh --maintain starts a session it takes the
 # lease, a comment on the pinned Maintainer report issue that starts with
@@ -2056,6 +2127,26 @@ gh_red() {
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
 }
 
+# gh_queued [--minutes M]: see the usage above; exit 2 when GitHub can't say.
+gh_queued() {
+  local minutes=30 runs
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --minutes) minutes=${2:?usage: queued [--minutes M]}; shift 2 ;;
+      *) echo "usage: queued [--minutes M]" >&2; return 64 ;;
+    esac
+  done
+  [[ $minutes =~ ^[0-9]+$ ]] || { echo "usage: queued [--minutes M]" >&2; return 64; }
+  gh_token || return 2
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
+    --json databaseId,status,createdAt) || return 2
+  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) |
+    select(length > 0 and (now - (.[0].createdAt | fromdateiso8601)) > $m * 60) | "\(.[0].createdAt)\t\(length)"' <<<"$runs") ||
+    return 2
+  [ -n "$runs" ] || return 1
+  echo "$runs"
+}
+
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
 # "[FAIL] <spec>" summary lines, once each, colour codes, carriage returns
 # and "[It] " dropped and tabs made spaces (the spec is a column of a TSV).
@@ -2233,8 +2324,10 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     intake) gh_intake "$@" ;;
     red) gh_red "$@" ;;
     flakes) gh_flakes "$@" ;;
+    queued) gh_queued "$@" ;;
     activity) gh_activity ;;
     report) gh_report "$@" ;;
+    report-note) gh_report_note "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64
