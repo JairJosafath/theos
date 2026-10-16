@@ -200,7 +200,7 @@ pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }
-proposed() { github proposed; }
+proposed() { github proposed "$@"; }
 run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }

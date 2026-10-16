@@ -20,6 +20,9 @@ T=$(mktemp -d)
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER
+# Git looks no further up than $T: with $TMPDIR inside a checkout, $T/repo
+# would be that checkout, and --install refuses a worktree.
+export GIT_CEILING_DIRECTORIES=${T%/*}
 # shellcheck source=hack/relay-watch.sh
 . "$(dirname "$0")/relay-watch.sh"
 DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600 TRIAGE_EVERY=1800
@@ -37,6 +40,17 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
   check "pick_next: every worker's .relay/next, not the triage's" "$(pick_next)" \
     "$REPO/.claude/worktrees/relay-1/.relay/next
 $REPO/.claude/worktrees/relay-2/.relay/next"
+  exit $fail
+) || fail=1
+
+# proposed passes its arguments on, --since included (#1251): the real wrapper
+# and github, against a fake hack/lib/github.sh.
+(
+  CODE=$T/code
+  mkdir -p "$CODE/hack/lib"
+  printf '#!/bin/sh\necho "$*"\n' >"$CODE/hack/lib/github.sh"
+  chmod +x "$CODE/hack/lib/github.sh"
+  check "proposed: passes --since on (#1251)" "$(proposed --since 1700000000)" "proposed --since 1700000000"
   exit $fail
 ) || fail=1
 
