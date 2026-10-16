@@ -63,10 +63,12 @@ func (g *gitea) RunnerRegistrationToken(ctx context.Context) (string, error) {
 }
 
 // Runners returns the runners registered to the owner organization, reading
-// at most runnerPages pages: a pool has far fewer, and the first pages are
-// enough to clear dead registrations a few at a time.
+// at most runnerPages pages; a pool has far fewer. Gitea lists the runners it
+// heard from last first, so one that calls it while the pages are read can
+// move to an earlier page: a runner listed twice is returned once.
 func (g *gitea) Runners(ctx context.Context) ([]Runner, error) {
 	var out []Runner
+	seen := map[int64]bool{}
 	for page := 1; page <= runnerPages; page++ {
 		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
 		status, data, err := g.do(ctx, http.MethodGet, g.runnersPath()+"?"+query.Encode(), nil)
@@ -83,7 +85,10 @@ func (g *gitea) Runners(ctx context.Context) ([]Runner, error) {
 			return nil, fmt.Errorf("gitea: listing the runners of %q: %w", g.owner, err)
 		}
 		for _, r := range runners.Runners {
-			out = append(out, r.runner())
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				out = append(out, r.runner())
+			}
 		}
 		if len(runners.Runners) < issuePageSize {
 			break

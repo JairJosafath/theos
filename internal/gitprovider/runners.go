@@ -27,9 +27,10 @@ type Runner struct {
 	Labels []string
 	// Ephemeral is whether it takes one job and is removed when that job ends.
 	Ephemeral bool
-	// Online is whether it has called the host lately, idle or busy; a
-	// registration whose runner stopped, or never started, isn't.
+	// Online is whether it has called the host lately; a registration whose
+	// runner stopped, or never started, isn't.
 	Online bool
-	// Busy is whether the host has given it a job that hasn't ended.
+	// Busy is whether the host has given it a job that hasn't ended, which a
+	// runner that stopped mid-job still has.
 	Busy bool
 }
