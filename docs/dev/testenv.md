@@ -551,8 +551,15 @@ scaffolds the release's `orders-api` sample. Then it follows
 Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through
 it) and `config/samples/first-app/`, set to the release's agent tag and
 template refs, until `orders-cli` is scaffolded and its Crew is `Idle`; no
-Agent runs, as CI has no Claude token. A tag without `first-app` skips that
-part and says so.
+Claude Agent runs, as CI has no Claude token. A tag without `first-app` skips that
+part and says so. Then it follows the guide's *Without a token* command for
+command: a Brief on the chart's Agent `stand-in` plans, its Crew's stand-in
+Tasks merge the issue and "Prepare v0.1.0", the Crew tags `v0.1.0` and the
+release run puts the binaries and `SHA256SUMS` on the Gitea release, in up to
+75 minutes (#1083). `test/chart/verify_release_guide_test.go` holds that step
+to the guide's commands. A tag whose stand-in releases nothing stops at the
+Crew's first Task. Publishing to GitHub isn't checked: it needs a repository
+and token of the owner's (#1216).
 
 The upgrade check takes the path a device takes: `helm upgrade` from the
 release it already runs. It installs the previous release (the highest

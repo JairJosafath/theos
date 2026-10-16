@@ -1039,10 +1039,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
-  the Brief on the first Framework, with an issue for it, and an issue for
-  each follow-up prompt and each request it takes. `make e2e` takes a Brief through two rounds that way,
-  with no token, and *Verify Release*, when a human dispatches it, takes one
-  through a round on the published chart, whose Agent `stand-in` any project can name.
+  the Brief on the first Framework a Deployment ships and a Standard fits,
+  with both and released (else on the first Framework, unreleased), with an issue for
+  it, and an issue for each follow-up prompt and each request it takes.
+  `make e2e` takes a Brief through two rounds that way, with no token, and
+  *Verify Release*, when a human dispatches it, follows
+  [getting-started.md](getting-started.md)'s *Without a token* on the
+  published chart, whose Agent `stand-in` any project can name, until the
+  Brief's app has a release on Gitea with its files (#1083).
   How well a real planner plans an idea is the person's run.
 - **The person answers the reviewers' suggestions in a prompt** (#375). A
   reviewer's follow-up waiting, `status/proposed`, in the repository of a
