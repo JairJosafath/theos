@@ -867,8 +867,14 @@ var _ = Describe("Task with a gated merge", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 		}).Should(Succeed())
 		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
-		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
-			"It also changes `tests/test_release.py`, which no Standard protects")).To(Equal(1))
+		// The note follows the status write (#906), so the status can show
+		// before it is posted (#1254): wait for it, then make sure it stays one.
+		notes := func() int {
+			return countContaining(gitFake.pullComments(ns, "orders-api", 1),
+				"It also changes `tests/test_release.py`, which no Standard protects")
+		}
+		Eventually(notes).Should(Equal(1))
+		Consistently(notes, "500ms").Should(Equal(1))
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
 	})
 
