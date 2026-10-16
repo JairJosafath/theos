@@ -740,10 +740,18 @@ queue:
   printing who holds them (pid, checkout, goals, since when) and how many jobs
   wait ahead of it; the wait is not a hang, so give the command a long timeout
   or run it in the background. Waiters get slots first come, first served:
-  each holds a numbered ticket, and a waiter that dies loses its turn. A job
-  that ends, fails or is killed frees its slot within a second; its sub-makes
-  don't take another. `hack/heavy-slot.sh status` shows the slots and the
-  waiters.
+  each holds a numbered ticket, and a waiter that dies loses its turn. One
+  job goes first: the `make check` that `land` runs under the merge turn
+  (`C4_HEAVY_FIRST=1`, which the Makefile turns into `hack/heavy-slot.sh
+  acquire --first`) takes the next slot that frees, ahead of every waiter,
+  since every device's lands wait on it while the other checks hold up only
+  their own. It never takes a held slot, and one pull request at a time holds
+  the turn across every device, so the other waiters can't starve. The check
+  `land` runs before it queues for the turn waits its turn like any other. A
+  job that ends, fails or is killed frees its slot within a second; its
+  sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
+  and the waiters, the one going first marked `goes first` and the slot it
+  took `went first`.
 - Two checks at once still start several envtest control planes at once, so
   `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
   start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout
@@ -782,8 +790,11 @@ queue:
 `/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
-the oldest waiter taking the next free slot and a dead waiter skipped, and the
-Makefile queueing its heavy goals. `hack/check-cache_test.sh` tests the
+the oldest waiter taking the next free slot and a dead waiter skipped, a
+`--first` waiter taking the next free slot ahead of older waiters but never a
+held one while the others keep their order, and the Makefile queueing its
+heavy goals, going first only with `C4_HEAVY_FIRST`, which its recipes don't
+inherit. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
 
