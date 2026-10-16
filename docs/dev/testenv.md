@@ -330,8 +330,8 @@ it back to `status/ready` or `status/proposed` isn't counted either way.
 
 This is the human path: a person who wants to run Kind sets
 `C4_HUMAN_CLUSTER=1` in their own shell; without it `cluster acquire` exits 5
-and names the opt-in. The relay never sets it, and no prompt or skill tells an
-agent to. Two humans' checkouts (or a human's worktrees) may still run Kind at
+and names the opt-in. The relay never sets it and unsets it for its sessions
+(`hack/lib/session-env.sh`), and no prompt or skill tells an agent to. Two humans' checkouts (or a human's worktrees) may still run Kind at
 once. A deploy and its verification take a whole cluster: `make deploy` from a branch
 replaces the operator, CRDs and admission policies another session deployed,
 an outage test or `make down`/`make up` stops the node, and Standard tags land
@@ -388,9 +388,10 @@ checkout): `c4-cluster.lease` for `c4factory`, `c4-cluster-<name>.lease` for
 the others, naming the cluster, agent, issue and worktree. A checkout holds
 at most one. `beat` (the heartbeat hook) refreshes it, and it is stale after
 `C4_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
-over. `release`, `handoff`, `close`, `status N needs-maintainer` and
-`status N needs-human` drop it, and
-the relay drops one its session left behind, as it does a claim.
+over. `release`, `handoff`, `close`, `status N waiting`, `status N
+needs-maintainer` and `status N needs-human` drop it. In the relay and its
+sessions (`C4_HEADLESS=1`) `beat` and those commands touch no lease: they
+hold none.
 `hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`, `test-e2e`, `up`
 and `down` while another checkout holds the cluster the command targets
 (`KIND_CLUSTER=` in the command, else the checkout's lease, else
@@ -428,9 +429,9 @@ as the maintainer does: it needs no free worker, doesn't count against
 goes through `admit` like any session and logs to `.relay/relay-triage.log`.
 To triage now, say after a plan files its steps `status/proposed`, run
 `./dev run hack/relay.sh --triage`: it starts one triage session unless one
-runs, and records its time and issues in `.relay/triaged` as the watch's does,
-so the watch starts no second triage for the same issues, only for one filed
-after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+runs, and records its time and issues in `.relay/triaged`, as every triage
+session does (the watch only reads that file), so the watch starts no second
+triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
