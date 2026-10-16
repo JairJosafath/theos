@@ -55,7 +55,7 @@ check "generate: keeps the DeepCopy code" $? 0
 # with TEST_TIMEOUT=7m.
 gotest() {
   env -u COVER -u FORCE C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true \
-    TEST_TIMEOUT=7m "$@" 2>/dev/null | sed -n "s/.* go test .*grep -v '\/test\/e2e\$') //p" | xargs
+    TEST_TIMEOUT=7m "$@" 2>/dev/null | sed -n 's/.* go test .*$pkgs //p' | xargs
 }
 check "make test: TEST_TIMEOUT, no flag Go won't cache" "$(gotest)" "-timeout 7m"
 check "COVER=1: writes cover.out" "$(gotest COVER=1)" "-timeout 7m -coverprofile cover.out"

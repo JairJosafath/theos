@@ -46,7 +46,8 @@ network.
 ## Testing & Development
 
 ```bash
-make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
+make test                # Unit and envtest tests of the packages the change affects (real K8s API + etcd, no cluster needed)
+make test TEST_ALL=1     # The same, every package
 make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
@@ -74,6 +75,28 @@ renders every folder in `templates/` in a realistic combination, without envtest
 fails on a render error, a path two layers write, or YAML that doesn't parse. A new
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
+
+`make test` tests only the packages the change since `origin/main` (its merge
+base, with uncommitted and untracked files) can affect: a package with a changed
+file (its directory or one below it, so embedded files count) and every package
+whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
+prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
+internal/model`, or `testing every package (21): <reason>`. It tests every
+package on `main`, without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
+after a change to a file a Go test may read without importing it: `go.mod`,
+`go.sum`, the `Makefile`, `hack/`, `config/` (the CRDs and RBAC envtest loads),
+`api/`, `dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
+A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
+`.github/` or a top-level `*.md` tests no package. `land`'s `make check` selects
+the same way; the *Tests* workflow sets `TEST_ALL=1`, so every merge to main
+still runs every package and catches what a selection missed. With `COVER=1`,
+`cover.out` covers the packages that ran (`mode: set` and nothing else when none
+did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
+selects the same way, but it loads every package of every module in the build
+list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
+more requirements) and which takes a minute where `go list -test ./...` takes
+half a second.
 
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why). The
 controller suite ends itself 30 s before that, failing the spec that was running by
@@ -332,10 +355,13 @@ is no number) `--next` files the issue ready and reserves nothing.
 Follow-ups that need a decision are still filed `status/proposed` for the
 triage.
 Each session, the triage's and the maintainer's too, gets
-`TMPDIR=<its worktree>/.dev/tmp` (#1269), on disk and gitignored, not the
-device's `/tmp`, a small tmpfs every session shares, which one session's
-scratch, Go's build dirs and envtest's once filled: the relay empties it before
-the session starts and removes it when the session ends.
+`TMPDIR=~/.cache/c4factory/tmp/<its worktree>` (#1269, #1307;
+`RELAY_SCRATCH` moves the parent): on disk, not the device's `/tmp`, a small
+tmpfs every session shares, which one session's scratch, Go's build dirs and
+envtest's once filled; and outside any git checkout, so a test that runs git in
+a `mktemp -d` directory finds no repository above it, as it would in the
+worktree. The relay empties it before the session starts and removes it when
+the session ends.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -457,7 +483,7 @@ in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
 as the maintainer does: it needs no free worker, doesn't count against
 `RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
 goes through `admit` like any session and logs to `.relay/relay-triage.log`.
-To triage now, say after a plan files its steps `status/proposed`, run
+To triage now, say after a session files follow-ups `status/proposed`, run
 `./dev run hack/relay.sh --triage`: it starts one triage session unless one
 runs, and records its time and issues in `.relay/triaged`, as every triage
 session does (the watch only reads that file), so the watch starts no second
@@ -501,8 +527,8 @@ percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
 naming its three largest entries, under the Maintainer report's Health only,
 with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
 `.relay/tmp-full` holds the note while it lasts; the first round under the
-threshold removes it. Relay sessions keep their scratch in their worktree's
-`.dev/tmp`, so what fills `/tmp` is someone else's.
+threshold removes it. Relay sessions keep their scratch in
+`~/.cache/c4factory/tmp`, so what fills `/tmp` is someone else's.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when
@@ -703,7 +729,7 @@ queue:
   workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
+  `vulncheck`, `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
@@ -862,6 +888,14 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   one of the two groups, or with `cancel-in-progress`; Lint or UI off pull
   requests to main or with other paths there; Lint without its `test-hack`
   job; and Tests on pull requests or grouped by anything but the commit.
+- **Vulnerabilities runs govulncheck.** *Vulnerabilities* (`vulncheck.yml`)
+  runs `make vulncheck` (`govulncheck ./...`, which needs the network and so
+  stays out of `make check`) on pushes to main and pull requests to main that
+  change the Go code, the modules or the `Makefile`, and every Monday at 04:23
+  UTC, so a new advisory shows up without a change. It fails on a known
+  vulnerability the code reaches, in a module or in the standard library of
+  `go.mod`'s toolchain; two failed runs on main file "main is red:
+  Vulnerabilities", which a bump of the toolchain or the module fixes.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a

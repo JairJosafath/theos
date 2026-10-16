@@ -44,7 +44,7 @@ func main() {
 	slog.Info("Finished job", "role", result.Role, "commit", result.Commit, "verdict", result.Verdict,
 		"error", result.Error)
 	fmt.Println(result.Summary)
-	if err := os.WriteFile(*resultPath, result.Encode(), 0o644); err != nil {
+	if err := os.WriteFile(*resultPath, result.Encode(), 0o600); err != nil {
 		slog.Error("Failed to write the result", "path", *resultPath, "error", err)
 		os.Exit(1)
 	}
@@ -57,7 +57,7 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	}
 	slog.Info("Starting job", "role", job.Role, "container", job.Container, "brief", job.Brief, "branch", job.Branch,
 		"round", job.Round)
-	if err := os.MkdirAll(workdir, 0o755); err != nil {
+	if err := os.MkdirAll(workdir, 0o750); err != nil {
 		return agentrunner.Result{Role: job.Role, Error: err.Error()}
 	}
 	// For an Agent whose own GOPROXY names the Git host's registry.

@@ -29,9 +29,10 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change; a tree that already
-passed on this device answers from the cache, which counts as a pass
-(`FORCE=1 make check` reruns it).
+the layering. `make check` gates every change; `hack/lib/github.sh land` runs it
+before it merges, so run it by hand only when you need its whole output. A tree
+that already passed on this device answers from the cache, which counts as a
+pass (`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 
@@ -92,7 +93,7 @@ make lint-fix   # Auto-fix code style
 make test       # Run unit and envtest tests
 ```
 
-**Before finishing any change:**
+**Before finishing any change** (`land` runs it for you):
 ```
 make check      # manifests, generate, fmt, vet, lint, test and the UI's check in one go
 ```
@@ -132,10 +133,14 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
 - **Small pull requests to main.** One branch per issue, the one `take` names
   (`<type>/<N>-<slug>`, from an up-to-date main), pushed after every commit; a
   pull request to main whose body says `Closes #N`, merged with
-  `hack/lib/github.sh land PR` once `make check` passes (`land` takes the merge
-  turn, one across every device, merges `origin/main` in, reruns `make check`
-  and merges; over 400 changed lines it wants a review pass first, the
-  `handoff` skill's "Review before landing"). No long-lived or stacked branches. A plan's pull request says
+  `hack/lib/github.sh land PR`. `land`'s check is the check: while you work,
+  run the targeted tests (`make test-hack`, `go test ./internal/...`,
+  `make ui-test`), then land; `land` merges `origin/main` in and runs
+  `make check` before it queues, then takes the merge turn, one across every
+  device, and merges at once, checking again under the turn only when main
+  moved. Run `make check` by hand only when `land` failed and you need the
+  whole output. Over 400 changed lines it wants a review pass first, the
+  `handoff` skill's "Review before landing". No long-lived or stacked branches. A plan's pull request says
   `Refs #N` and never a closing word next to `#N`; the parent gets a
   `Depends on #S` line per step, goes `status/waiting` and closes itself when
   its last step closes. Never close a parent by hand (`hack/close-guard.sh`
@@ -148,8 +153,8 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   and names the issue in the spec or table case (`#1019`), at the lowest tier
   that sees the bug, and the pull request body names the test. `land` and
   `merge` refuse a pull request closing a `kind/bug` issue that changes no
-  test file (`*_test.go`, `*_test.sh`, `*.test.ts`), unless a line of its
-  body says `No test: <why>` (a docs-only or chart-only fix).
+  test file (`*_test.go`, `*_test.sh`, `*.test.ts`, `*.test.mjs`), unless a
+  line of its body says `No test: <why>` (a docs-only or chart-only fix).
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).
@@ -227,14 +232,14 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   allow rules in `.claude/settings.json` are the owner's: never edit them, and
   never do the refused thing through another command.
 - **On a device running many sessions, memory is the limit.** A session at rest is cheap;
-  heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
+  heavy jobs (`make check`, `test`, `lint`, `vulncheck`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
 - **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
   device shares; one session's copies and caches filled it and failed every
   `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the
-  relay points it at your worktree's `.dev/tmp` and removes it after the
-  session), never a literal `/tmp/...` path, and remove it before you land.
+  relay points it at `~/.cache/c4factory/tmp/<worktree>`, outside any git
+  checkout (#1307), and removes it after the session), never a literal `/tmp/...` path, and remove it before you land.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?
