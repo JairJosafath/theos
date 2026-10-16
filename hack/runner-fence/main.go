@@ -6,10 +6,12 @@
 //
 // A runner's pods (label app.kubernetes.io/component: ci-runner) give the
 // registration token (env RUNNER_TOKEN, Secret gitea-runner) to an init
-// container only, never to a container where jobs run. Every NetworkPolicy
-// that selects them lets no traffic in and lets out only DNS, Gitea's pods on
-// port 3000 and HTTPS to public addresses; together they let out all three,
-// and one of them isolates the pods both ways.
+// container only, never to a container where jobs run or one beside them;
+// they mount no ServiceAccount token, share no process namespace and use no
+// host network. Every NetworkPolicy that selects them lets no traffic in and
+// lets out only DNS, Gitea's pods on port 3000 and HTTPS to public addresses
+// (model.PrivateRanges kept out); together they let out all three, and one of
+// them isolates the pods both ways.
 package main
 
 import (
@@ -28,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 const (
@@ -35,16 +39,14 @@ const (
 	runnerComponent = "ci-runner"
 	nameLabel       = "app.kubernetes.io/name"
 	// tokenSecret and tokenEnv hold Gitea's instance-wide registration token.
-	tokenSecret = "gitea-runner"
-	tokenEnv    = "RUNNER_TOKEN"
+	tokenSecret   = "gitea-runner"
+	tokenEnv      = "RUNNER_TOKEN"
+	readsTheToken = "can read the registration token (" + tokenEnv + ", Secret " + tokenSecret +
+		"); only the init container that registers may"
 	// gitea is the Gitea Deployment, and the name label of its pods.
 	gitea     = "gitea"
 	giteaPort = 3000
 )
-
-// privateRanges are the addresses a job can't reach over HTTPS, as for the
-// agent sandboxes (internal/controller/project_agent_network.go).
-var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
 
 // The egress a job needs, each one rule.
 const (
@@ -74,7 +76,8 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	fmt.Printf("The CI runners in %s are fenced: %s\n", strings.Join(os.Args[1:], ", "), strings.Join(runnerNames(objs), ", "))
+	fmt.Printf("The CI runners in %s are fenced: %s\n",
+		strings.Join(os.Args[1:], ", "), strings.Join(runnerNames(objs), ", "))
 }
 
 // read returns the Deployments and NetworkPolicies in the YAML files.
@@ -143,33 +146,69 @@ func check(objs objects) []string {
 	var problems []string
 	runners := 0
 	for _, d := range objs.deployments {
-		spec := d.Spec.Template.Spec
 		name := fmt.Sprintf("Deployment %s/%s", d.Namespace, d.Name)
 		if !isRunner(d) {
-			// Gitea reads the token too, as GITEA_RUNNER_REGISTRATION_TOKEN;
-			// a runner registers with it as RUNNER_TOKEN (hack/runner/register.sh).
-			if slices.ContainsFunc(slices.Concat(spec.InitContainers, spec.Containers), func(c corev1.Container) bool {
-				return slices.ContainsFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == tokenEnv })
-			}) {
-				problems = append(problems, fmt.Sprintf("%s registers a runner, but its pods lack label %s: %s, which the fence selects",
+			if registers(d.Spec.Template.Spec) {
+				problems = append(problems, fmt.Sprintf(
+					"%s registers a runner, but its pods lack label %s: %s, which the fence selects",
 					name, componentLabel, runnerComponent))
 			}
 			continue
 		}
 		runners++
-		for _, c := range spec.Containers {
-			if readsToken(spec, c) {
-				problems = append(problems, fmt.Sprintf("%s: container %s, where jobs run, can read the registration token (%s, Secret %s); only the init container that registers may",
-					name, c.Name, tokenEnv, tokenSecret))
-			}
-		}
-		if !slices.ContainsFunc(spec.InitContainers, func(c corev1.Container) bool { return readsToken(spec, c) }) {
-			problems = append(problems, fmt.Sprintf("%s: no init container registers the runner with %s", name, tokenEnv))
-		}
+		problems = append(problems, checkPod(name, d.Spec.Template.Spec)...)
 		problems = append(problems, checkFence(name, d, objs)...)
 	}
 	if runners == 0 {
-		problems = append(problems, fmt.Sprintf("No runner Deployment (pod label %s: %s) to check", componentLabel, runnerComponent))
+		problems = append(problems, fmt.Sprintf("No runner Deployment (pod label %s: %s) to check",
+			componentLabel, runnerComponent))
+	}
+	return problems
+}
+
+// registers says whether a pod registers a runner. Gitea reads the token
+// too, as GITEA_RUNNER_REGISTRATION_TOKEN; a runner registers with it as
+// RUNNER_TOKEN (hack/runner/register.sh).
+func registers(spec corev1.PodSpec) bool {
+	return slices.ContainsFunc(slices.Concat(spec.InitContainers, spec.Containers), func(c corev1.Container) bool {
+		return slices.ContainsFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == tokenEnv })
+	})
+}
+
+// checkPod checks that only an init container, which ends before the jobs
+// start, gets the registration token, and that the pod gives the jobs no
+// way around the fence.
+func checkPod(name string, spec corev1.PodSpec) []string {
+	var problems []string
+	if spec.HostNetwork {
+		problems = append(problems, name+": its pods use the node's network, which no NetworkPolicy fences")
+	}
+	if spec.AutomountServiceAccountToken == nil || *spec.AutomountServiceAccountToken {
+		problems = append(problems, name+
+			": its pods mount a ServiceAccount token, with which a job reaches the API; set automountServiceAccountToken: false")
+	}
+	if spec.ShareProcessNamespace != nil && *spec.ShareProcessNamespace {
+		problems = append(problems, name+
+			": its containers share a process namespace, so a job could read the others' environment")
+	}
+	registered := false
+	for _, c := range spec.InitContainers {
+		switch {
+		case !readsToken(spec, c):
+		case c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways:
+			problems = append(problems, fmt.Sprintf("%s: sidecar %s, which runs beside the jobs, %s",
+				name, c.Name, readsTheToken))
+		default:
+			registered = true
+		}
+	}
+	for _, c := range spec.Containers {
+		if readsToken(spec, c) {
+			problems = append(problems, fmt.Sprintf("%s: container %s, where jobs run, %s", name, c.Name, readsTheToken))
+		}
+	}
+	if !registered {
+		problems = append(problems, fmt.Sprintf("%s: no init container registers the runner with %s", name, tokenEnv))
 	}
 	return problems
 }
@@ -178,7 +217,8 @@ func check(objs objects) []string {
 // its environment or a mounted Secret.
 func readsToken(spec corev1.PodSpec, c corev1.Container) bool {
 	for _, e := range c.Env {
-		if e.Name == tokenEnv || e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil && e.ValueFrom.SecretKeyRef.Name == tokenSecret {
+		if e.Name == tokenEnv ||
+			e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil && e.ValueFrom.SecretKeyRef.Name == tokenSecret {
 			return true
 		}
 	}
@@ -216,7 +256,8 @@ func checkFence(name string, d appsv1.Deployment, objs objects) []string {
 		}
 	}
 	if giteaPods == nil {
-		problems = append(problems, fmt.Sprintf("%s: no Deployment %s/%s to check the fence's Gitea rule against", name, d.Namespace, gitea))
+		problems = append(problems, fmt.Sprintf("%s: no Deployment %s/%s to check the fence's Gitea rule against",
+			name, d.Namespace, gitea))
 	}
 	selected, isolated, reaches := false, false, map[string]bool{}
 	for _, p := range objs.policies {
@@ -240,11 +281,15 @@ func checkFence(name string, d appsv1.Deployment, objs objects) []string {
 				types = append(types, networkingv1.PolicyTypeEgress)
 			}
 		}
-		if slices.Contains(types, networkingv1.PolicyTypeIngress) && slices.Contains(types, networkingv1.PolicyTypeEgress) {
-			isolated = true
-		}
-		if len(p.Spec.Ingress) > 0 {
+		// The API server ignores the rules of a type the policy doesn't name.
+		ingress := slices.Contains(types, networkingv1.PolicyTypeIngress)
+		egressed := slices.Contains(types, networkingv1.PolicyTypeEgress)
+		isolated = isolated || ingress && egressed
+		if ingress && len(p.Spec.Ingress) > 0 {
 			problems = append(problems, fmt.Sprintf("%s lets traffic into the runner pods of %s", policy, name))
+		}
+		if !egressed {
+			continue
 		}
 		for i, rule := range p.Spec.Egress {
 			reach, problem := egress(rule, giteaPods)
@@ -263,7 +308,8 @@ func checkFence(name string, d appsv1.Deployment, objs objects) []string {
 	}
 	for _, reach := range []string{reachDNS, reachGitea, reachHTTPS} {
 		if !reaches[reach] {
-			problems = append(problems, fmt.Sprintf("%s: no NetworkPolicy lets its pods reach %s, which a job needs", name, reach))
+			problems = append(problems, fmt.Sprintf("%s: no NetworkPolicy lets its pods reach %s, which a job needs",
+				name, reach))
 		}
 	}
 	return problems
@@ -281,7 +327,7 @@ func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (re
 		if to.IPBlock.CIDR != "0.0.0.0/0" || !ports(rule.Ports, port{corev1.ProtocolTCP, 443}) {
 			return "", more
 		}
-		for _, r := range privateRanges {
+		for _, r := range model.PrivateRanges() {
 			if !slices.Contains(to.IPBlock.Except, r) {
 				return "", fmt.Sprintf("reaches the private range %s over HTTPS", r)
 			}

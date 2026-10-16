@@ -3,8 +3,8 @@
 # only DNS, Gitea (its pod's port 3000: Git, the API and the package
 # registries) and HTTPS to public addresses (the Go proxy, npm, PyPI), as the
 # agent sandboxes do. The Kubernetes API and every other in-cluster service
-# stay out of reach. `make runner-base` and `make runner-go` apply it; make
-# validate-yaml checks it (hack/runner-fence).
+# on a private address stay out of reach. `make runner-base` and `make
+# runner-go` apply it; make validate-yaml checks it (hack/runner-fence).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -35,6 +35,12 @@ rm "$T/calls"
 register RUNNER_TOKEN=reg-token; check "register again" $? 0
 check "  keeps the runner file, registers nothing" "$(calls)" ""
 
+# The runner writes the file its config names; both scripts look for it there.
+file=$(sed -n 's/^  file: //p' "$DIR/config.yaml")
+for s in register.sh entrypoint.sh; do
+	check "$s looks for config.yaml's runner.file" "$(sed -n 's/^file=\${RUNNER_FILE:-\(.*\)}$/\1/p' "$DIR/$s")" "$file"
+done
+
 run() { env -u RUNNER_TOKEN "$@" bash "$DIR/entrypoint.sh" >"$T/out" 2>&1; }
 run RUNNER_TOKEN=reg-token; check "the runner container with RUNNER_TOKEN fails" $? 1
 grep -q 'RUNNER_TOKEN is set in the runner container' "$T/out"; check "  and says why" $? 0
