@@ -442,7 +442,8 @@ gitea:
     waitSeconds: 300
 
 ## The CI runners in Gitea's namespace, one per label, installed with Gitea.
-## A Container's workflow picks one with runs-on: <label>.
+## A Container's workflow picks one with runs-on: <label>. NetworkPolicy
+## ci-runner fences them: no traffic in, out only DNS, Gitea and public HTTPS.
 ##
 runners:
   ## The minimal toolchain (Node, bash, git, make).

@@ -12,6 +12,9 @@ RUN curl -fsSL -o /usr/local/bin/gitea-runner \
  && echo "${RUNNER_SHA256}  /usr/local/bin/gitea-runner" | sha256sum -c - \
  && chmod +x /usr/local/bin/gitea-runner
 COPY hack/runner/config.yaml /etc/gitea-runner/config.yaml
+# The pod's init container registers (c4-runner-register), the only one given
+# the registration token; the entrypoint runs jobs and refuses the token.
+COPY --chmod=0755 hack/runner/register.sh /usr/local/bin/c4-runner-register
 COPY --chmod=0755 hack/runner/entrypoint.sh /usr/local/bin/entrypoint
 COPY --chmod=0755 hack/runner/tmp-sweep.sh /usr/local/bin/c4-tmp-sweep
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

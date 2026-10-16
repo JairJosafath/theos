@@ -131,6 +131,67 @@ spec:
                 required:
                 - name
                 type: object
+              operations:
+                description: |-
+                  operations is what the application promises whatever tier runs it: how
+                  long its backups are kept and where they are copied, its recovery
+                  objectives and who its alarms tell. The tier itself is the deploy
+                  target's, never the Container's. A field left out takes the factory's
+                  default; a change after the scaffold shows on the condition
+                  OperationsApplied.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
               softwareSystemRef:
                 description: softwareSystemRef names the SoftwareSystem this Container
                   belongs to. It can't change.
@@ -171,6 +232,7 @@ spec:
                 - cli
                 - extension
                 - operator
+                - function
                 type: string
             required:
             - frameworkRef
@@ -241,7 +303,8 @@ spec:
               conditions:
                 description: |-
                   conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
-                  and, for a Container with a Standard, StandardUpdated and ChecksApplied.
+                  and, for a Container with a Standard, StandardUpdated and ChecksApplied;
+                  once scaffolded, OperationsApplied.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -305,6 +368,64 @@ spec:
                   reflects.
                 format: int64
                 type: integer
+              operations:
+                description: |-
+                  operations is the operations block the scaffold rendered with, its
+                  defaults filled in. OperationsApplied compares spec.operations to it. A
+                  Container scaffolded before this was kept has none.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
               phase:
                 description: phase is Pending, Scaffolding, then Ready or Failed.
                 enum:
