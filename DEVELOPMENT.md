@@ -129,7 +129,9 @@ What lives outside the folder belongs to the machine, not the project:
   On WSL that Docker is Docker Desktop, so the runners need it running, with
   WSL integration on for this distro (Settings > Resources > WSL integration).
   They stop when it stops and come back when it starts, and GitHub has no other
-  runner to fall back on: a queued run never fails, it waits. The relay watch
+  runner to fall back on: a queued run never fails, it waits. When Docker
+  Desktop comes back without their containers, the keeper
+  (`hack/gh-runner/gh-runner.sh install`) makes them again within 2 minutes. The relay watch
   says "Runners offline since T: N runs queued" in the Maintainer report once
   a run on main has waited 30 minutes with no runner online ("N runs queued
   since T with M runners online" when some are). Run `make gh-runner-status`.
