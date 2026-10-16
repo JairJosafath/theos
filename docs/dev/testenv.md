@@ -81,8 +81,14 @@ base, with uncommitted and untracked files) can affect: a package with a changed
 file (its directory or one below it, so embedded files count) and every package
 whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
 prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
-internal/model`, or `testing every package (21): <reason>`. It tests every
-package on `main`, without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
+internal/model`, or `testing every package (21): <reason>`. A changed non-Go
+file in a package, or a changed `//go:embed` line, also tests `cmd`: its
+`TestDockerContextHasEmbeddedFiles` checks the embeds of every package a
+Dockerfile builds without linking them (#1321). A file directly under
+`test/e2e/` (the e2e suite) tests nothing; one in `test/e2e/standin/` tests
+that package. It tests every package on the branch `main` (a detached HEAD at
+main's commit is no branch: it diffs against `origin/main` and tests no
+package), without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
 after a change to a file a Go test may read without importing it: `go.mod`,
 `go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
 `hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
@@ -94,8 +100,12 @@ A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
 tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
 that names a new `hack/` path fails `hack/test-packages_test.sh` until the
 path joins that list. `land`'s `make check` selects
-the same way; the *Tests* workflow sets `TEST_ALL=1`, so every merge to main
-still runs every package and catches what a selection missed. With `COVER=1`,
+the same way. The *Tests* workflow sets `TEST_ALL=1`, so a merge to main it
+runs on tests every package and catches what a selection missed; but its
+`paths` filter skips a merge that changes only `*.md`, `docs/`, `ui/`,
+`config/ui/`, `config/samples/`, `test/e2e/`, the linter configs, `hack/` (but
+the four files it names), `dev`, `.vscode/` or `.github/` (but its own
+workflow) files, so such a merge gets only `land`'s selection. With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
 did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
 selects the same way, but it loads every package of every module in the build
@@ -980,7 +990,8 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
-- **Lint and UI run on pull requests too; Tests tests every merge commit.**
+- **Lint and UI run on pull requests too; Tests tests every merge commit its
+  `paths` match.**
   *Lint* (with its `test-hack` job, `make test-hack`) and *UI* run on pushes
   to main and on pull requests to main, with the same path filters, so vet,
   lint and the shell tests answer before `hack/lib/github.sh land`. They carry
