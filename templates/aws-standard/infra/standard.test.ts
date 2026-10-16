@@ -43,7 +43,12 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
   'AWS::Lambda::Function': ['Errors', 'Throttles', 'Duration'],
   'AWS::DynamoDB::Table': ['ReadThrottleEvents', 'WriteThrottleEvents', 'SystemErrors'],
   'AWS::ApiGatewayV2::Api': ['5xx'],
+  'AWS::CloudFront::Distribution': ['5xxErrorRate'],
 };
+
+// What AWS Backup's plan backs up; a stack holding none of it has no plan.
+// A data bucket keeps its earlier versions instead.
+const BACKED_UP_TYPES = ['AWS::DynamoDB::Table'];
 
 /** The feature flags `cdk synth` reads from cdk.json, so the tests build the same app. */
 function cdkContext(): Record<string, unknown> {
@@ -157,6 +162,37 @@ function holdsOnlyACopyVault(template: Template): boolean {
   return (
     types.has('AWS::Backup::BackupVault') &&
     [...types].every((type) => ['AWS::Backup::BackupVault', 'AWS::KMS::Key'].includes(type))
+  );
+}
+
+/** Whether `template` holds a resource AWS Backup's plan backs up. */
+function holdsBackedUpData(template: Template): boolean {
+  return BACKED_UP_TYPES.some((type) => resourcesOf(template, type).length > 0);
+}
+
+/**
+ * The buckets in `template` that hold data: every bucket but those another
+ * resource writes its logs to (a bucket's access logs, a distribution's, a
+ * load balancer's), which are not data and expire.
+ */
+function dataBuckets(template: Template): [string, Resource][] {
+  const logging = resourcesOf(template).flatMap(([, resource]) => {
+    const properties = resource.Properties ?? {};
+    const distribution = properties['DistributionConfig'];
+    const attributes = properties['LoadBalancerAttributes'];
+    return [
+      properties['LoggingConfiguration'],
+      isRecord(distribution) ? distribution['Logging'] : undefined,
+      Array.isArray(attributes)
+        ? (attributes as unknown[]).filter(
+            (attribute) => isRecord(attribute) && attribute['Key'] === 'access_logs.s3.bucket',
+          )
+        : undefined,
+    ].map((value: unknown) => JSON.stringify(value ?? null));
+  });
+  return resourcesOf(template, 'AWS::S3::Bucket').filter(
+    ([id]) =>
+      !logging.some((json) => json.includes(ref(id)) || json.includes(`{"Fn::GetAtt":["${id}",`)),
   );
 }
 
@@ -344,11 +380,14 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the removal policies', () => {
-      it('keep every table, backup vault and vault key where the tier keeps data, else delete them', () => {
+      it('keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them', () => {
         const policy = rules.keepData ? 'Retain' : 'Delete';
         for (const [name, template] of app(tier).templates) {
-          for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
-            expect([table.DeletionPolicy, table.UpdateReplacePolicy], `${name}/${id}`).toEqual([
+          for (const [id, data] of [
+            ...resourcesOf(template, 'AWS::DynamoDB::Table'),
+            ...dataBuckets(template),
+          ]) {
+            expect([data.DeletionPolicy, data.UpdateReplacePolicy], `${name}/${id}`).toEqual([
               policy,
               policy,
             ]);
@@ -409,6 +448,31 @@ describe.runIf(operations !== undefined).each(TIERS)(
       });
     });
 
+    describe('the versions of data buckets', () => {
+      it('are kept, and the earlier ones expire, where the tier keeps data', () => {
+        if (!rules.keepData) {
+          return;
+        }
+        for (const [name, template] of app(tier).templates) {
+          for (const [id, bucket] of dataBuckets(template)) {
+            expect(bucket.Properties?.['VersioningConfiguration'], `${name}/${id}`).toEqual({
+              Status: 'Enabled',
+            });
+            const lifecycle = bucket.Properties?.['LifecycleConfiguration'];
+            const lifecycleRules: unknown[] = isRecord(lifecycle)
+              ? [lifecycle['Rules']].flat()
+              : [];
+            expect(lifecycleRules, `${name}/${id}`).toContainEqual(
+              expect.objectContaining({
+                Status: 'Enabled',
+                NoncurrentVersionExpiration: { NoncurrentDays: expect.any(Number) as unknown },
+              }),
+            );
+          }
+        }
+      });
+    });
+
     describe('the backup plan and vault', () => {
       it('back up daily for retentionDays in a vault with its own key, copied to copyToRegion', () => {
         const { retentionDays, copyToRegion } = promised().backups;
@@ -417,7 +481,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
           const plans = resourcesOf(template, 'AWS::Backup::BackupPlan');
           const vaults = resourcesOf(template, 'AWS::Backup::BackupVault');
           const selections = resourcesOf(template, 'AWS::Backup::BackupSelection');
-          if (!backedUp) {
+          if (!backedUp || !holdsBackedUpData(template)) {
             expect([plans, vaults, selections], name).toEqual([[], [], []]);
             continue;
           }
@@ -463,7 +527,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
         );
-        if (backedUp && copyToRegion !== '') {
+        if (backedUp && copyToRegion !== '' && serving().some(([, t]) => holdsBackedUpData(t))) {
           expect(copyStacks.map((stack) => stack.region)).toEqual([copyToRegion]);
         } else {
           expect(copyStacks).toEqual([]);
@@ -483,7 +547,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table and API, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API and distribution, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
