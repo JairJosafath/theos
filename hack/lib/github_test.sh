@@ -13,7 +13,7 @@
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
-unset C4_CLUSTER C4_HUMAN_CLUSTER # ./dev setup --lite sets the one, a human the other; each test sets its own
+unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS # ./dev setup --lite sets the first, a human the second, the relay the third; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -76,7 +76,7 @@ eval "real_set_status() $(declare -f gh_set_status | tail -n +2)"
 gh_set_status() { :; }
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
-claim() { mkdir -p "$1/.relay"; jq -n --argjson i "$2" --argjson b "$3" '{issue:$i,id:1,name:"heron-\($i)",branch:"b",labels:[],beat:$b}' >"$1/.relay/claim"; }
+claim() { mkdir -p "$1/.relay"; jq -n --argjson i "$2" --argjson b "$3" '{issue:$i,id:1,name:"heron-\($i)",branch:"b",beat:$b}' >"$1/.relay/claim"; }
 clear() { rm -rf "$T"/{main,wt2,wt3}/.relay; }
 
 # The cluster pool. as WT CMD...: run CMD as the checkout WT would. A fake kind
@@ -143,7 +143,9 @@ gh_cluster acquire --wait 0 >/dev/null 2>&1; check "lease of a removed worktree 
 lease "$T/wt2" 50 "$GH_NOW"
 gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
 lease "$T/main" 50 $((GH_NOW - 3600))
-gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
+C4_HEADLESS=1 gh_beat; check "beat, the relay's: no lease touched (#1128)" "$(jq .beat "$LEASE")" $((GH_NOW - 3600))
+# The heartbeat hook runs beat without the opt-in a human gave acquire inline.
+C4_HUMAN_CLUSTER= gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
 lease "$T/wt2" 50 $((GH_NOW - 3600)); b=$(jq .beat "$LEASE")
 gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
 # A heartbeat 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
@@ -302,6 +304,20 @@ clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+# The relay's release, handoff, close and status touch no lease, even one
+# naming its checkout and issue (#1128): only a human's checkout holds one.
+clear; claim "$T/main" 72 "$GH_NOW"; lease "$T/main" 72 "$GH_NOW"
+echo landed | C4_HEADLESS=1 gh_close 72 - >/dev/null 2>&1
+check "close, the relay's: the claim released, no lease touched" \
+  "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
+clear; lease "$T/main" 73 "$GH_NOW"
+echo h | C4_HEADLESS=1 gh_handoff 73 - >/dev/null 2>&1; check "handoff, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+clear; lease "$T/main" 73 "$GH_NOW"
+C4_HEADLESS=1 gh_release >/dev/null 2>&1; check "release, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
+C4_HEADLESS=1 real_set_status 51 needs-maintainer >/dev/null 2>&1
+check "needs-maintainer, the relay's: the claim released, no lease touched" \
+  "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
 rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
 
@@ -662,6 +678,52 @@ A <!-- watch:runners -->"
   exit $fail
 ) || fail=1
 
+# queued (#1236): a run queued past --minutes counts only while it has a job
+# queued. One GitHub made no jobs for is named and not counted, and neither is
+# one whose jobs started; the runs after the first that waits count unasked.
+# The line says how many of the repository's runners are online, over every
+# page; GitHub is asked for them only when a run waits.
+(
+  ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+  declare -A JOBS
+  NONE='{"jobs":[]}'
+  gh() {
+    case "$1 $2" in
+      "run list") echo "$RUNS" ;;
+      "run view") echo "$3" >>"$T/asked"; jq -r "${@: -1}" <<<"${JOBS[$3]:-$NONE}" ;;
+      *) return 1 ;;
+    esac
+  }
+  gh_api() {
+    local a q= p
+    for a in "$@"; do [ "$p" != --jq ] || q=$a; p=$a; done
+    [[ " $* " == *" $R/actions/runners?per_page=100 "* ]] || return 1
+    echo runners >>"$T/asked"
+    for p in "${PAGES[@]}"; do jq -r "$q" <<<"$p"; done
+  }
+  queued() { rm -f "$T/asked"; gh_queued "$@"; echo "exit $?"; }
+  asked() { cat "$T/asked" 2>/dev/null | tr '\n' ' '; }
+  RUNS=$(jq -nc --arg g "$(ago '9 days')" --arg a "$(ago '2 hours')" --arg b "$(ago '40 minutes')" --arg c "$(ago '5 minutes')" \
+    '[{databaseId: 4, status: "queued", createdAt: $b}, {databaseId: 1, status: "queued", createdAt: $g},
+      {databaseId: 5, status: "queued", createdAt: $c}, {databaseId: 2, status: "queued", createdAt: $a},
+      {databaseId: 9, status: "in_progress", createdAt: $g}]')
+  JOBS[2]='{"jobs":[{"status":"in_progress"},{"status":"completed"}]}'
+  JOBS[4]='{"jobs":[{"status":"completed"},{"status":"queued"}]}'
+  PAGES=('{"runners":[{"status":"offline"},{"status":"offline"}]}' '{"runners":[{"status":"offline"}]}')
+  check "queued: no jobs named, not counted; every runner offline" "$(queued)|$(asked)" \
+    "$(printf 'no-jobs\t1\t%s\nwaiting\t%s\t2\t0\nexit 0' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 runners "
+  PAGES=('{"runners":[{"status":"offline"},{"status":"online"}]}' '{"runners":[{"status":"online"}]}')
+  check "queued: says how many runners are online" "$(queued | sed -n 2p)" "$(printf 'waiting\t%s\t2\t2' "$(ago '40 minutes')")"
+  PAGES=('{"runners":[{"status":"online"}]}')
+  check "queued: one online" "$(queued | sed -n 2p | cut -f4)" 1
+  JOBS[4]='{"jobs":[]}'
+  check "queued: only runs without a job queued: exit 1, runners not asked" "$(queued)|$(asked)" \
+    "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$(ago '9 days')" "$(ago '40 minutes')")|1 2 4 "
+  check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
+  check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
+  exit $fail
+) || fail=1
+
 # Labels: GitHub refuses a description longer than 100 characters.
 long=$(for l in "${GH_LABELS[@]}"; do d=${l#*|}; d=${d#*|}; [ ${#d} -le 100 ] || echo "${l%%|*}"; done)
 check "labels: descriptions fit GitHub's 100 characters" "$long" ""
@@ -718,9 +780,8 @@ check "labels: descriptions fit GitHub's 100 characters" "$long" ""
   out=$(CLAIMS=$(claimed 129) gh_parents --apply 2>&1)
   check "parents --apply: closes the finished one, marks the waiting one" "$out" "#120 closed: its steps #121, #122 closed; plan #130
 #123 to status/waiting: waits on #124 (of #124, #125; plan #131)"
-  check "parents --apply: the close comment names the steps" "$(cat "$T/comment-120")" "<!-- relay-parent -->
-Its steps #121, #122 are all closed and its plan's pull request #130 merged: nothing it waits on is left, so the relay closes it."
-  check "parents --apply: the waiting comment names the steps left" "$(sed -n 2p "$T/comment-123")" "Waiting on its steps, not on an agent: #124 still open (of #124, #125). Its plan's pull request #131 merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes."
+  check "parents --apply: the close comment names the steps" "$(cat "$T/comment-120")" "Its steps #121, #122 are all closed and its plan's pull request #130 merged: nothing it waits on is left, so the relay closes it."
+  check "parents --apply: the waiting comment names the steps left" "$(cat "$T/comment-123")" "Waiting on its steps, not on an agent: #124 still open (of #124, #125). Its plan's pull request #131 merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes."
   check "parents --apply: what it changed" "$(cat "$T/calls")" "POST $R/issues/120/comments
 PATCH $R/issues/120
 PUT $R/issues/120/labels

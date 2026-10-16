@@ -2,8 +2,7 @@
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
 # faked /proc/meminfo; the flush of a kept handoff, which releases the
-# session's claim so the relay has none left to release; the cluster
-# lease a session leaves behind, which the relay drops; the prompts, which
+# session's claim so the relay has none left to release; the prompts, which
 # never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
 # worktree and lock, which it starts in however many workers run; against a
@@ -119,21 +118,6 @@ check "flush: logs the URL and the release" $? 0
 gh_claim_read; check "flush: no claim left to release" $? 1
 grep -q "could not release" "$LOG"; check "flush: no failed release logged" $? 1
 
-# The cluster lease a session left behind is dropped and logged; another
-# checkout's is left alone.
-export C4_CLUSTER_LEASE=$T/lease
-mkdir -p "$T/other"
-lease() { jq -n --arg wt "$1" --argjson b "$(date +%s)" '{name:"otter-76",issue:76,worktree:$wt,beat:$b}' >"$C4_CLUSTER_LEASE"; }
-lease "$T/wt/.."
-drop_lease "that session 1 left behind"
-check "lease: dropped" "$([ -e "$C4_CLUSTER_LEASE" ] && echo kept || echo gone)" gone
-grep -q "released Kind cluster c4factory (otter-76, #76) that session 1 left behind$" "$LOG"; check "lease: logged" $? 0
-lease "$T/other"
-: >"$LOG"
-drop_lease "that session 1 left behind"
-check "lease: another checkout's kept" "$(jq -r .worktree "$C4_CLUSTER_LEASE")" "$T/other"
-check "lease: nothing logged" "$(cat "$LOG")" ""
-
 # No prompt tells a session to lease, create or deploy to a cluster (#353):
 # the worker's, the triage's and the maintainer's, on a device with or without one.
 for c in unset none; do
@@ -223,8 +207,16 @@ check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues
   until ! flock -n "$LOCK" true; do sleep 0.1; done
   start_triage hack/relay.sh >"$T/out" 2>&1
   check "triage: none beside one that runs" "$? $(grep -c 'a triage runs already' "$T/out") $(test -e "$T/setsid" && echo started)" "1 1 "
+  # relay.sh alone writes .relay/triaged (#1128): the triage that runs keeps
+  # its record, and a start with no token keeps only the time.
+  echo "1 40 41" >"$DIR/triaged"
+  DRY_RUN= start_triage hack/relay.sh >/dev/null 2>&1
+  check "triage: the one that runs keeps its record" "$(cat "$DIR/triaged")" "1 40 41"
   kill "$l1" "$l2" "$l3"
   wait 2>/dev/null
+  gh_token() { return 1; }
+  DRY_RUN= start_triage hack/relay.sh >/dev/null 2>&1
+  check "triage: no token, only the time recorded" "$? $(awk '{print NF}' "$DIR/triaged")" "1 1"
   exit $fail
 ) || fail=1
 # A triage whose session never ran keeps only the time, for the watch to try again.
@@ -375,7 +367,6 @@ echo 1 >"$HANDOFF"
 echo 'open status/in-progress' >"$STATE"
 update() { :; }
 worktree() { :; }
-drop_lease() { :; }
 gh_claim_read() { return 1; }
 pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
 gh_take() { echo take >>"$T/takes"; printf 'otter-175\tb\n'; }
@@ -465,10 +456,12 @@ echo env >"$FAKE"
   CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=claude-vscode \
   CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s CLAUDE_CODE_MESSAGING_TOKEN=x CLAUDE_EFFORT=xhigh \
   CLAUDE_PID=1 AI_AGENT=claude ELECTRON_RUN_AS_NODE=1 VSCODE_PID=1 VSCODE_IPC_HOOK_CLI=/tmp/v \
-  GIT_ASKPASS=/home/u/.vscode-server/askpass.sh TERM_PROGRAM=vscode CLAUDE_CODE_OAUTH_TOKEN=kept
+  GIT_ASKPASS=/home/u/.vscode-server/askpass.sh TERM_PROGRAM=vscode CLAUDE_CODE_OAUTH_TOKEN=kept \
+  C4_HUMAN_CLUSTER=1
   work)
 check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
+check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
 no_strikes
 
@@ -602,9 +595,9 @@ echo quiet >"$FAKE"
 work
 grep -q "stopped: its transcript was idle" "$LOG"; check "no transcript: not ended" $? 1
 check "no transcript: logged once" "$(grep -c "session 1 wrote no transcript in 2s (.*); it runs until the 6h timeout" "$LOG")" 1
-check "seconds: 45m" "$(seconds 45m)" 2700
-check "seconds: 1d" "$(seconds 1d)" 86400
-seconds 1.5h >/dev/null; check "seconds: 1.5h refused" $? 1
+check "seconds: 45m" "$(gh_seconds 45m RELAY_IDLE)" 2700
+check "seconds: 1d" "$(gh_seconds 1d RELAY_IDLE)" 86400
+gh_seconds 1.5h RELAY_IDLE >/dev/null 2>&1; check "seconds: 1.5h refused" $? 1
 : >"$LOG"
 # A session that ends at once still logs it (#479): the relay checks RELAY_IDLE
 # before the session starts, not in the watch the session's end cuts short.
