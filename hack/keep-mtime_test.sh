@@ -68,5 +68,15 @@ check "ENVTEST_ENV still set" $? 0
 xdg=$(sed -n 's/.* XDG_CACHE_HOME="\([^"]*\)" .*/\1/p' <<<"$line")
 [ -n "$xdg" ] && [[ $xdg != "$ROOT"/* ]]; check "tests: XDG_CACHE_HOME outside the module" $? 0
 check "tests: GOCACHE kept" "$(sed -n 's/.* GOCACHE="\([^"]*\)" .*/\1/p' <<<"$line")" "$(go env GOCACHE)"
+# The cache home is one per device: the session's TMPDIR, inside the checkout
+# or per-session scratch the relay empties, never moves it (#1314).
+xdgfor() {
+  C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null |
+    grep ' hack/go-test.sh ' | sed -n 's/.* XDG_CACHE_HOME="\([^"]*\)" .*/\1/p'
+}
+unset_xdg=$(env -u TMPDIR bash -c "$(declare -f xdgfor); xdgfor")
+check "#1314: TMPDIR inside the worktree, same cache home" "$(TMPDIR="$ROOT/.dev/tmp" xdgfor)" "$unset_xdg"
+check "#1314: TMPDIR in the relay's scratch, same cache home" "$(TMPDIR="$HOME/.cache/c4factory/tmp/relay-4" xdgfor)" "$unset_xdg"
+[ -n "$unset_xdg" ] && [[ $unset_xdg != "$ROOT"/* ]]; check "#1314: the cache home lies outside the module" $? 0
 
 exit $fail
