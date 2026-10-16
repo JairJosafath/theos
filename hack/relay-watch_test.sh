@@ -5,7 +5,8 @@
 # hack/relay.sh faked; that it tends the plans' parents (parents faked); when a triage reads a proposed issue again, with
 # hack/lib/github.sh's proposed against a stubbed GitHub; and when a CI round
 # files a "main is red" issue, and when a flake round records a failed spec
-# and files a "Flaky:" bug, with gh faked under the real hack/lib/github.sh;
+# and files a "Flaky:" bug, and when a runner round notes runs queued too long
+# in the Maintainer report (report_note faked), with gh faked under the real hack/lib/github.sh;
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
@@ -772,6 +773,54 @@ flake_round
 check "flake: filed once" "$(filed)" 1
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
+
+# Runners offline: a run queued on main for 40 minutes puts the note in the
+# Maintainer report (report_note faked; the runs are gh run list's output,
+# read by the real hack/lib/github.sh queued), 10 minutes says nothing, and
+# runs that start again take it out. A failure is logged once.
+NOTE_RC=0
+report_note() { printf '%s\n' "$*" >>"$T/notes"; return "$NOTE_RC"; }
+notes() { cat "$T/notes" 2>/dev/null; }
+# queued AGE...: the runs queued on main, created AGE ago each, beside one in progress.
+queued() {
+  local a i=0
+  for a in "$@"; do
+    i=$((i + 1))
+    jq -n --argjson id "$((700 + i))" --arg at "$(date -u -d "$a ago" +%Y-%m-%dT%H:%M:%SZ)" \
+      '{databaseId: $id, status: "queued", createdAt: $at}'
+  done | jq -s '. + [{databaseId: 1, status: "in_progress", createdAt: "2026-10-01T00:00:00Z"}]' >"$T/runs-.json"
+}
+: >"$LOG"
+rm -f "$T/notes"
+queued '10 minutes'
+runner_round
+check "runners: queued 10 minutes says nothing" "$(notes)|$(cat "$LOG")|$(ls "$DIR/runners-offline" 2>/dev/null)" "||"
+queued '40 minutes' '5 minutes'
+since=$(TZ=UTC date -d "40 minutes ago" '+%Y-%m-%d %H:%M UTC')
+TZ=UTC runner_round
+check "runners: queued 40 minutes notes it in Health and Needs you" "$(notes)" \
+  "runners Runners offline since $since: 2 runs queued Runners offline since $since: 2 runs queued. Start Docker Desktop (WSL integration on for this distro) on the runners' device, then check \`make gh-runner-status\` (DEVELOPMENT.md)."
+check "runners: logged" "$(logged "Runners offline since $since: 2 runs queued; said in the Maintainer report$")" 1
+queued '41 minutes' '6 minutes' '1 minute'
+TZ=UTC runner_round
+check "runners: the note follows the count, logged once" "$(notes | tail -1 | sed "s/ queued .*/ queued/")|$(logged 'said in the Maintainer report')" \
+  "runners Runners offline since $(TZ=UTC date -d "41 minutes ago" '+%Y-%m-%d %H:%M UTC'): 3 runs queued|1"
+rm -f "$T/notes"
+queued
+runner_round
+check "runners: running again clears the note" "$(notes)|$(ls "$DIR/runners-offline" 2>/dev/null)|$(logged 'runners back')" "runners||1"
+runner_round
+check "runners: online, the report is left alone" "$(notes)" "runners"
+queued '1 hour'
+NOTE_RC=1
+runner_round
+runner_round
+check "runners: a report that can't be edited is logged once" "$(logged 'could not say it in the Maintainer report')|$(ls "$DIR/runners-offline" 2>/dev/null)" "1|"
+NOTE_RC=0
+runner_round
+check "runners: and noted once it can" "$(logged 'said in the Maintainer report')|$(cat "$DIR/runners-offline")" \
+  "2|Runners offline since $(date -d "1 hour ago" '+%Y-%m-%d %H:%M %Z'): 1 run queued"
+rm -f "$T/runs-.json" "$T/notes" "$DIR/runners-offline"
 
 # The groups: a watch, or a user manager, without a group the user has in
 # /etc/group says so, with the fix; one with all of them says nothing.

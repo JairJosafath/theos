@@ -454,7 +454,7 @@ gh-runner-down: ## Stop every GitHub Actions runner of this device and remove th
 	@hack/gh-runner/gh-runner.sh down
 
 .PHONY: gh-runner-status
-gh-runner-status: ## Show the GitHub Actions runners' containers and their status on GitHub.
+gh-runner-status: ## Show whether Docker answers, the GitHub Actions runners' containers and their status on GitHub, and what to do.
 	@hack/gh-runner/gh-runner.sh status
 
 ##@ Helm Deployment

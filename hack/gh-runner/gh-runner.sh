@@ -5,7 +5,8 @@
 #
 #   hack/gh-runner/gh-runner.sh up      build the image, register each runner once and start RUNNERS of them (make gh-runner RUNNERS=N)
 #   hack/gh-runner/gh-runner.sh down    stop them all, remove them from GitHub, drop their registrations (make gh-runner-down)
-#   hack/gh-runner/gh-runner.sh status  their containers and their status on GitHub; exit 1 unless all are online (make gh-runner-status)
+#   hack/gh-runner/gh-runner.sh status  whether Docker answers, their containers and their status on GitHub,
+#                                       and what to do; exit 1 unless all are online (make gh-runner-status)
 #
 # Runner i is container c4factory-gh-runner-i, named c4factory-<hostname>-i on
 # GitHub, with its registration and tool cache on volumes of its own and its own
@@ -230,8 +231,23 @@ down() {
   say "the caches (volumes $prefix-*-toolcache and $cache) and $base_work stay"
 }
 
+# status: whether this device's Docker answers, then each runner's container
+# and how GitHub sees it, with what to do when one is down. The runners run on
+# the device's Docker: on WSL that is Docker Desktop with WSL integration on
+# for this distro, and they stop whenever it does (DEVELOPMENT.md).
 status() {
-  local i c r ok=true all
+  local i c r ok=true all where=${WSL_DISTRO_NAME:+WSL distro $WSL_DISTRO_NAME}
+  if ! docker info >/dev/null 2>&1; then
+    echo "docker: not reachable from ${where:-this host}; the runners stop with it"
+    # GitHub still says which of this device's runners it sees.
+    r=$(gh api --paginate "repos/$repo/actions/runners?per_page=100" \
+      --jq ".runners[] | select(.name | startswith(\"$base_name-\")) | \"\(.name) \(.status) busy=\(.busy)\"") ||
+      r="can't list the runners of $repo"
+    echo "github: ${r:-no runner named $base_name-N is registered with $repo}" | sed '2,$s/^/github: /'
+    echo "fix: start Docker Desktop, with WSL integration on for ${WSL_DISTRO_NAME:-this distro} (Settings > Resources > WSL integration); the runners restart with it. Then make gh-runner-status again (DEVELOPMENT.md)."
+    return 1
+  fi
+  echo "docker: reachable from ${where:-this host}"
   all=$(indices)
   if [ -z "$all" ]; then
     echo "no runners on this device; make gh-runner RUNNERS=N starts N"
@@ -239,13 +255,19 @@ status() {
   fi
   for i in $all; do
     use "$i"
-    c=$(docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | awk -F'\t' -v n="$container" '$1 == n {print $2 " (" $3 ")"}')
-    echo "container: $container ${c:-does not exist}"
+    c=$(docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | awk -F'\t' -v n="$container" '$1 == n {print $2 ", " $3}')
+    case $c in
+      Up*) echo "container: $container up ($c)" ;;
+      '') echo "container: $container does not exist"; ok=false ;;
+      *) echo "container: $container down ($c)"; ok=false ;;
+    esac
     r=$(github_runner) || { echo "github: can't list the runners of $repo"; return 1; }
     echo "github: ${r:-$name is not registered with $repo}"
     [[ $r == *" online "* ]] || ok=false
   done
-  $ok
+  $ok && return 0
+  echo "fix: make gh-runner RUNNERS=$(wc -w <<<"$all") starts the containers that are down and registers again the runners GitHub lost; a container that is up while GitHub sees it offline says why in docker logs --tail 50 NAME (DEVELOPMENT.md)."
+  return 1
 }
 
 case "${1:-}" in
