@@ -163,7 +163,7 @@ mtime back. envtest reserves each port it hands out as a file in
 `$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
 `.dev/`, inside the module, where each envtest run changed a directory the
 other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
-(`$TMPDIR/c4factory-test-cache`, one per device) and keeps `GOCACHE`. A
+(`~/.cache/c4factory/test-cache`, one per device, outside any checkout, #1326) and keeps `GOCACHE`. A
 result is not cached when a file the test read changed in the 2 seconds
 before; the next run caches it. Coverage is collected only when
 asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
@@ -379,6 +379,10 @@ envtest's once filled; and outside any git checkout, so a test that runs git in
 a `mktemp -d` directory finds no repository above it, as it would in the
 worktree. The relay empties it before the session starts and removes it when
 the session ends.
+Before the session, the relay also replaces a worktree's `.dev/` of its own,
+the caches `make check` left there before `hack/dev/env.sh` pointed worktrees
+at the main checkout's (#1132), with the link to the main checkout's `.dev/`,
+as `./dev setup` makes in a worktree, and logs what that freed (#1246).
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -395,7 +399,9 @@ account. The count is read from the issue, so every device's strikes add up;
 one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
 (3) the relay posts one comment linking them and sets the issue to
 `status/needs-maintainer`; when only that status swap fails, the next failed
-session retries it without a new comment (`.relay/escalated-<issue>`). A
+session on any device retries it without a new strike or comment: the newest
+of the issue's handoff, reset and escalation comments is the escalation, and
+the issue wasn't labeled `status/needs-maintainer` after it. A
 handoff, a commit or a finish on any device resets the count: the relay posts
 a reset comment when any strike counts. One that leaves the issue in
 `status/waiting` (a plan's parent) has finished, like a handoff; one that sets

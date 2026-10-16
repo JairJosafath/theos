@@ -16,10 +16,15 @@
 # another branch, against a scratch origin.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
+# $T may lie inside a checkout (the relay's TMPDIR, #1326): git stops at it.
+export GIT_CEILING_DIRECTORIES=$T
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER
+# Git looks no further up than $T: with $TMPDIR inside a checkout, $T/repo
+# would be that checkout, and --install refuses a worktree.
+export GIT_CEILING_DIRECTORIES=${T%/*}
 # shellcheck source=hack/relay-watch.sh
 . "$(dirname "$0")/relay-watch.sh"
 DIR=$T/relay LOG=$T/log WORKERS=2 RETRY=600 TRIAGE_EVERY=1800
@@ -37,6 +42,17 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
   check "pick_next: every worker's .relay/next, not the triage's" "$(pick_next)" \
     "$REPO/.claude/worktrees/relay-1/.relay/next
 $REPO/.claude/worktrees/relay-2/.relay/next"
+  exit $fail
+) || fail=1
+
+# proposed passes its arguments on, --since included (#1251): the real wrapper
+# and github, against a fake hack/lib/github.sh.
+(
+  CODE=$T/code
+  mkdir -p "$CODE/hack/lib"
+  printf '#!/bin/sh\necho "$*"\n' >"$CODE/hack/lib/github.sh"
+  chmod +x "$CODE/hack/lib/github.sh"
+  check "proposed: passes --since on (#1251)" "$(proposed --since 1700000000)" "proposed --since 1700000000"
   exit $fail
 ) || fail=1
 
@@ -860,6 +876,24 @@ check "flake: CR and backslashes: one name" "$(cut -f1 "$DIR/flakes.tsv" | sort 
 check "flake: the next round files it" "$(jq -r '.[].title' "$T/issues.json")" 'Flaky: Parse matches \d+ and a\nb'
 flake_round
 check "flake: filed once" "$(filed)" 1
+
+# A shell test that fails on main counts as its file and case: the FAIL line
+# test-hack.sh shows under the test's own, not its ok lines, nor a Go
+# "--- FAIL" after test-hack's summary (#1208).
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/runs-.json"
+{
+  printf 'Lint\tRun make check\t2026-10-16T03:12:40.1Z ok   hack/a_test.sh (2s)\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z FAIL hack/lib/github_test.sh (exit 1, 135s):\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     FAIL take: claims it: got [x] want [y]\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.1Z     ok   take: names the branch\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:44.2Z test-hack: 1 of 29 shell tests failed\n'
+  printf 'Lint\tRun make check\t2026-10-16T03:12:45.1Z     --- FAIL: TestNothing (0.00s)\n'
+} >"$T/log-821.txt"
+failed 821 '1 hour'
+flake_round
+check "flake: a shell test's case is recorded" "$(cut -f1-2 "$DIR/flakes.tsv")" "hack/lib/github_test.sh: take: claims it	821"
+check "flake: --count lists it" "$("$HERE/lib/github.sh" flakes --count)" "1	hack/lib/github_test.sh: take: claims it"
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 

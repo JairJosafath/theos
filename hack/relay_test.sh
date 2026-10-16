@@ -12,7 +12,8 @@
 # under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
-# TMPDIR, outside any checkout, emptied before and removed after it; and idle workers,
+# TMPDIR, outside any checkout, emptied before and removed after it; a
+# worktree's own .dev/, which becomes the link to the main checkout's; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -33,12 +34,11 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
-check "defaults: scratch in the user's cache (#1307)" "$(unset XDG_CACHE_HOME RELAY_SCRATCH; HOME=/h; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
-# ./dev sets XDG_CACHE_HOME to the main checkout's .dev/cache; the scratch
-# stays out of it, in no git checkout (#1347).
+check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+# With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
+# scratch is in no git checkout (#1347).
 git init -q "$T/main" && mkdir -p "$T/home"
 scratch=$(unset RELAY_SCRATCH; HOME=$T/home XDG_CACHE_HOME=$T/main/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")
-check "defaults #1347: scratch not under ./dev's XDG_CACHE_HOME" "$scratch" "$T/home/.cache/c4factory/tmp"
 check "defaults #1347: scratch in no git checkout" "$(mkdir -p "$scratch" && cd "$scratch" && GIT_CEILING_DIRECTORIES=$T git rev-parse --show-toplevel 2>/dev/null)" ""
 
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
@@ -438,8 +438,17 @@ eval "$(declare -f gh_comments | sed '1s/^gh_comments/gh_comments_api/')"
 gh_comments() { if [ "$1" = 175 ]; then cat "$COMMENTS"; else gh_comments_api "$1"; fi; }
 gh_comment() { cat >"$T/comment"; add_comment "$(cat "$T/comment")"; jq -r 'last.html_url' "$COMMENTS"; }
 counted() { strikes 175 | grep -c .; }
-no_strikes() { echo '[]' >"$COMMENTS"; }
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+# #175's label events, in $EVENTS; a status swap adds one.
+EVENTS=$T/events.json
+echo '[]' >"$EVENTS"
+label_events() { cat "$EVENTS"; }
+no_strikes() { echo '[]' >"$COMMENTS"; echo '[]' >"$EVENTS"; }
+set_status() {
+  echo "$1 $2" >"$T/status"
+  jq --arg l "status/$2" --arg t "$(date -u +%FT%TZ)" '. + [{event: "labeled", created_at: $t, label: {name: $l}}]' \
+    "$EVENTS" >"$EVENTS.new" && mv "$EVENTS.new" "$EVENTS"
+}
+gh_set_status() { set_status "$@"; }
 takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
 : >"$LOG"
@@ -543,6 +552,28 @@ check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SC
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
+# Before a session, a worktree's .dev/ of its own, the caches make check left
+# there before #1132, becomes the link to the main checkout's (#1246).
+(
+  REPO=$T/main WT=$T/wt-dev
+  mkdir -p "$REPO/.dev/cache" "$WT/.dev/cache/go-build" && head -c 300000 /dev/zero >"$WT/.dev/cache/go-build/x"
+  mkdir "$WT/.dev/cache/go-build/ro" && chmod a-w "$WT/.dev/cache/go-build/ro"
+  share_dev
+  check "share_dev #1246: a .dev/ of its own becomes the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: the main checkout's .dev/ stays" "$(test -d "$REPO/.dev/cache" && echo kept)" kept
+  check "share_dev #1246: logs what it freed" "$(grep -c "freed [0-9.]*[KM] in $WT/.dev, a .dev/ of its own; linked it to $REPO/.dev" "$LOG")" 1
+  : >"$LOG"
+  share_dev
+  check "share_dev #1246: an already linked one stays" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: an already linked one logs nothing" "$(cat "$LOG")" ""
+  rm "$WT/.dev"
+  share_dev
+  check "share_dev #1246: a worktree without .dev/ gets the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  rm "$WT/.dev" && mkdir "$WT/.dev" && rm -r "$REPO/.dev"
+  share_dev
+  check "share_dev #1246: no main .dev/, nothing changes" "$(test -d "$WT/.dev" && ! test -L "$WT/.dev" && echo kept)" kept
+)
+
 # Failed sessions are strikes, comments on the issue: a handoff or a commit
 # resets the count; the third escalates the issue to the maintainer, with one
 # comment linking each strike.
@@ -644,11 +675,32 @@ check "swap fails: one escalation comment" "$(jq --arg e "$STRIKE_ESCALATED_MARK
 grep -q "setting it to status/needs-maintainer failed; trying again after the next failed session" "$LOG"
 check "swap fails: logged" $? 0
 n=$(jq length "$COMMENTS")
-gh_set_status() { echo "$1 $2" >"$T/status"; }
+gh_set_status() { set_status "$@"; }
 work
 check "swap retried: the maintainer's" "$(cat "$T/status")" "175 needs-maintainer"
 check "swap retried: no new comment" "$(jq length "$COMMENTS")" "$n"
-check "swap retried: done" "$(test -e "$DIR/escalated-175" && echo kept)" ""
+# Swapped, then set back to ready by the maintainer: a failed session is a
+# strike again, not another swap.
+rm -f "$T/status"
+work
+check "swap done: a strike, not a swap" "$(cat "$T/status" 2>/dev/null) $(counted)" " 1"
+
+# #1213: device A posts the escalation and its swap fails; device B, with
+# nothing of A's in .relay, fails a session on #175 and retries the swap
+# alone: it sets needs-maintainer and posts nothing.
+no_strikes; rm -f "$T/status"
+for i in 1 2 3; do add_comment "$STRIKE_MARKER
+**Strike:** session \`a$i\` on host \`a\`" $((400 - i))
+done
+add_comment "$STRIKE_ESCALATED_MARKER
+The relay stopped working #175" 300
+n=$(jq length "$COMMENTS")
+: >"$LOG"
+work
+check "swap elsewhere #1213: B sets needs-maintainer" "$(cat "$T/status" 2>/dev/null)" "175 needs-maintainer"
+check "swap elsewhere #1213: B posts nothing" "$(jq length "$COMMENTS")" "$n"
+grep -q "#175 reached 3 strikes; set it to status/needs-maintainer: https://github.com/x/issues/175#issuecomment-4" "$LOG"
+check "swap elsewhere #1213: logged" $? 0
 
 # A session whose transcript stops growing is ended and counted as failed; one
 # that keeps writing, or writes none, runs on.

@@ -75,7 +75,6 @@ runner itself) is not tested before release.
 | `.dev/claude/` | Claude Code login, settings and history for this project |
 | `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, and the operator shares it with every project namespace ([docs/dev/testenv.md](docs/dev/testenv.md)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
-| `.dev/tmp/` | In a relay worktree, its session's `TMPDIR`, which the relay empties before and removes after each session (#1269) |
 | `bin/` | What `make build` writes (`bin/manager`) |
 
 `hack/dev/env.sh` sets the variables that point every tool at `.dev/`, and
