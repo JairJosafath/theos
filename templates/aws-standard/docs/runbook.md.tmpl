@@ -153,8 +153,10 @@ deliveries that failed; it waits there 14 days, then SQS deletes it.
    `aws sqs start-message-move-task --source-arn <dead-letter queue ARN>`
    (with no destination it returns each message to its source queue), and
    follow it with `aws sqs list-message-move-tasks --source-arn <dead-letter queue ARN>`.
-   Sending one back twice does no harm: storing an item puts the whole
-   item under its id again.
+   A message sent back is stored as it is: it puts its whole item under its
+   id, over whatever later messages stored there. Before moving one back,
+   check the item's newest state (`aws dynamodb get-item`) and delete the
+   messages an item has since moved past.
 4. A message no fix can save: delete it
    (`aws sqs delete-message` with its receipt handle) and write down what it
    held.

@@ -5,6 +5,7 @@
  * reports the ones that throw as failed, so SQS delivers only those again.
  */
 import { checkMessage } from './items';
+import type { Item } from './items';
 import type { ItemStore } from './item_store';
 
 /** What the worker reads of an SQS message: its id and its body. */
@@ -33,13 +34,29 @@ export class Malformed extends Error {
   }
 }
 
-/** Stores the item `message` carries; throws `Malformed` when it carries none, and what the store throws. */
-export async function consume(message: Message, store: ItemStore): Promise<void> {
+/** The item `message` carries; throws `Malformed` when it carries none. */
+export function itemOf(message: Message): Item {
   const checked = checkMessage(message.body);
   if (!checked.ok) {
     throw new Malformed(message.messageId, checked.error);
   }
-  await store.put(checked.value);
+  return checked.value;
+}
+
+/** Stores the item `message` carries; throws `Malformed` when it carries none, and what the store throws. */
+export async function consume(message: Message, store: ItemStore): Promise<void> {
+  await store.put(itemOf(message));
+}
+
+/**
+ * `work`, run only on a message that carries an item: a malformed one
+ * throws `Malformed` before `work` (the idempotent store) records anything.
+ */
+export function checkingFirst(work: Work): Work {
+  return async (message) => {
+    itemOf(message);
+    await work(message);
+  };
 }
 
 /** `work`, telling `report` how each message went, and throwing on what it throws. */

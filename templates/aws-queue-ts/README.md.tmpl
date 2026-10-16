@@ -74,8 +74,8 @@ owner, with their own credentials.
   `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and hands each batch to
   `consumeBatch` in `src/batch.ts`, which runs Powertools' batch processing
   and answers the messages that failed.
-- `src/consume.ts` checks a message and stores its item, through
-  Powertools' Idempotency; `src/items.ts` holds the rules, free of AWS;
+- `src/consume.ts` checks a message and stores its item; `src/handler.ts`
+  runs that through Powertools' Idempotency, after the check; `src/items.ts` holds the rules, free of AWS;
   `src/item_store.ts` keeps items in DynamoDB behind the `ItemStore`
   interface tests fake.
 - `infra/stacks.ts` defines the stacks for a tier; `infra/queue_stack.ts` is

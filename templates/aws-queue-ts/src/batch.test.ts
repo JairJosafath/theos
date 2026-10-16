@@ -33,12 +33,22 @@ describe('consumeBatch', () => {
   it('runs the work on every message, in order, and reports no failure when all pass', async () => {
     const seen: string[] = [];
 
-    const response = await consumeBatch(EVENT, (message: Message) => {
-      seen.push(`${message.messageId}=${message.body}`);
-      return Promise.resolve();
+    // Each message's work ends a turn later than it starts: run at once, the
+    // starts and ends would interleave.
+    const response = await consumeBatch(EVENT, async (message: Message) => {
+      seen.push(`start ${message.messageId}=${message.body}`);
+      await Promise.resolve();
+      seen.push(`end ${message.messageId}`);
     });
 
-    expect(seen).toEqual(['m1=one', 'm2=two', 'm3=three']);
+    expect(seen).toEqual([
+      'start m1=one',
+      'end m1',
+      'start m2=two',
+      'end m2',
+      'start m3=three',
+      'end m3',
+    ]);
     expect(response).toEqual({ batchItemFailures: [] });
   });
 

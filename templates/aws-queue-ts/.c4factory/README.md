@@ -11,9 +11,11 @@ synthesizes the CloudFormation offline.
   `Logger` and `Metrics` and the idempotent `consume` at module scope, reads
   `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and passes each `SQSEvent` to
   `consumeBatch` in `src/batch.ts`: Powertools' `BatchProcessor` and
-  `processPartialResponse` run the work on each message and answer the ones
+  `processPartialResponse` run the work on each message, one at a time
+  (`processInParallel: false`), and answer the ones
   that threw as `batchItemFailures`, and throw when all of them did. The
-  work is `consume` in `src/consume.ts` behind Powertools' `makeIdempotent`
+  work is `consume` in `src/consume.ts` behind Powertools' `makeIdempotent`,
+  after `checkingFirst` refuses a malformed message before it is recorded
   (keyed by the `messageId`, so a message delivered twice is stored once,
   and a failure keeps no record), wrapped in `reporting`, which counts
   `ConsumedMessages` and `FailedMessages` with `Metrics` and logs a failure.

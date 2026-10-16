@@ -467,7 +467,9 @@ traceability, and protection at every layer._
 {{- if $queue }}
 - Authenticate every producer: the queue takes messages only from
   principals whose IAM policies allow `sqs:SendMessage` on `QueueArn`; the
-  stack grants nobody but the function, which may only receive and delete.
+  stack grants nobody but the function, whose event source may only
+  receive, delete and change the visibility of messages and read the
+  queue's attributes.
 {{- else }}
 - Authenticate every request: every route has an authorizer (IAM, JWT or a
   Lambda authorizer).

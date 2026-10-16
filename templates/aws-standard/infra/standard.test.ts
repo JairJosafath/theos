@@ -302,7 +302,8 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     for (const [name, template] of app(tier).templates) {
       const queues = resourcesOf(template, 'AWS::SQS::Queue').map(([id]) => `"${id}"`);
       for (const [id, mapping] of resourcesOf(template, 'AWS::Lambda::EventSourceMapping')) {
-        const source = JSON.stringify(mapping.Properties?.['EventSourceArn']);
+        // A source without an ARN (a self-managed Kafka cluster) is no queue.
+        const source = JSON.stringify(mapping.Properties?.['EventSourceArn'] ?? '');
         if (source.includes(':sqs:') || queues.some((queue) => source.includes(queue))) {
           // Without it one bad message fails its whole batch, again and again.
           expect(mapping.Properties?.['FunctionResponseTypes'], `${name}/${id}`).toContain(
@@ -536,7 +537,8 @@ describe.runIf(operations !== undefined).each(TIERS)(
               return (
                 json.includes('"MetricName":"ApproximateNumberOfMessagesVisible"') &&
                 json.includes(`"${target}"`) &&
-                alarm.Properties?.['Threshold'] === 0
+                alarm.Properties?.['Threshold'] === 0 &&
+                alarm.Properties['ComparisonOperator'] === 'GreaterThanThreshold'
               );
             });
             expect(watching.length, `${name}/${target} depth`).toBeGreaterThan(0);

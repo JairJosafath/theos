@@ -7,7 +7,7 @@ import { Metrics, MetricUnit } from '@aws-lambda-powertools/metrics';
 import type { Context, SQSBatchResponse, SQSEvent } from 'aws-lambda';
 
 import { consumeBatch } from './batch';
-import { consume, reporting } from './consume';
+import { checkingFirst, consume, reporting } from './consume';
 import type { Message, Report } from './consume';
 import { DynamoDbItemStore } from './item_store';
 
@@ -40,7 +40,7 @@ const report: Report = {
 // SQS delivers a message at least once: the same message delivered again,
 // with the same messageId, finds its record and writes nothing twice. Only
 // what was consumed is kept: a failed message keeps no record, so its next
-// delivery runs again.
+// delivery runs again. A malformed message is refused before it is recorded.
 const idempotency = new IdempotencyConfig({ eventKeyJmesPath: 'messageId' });
 const consumeOnce = makeIdempotent((message: Message) => consume(message, store), {
   persistenceStore: new DynamoDBPersistenceLayer({
@@ -59,7 +59,7 @@ export async function handler(event: SQSEvent, context: Context): Promise<SQSBat
   idempotency.registerLambdaContext(context);
   metrics.captureColdStartMetric();
   try {
-    return await consumeBatch(event, reporting(consumeOnce, report));
+    return await consumeBatch(event, reporting(checkingFirst(consumeOnce), report));
   } finally {
     metrics.publishStoredMetrics();
   }

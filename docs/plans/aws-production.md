@@ -329,6 +329,10 @@ settled, which steps 10 and 11 can copy:
   function's error alarm and not only the dead-letter queue's. A malformed
   message is not dropped: it fails like any other and reaches the
   dead-letter queue after five deliveries, where a person sees it.
+- **One message at a time:** the processor runs with `processInParallel:
+  false`, since Powertools' default runs a batch's messages at once and two
+  for one item would race; a malformed message is refused
+  (`checkingFirst`) before the idempotent store records it.
 - **Idempotency is keyed by `messageId`,** which SQS keeps across
   redeliveries of one message; a producer that sends the same item twice
   sends two messages, and the item is simply put twice.

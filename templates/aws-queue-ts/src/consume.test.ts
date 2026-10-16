@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { consume, Malformed, reporting } from './consume';
+import { checkingFirst, consume, itemOf, Malformed, reporting } from './consume';
 import type { Message, Report } from './consume';
 import type { Item } from './items';
 import type { ItemStore } from './item_store';
@@ -58,6 +58,40 @@ describe('consume', () => {
     const consumed = consume(LAMP, new FakeStore(new Error('throttled')));
 
     await expect(consumed).rejects.toThrow('throttled');
+  });
+});
+
+describe('itemOf', () => {
+  it('is the item a message carries', () => {
+    expect(itemOf(LAMP)).toEqual({ id: 'i1', name: 'Lamp', quantity: 3 });
+  });
+
+  it('throws Malformed for a body that is no item', () => {
+    expect(() => itemOf({ messageId: 'm2', body: '[]' })).toThrow(Malformed);
+  });
+});
+
+describe('checkingFirst', () => {
+  it('runs the work on a message that carries an item', async () => {
+    const seen: string[] = [];
+
+    await checkingFirst((message) => {
+      seen.push(message.messageId);
+      return Promise.resolve();
+    })(LAMP);
+
+    expect(seen).toEqual(['m1']);
+  });
+
+  it('throws Malformed before the work runs on a malformed message', async () => {
+    const seen: string[] = [];
+    const work = checkingFirst((message) => {
+      seen.push(message.messageId);
+      return Promise.resolve();
+    });
+
+    await expect(work({ messageId: 'm2', body: '{' })).rejects.toBeInstanceOf(Malformed);
+    expect(seen).toEqual([]);
   });
 });
 
