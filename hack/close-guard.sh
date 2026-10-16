@@ -74,6 +74,20 @@ shell_words() {
   done
 }
 
+# no_heredocs TEXT: TEXT without its heredocs' bodies, which are text (a pull
+# request's body, a commit message), not commands.
+no_heredocs() {
+  local line end= re="(^|[^<])<<-?[[:blank:]]*[\"']?\\\\?([[:alnum:]_]+)"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -n "$end" ]; then
+      [ "${line#"${line%%[!$'\t']*}"}" != "$end" ] || end=
+      continue
+    fi
+    printf '%s\n' "$line"
+    [[ $line =~ $re ]] && end=${BASH_REMATCH[2]}
+  done <<<"$1"
+}
+
 # ours REPO: REPO (OWNER/REPO, HOST/OWNER/REPO, gh api's {owner}/{repo}, a
 # $VAR, or empty for the current one) is this repository.
 ours() {
@@ -155,7 +169,7 @@ if [ -n "$byhand" ]; then
     else
       c+=("$w")
     fi
-  done < <(shell_words "$cmd"; printf ';\0')
+  done < <(shell_words "$(no_heredocs "$cmd")"; printf ';\0')
   [ ${#unsure[@]} -eq 0 ] ||
     deny "close-guard: could not tell which issue \`${unsure[0]}\` closes, so it could not check that no step of it is still open. Name the issue by its number."
   refused= lost=

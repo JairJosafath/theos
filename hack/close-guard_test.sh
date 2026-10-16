@@ -139,6 +139,11 @@ it's done
 EOF
 gh issue close 467"
 check "issue close: an apostrophe in a heredoc before it doesn't hide it" "$(decision)" deny
+hook "cat >body.md <<'EOF'
+Run gh issue close 475 && gh issue close \"\$n\" && gh issue close 467 by hand.
+EOF
+git status"
+check "a heredoc's body is text, not commands: allowed, no gh call" "$(decision) $(calls)" "none 0"
 hook 'gh issue close 467' "$T/other"
 check "issue close: another repository's checkout, not guarded" "$(decision) $(calls)" "none 0"
 hook 'gh api -X PATCH repos/JairJosafath/c4factory/issues/467 -f state=closed'
