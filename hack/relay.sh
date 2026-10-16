@@ -83,7 +83,7 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
-# Each session gets TMPDIR=<its worktree>/.dev/tmp (#1269), on disk and
+# Each session gets TMPDIR=<its worktree>/.relay/tmp (#1269), on disk and
 # gitignored, not the device's /tmp: a small tmpfs every session shares, which
 # one session's scratch, Go's build dirs and envtest's filled. The relay
 # empties it before the session starts and removes it when the session ends.
@@ -380,6 +380,7 @@ worktree() {
     git -C "$REPO" worktree add -q --detach "$WT" origin/main 2>>"$LOG" || return 1
     log "created the worktree $WT"
   fi
+  share_dev
   mkdir -p "$GH_PENDING_DIR"
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
   if [ -n "$(git -C "$WT" status --porcelain)" ]; then
@@ -387,6 +388,24 @@ worktree() {
       return 1
     log "stashed uncommitted changes left in $WT (git -C $WT stash list)"
   fi
+}
+
+# share_dev: link the worktree's .dev/ to the main checkout's, as ./dev setup
+# links a worktree's. A real .dev/ there holds caches that make check made
+# before hack/dev/env.sh pointed worktrees at the main checkout's (#1132):
+# gigabytes no one reads, so it goes (#1246). The worker's lock is held and no
+# session runs in the worktree; its TMPDIR is in .relay/, not .dev/.
+share_dev() {
+  local dev=$WT/.dev main=$REPO/.dev freed
+  [ -L "$dev" ] && return 0
+  [ -d "$main" ] || return 0
+  if [ -e "$dev" ]; then
+    freed=$(du -sh "$dev" 2>/dev/null | cut -f1)
+    scratch_clear "$dev"
+    [ -e "$dev" ] && { log "could not replace $dev with a link to $main"; return 0; }
+    log "freed ${freed:-?} in $dev, a .dev/ of its own; linked it to $main (#1246)"
+  fi
+  ln -s "$main" "$dev" 2>>"$LOG" || log "could not link $dev to $main"
 }
 
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
@@ -690,7 +709,7 @@ scratch_clear() {
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT.
 session() {
-  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.dev/tmp
+  local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$WT/.relay/tmp
   t0=$(date +%s)
   # Checked here, not in the watch: a session that ends before the watch runs
   # would take the log line with it.

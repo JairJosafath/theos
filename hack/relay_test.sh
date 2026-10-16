@@ -8,7 +8,8 @@
 # worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
-# TMPDIR, in its worktree, emptied before and removed after it; and idle workers,
+# TMPDIR, in its worktree, emptied before and removed after it; a worktree's
+# own .dev/, which becomes the link to the main checkout's; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -400,17 +401,39 @@ check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=ke
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 no_strikes
 
-# Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
+# Each session's TMPDIR is its worktree's .relay/tmp, not the device's shared
 # /tmp tmpfs: emptied before it starts and removed after it ends (#1269).
 echo tmp >"$FAKE"
-mkdir -p "$WT/.dev/tmp" && echo old >"$WT/.dev/tmp/left"
+mkdir -p "$WT/.relay/tmp" && echo old >"$WT/.relay/tmp/left"
 work
-check "tmp #1269: TMPDIR is the worktree's .dev/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.dev/tmp"
+check "tmp #1269: TMPDIR is the worktree's .relay/tmp" "$(cat "$FAKE.tmpdir")" "$WT/.relay/tmp"
 check "tmp #1269: a dead session's scratch is gone before the next starts" "$(cat "$FAKE.left")" gone
-check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.dev/tmp/"?*) echo in ;; esac)" in
-check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.dev/tmp" && echo left)" ""
+check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$WT/.relay/tmp/"?*) echo in ;; esac)" in
+check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$WT/.relay/tmp" && echo left)" ""
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
+
+# Before a session, a worktree's .dev/ of its own, the caches make check left
+# there before #1132, becomes the link to the main checkout's (#1246).
+(
+  REPO=$T/main WT=$T/wt-dev
+  mkdir -p "$REPO/.dev/cache" "$WT/.dev/cache/go-build" && head -c 300000 /dev/zero >"$WT/.dev/cache/go-build/x"
+  mkdir "$WT/.dev/cache/go-build/ro" && chmod a-w "$WT/.dev/cache/go-build/ro"
+  share_dev
+  check "share_dev #1246: a .dev/ of its own becomes the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: the main checkout's .dev/ stays" "$(test -d "$REPO/.dev/cache" && echo kept)" kept
+  check "share_dev #1246: logs what it freed" "$(grep -c "freed [0-9.]*[KM] in $WT/.dev, a .dev/ of its own; linked it to $REPO/.dev" "$LOG")" 1
+  : >"$LOG"
+  share_dev
+  check "share_dev #1246: an already linked one stays" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  check "share_dev #1246: an already linked one logs nothing" "$(cat "$LOG")" ""
+  rm "$WT/.dev"
+  share_dev
+  check "share_dev #1246: a worktree without .dev/ gets the link" "$(readlink "$WT/.dev")" "$REPO/.dev"
+  rm "$WT/.dev" && mkdir "$WT/.dev" && rm -r "$REPO/.dev"
+  share_dev
+  check "share_dev #1246: no main .dev/, nothing changes" "$(test -d "$WT/.dev" && ! test -L "$WT/.dev" && echo kept)" kept
+)
 
 # Failed sessions are strikes, comments on the issue: a handoff or a commit
 # resets the count; the third escalates the issue to the maintainer, with one
