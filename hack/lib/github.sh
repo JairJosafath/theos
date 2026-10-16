@@ -76,7 +76,8 @@
 #                                        the text also says Refs, or one with a Depends on step still open that the
 #                                        text doesn't close too. Exit 2: GitHub could not be asked. hack/close-guard.sh
 #                                        runs it before a session's gh pr create, edit or merge and git commit
-#   hack/lib/github.sh pr-check PR       closes-check over pull request PR's title, body and commit messages
+#   hack/lib/github.sh pr-check PR       closes-check over pull request PR's title, body and commit messages,
+#                                        its Refs #N read from the body alone: a commit's Refs #N closes nothing
 #   hack/lib/github.sh merge PR          merge pull request PR with a merge commit. Refused (exit 1) when its body
 #                                        says Refs #N and a closing word next to #N (closes #N, fixed #N, even in
 #                                        prose or a commit message) or GitHub's closingIssuesReferences would
@@ -195,8 +196,19 @@ export GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1
 GH_NAMES=(otter heron lynx wren finch badger marten plover stoat ibis kestrel
   vole puffin newt egret ferret curlew shrew tern hare dipper robin gecko crane)
 
+# gh_now: the clock heartbeats are written with and their age and freshness
+# read from, in epoch seconds. GH_NOW pins it (hack/lib/github_test.sh does, so
+# an age it expects is the same however long the run takes; #1194). How long a
+# wait has lasted is timed with SECONDS or date, never with this clock.
+gh_now() { echo "${GH_NOW:-$(date +%s)}"; }
+# GH_NOW_JQ: jq's now, read from the same clock.
+GH_NOW_JQ='
+  def _now: now;
+  def now: $ENV.GH_NOW // "" | if . == "" then _now else tonumber end;
+'
+
 # jq definitions over comments ({id, updated_at, body}); need --arg cm and --argjson ttl.
-GH_CLAIM_JQ='
+GH_CLAIM_JQ=$GH_NOW_JQ'
   def claim: .body | sub("^\\s+"; "") | startswith($cm);
   def held: .body | test("\\*\\* works on this issue");
   def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
@@ -293,7 +305,7 @@ gh_ttl() { gh_seconds "$C4_LEASE_TTL" C4_LEASE_TTL; }
 # SECONDS, as one JSON array of {id, issue, updated_at, html_url, body}.
 gh_recent_claims() {
   local since pages
-  since=$(date -u -d "@$(($(date +%s) - $1))" +%Y-%m-%dT%H:%M:%SZ)
+  since=$(date -u -d "@$(($(gh_now) - $1))" +%Y-%m-%dT%H:%M:%SZ)
   pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
   jq -c --arg cm "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'
     [.[][] | select(claim) | {id, issue: (.issue_url | sub(".*/"; "") | tonumber), updated_at, html_url, body}]' <<<"$pages"
@@ -866,7 +878,7 @@ gh_take_locked() {
   mkdir -p "$GH_PENDING_DIR"
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
   jq -n --argjson n "$n" --argjson id "$id" --arg name "$name" --arg branch "$branch" \
-    --argjson labels "$(jq -c '[.labels[].name]' <<<"$issue")" --argjson beat "$(date +%s)" \
+    --argjson labels "$(jq -c '[.labels[].name]' <<<"$issue")" --argjson beat "$(gh_now)" \
     '{issue: $n, id: $id, name: $name, branch: $branch, labels: $labels, beat: $beat}' >"$GH_CLAIM_FILE"
   [ -n "${GH_TAKE_KEEP_STATUS:-}" ] ||
     gh_set_status "$n" in-progress || echo "github: claimed #$n but could not label it status/in-progress" >&2
@@ -1003,7 +1015,7 @@ gh_lease_live() {
   local ttl
   gh_lease_read "$1" && [ -d "$l_wt" ] || return 1
   ttl=$(gh_ttl 2>/dev/null) || return 0
-  [ $(($(date +%s) - ${l_beat:-0})) -lt "$ttl" ]
+  [ $(($(gh_now) - ${l_beat:-0})) -lt "$ttl" ]
 }
 
 # gh_lease_mine: exit 0 when the lease read names this checkout.
@@ -1011,7 +1023,7 @@ gh_lease_mine() { [ "$(realpath -m "$l_wt")" = "$(gh_checkout)" ]; }
 
 # gh_lease_desc: the lease read, as "otter-23 (#23, PATH), heartbeat 5m ago".
 gh_lease_desc() {
-  echo "$l_name (${l_issue:+#$l_issue, }$l_wt), heartbeat $((($(date +%s) - ${l_beat:-0}) / 60))m ago"
+  echo "$l_name (${l_issue:+#$l_issue, }$l_wt), heartbeat $((($(gh_now) - ${l_beat:-0}) / 60))m ago"
 }
 
 # gh_lease_name: the cluster whose lease names this checkout, live or not.
@@ -1089,7 +1101,7 @@ gh_lease_take() {
   if gh_claim_read; then name=$c_name issue=$c_issue; fi
   f=$(gh_lease_file "$pick")
   jq -n --arg c "$pick" --arg name "${name:-${USER:-$(id -un)}}" --arg issue "$issue" --arg wt "$(gh_checkout)" \
-    --argjson beat "$(date +%s)" '{cluster: $c, name: $name, issue: ($issue | tonumber? // null), worktree: $wt, beat: $beat}' \
+    --argjson beat "$(gh_now)" '{cluster: $c, name: $name, issue: ($issue | tonumber? // null), worktree: $wt, beat: $beat}' \
     >"$f.$$" && mv "$f.$$" "$f" && echo "$pick"
 }
 
@@ -1205,7 +1217,7 @@ gh_lease_beat() {
   local c l_name l_issue l_wt l_beat
   c=$(gh_lease_name) || return 0
   gh_lease_read "$c"
-  [ $(($(date +%s) - ${l_beat:-0})) -ge "$GH_BEAT_EVERY" ] || return 0
+  [ $(($(gh_now) - ${l_beat:-0})) -ge "$GH_BEAT_EVERY" ] || return 0
   gh_lease_locked gh_lease_beat_locked
 }
 
@@ -1213,7 +1225,7 @@ gh_lease_beat_locked() {
   local c f
   c=$(gh_lease_name) || return 0
   f=$(gh_lease_file "$c")
-  jq --argjson t "$(date +%s)" '.beat = $t' "$f" >"$f.$$" && mv "$f.$$" "$f"
+  jq --argjson t "$(gh_now)" '.beat = $t' "$f" >"$f.$$" && mv "$f.$$" "$f"
 }
 
 # gh_lease_pool: each pool cluster and whether it is leased, free or not
@@ -1297,7 +1309,7 @@ gh_beat() {
   gh_lease_beat
   gh_claim_read || return 0
   last=$(jq -r '.beat // 0' "$GH_CLAIM_FILE")
-  [ $(($(date +%s) - last)) -ge "$GH_BEAT_EVERY" ] || return 0
+  [ $(($(gh_now) - last)) -ge "$GH_BEAT_EVERY" ] || return 0
   c=$(gh_claim_held 2>/dev/null)
   rc=$?
   [ "$rc" = 2 ] && return 0
@@ -1312,7 +1324,7 @@ EOF
   fi
   body=$(jq -r .body <<<"$c" | sed "s/^Heartbeat: .*/Heartbeat: $(date -u +%Y-%m-%dT%H:%MZ)/")
   gh_edit_comment "$c_id" "$body" 2>/dev/null || return 0
-  jq --argjson t "$(date +%s)" '.beat = $t' "$GH_CLAIM_FILE" >"$GH_CLAIM_FILE.tmp" &&
+  jq --argjson t "$(gh_now)" '.beat = $t' "$GH_CLAIM_FILE" >"$GH_CLAIM_FILE.tmp" &&
     mv "$GH_CLAIM_FILE.tmp" "$GH_CLAIM_FILE"
 }
 
@@ -1431,20 +1443,25 @@ gh_steps() {
   return 0
 }
 
-# gh_closes_check FILE: refuse a pull request body or commit message (FILE, or
-# - for stdin) that would close the parent of a plan too early: a closing
-# keyword for an issue with a "Depends on #S" step still open, or for one the
-# same text names with Refs #N while it has no steps yet (a plan's pull
-# request, whose steps are filed after it merges). Steps the same text closes
-# count as closed, so a last step's Closes #S and Closes #N passes.
+# gh_closes_check FILE [BODY]: refuse a pull request body or commit message
+# (FILE, or - for stdin) that would close the parent of a plan too early: a
+# closing keyword for an issue with a "Depends on #S" step still open, or for
+# one the same text names with Refs #N while it has no steps yet (a plan's
+# pull request, whose steps are filed after it merges). Steps the same text
+# closes count as closed, so a last step's Closes #S and Closes #N passes.
+# When FILE holds a whole pull request (title, body and commit messages), BODY
+# is its body: a pull request's intent is its body, so only BODY's Refs #N
+# make it a plan's; a commit's Refs #N closes nothing (#1200). Its commits'
+# closing keywords still count.
 # Each refusal names the line, on stderr. Exit 1: refused; 2: GitHub could
 # not be asked. Text without a closing keyword never asks GitHub.
 gh_closes_check() {
-  local text refs closes line n s state dline rc=0
+  local text refs closes line n s state dline rc=0 said="the same text says"
   text=$(gh_read "${1:--}") || return 2
   closes=$(gh_closing_refs <<<"$text" | sort -nu)
   [ -n "$closes" ] || return 0
-  refs=$(grep -oiE '(^|[^[:alnum:]_])refs:?[[:space:]]+#[0-9]+([[:space:]]*(,|and)[[:space:]]*#[0-9]+)*' <<<"$text" |
+  [ $# -lt 2 ] || said="the pull request's body says"
+  refs=$(grep -oiE '(^|[^[:alnum:]_])refs:?[[:space:]]+#[0-9]+([[:space:]]*(,|and)[[:space:]]*#[0-9]+)*' <<<"${2-$text}" |
     grep -oE '#[0-9]+' | tr -d '#' | sort -nu)
   local -A steps=()
   for n in $closes; do
@@ -1455,7 +1472,7 @@ gh_closes_check() {
     for n in $(gh_closing_refs <<<"$line" | sort -nu); do
       line=$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line")
       if [ -z "${steps[$n]}" ] && grep -qxF -- "$n" <<<"$refs"; then
-        echo "github: refused: \"$line\" closes #$n at merge, and the same text says Refs #$n. A plan's pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #$n. If this pull request finishes #$n, which has no plan, the Refs #$n is wrong: say Closes #$n, never Refs #$n; when a pushed commit says Refs #$n, reword the history onto a new branch <branch>-2, open a fresh pull request and close this one (the handoff skill, Finish)." >&2
+        echo "github: refused: \"$line\" closes #$n at merge, and $said Refs #$n. A plan's pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #$n (in a pushed commit: the handoff skill, Plan only). If this finishes #$n, which has no plan, drop the Refs #$n and keep the Closes #$n: Refs #$n is only a plan's word." >&2
         rc=1
         continue
       fi
@@ -1477,11 +1494,18 @@ gh_pr_text() {
   gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/commits?per_page=100" --jq '.[].commit.message' || return 1
 }
 
-# gh_pr_check PR: gh_closes_check over pull request PR's title, body and commits.
+# gh_pr_body PR: pull request PR's body, whose Refs #N alone make it a plan's.
+gh_pr_body() {
+  gh_api "repos/$C4_GITHUB_REPO/pulls/${1:?usage: pr-check PR}" --jq '.body // ""'
+}
+
+# gh_pr_check PR: gh_closes_check over pull request PR's title, body and
+# commits, its Refs #N read from the body alone.
 gh_pr_check() {
-  local text
+  local text body
   text=$(gh_pr_text "$@") || return 2
-  gh_closes_check - <<<"$text"
+  body=$(gh_pr_body "$@") || return 2
+  gh_closes_check - "$body" <<<"$text"
 }
 
 # gh_close N FILE: comment what landed, close N as completed, drop its status
@@ -1520,6 +1544,8 @@ gh_close() {
 # #N"), so a plan's pull request would close its parent with the steps
 # unbuilt. Refused (exit 1) when such a phrase is there or GraphQL's
 # closingIssuesReferences lists N; the message names the line to reword.
+# Only the body's Refs #N make it a plan's: a commit's Refs #N closes
+# nothing, so a finishing pull request merges though a commit says it (#1200).
 # Refused as well when it would close any issue that no line of the body or a
 # commit message starts with Closes, Fixes or Resolves #N for: a step's or a
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
@@ -1534,16 +1560,17 @@ gh_close() {
 # does both in its turn). The merge is pinned to the head checked, so a push
 # after the check refuses too.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view text refs closing meant line n bad= base head behind turn
+  local pr=${1:?usage: merge PR} view body text refs closing meant line n bad= base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
       files(first: 100) { totalCount nodes { path } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
+  body=$(jq -r '.body // ""' <<<"$view")
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
-  refs=$(jq -r '.body // ""' <<<"$view" | grep -oiE '\brefs:?[[:space:]]+#[0-9]+\b' | grep -oE '[0-9]+$' | sort -un)
+  refs=$(grep -oiE '\brefs:?[[:space:]]+#[0-9]+\b' <<<"$body" | grep -oE '[0-9]+$' | sort -un)
   for n in $refs; do
     line=$(gh_closing_line "$n" <<<"$text")
     if [ -n "$line" ]; then
@@ -1569,7 +1596,7 @@ gh_merge() {
   done
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
-  gh_closes_check - <<<"$text" || return 1
+  gh_closes_check - "$body" <<<"$text" || return 1
   # Nor may it fix a bug without a test.
   gh_bugfix_check "$pr" "$view" || return 1
   # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
@@ -1767,7 +1794,7 @@ gh_report_note() {
 # (.relay/maintain.lock), takes it, so a live lease of this host is one a
 # crashed maintainer left: it is taken over like a stale one.
 GH_MAINT_MARKER='<!-- c4-maintainer -->'
-GH_MAINT_JQ='
+GH_MAINT_JQ=$GH_NOW_JQ'
   def lease: .body | sub("^\\s+"; "") | startswith($mm);
   def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
   def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
@@ -1868,7 +1895,7 @@ GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw th
 # so a fetch in another one at the same moment fails this one's ref update.
 GH_LAND_FETCH_TRIES=${GH_LAND_FETCH_TRIES:-5}
 GH_LAND_FETCH_PAUSE=${GH_LAND_FETCH_PAUSE:-5} # seconds between those tries
-GH_LAND_JQ='
+GH_LAND_JQ=$GH_NOW_JQ'
   def turn: .body | sub("^\\s+"; "") | startswith($lm);
   def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
   def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
