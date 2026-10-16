@@ -283,14 +283,22 @@ enforces.
   same round and tells the agent nothing, up to twice a round; a third killed
   job fails the Task, reason `RunnerOutOfMemory`, costing no try. Checks
   their runner abandoned are rerun the same way, sharing those two reruns: a
-  run that ended cancelled (a runner that stops, its pod restarting, cancels
-  its job; Gitea records no one who cancelled a run, and a person's cancel in
-  its UI leaves the same traces, so every cancel counts and the cap bounds
-  what a person's costs), a job that started and has no log, or a log that
+  run its runner cancelled (a runner told to stop, its pod replaced, cancels
+  its job), a job that started and has no log, or a log that
   stops before the runner says how the job ended (`Job failed`), or ends in
   its `Early termination` (a runner killed mid-job, whose job Gitea fails
   once it stops reporting). The next abandoned run fails the Task, reason
-  `RunnerLost`, costing no try. When an
+  `RunnerLost`, costing no try. Gitea records no one who cancelled a run,
+  and the runner's log ends the same way whoever did (`Job cancelled`), so
+  the operator reads the cancelled jobs' runners: a runner that cancelled its
+  job stopped, and the factory's runner registers as a new one each time its
+  pod starts, while a person's cancel in Gitea leaves the runner online. A
+  cancelled job whose runner is offline or gone is the runner's; one whose
+  runner is still online two minutes after it ended (a runner that stopped
+  shows offline by then), or that no runner started, is a person's, and
+  costs the round like any failed check, its feedback saying someone
+  cancelled them. Until then the Task waits; jobs or a runner Gitea doesn't
+  say of count the cancel as the runner's. When an
   implementer pushes again the commit whose checks failed, having found
   nothing to fix, its failed jobs run again before the Task reads the checks;
   a failure from before a rerun is never read as its result

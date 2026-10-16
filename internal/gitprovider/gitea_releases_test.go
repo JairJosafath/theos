@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -365,6 +366,107 @@ func TestRunnersOnline(t *testing.T) {
 	}
 	if online, known := p.RunnersOnline(context.Background()); online != 0 || known {
 		t.Errorf("RunnersOnline() of a Gitea that is down = %d, %t; want unknown", online, known)
+	}
+}
+
+func TestRunnerOnline(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		status     int
+		body       string
+		wantOnline bool
+		wantKnown  bool
+	}{
+		{name: "idle", status: http.StatusOK, body: `{"id":4,"status":"idle","busy":false}`, wantOnline: true,
+			wantKnown: true},
+		{name: "busy", status: http.StatusOK, body: `{"id":4,"status":"active","busy":true}`, wantOnline: true,
+			wantKnown: true},
+		{name: "offline", status: http.StatusOK, body: `{"id":4,"status":"offline","busy":false}`, wantKnown: true},
+		{name: "offline, busy with the job it stopped in", status: http.StatusOK,
+			body: `{"id":4,"status":"offline","busy":true}`, wantKnown: true},
+		{name: "deleted", status: http.StatusNotFound,
+			body: `{"message":"runner with id 4: resource does not exist"}`, wantKnown: true},
+		{name: "older Gitea", status: http.StatusNotFound, body: `{"message":"not found"}`},
+		{name: "not an admin", status: http.StatusForbidden, body: `{"message":"user should be an admin"}`},
+		{name: "not JSON", status: http.StatusOK, body: `<html>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/actions/runners/4" {
+					http.NotFound(w, r)
+					return
+				}
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			online, known := p.RunnerOnline(context.Background(), 4)
+			if online != tc.wantOnline || known != tc.wantKnown {
+				t.Errorf("RunnerOnline() = %t, %t; want %t, %t", online, known, tc.wantOnline, tc.wantKnown)
+			}
+		})
+	}
+}
+
+func TestRunJobs(t *testing.T) {
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/repos/webshop/orders-api/actions/runs/9/jobs":
+			pages = append(pages, r.URL.Query().Get("page"))
+			if r.URL.Query().Get("page") == "1" {
+				jobs := make([]string, 0, issuePageSize)
+				for i := range issuePageSize {
+					jobs = append(jobs, fmt.Sprintf(`{"id":%d,"status":"completed","conclusion":"success",`+
+						`"runner_id":3,"completed_at":"2026-10-16T12:00:00Z"}`, 100+i))
+				}
+				_, _ = w.Write([]byte(`{"jobs":[` + strings.Join(jobs, ",") + `]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"jobs":[
+				{"id":7,"status":"completed","conclusion":"cancelled","runner_id":4,"runner_name":"gitea-runner-go-7f9",
+				 "started_at":"2026-10-16T11:58:00Z","completed_at":"2026-10-16T11:59:30Z"},
+				{"id":8,"status":"completed","conclusion":"cancelled","started_at":"1970-01-01T00:00:00Z",
+				 "completed_at":"1970-01-01T00:00:00Z"}],"total_count":` + strconv.Itoa(issuePageSize+2) + `}`))
+		case "/api/v1/repos/webshop/orders-api/actions/runs/8/jobs":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"workflow run not found"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	p, err := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop", Credentials: Credentials{Token: "secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := p.Repository("orders-api")
+	jobs, err := p.RunJobs(context.Background(), repo, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []WorkflowJob{
+		{ID: 7, Status: "completed", Conclusion: "cancelled", RunnerID: 4,
+			Completed: time.Date(2026, 10, 16, 11, 59, 30, 0, time.UTC)},
+		{ID: 8, Status: "completed", Conclusion: "cancelled"},
+	}
+	if len(jobs) != issuePageSize+2 || !slices.EqualFunc(jobs[issuePageSize:], want, func(a, b WorkflowJob) bool {
+		return a.ID == b.ID && a.Status == b.Status && a.Conclusion == b.Conclusion && a.RunnerID == b.RunnerID &&
+			a.Completed.Equal(b.Completed)
+	}) {
+		t.Errorf("RunJobs() = %d jobs ending %+v, want %d ending %+v", len(jobs), jobs[max(0, len(jobs)-2):],
+			issuePageSize+2, want)
+	}
+	if !slices.Equal(pages, []string{"1", "2"}) {
+		t.Errorf("read pages %v, want 1 and 2", pages)
+	}
+	if _, err := p.RunJobs(context.Background(), repo, 8); err == nil ||
+		!strings.Contains(err.Error(), "workflow run not found") {
+		t.Errorf("RunJobs() of a run Gitea doesn't have: error %v, want Gitea's message", err)
 	}
 }
 
