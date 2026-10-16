@@ -138,6 +138,22 @@ check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.
 check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
 check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
 
+# A resumed issue continues from its newest handoff at every priority (#1309):
+# pick says in-progress for a priority/3 one (#1329), and its prompt says so.
+(
+  mkdir -p "$DIR"
+  gh_api() {
+    case $* in
+      *issues/comments*) echo '[[]]' ;;
+      *issues\?state=open*) echo '[[{"number":7,"title":"t","html_url":"u","body":"","labels":[{"name":"status/in-progress"},{"name":"priority/3"}]}]]' ;;
+    esac
+  }
+  pick; check "pick, in-progress + priority/3: in-progress (#1309)" "$? $ISSUE $HOW" "0 7 in-progress"
+  check "prompt, in-progress + priority/3: continues from the handoff (#1309)" \
+    "$(prompt "$ISSUE" "$TITLE" "$URL" "$HOW" n b | grep -c 'continue from its newest handoff comment')" 1
+  exit $fail
+) || fail=1
+
 # A session escalates to the maintainer, never to the user.
 out=$(prompt 1 t u ready n b)
 check "prompt: escalates with needs-maintainer" "$(grep -c 'hack/lib/github.sh status 1 needs-maintainer' <<<"$out")" 1

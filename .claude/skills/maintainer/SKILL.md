@@ -83,7 +83,7 @@ unanswered for 14 days.
      Then post the right comment and restore the right status.
    - If a rule, prompt or doc caused the mistake, file the fix:
      `hack/lib/github.sh create TITLE FILE status/ready kind/bug source/dev`,
-     with the evidence in FILE. Add `priority/urgent` if the mistake will
+     with the evidence in FILE. Add `priority/1` if the mistake will
      happen again tonight.
 5. **Pull requests:** sessions merge their own.
    - An open pull request with no live claim on its issue for 2 hours: say on
@@ -198,7 +198,7 @@ unanswered for 14 days.
      previews the next one, vX.Y.Z.
    - If auto mode refuses `hack/release.sh`, list it under *Needs you* once
      and don't retry it every sweep: the allow rules are the owner's.
-   - A failure becomes a `kind/bug` issue, ready and `priority/urgent`.
+   - A failure becomes a `kind/bug` issue, ready and `priority/1`.
 9. **The report:** write its body (format below) and set it with
    `hack/lib/github.sh report FILE`.
 

@@ -326,10 +326,12 @@ touch .relay/stop                  # stop the watch, and every worker after its 
 ```
 
 The relay picks the issue its worker's last session reserved (`create --next`,
-below), else `priority/urgent` issues, then `priority/velocity` ones (what
-makes development itself faster, [docs/plans/velocity.md](../plans/velocity.md)),
-then the rest; within each, the oldest `status/in-progress` issue nobody
-holds, else the oldest `status/ready` one, skipping issues with a live claim
+below), else by `priority/N`, 1 first: an issue with no priority label counts
+as 5, and of several labels the lowest counts. 1 is something broken now (a
+red main, a dead relay, a failed release check), 3 what makes development
+itself faster ([docs/plans/velocity.md](../plans/velocity.md)), 10 last.
+Within a number, the oldest `status/in-progress` issue nobody holds goes
+first, else the oldest `status/ready` one, skipping issues with a live claim
 or an open `Depends on #M`, and claims it (see
 [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
@@ -344,7 +346,7 @@ A follow-up a session decided goes to the front of its own worker's queue:
 `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
 `status/ready` and reserves it, with a claim comment that says "reserved this
 issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
-returns it before every other issue, urgent ones too, and its `take` turns
+returns it before every other issue, `priority/1` ones too, and its `take` turns
 the reservation into the claim; every other `pick` skips it and every other
 `take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
 which anyone picks it. The log shows such a session as `(next)`. The watch's
@@ -492,7 +494,7 @@ session does (the watch only reads that file), so the watch starts no second
 triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
-ready and urgent, so the next session fixes main before anything else; a single
+ready and `priority/1`, so the next session fixes main before anything else; a single
 failure files nothing. When GitHub started none of the newest failed run's
 jobs (no steps, an annotation saying the job was not started: failed
 payments, a spending limit), no code is at fault: the watch files one
@@ -503,8 +505,8 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/velocity`,
-not urgent, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
+time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/3`,
+when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
 while it is open, a third failure files nothing.
 `hack/lib/github.sh flakes --count` lists the specs that failed on main this
 week, from GitHub, on any device.
@@ -636,7 +638,7 @@ upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
 main files (or comments on) `Release vX.Y.Z fails its check`, ready and
-urgent, as the watch does for a red main.
+`priority/1`, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and
@@ -678,7 +680,7 @@ the newest samples that made their own catalog and Agents, from history.
 
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
-Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/urgent`), or
+Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/1`), or
 comments on the open one, so the relay picks it up; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
 branch only reports in its run. Any published release can be checked; add

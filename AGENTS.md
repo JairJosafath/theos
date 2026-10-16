@@ -172,10 +172,11 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   (reported from a device running the Helm release); `hack/lib/github.sh`
   reads and writes them. No issue needs a cluster: every one is verified by Go
   tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
-  works every ready issue. `priority/velocity` marks what makes development
-  itself faster (the relay, `land`, `make check`, flakes, the scripts); the
-  relay picks it after `priority/urgent`, before the rest. What each status
-  means:
+  works every ready issue. `priority/1` to `priority/10` order the relay's
+  picks, 1 first; an issue with none counts as 5. 1 is something broken now
+  (a red main, a dead relay, a failed release check); 3 marks what makes
+  development itself faster (the relay, `land`, `make check`, flakes, the
+  scripts). What each status means:
   - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
     the owner (a session the user runs files what the user decided as
     `ready`), the maintainer, or the relay's triage (the `triage` skill). An
