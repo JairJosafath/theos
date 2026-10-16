@@ -270,7 +270,19 @@ of the Standard's version, and the second to merge takes the next minor, as
   `internal/model`, not by CRD defaulting, so a client that sets one field
   reads back that field and a stored object never changes shape on upgrade.
   The block is mutable; `OperationsApplied` on the Container says whether
-  the repository's `infra/operations.ts` matches it.
+  the repository's `infra/operations.ts` matches it. Step 2 chose how: the
+  scaffold records the resolved block in `status.operations`, and the
+  condition compares the resolved `spec.operations` to it, so writing a
+  default out is no change. A Container scaffolded before the record has
+  no condition until its block says something, and then
+  `ChangedAfterScaffold`, since its repository has none of it. A Standard
+  update renders with the recorded block, as it does with the recorded
+  checks. Step 12 updates the record when its pull request merges.
+- **The planner and existing Containers.** A plan writes `operations` only
+  on a Container it makes; `model/containers.yaml` doesn't show an existing
+  one's block, and a plan that sets it is refused, so a block a person
+  keeps is never undone by a round. A `tier` anywhere in a plan's Container
+  refuses the plan with a message saying the tier is the target's.
 - **The tier at synth.** `infra/main.ts` (the Standard's) reads
   `app.node.tryGetContext('tier')`, accepts `production` or `development`,
   defaults to `development`, and passes it to every stack; `make synth`

@@ -335,6 +335,7 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 			ComputeRef:     optionalLocalRef(o.Compute),
 			DeploymentRef:  optionalLocalRef(o.Deployment),
 			Checks:         c4v1alpha1.ChecksMode(o.Checks),
+			Operations:     operationsSpec(o.Operations),
 		}}, nil
 	case model.KindDataStore:
 		return &c4v1alpha1.DataStore{ObjectMeta: objMeta, Spec: c4v1alpha1.DataStoreSpec{

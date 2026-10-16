@@ -458,7 +458,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
 			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: s.FrameworkRef.Name,
 			Standard: refName(s.StandardRef), Compute: refName(s.ComputeRef), Deployment: refName(s.DeploymentRef),
-			Checks: string(s.Checks)})
+			Checks: string(s.Checks), Operations: plannedOperations(s.Operations)})
 	}
 	var stores c4v1alpha1.DataStoreList
 	if err := c.List(ctx, &stores, in); err != nil {

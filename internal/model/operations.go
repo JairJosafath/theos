@@ -1,0 +1,108 @@
+package model
+
+import (
+	"fmt"
+	"regexp"
+)
+
+// A Container's spec.operations is what the app promises whatever tier runs
+// it (plans/aws-production.md, decision 1). The factory fills in what the
+// block leaves out here, never by CRD defaulting, so a client reads back only
+// what it set and a stored object keeps its shape on an upgrade. The tier is
+// the deploy target's and has no place in the block.
+
+// The defaults of a field the block leaves out.
+const (
+	DefaultRetentionDays int32 = 35
+	DefaultRPO                 = "1h"
+	DefaultRTO                 = "4h"
+	// MaxRetentionDays is the most days backups may be kept.
+	MaxRetentionDays int32 = 3650
+)
+
+// OperationsChoices is a Container's spec.operations as written: a nil
+// RetentionDays, or an empty string, is a field left out.
+type OperationsChoices struct {
+	RetentionDays *int32
+	CopyToRegion  string
+	RPO           string
+	RTO           string
+	Email         string
+}
+
+// Operations is a Container's operations block with the defaults filled in:
+// what the templates render infra/operations.ts from.
+type Operations struct {
+	Backups  OperationsBackups
+	Recovery OperationsRecovery
+	Alerts   OperationsAlerts
+}
+
+// OperationsBackups: RetentionDays 0 means point-in-time recovery only, and
+// an empty CopyToRegion no copy.
+type OperationsBackups struct {
+	RetentionDays int32
+	CopyToRegion  string
+}
+
+// OperationsRecovery holds the recovery objectives, such as 1h.
+type OperationsRecovery struct {
+	RPO string
+	RTO string
+}
+
+// OperationsAlerts: an empty Email tells nobody.
+type OperationsAlerts struct {
+	Email string
+}
+
+// ResolveOperations fills in the defaults of what c leaves out.
+func ResolveOperations(c OperationsChoices) Operations {
+	o := Operations{
+		Backups:  OperationsBackups{RetentionDays: DefaultRetentionDays, CopyToRegion: c.CopyToRegion},
+		Recovery: OperationsRecovery{RPO: DefaultRPO, RTO: DefaultRTO},
+		Alerts:   OperationsAlerts{Email: c.Email},
+	}
+	if c.RetentionDays != nil {
+		o.Backups.RetentionDays = *c.RetentionDays
+	}
+	if c.RPO != "" {
+		o.Recovery.RPO = c.RPO
+	}
+	if c.RTO != "" {
+		o.Recovery.RTO = c.RTO
+	}
+	return o
+}
+
+// The patterns of the CRD's markers on OperationsSpec; a test holds the two
+// together.
+var (
+	objectivePattern = regexp.MustCompile(`^[0-9]+(m|h|d)$`)
+	regionPattern    = regexp.MustCompile(`^([a-z]{2}(-[a-z]+)+-[0-9]+)?$`)
+	emailPattern     = regexp.MustCompile(`^([^@\s]+@[^@\s]+)?$`)
+)
+
+// OperationsProblems returns what the API server would refuse in c, one
+// sentence per field, naming it as spec.operations does.
+func OperationsProblems(c OperationsChoices) []string {
+	var out []string
+	if d := c.RetentionDays; d != nil && (*d < 0 || *d > MaxRetentionDays) {
+		out = append(out, fmt.Sprintf("backups.retentionDays is %d; write 0 to %d days, 0 meaning point-in-time "+
+			"recovery only", *d, MaxRetentionDays))
+	}
+	if !regionPattern.MatchString(c.CopyToRegion) {
+		out = append(out, fmt.Sprintf("backups.copyToRegion is %q; write an AWS region such as eu-west-1, "+
+			"or leave it out", c.CopyToRegion))
+	}
+	for _, f := range []struct{ name, value string }{{"recovery.rpo", c.RPO}, {"recovery.rto", c.RTO}} {
+		if f.value != "" && !objectivePattern.MatchString(f.value) {
+			out = append(out, fmt.Sprintf("%s is %q; write a number of minutes, hours or days, such as 30m, "+
+				"4h or 1d", f.name, f.value))
+		}
+	}
+	if !emailPattern.MatchString(c.Email) {
+		out = append(out, fmt.Sprintf("alerts.email is %q; write one email address, or leave it out", c.Email))
+	}
+	return out
+}
