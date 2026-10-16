@@ -1397,7 +1397,37 @@ meets other hosts:
 | Issue dependencies | native | "blocked by" | issue links that block | `OpenBlockers` and `AddIssueDependency` are part of Issues |
 | Runners online | admin API | runners API | runners API | may answer "unknown", as it can now |
 | Go modules | the owner's Go registry | none: the module is fetched from its tag | Go proxy | optional capability of Registry |
-| Events | webhooks (#1084) | webhooks | webhooks | polling is the contract; webhooks are an optional capability of GitHost |
+| Events | an organization webhook, signed (#1084) | webhooks | webhooks | polling is the contract; webhooks are Events, an optional capability of GitHost: register a hook, parse a signed delivery |
+
+**Events: the host calls back, and polling stays the contract.** A host that
+offers webhooks only shortens the wait; every rule still holds on a host
+without them, or when a delivery is lost
+([plans/git-events.md](plans/git-events.md)).
+
+- **One hook per GitProvider, on its organization,** so every Container and
+  Brief repository, those made later too, delivers to it, and scaffolding
+  gains no call. Its URL ends in `/git-events/<namespace>/<gitprovider>`,
+  which is how the operator finds it again and which Secret checks a
+  delivery. A GitProvider reconciler ensures it every 10 minutes; a token
+  that may not manage the organization's hooks leaves the factory polling.
+- **Every delivery is signed** with a secret the operator makes at runtime
+  (Secret `<gitprovider>-git-events`, owned by the GitProvider, never in the
+  repository or in what Helm renders) and sets on the hook. The receiver, a
+  plain HTTP listener of the operator behind its own Service, refuses a
+  delivery whose signature fails.
+- **A delivery is a hint, never a fact.** It names what to reconcile: the
+  Container or Brief whose repository it concerns, that Container's Crews,
+  and the Tasks with that issue, pull request or branch. The reconcile
+  then reads the host as a poll would, so a lost, repeated or replayed
+  delivery costs at most a wait or one reconcile.
+- **The GitProvider's `Events` condition** says whether deliveries arrive:
+  True (`Receiving`) once a signed one came after the hook was registered;
+  False with `Disabled`, `Unsupported`, `RegisterFailed`, `Registered` (none
+  yet) or `DeliveryRefused`.
+- **While `Events` is True, the polls that wait for the host stretch to 10
+  minutes:** the Crew's ready issues, a Task's checks and Standard change, a
+  Container's checks, a Brief waiting for answers. Otherwise they poll as
+  before.
 
 **How a device picks: Helm decides what is installed, custom resources decide
 what is used.** The chart installs Gitea, its runners and Agent Sandbox when
@@ -1445,6 +1475,7 @@ the agents wrote. Each port names its Secret and who reads it:
 | Port | Secret | Read by | An agent or CI job gets instead |
 | --- | --- | --- | --- |
 | GitHost, Issues, CI, Registry | the GitProvider's `credentialsSecretRef` (a Gitea token; a GitHub App's ID and private key; a GitLab group token), made by the user; the operator reads runs, logs and runners with it too | the operator only | nothing of it |
+| GitHost Events | the GitProvider's delivery Secret (`<gitprovider>-git-events`), made by the operator at runtime, owned by the GitProvider | the operator, which sets it on the host's hook and checks each delivery with it | nothing of it |
 | Issues, for request intake | the Brief's GitHub token Secret (`releases[].requests`), made by the user | the operator only | nothing of it |
 | AgentAccess | the Container's agent Git Secret, minted by the operator from the GitProvider's credential, owned by the Container | the operator, which passes it to that Container's sandboxes | a token that writes to that repository only and cannot merge to `main` |
 | CI jobs | none of the user's | the CI system | the host's own job token (Gitea's or GitHub's `GITHUB_TOKEN`, GitLab's `CI_JOB_TOKEN`), scoped to the repository; it may push to the host's registry |
