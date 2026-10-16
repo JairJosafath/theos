@@ -36,7 +36,10 @@ PARENTS= PARENTS_RC=0
 parents() { echo x >>"$T/tends"; [ -n "$PARENTS" ] && printf '%s\n' "$PARENTS"; return "$PARENTS_RC"; }
 tends() { cat "$T/tends" 2>/dev/null | wc -l | tr -d ' '; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
-run_triage() { echo triage >>"$T/triages"; echo "triage started in worker 2"; return "$TRIAGE_RC"; }
+run_triage() { echo triage >>"$T/triages"; echo "triage started (pid 1)"; return "$TRIAGE_RC"; }
+# The watch asks for the proposed issues every round here; its WATCH_RETRY
+# between asks has its own tests below.
+TRIAGE_ASK=0
 # The maintainer is off (WATCH_MAINTAIN=0) until its own tests below.
 MAINTAIN_EVERY=0 ACT='t1 sha1' ACT_RC=0 MAINT_RC=0
 activity() { echo "$ACT"; return "$ACT_RC"; }
@@ -61,7 +64,7 @@ check "idle, nothing proposed: no triage" "$(triages)" 0
 PROPOSED='40 41'
 round
 check "proposed: starts a triage" "$(triages)" 1
-check "proposed: one line" "$(logged 'triage: proposed #40 #41 (new: #40 #41); hack/relay.sh --triage: triage started in worker 2$')" 1
+check "proposed: one line" "$(logged 'triage: proposed #40 #41 (new: #40 #41); hack/relay.sh --triage: triage started (pid 1)$')" 1
 check "proposed: kept" "$(cut -d' ' -f2- "$DIR/triaged")" "40 41"
 check "proposed: no relay" "$(starts)" 0
 
@@ -123,6 +126,66 @@ round; round
 check "proposed fails: no triage" "$(triages)" 6
 check "proposed fails: logged once" "$(logged 'could not list the proposed issues (exit 2)')" 1
 PROPOSED= PROPOSED_RC=0
+
+# Issues ready (#1191): a new proposed issue gets its triage all the same,
+# with a worker free or every worker busy, as the triage runs in its own
+# worktree; none within WATCH_TRIAGE of the last one, and none while one runs.
+PICKED=$'60\tReady\thttps://github.com/x/y/issues/60\tready' PICK_RC=0
+echo "$(($(date +%s) - TRIAGE_EVERY)) 41" >"$DIR/triaged"
+PROPOSED='41 61'
+before=$(triages) relays=$(starts)
+round
+check "ready: starts a triage" "$(triages)" $((before + 1))
+check "ready: names the new one" "$(logged 'triage: proposed #41 #61 (new: #61)')" 1
+check "ready: starts the relay too" "$(starts)" $((relays + 1))
+PROPOSED='41 61 62'
+round
+check "ready: none within WATCH_TRIAGE" "$(triages)" $((before + 1))
+flock -o "$DIR/lock-1" sleep 30 &
+l1=$!
+flock -o "$DIR/lock-2" sleep 30 &
+l2=$!
+until ! flock -n "$DIR/lock-1" true && ! flock -n "$DIR/lock-2" true; do sleep 0.1; done
+aged
+round
+check "every worker busy: starts a triage" "$(triages)" $((before + 2))
+check "every worker busy: names the new one" "$(logged 'triage: proposed #41 #61 #62 (new: #62)')" 1
+# A triage that runs holds .relay/triage.lock: no second one beside it.
+PROPOSED='41 61 62 63'
+flock -o "$DIR/triage.lock" sleep 30 &
+l3=$!
+until ! flock -n "$DIR/triage.lock" true; do sleep 0.1; done
+aged
+round
+check "a triage runs: no second one" "$(triages)" $((before + 2))
+kill "$l3"
+wait "$l3" 2>/dev/null
+round
+check "the triage ended: the next one" "$(triages)" $((before + 3))
+check "every worker busy: no relay" "$(starts)" $((relays + 1))
+kill "$l1" "$l2"
+wait "$l1" "$l2" 2>/dev/null
+
+# Past WATCH_TRIAGE, the watch asks for the proposed issues at most every
+# WATCH_RETRY, not every round: each ask reads every open issue and the
+# comments since the last triage.
+TRIAGE_ASK=600 TRIAGE_T=0
+asked() { [ -e "$T/proposed-args" ] && echo asked; rm -f "$T/proposed-args"; }
+rm -f "$T/proposed-args"
+aged
+round
+check "asks: once past WATCH_TRIAGE" "$(asked)" asked
+check "asks: nothing new, no triage" "$(triages)" $((before + 3))
+round
+check "asks: not again within WATCH_RETRY" "$(asked)" ""
+TRIAGE_T=$(($(date +%s) - 600))
+round
+check "asks: again after WATCH_RETRY" "$(asked)" asked
+TRIAGE_ASK=0
+# The ready tests below count their own starts and log lines.
+PICKED= PICK_RC=1 LAST_N= LAST_T=0 SAID=
+rm -f "$T/starts"
+: >"$LOG"
 
 # A triage reads a seen proposed issue again: hack/lib/github.sh proposed
 # --since, against a stubbed GitHub ($T/gh/*.json), says what changed since it.

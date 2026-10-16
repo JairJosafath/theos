@@ -394,14 +394,21 @@ starts, finds nothing and stops every minute. It logs only changes, to `.relay/w
 minutes and restarts itself when that changed its code. Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour.
-With nothing ready, it starts a triage of the `status/proposed` issues: for a
-new one, for one that changed since the last triage or waits on an issue that
-closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
-`WATCH_TRIAGE` (30m). To triage now, say after a plan files its steps
-`status/proposed`, run `./dev run hack/relay.sh --triage --workers N`: it
-starts one triage session in the first free worker, and records its time and
-issues in `.relay/triaged` as the watch's does, so the watch starts no second
-triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+Busy or idle, with issues ready or not (#1191), it starts a triage of the
+`status/proposed` issues: for a new one, for one that changed since the last
+triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
+in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+`WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
+`WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
+`.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
+as the maintainer does: it needs no free worker, doesn't count against
+`RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
+goes through `admit` like any session and logs to `.relay/relay-triage.log`.
+To triage now, say after a plan files its steps `status/proposed`, run
+`./dev run hack/relay.sh --triage`: it starts one triage session unless one
+runs, and records its time and issues in `.relay/triaged` as the watch's does,
+so the watch starts no second triage for the same issues, only for one filed
+after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single

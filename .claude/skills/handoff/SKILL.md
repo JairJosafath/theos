@@ -134,21 +134,23 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   in and `merge` by hand: `merge` refuses while another pull request holds the
   turn. If N is still open: `hack/lib/github.sh close N FILE`,
   FILE naming the pull request, SHAs and evidence. An issue with no plan is
-  finished by its own pull request: its body says `Closes #N`, and neither the
-  body nor a commit message says `Refs #N` (that is only a plan's), or `merge`
-  refuses it, or merges it leaving N open. When a pushed commit already says
-  `Refs #N`, don't force-push: reword the history onto a new branch
-  `<branch>-2` (`git switch -c <branch>-2 origin/main`, cherry-pick the
-  commits and `git commit --amend` or `git rebase` to reword the message),
-  push it, open a fresh pull request saying `Closes #N`, and close the old one
-  with a comment naming the new one (`gh pr close OLD --comment ...`).
+  finished by its own pull request: its body says `Closes #N` and not
+  `Refs #N` (that is only a plan's), or `merge` refuses it. A pull request's
+  intent is its body: a commit message saying `Refs #N` closes nothing and
+  `merge` lets it through, so leave pushed commits as they are; if the body
+  says `Refs #N`, edit the body (`gh pr edit PR --body-file FILE`).
 - **Plan only:** when N is split into a plan and step issues, the plan's
   pull request says `Refs #N`, never `Closes #N`: nothing N asked for has
   shipped. Nor may a close, fix or resolve word (closes, fixed, resolves...)
   stand next to `#N` anywhere in its body or commit messages, even in prose:
   GitHub reads "#S (its PR closes #N)" as closing N. Write "#S finishes #N"
   instead. `hack/lib/github.sh merge PR` refuses such a pull request and names
-  the phrase to reword. Once it merges, add a `Depends on #S` line per step to N's body
+  the phrase to reword. When the phrase is in a pushed commit, don't
+  force-push: reword the history onto a new branch `<branch>-2`
+  (`git switch -c <branch>-2 origin/main`, cherry-pick the commits and
+  `git commit --amend` or `git rebase` to reword the message), push it, open
+  a fresh pull request saying `Refs #N`, and close the old one with a comment
+  naming the new one (`gh pr close OLD --comment ...`). Once it merges, add a `Depends on #S` line per step to N's body
   (`gh issue edit N --body-file FILE`, the rest kept), post a handoff naming
   the plan and the steps, then `hack/lib/github.sh status N waiting`: N stays
   open, waiting on its steps rather than on an agent, and `pick` skips it.

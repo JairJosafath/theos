@@ -5,7 +5,8 @@
 # session's claim so the relay has none left to release; the cluster
 # lease a session leaves behind, which the relay drops; the prompts, which
 # never send a session to a cluster; the triage of the
-# proposed issues and the maintainer's prompt, as dry runs; and, with claude faked, the pause a usage
+# proposed issues and the maintainer's prompt, as dry runs; the triage's own
+# worktree and lock, which it starts in however many workers run; and, with claude faked, the pause a usage
 # limit sets, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
@@ -187,6 +188,40 @@ check "triage skill: never to the owner" "$(grep -c 'never to the owner' <<<"$sk
 gh_proposed() { :; }
 rm -f "$DIR/admitted"
 check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"
+# The triage runs in its own worktree, relay-triage, under its own lock (#1191),
+# and its prompt says so: it starts while every worker runs, past
+# RELAY_MAX_WORKERS on the device with the cluster, but not beside a triage
+# that runs.
+(
+  . "$(dirname "$0")/relay.sh" --triage
+  check "triage: its own worktree, log and lock" "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}" \
+    ".claude/worktrees/relay-triage relay-triage.log triage.lock"
+  DIR=$T/triage STOP=$T/triage/stop LOCK=$T/triage/triage.lock LOG=$T/triage/log MAX_WORKERS=1
+  mkdir -p "$DIR"
+  gh_proposed() { printf '40\n41\n'; }
+  check "triage: its prompt names its worktree" "$(DRY_RUN=1 triage | grep -c 'this worktree, relay-triage, is on origin/main')" 1
+  gh_token() { :; }
+  setsid() { echo "${C4_RELAY_CHILD:-} ${C4_RELAY_TRIAGE:-} $*" >"$T/setsid"; }
+  flock -o "$DIR/lock-1" sleep 30 &
+  l1=$!
+  flock -o "$DIR/lock-2" sleep 30 &
+  l2=$!
+  until ! flock -n "$DIR/lock-1" true && ! flock -n "$DIR/lock-2" true; do sleep 0.1; done
+  start_triage hack/relay.sh >"$T/out" 2>&1
+  rc=$?
+  wait $!
+  check "triage: starts while every worker runs" "$rc $(grep -c "^triage started (pid [0-9]*): tail -f $LOG$" "$T/out")" "0 1"
+  check "triage: started as the triage's child" "$(cat "$T/setsid")" "1 1 nohup bash hack/relay.sh"
+  rm -f "$T/setsid"
+  flock -o "$LOCK" sleep 30 &
+  l3=$!
+  until ! flock -n "$LOCK" true; do sleep 0.1; done
+  start_triage hack/relay.sh >"$T/out" 2>&1
+  check "triage: none beside one that runs" "$? $(grep -c 'a triage runs already' "$T/out") $(test -e "$T/setsid" && echo started)" "1 1 "
+  kill "$l1" "$l2" "$l3"
+  wait 2>/dev/null
+  exit $fail
+) || fail=1
 # A triage whose session never ran keeps only the time, for the watch to try again.
 echo "1 40 41" >"$DIR/triaged"
 DRY_RUN= untriaged
