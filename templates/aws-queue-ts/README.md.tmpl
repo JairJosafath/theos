@@ -1,0 +1,94 @@
+# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+
+The `{{ .Container }}` worker of {{ .SoftwareSystem }}, in project {{ .Project }}: an SQS
+queue whose messages an AWS Lambda function in TypeScript consumes in
+batches, keeping the items they carry in a DynamoDB table, with its
+infrastructure as a CDK app. Scaffolded by C4 Factory.
+
+## The queue
+
+A producer sends each message to the queue (the stack's `EntryPoint`, its
+URL) over TLS, with its own AWS credentials allowed `sqs:SendMessage` on the
+queue (the stack's `QueueArn`). A message's body is one item:
+
+```json
+{ "id": "lamp-1", "name": "Lamp", "quantity": 3 }
+```
+
+An id is 1 to 64 letters, digits, `-` or `_`. A name is 1 to 200 characters;
+a quantity a whole number, 0 or more. The worker stores the item under its
+id, replacing what was there. SQS delivers a message at least once; one
+delivered again with the same message id is stored once. A message that
+fails, a malformed body or an error storing it, is delivered again alone,
+not with its batch, and after five deliveries waits in the dead-letter queue
+for 14 days, where an alarm tells you; `docs/runbook.md` says how to send it
+back.
+
+## Develop
+
+Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
+
+```sh
+npm ci           # install the exact packages in package-lock.json
+npm test         # unit tests and the stacks' assertions, with vitest
+npm run synth    # write the development CloudFormation templates into cdk.out/
+{{- if .Standard }}
+make check       # what CI runs: format, lint, type check, test, synth, cfn-lint
+make help        # every target
+{{- end }}
+```
+
+Nothing here deploys or needs an AWS account: synth runs offline, bundles the
+function with the installed esbuild, and needs neither Docker nor credentials.
+
+## Tiers and operations
+
+The stacks are built for a tier, `production` or `development`, which is the
+place they run, not the code: `make synth` writes both, into
+`cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
+(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+The production stack is `{{ .Container }}`, the development one
+`{{ .Container }}-development`, so a deploy that names no tier never changes
+production.
+Production keeps the tables and queues when the stack goes, protects the tables and the stack
+from deletion, recovers them to any second of the last 35 days, backs them up
+daily with AWS Backup, traces with X-Ray and keeps logs a year; development
+throws its data and messages away with the stack and keeps logs a month. Both tiers alarm
+and have a dashboard.
+
+What the app promises whatever the tier, the backups' retention and copy
+region, the recovery objectives and who the alarms tell, is in
+`infra/operations.ts`, which C4 Factory renders from the Container's
+`spec.operations`: change the block, and the file follows it. The alert email is the
+stack's `AlertEmail` parameter, which a deploy can set per environment. Each
+stack outputs `EntryPoint`, the queue's URL, `QueueArn`, its ARN, and
+`AlarmTopicArn`, the topic its alarms notify.
+
+Deploying (`cdk deploy`, after `cdk bootstrap` of the account) is for its
+owner, with their own credentials.
+
+## Layout
+
+- `src/handler.ts` is the Lambda entry point: it creates the DynamoDB client
+  and Powertools' Logger and Metrics once, at module scope, reads
+  `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and hands each batch to
+  `consumeBatch` in `src/batch.ts`, which runs Powertools' batch processing
+  and answers the messages that failed.
+- `src/consume.ts` checks a message and stores its item; `src/handler.ts`
+  runs that through Powertools' Idempotency, after the check; `src/items.ts` holds the rules, free of AWS;
+  `src/item_store.ts` keeps items in DynamoDB behind the `ItemStore`
+  interface tests fake.
+- `infra/stacks.ts` defines the stacks for a tier; `infra/queue_stack.ts` is
+  the main one: the queue and its dead-letter queue, the tables, the
+  function with its log group, role and event source, the alarms
+  (`infra/alarms.ts`) and, in production, the backups (`infra/backups.ts`).
+  The stack is named after the package. `infra/operations.ts` holds what
+  the Container promises.
+{{- if .Standard }}
+- `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
+  `infra/standard.ts` says what each tier means, tags every stack and adds
+  CDK Nag's checks. `docs/runbook.md` says how to restore the data, roll a
+  deployment back, and what to do when an alarm fires.
+
+Read `AGENTS.md` before changing anything: it is the rulebook, for people and agents.
+{{- end }}

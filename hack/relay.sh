@@ -10,14 +10,14 @@
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
 # (hack/lib/github.sh pick: a ready one this worker's last session filed with
-# create --next, which reserves it for this worktree, else an in-progress one
-# nobody holds, else the oldest ready + urgent one, else the oldest ready one)
-# and claims it (take); when another agent claims it first, it picks again, up
-# to 5 times. Claims keep the workers and hand-started sessions off each
-# other's issues. A session that ends still holding its claim gets it
-# released. With nothing
-# ready, a worker stops, without waiting in admit: it asks (pick is read-only)
-# before admit as well as after, so an idle worker takes no session-start slot.
+# create --next, which reserves it for this worktree, else urgent, then
+# velocity, then the rest; within each, an in-progress one nobody holds, else
+# the oldest ready one) and claims it (take); when another agent claims it
+# first, it picks again, up to 5 times. Claims keep the workers and
+# hand-started sessions off each other's issues. A session that ends still
+# holding its claim gets it released. With nothing ready, a worker stops,
+# without waiting in admit: it asks (pick is read-only) before admit as well
+# as after, so an idle worker takes no session-start slot.
 #
 # Triage: hack/relay-watch.sh starts one triage session (--triage) on the
 # open status/proposed issues, which relay sessions file their follow-ups as,
@@ -358,9 +358,10 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (next, in-progress, ready-urgent, ready)
-# to the issue to work next; next is one this worker's last session reserved
-# (create --next, .relay/next in its worktree).
+# pick: set ISSUE, TITLE, URL and HOW (next, in-progress, ready-urgent,
+# in-progress-velocity, ready-velocity, ready) to the issue to work next; next
+# is one this worker's last session reserved (create --next, .relay/next in
+# its worktree).
 # Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc

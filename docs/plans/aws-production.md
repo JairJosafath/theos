@@ -473,6 +473,42 @@ task size, as said here):
   branch meet this one only at the branch line.
 - **`vitest.config.mts`** gives aws-fargate-ts a `hookTimeout` of 120 s.
 
+### Step 8, as built
+
+`aws-queue-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.9.0. What it
+settled, which steps 10 and 11 can copy:
+
+- **The work per message is a function, the batch is Powertools'.**
+  `src/consume.ts` checks one message and stores its item, throwing
+  `Malformed` for a body that is no item; `src/batch.ts` runs Powertools'
+  `BatchProcessor` and `processPartialResponse` over the batch, answering
+  the messages that threw as `batchItemFailures` and throwing
+  `FullBatchFailureError` when all did, so a broken deploy fires the
+  function's error alarm and not only the dead-letter queue's. A malformed
+  message is not dropped: it fails like any other and reaches the
+  dead-letter queue after five deliveries, where a person sees it.
+- **One message at a time:** the processor runs with `processInParallel:
+  false`, since Powertools' default runs a batch's messages at once and two
+  for one item would race; a malformed message is refused
+  (`checkingFirst`) before the idempotent store records it.
+- **Idempotency is keyed by `messageId`,** which SQS keeps across
+  redeliveries of one message; a producer that sends the same item twice
+  sends two messages, and the item is simply put twice.
+- **Queues follow the tier like tables:** `RETAIN` in production, `DESTROY`
+  in development, since a message not yet consumed is data. Both queues use
+  SQS-managed encryption and `enforceSSL`; the visibility timeout is six
+  times the function's 30 s plus the 5 s batching window, AWS's advice for
+  a Lambda source.
+- **Two Standard rules, per resource type:** every event source mapping
+  from SQS sets `ReportBatchItemFailures`, and every dead-letter queue (a
+  queue another one's `RedrivePolicy` names) has an alarm on its first
+  visible message. A later Framework with a queue gets both without a
+  Standard change.
+- **Outputs:** `EntryPoint` is the queue's URL, and `QueueArn` is added,
+  which a producer's `sqs:SendMessage` names.
+- **The runbook's queue branch** says how to send dead-lettered messages
+  back (`aws sqs start-message-move-task`) once the cause is fixed.
+
 ### Step 9, as built
 
 `aws-static-site-ts` v1.0.0 with `aws-standard` v1.8.0

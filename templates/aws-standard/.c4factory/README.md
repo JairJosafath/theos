@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2, a container service on Fargate or a static site on S3 and CloudFront) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate, a static site on S3 and CloudFront or a queue consumer on SQS and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -22,9 +22,10 @@ python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
-- **Supports:** `function`, `service`, `static-site` (since v1.8.0);
-  Frameworks: `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`,
-  `aws-fargate-ts`, `aws-lambda-py`, `aws-static-site-ts`
+- **Supports:** `function`, `service`, `static-site` (since v1.8.0),
+  `worker` (since v1.9.0); Frameworks: `aws-lambda-ts`, `aws-lambda-go`,
+  `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-py`, `aws-static-site-ts`,
+  `aws-queue-ts`
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -89,15 +90,23 @@ byte for byte.
   S3, AWS WAF and Vite references; Vite in the tools), the issue template
   and `eslint.config.mjs` (`dist/` ignored, `no-console` because visitors
   see the page, `process.exit` refused in the CDK app, and Node's globals
-  and modules refused in `src/`). A Framework added later gets its branches
-  in the version that adds it.
+  and modules refused in `src/`). `aws-queue-ts` (since v1.9.0), a
+  `worker`, is in `$tiered` and shares `aws-lambda-ts`'s branches; a
+  `$queue` variable says queue where those say API: the message boundary,
+  the queues it keeps, its alarms and the dead-letter redrive in the
+  runbook, the queue and its event source in `docs/style/aws.md`, the SQS
+  sources in `SOURCES.md`, and `eslint.config.mjs`'s `process.exit`
+  message. `infra/standard.test.ts` checks two rules for every Framework:
+  an event source mapping from SQS reports batch item failures, and every
+  dead-letter queue has an alarm on its first message. A Framework added
+  later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts`, `aws-fargate-ts` and `aws-static-site-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts` and `aws-queue-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -291,8 +300,8 @@ byte for byte.
   `aws-ec2-ts`, and with ECS's best practices for `aws-fargate-ts`), one section per pillar (operational excellence, security, reliability,
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
-  does. It is self-contained: agents have no internet. For `aws-lambda-ts`
-  and `aws-fargate-ts` it also says what each tier does per pillar and what `infra/operations.ts`
+  does. It is self-contained: agents have no internet. For `aws-lambda-ts`,
+  `aws-fargate-ts` and `aws-queue-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
@@ -301,8 +310,9 @@ byte for byte.
   origin access control, TLS, the firewall and the security headers, the
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
-- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`
-  and `aws-static-site-ts` (a branch each), renders the
+- **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`,
+  `aws-static-site-ts` and `aws-queue-ts` (a branch each, but
+  `aws-queue-ts` shares `aws-lambda-ts`'s), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the

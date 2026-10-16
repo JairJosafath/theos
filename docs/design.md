@@ -905,7 +905,10 @@ model and context it needs.
   Framework `aws-static-site-ts` (a Vite page, built at synth, in a private
   S3 bucket behind a CloudFront distribution with origin access control,
   and in production a web application firewall; the stack is in us-east-1,
-  where CloudFront takes its firewall, certificate and metrics).
+  where CloudFront takes its firewall, certificate and metrics), and the
+  `worker` Framework `aws-queue-ts` (an SQS queue with a dead-letter queue,
+  consumed in batches by a TypeScript Lambda that reports only the messages
+  that failed).
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
   its stacks for two tiers, and the place it is deployed to picks one: a
   deploy target says `production` or `development`, and a hand deploy that

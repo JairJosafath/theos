@@ -1,5 +1,7 @@
-{{ if eq .Framework "aws-lambda-ts" -}}
+{{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" -}}
 {{- $ops := .Operations -}}
+{{- /* A queue consumer: an SQS queue and its dead-letter queue, no API. */ -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
 # Runbook
 
 What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
@@ -19,7 +21,7 @@ AWS, and no agent runs these commands.
 this list differ, it is right.
 
 - Recovery point objective (RPO): {{ $ops.Recovery.RPO }}, the most data a restore may lose.
-- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the API may be without its data.
+- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the {{ if $queue }}worker{{ else }}API{{ end }} may be without its data.
 {{- if eq $ops.Backups.RetentionDays 0 }}
 - Backups: point-in-time recovery only (`retentionDays` is 0); no AWS Backup plan.
 {{- else }}
@@ -38,6 +40,20 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 
 ## What the stack keeps
 
+{{ if $queue -}}
+| Resource                | Holds                                        | When the stack is deleted         |
+| ----------------------- | -------------------------------------------- | --------------------------------- |
+| `Items` table           | the items                                    | kept; deletion protection is on   |
+| `Idempotency` table     | the messages consumed, for an hour each      | kept; deletion protection is on   |
+| `Messages` queue        | the messages not yet consumed, up to 4 days  | kept                              |
+| `DeadLetters` queue     | the messages that failed five times, 14 days | kept                              |
+{{- if ne $ops.Backups.RetentionDays 0 }}
+| backup vault and key    | the daily backups                            | kept, with every backup in it     |
+{{- end }}
+| log groups              | the function's logs                          | deleted; kept one year until then |
+| alarm topic and its key | nothing                                      | deleted                           |
+
+{{ else -}}
 | Resource                | Holds                                         | When the stack is deleted         |
 | ----------------------- | --------------------------------------------- | --------------------------------- |
 | `Items` table           | the items                                     | kept; deletion protection is on   |
@@ -48,10 +64,13 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 | log groups              | the function's logs and the API's access logs | deleted; kept one year until then |
 | alarm topic and its key | nothing                                       | deleted                           |
 
+{{ end -}}
 The physical names are in the stack:
 `aws cloudformation describe-stack-resources --stack-name {{ .Container }}`.
 The `Idempotency` table needs no restore: its records expire within the
-hour, and an empty one only means a repeated `PUT` runs again.
+hour, and an empty one only means {{ if $queue }}a message delivered again is stored again, which
+puts the same item{{ else }}a repeated `PUT` runs again{{ end }}.{{ if $queue }} The queues are not backed up: a message lives
+days, not months, and its producer holds what it sent.{{ end }}
 
 ## Restore the items to a point in time
 
@@ -59,7 +78,7 @@ When: bad writes (a bug, a wrong script) or deleted items, within the last
 35 days.
 
 1. Find the last good moment: the deploy or script that did the damage, or
-   the first bad request in the function's logs.
+   the first bad {{ if $queue }}message{{ else }}request{{ end }} in the function's logs.
 2. Restore to a new table beside the live one:
    `aws dynamodb restore-table-to-point-in-time --source-table-name <items table> --target-table-name <items table>-restored --restore-date-time <time, ISO 8601>`.
    It takes minutes for a small table, longer for a large one; wait until
@@ -120,6 +139,38 @@ doesn't carry: point-in-time recovery
 live (`expiration`, for the `Idempotency` table) and the three
 `c4factory:` tags, which the backup plan selects by. Deploy the stack again
 (`cdk deploy -c tier=production`) and check it reports no drift.
+{{- if $queue }}
+
+## Send dead-lettered messages back
+
+When: the `Messages-DLQ-Queue-Message-Count-Max-Critical` alarm fired, and
+the cause is found. A message reaches the dead-letter queue after five
+deliveries that failed; it waits there 14 days, then SQS deletes it.
+
+1. Read why it failed: the function's logs say
+   `A message failed; SQS delivers it again.` with the `messageId` and the
+   error, five times per message. A `Malformed` error is the producer's: fix what it sends, and
+   leave or delete the message. Any other error is the worker's or
+   DynamoDB's: fix and deploy first.
+2. Look at the messages without consuming them:
+   `aws sqs receive-message --queue-url <dead-letter queue URL> --max-number-of-messages 10 --visibility-timeout 0`.
+3. Move them back to the queue they came from, which the worker consumes:
+   `aws sqs start-message-move-task --source-arn <dead-letter queue ARN>`
+   (with no destination it returns each message to its source queue), and
+   follow it with `aws sqs list-message-move-tasks --source-arn <dead-letter queue ARN>`.
+   A message sent back is stored as it is: it puts its whole item under its
+   id, over whatever later messages stored there. Before moving one back,
+   check the item's newest state (`aws dynamodb get-item`) and delete the
+   messages an item has since moved past.
+4. A message no fix can save: delete it
+   (`aws sqs delete-message` with its receipt handle) and write down what it
+   held.
+
+The queue URLs and ARNs are in the stack:
+`aws cloudformation describe-stack-resources --stack-name {{ .Container }}`
+(`Messages`, `DeadLetters`), and the stack's `EntryPoint` and `QueueArn`
+outputs name the queue the worker consumes.
+{{- end }}
 
 ## Roll a deployment back
 
@@ -129,7 +180,7 @@ live (`expiration`, for the `Idempotency` table) and the three
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production`. The function, the API and the alarms go
+  `cdk deploy -c tier=production`. The function, the {{ if $queue }}queues{{ else }}API{{ end }} and the alarms go
   back; the data does not. If the bad version wrote bad data, restore the
   items as above to the moment it was deployed.
 - Never deploy a change that replaces a table (a new key, a new name): the
@@ -149,6 +200,19 @@ email AWS sends it. The dashboard `{{ .Container }}` shows each alarm's metric. 
 alarm fires on one bad five-minute period and clears itself when the next
 one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name below.
 
+{{ if $queue -}}
+| Alarm                                             | Means                                                                                     | First                                                                                                      |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Messages-DLQ-Queue-Message-Count-Max-Critical`   | a message failed five deliveries and waits in the dead-letter queue                       | read why in the function's logs, then [send it back](#send-dead-lettered-messages-back)                    |
+| `Messages-Queue-Message-Age-Max-Warning`          | a message has waited over 15 minutes: the worker is behind or not consuming               | check the function's errors and throttles on the dashboard, and that its event source mapping is `Enabled` |
+| `Handler-Fault-Count-Critical`                    | an invocation failed: every message of a batch failed, or the function threw or timed out | read the function's logs around the time; an error at start-up (a missing variable) means a broken deploy  |
+| `Handler-Throttled-Count-Critical`                | Lambda refused calls: the account's or function's concurrency is used up                  | check the account's concurrent executions; the queue holds the messages meanwhile                          |
+| `Handler-Latency-P99-Warning`                     | the slowest batches take over 24 of their 30 seconds                                      | check DynamoDB's latency on the dashboard and the function's duration in its logs; a timeout is next       |
+| `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits          | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design      |
+| `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                      | check the AWS Health Dashboard for DynamoDB in the region; the messages are delivered again                |
+| `Idempotency-...`                                 | the same, for the idempotency records                                                     | as for `Items`; while it lasts, messages may fail and be delivered again                                   |
+
+{{ else -}}
 | Alarm                                             | Means                                                                            | First                                                                                                           |
 | ------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `Api-Fault-Count-Critical`                        | the API answered 5xx: the function failed or timed out                           | read the function's logs for `The request failed.` and the request id; roll back if a deploy just went out      |
@@ -159,6 +223,7 @@ one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name 
 | `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                             | check the AWS Health Dashboard for DynamoDB in the region; the SDK retries, so watch whether clients see errors |
 | `Idempotency-...`                                 | the same, for the idempotency records                                            | as for `Items`; while it lasts, repeated `PUT`s may run again                                                   |
 
+{{ end -}}
 When an alarm fires, note the time, what you saw and what you did; when it
 has fired before for the same cause, that cause needs a fix, not another
 note.

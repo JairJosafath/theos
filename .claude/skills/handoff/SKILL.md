@@ -18,8 +18,9 @@ said to work it in this session; otherwise leave it to the relay.
 
 1. `hack/lib/github.sh flush` posts any handoff kept in `.relay/` while GitHub
    was away.
-2. No issue named? `hack/lib/github.sh pick`: the oldest in-progress issue
-   nobody holds, else the oldest ready + urgent one, else the oldest ready one.
+2. No issue named? `hack/lib/github.sh pick`: urgent first, then velocity,
+   then the rest; within each, the oldest in-progress issue nobody holds,
+   else the oldest ready one.
 3. `hack/lib/github.sh take N` claims it, sets `status/in-progress` and prints
    your name (`otter-23`) and branch. Exit 4: another agent holds it, pick
    again. Exit 1 "this checkout holds #M": work from your own worktree. The

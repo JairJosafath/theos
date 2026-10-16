@@ -58,9 +58,9 @@
 #
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
-# bug, status/ready and not urgent, when one failed in two runs within
-# WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
-# so it never turns main red. An open one is not filed again.
+# bug, status/ready and priority/velocity, not urgent, when one failed in two
+# runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
+# twice in a row, so it never turns main red. An open one is not filed again.
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -486,7 +486,7 @@ $(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4fac
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
-    out=$(github create "$title" - status/ready kind/bug source/dev <<<"$body" 2>&1)
+    out=$(github create "$title" - status/ready priority/velocity kind/bug source/dev <<<"$body" 2>&1)
     rc=$?
     if [ "$rc" = 0 ]; then
       log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"
