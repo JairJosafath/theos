@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import type { Log } from './api';
 import { DynamoDbItemStore } from './item_store';
 import { listener } from './server';
+import { stopTracing } from './tracing';
 
 // The entry point the image runs: wiring only, the work is in `listener`.
 // Configuration is read once, here, and the process fails at start-up when
@@ -47,7 +48,7 @@ process.once('SIGTERM', () => {
   log({ level: 'INFO', message: 'Stopping.' });
   // Once the last request is answered, send the spans not yet sent.
   server.close(() => {
-    void tracing?.shutdown();
+    void stopTracing(tracing, log);
   });
   server.closeIdleConnections();
 });

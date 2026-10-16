@@ -1,11 +1,22 @@
 # make check in a scaffolded aws-fargate-ts v1.1.0 + aws-standard v1.7.0 Container (issue #1110)
+# Run again on 2026-10-16 after the review of PR #1274 (agent otter-1110), which changed what the
+# stack builds: the deployment alarms roll back on over 5 % of the answers 5xx for three
+# one-minute periods in a row (any 5xx now only notifies, as a -5xx-Warning alarm) and on an
+# unhealthy task by the Maximum of one-minute periods, two of three; the backups leave the
+# access-log bucket out; in production the app keeps its 256 CPU units and 512 MiB and the
+# collector's own are added to the task (512 and 1 GB); the running-tasks alarm counts no data
+# as too few; and SIGTERM no longer ends the service with code 1 when the collector is gone.
+# Every run below is of this commit's templates: the runs of 18fd3d2e this file held are
+# replaced; the failing cases add the backup exclusion, the 5xx share, the unhealthy-task
+# statistic and the task size, and the stop with the collector gone is shown before and after.
 # go run ./hack/render -out /tmp/aws-1110 -type service Framework=aws-fargate-ts Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23:
-# env -i PATH=$PATH HOME=/tmp/aws-1110-home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
-# on 2026-10-16 (npm's update notices left out). synth writes both tiers, cdk.out/production/
-# and cdk.out/development/, and cfn-lint lints both with --include-checks I; the templates
-# synth wrote are listed after the exit status.
+# env -i "PATH=$PATH" HOME=/tmp/aws-1110-home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
+# (PATH quoted: this device's holds directories with spaces) on 2026-10-16 (npm's update notices
+# left out). synth writes both tiers, cdk.out/production/ and cdk.out/development/, and
+# cfn-lint lints both with --include-checks I; the templates synth wrote are listed after the
+# exit status.
 
 npm ci --no-audit --no-fund
 
@@ -19,20 +30,23 @@ node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/aws-1110
 
- ✓ src/api.test.ts (12 tests) 15ms
- ✓ src/items.test.ts (25 tests) 15ms
- ✓ src/server.test.ts (8 tests) 27ms
- ✓ src/item_store.test.ts (4 tests) 9ms
- ✓ src/tracing.test.ts (2 tests) 11ms
- ✓ infra/service_stack.test.ts (21 tests) 2685ms
-   ✓ ServiceStack (19)
-     ✓ defaults the alert email to alerts.email 432ms
- ✓ infra/standard.test.ts (49 tests) 2851ms
+ ✓ src/items.test.ts (25 tests) 17ms
+ ✓ src/api.test.ts (12 tests) 14ms
+ ✓ src/server.test.ts (8 tests) 30ms
+ ✓ src/item_store.test.ts (4 tests) 10ms
+ ✓ src/tracing.test.ts (4 tests) 14ms
+ ✓ infra/service_stack.test.ts (26 tests) 4378ms
+   ✓ ServiceStack (24)
+     ✓ defaults the alert email to alerts.email 1096ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 670ms
+ ✓ infra/standard.test.ts (51 tests) 4910ms
+   ✓ the Standard, in production (9)
+     ✓ leaves no error or warning on any stack 758ms
 
  Test Files  7 passed (7)
-      Tests  121 passed (121)
-   Start at  09:53:18
-   Duration  4.31s (tests 62%, import 26%, transform 11%)
+      Tests  130 passed (130)
+   Start at  11:21:20
+   Duration  6.49s (tests 70%, import 19%, transform 11%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
@@ -47,7 +61,7 @@ cdk.out/production/sample-app.template.json
 # make check (as above): the vitest summary, the exit status and the templates synth wrote
 
  Test Files  7 passed (7)
-      Tests  121 passed (121)
+      Tests  130 passed (130)
 make check exit 0
 cdk.out/development/sample-app-development.template.json
 cdk.out/production/sample-app-backup-copy.template.json
@@ -59,21 +73,32 @@ sample-app: parameter AlertEmail default "ops@example.com"
 sample-app: AlarmsEmailSubscription71D15C2C under condition HasAlertEmail = {"Fn::Not": [{"Fn::Equals": [{"Ref": "AlertEmail"}, ""]}]}
    {"Endpoint": {"Ref": "AlertEmail"}, "Protocol": "email", "TopicArn": {"Ref": "AlarmsTopic3A2DFEBA"}}
 sample-app: backup plan rule cron(0 5 * * ? *) keeps {'DeleteAfterDays': 7} copies to [{"DestinationBackupVaultArn": {"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"}, ":backup:eu-central-1:", {"Ref": "AWS::AccountId"}, ":backup-vault:sample-app-copies"]]}, "Lifecycle": {"DeleteAfterDays": 7}}]
+sample-app: backup selection {"Resources": ["*"], "Conditions": {"StringEquals": [{"ConditionKey": "aws:ResourceTag/c4factory:container", "ConditionValue": "sample-app"}]}, "ListOfTags": null, "NotResources": [{"Fn::GetAtt": ["LoadBalancerLogsC31A6119", "Arn"]}]}
+  NotResources names LoadBalancerLogsC31A6119 AWS::S3::Bucket
+sample-app: LoadBalancerBE9EEC3A writes its access logs to {"Ref": "LoadBalancerLogsC31A6119"}
 sample-app-backup-copy: VaultKey6B75F33E AWS::KMS::Key Retain, Vault23237E5B AWS::Backup::BackupVault Retain ; vault name sample-app-copies
 manifest: sample-app in aws://unknown-account/unknown-region, depends on ['sample-app-backup-copy'], termination protection True
 manifest: sample-app-backup-copy in aws://unknown-account/eu-central-1, depends on [], termination protection True
-sample-app: service DeploymentConfiguration {"Alarms": {"AlarmNames": ["sample-app-LoadBalancer-5xx-Critical", "sample-app-Service-5xx-Critical", "sample-app-Service-Unhealthy-Tasks-Critical"], "Enable": true, "Rollback": true}, "DeploymentCircuitBreaker": {"Enable": true, "Rollback": true}, "MaximumPercent": 200, "MinimumHealthyPercent": 100}
-sample-app: NAT gateways 2 ; alarms 10
+sample-app: service DeploymentConfiguration {"Alarms": {"AlarmNames": ["sample-app-LoadBalancer-5xx-Rate-Critical", "sample-app-Service-5xx-Rate-Critical", "sample-app-Service-Unhealthy-Tasks-Critical"], "Enable": true, "Rollback": true}, "DeploymentCircuitBreaker": {"Enable": true, "Rollback": true}, "MaximumPercent": 200, "MinimumHealthyPercent": 100}
+sample-app: task 512 CPU units, 1024 MiB; containers [{"Name": "App", "Cpu": 256, "Memory": null, "MemoryReservation": 512, "Essential": true}, {"Name": "Collector", "Cpu": 256, "Memory": 512, "MemoryReservation": null, "Essential": false}]
+  alarm sample-app-LoadBalancer-5xx-Rate-Critical: 100 * errors / (requests + errors) errors=HTTPCode_ELB_5XX_Count:Sum/60s requests=RequestCount:Sum/60s GreaterThanThreshold 5, 3 of 3, missing notBreaching
+  alarm sample-app-LoadBalancer-5xx-Warning: HTTPCode_ELB_5XX_Count:Sum/300s GreaterThanThreshold 0, 1 of 1, missing notBreaching
+  alarm sample-app-Service-5xx-Rate-Critical: 100 * errors / requests errors=HTTPCode_Target_5XX_Count:Sum/60s requests=RequestCount:Sum/60s GreaterThanThreshold 5, 3 of 3, missing notBreaching
+  alarm sample-app-Service-5xx-Warning: HTTPCode_Target_5XX_Count:Sum/300s GreaterThanThreshold 0, 1 of 1, missing notBreaching
+  alarm sample-app-Service-Running-Tasks-Critical: RunningTaskCount:Average/300s LessThanThreshold 2, 1 of 1, missing breaching
+  alarm sample-app-Service-Unhealthy-Tasks-Critical: m1=UnHealthyHostCount:Maximum/60s GreaterThanThreshold 0, 2 of 3, missing missing
+sample-app: NAT gateways 2 ; alarms 12
 runbook names the copy region: True
 
-# It fails when infra/operations.ts and the stack disagree: in a copy of /tmp/aws-1110, the stack
-# keeps its backups 30 days whatever infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures:
+# It fails when infra/operations.ts and the stack disagree: in /tmp/aws-1110 (a git repository
+# for the diffs), the stack keeps its backups 30 days whatever infra/operations.ts says (35).
+# vitest run (NO_COLOR=1), the failures; each case is undone before the next.
 
 diff --git a/infra/service_stack.ts b/infra/service_stack.ts
-index 7d6a4e2..1a35a86 100644
+index 88109ae..bc15243 100644
 --- a/infra/service_stack.ts
 +++ b/infra/service_stack.ts
-@@ -391,7 +391,7 @@ export class ServiceStack extends Stack {
+@@ -473,7 +473,7 @@ export class ServiceStack extends Stack {
  
      if (rules.backups && backups.retentionDays > 0) {
        new Backups(this, 'Backups', {
@@ -81,59 +106,63 @@ index 7d6a4e2..1a35a86 100644
 +        retentionDays: 30,
          copyToRegion: backups.copyToRegion,
          tag: props.backupTag,
-       });
+         // The access logs carry the tag too, and are not data.
 
-     × backs up daily for retentionDays in production, and not at all in development 7ms
-     × copies the backups to the vault in copyToRegion 355ms
-       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 14ms
+     × backs up daily for retentionDays in production, and not at all in development 6ms
+     × copies the backups to the vault in copyToRegion 180ms
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 8ms
  FAIL  infra/service_stack.test.ts > ServiceStack > backs up daily for retentionDays in production, and not at all in development
 AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
  FAIL  infra/service_stack.test.ts > ServiceStack > copies the backups to the vault in copyToRegion
 AssertionError: Template has 1 resources with type AWS::Backup::BackupPlan, but none match as expected.
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
 AssertionError: sample-app: expected { CopyActions: [], …(4) } to match object { …(3) }
-      Tests  3 failed | 118 passed (121)
+      Tests  3 failed | 127 passed (130)
 vitest exit 1
 
-# And when the stack ignores the tier: the collector, its environment and X-Ray's grant in development too.
+# And when the stack ignores the tier: the collector, its environment, its share of the task and
+# X-Ray's grant in development too.
 
 diff --git a/infra/service_stack.ts b/infra/service_stack.ts
-index 7d6a4e2..1ecf6b8 100644
+index 88109ae..82107c9 100644
 --- a/infra/service_stack.ts
 +++ b/infra/service_stack.ts
-@@ -187,7 +187,7 @@ export class ServiceStack extends Stack {
-       // SIGKILL after this: time for the requests still in flight to finish.
-       stopTimeout: Duration.seconds(30),
-     });
--    if (rules.tracing) {
-+    if (rules.tracing || props.tier === "development") {
-       this.traceThroughCollector(taskDefinition, app, rules.logRetention);
-     }
-     Validations.of(taskDefinition).acknowledge({
+@@ -131,7 +131,7 @@ export interface ServiceStackProps extends StackProps {
+ export class ServiceStack extends Stack {
+   constructor(scope: Construct, id: string, props: ServiceStackProps) {
+     super(scope, id, props);
+-    const rules = TIER_RULES[props.tier];
++    const rules = { ...TIER_RULES[props.tier], tracing: true };
+     const { backups, alerts } = props.operations;
+ 
+     // The certificate is the deployer's: an ACM certificate for the domain
 
-     × runs the app alone, untraced, in development 16ms
-     × lets the tasks only get and put items, and write traces in production 11ms
-       × traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere 10ms
-       × grants no X-Ray writes where the tier does not trace 3ms
+     × gives the app the same CPU and memory in either tier, adding the collector’s to the task 21ms
+     × runs the app alone, untraced, in development 26ms
+     × lets the tasks only get and put items, and write traces in production 2ms
+       × traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere 11ms
+       × grants no X-Ray writes where the tier does not trace 6ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > gives the app the same CPU and memory in either tier, adding the collector’s to the task
+AssertionError: Template has 1 resources with type AWS::ECS::TaskDefinition, but none match as expected.
  FAIL  infra/service_stack.test.ts > ServiceStack > runs the app alone, untraced, in development
 AssertionError: expected [ 'App', 'Collector' ] to deeply equal [ 'App' ]
  FAIL  infra/service_stack.test.ts > ServiceStack > lets the tasks only get and put items, and write traces in production
 AssertionError: expected [ '"dynamodb:GetItem"', …(3) ] to deeply equal [ '"dynamodb:GetItem"', …(1) ]
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere
-AssertionError: sample-app-development/Task79114B6B: expected [ [ { …(6) } ], [ { …(9) } ] ] to deeply equal [ [], [] ]
+AssertionError: sample-app-development/Task79114B6B: expected [ [ { …(8) } ], …(1) ] to deeply equal [ [], [] ]
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > tracing > grants no X-Ray writes where the tier does not trace
 AssertionError: sample-app-development: expected [ 'xray:PutTelemetryRecords', …(1) ] to not include 'xray:PutTraceSegments'
-      Tests  4 failed | 117 passed (121)
+      Tests  5 failed | 125 passed (130)
 vitest exit 1
 
 # And when a resource has no alarm the Standard asks for: the service without its running-tasks alarm.
 # The Standard finds the service in the other alarms' dimensions by Fn::GetAtt, and misses RunningTaskCount.
 
 diff --git a/infra/service_stack.ts b/infra/service_stack.ts
-index 7d6a4e2..ebb68c6 100644
+index 88109ae..75cb92e 100644
 --- a/infra/service_stack.ts
 +++ b/infra/service_stack.ts
-@@ -329,30 +329,6 @@ export class ServiceStack extends Stack {
+@@ -398,33 +398,7 @@ export class ServiceStack extends Stack {
                },
              ],
            },
@@ -156,34 +185,41 @@ index 7d6a4e2..ebb68c6 100644
 -                  Critical: {
 -                    threshold: MIN_TASKS,
 -                    comparisonOperator: ComparisonOperator.LESS_THAN_THRESHOLD,
+-                    // Container Insights' guide doesn't promise a count of
+-                    // 0 while no task runs: no data is taken for none.
+-                    treatMissingDataOverride: TreatMissingData.BREACHING,
 -                  },
 -                },
 -              },
 -            ],
 -          },
++
          ],
        })
        .monitorFargateApplicationLoadBalancer({
 
-     × alarms on the load balancer, the service and the table, in either tier 3ms
+       × alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard 4ms
        × alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard 2ms
-       × alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard 1ms
+     × counts no data on running tasks as too few 12ms
+     × alarms on the load balancer, the service and the table, in either tier 4ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > counts no data on running tasks as too few
+AssertionError: test-Service-Running-Tasks-Critical: expected [] to have a length of 1 but got +0
  FAIL  infra/service_stack.test.ts > ServiceStack > alarms on the load balancer, the service and the table, in either tier
-AssertionError: Expected 10 resources of type AWS::CloudWatch::Alarm but found 9
+AssertionError: Expected 12 resources of type AWS::CloudWatch::Alarm but found 11
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the alarms and topic > alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard
 AssertionError: sample-app/ServiceD69D759B RunningTaskCount: expected 0 to be greater than 0
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > the alarms and topic > alarm on every function, table, API, load balancer, target group and service, to the one encrypted topic, with a dashboard
 AssertionError: sample-app-development/ServiceD69D759B RunningTaskCount: expected 0 to be greater than 0
-      Tests  3 failed | 118 passed (121)
+      Tests  4 failed | 126 passed (130)
 vitest exit 1
 
 # And one NAT gateway in production (the stack's own test; the NAT gateways are not a TIER_RULES item).
 
 diff --git a/infra/service_stack.ts b/infra/service_stack.ts
-index 7d6a4e2..bc97384 100644
+index 88109ae..09a56ff 100644
 --- a/infra/service_stack.ts
 +++ b/infra/service_stack.ts
-@@ -62,7 +62,7 @@ const ZONES = 2;
+@@ -68,7 +68,7 @@ const ZONES = 2;
  // NAT gateways per tier: one per zone in production, so the tasks in a zone
  // keep their way out when the other zone fails; one in development, for half
  // the price.
@@ -193,18 +229,147 @@ index 7d6a4e2..bc97384 100644
  const MIN_TASKS = 2;
  const MAX_TASKS = 4;
 
-     × has a NAT gateway in each zone in production, and one in development 3ms
+     × has a NAT gateway in each zone in production, and one in development 6ms
  FAIL  infra/service_stack.test.ts > ServiceStack > has a NAT gateway in each zone in production, and one in development
 AssertionError: Expected 2 resources of type AWS::EC2::NatGateway but found 1
-      Tests  1 failed | 120 passed (121)
+      Tests  1 failed | 129 passed (130)
 vitest exit 1
 
-# The bundled service traced, by hand: npm run bundle in /tmp/aws-1110, then dist/main.cjs run with
-# OTEL_EXPORTER_OTLP_ENDPOINT at a stand-in for the collector's OTLP/HTTP receiver on localhost
-# (a 20-line Node server printing each span it gets), three requests, and SIGTERM. No AWS
-# credentials, so the item read fails (500) after the SDK's calls to the instance metadata
-# endpoint, which the client spans show; /health makes no span; the spans are sent when the
-# service stops.
+# And the backups selecting the access-log bucket, as before the review: the stack's test and the
+# Standard's per-tier check (every load balancer's log bucket in each selection's NotResources) fail.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 88109ae..9082c92 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -476,8 +476,6 @@ export class ServiceStack extends Stack {
+         retentionDays: backups.retentionDays,
+         copyToRegion: backups.copyToRegion,
+         tag: props.backupTag,
+-        // The access logs carry the tag too, and are not data.
+-        exclude: [accessLogs.bucketArn],
+       });
+     }
+ 
+
+     × leaves the load balancer’s access logs out of the backups: logs, not data 14ms
+       × leave every load balancer's log bucket out: logs, not data 6ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > leaves the load balancer’s access logs out of the backups: logs, not data
+AssertionError: Template has 1 resources with type AWS::Backup::BackupSelection, but none match as expected.
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > leave every load balancer's log bucket out: logs, not data
+AssertionError: sample-app/BackupsPlanTaggedD0011821 selects LoadBalancerBE9EEC3A's log bucket LoadBalancerLogsC31A6119: expected false to be true // Object.is equality
+      Tests  2 failed | 128 passed (130)
+vitest exit 1
+
+# And a deployment that rolls back on any 5xx in a minute, close to the first version's any 5xx in
+# five: the stack's test of the share and its three minutes fails.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 88109ae..a9dbcc4 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -308,11 +308,8 @@ export class ServiceStack extends Stack {
+       treatMissingDataOverride: TreatMissingData.NOT_BREACHING,
+     });
+     // Over MAX_5XX_PERCENT for ROLLBACK_MINUTES minutes in a row.
+-    const rollBackAbove: CustomThreshold = {
+-      ...above(MAX_5XX_PERCENT),
+-      datapointsToAlarm: ROLLBACK_MINUTES,
+-      evaluationPeriods: ROLLBACK_MINUTES,
+-    };
++    const rollBackAbove: CustomThreshold = above(0);
++
+     const requests = loadBalancer.metrics.requestCount({ statistic: Stats.SUM });
+     const elb5xx = loadBalancer.metrics.httpCodeElb(HttpCodeElb.ELB_5XX_COUNT, {
+       statistic: Stats.SUM,
+
+     × rolls back on over 5 % of answers 5xx for three minutes in a row, never on a stray one 9ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > rolls back on over 5 % of answers 5xx for three minutes in a row, never on a stray one
+AssertionError: test-LoadBalancer-5xx-Rate-Critical: expected { ActionsEnabled: true, …(9) } to match object { …(5) }
+      Tests  1 failed | 129 passed (130)
+vitest exit 1
+
+# And the first version's unhealthy-task alarm, the Minimum over five minutes, which never saw a task
+# that ECS replaced in a minute or two.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 88109ae..6e637a1 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -438,14 +438,9 @@ export class ServiceStack extends Stack {
+         // node agreeing), would rarely see it: one-minute periods, two bad
+         // ones of three, so a task one node doubted for a moment rolls
+         // nothing back.
+-        addUnhealthyTaskCountAlarm: {
+-          Critical: {
+-            maxUnhealthyTasks: 0,
+-            period: Duration.minutes(1),
+-            datapointsToAlarm: 2,
+-            evaluationPeriods: 3,
+-          },
+-        },
++        invertLoadBalancerTaskCountMetricsStatistics: true,
++        addUnhealthyTaskCountAlarm: { Critical: { maxUnhealthyTasks: 0 } },
++
+         addCpuUsageAlarm: { Warning: { maxUsagePercent: 90 } },
+         addMemoryUsageAlarm: { Warning: { maxUsagePercent: 90 } },
+       })
+
+     × finds an unhealthy task by the Maximum of one-minute periods, two of three 33ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > finds an unhealthy task by the Maximum of one-minute periods, two of three
+AssertionError: expected { ActionsEnabled: true, …(9) } to match object { Threshold: +0, …(3) }
+      Tests  1 failed | 129 passed (130)
+vitest exit 1
+
+# And the first version's task size, the collector sharing the app's 256 CPU units and 512 MiB in
+# production.
+
+diff --git a/infra/service_stack.ts b/infra/service_stack.ts
+index 88109ae..84ae523 100644
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -189,8 +189,8 @@ export class ServiceStack extends Stack {
+       removalPolicy: RemovalPolicy.DESTROY,
+     });
+     const taskDefinition = new FargateTaskDefinition(this, 'Task', {
+-      cpu: APP_CPU + (rules.tracing ? COLLECTOR_CPU : 0),
+-      memoryLimitMiB: APP_MEMORY_MIB + (rules.tracing ? COLLECTOR_MEMORY_MIB : 0),
++      cpu: APP_CPU,
++      memoryLimitMiB: APP_MEMORY_MIB,
+       runtimePlatform: {
+         cpuArchitecture: CpuArchitecture.ARM64,
+         operatingSystemFamily: OperatingSystemFamily.LINUX,
+@@ -200,8 +200,6 @@ export class ServiceStack extends Stack {
+       // Synth only stages the build context in cdk.out/; `cdk deploy` builds
+       // and pushes the image, with Docker, on the deployer's machine.
+       image: ContainerImage.fromAsset(ROOT, { platform: Platform.LINUX_ARM64 }),
+-      cpu: APP_CPU,
+-      memoryReservationMiB: APP_MEMORY_MIB,
+       portMappings: [{ containerPort: PORT }],
+       environment: { TABLE_NAME: table.tableName },
+       logging: LogDrivers.awsLogs({ streamPrefix: 'app', logGroup: serviceLogs }),
+@@ -504,8 +502,6 @@ export class ServiceStack extends Stack {
+     const collector = taskDefinition.addContainer('Collector', {
+       image: ContainerImage.fromRegistry(COLLECTOR_IMAGE),
+       command: [`--config=${COLLECTOR_CONFIG}`],
+-      cpu: COLLECTOR_CPU,
+-      memoryLimitMiB: COLLECTOR_MEMORY_MIB,
+       // A collector that stops loses traces, not requests: the task goes on.
+       essential: false,
+       logging: LogDrivers.awsLogs({ streamPrefix: 'collector', logGroup: collectorLogs }),
+
+     × gives the app the same CPU and memory in either tier, adding the collector’s to the task 44ms
+ FAIL  infra/service_stack.test.ts > ServiceStack > gives the app the same CPU and memory in either tier, adding the collector’s to the task
+AssertionError: Template has 1 resources with type AWS::ECS::TaskDefinition, but none match as expected.
+      Tests  1 failed | 129 passed (130)
+vitest exit 1
+
+# The bundled service traced, by hand: npm run bundle in /tmp/aws-1110, then dist/main.cjs run
+# with OTEL_EXPORTER_OTLP_ENDPOINT at a stand-in for the collector's OTLP/HTTP receiver on
+# localhost (a 30-line Node server printing each span it gets), three requests, and SIGTERM. No
+# AWS credentials or region, so the item read fails (500) after the SDK's call to the instance
+# metadata endpoint, which the client span shows; /health makes no span; the spans are sent when
+# the service stops.
 
 GET /health -> 200
 GET /items/lamp -> 500
@@ -212,23 +377,80 @@ GET /nope -> 404
 service exit 0
 --- service log
 {"level":"INFO","message":"Listening.","port":18080}
-{"level":"ERROR","message":"The request failed.","requestId":"236f7f2b-7790-4358-b36f-fea55e124fbc","method":"GET","path":"/items/lamp","error":"Could not load credentials from any providers"}
+{"level":"ERROR","message":"The request failed.","requestId":"a15c8aa9-2080-44f4-9eb5-237b1831b74c","method":"GET","path":"/items/lamp","error":"Region is missing"}
 {"level":"INFO","message":"Stopping."}
 --- stand-in collector log
 got POST /v1/traces (application/json)
   service sample-app: client span PUT  169.254.169.254 -> (no answer)
-  service sample-app: server span GET /items/lamp localhost -> 500
-  service sample-app: client span GET  169.254.169.254 -> (no answer)
-  service sample-app: server span GET /nope localhost -> 404
+  service sample-app: server span GET /items/lamp 127.0.0.1 -> 500
+  service sample-app: server span GET /nope 127.0.0.1 -> 404
+
+# And with the collector gone: OTEL_EXPORTER_OTLP_ENDPOINT at a port nothing listens on, one
+# request, SIGTERM. The spans can't be sent; the service logs it and exits 0.
+
+GET /nope -> 404
+service exit 0
+--- service log
+{"level":"INFO","message":"Listening.","port":18080}
+{"level":"INFO","message":"Stopping."}
+{"level":"ERROR","message":"The last spans were not sent.","error":"connect ECONNREFUSED 127.0.0.1:18081"}
+
+# The same with the first version's `void tracing?.shutdown()`: the rejected promise goes
+# unhandled, and Node ends the process with code 1.
+
+diff --git a/src/main.ts b/src/main.ts
+index c01df3b..af1b343 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -9,7 +9,6 @@ import { createServer } from 'node:http';
+ import type { Log } from './api';
+ import { DynamoDbItemStore } from './item_store';
+ import { listener } from './server';
+-import { stopTracing } from './tracing';
+ 
+ // The entry point the image runs: wiring only, the work is in `listener`.
+ // Configuration is read once, here, and the process fails at start-up when
+@@ -48,7 +47,7 @@ process.once('SIGTERM', () => {
+   log({ level: 'INFO', message: 'Stopping.' });
+   // Once the last request is answered, send the spans not yet sent.
+   server.close(() => {
+-    void stopTracing(tracing, log);
++    void tracing?.shutdown();
+   });
+   server.closeIdleConnections();
+ });
+GET /nope -> 404
+service exit 1
+--- service log
+{"level":"INFO","message":"Listening.","port":18080}
+{"level":"INFO","message":"Stopping."}
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+Error: connect ECONNREFUSED 127.0.0.1:18081
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 18081
+}
+
+Node.js v24.21.0
 
 # The other AWS Frameworks with aws-standard v1.7.0, each rendered with hack/render (their
 # templates are as pinned in templates/versions.txt; aws-lambda-go with golangci-lint 2.13.1 on
-# PATH) and checked with make check as above. The first run of aws-lambda-go and aws-ec2-ts
-# failed when /tmp, a memory-backed file system, filled up with the copies' node_modules (exit 2,
-# ENOSPC); both were run again, one at a time, with the copies removed, and these are those runs.
-aws-lambda-ts v1.1.0: make check exit 0, vitest: 107 passed (107)
-aws-lambda-py v1.0.0: make check exit 0, vitest: 26 passed | 28 skipped (54)
-aws-lambda-go v1.0.0: make check exit 0, vitest: 27 passed | 28 skipped (55)
-aws-ec2-ts v1.0.0: make check exit 0, vitest: 79 passed | 28 skipped (107)
-# and aws-fargate-ts v1.0.0 (the base commit's, no infra/operations.ts), as a Standard update leaves it:
-aws-fargate-ts v1.0.0: make check exit 0, vitest: 78 passed | 28 skipped (106)
+# PATH) and checked with make check as above, one at a time, each copy removed before the next.
+# Only aws-lambda-ts has infra/operations.ts among them, so it alone runs the Standard's per-tier
+# checks, with its ListOfTags selection; the others compile and lint the Standard's test.
+# aws-ec2-ts and aws-fargate-ts v1.0.0 ran twice: the first time their HOME still held the Go
+# toolchain aws-lambda-go's check had fetched (read-only files rm left), so they were run again
+# with it emptied; these are the second runs, whose results match the first.
+
+aws-lambda-ts v1.1.0: make check exit 0, vitest: 109 passed (109)
+aws-lambda-py v1.0.0: make check exit 0, vitest: 26 passed | 30 skipped (56)
+aws-lambda-go v1.0.0: make check exit 0, vitest: 27 passed | 30 skipped (57)
+aws-ec2-ts v1.0.0: make check exit 0, vitest: 79 passed | 30 skipped (109)
+# and aws-fargate-ts v1.0.0 (aff4b656's template, no infra/operations.ts), as a Standard update leaves it:
+aws-fargate-ts v1.0.0: make check exit 0, vitest: 78 passed | 30 skipped (108)

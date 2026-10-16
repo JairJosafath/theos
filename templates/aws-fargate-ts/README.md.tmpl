@@ -60,8 +60,10 @@ daily with AWS Backup, traces every request through an AWS Distro for
 OpenTelemetry collector beside the app into X-Ray, keeps logs a year and has
 a NAT gateway in each of its two zones; development throws its data away
 with the stack, traces nothing, keeps logs a month and has one NAT gateway.
-Both tiers alarm, have a dashboard, and roll back a deployment that sets off
-a 5xx or unhealthy-task alarm.
+Both tiers alarm, have a dashboard, and roll back a deployment whose answers
+are over 5 % 5xx for three minutes, or whose tasks fail their health check.
+The app has the same CPU and memory in both; production adds the
+collector's to the task.
 
 What the app promises whatever the tier, the backups' retention and copy
 region, the recovery objectives and who the alarms tell, is in

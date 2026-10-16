@@ -319,10 +319,13 @@ evidence):
 
 Step 5 is `aws-fargate-ts` v1.1.0 with `aws-standard` v1.7.0 (agent
 otter-1110; `docs/screenshots/1110-aws-fargate-ts-check.txt` has the
-evidence). It copies step 3: `infra/alarms.ts`, `infra/backups.ts` and
-`infra/operations.ts.tmpl` are aws-lambda-ts's, byte for byte, and
+evidence). It copies step 3: `infra/alarms.ts` and
+`infra/operations.ts.tmpl` are aws-lambda-ts's, byte for byte,
+`infra/backups.ts` is aws-lambda-ts's but for its selection (below), and
 `infra/stacks.ts` is its `defineStacks(app, tier)` with the copy-region
-stack. What it settled, and what step 6 copies:
+stack. What it settled, and what step 6 copies (the review of #1274
+changed the deployment alarms, the backup selection and the production
+task size, as said here):
 
 - **NAT gateways by tier.** Two in production, one per zone: a NAT gateway
   is zonal, and the VPC guide says to put one in each zone so a zone's
@@ -333,9 +336,26 @@ stack. What it settled, and what step 6 copies:
   regional NAT gateway is not used.
 - **The deployment alarms.** The service names three alarms with
   `enableDeploymentAlarms(..., { behavior: AlarmBehavior.ROLLBACK_ON_ALARM })`,
-  beside the circuit breaker: `LoadBalancer-5xx-Critical`,
-  `Service-5xx-Critical` and `Service-Unhealthy-Tasks-Critical`. Latency,
-  CPU, memory and running tasks don't roll a deployment back: a slow first
+  beside the circuit breaker: `LoadBalancer-5xx-Rate-Critical`,
+  `Service-5xx-Rate-Critical` and `Service-Unhealthy-Tasks-Critical`. The
+  two 5xx ones read the share of 5xx in `RequestCount` by the minute, with
+  metric math, and fire over 5 % for three minutes in a row
+  (`MAX_5XX_PERCENT`, `ROLLBACK_MINUTES`): a first version fired on any 5xx
+  in five minutes, so one stray 500 rolled a good deployment back. The load
+  balancer's share adds its own 5xx to `RequestCount`, which leaves out a
+  503 sent before a task was chosen, so with no healthy task it reads
+  100 %, not nothing; a 502 or 504 is in both, which at worst halves the
+  share. Minutes with no request divide by zero, which metric math drops:
+  missing, not breaching. Any 5xx still notifies, as
+  `LoadBalancer-5xx-Warning` and `Service-5xx-Warning`, which roll nothing
+  back. The unhealthy-task alarm reads the Maximum of `UnHealthyHostCount`
+  over one-minute periods, two of three: the first version's Minimum over
+  five minutes (the load balancer guide's advice for a steady alarm) stays
+  0 for a task ECS replaces within a minute or two, so it never fired in a
+  rollout. A load balancer marks a new task unhealthy after two failed
+  checks, 30 seconds: an app slower than that to answer `/health` would
+  roll back, which this one, answering in a second, is not. Latency, CPU,
+  memory and running tasks don't roll a deployment back: a slow first
   minute or a scale-out is no reason to, and the circuit breaker already
   counts tasks that don't start. The names are written out as
   `<stack>-<name>` and checked against the alarms the stack made, so a
@@ -345,19 +365,25 @@ stack. What it settled, and what step 6 copies:
   the `cdk init` flag every AWS Framework carries: it only decides whether
   a service that names no alarm gets an empty, disabled alarm
   configuration, and changes nothing for one that names alarms. The
-  runbook says what ECS does with them: it ignores an alarm already firing
-  when a deployment starts, and watches for a bake time after it.
+  runbook says what ECS does with them: when one is already firing as a
+  deployment starts, ECS watches none of them for that deployment, which
+  only the circuit breaker can then roll back (so the runbook says to clear
+  or reset the alarm before any deploy but a fix), and it watches for a
+  bake time after the deployment.
 - **The alarms.** `cdk-monitoring-constructs` 10.3.2 has no monitoring of
   an Application Load Balancer alone, so the load balancer's own 5xx
   (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx (`HTTPCode_Target_5XX_Count`)
   and their p99 latency (`TargetResponseTime` over a second) are
   `monitorCustom` groups whose missing data is not breaching: the load
-  balancer reports nothing while no requests come. Unhealthy tasks, CPU and
-  memory (over 90 %) come from `monitorFargateApplicationLoadBalancer`,
-  unhealthy by the `Minimum` as the load balancer guide advises; running
-  tasks under the minimum of two from Container Insights' `RunningTaskCount`,
-  as a custom metric, since the library's running-task alarm only fires
-  above a maximum.
+  balancer reports nothing while no requests come; the library has no 5xx
+  share for a load balancer either, so the deployment alarms' metric math
+  is in those groups too. Unhealthy tasks, CPU and memory (over 90 %) come
+  from `monitorFargateApplicationLoadBalancer`; running tasks under the
+  minimum of two from Container Insights' `RunningTaskCount`, as a custom
+  metric, since the library's running-task alarm only fires above a
+  maximum, with missing data breaching: Container Insights' guide doesn't
+  promise a 0 while no task runs, and an alarm that sat in
+  `INSUFFICIENT_DATA` then would miss the one moment it is for.
 - **The Standard sees load balancers and services.** `ALARMED_METRICS`
   gains `AWS::ElasticLoadBalancingV2::LoadBalancer` (the two 5xx and
   `TargetResponseTime`), `AWS::ElasticLoadBalancingV2::TargetGroup`
@@ -394,7 +420,10 @@ stack. What it settled, and what step 6 copies:
   and is `src/main.ts`'s first import, so the HTTP instrumentation's hook is
   in place before anything loads `node:http` or `node:https`, which esbuild
   leaves outside its CommonJS bundle. Health checks are not traced, and
-  `SIGTERM` sends the spans left once the server has closed. Checked by
+  `SIGTERM` sends the spans left once the server has closed, through
+  `stopTracing`, which logs `The last spans were not sent.` instead of
+  rejecting when the collector is gone (an unhandled rejection would end
+  the process with code 1). Checked by
   hand on the bundle: run with the endpoint at a local listener, three
   requests and a stop; the listener got one `POST /v1/traces` with the
   requests' spans and none for `/health`.
@@ -410,6 +439,30 @@ stack. What it settled, and what step 6 copies:
   month, instead of a fixed 30 days. The Standard's per-tier removal checks
   name tables and vaults, so a log bucket passes in either tier; the stack
   test asserts it, and step 9, the first data bucket, adds the bucket rule.
+- **The backups leave the access logs out.** The plan selects by the
+  `c4factory:container` tag, which `applyStandard` puts on every resource,
+  the log bucket too: in an account that opted S3 in to AWS Backup, its
+  daily job would fail (the bucket isn't versioned, the role has no S3
+  permissions) and back up logs (decision 3). `Backups` takes an optional
+  `exclude`, the ARNs of tagged resources that are not data, and the stack
+  passes the log bucket's. AWS Backup's guide shows `NotResources` only
+  beside `Resources: ["*"]` and `Conditions` (and recommends `Conditions`
+  over `ListOfTags`), so Fargate's `backups.ts` selects by one
+  `aws:ResourceTag/c4factory:container` condition on `*` instead of CDK's
+  `fromTag`. This is where it departs from aws-lambda-ts's file, which has
+  nothing to leave out and is unchanged; the Standard's test accepts either
+  form, exactly the tag either way, and checks per tier that every load
+  balancer's access-log bucket is in each selection's `NotResources`.
+  Step 6's load balancer is held to it.
+- **The app's room is the same in both tiers.** The app container has 256
+  CPU units and a 512 MiB reservation in either tier, the whole task in
+  development; in production the collector's 256 CPU units and a hard limit
+  of 512 MiB are added to the task, 0.5 vCPU and 1 GB, the next Fargate
+  size (a first version shared the 0.25 vCPU and 512 MiB task, so the app
+  had less in production than where it was tried). The hard limit means a
+  collector that grows is stopped, not the app; it costs a task twice the
+  size in production, which the runbook's and the digest's cost sections
+  say.
 - **`EntryPoint` replaces `LoadBalancerDns`,** with the same value, the
   load balancer's DNS name; nothing read the old output.
 - **`$tiered`.** The Standard's templates name the Frameworks with

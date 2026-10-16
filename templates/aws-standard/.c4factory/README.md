@@ -71,8 +71,12 @@ byte for byte.
   `docs/style/aws.md` and `SOURCES.md`; the templates name the Frameworks
   with operations once, as `$tiered`. The Standard's test checks a load
   balancer's, target group's and ECS service's alarms, the collector in
-  every task by tier, and no X-Ray writes where the tier doesn't trace. A
-  Framework added later gets its branches in the version that adds it.
+  every task by tier, no X-Ray writes where the tier doesn't trace, a
+  backup selection by the tag as `ListOfTags` or as a condition on `*`,
+  and no load balancer's access-log bucket left in a selection; and both
+  runbook branches say that AWS Backup's advanced DynamoDB features, which
+  a cross-region copy needs, are a setting of the account in each region.
+  A Framework added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -135,8 +139,10 @@ byte for byte.
   when `rpo` is under a day), the backup plan and vault (in production with `retentionDays`
   over 0: one plan whose rules are daily, keep `retentionDays` and copy to
   `copyToRegion`'s vault when set, one vault with its own key, one selection
-  by the `c4factory:container` tag, and a copy stack in that region; else
-  none), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  of exactly what carries the `c4factory:container` tag, as `ListOfTags` or
+  as one `aws:ResourceTag` condition on `*`, and a copy stack in that
+  region; else none; and no load balancer's access-log bucket in any
+  selection's reach unless its `NotResources` names it), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
   `SystemErrors`, every HTTP API's `5xx`, every load balancer's

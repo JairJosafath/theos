@@ -3,6 +3,8 @@ import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 
+import type { Log } from './api';
+
 /** What tracing reads from the environment, which the stack sets where the tier traces. */
 export interface TracingEnvironment {
   /** The collector's OTLP over HTTP endpoint, such as `http://localhost:4318`; unset, nothing is traced. */
@@ -42,4 +44,25 @@ export function startTracing(env: TracingEnvironment): NodeTracerProvider | unde
     ignoreIncomingRequestHook: (request) => request.url === '/health',
   }).setTracerProvider(provider);
   return provider;
+}
+
+/**
+ * Sends the spans `provider` has not yet sent, as the service stops, and logs
+ * an error, never rejecting, when that fails: the collector may be gone, and
+ * a rejection nobody handles would end the process with a failure. Does
+ * nothing without a provider.
+ */
+export async function stopTracing(
+  provider: Pick<NodeTracerProvider, 'shutdown'> | undefined,
+  log: Log,
+): Promise<void> {
+  try {
+    await provider?.shutdown();
+  } catch (error: unknown) {
+    log({
+      level: 'ERROR',
+      message: 'The last spans were not sent.',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

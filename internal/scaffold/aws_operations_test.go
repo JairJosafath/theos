@@ -35,7 +35,7 @@ var awsOperationsFrameworks = []struct {
 }{
 	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}},
 	{side{model.TypeService, "aws-fargate-ts"}, []string{
-		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Critical", "Service-Running-Tasks-Critical",
+		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
 		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
 	}},
 }

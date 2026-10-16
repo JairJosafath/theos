@@ -55,6 +55,15 @@ function containerNames(template: Template): unknown[] {
     : [];
 }
 
+/** The one alarm named `name` in `template`, as its properties. */
+function alarmNamed(template: Template, name: string): Record<string, unknown> {
+  const found = Object.values(
+    template.findResources('AWS::CloudWatch::Alarm', { Properties: { AlarmName: name } }),
+  );
+  expect(found, name).toHaveLength(1);
+  return (found[0] as { Properties: Record<string, unknown> }).Properties;
+}
+
 let production: Template;
 let development: Template;
 
@@ -91,8 +100,6 @@ describe('ServiceStack', () => {
   it('runs the image on arm64 Fargate, read-only, logging to its own group', () => {
     production.hasResourceProperties('AWS::ECS::TaskDefinition', {
       RequiresCompatibilities: ['FARGATE'],
-      Cpu: '256',
-      Memory: '512',
       RuntimePlatform: { CpuArchitecture: 'ARM64', OperatingSystemFamily: 'LINUX' },
       ContainerDefinitions: Match.arrayWith([
         Match.objectLike({
@@ -103,6 +110,22 @@ describe('ServiceStack', () => {
           LogConfiguration: Match.objectLike({ LogDriver: 'awslogs' }),
         }),
       ]),
+    });
+  });
+
+  it('gives the app the same CPU and memory in either tier, adding the collector’s to the task', () => {
+    // The app alone in development; in production the collector's 256 CPU
+    // units and 512 MiB, its memory a hard limit, on top of the app's.
+    const app = Match.objectLike({ Name: 'App', Cpu: 256, MemoryReservation: 512 });
+    development.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      Cpu: '256',
+      Memory: '512',
+      ContainerDefinitions: [app],
+    });
+    production.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      Cpu: '512',
+      Memory: '1024',
+      ContainerDefinitions: [app, Match.objectLike({ Name: 'Collector', Cpu: 256, Memory: 512 })],
     });
   });
 
@@ -184,10 +207,10 @@ describe('ServiceStack', () => {
     }
   });
 
-  it('rolls a deployment back on a 5xx or an unhealthy task, naming alarms the stack has', () => {
+  it('rolls a deployment back on a share of 5xx or an unhealthy task, naming alarms the stack has', () => {
     const names = [
-      'test-LoadBalancer-5xx-Critical',
-      'test-Service-5xx-Critical',
+      'test-LoadBalancer-5xx-Rate-Critical',
+      'test-Service-5xx-Rate-Critical',
       'test-Service-Unhealthy-Tasks-Critical',
     ];
     for (const template of [production, development]) {
@@ -199,6 +222,70 @@ describe('ServiceStack', () => {
       for (const name of names) {
         template.hasResourceProperties('AWS::CloudWatch::Alarm', { AlarmName: name });
       }
+    }
+  });
+
+  it('rolls back on over 5 % of answers 5xx for three minutes in a row, never on a stray one', () => {
+    for (const template of [production, development]) {
+      for (const [name, expression, metric] of [
+        [
+          'test-LoadBalancer-5xx-Rate-Critical',
+          '100 * errors / (requests + errors)',
+          'HTTPCode_ELB_5XX_Count',
+        ],
+        ['test-Service-5xx-Rate-Critical', '100 * errors / requests', 'HTTPCode_Target_5XX_Count'],
+      ] as const) {
+        const alarm = alarmNamed(template, name);
+        expect(alarm, name).toMatchObject({
+          ComparisonOperator: 'GreaterThanThreshold',
+          Threshold: 5,
+          EvaluationPeriods: 3,
+          DatapointsToAlarm: 3,
+          TreatMissingData: 'notBreaching',
+        });
+        const metrics = JSON.stringify(alarm['Metrics']);
+        expect(metrics, name).toContain(`"Expression":"${expression}"`);
+        expect(metrics, name).toContain(`"MetricName":"${metric}"`);
+        expect(metrics, name).toContain('"MetricName":"RequestCount"');
+        expect(metrics, name).toContain('"Period":60');
+        expect(metrics, name).not.toContain('"Period":300');
+      }
+      // Any 5xx at all only notifies.
+      for (const name of ['test-LoadBalancer-5xx-Warning', 'test-Service-5xx-Warning']) {
+        expect(alarmNamed(template, name), name).toMatchObject({
+          Threshold: 0,
+          Period: 300,
+          Statistic: 'Sum',
+        });
+      }
+    }
+  });
+
+  it('finds an unhealthy task by the Maximum of one-minute periods, two of three', () => {
+    for (const template of [production, development]) {
+      const alarm = alarmNamed(template, 'test-Service-Unhealthy-Tasks-Critical');
+      expect(alarm).toMatchObject({
+        Threshold: 0,
+        ComparisonOperator: 'GreaterThanThreshold',
+        DatapointsToAlarm: 2,
+        EvaluationPeriods: 3,
+      });
+      expect(alarm['Metrics']).toMatchObject([
+        {
+          MetricStat: { Metric: { MetricName: 'UnHealthyHostCount' }, Stat: 'Maximum', Period: 60 },
+        },
+      ]);
+    }
+  });
+
+  it('counts no data on running tasks as too few', () => {
+    for (const template of [production, development]) {
+      expect(alarmNamed(template, 'test-Service-Running-Tasks-Critical')).toMatchObject({
+        MetricName: 'RunningTaskCount',
+        Threshold: 2,
+        ComparisonOperator: 'LessThanThreshold',
+        TreatMissingData: 'breaching',
+      });
     }
   });
 
@@ -286,10 +373,10 @@ describe('ServiceStack', () => {
 
   it('alarms on the load balancer, the service and the table, in either tier', () => {
     for (const template of [production, development]) {
-      // The load balancer's 5xx; the tasks' 5xx, latency, unhealthy tasks,
-      // CPU, memory and running tasks; the table's read and write throttles
-      // and system errors.
-      template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 6 + 3);
+      // The load balancer's 5xx and their share; the tasks' 5xx and their
+      // share, latency, unhealthy tasks, CPU, memory and running tasks; the
+      // table's read and write throttles and system errors.
+      template.resourceCountIs('AWS::CloudWatch::Alarm', 2 + 7 + 3);
       template.resourceCountIs('AWS::CloudWatch::Dashboard', 1);
       template.hasOutput('AlarmTopicArn', { Value: { Ref: Match.anyValue() } });
       template.hasOutput('EntryPoint', {
@@ -312,17 +399,30 @@ describe('ServiceStack', () => {
     });
     production.hasResourceProperties('AWS::Backup::BackupSelection', {
       BackupSelection: Match.objectLike({
-        ListOfTags: [
-          {
-            ConditionKey: 'c4factory:container',
-            ConditionType: 'STRINGEQUALS',
-            ConditionValue: 'test',
-          },
-        ],
+        Resources: ['*'],
+        Conditions: {
+          StringEquals: [
+            { ConditionKey: 'aws:ResourceTag/c4factory:container', ConditionValue: 'test' },
+          ],
+        },
       }),
     });
     development.resourceCountIs('AWS::Backup::BackupPlan', 0);
     development.resourceCountIs('AWS::Backup::BackupVault', 0);
+  });
+
+  it('leaves the load balancer’s access logs out of the backups: logs, not data', () => {
+    const [balancer, ...others]: unknown[] = Object.values(
+      production.findResources('AWS::ElasticLoadBalancingV2::LoadBalancer'),
+    );
+    expect(others).toEqual([]);
+    const target = /"Key":"access_logs\.s3\.bucket","Value":\{"Ref":"([^"]+)"\}/.exec(
+      JSON.stringify(balancer),
+    )?.[1];
+    expect(target).toBeDefined();
+    production.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({ NotResources: [{ 'Fn::GetAtt': [target, 'Arn'] }] }),
+    });
   });
 
   it('keeps only point-in-time recovery when retentionDays is 0', () => {

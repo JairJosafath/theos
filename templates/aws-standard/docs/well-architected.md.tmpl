@@ -77,10 +77,13 @@ _Run and monitor the system, and improve it in small, reversible changes._
     none elsewhere.
 - Alarms are code (OPS08-BP04, REL06-BP03), the same in both tiers:
   `cdk-monitoring-constructs` builds them on the load balancer's own 5xx,
-  the tasks' 5xx and p99 latency (over a second), unhealthy tasks, the
-  service's CPU and memory (over 90 %) and running tasks (under two), and
-  the table's read and write throttles and system errors, each firing on
-  one bad five-minute period. Every alarm notifies the stack's one SNS
+  the tasks' 5xx and p99 latency (over a second), the service's CPU and
+  memory (over 90 %) and running tasks (under two), and the table's read
+  and write throttles and system errors, each firing on one bad five-minute
+  period; and on the share of 5xx, from the load balancer and from the
+  tasks, over 5 % for three minutes in a row, and unhealthy tasks in two
+  minutes of three, the ones a deployment rolls back on. Every alarm
+  notifies the stack's one SNS
   topic, encrypted with its own key, and a dashboard per stack shows them
   (OPS08-BP05). `infra/standard.test.ts` checks that every load balancer,
   target group, service and table has its alarms and that every alarm
@@ -94,8 +97,8 @@ _Run and monitor the system, and improve it in small, reversible changes._
 - Deploy safely: a deployment starts new tasks before stopping old ones
   (minimum healthy 100 %), and rolls itself back when the circuit breaker
   sees the new tasks fail to start or pass the health check, or when a
-  deployment alarm fires (the 5xx and unhealthy-task ones,
-  `ROLLBACK_ON_ALARM`).
+  deployment alarm fires (the 5xx-share and unhealthy-task ones,
+  `ROLLBACK_ON_ALARM`; a stray 5xx only notifies).
 - A runbook: `docs/runbook.md` says what each alarm means and what to do
   first, how to restore the data and how a deployment rolls back. A change
   to what the stacks keep updates it, as a Standard change.
@@ -200,8 +203,9 @@ fails._
   - No vault lock: in compliance mode it can never be undone, which is the
     account owner's decision.
   - The tasks hold no data, and the load balancer's access logs are logs,
-    not data: they expire after the tier's log retention, and their bucket
-    is kept in either tier, as a bucket holding objects can't be deleted.
+    not data: they expire after the tier's log retention, their bucket is
+    kept in either tier, as a bucket holding objects can't be deleted, and
+    the backup plan leaves it out by its ARN, though it carries the tag.
   - Development backs up nothing: its data goes with its stack.
 - Nothing of value is deleted by accident, in production: the table is
   `RETAIN` with deletion protection, and the stack has termination
@@ -212,7 +216,7 @@ fails._
     acknowledges it in development only.
   - `infra/standard.test.ts`: per tier, the removal policies, the
     protections, point-in-time recovery, the backup plan, its vault and its
-    copy.
+    copy, and that no load balancer's log bucket is backed up.
   - cfn-lint I3011: every stateful resource has a deletion policy.
 - Restore by a written procedure (REL09-BP04, REL13-BP05):
   `docs/runbook.md` restores the items to a point in time, from the vault,
@@ -239,9 +243,11 @@ _Use resources efficiently as demand changes and technology evolves._
 - The newest Node.js LTS in the image (`node:24-alpine`); a bump is a
   change to the `Dockerfile`.
 - Size the task's CPU and memory to the work, and the service's scaling
-  bounds to the load the issue states; measure before raising them. In
-  production the collector shares the task's CPU and memory: the CPU and
-  memory alarms say when it is short.
+  bounds to the load the issue states; measure before raising them. The
+  app's share is the same in both tiers (0.25 vCPU, 512 MiB): in
+  production the collector's own, 0.25 vCPU and at most 512 MiB, is added
+  to the task, so the app is measured in development as it runs in
+  production.
 - Start-up: SDK clients created once, in `src/main.ts`; a small image
   (esbuild's bundle on Alpine, no `node_modules`), so a new task starts
   fast.
@@ -264,15 +270,16 @@ where the money goes._
 - The DynamoDB gateway endpoint is free and keeps table traffic off the NAT
   gateways, which charge per gigabyte.
 - What production costs over development: a second NAT gateway, by the hour
-  and by the gigabyte; the collector beside each task, in the task's CPU and
-  memory; X-Ray for every trace past the free tier (every request but the
-  health checks); point-in-time recovery on the table (by its size, per
-  month); AWS Backup's storage (each daily backup is a full copy of the
-  table, kept `retentionDays`, so about that many times the table's size),
-  and with `copyToRegion` the transfer of each copy and its storage there;
-  twelve months of logs and access logs instead of one; and a KMS key per
-  vault. The tasks, the load balancer, the alarms (each per month) and the
-  dashboard cost the same in both tiers. Lower `retentionDays` to pay less
+  and by the gigabyte; tasks twice the size (0.5 vCPU and 1 GB instead of
+  0.25 vCPU and 0.5 GB), half of it the collector's; X-Ray for every trace
+  past the free tier (every request but the health checks); point-in-time
+  recovery on the table (by its size, per month); AWS Backup's storage
+  (each daily backup is a full copy of the table, kept `retentionDays`, so
+  about that many times the table's size), and with `copyToRegion` the
+  transfer of each copy and its storage there; twelve months of logs and
+  access logs instead of one; and a KMS key per vault. The load balancer,
+  the alarms (each per month) and the dashboard cost the same in both
+  tiers. Lower `retentionDays` to pay less
   for backups; 0 keeps point-in-time recovery alone.
 - Log retention limits what storage costs grow to (`infra/standard.test.ts`,
   cfn-lint I3013); the access logs expire from their bucket with it.

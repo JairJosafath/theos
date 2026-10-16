@@ -1,7 +1,7 @@
 import { trace } from '@opentelemetry/api';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { startTracing } from './tracing';
+import { startTracing, stopTracing } from './tracing';
 
 afterEach(() => {
   trace.disable();
@@ -24,5 +24,24 @@ describe('startTracing', () => {
     // Not ended, so nothing is sent to a collector that isn't there.
     expect(trace.getTracer('test').startSpan('request').isRecording()).toBe(true);
     await provider?.shutdown();
+  });
+});
+
+describe('stopTracing', () => {
+  it('logs, and never rejects, when the last spans can’t be sent', async () => {
+    const logged: Readonly<Record<string, unknown>>[] = [];
+    const gone = { shutdown: () => Promise.reject(new Error('connect ECONNREFUSED')) };
+
+    await expect(stopTracing(gone, (entry) => logged.push(entry))).resolves.toBeUndefined();
+
+    expect(logged).toEqual([
+      expect.objectContaining({ level: 'ERROR', error: 'connect ECONNREFUSED' }),
+    ]);
+  });
+
+  it('does nothing where the tier doesn’t trace', async () => {
+    const logged: unknown[] = [];
+    await stopTracing(undefined, (entry) => logged.push(entry));
+    expect(logged).toEqual([]);
   });
 });

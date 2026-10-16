@@ -8,7 +8,13 @@ import {
   Validations,
 } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
-import { ComparisonOperator, Metric, Stats, TreatMissingData } from 'aws-cdk-lib/aws-cloudwatch';
+import {
+  ComparisonOperator,
+  MathExpression,
+  Metric,
+  Stats,
+  TreatMissingData,
+} from 'aws-cdk-lib/aws-cloudwatch';
 import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
 import {
   FlowLogDestination,
@@ -66,6 +72,16 @@ const NAT_GATEWAYS: Readonly<Record<Tier, number>> = { production: ZONES, develo
 // The fewest tasks the service runs, one per zone, and the most it scales to.
 const MIN_TASKS = 2;
 const MAX_TASKS = 4;
+// The app container's CPU units and memory, in every tier: in development it
+// has the task to itself, and where the tier traces the collector's share is
+// added to the task, so the app has the same room in both.
+const APP_CPU = 256;
+const APP_MEMORY_MIB = 512;
+// The collector's share: CPU units it is sure of and a hard memory limit, so
+// it never takes the app's. With the app's, the task is 512 CPU units and
+// 1 GB, the smallest Fargate size with more CPU than the app's alone.
+const COLLECTOR_CPU = 256;
+const COLLECTOR_MEMORY_MIB = 512;
 // The AWS Distro for OpenTelemetry collector that runs beside the app where
 // the tier traces, pinned by tag, and the configuration in its image that
 // takes spans over OTLP and sends them to X-Ray, and nothing else.
@@ -79,12 +95,17 @@ const XRAY_WRITE_ACTIONS = ['xray:PutTraceSegments', 'xray:PutTelemetryRecords']
 // The slowest answer the latency alarm allows, at the 99th percentile: an
 // item is one DynamoDB call, which takes milliseconds.
 const MAX_LATENCY = Duration.seconds(1);
+// A deployment rolls back when over this share of the answers, in percent,
+// are 5xx from the load balancer or from the tasks, for this many one-minute
+// periods in a row: a stray 5xx, or one bad minute, is no reason to.
+const MAX_5XX_PERCENT = 5;
+const ROLLBACK_MINUTES = 3;
 // The alarms that fail a deployment and roll it back, by their names after
-// the stack's: a 5xx from the load balancer or the tasks, or a task failing
-// its health check.
+// the stack's: the share of 5xx above, from the load balancer or the tasks,
+// or a task failing its health check.
 const DEPLOYMENT_ALARMS = [
-  'LoadBalancer-5xx-Critical',
-  'Service-5xx-Critical',
+  'LoadBalancer-5xx-Rate-Critical',
+  'Service-5xx-Rate-Critical',
   'Service-Unhealthy-Tasks-Critical',
 ];
 
@@ -103,9 +124,9 @@ export interface ServiceStackProps extends StackProps {
  * behind an internet-facing Application Load Balancer that serves HTTPS
  * with the certificate the deployer names, keeping items in a DynamoDB table.
  * Every part has alarms, to a topic the stack outputs with the load
- * balancer's name, and a deployment that sets off a 5xx or unhealthy-task
- * alarm rolls back; production keeps and backs up the data and traces every
- * request.
+ * balancer's name, and a deployment that sets off a 5xx-share or
+ * unhealthy-task alarm rolls back; production keeps and backs up the data
+ * and traces every request.
  */
 export class ServiceStack extends Stack {
   constructor(scope: Construct, id: string, props: ServiceStackProps) {
@@ -168,8 +189,8 @@ export class ServiceStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const taskDefinition = new FargateTaskDefinition(this, 'Task', {
-      cpu: 256,
-      memoryLimitMiB: 512,
+      cpu: APP_CPU + (rules.tracing ? COLLECTOR_CPU : 0),
+      memoryLimitMiB: APP_MEMORY_MIB + (rules.tracing ? COLLECTOR_MEMORY_MIB : 0),
       runtimePlatform: {
         cpuArchitecture: CpuArchitecture.ARM64,
         operatingSystemFamily: OperatingSystemFamily.LINUX,
@@ -179,6 +200,8 @@ export class ServiceStack extends Stack {
       // Synth only stages the build context in cdk.out/; `cdk deploy` builds
       // and pushes the image, with Docker, on the deployer's machine.
       image: ContainerImage.fromAsset(ROOT, { platform: Platform.LINUX_ARM64 }),
+      cpu: APP_CPU,
+      memoryReservationMiB: APP_MEMORY_MIB,
       portMappings: [{ containerPort: PORT }],
       environment: { TABLE_NAME: table.tableName },
       logging: LogDrivers.awsLogs({ streamPrefix: 'app', logGroup: serviceLogs }),
@@ -271,17 +294,31 @@ export class ServiceStack extends Stack {
       defaultAction: ListenerAction.redirect({ protocol: 'HTTPS', port: '443', permanent: true }),
     });
 
-    // Each alarm fires on the first bad five minutes: a 5xx from the load
-    // balancer or the tasks, slow answers, a task failing its health check,
-    // the tasks short of CPU or memory or fewer than the service's minimum,
-    // and the table throttled or failing. docs/runbook.md says what each
-    // means and what to do first.
+    // Most alarms fire on the first bad five minutes: a 5xx from the load
+    // balancer or the tasks, slow answers, the tasks short of CPU or memory or
+    // fewer than the service's minimum, and the table throttled or failing.
+    // The ones a deployment rolls back on look closer and wait longer: the
+    // share of 5xx minute by minute, and a task failing its health check.
+    // docs/runbook.md says what each means and what to do first.
     const alarms = new Alarms(this, 'Alarms', alerts.email);
     // No requests is no 5xx and no slow answer.
     const above = (threshold: number): CustomThreshold => ({
       threshold,
       comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
       treatMissingDataOverride: TreatMissingData.NOT_BREACHING,
+    });
+    // Over MAX_5XX_PERCENT for ROLLBACK_MINUTES minutes in a row.
+    const rollBackAbove: CustomThreshold = {
+      ...above(MAX_5XX_PERCENT),
+      datapointsToAlarm: ROLLBACK_MINUTES,
+      evaluationPeriods: ROLLBACK_MINUTES,
+    };
+    const requests = loadBalancer.metrics.requestCount({ statistic: Stats.SUM });
+    const elb5xx = loadBalancer.metrics.httpCodeElb(HttpCodeElb.ELB_5XX_COUNT, {
+      statistic: Stats.SUM,
+    });
+    const target5xx = loadBalancer.metrics.httpCodeTarget(HttpCodeTarget.TARGET_5XX_COUNT, {
+      statistic: Stats.SUM,
     });
     alarms.monitoring
       .monitorCustom({
@@ -293,11 +330,29 @@ export class ServiceStack extends Stack {
             metrics: [
               {
                 // 502, 503 and 504: no task answered, or none in time.
-                metric: loadBalancer.metrics.httpCodeElb(HttpCodeElb.ELB_5XX_COUNT, {
-                  statistic: Stats.SUM,
-                }),
+                metric: elb5xx,
                 alarmFriendlyName: '5xx',
-                addAlarm: { Critical: above(0) },
+                addAlarm: { Warning: above(0) },
+              },
+            ],
+          },
+          {
+            title: '5xx answers of its own, % of requests',
+            metrics: [
+              {
+                // RequestCount leaves out what the load balancer answered
+                // before it chose a task, a 503 when none is healthy, so the
+                // 5xx are added to it; a 502 or 504 is in both, which at
+                // worst halves the share. Metric math drops the minutes with
+                // no request (a division by zero): no request is no 5xx.
+                metric: new MathExpression({
+                  expression: '100 * errors / (requests + errors)',
+                  usingMetrics: { errors: elb5xx, requests },
+                  period: Duration.minutes(1),
+                  label: '5xx, % of requests',
+                }),
+                alarmFriendlyName: '5xx-Rate',
+                addAlarm: { Critical: rollBackAbove },
               },
             ],
           },
@@ -311,11 +366,25 @@ export class ServiceStack extends Stack {
             title: '5xx answers from the tasks',
             metrics: [
               {
-                metric: loadBalancer.metrics.httpCodeTarget(HttpCodeTarget.TARGET_5XX_COUNT, {
-                  statistic: Stats.SUM,
-                }),
+                metric: target5xx,
                 alarmFriendlyName: '5xx',
-                addAlarm: { Critical: above(0) },
+                addAlarm: { Warning: above(0) },
+              },
+            ],
+          },
+          {
+            title: '5xx answers from the tasks, % of requests',
+            metrics: [
+              {
+                // Every request a task answered is in RequestCount.
+                metric: new MathExpression({
+                  expression: '100 * errors / requests',
+                  usingMetrics: { errors: target5xx, requests },
+                  period: Duration.minutes(1),
+                  label: '5xx, % of requests',
+                }),
+                alarmFriendlyName: '5xx-Rate',
+                addAlarm: { Critical: rollBackAbove },
               },
             ],
           },
@@ -348,6 +417,9 @@ export class ServiceStack extends Stack {
                   Critical: {
                     threshold: MIN_TASKS,
                     comparisonOperator: ComparisonOperator.LESS_THAN_THRESHOLD,
+                    // Container Insights' guide doesn't promise a count of
+                    // 0 while no task runs: no data is taken for none.
+                    treatMissingDataOverride: TreatMissingData.BREACHING,
                   },
                 },
               },
@@ -360,10 +432,20 @@ export class ServiceStack extends Stack {
         applicationLoadBalancer: loadBalancer,
         applicationTargetGroup: targetGroup,
         alarmFriendlyName: 'Service',
-        // A task is unhealthy when every load balancer node finds it so
-        // (the minimum), as Elastic Load Balancing's guide advises.
-        invertLoadBalancerTaskCountMetricsStatistics: true,
-        addUnhealthyTaskCountAlarm: { Critical: { maxUnhealthyTasks: 0 } },
+        // Unhealthy tasks by the library's statistic, the Maximum: a task any
+        // load balancer node finds unhealthy. ECS replaces a failing task in
+        // a minute or two, so a five-minute period, or the Minimum (every
+        // node agreeing), would rarely see it: one-minute periods, two bad
+        // ones of three, so a task one node doubted for a moment rolls
+        // nothing back.
+        addUnhealthyTaskCountAlarm: {
+          Critical: {
+            maxUnhealthyTasks: 0,
+            period: Duration.minutes(1),
+            datapointsToAlarm: 2,
+            evaluationPeriods: 3,
+          },
+        },
         addCpuUsageAlarm: { Warning: { maxUsagePercent: 90 } },
         addMemoryUsageAlarm: { Warning: { maxUsagePercent: 90 } },
       })
@@ -394,6 +476,8 @@ export class ServiceStack extends Stack {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
         tag: props.backupTag,
+        // The access logs carry the tag too, and are not data.
+        exclude: [accessLogs.bucketArn],
       });
     }
 
@@ -420,6 +504,8 @@ export class ServiceStack extends Stack {
     const collector = taskDefinition.addContainer('Collector', {
       image: ContainerImage.fromRegistry(COLLECTOR_IMAGE),
       command: [`--config=${COLLECTOR_CONFIG}`],
+      cpu: COLLECTOR_CPU,
+      memoryLimitMiB: COLLECTOR_MEMORY_MIB,
       // A collector that stops loses traces, not requests: the task goes on.
       essential: false,
       logging: LogDrivers.awsLogs({ streamPrefix: 'collector', logGroup: collectorLogs }),

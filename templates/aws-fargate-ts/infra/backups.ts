@@ -1,6 +1,12 @@
 import { Aws, Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
-import { BackupPlan, BackupPlanRule, BackupResource, BackupVault } from 'aws-cdk-lib/aws-backup';
+import {
+  BackupPlan,
+  BackupPlanRule,
+  BackupResource,
+  BackupVault,
+  CfnBackupSelection,
+} from 'aws-cdk-lib/aws-backup';
 import { Schedule } from 'aws-cdk-lib/aws-events';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
@@ -23,13 +29,19 @@ export interface BackupsProps {
   readonly copyToRegion: string;
   /** The tag, key and value, of the resources to back up: the Container's, which the Standard sets. */
   readonly tag: readonly [string, string];
+  /**
+   * The ARNs of resources carrying the tag that are not data, which the plan
+   * leaves out: a load balancer's log bucket. None by default.
+   */
+  readonly exclude?: readonly string[];
 }
 
 /**
- * Daily AWS Backup backups of every resource carrying the Container's tag, in
- * a vault with its own key, kept `retentionDays` and copied to `copyToRegion`
- * when it is set. Backups are data: the vault and its key outlive the stack.
- * No vault lock, which can never be undone: that is the account owner's call.
+ * Daily AWS Backup backups of every resource carrying the Container's tag but
+ * those `exclude` names, in a vault with its own key, kept `retentionDays`
+ * and copied to `copyToRegion` when it is set. Backups are data: the vault
+ * and its key outlive the stack. No vault lock, which can never be undone:
+ * that is the account owner's call.
  */
 export class Backups extends Construct {
   readonly vault: BackupVault;
@@ -74,10 +86,25 @@ export class Backups extends Construct {
         copyActions,
       }),
     );
+    // Every resource with the tag, by a condition rather than CDK's
+    // `fromTag` (a `ListOfTags`): AWS Backup's guide recommends `Conditions`,
+    // and leaves resources out (`NotResources`) beside `Resources` and
+    // `Conditions` in each of its examples.
     const [tagKey, tagValue] = props.tag;
     const selection = this.plan.addSelection('Tagged', {
-      resources: [BackupResource.fromTag(tagKey, tagValue)],
+      resources: [BackupResource.fromArn('*')],
     });
+    const cfnSelection = selection.node.defaultChild;
+    if (!(cfnSelection instanceof CfnBackupSelection)) {
+      throw new Error('The backup selection has no CloudFormation resource.');
+    }
+    cfnSelection.addPropertyOverride('BackupSelection.Conditions', {
+      StringEquals: [{ ConditionKey: `aws:ResourceTag/${tagKey}`, ConditionValue: tagValue }],
+    });
+    const exclude = props.exclude ?? [];
+    if (exclude.length > 0) {
+      cfnSelection.addPropertyOverride('BackupSelection.NotResources', exclude);
+    }
     Validations.of(selection).acknowledge({
       id: 'AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]',
       reason:

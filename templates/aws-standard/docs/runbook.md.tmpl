@@ -96,10 +96,15 @@ When the stack's region is lost, the copies are in {{ $ops.Backups.CopyToRegion 
 of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that region,
 and give the restore an encryption key there (the vault's own key will do).
 Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
-region), then fill its new table from the restored one as in step 4. AWS
-Backup copies DynamoDB backups across regions only with its advanced
-features for DynamoDB on in the stack's region: a backup plan turns them on
-by itself, and AWS Backup's _Settings_ page says whether they are.
+region), then fill its new table from the restored one as in step 4.
+AWS Backup copies DynamoDB backups across regions only with its advanced
+features for DynamoDB on in the stack's region. That is a setting of the
+account in each region, not of the stack: on by default in an account that
+made no backup vault before 21 November 2021, and in an older one the
+account owner turns it on (AWS Backup's _Settings_, or
+`aws backup update-region-settings --resource-type-opt-in-preference DynamoDB=true --resource-type-management-preference DynamoDB=true`).
+`aws backup describe-region-settings` says whether it is on: `DynamoDB` is
+`true` under both preferences. Check it before you rely on the copies.
 {{- end }}
 {{- end }}
 
@@ -286,10 +291,15 @@ of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that
 and give the restore an encryption key there (the vault's own key will do).
 Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
 region, and a certificate in it), then fill its new table from the restored
-one as in step 4, and point the service's domain at the new `EntryPoint`. AWS
-Backup copies DynamoDB backups across regions only with its advanced
-features for DynamoDB on in the stack's region: a backup plan turns them on
-by itself, and AWS Backup's _Settings_ page says whether they are.
+one as in step 4, and point the service's domain at the new `EntryPoint`.
+AWS Backup copies DynamoDB backups across regions only with its advanced
+features for DynamoDB on in the stack's region. That is a setting of the
+account in each region, not of the stack: on by default in an account that
+made no backup vault before 21 November 2021, and in an older one the
+account owner turns it on (AWS Backup's _Settings_, or
+`aws backup update-region-settings --resource-type-opt-in-preference DynamoDB=true --resource-type-management-preference DynamoDB=true`).
+`aws backup describe-region-settings` says whether it is on: `DynamoDB` is
+`true` under both preferences. Check it before you rely on the copies.
 {{- end }}
 {{- end }}
 
@@ -318,12 +328,13 @@ the last one that completed, by themselves:
   health check: three failures in a row (half the desired count, at least
   three).
 - The deployment alarms, when the new tasks start but answer badly:
-  `LoadBalancer-5xx-Critical`, `Service-5xx-Critical` and
-  `Service-Unhealthy-Tasks-Critical`. ECS watches them while the deployment
-  runs and for a bake time after it (under five minutes), which is why a
-  deployment takes that much longer to complete. An alarm already firing
-  when a deployment starts is ignored for that deployment, so a deploy that
-  fixes an incident still goes out.
+  `LoadBalancer-5xx-Rate-Critical` and `Service-5xx-Rate-Critical` (over
+  5 % of the answers 5xx, three minutes in a row; a stray 5xx only sets off
+  the `-5xx-Warning` alarms, which roll nothing back) and
+  `Service-Unhealthy-Tasks-Critical` (a task failing its health check in two
+  minutes of three). ECS watches them while the deployment runs and for a
+  bake time after it (under five minutes by default), which is why a
+  deployment takes that much longer to complete.
 
 Either way CloudFormation sees the service fail to stabilize and rolls the
 whole stack back (`UPDATE_ROLLBACK_COMPLETE`). `aws ecs describe-services
@@ -349,27 +360,42 @@ says which deployment is running, its `rolloutState` and why it failed
   off is the account owner's decision; the table, the vault and the log
   bucket stay anyway.
 
+If any of the three deployment alarms is firing when a deployment starts,
+ECS watches none of them for that deployment: only the circuit breaker can
+roll it back. That lets a deploy that fixes the incident go out. For any
+other deploy, first let the firing alarm clear, or, once its cause is gone,
+set it back by hand
+(`aws cloudwatch set-alarm-state --alarm-name <name> --state-value OK --state-reason "<why>"`),
+so the deployment is watched; and know that a deploy started while one
+fires rolls back only if its tasks fail to start or to pass the health
+check.
+
 ## Alarms
 
 Every alarm notifies the stack's alarm topic (the output `AlarmTopicArn`);
 the `AlertEmail` parameter subscribes an address, which must confirm the
 email AWS sends it. The dashboard `{{ .Container }}` shows each alarm's metric. Each
 alarm fires on one bad five-minute period and clears itself when the next
-one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name below.
-The load balancer reports nothing while no requests come, which its alarms
-count as good.
+one is good, but the three a deployment rolls back on, which read one-minute
+periods: the two `-5xx-Rate-` alarms fire after three bad minutes in a row,
+`Service-Unhealthy-Tasks-Critical` after two of three. An alarm's name is the
+stack's, `{{ .Container }}-`, then the name below. The load balancer reports nothing
+while no requests come, which its alarms count as good; Container Insights
+reporting no running tasks counts as too few.
 
-| Alarm                                             | Means                                                                                                                  | First                                                                                                                                                        |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LoadBalancer-5xx-Critical`                       | the load balancer answered 5xx itself: no healthy task to send a request to (502, 503), or none answered in time (504) | look at the running and unhealthy tasks on the dashboard, then the app's logs for an error at start-up; a deployment that just went out rolls back by itself |
-| `Service-5xx-Critical`                            | the app answered 5xx: a request failed, most often at the table                                                        | read the app's logs for `The request failed.` and the request id; check the table's alarms; roll back if a deploy just went out                              |
-| `Service-Latency-P99-Warning`                     | the slowest answers take over a second                                                                                 | check the table's latency and the tasks' CPU on the dashboard; a slow request's trace in X-Ray shows where the time went                                     |
-| `Service-Unhealthy-Tasks-Critical`                | a task fails the health check on `/health`                                                                             | read that task's logs (stream `app/App/<task id>`); ECS replaces it, and a deployment rolls back                                                             |
-| `Service-CPU-Usage-Warning`                       | the tasks use over 90 % of their CPU: scaling is at its four tasks, or can't keep up                                   | check the request count; raise the most tasks or the task's CPU in `infra/service_stack.ts`                                                                  |
-| `Service-Memory-Usage-Warning`                    | the tasks use over 90 % of their memory: a leak, or a task too small                                                   | watch whether memory only grows between deploys (a leak); otherwise raise the task's memory                                                                  |
-| `Service-Running-Tasks-Critical`                  | fewer than two tasks run: tasks stop, or new ones can't start                                                          | read the service's events and a stopped task's `stoppedReason` (`aws ecs describe-tasks`); an image that can't be pulled points at a NAT gateway or ECR      |
-| `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits                                       | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design                                                        |
-| `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                                                   | check the AWS Health Dashboard for DynamoDB in the region; the SDK retries, so watch whether `Service-5xx` fires too                                         |
+| Alarm                                             | Means                                                                                                                                                                    | First                                                                                                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LoadBalancer-5xx-Rate-Critical`                  | over 5 % of the requests got a 5xx from the load balancer itself, three minutes in a row: no healthy task to send them to (503), or none answered (502) or in time (504) | look at the running and unhealthy tasks on the dashboard, then the app's logs for an error at start-up; a deployment that just went out rolls back by itself |
+| `LoadBalancer-5xx-Warning`                        | the load balancer answered a 5xx itself, once or more in five minutes                                                                                                    | if it comes back, as for `LoadBalancer-5xx-Rate-Critical`; a lone 502 can be a task stopping mid-request                                                     |
+| `Service-5xx-Rate-Critical`                       | over 5 % of the app's answers were 5xx, three minutes in a row: requests fail, most often at the table                                                                   | read the app's logs for `The request failed.` and the request id; check the table's alarms; a deployment that just went out rolls back by itself             |
+| `Service-5xx-Warning`                             | the app answered a 5xx, once or more in five minutes                                                                                                                     | read the app's logs for `The request failed.` and the request id: each one is a bug or a failing dependency                                                  |
+| `Service-Latency-P99-Warning`                     | the slowest answers take over a second                                                                                                                                   | check the table's latency and the tasks' CPU on the dashboard; a slow request's trace in X-Ray shows where the time went                                     |
+| `Service-Unhealthy-Tasks-Critical`                | a task failed the health check on `/health`, in two minutes of three                                                                                                     | read that task's logs (stream `app/App/<task id>`); ECS replaces it, and a deployment rolls back                                                             |
+| `Service-CPU-Usage-Warning`                       | the tasks use over 90 % of their CPU: scaling is at its four tasks, or can't keep up                                                                                     | check the request count; raise the most tasks or the task's CPU in `infra/service_stack.ts`                                                                  |
+| `Service-Memory-Usage-Warning`                    | the tasks use over 90 % of their memory: a leak, or a task too small                                                                                                     | watch whether memory only grows between deploys (a leak); otherwise raise the task's memory                                                                  |
+| `Service-Running-Tasks-Critical`                  | fewer than two tasks run: tasks stop, or new ones can't start                                                                                                            | read the service's events and a stopped task's `stoppedReason` (`aws ecs describe-tasks`); an image that can't be pulled points at a NAT gateway or ECR      |
+| `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits                                                                                         | find the key in the logs; on-demand adapts within minutes, a hot key needs a change to the key design                                                        |
+| `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                                                                                                     | check the AWS Health Dashboard for DynamoDB in the region; the SDK retries, so watch whether `Service-5xx` fires too                                         |
 
 When an alarm fires, note the time, what you saw and what you did; when it
 has fired before for the same cause, that cause needs a fix, not another
@@ -382,8 +408,10 @@ its spans to the AWS Distro for OpenTelemetry collector beside it in the
 task, which sends them to X-Ray, under the service name `{{ .Container }}`. A
 trace shows the request and each call it made to DynamoDB. With no traces in
 X-Ray, read the collector's log group (`CollectorLogs` in the stack): the
-collector is not essential, so when it fails the app goes on, untraced.
-Development traces nothing.
+collector is not essential, so when it fails the app goes on, untraced. It
+has 0.25 vCPU of its own and at most 512 MiB, past which it is stopped, not
+the app. A task that stops sends the spans it still holds; when it can't, the
+app's log says `The last spans were not sent.` Development traces nothing.
 
 ## The network
 
@@ -397,13 +425,15 @@ or write its logs.
 ## What production costs over development
 
 Every hour, production pays for a second NAT gateway (each charges by the
-hour and by the gigabyte it carries) and for the collector beside each task,
-which shares the task's CPU and memory; X-Ray charges per trace past its
-free tier, and every request but the health checks is traced. Then
+hour and by the gigabyte it carries) and for tasks twice the size, 0.5 vCPU
+and 1 GB instead of 0.25 vCPU and 0.5 GB: the collector beside the app gets
+half, so the app has in production what it has in development. X-Ray
+charges per trace past its free tier, and every request but the health
+checks is traced. Then
 point-in-time recovery{{ if ne $ops.Backups.RetentionDays 0 }} and AWS Backup's storage{{ end }} by the table's size{{ if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}, the
 copies' transfer to {{ $ops.Backups.CopyToRegion }} and their storage there{{ end }}{{ if ne $ops.Backups.RetentionDays 0 }}, a KMS key per vault{{ end }},
-and a year of logs instead of a month. The two tasks, the load balancer,
-the alarms and the dashboard cost the same in both tiers.
+and a year of logs instead of a month. The load balancer, the alarms and
+the dashboard cost the same in both tiers.
 
 ## What the account provides
 

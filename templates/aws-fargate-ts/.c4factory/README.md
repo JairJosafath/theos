@@ -56,12 +56,15 @@ container asset that synth only stages.
   a custom-resource Lambda); an on-demand DynamoDB table (KMS-encrypted;
   point-in-time recovery, deletion protection and `RETAIN` in production,
   none of them, `DESTROY`, in development); a cluster with Container
-  Insights; an arm64 Fargate task (0.25 vCPU, 512 MiB) whose container is
+  Insights; an arm64 Fargate task whose app container (256 CPU units and a
+  512 MiB reservation, the task's whole size in development) is
   `ContainerImage.fromAsset` for `linux/arm64`, logs to its own log group,
   and whose task role may only `GetItem` and `PutItem` on the table; in
   production the task also runs the AWS Distro for OpenTelemetry collector
   (`public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0`, its
-  image's `/etc/ecs/ecs-xray.yaml`: OTLP in, X-Ray out), not essential, on a
+  image's `/etc/ecs/ecs-xray.yaml`: OTLP in, X-Ray out), with 256 CPU units
+  and a hard limit of 512 MiB of its own added to the task (0.5 vCPU, 1 GB),
+  so the app has the room it has in development, not essential, on a
   read-only root file system, logging to its own log group; the app
   container starts after it and gets `OTEL_EXPORTER_OTLP_ENDPOINT`
   (`http://localhost:4318`) and `OTEL_SERVICE_NAME` (the stack's name), and
@@ -69,7 +72,9 @@ container asset that synth only stages.
   Standard acknowledges their `*`). A service of two tasks in the private
   subnets, without public IPs, with the deployment circuit breaker and
   rollback and deployment alarms that roll back (`ROLLBACK_ON_ALARM`) on the
-  load balancer's and the tasks' 5xx and an unhealthy task, named by their
+  load balancer's and the tasks' 5xx over 5 % of the requests for three
+  one-minute periods in a row and on an unhealthy task (the Maximum of
+  `UnHealthyHostCount` in two one-minute periods of three), named by their
   literal names (a reference would make the alarm and the service depend on
   each other), scaling on CPU from two to four. `cdk.json` keeps
   `@aws-cdk/aws-ecs:removeDefaultDeploymentAlarm`: it only governs a
@@ -84,14 +89,18 @@ container asset that synth only stages.
   `Alarms` (aws-lambda-ts's) makes the alarm topic, the `AlertEmail`
   parameter and its subscription under `HasAlertEmail`, and
   `cdk-monitoring-constructs`' `MonitoringFacade` with a dashboard: alarms on
-  the load balancer's 5xx (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx
-  (`HTTPCode_Target_5XX_Count`) and p99 latency (`TargetResponseTime` over a
-  second), unhealthy tasks (`UnHealthyHostCount`), the service's CPU and
-  memory (over 90 %) and running tasks (Container Insights'
-  `RunningTaskCount` under two), and the table's read and write throttles
-  and system errors, each on one bad five-minute period. In production with
-  `retentionDays` over 0, `infra/backups.ts`'s `Backups` adds the AWS Backup
-  vault, plan and selection, as aws-lambda-ts's. The stack outputs
+  any of the load balancer's 5xx (`HTTPCode_ELB_5XX_Count`) and the tasks'
+  5xx (`HTTPCode_Target_5XX_Count`), as warnings, and on their share of
+  `RequestCount` (metric math, the deployment alarms above), p99 latency
+  (`TargetResponseTime` over a second), unhealthy tasks, the service's CPU
+  and memory (over 90 %) and running tasks (Container Insights'
+  `RunningTaskCount` under two, no data counting as too few), and the table's
+  read and write throttles and system errors, each on one bad five-minute
+  period but the deployment alarms. In production with `retentionDays` over
+  0, `infra/backups.ts`'s `Backups` adds the AWS Backup vault, plan and
+  selection: aws-lambda-ts's, but selecting by an `aws:ResourceTag`
+  condition on `*` instead of `ListOfTags`, so its `exclude` leaves the
+  access-log bucket out (`NotResources`). The stack outputs
   `EntryPoint` (the load balancer's DNS name) and `AlarmTopicArn`. It passes
   CDK Nag's `AwsSolutions` checks with four acknowledgements of its own,
   each with its reason: `ECS2` (the variables are the table's name and the

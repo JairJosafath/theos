@@ -162,6 +162,38 @@ function only<T>(items: readonly T[], what: string): T {
 }
 
 /**
+ * Whether a backup selection takes exactly the resources carrying the tag
+ * `key` = `value`: by `ListOfTags`, or by that one condition on every
+ * resource (`*`), the form that can leave some out by `NotResources`.
+ */
+function selectsByTag(selection: unknown, key: string, value: string | undefined): boolean {
+  if (!isRecord(selection) || value === undefined) {
+    return false;
+  }
+  const tags: unknown[] = [selection['ListOfTags'] ?? []].flat();
+  const conditions = selection['Conditions'];
+  const equal: unknown[] = isRecord(conditions) ? [conditions['StringEquals'] ?? []].flat() : [];
+  const [tag] = tags;
+  const [condition] = equal;
+  const byList =
+    tags.length === 1 &&
+    isRecord(tag) &&
+    tag['ConditionKey'] === key &&
+    tag['ConditionType'] === 'STRINGEQUALS' &&
+    tag['ConditionValue'] === value;
+  const byCondition =
+    tags.length === 0 &&
+    JSON.stringify(selection['Resources']) === '["*"]' &&
+    isRecord(conditions) &&
+    Object.keys(conditions).join() === 'StringEquals' &&
+    equal.length === 1 &&
+    isRecord(condition) &&
+    condition['ConditionKey'] === `aws:ResourceTag/${key}` &&
+    condition['ConditionValue'] === value;
+  return byList || byCondition;
+}
+
+/**
  * Whether `json`, a part of a template, refers to the resource `id`: by
  * `Ref`, as a table's or function's name, or by `Fn::GetAtt`, as a load
  * balancer's or target group's full name and a service's name.
@@ -476,18 +508,15 @@ describe.runIf(operations !== undefined).each(TIERS)(
             }
           }
           // The plan backs up what carries the Container's tag, which the
-          // Standard puts on every resource.
+          // Standard puts on every resource: as a tag (`ListOfTags`), or as
+          // a condition on every resource, which can leave some out.
           const container = STANDARD_TAGS['c4factory:container'];
           const selection = only(selections, `${name}'s backup selections`)[1];
-          expect(selection.Properties?.['BackupSelection'], name).toMatchObject({
-            ListOfTags: [
-              {
-                ConditionKey: 'c4factory:container',
-                ConditionType: 'STRINGEQUALS',
-                ConditionValue: container,
-              },
-            ],
-          });
+          const backupSelection = selection.Properties?.['BackupSelection'];
+          expect(
+            selectsByTag(backupSelection, 'c4factory:container', container),
+            `${name}: ${JSON.stringify(backupSelection)}`,
+          ).toBe(true);
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -496,6 +525,35 @@ describe.runIf(operations !== undefined).each(TIERS)(
           expect(copyStacks.map((stack) => stack.region)).toEqual([copyToRegion]);
         } else {
           expect(copyStacks).toEqual([]);
+        }
+      });
+
+      it("leave every load balancer's log bucket out: logs, not data", () => {
+        for (const [name, template] of app(tier).templates) {
+          const selections = resourcesOf(template, 'AWS::Backup::BackupSelection');
+          for (const [balancerId, balancer] of resourcesOf(
+            template,
+            'AWS::ElasticLoadBalancingV2::LoadBalancer',
+          )) {
+            const attributes = balancer.Properties?.['LoadBalancerAttributes'];
+            const bucket = (Array.isArray(attributes) ? (attributes as unknown[]) : [])
+              .filter(isRecord)
+              .find((attribute) => attribute['Key'] === 'access_logs.s3.bucket')?.['Value'];
+            if (!isRecord(bucket) || typeof bucket['Ref'] !== 'string') {
+              continue;
+            }
+            // Every resource carries the tag a selection backs up by, so a
+            // selection leaves the bucket out by name.
+            for (const [id, selection] of selections) {
+              const notResources = isRecord(selection.Properties?.['BackupSelection'])
+                ? selection.Properties['BackupSelection']['NotResources']
+                : undefined;
+              expect(
+                refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
+                `${name}/${id} selects ${balancerId}'s log bucket ${bucket['Ref']}`,
+              ).toBe(true);
+            }
+          }
         }
       });
     });

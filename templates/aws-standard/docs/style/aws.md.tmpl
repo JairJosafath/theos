@@ -126,9 +126,13 @@ says why each rule matters.
   longest request: ECS stops a task only after the load balancer has
   drained it. [review]
 - Alarms on its own 5xx (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx
-  (`HTTPCode_Target_5XX_Count`), their p99 latency (`TargetResponseTime`)
-  and unhealthy targets (`UnHealthyHostCount`), from the stack's `Alarms`.
-  [test: the alarms and topic]
+  (`HTTPCode_Target_5XX_Count`), each also as a share of `RequestCount`,
+  their p99 latency (`TargetResponseTime`) and unhealthy targets
+  (`UnHealthyHostCount`), from the stack's `Alarms`. [test: the alarms and
+  topic]
+- Its access-log bucket carries the Container's tag like every resource,
+  and the backup plan leaves it out (`Backups`' `exclude`): logs, not
+  data. [test: the backup plan and vault]
 
 ## The task and the service in the stack
 
@@ -139,8 +143,11 @@ says why each rule matters.
 - The `Dockerfile` pins the Node major (`node:24-alpine`), builds with
   `npm ci` and esbuild, and runs the bundle alone as the `node` user. [review]
 - `arm64` (Graviton): cheaper per vCPU-hour and lower energy. [review]
-- CPU and memory set for the work; a read-only root file system; a stop
-  timeout that lets requests in flight finish. [review]
+- CPU and memory set for the work, the app's the same in every tier: a
+  container beside it where the tier runs one, such as the collector, adds
+  its own share to the task, with a hard memory limit so it never takes the
+  app's. A read-only root file system; a stop timeout that lets requests in
+  flight finish. [review]
 - The task role is granted only what the code calls; the execution role
   only what CDK grants it to pull the image and write logs. No AWS managed
   policies. [nag: AwsSolutions-IAM4]
@@ -158,7 +165,8 @@ says why each rule matters.
   circuit breaker and rollback, and scales between bounds the issue's load
   sets. [review]
 - A deployment also rolls back on its alarms (`enableDeploymentAlarms` with
-  `AlarmBehavior.ROLLBACK_ON_ALARM`): the 5xx and unhealthy-target ones,
+  `AlarmBehavior.ROLLBACK_ON_ALARM`): the share of 5xx over a few percent
+  for minutes, never a single 5xx, and unhealthy targets by the minute,
   named in `DEPLOYMENT_ALARMS` by their names, never by a reference to the
   alarm, whose metric names the service, so the two would depend on each
   other. `cdk.json`'s `removeDefaultDeploymentAlarm` only governs a service
