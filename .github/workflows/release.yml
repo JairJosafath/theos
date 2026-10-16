@@ -15,6 +15,10 @@ name: Release
 # The tag must be dist/chart/Chart.yaml's version and the release
 # docs/getting-started.md installs, or nothing is built (hack/release.sh
 # --check); hack/release.sh X.Y.Z bumps both, merges and tags.
+# A published minor (vX.Y.0) then dispatches Verify Release on main with its
+# tag (#1105): it installs the release on Kind and upgrades to it from the
+# previous one, and a failure files "Release vX.Y.Z fails its check". A patch
+# isn't checked: it ships a fix within the hour on the path its minor checked.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
@@ -24,6 +28,7 @@ permissions: {}
 jobs:
   release:
     permissions:
+      actions: write
       contents: write
       packages: write
     name: Build and publish
@@ -128,3 +133,14 @@ jobs:
           cat notes.md
           gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+
+      # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.
+      # The run is on main: only a dispatch on main files the failure issue.
+      - name: Dispatch Verify Release
+        if: env.PUBLISH == 'true' && endsWith(github.ref_name, '.0')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN: ${{ github.event.repository.default_branch }}
+        run: |
+          gh workflow run verify-release.yml --repo "$GITHUB_REPOSITORY" --ref "$MAIN" -f tag="$GITHUB_REF_NAME"
+          echo "Verify Release checks $GITHUB_REF_NAME: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/verify-release.yml" >>"$GITHUB_STEP_SUMMARY"
