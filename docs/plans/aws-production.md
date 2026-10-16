@@ -548,6 +548,41 @@ What it settled, which steps 8, 10 and 11 can reuse:
   rate limit per address. In development `AwsSolutions-CFR2` is
   acknowledged, since a firewall costs a monthly fee per stack.
 
+### Step 10, as built
+
+`aws-schedule-ts` v1.0.0, a `job` Framework under `aws-standard` v1.10.0
+(`docs/screenshots/1115-aws-schedule-ts-check.txt` has the evidence). What
+it settled, which step 11 can copy:
+
+- **Two levels of retry, one dead-letter queue.** The Scheduler invokes the
+  function asynchronously, so its retry policy (10 attempts within an hour)
+  covers only handing the run to Lambda; a run that throws is retried by
+  Lambda's own `EventInvokeConfig` (twice within an hour). The schedule
+  target's `DeadLetterConfig` and the function's both name the one queue.
+  No redrive policy names it, so `AwsSolutions-SQS3` is acknowledged.
+- **The scheduled time is the run's key.** The target's input is
+  `{"scheduledTime": <aws.scheduler.scheduled-time>, "attemptNumber":
+  <aws.scheduler.attempt-number>}`, and Powertools' Idempotency is keyed by
+  `scheduledTime`, which every retry of a run, at either level, keeps.
+- **The schedule's role is the stack's own.** `LambdaInvoke` would make one
+  granting `lambda:InvokeFunction` on `<arn>` and `<arn>:*`; the stack's
+  role grants the function's ARN only, and `sqs:SendMessage` on the
+  dead-letter queue, and only `scheduler.amazonaws.com` for this account
+  and this schedule group may assume it. The target gets it
+  `withoutPolicyUpdates()`.
+- **A schedule group per stack.** The Scheduler's metrics are per group,
+  so the stack's schedule is in its own; its alarms are
+  `InvocationDroppedCount` and `InvocationsFailedToBeSentToDeadLetterCount`,
+  a run lost. CDK names the group at synth, so the Standard's
+  `refersTo` also matches a resource's literal `Name`.
+- **Three Standard rules, per resource type:** `AWS::Scheduler::ScheduleGroup`
+  joins `ALARMED_METRICS`; a dead-letter queue is any queue a
+  `RedrivePolicy`, `DeadLetterConfig` or `OnFailure` names (step 11's rule
+  target gets the depth alarm without a change); every schedule has a
+  retry policy, a dead-letter queue and a group of its stack.
+- **Outputs:** `EntryPoint` is the schedule's ARN; `FunctionName` is added,
+  which a person invokes to run a dead-lettered run again.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`

@@ -1,0 +1,45 @@
+{
+  "name": "{{ .Container }}",
+  "description": "The {{ .Container }} scheduled job of {{ .SoftwareSystem }}.",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint --max-warnings 0 .",
+    "format": "prettier --write .",
+    "synth": "cdk synth --quiet"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/idempotency": "2.36.0",
+    "@aws-lambda-powertools/logger": "2.36.0",
+    "@aws-lambda-powertools/metrics": "2.36.0",
+    "@aws-sdk/client-dynamodb": "3.1150.0",
+    "@aws-sdk/lib-dynamodb": "3.1150.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/aws-lambda": "8.10.164",
+    "@types/node": "24.19.1",
+    "aws-cdk": "2.1145.0",
+    "aws-cdk-lib": "2.273.0",
+    "cdk-monitoring-constructs": "10.3.2",
+    "cdk-nag": "3.0.2",
+    "constructs": "10.8.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.11.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.3"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}
