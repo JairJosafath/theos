@@ -36,18 +36,22 @@ gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 One install is one trust domain: run it on a device you own, for people you
 would hand the Claude token to, and never on a shared or production cluster.
 Anyone who can create a Project or a Brief in the cluster, the UI's users
-included, can have the factory run code that holds the Claude token and
-reaches the cluster network, through an agent's sandbox or a CI job. Two
+included, can have the factory run code: in an agent's sandbox, which holds
+the Claude token, and in a CI job, on a runner every project shares. Two
 gaps make that so, and two issues close them:
 
 - **The Claude token is readable inside an agent's sandbox.** The agent's
   code can read it and send it anywhere public HTTPS reaches. An egress proxy
   that adds the token to the agent's requests, so the sandbox never holds it,
   closes this ([#1075](https://github.com/JairJosafath/c4factory/issues/1075)).
-- **The Gitea CI runners run the agents' code on the cluster network.** They
-  run every project's checks in host mode, sharing the runner's own files, and
-  no NetworkPolicy fences them. A fresh environment per job with no cluster
-  network beyond what a check needs closes this
+- **The Gitea CI runners share one environment between jobs.** A
+  NetworkPolicy keeps their jobs to DNS, Gitea and public HTTPS (on a
+  network plugin that enforces them, which the agents' fence needs too), and the
+  runner registration token stays out of a job's reach, but each label's
+  runner runs every project's checks, and the releases, one after another in
+  host mode: a job can leave a process or a file for the next one, act with
+  the runner's own token and write the shared Go build cache. A fresh pod per
+  job, in a runner pool per project, closes this
   ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)).
 
 ## 1. Install the factory
