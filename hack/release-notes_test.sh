@@ -21,7 +21,7 @@ check "drafts from a fixture" $? 0
 
 check "sections in Keep a Changelog order" "$(grep '^### ' "$T/out" | tr '\n' ' ')" "### Added ### Changed ### Fixed ### Security "
 check "feat: Added, without the prefix; a title with none takes the branch's type" \
-  "$(section Added)" "$(printf -- '- a Brief kind (#1)\n- Briefs step 2: the planner (#2)')"
+  "$(section Added)" "$(printf -- '- a Brief kind (#1)\n- Briefs step 2: the planner (#2)\n- AWS: the Go Lambda Framework aws-lambda-go (#15)')"
 check "fix: Fixed" "$(section Fixed)" "- the UI keeps its session (#3)"
 check "breaking (! or BREAKING CHANGE) and other types: Changed" "$(section Changed)" \
   "$(printf -- '- **Breaking:** Containers name their System (#4)\n- **Breaking:** one reconcile loop (#5)\n- cache the templates (#8)')"
@@ -30,6 +30,10 @@ check "a security label or title: Security" "$(section Security)" \
 for n in 9 10 11 12; do hasnt "chore, ci, test and docs are left out (#$n)" "(#$n)"; done
 hasnt "only hack/, .claude/, .relay/ and docs/dev/: left out" "(#13)"
 hasnt "a security fix to hack/ only: left out" "(#14)"
+has "an AWS: title on a feat/ branch: Added, the title whole (#1270)" "- AWS: the Go Lambda Framework aws-lambda-go (#15)"
+hasnt "an Envtest: title on a chore/ branch: left out (#1270)" "(#16)"
+hasnt "a plan touching only docs/plans/ on a feat/ branch: left out (#1270)" "(#17)"
+hasnt "a plan touching the design, architecture, AGENTS.md and evidence too: left out (#1270)" "(#18)"
 has "the image list ends it" 'Images: `ghcr.io/o/c4factory/<name>:1.2.0` for operator, ui, seed, the toolchains'
 has "the install command names the version" "helm install c4-factory oci://ghcr.io/o/c4factory/charts/c4-factory --version 1.2.0 \\"
 has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/c4factory/blob/v1.2.0/docs/getting-started.md)"
@@ -62,7 +66,7 @@ for f in "$T/release-notes" docs/getting-started.md dist/chart/README.md dist/ch
   check "the leader-election patch follows sandbox.yaml in ${f##*/}" "$got" yes
 done
 
-grep -E '"number":(9|10|11|12|13|14),' "$HACK/testdata/release-notes-prs.jsonl" >"$T/none.jsonl"
+grep -E '"number":(9|10|11|12|13|14|16|17|18),' "$HACK/testdata/release-notes-prs.jsonl" >"$T/none.jsonl"
 VERSION=1.2.0 "$NOTES" --prs "$T/none.jsonl" v1.1.0 >"$T/out" 2>&1
 check "a range with nothing to list: drafts" $? 0
 check "  no sections" "$(grep -c '^### ' "$T/out")" 0
