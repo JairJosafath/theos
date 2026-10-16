@@ -61,10 +61,18 @@ CloudFormation offline.
   `AwsSolutions-IAM4`). The stack outputs `EntryPoint` (the API's URL) and
   `AlarmTopicArn`. `infra/api_stack.test.ts` asserts it with
   `Template.fromStack` for both tiers.
+- **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
+  `DATA_STORES`: one entry per Connector of a DataStore the Container's
+  Relationships name that this Framework knows (`dynamodb`, whose
+  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  stack calls each entry with the function and the tier's `TIER_RULES`, so the
+  Connector makes its table, grants the function its calls and hands it the
+  table's name; the stack alarms on the table like its own, and the backup
+  plan selects it by the stack's tag.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
   `infra/api_stack.ts`, `infra/api_stack.test.ts`, `infra/alarms.ts`,
-  `infra/backups.ts`, `infra/operations.ts`, `README.md`, `CHANGELOG.md`,
+  `infra/backups.ts`, `infra/operations.ts`, `infra/connectors.ts`, `README.md`, `CHANGELOG.md`,
   `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients and
