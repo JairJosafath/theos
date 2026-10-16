@@ -232,6 +232,59 @@ spec:
                 required:
                 - name
                 type: object
+              routes:
+                description: |-
+                  routes send the issues with a label to other Agents than implementer and
+                  reviewer, such as kind/docs to a cheaper model or a security label to a
+                  stronger reviewer. For each role, the first route in the list whose label
+                  the issue has and that names an Agent for the role decides; with none,
+                  the Crew's own Agent takes it. The labels are read as the Task starts,
+                  and its agentRef and reviewerRef name the Agents it got.
+                items:
+                  description: CrewRoute sends a Crew's issues with a label to other
+                    Agents.
+                  properties:
+                    implementer:
+                      description: implementer names the Agent that implements an
+                        issue with the label.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    label:
+                      description: label is an issue label, such as kind/docs, matched
+                        exactly.
+                      maxLength: 100
+                      minLength: 1
+                      type: string
+                    reviewer:
+                      description: reviewer names the Agent that reviews an issue
+                        with the label.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - label
+                  type: object
+                  x-kubernetes-validations:
+                  - message: a route names an implementer, a reviewer or both
+                    rule: has(self.implementer) || has(self.reviewer)
+                maxItems: 20
+                type: array
+                x-kubernetes-list-map-keys:
+                - label
+                x-kubernetes-list-type: map
               tagReleases:
                 description: |-
                   tagReleases lets the Crew tag a release once it is done: a milestone with a

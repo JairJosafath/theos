@@ -169,10 +169,15 @@ export interface AgentRole {
 }
 
 /** The Agent a reference names, in the namespace of the object that refers to it. */
-export function agentRole(agents: Agent[], namespace: string | undefined, name: string): AgentRole {
-  const agent = agents.find(
+export function findAgent(agents: Agent[], namespace: string | undefined, name: string): Agent | undefined {
+  return agents.find(
     (a) => a.metadata.name === name && (!namespace || !a.metadata.namespace || a.metadata.namespace === namespace),
   )
+}
+
+/** The Agent a reference names, as the views show it. */
+export function agentRole(agents: Agent[], namespace: string | undefined, name: string): AgentRole {
+  const agent = findAgent(agents, namespace, name)
   if (!agent) return { name, title: name, found: false }
   const model = agent.spec.model?.trim() || (agent.spec.harness === 'stand-in' ? 'stand-in' : undefined)
   return { name, title: agent.spec.displayName?.trim() || name, model, found: true }
@@ -275,7 +280,7 @@ export interface FactoryStats {
   withTimeline: number
 }
 
-function median(values: number[]): number | undefined {
+export function median(values: number[]): number | undefined {
   if (!values.length) return undefined
   const sorted = [...values].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
