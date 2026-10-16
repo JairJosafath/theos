@@ -124,6 +124,15 @@ for c in unset none; do
   check "prompt, C4_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
 done
 
+# A follow-up (#1284): fixed in the pull request when it is already there,
+# filed --next when decided, proposed when it needs a decision; a session on
+# a --next issue is told where it came from.
+out=$(prompt 1 t u ready n b)
+check "prompt: a small follow-up goes in the pull request" "$(grep -c 'Also fixes:' <<<"$out")" 1
+check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.sh create --next TITLE FILE' <<<"$out")" 1
+check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
+check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
+
 # A session escalates to the maintainer, never to the user.
 out=$(prompt 1 t u ready n b)
 check "prompt: escalates with needs-maintainer" "$(grep -c 'hack/lib/github.sh status 1 needs-maintainer' <<<"$out")" 1
@@ -388,6 +397,7 @@ check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
+check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 no_strikes
 
 # Each session's TMPDIR is its worktree's .dev/tmp, not the device's shared
@@ -412,7 +422,10 @@ check "fails: not yet the maintainer's" "$(cat "$T/status" 2>/dev/null)" ""
 grep -q "^\*\*Strike:\*\* session .* exit 0 after 0m" "$T/comment"; check "fails: a strike names its session" $? 0
 check "fails: a strike has its stderr and account" "$(grep -c '^boom \|^gave up$' "$T/comment")" 2
 echo handoff >"$FAKE"
+pick() { ISSUE=175 TITLE=t URL=u HOW=next; }
 work
+pick() { ISSUE=175 TITLE=t URL=u HOW=ready; }
+check "next: the log names the issue a --next reserved (#1284)" "$(grep -c 'session 1 start: id .*, otter-175 on #175 (next) t' "$LOG")" 1
 check "fails: a handoff resets" "$(counted)" 0
 check "fails: the reset is a comment" "$(head -1 "$T/comment")" "$STRIKE_RESET_MARKER"
 echo fail >"$FAKE"
