@@ -96,7 +96,8 @@
 #                                        wait for the merge turn (one pull request at a time, across every device,
 #                                        first come first served) and merge PR at once when origin/main is still what
 #                                        was checked, else merge it in and check again under the turn (at most
-#                                        GH_LAND_RECHECKS times); give the turn up, merged or not (a conflict or a
+#                                        GH_LAND_RECHECKS times; that check takes the device's next free heavy-job
+#                                        slot ahead of the waiters); give the turn up, merged or not (a conflict or a
 #                                        red check is said; make check's output, the path taken and how long the turn
 #                                        was held are kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
@@ -2215,7 +2216,9 @@ gh_land_fetch() {
 
 # gh_land_sync PR BASE BRANCH [ID]: merge origin/BASE (as fetched) into BRANCH,
 # run make check, push, and wait until GitHub shows the push. With ID, the
-# merge-turn comment ID is heartbeaten while make check runs.
+# merge-turn comment ID is heartbeaten while make check runs, and make check
+# goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
+# device's lands wait on it, and only the turn's one holder may.
 gh_land_sync() {
   local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s
   if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
@@ -2236,7 +2239,7 @@ gh_land_sync() {
     ) >/dev/null 2>&1 &
     GH_LAND_BEATER=$!
   fi
-  "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
+  C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
   rc=$?
   if [ -n "$GH_LAND_BEATER" ]; then
     kill "$GH_LAND_BEATER" 2>/dev/null

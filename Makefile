@@ -77,7 +77,9 @@ vet: ## Run go vet against code.
 
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
-# held while this make runs; its sub-makes don't take another.
+# held while this make runs; its sub-makes don't take another. With
+# C4_HEAVY_FIRST set (land's make check under the merge turn, #1290) it takes
+# the next free slot ahead of the waiters; the recipes don't inherit it.
 # A plain `make check` on a tree that already passed on this device, in any
 # checkout, is answered from the cache (hack/check-cache.sh) without a slot;
 # FORCE=1 runs it anyway.
@@ -87,10 +89,11 @@ endif
 HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
-$(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
+$(shell hack/heavy-slot.sh acquire $(if $(C4_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
 export C4_HEAVY_SLOT := 1
 endif
 endif
+unexport C4_HEAVY_FIRST
 
 # TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
 # envtest suite, whose specs run one after another: 286 specs in 557 s on the CI
