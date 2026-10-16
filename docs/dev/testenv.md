@@ -856,8 +856,35 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
-  On a miss, Go's test cache (above) still answers each unchanged package: a
-  `hack/`-only change reruns the other tiers, not the envtest suites.
+  On a miss, Go's test cache (above) still answers each unchanged package,
+  and three tiers answer from their own cache (#1285): `validate-yaml`,
+  `test-hack` and `ui-test` each run through `hack/check-cache.sh run TIER`,
+  which skips a tier whose key passed on this device, in any checkout, and
+  says so in one line (`ui-test: cached (ui/ unchanged since <time>, passed
+  in <checkout>); FORCE=1 to rerun`). A key is the hash of `git ls-files -s`
+  over the files the tier reads, in the working state after `manifests`,
+  `generate` and `fmt`, and the versions of the tools the Makefile doesn't
+  pin; every key covers the Makefile, `hack/*.mk` and `hack/check-cache.sh`,
+  whose pins and rules the tier runs by:
+  - `ui-test`: `ui/`, `node --version` and `npm --version`.
+  - `test-hack`: everything but `api/`, `cmd/`, `internal/`, `templates/`,
+    `test/`, `features/`, `docs/` and `ui/`, since the shell tests read the
+    Makefile, the chart, `config/`, `.claude/` and `.github/` as well as
+    `hack/`; plus the files there they read (`docs/getting-started.md`,
+    `docs/dev/testenv.md`, `ui/Dockerfile`, `ui/package.json`,
+    `ui/package-lock.json`), and the bash and git versions.
+  - `validate-yaml`: `config/`, `dist/`, `api/`, `templates/`,
+    `test/e2e/testdata`, `test/crds`, `test/invalid`, its scripts
+    (`hack/validate-yaml.sh`, `hack/chart-*.sh`, `hack/k8s-openapi.sh`), the
+    seed and session manifests, `go.mod`, `go.sum`, the module's packages
+    `go run ./hack/render` and `./hack/runner-fence` build (`go list -deps`),
+    and `go version`.
+
+  `lint` keeps golangci-lint's own cache. Tier passes live in
+  `.dev/cache/c4factory/checks/tiers/<tier>-<key>`; a failing tier records
+  nothing, `FORCE=1` runs every tier, and a dry run (`make -n check`)
+  records nothing. So a `hack/`-only change runs the shell tests and skips
+  the UI's check and `validate-yaml`; one under `ui/` runs only the UI's check.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
   before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
   `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
@@ -879,7 +906,10 @@ held one while the others keep their order, and the Makefile queueing its
 heavy goals, going first only with `C4_HEAVY_FIRST`, which its recipes don't
 inherit. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
-on one changed byte (tracked or untracked), and `FORCE=1` queueing again.
+on one changed byte (tracked or untracked), and `FORCE=1` queueing again; and
+the tiers: which keys a change under `ui/`, `hack/`, `config/`, `docs/` or a
+package `hack/render` builds moves, a hit that doesn't run the tier, `FORCE=1`
+and a failure that do, and the Makefile's cached and dry-run paths.
 
 ### Disk space on WSL
 

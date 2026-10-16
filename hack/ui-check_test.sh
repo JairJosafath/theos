@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tests that make check runs the UI's check (#1006): check depends on ui-test,
+# through the tier cache (check-tier-ui-test, #1285),
 # and ui-test runs npm run check in ui/ and fails when it fails, a Prettier
 # violation among them. npm is a fake that records its calls, so the test needs
 # neither Node nor the network.
@@ -15,7 +16,7 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 # The rule make check has, from make's database; help is only asked about
 # (-q), so nothing runs.
 rule=$(make -pq help 2>/dev/null | grep -m1 '^check:')
-[[ " $rule " == *" ui-test "* ]]; check "check depends on ui-test" $? 0
+[[ " $rule " == *" check-tier-ui-test "* ]]; check "check depends on ui-test, through the tier cache" $? 0
 
 # A fake npm: logs where it ran and with what, makes node_modules on npm ci,
 # and fails as npm run check does on a file Prettier would rewrite.

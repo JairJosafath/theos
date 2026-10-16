@@ -196,10 +196,19 @@ test-e2e: e2e ## Same as e2e.
 # part of it: the UI workflow runs only after a merge to main, so nothing else
 # before a merge would see a UI change break it (#1006). ./dev setup installs
 # Node on every device, a lite one too.
+# validate-yaml, test-hack and ui-test each run only when their own inputs
+# changed since they last passed on this device (hack/check-cache.sh run, #1285;
+# docs/dev/testenv.md says what each key covers); FORCE=1 runs them anyway. The
+# key is taken after manifests, generate and fmt, so the tier's sub-make skips
+# manifests. A dry run (make -n) still runs a recipe line with $(MAKE) in it,
+# so it goes straight to the tier and records nothing.
 CHECK_UI := $(if $(wildcard ui/package.json),ui-test)
+CHECK_TIERS := validate-yaml test-hack $(CHECK_UI)
+check-tier-%: manifests generate fmt
+	@$(if $(findstring n,$(firstword -$(MAKEFLAGS))),,hack/check-cache.sh run $* )$(MAKE) --no-print-directory -o manifests $*
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet lint validate-yaml test-hack $(CHECK_UI) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
+check: manifests generate fmt vet lint $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
 	@git diff --quiet -- config/crd config/rbac api || \
 		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
 	@hack/check-cache.sh record
