@@ -16,6 +16,7 @@ aws-ec2-ts v1.0.0
 aws-fargate-ts v1.0.0
 aws-lambda-go v1.0.0
 aws-lambda-py v1.0.0
+aws-queue-ts v1.0.0
 aws-standard v1.6.0
 python-standard v1.3.0
 gitea-release v1.2.0

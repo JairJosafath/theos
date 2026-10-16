@@ -46,6 +46,7 @@ var awsFrameworks = []side{
 	{model.TypeService, "aws-ec2-ts"},
 	{model.TypeService, "aws-fargate-ts"},
 	{model.TypeFunction, "aws-lambda-py"},
+	{model.TypeWorker, "aws-queue-ts"},
 }
 
 func TestAWSStandardKeepsTSStandardsSharedFiles(t *testing.T) {
@@ -262,6 +263,8 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		{"aws-ec2-ts", []string{"esbuild"}, []string{"go build"}},
 		{"aws-fargate-ts", nil, []string{"go build", "bootstrap"}},
 		{"aws-lambda-py", []string{"uv.lock", "module scope"}, []string{"esbuild", "go build", "bootstrap"}},
+		{"aws-queue-ts", []string{"esbuild", "module scope", "dead-letter queue", "ReportBatchItemFailures"},
+			[]string{"go build", "bootstrap", "API Gateway"}},
 	}
 	types := map[string]string{}
 	for _, f := range awsFrameworks {
