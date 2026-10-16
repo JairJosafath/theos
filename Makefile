@@ -111,8 +111,14 @@ ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
 	ETCD_ELECTION_TIMEOUT=$(ENVTEST_ETCD_ELECTION_TIMEOUT) ETCD_HEARTBEAT_INTERVAL=$(ENVTEST_ETCD_HEARTBEAT_INTERVAL)
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest install-helm ## Run tests.
-	$(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') -timeout $(TEST_TIMEOUT) -coverprofile cover.out
+# make test tests only the packages the change since origin/main can affect,
+# and every package on main, after a change to go.mod, hack/, config/, api/ and
+# the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
+# and why. cover.out covers the packages that ran, and is empty when none did.
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package).
+	@pkgs="$$(hack/test-packages.sh)" || exit; \
+	if [ -z "$$pkgs" ]; then echo 'mode: set' >cover.out; exit 0; fi; \
+	set -x; $(ENVTEST_ENV) HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$pkgs -timeout $(TEST_TIMEOUT) -coverprofile cover.out
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
