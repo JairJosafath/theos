@@ -186,6 +186,73 @@ func TestStandInReleasesOnTheChartsCatalog(t *testing.T) {
 	}
 }
 
+// TestVerifyReleaseMakesNoSharedPullSecret holds Verify Release to
+// docs/getting-started.md's "Registry login and the pull secret": a project
+// needs no pull secret of its own, the operator copies the chart's into it.
+// No step makes a pull secret of the installed values in a project namespace,
+// for loops included; one that did failed v0.24.0's check once the
+// operator's copy was there first (#1271).
+func TestVerifyReleaseMakesNoSharedPullSecret(t *testing.T) {
+	root := filepath.Join("..", "..")
+	workflow := readFile(t, root, ".github", "workflows", "verify-release.yml")
+	install := workflowStep(t, workflow, "verify-release", "Install the chart")
+	_, values, ok := strings.Cut(install.Run, "<<'EOF'\n")
+	if ok {
+		values, _, ok = strings.Cut(values, "\nEOF")
+	}
+	if !ok {
+		t.Fatalf("step %q writes no values with <<'EOF'", install.Name)
+	}
+	var v struct {
+		Gitea struct {
+			Projects []string `yaml:"projects"`
+		} `yaml:"gitea"`
+		Global struct {
+			ImagePullSecrets []struct {
+				Name string `yaml:"name"`
+			} `yaml:"imagePullSecrets"`
+		} `yaml:"global"`
+	}
+	if err := yaml.Unmarshal([]byte(values), &v); err != nil {
+		t.Fatal(err)
+	}
+	secrets := make([]string, 0, len(v.Global.ImagePullSecrets))
+	for _, s := range v.Global.ImagePullSecrets {
+		secrets = append(secrets, s.Name)
+	}
+	if len(v.Gitea.Projects) == 0 || len(secrets) == 0 {
+		t.Fatalf("step %q's values name no projects or no global.imagePullSecrets", install.Name)
+	}
+
+	forLoop := regexp.MustCompile(`\bfor (\w+) in ([^;]*); do`)
+	namespace := regexp.MustCompile(`(?:-n|--namespace)[ =](\S+)`)
+	createSecret := regexp.MustCompile(`\$KUBECTL\b.*\bcreate secret \S+ (\S+)`)
+	for _, step := range workflowSteps(t, workflow, "verify-release") {
+		loops := map[string][]string{}
+		for line := range strings.SplitSeq(strings.ReplaceAll(step.Run, "\\\n", " "), "\n") {
+			if m := forLoop.FindStringSubmatch(line); m != nil {
+				loops[m[1]] = strings.Fields(m[2])
+			}
+			m := createSecret.FindStringSubmatch(line)
+			n := namespace.FindStringSubmatch(line)
+			if m == nil || n == nil || !slices.Contains(secrets, strings.Trim(m[1], `"'`)) {
+				continue
+			}
+			ns := strings.Trim(n[1], `"'`)
+			namespaces := []string{ns}
+			if name, isVar := strings.CutPrefix(ns, "$"); isVar {
+				namespaces = loops[strings.Trim(name, "{}")]
+			}
+			for _, ns := range namespaces {
+				if slices.Contains(v.Gitea.Projects, ns) {
+					t.Errorf("step %q makes pull secret %s in project namespace %s; the operator copies it there: %s",
+						step.Name, m[1], ns, strings.TrimSpace(line))
+				}
+			}
+		}
+	}
+}
+
 // curlWrite is a curl that sends something.
 var curlWrite = regexp.MustCompile(`\bcurl\b.*\s` +
 	`(-X\S*|--request|-d\S*|--data\S*|-F\S*|--form\S*|-T\S*|--upload-file)(\s|$)`)
@@ -264,6 +331,18 @@ type workflowStepYAML struct {
 // workflowStep is the step named name of the workflow's job.
 func workflowStep(t *testing.T, workflow, job, name string) workflowStepYAML {
 	t.Helper()
+	for _, s := range workflowSteps(t, workflow, job) {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("job %s has no step %q", job, name)
+	return workflowStepYAML{}
+}
+
+// workflowSteps are the steps of the workflow's job.
+func workflowSteps(t *testing.T, workflow, job string) []workflowStepYAML {
+	t.Helper()
 	var w struct {
 		Jobs map[string]struct {
 			Steps []workflowStepYAML `yaml:"steps"`
@@ -272,13 +351,10 @@ func workflowStep(t *testing.T, workflow, job, name string) workflowStepYAML {
 	if err := yaml.Unmarshal([]byte(workflow), &w); err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range w.Jobs[job].Steps {
-		if s.Name == name {
-			return s
-		}
+	if len(w.Jobs[job].Steps) == 0 {
+		t.Fatalf("workflow has no job %s", job)
 	}
-	t.Fatalf("job %s has no step %q", job, name)
-	return workflowStepYAML{}
+	return w.Jobs[job].Steps
 }
 
 func readFile(t *testing.T, root string, path ...string) string {

@@ -291,6 +291,11 @@ holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
 (`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
+Each session, the triage's and the maintainer's too, gets
+`TMPDIR=<its worktree>/.dev/tmp` (#1269), on disk and gitignored, not the
+device's `/tmp`, a small tmpfs every session shares, which one session's
+scratch, Go's build dirs and envtest's once filled: the relay empties it before
+the session starts and removes it when the session ends.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -450,6 +455,13 @@ long removes both lines. `make gh-runner-status` says why (below). A run
 GitHub made no jobs for stays queued for good, and GitHub won't cancel it
 (#1236): no runner can take it, so the watch logs it once, by id
 (`.relay/runs-without-jobs`), and never notes it.
+In the same round, when `/tmp` on the device is at least `WATCH_TMP_FULL`
+percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
+naming its three largest entries, under the Maintainer report's Health only,
+with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
+`.relay/tmp-full` holds the note while it lasts; the first round under the
+threshold removes it. Relay sessions keep their scratch in their worktree's
+`.dev/tmp`, so what fills `/tmp` is someone else's.
 With nothing ready, it also logs, once per change, which skipped issue waits on
 which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
 alone lists every skipped issue's blockers, with status and claim), and when

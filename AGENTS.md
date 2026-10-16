@@ -221,5 +221,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
+- **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
+  device shares; one session's copies and caches filled it and failed every
+  `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the
+  relay points it at your worktree's `.dev/tmp` and removes it after the
+  session), never a literal `/tmp/...` path, and remove it before you land.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

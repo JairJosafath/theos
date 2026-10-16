@@ -18,8 +18,8 @@ name: Verify Release
 # wait for the seed's repositories, both runners, the manager and the UI, then
 # apply the installed release's own webshop sample and wait for orders-api's
 # repository. Then they follow docs/getting-started.md for the first app: the
-# `ghcr` pull Secret in webshop and its `default` ServiceAccount patch (proved
-# by pulling agent-go through it), and config/samples/first-app (on the chart's
+# operator's copy of the `ghcr` pull Secret in webshop (proved by pulling
+# agent-go through it), and config/samples/first-app (on the chart's
 # catalog and Agents; an older tag's samples pinned to the release: the
 # agent-go tag and the template refs from its templates/versions.txt), until
 # orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI has no
@@ -326,21 +326,24 @@ jobs:
           curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/webshop/orders-api/contents" |
             jq -r '.[].path'
 
-      # docs/getting-started.md, "Registry login and the pull secret": the
-      # agents' pods run as the project's default ServiceAccount. A pod with
+      # docs/getting-started.md, "Registry login and the pull secret": a
+      # project needs no pull secret of its own. The operator copies `ghcr`
+      # into webshop, labeled c4.factory.io/shared-secrets=true by the chart,
+      # and names it in the agents' pods (#1271). A pod naming it with
       # imagePullPolicy Always proves it pulls agent-go from GHCR, though Kind
       # has the image loaded.
       - name: "Getting started: the project's pull secret"
         if: env.GUIDE == 'run'
-        env:
-          TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
         run: |
-          $KUBECTL -n webshop create secret docker-registry ghcr --docker-server=ghcr.io \
-            --docker-username="$ACTOR" --docker-password="$TOKEN"
-          $KUBECTL -n webshop patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr"}]}'
+          for i in $(seq 1 60); do
+            $KUBECTL -n webshop get secret ghcr >/dev/null 2>&1 && break
+            sleep 5
+          done
+          $KUBECTL -n webshop get project webshop \
+            -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}{"\n"}' || true
+          $KUBECTL -n webshop get secret ghcr
           $KUBECTL -n webshop run pull-check --image="$REGISTRY/agent-go:$FROM_VERSION" --image-pull-policy=Always \
-            --restart=Never --command -- true
+            --overrides='{"spec":{"imagePullSecrets":[{"name":"ghcr"}]}}' --restart=Never --command -- true
           $KUBECTL -n webshop wait pod/pull-check --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m ||
             { $KUBECTL -n webshop describe pod pull-check | tail -20; exit 1; }
           $KUBECTL -n webshop delete pod pull-check
@@ -681,7 +684,7 @@ jobs:
             echo
             if [ "$GUIDE" = run ]; then
               echo "The guide's first app, from \`$SAMPLES\` of $SAMPLES_REF set to $FROM_VERSION," \
-                "through the \`ghcr\` pull Secret on ServiceAccount \`webshop/default\`." \
+                "through the operator's copy of the \`ghcr\` pull Secret in \`webshop\`." \
                 "The Agent isn't run: CI has no Claude token, so the check stops before a Task."
               echo; echo '```'; cat first-app.txt; echo '```'
               if [ -s first-app.diff ]; then
