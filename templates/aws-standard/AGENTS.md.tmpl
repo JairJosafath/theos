@@ -1,8 +1,9 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks, aws-fargate-ts, aws-queue-ts and aws-schedule-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
+     aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
@@ -324,7 +325,8 @@ too; `npm run dev` serves it on your machine.{{ end }}
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keep what `infra/operations.ts` promises: data
     kept, protected and backed up in production; every {{ if eq .Framework "aws-fargate-ts" }}load balancer,
-    target group, service and table{{ else }}function, table and
+    target group, service and table{{ else if eq .Framework "aws-ec2-ts" }}load balancer,
+    target group, Auto Scaling group and table{{ else }}function, table and
     {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
     `EntryPoint` and `AlarmTopicArn` outputs. `infra/standard.test.ts` checks
     both tiers. Nothing at synth reads a context value but `tier`, or an

@@ -12,7 +12,7 @@ node-cli v1.0.0
 python-cli v1.0.0
 ts-standard v1.5.0
 aws-lambda-ts v1.1.0
-aws-ec2-ts v1.0.0
+aws-ec2-ts v1.1.0
 aws-fargate-ts v1.1.0
 aws-lambda-go v1.1.0
 aws-lambda-py v1.1.0

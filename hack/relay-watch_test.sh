@@ -908,13 +908,21 @@ notes() { cat "$T/notes" 2>/dev/null; }
 # queued AGE...: the runs queued on main, 701 on, created AGE ago each and
 # each with a job queued, beside one in progress. nojobs RUN: GitHub made no
 # jobs for RUN. runners ON OFF: the repository's runners online and offline.
+# ago AGE FORMAT: the instant AGE before the last queued, so a minute boundary
+# between it and the runs' createdAt can't split them (#1365).
+ago() {
+  local t
+  t=$(TZ=UTC date -d "$(TZ=UTC date -d "@$QUEUED_AT" '+%F %T') $1 ago" +%s)
+  date -d "@$t" "$2"
+}
 queued() {
   local a i=0
+  QUEUED_AT=$(date +%s)
   rm -f "$T"/jobs-7*.json
   for a in "$@"; do
     i=$((i + 1))
     echo '{"jobs":[{"databaseId":1,"name":"Run on Ubuntu","status":"queued","steps":[]}]}' >"$T/jobs-$((700 + i)).json"
-    jq -n --argjson id "$((700 + i))" --arg at "$(date -u -d "$a ago" +%Y-%m-%dT%H:%M:%SZ)" \
+    jq -n --argjson id "$((700 + i))" --arg at "$(TZ=UTC ago "$a" +%Y-%m-%dT%H:%M:%SZ)" \
       '{databaseId: $id, status: "queued", createdAt: $at}'
   done | jq -s '. + [{databaseId: 1, status: "in_progress", createdAt: "2026-10-01T00:00:00Z"}]' >"$T/runs-.json"
 }
@@ -930,7 +938,7 @@ queued '10 minutes'
 runner_round
 check "runners: queued 10 minutes says nothing" "$(notes)|$(cat "$LOG")|$(ls "$DIR/runners-offline" 2>/dev/null)" "||"
 queued '40 minutes' '5 minutes'
-since=$(TZ=UTC date -d "40 minutes ago" '+%Y-%m-%d %H:%M UTC')
+since=$(TZ=UTC ago '40 minutes' '+%Y-%m-%d %H:%M UTC')
 TZ=UTC runner_round
 check "runners: queued 40 minutes notes it in Health and Needs you" "$(notes)" \
   "runners Runners offline since $since: 2 runs queued Runners offline since $since: 2 runs queued. Start Docker Desktop (WSL integration on for this distro) on the runners' device, then check \`make gh-runner-status\` (DEVELOPMENT.md)."
@@ -938,7 +946,7 @@ check "runners: logged" "$(logged "Runners offline since $since: 2 runs queued; 
 queued '41 minutes' '6 minutes' '1 minute'
 TZ=UTC runner_round
 check "runners: the note follows the count, logged once" "$(notes | tail -1 | sed "s/ queued .*/ queued/")|$(logged 'said in the Maintainer report')" \
-  "runners Runners offline since $(TZ=UTC date -d "41 minutes ago" '+%Y-%m-%d %H:%M UTC'): 3 runs queued|1"
+  "runners Runners offline since $(TZ=UTC ago '41 minutes' '+%Y-%m-%d %H:%M UTC'): 3 runs queued|1"
 rm -f "$T/notes"
 queued
 runner_round
@@ -953,7 +961,7 @@ check "runners: a report that can't be edited is logged once" "$(logged 'could n
 NOTE_RC=0
 runner_round
 check "runners: and noted once it can" "$(logged 'said in the Maintainer report')|$(cat "$DIR/runners-offline")" \
-  "2|Runners offline since $(date -d "1 hour ago" '+%Y-%m-%d %H:%M %Z'): 1 run queued"
+  "2|Runners offline since $(ago '1 hour' '+%Y-%m-%d %H:%M %Z'): 1 run queued"
 # A run GitHub made no jobs for waits for good (#1236): no note, logged once by
 # id, and the run after it that waits is noted without it.
 queued
@@ -966,10 +974,10 @@ runner_round
 runner_round
 check "runners: a run with no jobs is never noted (#1236)" "$(notes)|$(ls "$DIR/runners-offline" 2>/dev/null)" "|"
 check "runners: a run with no jobs is logged once, by id" \
-  "$(logged "run 701 on main, queued since $(date -d "9 days ago" '+%Y-%m-%d %H:%M %Z'), has no jobs: no runner can take it")|$(cat "$LOG" | wc -l | tr -d ' ')" "1|1"
+  "$(logged "run 701 on main, queued since $(ago '9 days' '+%Y-%m-%d %H:%M %Z'), has no jobs: no runner can take it")|$(cat "$LOG" | wc -l | tr -d ' ')" "1|1"
 queued '9 days' '40 minutes' '5 minutes'
 nojobs 701
-since=$(TZ=UTC date -d "40 minutes ago" '+%Y-%m-%d %H:%M UTC')
+since=$(TZ=UTC ago '40 minutes' '+%Y-%m-%d %H:%M UTC')
 TZ=UTC runner_round
 check "runners: the run with no jobs isn't counted" "$(notes | tail -1 | sed "s/ queued .*/ queued/")|$(logged 'run 701')" \
   "runners Runners offline since $since: 2 runs queued|1"
@@ -983,8 +991,9 @@ check "runners: online, the note is kept" "$(cat "$DIR/runners-offline")" "2 run
 queued '9 days' '40 minutes'
 nojobs 701
 runners 1 0
+since=$(TZ=UTC ago '40 minutes' '+%Y-%m-%d %H:%M UTC')
 TZ=UTC runner_round
-check "runners: one online, one queued" "$(notes | tail -1 | sed 's/ online .*/ online/')" \
+check "runners: one online, one queued (#1365)" "$(notes | tail -1 | sed 's/ online .*/ online/')" \
   "runners 1 run queued since $since with 1 runner online"
 queued '9 days'
 nojobs 701

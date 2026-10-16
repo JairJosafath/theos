@@ -114,6 +114,16 @@ byte for byte.
   a `RedrivePolicy`, a `DeadLetterConfig` or an `OnFailure` names, and
   each has its alarm; and every schedule is retried, dead-lettered and in a
   group of its stack.
+  Since v1.11.0 `aws-ec2-ts` (from its v1.1.0) has what v1.6.0 gave
+  `aws-lambda-ts`: its `docs/well-architected.md` branch rewritten for the tiers (no tracing in
+  either), the HTTPS listener, the rolling update that waits for
+  `cfn-signal`, the scaling notifications and instances that hold no data;
+  a `docs/runbook.md` branch; and its branches in `AGENTS.md`, the role
+  guides and `docs/style/aws.md`, which makes it a rule that instances hold
+  no data and their volumes are never backed up. The Standard's test checks
+  an Auto Scaling group's alarms, accepts a backup selection naming every
+  one of the stack's tables by ARN and nothing else, and refuses a selection
+  by tag in a stack with instances.
   Since v1.12.0 `aws-lambda-py` and `aws-lambda-go` (from their v1.1.0) take
   the `aws-lambda-ts` branches too, widened to the three Lambda Frameworks
   (`$lambda` where `aws-fargate-ts` has a whole file of its own; `$tiered`
@@ -121,12 +131,11 @@ byte for byte.
   and Idempotency in `app/once.py`) for `aws-lambda-py`; for
   `aws-lambda-go`, no Powertools (there is none for Go), `slog` JSON logs,
   idempotency by hand, and no `Idempotency` table in the runbook.
-  `docs/runbook.md` is now left out only for `aws-ec2-ts`. The serverless
-  `docs/well-architected.md` the two had before is gone: no Framework
-  renders it. A v1.0.0 of either, with no `infra/operations.ts`, still
-  passes `make check` on v1.12.0. `SOURCES.md` adds Powertools for Python
-  3.36.0's Logger, Metrics and Idempotency pages (read 2026-10-16), and
-  cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions. A
+  The serverless `docs/well-architected.md` the two had before is gone: no
+  Framework renders it. A v1.0.0 of either, with no `infra/operations.ts`,
+  still passes `make check` on v1.12.0. `SOURCES.md` adds Powertools for
+  Python 3.36.0's Logger, Metrics and Idempotency pages (read 2026-10-16),
+  and cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions. A
   Framework added later gets its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
@@ -135,8 +144,8 @@ byte for byte.
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
   `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`,
-  `aws-static-site-ts`, `aws-queue-ts` and `aws-schedule-ts` also
-  `docs/runbook.md`; for
+  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts`
+  also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -197,18 +206,25 @@ byte for byte.
   production with `retentionDays` over 0, in a stack holding a resource of
   `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
-  with its own key, one selection of exactly what carries the
-  `c4factory:container` tag, as `ListOfTags` or as one `aws:ResourceTag`
-  condition on `*`, and a copy stack in that region; else none; and no load
-  balancer's access-log bucket in any selection's reach unless its
-  `NotResources` names it), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  with its own key, one selection naming every one of the stack's own
+  tables by ARN and nothing else (since v1.11.0), or else of exactly what
+  carries the `c4factory:container` tag, as `ListOfTags` or as one
+  `aws:ResourceTag` condition on `*`, and a copy stack in that region; else
+  none; and no load balancer's access-log bucket in any selection's reach:
+  a selection by ARN doesn't name it, one by tag names it in
+  `NotResources`), the instances (since v1.11.0: in a stack with an Auto
+  Scaling group, a launch template or an instance, no EBS volume of its
+  own, every launch template's or instance's volume deleted with its
+  instance, and no backup selection by tag, which would back the instances
+  up), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
   `SystemErrors`, every HTTP API's `5xx`, every load balancer's
   `HTTPCode_ELB_5XX_Count`, `HTTPCode_Target_5XX_Count` and
   `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
   ECS service's `CPUUtilization`, `MemoryUtilization` and
-  `RunningTaskCount`, every schedule group's `InvocationDroppedCount` and
+  `RunningTaskCount`, since v1.11.0 every Auto Scaling group's
+  `CPUUtilization` and `GroupInServiceInstances`, every schedule group's `InvocationDroppedCount` and
   `InvocationsFailedToBeSentToDeadLetterCount`; an alarm watches a resource
   when its definition refers to it by `Ref` or by `Fn::GetAtt`, as a load
   balancer's and target group's full names and a service's name are, or by
@@ -293,8 +309,8 @@ byte for byte.
   exporting `defineStacks(app: App, tier: Tier): Stack[]` (one written
   before tiers takes the app alone), which adds every stack for the tier to
   `app` without an `env` from the environment or a context lookup; and,
-  from `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go` and
-  `aws-fargate-ts` v1.1.0 on, `infra/operations.ts`, rendered from
+  from `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`
+  and `aws-ec2-ts` v1.1.0 on, `infra/operations.ts`, rendered from
   `.Operations`, exporting `OPERATIONS` of the `Operations` type, which its
   stacks read;
   `cdk.json`, whose `app` is `node_modules/.bin/tsx infra/main.ts` and whose
@@ -342,7 +358,7 @@ byte for byte.
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For the Lambda
   Frameworks (`aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`),
-  `aws-fargate-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
+  `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
@@ -352,16 +368,18 @@ byte for byte.
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
 - **Runbook:** `docs/runbook.md`, for the three Lambda Frameworks,
-  `aws-fargate-ts`, `aws-static-site-ts`, `aws-queue-ts` and
+  `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and
   `aws-schedule-ts` (a branch each: one for the Lambda Frameworks, which
-  `aws-queue-ts` and `aws-schedule-ts` share, one for `aws-fargate-ts` and
-  one for `aws-static-site-ts`), renders the
+  `aws-queue-ts` and `aws-schedule-ts` share, one each for
+  `aws-fargate-ts`, `aws-ec2-ts` and `aws-static-site-ts`), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the
-  circuit breaker and the deployment alarms do), what each alarm means and
-  what to do first, for `aws-fargate-ts` where the traces are, what the NAT
-  gateways do per tier and what production costs over development, which account-level services the account's owner provides
+  circuit breaker and the deployment alarms do; for `aws-ec2-ts`, how a
+  rolling update stops on a failed or missing signal and where to look),
+  what each alarm means and what to do first, for `aws-fargate-ts` where
+  the traces are, what the NAT gateways do per tier and what production
+  costs over development, which account-level services the account's owner provides
   (GuardDuty, Security Hub, CloudTrail, AWS Config, Budgets, the cost
   allocation tags' activation), and how to drill a restore. For
   `aws-lambda-go` it names no `Idempotency` table, which Go lacks.
