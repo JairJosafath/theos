@@ -306,6 +306,12 @@ says why each rule matters.
 {{- else if $py -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `print`. [lint: T201]
+{{- else if eq .Framework "aws-lambda-ts" -}}
+- Log structured JSON, one entry per line, through Powertools' Logger,
+  which `src/handler.ts` makes and hands to the code as its `Log`; never
+  `console`. [lint: no-console]
+- Count what matters with Powertools' Metrics, written into the logs in
+  the embedded metric format: no API call, no permission. [review]
 {{- else -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
@@ -345,13 +351,31 @@ says why each rule matters.
 - Writes are idempotent: a `PutItem` of the whole item, or a conditional
   write (`ConditionExpression`) that refuses a second apply. Never a blind
   `ADD` on a retried request. [review]
+{{- if eq .Framework "aws-lambda-ts" }}
+- A route that changes data runs through Powertools' Idempotency, keyed by
+  the request's `Idempotency-Key` header, as `PUT /items/{id}` does: a
+  retry with the same key gets the first answer back. [review]
+{{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
+{{- if eq .Framework "aws-lambda-ts" }}
+- In production, point-in-time recovery on, the table kept when the stack
+  goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
+  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  tier's `TIER_RULES`, as the stack's tables are. [test: the removal
+  policies, deletion protection, point-in-time recovery]
+{{- else }}
 - Point-in-time recovery on. [nag: AwsSolutions-DDB3]
+{{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
+{{- if eq .Framework "aws-lambda-ts" }}
+- Every table has its alarms: read and write throttles and system errors,
+  from the stack's `Alarms`. [test: the alarms and topic]
+{{- else }}
 - The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
   protection. [test: says what happens to stateful resources; review]
+{{- end }}
 
 {{ if $go -}}
 ## The AWS SDK for Go v2

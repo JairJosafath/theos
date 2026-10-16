@@ -264,7 +264,10 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		DisplayName:    "Sample App",
 		Type:           typ,
 		Checks:         checks,
-		CI:             giteaActions(t),
+		// The operator always renders the resolved block: the defaults when
+		// the Container has none.
+		Operations: model.ResolveOperations(model.OperationsChoices{}),
+		CI:         giteaActions(t),
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {
