@@ -450,6 +450,23 @@ func TestBuildRejectsStandardBeforeFramework(t *testing.T) {
 	}
 }
 
+func TestTSString(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"ops@example.com", `'ops@example.com'`},
+		{"", `''`},
+		{"o'neil@example.com", `"o'neil@example.com"`},
+		{`a'b"c`, `'a\'b"c'`},
+		{`a'b'"c`, `"a'b'\"c"`},
+		{`C:\tools`, `'C:\\tools'`},
+		{"Tab\there", `'Tab\u0009here'`},
+	}
+	for _, tt := range tests {
+		if got := tsString(tt.in); got != tt.want {
+			t.Errorf("tsString(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestDartString(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"Photo Editor", `'Photo Editor'`},
