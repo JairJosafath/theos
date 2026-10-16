@@ -658,9 +658,20 @@ gh_comment() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .html_url
 }
 
+# gh_put_labels N: make the lines on stdin N's labels, in one PUT. GitHub
+# applies it whole, so writers on two devices swapping N's status at once leave
+# one's list or the other's: one status label, never two or none, as a DELETE
+# per old label and a POST of the new one interleaved did. A label another
+# writer adds between the caller's read and the PUT is lost; status swaps are
+# many, other label writes few.
+gh_put_labels() {
+  jq -Rn '{labels: [inputs | select(. != "")]}' |
+    gh_api --method PUT "repos/$C4_GITHUB_REPO/issues/$1/labels" --input - >/dev/null
+}
+
 # gh_set_status N STATUS: make status/STATUS N's only status label.
 gh_set_status() {
-  local n=${1:?usage: status N STATUS} want labels l
+  local n=${1:?usage: status N STATUS} want labels
   case ${2:-} in
     proposed | ready | in-progress | waiting | needs-maintainer | needs-human) want=status/$2 ;;
     *) echo "github: status must be proposed, ready, in-progress, waiting, needs-maintainer or needs-human" >&2; return 1 ;;
@@ -672,13 +683,8 @@ gh_set_status() {
     echo "github: #$n has no kind/* label; give it one (kind/bug, kind/feature, kind/improvement, kind/chore or kind/docs) before readying it" >&2
     return 1
   fi
-  while IFS= read -r l; do
-    [[ $l == status/* && $l != "$want" ]] || continue
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
-  done <<<"$labels"
-  if ! grep -qxF -- "$want" <<<"$labels"; then
-    jq -n --arg l "$want" '{labels: [$l]}' |
-      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
+  if [ "$(grep '^status/' <<<"$labels")" != "$want" ]; then
+    { grep -v '^status/' <<<"$labels"; echo "$want"; } | gh_put_labels "$n" || return 1
   fi
   case $want in
     status/waiting | status/needs-maintainer | status/needs-human) gh_lease_release_for "$n"; gh_release_for "$n" "${want#status/}" ;;
@@ -687,12 +693,10 @@ gh_set_status() {
 
 # gh_unstatus N: drop every status/* label from N.
 gh_unstatus() {
-  local n=${1:?usage: closed N} labels l
+  local n=${1:?usage: closed N} labels
   labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
-  while IFS= read -r l; do
-    [[ $l == status/* ]] || continue
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
-  done <<<"$labels"
+  grep -q '^status/' <<<"$labels" || return 0
+  { grep -v '^status/' <<<"$labels" || :; } | gh_put_labels "$n"
 }
 
 # gh_closed N: drop closed issue N's status labels; an open N is left alone.
