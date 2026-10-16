@@ -1468,6 +1468,7 @@ meets other hosts:
 | Exclusive scoped labels | native | none | scoped labels (`a::b`) | adding a label removes the others of its scope; the adapter does it when the host doesn't |
 | Issue dependencies | native | "blocked by" | issue links that block | `OpenBlockers` and `AddIssueDependency` are part of Issues |
 | Runners online | admin API | runners API | runners API | may answer "unknown", as it can now |
+| A project's own runners | the organization's registration token and runners API; `--ephemeral` runners | the organization's, likewise | the group's runners | optional capability of CI, `OwnerRunners`: the owner's registration token, its runners and their state, delete one; a host without it gets no runner pool |
 | Go modules | the owner's Go registry | none: the module is fetched from its tag | Go proxy | optional capability of Registry |
 | npm and PyPI packages | the owner's npm and PyPI registries | npm in GitHub Packages, no PyPI | the project's npm and PyPI registries | optional capability of Registry, one per ecosystem |
 | Events | an organization webhook, signed (#1084) | webhooks | webhooks | polling is the contract; webhooks are Events, an optional capability of GitHost: register a hook, parse a signed delivery |
