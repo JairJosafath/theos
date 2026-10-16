@@ -188,6 +188,7 @@ describe('SiteStack', () => {
       DistributionPaths: ['/*'],
       Prune: true,
     });
+    development.hasResourceProperties('Custom::CDKBucketDeployment', { RetainOnDelete: false });
   });
 
   it('traces the copying function in production only, and gives it its own log group', () => {

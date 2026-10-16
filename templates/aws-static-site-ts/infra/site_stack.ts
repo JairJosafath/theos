@@ -264,6 +264,9 @@ export class SiteStack extends Stack {
       destinationBucket: site,
       distribution,
       distributionPaths: ['/*'],
+      // In development the files go with the stack, so the bucket is empty
+      // when CloudFormation deletes it; in production both stay.
+      retainOnDelete: rules.keepData,
       role: deployRole,
       logGroup: deployLogs,
       memoryLimit: 512,
