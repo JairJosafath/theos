@@ -10,7 +10,7 @@
 # fast-forwarded, origin's, a new one from origin/main), worktree()'s fetch,
 # creation and stash of what a session left, and update() pulling nothing
 # under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
-# limit sets, the issue that goes to the user after failed sessions and the
+# limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
@@ -256,6 +256,23 @@ rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
 
+# limit_name: the few words for each limit a session can end on (#1199), the
+# most specific first: an expired OAuth session also failed to authenticate.
+while IFS='|' read -r msg want; do
+  check "limit_name: $msg" "$(limit_name "$msg")" "$want"
+done <<'EOF2'
+Failed to authenticate: OAuth session expired and could not be refreshed|OAuth session expired
+API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired."}}|OAuth token expired
+OAuth token revoked · Please run /login|OAuth token revoked
+Invalid API key · Please run /login|invalid API key
+Not logged in · Please run /login|not logged in
+API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}|authentication failed
+Credit balance is too low|credit balance too low
+You've hit your session limit · resets 3am (UTC)|usage limit
+Usage limit reached · resets 5pm|usage limit
+EOF2
+limit_name "the build failed" >/dev/null; check "limit_name: no limit" $? 1
+
 # switch_branch, worktree and update (#1129), in a scratch clone of a fake
 # origin, so no stash lands in the real checkout; another device, up, pushes to it.
 (
@@ -407,8 +424,13 @@ rm -f "$STOP" "$DIR/admitted"
 ADMIT_GAP=0 MAX_SESSIONS=1 MEM_POLL=1
 
 # A usage limit pauses the device until the time it names, and isn't counted.
+# The claim's release names the limit (#1199).
 echo limit >"$FAKE"
+gh_claim_read() { [ -e "$T/claimed" ]; }
+gh_take() { echo take >>"$T/takes"; : >"$T/claimed"; printf 'otter-175\tb\n'; }
+gh_release() { rm -f "$T/claimed"; echo "$1" >"$T/released"; echo "released #175 (otter-175): $1"; }
 work
+check "limit: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: usage limit)"
 want=$(TZ=UTC date -d 3am +%s)
 [ "$want" -le "$(date +%s)" ] && want=$((want + 86400))
 check "limit: paused until the reset" "$(cut -d' ' -f1 "$DIR/paused-until")" "$want"
@@ -431,6 +453,7 @@ echo login >"$FAKE"
 LIMIT_WAIT=10m work
 check "login: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 check "login: not counted" "$(counted)" 0
+check "login: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
 rm -f "$DIR/paused-until"
 # An expired OAuth session, in an error result, pauses too and isn't counted.
 echo oauth >"$FAKE"
@@ -438,6 +461,7 @@ LIMIT_WAIT=10m work
 check "oauth: paused for RELAY_LIMIT_WAIT" "$(($(cut -d' ' -f1 "$DIR/paused-until") - $(date +%s) > 590))" 1
 grep -q "paused the relay until .*: Failed to authenticate: OAuth session expired" "$LOG"; check "oauth: logged" $? 0
 check "oauth: not counted" "$(counted)" 0
+check "oauth: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: OAuth session expired)"
 rm -f "$DIR/paused-until"
 # A session that ends well and only mentions a login failure pauses nothing.
 echo oauth-ok >"$FAKE"
