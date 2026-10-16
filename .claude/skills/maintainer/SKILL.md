@@ -92,6 +92,11 @@ unanswered for 14 days.
      [Kubernetes reviewer](https://www.kubernetes.dev/docs/guide/pull-requests/)
      would. Check for tests at the lowest tier that sees the rule, scope of one
      issue, docs that match, and claims in the body that the evidence backs.
+   - A merged fix of a `kind/bug` issue: its test names the issue, would
+     have failed before the fix and covers what the report says, not a
+     neighbour of it; a `No test:` line gives a reason that holds. When the
+     test is missing or misses the report, file a follow-up `kind/bug`
+     issue, ready, for the test.
    - A defect becomes a `kind/bug` issue, ready. Name good work, specifically,
      in the report.
 6. **Health:**
