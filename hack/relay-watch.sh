@@ -741,8 +741,10 @@ uninstall_watch() {
 # Sourced (hack/relay-watch_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 # Whoever starts the watch, a Claude Code session among them, the watch and the
-# relay it starts run as from a plain project shell (#645).
+# relay it starts run as from a plain project shell (#645), headless: no
+# cluster lease code (gh_headless in hack/lib/github.sh).
 drop_session_env
+export C4_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"

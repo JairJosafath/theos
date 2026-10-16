@@ -13,7 +13,7 @@
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
-unset C4_CLUSTER C4_HUMAN_CLUSTER # ./dev setup --lite sets the one, a human the other; each test sets its own
+unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS # ./dev setup --lite sets the first, a human the second, the relay the third; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -143,8 +143,9 @@ gh_cluster acquire --wait 0 >/dev/null 2>&1; check "lease of a removed worktree 
 lease "$T/wt2" 50 "$GH_NOW"
 gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
 lease "$T/main" 50 $((GH_NOW - 3600))
-C4_HUMAN_CLUSTER= gh_beat; check "beat, an agent's: no lease touched (#1128)" "$(jq .beat "$LEASE")" $((GH_NOW - 3600))
-gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
+C4_HEADLESS=1 gh_beat; check "beat, the relay's: no lease touched (#1128)" "$(jq .beat "$LEASE")" $((GH_NOW - 3600))
+# The heartbeat hook runs beat without the opt-in a human gave acquire inline.
+C4_HUMAN_CLUSTER= gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
 lease "$T/wt2" 50 $((GH_NOW - 3600)); b=$(jq .beat "$LEASE")
 gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
 # A heartbeat 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
@@ -303,19 +304,19 @@ clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo h | gh_handoff 73 - >/dev/null 2>&1; check "handoff of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
-# An agent's release, handoff, close and status touch no lease, even one naming
-# its checkout and issue (#1128): only a human (C4_HUMAN_CLUSTER=1) holds one.
+# The relay's release, handoff, close and status touch no lease, even one
+# naming its checkout and issue (#1128): only a human's checkout holds one.
 clear; claim "$T/main" 72 "$GH_NOW"; lease "$T/main" 72 "$GH_NOW"
-echo landed | C4_HUMAN_CLUSTER= gh_close 72 - >/dev/null 2>&1
-check "close, an agent's: the claim released, no lease touched" \
+echo landed | C4_HEADLESS=1 gh_close 72 - >/dev/null 2>&1
+check "close, the relay's: the claim released, no lease touched" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
 clear; lease "$T/main" 73 "$GH_NOW"
-echo h | C4_HUMAN_CLUSTER= gh_handoff 73 - >/dev/null 2>&1; check "handoff, an agent's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+echo h | C4_HEADLESS=1 gh_handoff 73 - >/dev/null 2>&1; check "handoff, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; lease "$T/main" 73 "$GH_NOW"
-C4_HUMAN_CLUSTER= gh_release >/dev/null 2>&1; check "release, an agent's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+C4_HEADLESS=1 gh_release >/dev/null 2>&1; check "release, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
-C4_HUMAN_CLUSTER= real_set_status 51 needs-maintainer >/dev/null 2>&1
-check "needs-maintainer, an agent's: the claim released, no lease touched" \
+C4_HEADLESS=1 real_set_status 51 needs-maintainer >/dev/null 2>&1
+check "needs-maintainer, the relay's: the claim released, no lease touched" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
 rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"

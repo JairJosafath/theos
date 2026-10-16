@@ -374,8 +374,9 @@ the others, naming the cluster, agent, issue and worktree. A checkout holds
 at most one. `beat` (the heartbeat hook) refreshes it, and it is stale after
 `C4_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
 over. `release`, `handoff`, `close`, `status N waiting`, `status N
-needs-maintainer` and `status N needs-human` drop it. Without the opt-in,
-`beat` and those commands touch no lease: an agent holds none.
+needs-maintainer` and `status N needs-human` drop it. In the relay and its
+sessions (`C4_HEADLESS=1`) `beat` and those commands touch no lease: they
+hold none.
 `hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`, `test-e2e`, `up`
 and `down` while another checkout holds the cluster the command targets
 (`KIND_CLUSTER=` in the command, else the checkout's lease, else

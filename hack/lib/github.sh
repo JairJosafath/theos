@@ -30,11 +30,11 @@
 #   hack/lib/github.sh take N            claim N for this checkout and swap it to status/in-progress;
 #                                        prints NAME BRANCH, tab-separated. Exit 4: someone else holds it.
 #                                        This checkout's claim on a closed issue is released first
-#   hack/lib/github.sh release [REASON]  release this checkout's claim, and a human's cluster lease (default reason: released)
+#   hack/lib/github.sh release [REASON]  release this checkout's claim and cluster lease (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
-#   hack/lib/github.sh beat              refresh this checkout's claim heartbeat, and a human's cluster lease, at most every 15
+#   hack/lib/github.sh beat              refresh this checkout's claim heartbeat and cluster lease, at most every 15
 #                                        minutes. Exit 2: the claim was taken over; stop working
-#   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim (a human's lease too); if
+#   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim and lease; if
 #                                        GitHub can't be reached, keep it in .relay/pending-handoff-N.md (exit 3)
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
 #   hack/lib/github.sh comment N FILE    post FILE as a comment on N
@@ -64,10 +64,10 @@
 #   hack/lib/github.sh status N STATUS   swap N's status label: proposed, ready, in-progress, waiting,
 #                                        needs-maintainer, needs-human. Agents escalate with needs-maintainer; only
 #                                        the maintainer sets needs-human (GOVERNANCE.md). Those two and waiting
-#                                        (a plan's parent, waiting on its steps) release the claim (a human's lease too). ready is refused
+#                                        (a plan's parent, waiting on its steps) release the claim and lease. ready is refused
 #                                        (exit 1) for an issue with no kind/* label: take names the branch by it
 #   hack/lib/github.sh close N FILE      comment FILE (what landed: SHAs, branch), close N, drop its status labels,
-#                                        release the claim (a human's lease too), then close the plan parents N finishes (parents).
+#                                        release the claim and lease, then close the plan parents N finishes (parents).
 #                                        Refused (exit 1) while a "Depends on #S" line of N's body names an open S:
 #                                        a plan's parent closes itself when its last step closes
 #   hack/lib/github.sh closes-check FILE whether a pull request body or commit message (FILE, - for stdin) may
@@ -167,8 +167,8 @@
 # branch (make deploy) to the cluster it got, verify, `cluster release`. A lease lives in the git common dir,
 # beside every checkout, names the cluster, agent, issue and worktree, is
 # refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close,
-# needs-maintainer and needs-human drop it too. Without C4_HUMAN_CLUSTER=1
-# (gh_human) those commands and beat touch no lease: agents hold none.
+# needs-maintainer and needs-human drop it too. In the relay and its sessions
+# (gh_headless) those commands and beat touch no lease: they hold none.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
 #
 # Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
@@ -706,7 +706,7 @@ gh_set_status() {
   fi
   case $want in
     status/waiting | status/needs-maintainer | status/needs-human)
-      if gh_human; then gh_lease_release_for "$n"; fi
+      if ! gh_headless; then gh_lease_release_for "$n"; fi
       gh_release_for "$n" "${want#status/}"
       ;;
   esac
@@ -968,10 +968,12 @@ gh_milestones() {
 GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
 GH_POOL_FIRST=c4factory
 
-# gh_human: exit 0 when a human opted in to Kind (C4_HUMAN_CLUSTER=1, which
-# hack/lib/session-env.sh unsets for the relay's sessions). Only then does
-# anything but the cluster commands touch a lease.
-gh_human() { [ "${C4_HUMAN_CLUSTER:-}" = 1 ]; }
+# gh_headless: exit 0 in the relay and its sessions (C4_HEADLESS=1, set by
+# hack/relay.sh and hack/relay-watch.sh). They hold no lease: acquire wants
+# C4_HUMAN_CLUSTER=1, which hack/lib/session-env.sh unsets there. So beat,
+# release, handoff, close and the status swaps touch a lease only elsewhere,
+# in a checkout a human may have leased one to, however they opted in.
+gh_headless() { [ "${C4_HEADLESS:-}" = 1 ]; }
 
 # gh_pool: the pool's cluster names, one per line.
 gh_pool() {
@@ -1142,7 +1144,7 @@ gh_lease_take() {
 # runs Kind; agents never lease a cluster.
 gh_lease_acquire() {
   local wait=30m secs t0 out said= fresh= bare= held= l_name l_issue l_wt l_beat
-  if ! gh_human; then
+  if [ "${C4_HUMAN_CLUSTER:-}" != 1 ]; then
     echo "github: cluster acquire is for a human only: set C4_HUMAN_CLUSTER=1 to run Kind yourself. Agents never lease a cluster; make check (Go tests, validate-yaml, envtest) is the gate" >&2
     return 5
   fi
@@ -1297,12 +1299,12 @@ gh_cluster() {
   esac
 }
 
-# gh_release [REASON]: release this checkout's claim, and a human's cluster
-# lease; the claim's comment then says "**NAME** released this issue: REASON".
-# Without a claim there is nothing more to do.
+# gh_release [REASON]: release this checkout's claim, and its cluster lease
+# (gh_headless); the claim's comment then says "**NAME** released this issue:
+# REASON". Without a claim there is nothing more to do.
 gh_release() {
   local reason=${1:-released} c_issue c_id c_name c_branch rc
-  if gh_human; then gh_lease_release; fi
+  if ! gh_headless; then gh_lease_release; fi
   gh_claim_read || return 0
   gh_claim_held >/dev/null
   rc=$?
@@ -1326,12 +1328,13 @@ gh_release_for() {
     echo "github: could not release the claim on #$1; it expires after $C4_LEASE_TTL" >&2
 }
 
-# gh_beat: refresh this checkout's claim heartbeat, and a human's cluster
-# lease, at most every GH_BEAT_EVERY seconds. GitHub errors are ignored until
-# the next beat. Exit 2: the claim was taken over, with what to do on stderr.
+# gh_beat: refresh this checkout's claim heartbeat, and its cluster lease
+# (gh_headless), at most every GH_BEAT_EVERY seconds. GitHub errors are
+# ignored until the next beat. Exit 2: the claim was taken over, with what to
+# do on stderr.
 gh_beat() {
   local c_issue c_id c_name c_branch c rc last body
-  if gh_human; then gh_lease_beat; fi
+  if ! gh_headless; then gh_lease_beat; fi
   gh_claim_read || return 0
   last=$(jq -r '.beat // 0' "$GH_CLAIM_FILE")
   [ $(($(gh_now) - last)) -ge "$GH_BEAT_EVERY" ] || return 0
@@ -1369,7 +1372,7 @@ gh_claims() {
 }
 
 # gh_handoff N FILE: post FILE as N's handoff comment, the marker line first,
-# and drop a human's cluster lease if it works on N. If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
+# and drop this checkout's cluster lease (gh_headless) if it works on N. If GitHub can't be reached, keep the text in .relay/pending-handoff-N.md and
 # exit 3; gh_flush posts it later. A newer handoff replaces an unposted older
 # one: each handoff is a full snapshot.
 gh_handoff() {
@@ -1378,7 +1381,7 @@ gh_handoff() {
   [ -n "$body" ] || { echo "github: empty handoff" >&2; return 1; }
   [ "$(head -1 <<<"$body")" = "$GH_HANDOFF_MARKER" ] || body="$GH_HANDOFF_MARKER"$'\n'"$body"
   pending="$GH_PENDING_DIR/pending-handoff-$n.md"
-  if gh_human; then gh_lease_release_for "$n" >&2; fi
+  if ! gh_headless; then gh_lease_release_for "$n" >&2; fi
   if url=$(printf '%s\n' "$body" | gh_comment "$n" -); then
     rm -f "$pending"
     echo "$url"
@@ -1534,7 +1537,7 @@ gh_pr_check() {
 }
 
 # gh_close N FILE: comment what landed, close N as completed, drop its status
-# labels, then release the claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
+# labels, then release the claim and the cluster lease (gh_headless) if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work. A close that
 # fails because a merged pull request's Closes #N already closed N (GitHub
 # answers 422) still drops the labels and releases. Last, the plan parents
@@ -1558,7 +1561,7 @@ gh_close() {
     echo "#$n was already closed"
   fi
   gh_unstatus "$n" || echo "github: closed #$n but could not drop its status labels" >&2
-  if gh_human; then gh_lease_release_for "$n"; fi
+  if ! gh_headless; then gh_lease_release_for "$n"; fi
   gh_release_for "$n" finished
   gh_parents --apply "$n" || echo "github: closed #$n but could not close the plan parents waiting on it (hack/lib/github.sh parents --apply)" >&2
 }

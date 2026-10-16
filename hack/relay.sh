@@ -1044,6 +1044,8 @@ work() {
 # Sourced (hack/relay_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 drop_session_env
+# Headless, and its sessions too: no cluster lease code (gh_headless).
+export C4_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
@@ -1094,7 +1096,7 @@ if [ -z "$DRY_RUN" ]; then
   fi
 fi
 CODE_SUM=$(code_sum)
-gh_token 2>/dev/null || { log "no GitHub token; stopping"; exit 1; }
+gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, HEAD $(git rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
   maintain
