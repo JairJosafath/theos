@@ -258,9 +258,7 @@ describe('JobStack', () => {
         template.hasResourceProperties('AWS::CloudWatch::Alarm', {
           Namespace: 'AWS/Scheduler',
           MetricName: metric,
-          Dimensions: [
-            { Name: 'ScheduleGroup', Value: Match.stringLikeRegexp('Schedules') },
-          ],
+          Dimensions: [{ Name: 'ScheduleGroup', Value: Match.stringLikeRegexp('Schedules') }],
           Threshold: 0,
           ComparisonOperator: 'GreaterThanThreshold',
           TreatMissingData: 'notBreaching',

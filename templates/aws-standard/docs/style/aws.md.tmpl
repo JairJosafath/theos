@@ -656,8 +656,9 @@ says why each rule matters.
 - Wrap each service in one module behind an interface the rest of the code
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
-  loop around it. Catch what you can answer (a failed condition is a 409),
-  let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500. [review]
+  loop around it. {{ if eq .Framework "aws-schedule-ts" }}Catch only what the run can finish without (an item
+  already there); throw the rest, and Lambda runs the run again.{{ else }}Catch what you can answer (a failed condition is a 409),
+  let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500.{{ end }} [review]
 {{- end }}
 
 {{ if eq .Framework "aws-ec2-ts" }}## The network and the load balancer

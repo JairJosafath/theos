@@ -41,7 +41,12 @@ const report: Report = {
 // delivered again, with the same scheduledTime, finds its record and does
 // nothing twice. Only what finished is kept: a failed run keeps no record,
 // so its retry runs again. A malformed event is refused before it is recorded.
-const idempotency = new IdempotencyConfig({ eventKeyJmesPath: 'scheduledTime' });
+// A record lasts a day: longer than the schedule's hour of retries and
+// Lambda's hour after it, so a late delivery still finds it.
+const idempotency = new IdempotencyConfig({
+  eventKeyJmesPath: 'scheduledTime',
+  expiresAfterSeconds: 24 * 60 * 60,
+});
 const runOnce = makeIdempotent(
   async (event: unknown) => {
     await runJob(event, store, () => new Date());

@@ -61,7 +61,7 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 | Resource                | Holds                                     | When the stack is deleted         |
 | ----------------------- | ----------------------------------------- | --------------------------------- |
 | `Runs` table            | a record of each run that finished        | kept; deletion protection is on   |
-| `Idempotency` table     | the runs done, for an hour each           | kept; deletion protection is on   |
+| `Idempotency` table     | the runs done, for a day each             | kept; deletion protection is on   |
 | `DeadLetters` queue     | the runs that failed every retry, 14 days | kept                              |
 {{- if ne $ops.Backups.RetentionDays 0 }}
 | backup vault and key    | the daily backups                         | kept, with every backup in it     |
@@ -221,10 +221,13 @@ It waits there 14 days, then SQS deletes it.
    held.
 
 A run already done is not run again: Powertools' Idempotency keeps the
-record of each run that finished, by its scheduled time, for an hour, and
-a run delivered again in that hour does nothing. A run invoked later runs
-again and puts its record again, under the same scheduled time. A run that
-failed keeps no record, so running it again always runs it.
+record of each run that finished, by its scheduled time, for a day, and a
+run delivered again in that day does nothing. A dead-lettered event whose
+error is `IdempotencyAlreadyInProgressError` came while the run was still
+going: look for its record in the `Runs` table before running it again. A
+run invoked later runs again and puts its record again, under the same
+scheduled time. A run that failed keeps no record, so running it again
+always runs it.
 
 The queue's URL and ARN are in the stack:
 `aws cloudformation describe-stack-resources --stack-name {{ .Container }}`

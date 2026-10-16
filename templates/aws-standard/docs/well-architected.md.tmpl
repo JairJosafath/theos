@@ -726,11 +726,13 @@ fails._
 - Idempotency: EventBridge Scheduler and Lambda both deliver a run at least
   once, so a run delivered again changes nothing twice. Powertools'
   Idempotency keys each run by its scheduled time and keeps the record for
-  an hour in the stack's idempotency table; a failed run keeps none, so its
+  a day in the stack's idempotency table, longer than the schedule's hour
+  and Lambda's hour of retries together; a failed run keeps none, so its
   retry runs again. A run's record is put under its scheduled time, so a
   run done twice leaves the same record.
-- Limits: a timeout on every function, 5 minutes for a run, and the
-  schedule's retries and Lambda's end within an hour of the scheduled time.
+- Limits: a timeout on every function, 5 minutes for a run; the
+  schedule's retries end within an hour of the scheduled time, and
+  Lambda's within an hour of when it took the run.
   Serverless `LambdaFunctionDefaultTimeout`: by hand.
 {{- else if $queue }}
 - Idempotency: SQS delivers a message at least once, so a message

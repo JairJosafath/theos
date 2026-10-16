@@ -12,7 +12,7 @@ CloudFormation offline.
   `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and runs each event through
   `reporting(checkingFirst(runOnce))`: `checkingFirst` refuses an event that
   names no run before it is recorded, `runOnce` is `runJob` behind
-  Powertools' `makeIdempotent` (keyed by the `scheduledTime`, so a run
+  Powertools' `makeIdempotent` (keyed by the `scheduledTime`, records kept a day, so a run
   delivered twice runs once, and a failure keeps no record), and
   `reporting` counts `CompletedRuns` and `FailedRuns` with `Metrics` and
   logs a failure, throwing again so Lambda retries the run. `runJob` in
