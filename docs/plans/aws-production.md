@@ -315,6 +315,37 @@ evidence):
 - **No release job yet:** `make check` and CI synthesize both tiers, but
   `aws-standard` has no release that attaches `cdk.out/`; that is #1071's.
 
+### Step 8, as built
+
+`aws-queue-ts` v1.0.0, a `worker` Framework under `aws-standard`. What it
+settled, which steps 10 and 11 can copy:
+
+- **The work per message is a function, the batch is Powertools'.**
+  `src/consume.ts` checks one message and stores its item, throwing
+  `Malformed` for a body that is no item; `src/batch.ts` runs Powertools'
+  `BatchProcessor` and `processPartialResponse` over the batch, answering
+  the messages that threw as `batchItemFailures` and throwing
+  `FullBatchFailureError` when all did, so a broken deploy fires the
+  function's error alarm and not only the dead-letter queue's. A malformed
+  message is not dropped: it fails like any other and reaches the
+  dead-letter queue after five deliveries, where a person sees it.
+- **Idempotency is keyed by `messageId`,** which SQS keeps across
+  redeliveries of one message; a producer that sends the same item twice
+  sends two messages, and the item is simply put twice.
+- **Queues follow the tier like tables:** `RETAIN` in production, `DESTROY`
+  in development, since a message not yet consumed is data. Both queues use
+  SQS-managed encryption and `enforceSSL`; the visibility timeout is six
+  times the function's 30 s, AWS's advice for a Lambda source.
+- **Two Standard rules, per resource type:** every event source mapping
+  from SQS sets `ReportBatchItemFailures`, and every dead-letter queue (a
+  queue another one's `RedrivePolicy` names) has an alarm on its first
+  visible message. A later Framework with a queue gets both without a
+  Standard change.
+- **Outputs:** `EntryPoint` is the queue's URL, and `QueueArn` is added,
+  which a producer's `sqs:SendMessage` names.
+- **The runbook's queue branch** says how to send dead-lettered messages
+  back (`aws sqs start-message-move-task`) once the cause is fixed.
+
 ## Design
 
 - **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
