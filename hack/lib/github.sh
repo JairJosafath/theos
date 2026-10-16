@@ -6,7 +6,7 @@
 #
 # Source it for the gh_* functions (hack/relay.sh), or run it:
 #
-#   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
+#   hack/lib/github.sh labels            create the labels below, update their descriptions, delete the retired ones (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
 #   hack/lib/github.sh blocked [--unworked]
 #                                        what holds back each ready or in-progress issue pick skips: N waits on M
@@ -279,6 +279,9 @@ GH_LABELS=(
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
 )
+# Labels gh_labels deletes from the repository when present: the old priority
+# words the 1-10 scale replaced (#1329).
+GH_RETIRED_LABELS=(priority/urgent priority/velocity)
 GH_REPORT_LABEL=maintainer/report
 GH_REPORT_TITLE='Maintainer report'
 
@@ -325,6 +328,11 @@ gh_labels() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/labels" \
       -f name="$name" -f color="$color" -f description="$desc" >/dev/null || return 1
     echo "label $name: created"
+  done
+  for name in "${GH_RETIRED_LABELS[@]}"; do
+    grep -q -- "^$name"$'\t' <<<"$have" || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null || return 1
+    echo "label $name: retired"
   done
 }
 
@@ -376,8 +384,10 @@ gh_pick() {
   claims=$(gh_recent_claims "$ttl") || return 2
   mapfile -t extra <<<"${GH_NEXT_FILES:-}"
   next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
-  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" --argjson next "$next" "$GH_CLAIM_JQ"'
-    def has($l): .labels | any(. == $l);
+  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
+    --slurpfile next <(printf '%s' "$next") "$GH_CLAIM_JQ"'
+    $claims[0] as $claims | $next[0] as $next
+    | def has($l): .labels | any(. == $l);
     def priority: [.labels[] | capture("^priority/(?<n>[0-9]+)$").n | tonumber | select(. >= 1 and . <= 10)] | min // 5;
     [.[][]] as $all
     | [$all[].number] as $open
@@ -430,9 +440,10 @@ gh_blocked() {
   ttl=$(gh_ttl) || return 2
   issues=$(gh_open_issues) || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --slurpfile claims <(printf '%s' "$claims") \
     --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
-    def has($l): .labels | any(.name == $l);
+    $claims[0] as $claims
+    | def has($l): .labels | any(.name == $l);
     def isopen($n): any(.[]; .number == $n);
     . as $all
     | def holder($n): [$claims[] | select(live and .issue == $n)] | last | if . then cname else null end;
@@ -642,12 +653,15 @@ gh_proposed() {
   if [ "$closed" != '[]' ]; then
     for n in $(jq -r '.[].number' <<<"$issues"); do
       t=$(gh_comments "$n") || return 2
-      triage=$(jq -c --argjson n "$n" --argjson c "$t" \
-        '. + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
+      triage=$(jq -c --argjson n "$n" --slurpfile c <(printf '%s' "$t") \
+        '$c[0] as $c | . + [{n: $n, body: ([$c[] | select(.body | startswith("<!-- relay-triage -->"))] | last | .body // "")}]' <<<"$triage")
     done
   fi
-  jq -r --arg s "$since" --argjson comments "$comments" --argjson closed "$closed" --argjson triage "$triage" '
-    def ep: fromdateiso8601;
+  # Through files, not argv: a busy evening's listings pass Linux's 128 KiB per argument (#1359).
+  jq -r --arg s "$since" --slurpfile comments <(printf '%s' "$comments") --slurpfile closed <(printf '%s' "$closed") \
+    --slurpfile triage <(printf '%s' "$triage") '
+    $comments[0] as $comments | $closed[0] as $closed | $triage[0] as $triage
+    | def ep: fromdateiso8601;
     def mine: .body | startswith("<!-- relay-triage -->");
     [$comments[][] | select(.updated_at > $s) | . + {n: (.issue_url | sub(".*/"; "") | tonumber)}] as $since
     | .[] | .number as $n
