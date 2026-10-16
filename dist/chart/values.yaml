@@ -566,6 +566,15 @@ catalog:
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
     - kind: Framework
+      name: aws-static-site-ts
+      ref: v1.0.0
+      spec:
+        displayName: Static site on AWS (S3 and CloudFront, TypeScript)
+        description: "A static site on AWS: a TypeScript page built with Vite into a private S3 bucket behind a CloudFront distribution with origin access control, access logs, TLS 1.2 on its own domain, a web application firewall and the files versioned in production, alarms and a dashboard, and its CDK stack in infra/, which is its deployment."
+        supportedTypes: [static-site]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
+    - kind: Framework
       name: python-cli
       ref: v1.0.0
       spec:
@@ -613,12 +622,12 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.7.0
+      ref: v1.8.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
-        supportedTypes: [function, service]
-        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py]
+        supportedTypes: [function, service, static-site]
+        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
