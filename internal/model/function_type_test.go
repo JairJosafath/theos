@@ -29,7 +29,7 @@ spec:
 `
 
 // The function type's first templates (plans/done/aws.md, step 2): only the AWS
-// layers support it in the chart.
+// layers support it in the chart, the dynamodb Connector (#1117) among them.
 func TestFunctionTypeIsSupportedByTheAWSLayersOnly(t *testing.T) {
 	if !slices.Contains(containerTypes, TypeFunction) {
 		t.Errorf("containerTypes = %v, want it to hold %q", containerTypes, TypeFunction)
@@ -40,7 +40,7 @@ func TestFunctionTypeIsSupportedByTheAWSLayersOnly(t *testing.T) {
 			got = append(got, e.Side+" "+e.Name)
 		}
 	}
-	want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-go", "Framework aws-lambda-py", "Standard aws-standard"}
+	want := []string{"Framework aws-lambda-ts", "Framework aws-lambda-go", "Framework aws-lambda-py", "Standard aws-standard", "Connector dynamodb"}
 	if !slices.Equal(got, want) {
 		t.Errorf("chart entries supporting %q = %v, want %v", TypeFunction, got, want)
 	}

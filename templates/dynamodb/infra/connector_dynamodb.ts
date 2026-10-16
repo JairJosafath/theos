@@ -1,0 +1,51 @@
+import { RemovalPolicy } from 'aws-cdk-lib';
+import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
+import type { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
+import type { Construct } from 'constructs';
+
+import type { TierRules } from './standard';
+
+/** The environment variable that hands the function the table's name. */
+export const DYNAMODB_TABLE_NAME = 'DYNAMODB_TABLE_NAME';
+
+/**
+ * The item calls the function may make on the table: every read and write of
+ * items, and no scan, which reads the whole table, or change to the table itself.
+ */
+export const DYNAMODB_ACTIONS = [
+  'dynamodb:BatchGetItem',
+  'dynamodb:BatchWriteItem',
+  'dynamodb:ConditionCheckItem',
+  'dynamodb:DeleteItem',
+  'dynamodb:GetItem',
+  'dynamodb:PutItem',
+  'dynamodb:Query',
+  'dynamodb:UpdateItem',
+] as const;
+
+/**
+ * The DataStore on the `dynamodb` Connector: one on-demand table, keyed by a
+ * partition key `pk` and a sort key `sk`, both strings, so one table holds
+ * every kind of item the Container keeps. It is kept, protected and
+ * recoverable where the tier keeps data and thrown away with the stack where
+ * it doesn't, like the Framework's own tables; the stack's backup plan
+ * selects it by the stack's tag. `fn` gets its name in `DYNAMODB_TABLE_NAME`
+ * and may make only `DYNAMODB_ACTIONS` on it. The Framework's
+ * `infra/connectors.ts` calls this and alarms on the table it returns.
+ */
+export function connectDynamoDB(scope: Construct, fn: LambdaFunction, rules: TierRules): Table {
+  const table = new Table(scope, 'DynamoDB', {
+    billingMode: BillingMode.PAY_PER_REQUEST,
+    encryption: TableEncryption.AWS_MANAGED,
+    partitionKey: { name: 'pk', type: AttributeType.STRING },
+    sortKey: { name: 'sk', type: AttributeType.STRING },
+    pointInTimeRecoverySpecification: {
+      pointInTimeRecoveryEnabled: rules.pointInTimeRecovery,
+    },
+    deletionProtection: rules.keepData,
+    removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+  });
+  table.grant(fn, ...DYNAMODB_ACTIONS);
+  fn.addEnvironment(DYNAMODB_TABLE_NAME, table.tableName);
+  return table;
+}

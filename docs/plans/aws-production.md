@@ -219,7 +219,10 @@ alarms and runbooks) were written down and left to the reader.
     stores as DataStores with Connectors (DynamoDB, RDS) is the right shape
     and a bigger change than this plan; it is filed as a proposed follow-up
     (#1117), and this plan's backup rules are written per resource so that
-    Connector can reuse them.
+    Connector can reuse them. #1117 added the `dynamodb` Connector v1.0.0,
+    wired into `aws-lambda-ts` v1.2.0 through its `infra/connectors.ts`; the
+    Framework's own tables stay, and the planner still plans no DataStore
+    for an AWS Container until the other Frameworks wire it too.
 
 ## Track A, per Framework
 
