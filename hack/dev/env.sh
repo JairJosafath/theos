@@ -3,7 +3,17 @@
 # Sourced (not run) by ./dev and by the project shell (hack/dev/zshrc). Works in
 # bash and zsh. Expects C4_ROOT to point at the checkout.
 : "${C4_ROOT:?set C4_ROOT to the repository root before sourcing hack/dev/env.sh}"
-export C4_DEV="$C4_ROOT/.dev"
+# A git worktree uses the main checkout's .dev/, so tools and caches exist once
+# per device: also when make, a test or VS Code made a .dev/ of its own here
+# before ./dev setup could link it, which holds no tools (#1132).
+C4_DEV="$C4_ROOT/.dev"
+if [ -f "$C4_ROOT/.git" ]; then
+  _c4_common=$(git -C "$C4_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || _c4_common=
+  _c4_common=${_c4_common%/}
+  case $_c4_common in */.git) C4_DEV="${_c4_common%/.git}/.dev" ;; esac
+  unset _c4_common
+fi
+export C4_DEV
 
 # Tools downloaded by ./dev setup, then the Makefile's (versioned names), first
 # on PATH.

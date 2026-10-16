@@ -40,7 +40,7 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 | `./dev shell` | Opens the project shell outside VS Code, for example in Windows Terminal. |
 | `./dev run CMD` | Runs one command with the project environment, for example `./dev run go test ./...`. |
 | `./dev clean` | Deletes the Makefile tools left in each checkout's and worktree's `bin/` from before they moved to `.dev/make/bin/`. |
-| `./dev nuke` | Deletes this project's Kind clusters and all of `.dev/`, after asking. |
+| `./dev nuke` | Deletes this project's Kind clusters and all of `.dev/`, after asking; in a worktree, only the worktree's own `.dev/` or link. |
 
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
@@ -82,8 +82,15 @@ runner itself) is not tested before release.
 
 ## Worktrees
 
-A git worktree gets a symlink to the main checkout's `.dev/`, so tools and caches
-exist once. `./dev nuke` in a worktree removes only that link.
+A git worktree needs no setup of its own. `hack/dev/env.sh` points `./dev run`,
+`./dev shell` and the project shell of a worktree at the main checkout's `.dev/`,
+so tools and caches exist once per device, also when make, a test or VS Code made
+a `.dev/` in the worktree first. `./dev setup` in a worktree links the main
+checkout's `.dev/` there for VS Code, whose settings name the folder's own
+`.dev/`. Where the worktree already has a `.dev/` of its own, `./dev setup` says so
+and leaves it: `./dev nuke` deletes it, never the main checkout's or a Kind
+cluster, and `./dev setup` then links. In a linked worktree `./dev nuke` removes
+only the link.
 
 The Makefile finds the main checkout through git, so a worktree without the link
 (a relay worktree) uses the same `.dev/make/bin/`. Several worktrees can install
