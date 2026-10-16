@@ -46,7 +46,8 @@ network.
 ## Testing & Development
 
 ```bash
-make test                # Unit and envtest tests (real K8s API + etcd, no cluster needed)
+make test                # Unit and envtest tests of the packages the change affects (real K8s API + etcd, no cluster needed)
+make test TEST_ALL=1     # The same, every package
 make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
@@ -74,6 +75,28 @@ renders every folder in `templates/` in a realistic combination, without envtest
 fails on a render error, a path two layers write, or YAML that doesn't parse. A new
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
+
+`make test` tests only the packages the change since `origin/main` (its merge
+base, with uncommitted and untracked files) can affect: a package with a changed
+file (its directory or one below it, so embedded files count) and every package
+whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
+prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
+internal/model`, or `testing every package (21): <reason>`. It tests every
+package on `main`, without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
+after a change to a file a Go test may read without importing it: `go.mod`,
+`go.sum`, the `Makefile`, `hack/`, `config/` (the CRDs and RBAC envtest loads),
+`api/`, `dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
+A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
+`.github/` or a top-level `*.md` tests no package. `land`'s `make check` selects
+the same way; the *Tests* workflow sets `TEST_ALL=1`, so every merge to main
+still runs every package and catches what a selection missed. With `COVER=1`,
+`cover.out` covers the packages that ran (`mode: set` and nothing else when none
+did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
+selects the same way, but it loads every package of every module in the build
+list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
+more requirements) and which takes a minute where `go list -test ./...` takes
+half a second.
 
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why). The
 controller suite ends itself 30 s before that, failing the spec that was running by
