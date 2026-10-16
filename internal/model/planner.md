@@ -107,8 +107,9 @@ Push the branch `plan/<round>` with these files:
    Scheduler) is a `job` on the Framework that supports it, such as
    `aws-schedule-ts`, the same way: no `computeRef`, no `deploymentRef` and
    no DataStore, since the schedule and the table are in its CDK app. An
-   idea that reacts to events on AWS, names EventBridge, or consumes events
-   another service puts on an event bus is a `worker` on the Framework that
+   idea that reacts to events on AWS, names an EventBridge rule or event
+   bus (not EventBridge Scheduler, which is the `job` above), or consumes
+   events another service puts on an event bus is a `worker` on the Framework that
    supports it, such as `aws-event-ts`, the same way: no `computeRef`, no
    `deploymentRef` and no DataStore, since the rule and the table are in its
    CDK app. An idea that consumes a queue on AWS, names SQS, or works through messages

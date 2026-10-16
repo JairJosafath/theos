@@ -33,7 +33,10 @@ const report: Report = {
   },
   failed: (event, error) => {
     metrics.addMetric('FailedEvents', MetricUnit.Count, 1);
-    logger.error('The event failed; Lambda retries it.', { event, error });
+    // Only the event's id: its detail may hold user data.
+    const eventId =
+      typeof event === 'object' && event !== null && 'id' in event ? event.id : undefined;
+    logger.error('The event failed; Lambda retries it.', { eventId, error });
   },
 };
 
