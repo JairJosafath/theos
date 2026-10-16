@@ -88,8 +88,7 @@ func (g *gitea) listRunners(ctx context.Context, path, whose string) ([]giteaRun
 	var out []giteaRunner
 	seen := map[int64]bool{}
 	for page := 1; page <= runnerPages; page++ {
-		query := url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
-		status, data, err := g.do(ctx, http.MethodGet, path+"?"+query.Encode(), nil)
+		status, data, err := g.do(ctx, http.MethodGet, path+"?"+pageQuery(page).Encode(), nil)
 		if err != nil {
 			return nil, err
 		}

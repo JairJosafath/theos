@@ -174,7 +174,7 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
     the owner (a session the user runs files what the user decided as
     `ready`), the maintainer, or the relay's triage (the `triage` skill). An
-    agent's follow-up is filed `proposed`.
+    agent files a follow-up `proposed` only when it needs a decision (below).
   - `status/ready`: decided and unblocked; the relay picks it.
   - `status/in-progress`: an agent holds a claim.
   - `status/waiting`: a plan's parent, waiting on its steps, not on an agent.
@@ -186,6 +186,13 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   the user started picks or takes one only when the user says to work it in
   that session; the list above says who readies what.
 - **One issue, plan step or fix per session.** Start the next one fresh.
+- **A follow-up stays with its finder.** Fix it in the pull request when it
+  is already there: under about 30 lines, in a file the pull request changes,
+  in the issue's scope, named under `Also fixes:` in its body. File it
+  `hack/lib/github.sh create --next` when you can name its test (a bug's
+  failing test, a chore's or doc's Done-when): it is ready, and your relay
+  worker's next session starts on it. File it `status/proposed` when it needs
+  a decision. The `handoff` skill has the details.
 - **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
   before working it; it names you (`otter-23`). Sign commits with an
   `Agent: otter-23` trailer and say it in the pull request and handoff. One
@@ -224,5 +231,10 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
+- **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
+  device shares; one session's copies and caches filled it and failed every
+  `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the
+  relay points it at your worktree's `.dev/tmp` and removes it after the
+  session), never a literal `/tmp/...` path, and remove it before you land.
 - **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
   is it true next month?

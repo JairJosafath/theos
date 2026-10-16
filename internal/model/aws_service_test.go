@@ -47,7 +47,7 @@ func TestAWSFargateTSIsAServiceFrameworkOfAWSStandard(t *testing.T) {
 	if !slices.Equal(fargate.SupportedTypes, []string{TypeService}) {
 		t.Errorf("aws-fargate-ts supports %v, want [%s]", fargate.SupportedTypes, TypeService)
 	}
-	if want := []string{TypeFunction, TypeService}; !slices.Equal(standard.SupportedTypes, want) {
+	if want := []string{TypeFunction, TypeService, TypeStaticSite}; !slices.Equal(standard.SupportedTypes, want) {
 		t.Errorf("aws-standard supports %v, want %v", standard.SupportedTypes, want)
 	}
 	if !slices.Contains(standard.SupportedFrameworks, "aws-fargate-ts") {

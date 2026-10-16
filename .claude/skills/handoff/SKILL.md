@@ -64,11 +64,20 @@ Lost claim (the heartbeat hook says so):
 `git push origin HEAD:refs/heads/<branch>-otter-23`, then
 `hack/lib/github.sh comment N -` naming that branch, and stop.
 
+## Scratch
+
+Scratch goes under `$TMPDIR`: make it with `mktemp -d` (or `mktemp` for a
+file), never a literal `/tmp/...` path, and remove it before you land.
+`/tmp` is a small tmpfs every session on the device shares, and one
+session's copies and caches filled it and failed every `make check` (#1269).
+The relay points `$TMPDIR` at your worktree's `.dev/tmp` and removes it after
+the session.
+
 ## Write a handoff
 
 1. Commit and push first, so the SHAs you name exist on the remote.
-2. Write it to a scratch file, first line `<!-- relay-handoff -->`, under 150
-   lines, secrets redacted. Short sections:
+2. Write it to a scratch file (`mktemp`), first line `<!-- relay-handoff -->`,
+   under 150 lines, secrets redacted. Short sections:
    - **Agent:** your name.
    - **Goal:** the outcome in two sentences, and who asked for it.
    - **Where it stands:** done (commit SHAs), in progress, not started; the
@@ -181,10 +190,25 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   sends the issue on to the owner (`status/needs-human`, which only it sets).
   How to build it is ours to decide (AGENTS.md, "Designing is our job"),
   never a question for the user.
-- **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
-  kind/<kind>` (a body line `Depends on #M` if it waits on another issue). Don't start it in this
-  session. Write it so the relay's triage can ready it: one piece of work, a
-  checkable "Done when", and what it waits on.
+- **Follow-up found:** one rule, three cases. Don't start a filed one in this
+  session.
+  - *Already there:* under about 30 changed lines, in a file your pull
+    request already changes, inside the issue's scope: fix it in the same
+    pull request and name it in the body under `Also fixes:`.
+  - *Decided:* a `kind/bug` whose body names its failing test, or a
+    `kind/chore` or `kind/docs` whose Done-when you can state:
+    `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>`. It is
+    filed `status/ready` and, in a relay worker's session, reserved for your worktree:
+    the relay starts your worker's next session on it (`.relay/next`, read
+    before `pick`), and every other worker's `pick` skips it for
+    `C4_LEASE_TTL` (2h), after which anyone picks it. `--next` refuses
+    another kind, a status other than ready, or no kind.
+  - *Needs a decision* (a design question, a feature, anything the reporter
+    must elaborate): `hack/lib/github.sh create TITLE FILE status/proposed
+    kind/<kind>`, written so the relay's triage can ready it: one piece of
+    work, a checkable "Done when", and what it waits on.
+
+  Either way, a body line `Depends on #M` if it waits on another issue.
 
 ## Refused
 

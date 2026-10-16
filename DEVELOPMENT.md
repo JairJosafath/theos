@@ -40,7 +40,7 @@ Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 | `./dev shell` | Opens the project shell outside VS Code, for example in Windows Terminal. |
 | `./dev run CMD` | Runs one command with the project environment, for example `./dev run go test ./...`. |
 | `./dev clean` | Deletes the Makefile tools left in each checkout's and worktree's `bin/` from before they moved to `.dev/make/bin/`. |
-| `./dev nuke` | Deletes this project's Kind clusters and all of `.dev/`, after asking. |
+| `./dev nuke` | Deletes this project's Kind clusters and all of `.dev/`, after asking; in a worktree, only the worktree's own `.dev/` or link. |
 
 The same actions are VS Code tasks (**Terminal → Run Task → Dev: …**).
 
@@ -75,6 +75,7 @@ runner itself) is not tested before release.
 | `.dev/claude/` | Claude Code login, settings and history for this project |
 | `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, and the operator shares it with every project namespace ([docs/dev/testenv.md](docs/dev/testenv.md)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
+| `.dev/tmp/` | In a relay worktree, its session's `TMPDIR`, which the relay empties before and removes after each session (#1269) |
 | `bin/` | What `make build` writes (`bin/manager`) |
 
 `hack/dev/env.sh` sets the variables that point every tool at `.dev/`, and
@@ -82,8 +83,15 @@ runner itself) is not tested before release.
 
 ## Worktrees
 
-A git worktree gets a symlink to the main checkout's `.dev/`, so tools and caches
-exist once. `./dev nuke` in a worktree removes only that link.
+A git worktree needs no setup of its own. `hack/dev/env.sh` points `./dev run`,
+`./dev shell` and the project shell of a worktree at the main checkout's `.dev/`,
+so tools and caches exist once per device, also when make, a test or VS Code made
+a `.dev/` in the worktree first. `./dev setup` in a worktree links the main
+checkout's `.dev/` there for VS Code, whose settings name the folder's own
+`.dev/`. Where the worktree already has a `.dev/` of its own, `./dev setup` says so
+and leaves it: `./dev nuke` deletes it, never the main checkout's or a Kind
+cluster, and `./dev setup` then links. In a linked worktree `./dev nuke` removes
+only the link.
 
 The Makefile finds the main checkout through git, so a worktree without the link
 (a relay worktree) uses the same `.dev/make/bin/`. Several worktrees can install
@@ -123,8 +131,9 @@ What lives outside the folder belongs to the machine, not the project:
   They stop when it stops and come back when it starts, and GitHub has no other
   runner to fall back on: a queued run never fails, it waits. The relay watch
   says "Runners offline since T: N runs queued" in the Maintainer report once
-  a run on main has waited 30 minutes. Run `make gh-runner-status`. It says
-  whether Docker answers from this distro, whether each container is up, and
+  a run on main has waited 30 minutes with no runner online ("N runs queued
+  since T with M runners online" when some are). Run `make gh-runner-status`.
+  It says whether Docker answers from this distro, whether each container is up, and
   whether GitHub sees each runner online, and what to do: start Docker
   Desktop, or run `make gh-runner RUNNERS=N` to start the containers that are
   down. Switching `RUNS_ON` back to GitHub's runners is the owner's call.
