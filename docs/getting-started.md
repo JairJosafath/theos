@@ -250,9 +250,9 @@ Brief's history, so a prompt can overrule it.
 To watch the loop before making the token Secret, name Agent `stand-in` for
 every role. [config/samples/brief/stand-in.yaml](../config/samples/brief/stand-in.yaml)
 does that in `webshop`. The stand-in reads only the catalog: it adds Container
-`stand-in-demo` on the first Framework, `go-cli`, files one issue for it,
-and the Container's Crew picks the issue up. It plans in a minute or so, and
-every release checks it does:
+`stand-in-demo` on the first Framework a Deployment ships, `go-cli` with
+`gitea-release`, releases it and files one issue for it, and the Container's
+Crew picks the issue up. It plans in a minute or so:
 
 ```bash
 kubectl apply -f config/samples/brief/stand-in.yaml
@@ -260,6 +260,21 @@ kubectl -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Pla
 kubectl -n webshop get c4
 ```
 
+The stand-in implements and reviews the issue, and once it is merged the
+Crew releases the app as in *Release a Brief's app*: it files "Prepare
+v0.1.0", the stand-in does that too, the Crew tags `v0.1.0`, and the release
+run puts the binaries and `SHA256SUMS` on the Gitea release of
+`webshop/stand-in-demo`. That takes about half an hour, and every release
+checks it does:
+
+```bash
+kubectl -n webshop wait crew/stand-in-demo --for=jsonpath='{.status.lastRelease.run}'=Succeeded --timeout=60m
+kubectl -n webshop get brief stand-in-demo
+kubectl -n webshop get brief stand-in-demo -o jsonpath='{range .status.apps[*]}{.container}: {.message}{"\n"}{end}'
+```
+
+To have its releases on GitHub too, name it in the Brief's `spec.releases`, as
+step 2 of *Release a Brief's app* says, with a repository and token of yours.
 Deleting a Brief keeps what it made; `kubectl -n webshop delete brief,container
 stand-in-demo` removes the Container and its Crew too.
 
