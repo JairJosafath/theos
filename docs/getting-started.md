@@ -275,7 +275,9 @@ stand-in-demo` removes the Container and its Crew too.
 
 The Container picks Framework `go-cli` and Standard `go-standard`, and the Crew
 names Agents `implementer` and `reviewer`: all four came with the release, so
-the sample makes none of them.
+the sample makes none of them. A Crew can also send the issues with a label to
+other Agents, such as `kind/docs` to a cheaper model, in `spec.routes`
+(`kubectl explain crew.spec.routes`).
 
 Apply it and wait for the Container to be scaffolded:
 

@@ -88,7 +88,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 			r.setReleased(crew, status, metav1.ConditionTrue, reasonPreparingRelease, message)
 		}
 		return &model.Issue{Number: filed.Number, Title: filed.Title, Body: filed.Body, Prepare: true,
-			Release: releaseOf(facts, step.Milestone)}, ""
+			Release: releaseOf(facts, step.Milestone), Labels: slices.Clone(filed.Labels)}, ""
 	}
 	var preparing string
 	if err == nil && step.Reason == model.ReleasePrepareWaits {

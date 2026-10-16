@@ -77,6 +77,8 @@ type Issue struct {
 	Urgent bool
 	// Prepare is set for a release's prepare issue, labelled kind/release.
 	Prepare bool
+	// Labels are the issue's labels, which pick its Agents (Routes).
+	Labels []string
 }
 
 // Release is a milestone with a due date. A Crew works releases one at a time,
@@ -128,6 +130,36 @@ type CrewFacts struct {
 	// Preparing is the release whose prepare issue waits for the Tasks at work
 	// to end before it is filed (ReleasePrepareWaits); empty when none.
 	Preparing string
+	// Routes send issues with a label to other Agents, in the Crew's order.
+	Routes []AgentRoute
+}
+
+// AgentRoute sends the issues labelled Label to other Agents than the Crew's:
+// Implementer and Reviewer name them, empty for a role the route leaves to
+// the Crew's own Agent.
+type AgentRoute struct {
+	Label       string
+	Implementer string
+	Reviewer    string
+}
+
+// RouteAgents is who works an issue with labels: for each role, the Agent of
+// the first route whose label the issue has and that names one for the role,
+// else empty for the Crew's own. An issue labelled kind/docs and security can
+// so get the docs route's implementer and the security route's reviewer.
+func RouteAgents(routes []AgentRoute, labels []string) (implementer, reviewer string) {
+	for _, r := range routes {
+		if !slices.Contains(labels, r.Label) {
+			continue
+		}
+		if implementer == "" {
+			implementer = r.Implementer
+		}
+		if reviewer == "" {
+			reviewer = r.Reviewer
+		}
+	}
+	return implementer, reviewer
 }
 
 // Crew phases, mirroring the API.
@@ -146,6 +178,9 @@ type IssueStart struct {
 	// AllowedPaths are the protected paths the Task may change; set only for a
 	// Standard change issue a Task named.
 	AllowedPaths []string
+	// Implementer and Reviewer are the Agents a route gave the issue; empty
+	// for the Crew's own.
+	Implementer, Reviewer string
 }
 
 // IssueRejection is a ready issue that agents must not take, and why: it goes
@@ -194,6 +229,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	allowances := map[int][]string{}
 	urgent := map[int]bool{}
 	prepare := map[int]bool{}
+	labels := map[int][]string{}
 	for _, issue := range issues {
 		if working[issue.Number] {
 			// Taken a moment ago; its label changes when its Task starts.
@@ -235,6 +271,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			allowances[issue.Number] = allowance
 			urgent[issue.Number] = issue.Urgent
 			prepare[issue.Number] = issue.Prepare
+			labels[issue.Number] = issue.Labels
 		}
 	}
 	// An urgent issue goes first: a person asked for it at once. Then a Standard
@@ -292,8 +329,9 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			}
 		}
 		name := IssueTaskName(container, issue, attempt)
+		implementer, reviewer := RouteAgents(f.Routes, labels[issue])
 		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt,
-			AllowedPaths: allowances[issue]})
+			AllowedPaths: allowances[issue], Implementer: implementer, Reviewer: reviewer})
 		kind := "issue"
 		if urgent[issue] {
 			kind = "urgent issue"
