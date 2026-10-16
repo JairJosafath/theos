@@ -485,6 +485,16 @@ describe.runIf(operations !== undefined).each(TIERS)(
                 `${name}: ${JSON.stringify(resource)} is none of the stack's tables`,
               ).toBe(true);
             }
+            // And every table of the stack is named: a table left out
+            // would go unbacked.
+            for (const id of tables) {
+              expect(
+                named.some(
+                  (resource) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`,
+                ),
+                `${name}/${id} is in no backup selection`,
+              ).toBe(true);
+            }
             expect(chosen, name).not.toHaveProperty('ListOfTags');
             expect(chosen, name).not.toHaveProperty('Conditions');
           } else {
@@ -517,8 +527,19 @@ describe.runIf(operations !== undefined).each(TIERS)(
             continue;
           }
           expect(resourcesOf(template, 'AWS::EC2::Volume'), name).toEqual([]);
-          for (const [id, launchTemplate] of resourcesOf(template, 'AWS::EC2::LaunchTemplate')) {
-            const data = launchTemplate.Properties?.['LaunchTemplateData'];
+          // A launch template's volumes, and a lone instance's.
+          const owners: [string, unknown][] = [
+            ...resourcesOf(template, 'AWS::EC2::LaunchTemplate').map(
+              ([id, launchTemplate]): [string, unknown] => [
+                id,
+                launchTemplate.Properties?.['LaunchTemplateData'],
+              ],
+            ),
+            ...resourcesOf(template, 'AWS::EC2::Instance').map(
+              ([id, instance]): [string, unknown] => [id, instance.Properties],
+            ),
+          ];
+          for (const [id, data] of owners) {
             const devices: unknown[] = isRecord(data)
               ? [data['BlockDeviceMappings'] ?? []].flat()
               : [];

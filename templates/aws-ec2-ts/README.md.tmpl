@@ -63,14 +63,17 @@ region, the recovery objectives and who the alarms tell, is in
 `infra/operations.ts`, which C4 Factory renders from the Container's
 `spec.operations`: change the block, and the file follows it. A deploy sets
 two parameters per environment: `CertificateArn`, the load balancer's
-certificate, which it needs, and `AlertEmail`, who the alarms tell. Each
-stack outputs `EntryPoint`, the load balancer's DNS name, and
+certificate, which it needs, and `AlertEmail`, who the alarms tell. The
+service stack outputs `EntryPoint`, the load balancer's DNS name, and
 `AlarmTopicArn`, the topic its alarms and the group's scaling events
 notify.
 
-Deploying (`cdk deploy -c tier=production --parameters CertificateArn=<arn>`,
-after `cdk bootstrap` of the account) is for its owner, with their own
-credentials.
+Deploying is for its owner, with their own credentials, after
+`cdk bootstrap` of the account:
+`cdk deploy -c tier=production --all --parameters {{ .Container }}:CertificateArn=<arn>`.
+`--all` deploys the stack that holds the copy vault too when
+`copyToRegion` is set, and the parameter names the service stack, the only
+one that takes it.
 
 ## How it runs
 

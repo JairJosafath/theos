@@ -72,6 +72,10 @@ export const SIGNAL_TIMEOUT = Duration.minutes(15);
 // it gives up and signals a failure.
 const HEALTH_WAIT_SECONDS = 300;
 
+// How long a new instance may fail the load balancer's health check before
+// the group replaces it: its boot plus the health wait, with room to spare.
+const HEALTH_CHECK_GRACE = Duration.minutes(10);
+
 // The slowest answer the latency alarm allows, at the 99th percentile: an
 // item is one DynamoDB call, which takes milliseconds.
 const MAX_LATENCY = Duration.seconds(1);
@@ -256,7 +260,11 @@ export class ServiceStack extends Stack {
       cooldown: Duration.minutes(5),
       healthChecks: HealthChecks.withAdditionalChecks({
         additionalTypes: [AdditionalHealthCheckType.ELB],
-        gracePeriod: Duration.minutes(5),
+        // Longer than a boot: the packages, the download and the server's
+        // health wait (HEALTH_WAIT_SECONDS) all come before the instance
+        // signals, and the group must not replace it for failing the load
+        // balancer's check meanwhile.
+        gracePeriod: HEALTH_CHECK_GRACE,
       }),
       groupMetrics: [GroupMetrics.all()],
       // CloudFormation waits for each new instance's cfn-signal, which it

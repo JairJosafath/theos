@@ -1,10 +1,12 @@
 {{ if eq .Framework "aws-lambda-ts" -}}
 {{- $ops := .Operations -}}
+{{- $deploy := "cdk deploy -c tier=production --all" -}}
 # Runbook
 
 What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
-deployment back, and answer an alarm. It is written for the production tier
-(`cdk deploy -c tier=production`): a development stack keeps no data worth
+deployment back, and answer an alarm. It is written for the production tier,
+which `{{ $deploy }}` deploys (every stack, as one
+deploy needs `--all` when there are two): a development stack keeps no data worth
 restoring, and only its alarms apply. This file belongs to the Standard; a
 change to what the stacks keep or how they back it up changes it too,
 through a Standard change.
@@ -95,11 +97,14 @@ When: the damage is older than 35 days, or point-in-time recovery was off.
 When the stack's region is lost, the copies are in {{ $ops.Backups.CopyToRegion }}, in the vault
 of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that region,
 and give the restore an encryption key there (the vault's own key will do).
-Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
-region), then fill its new table from the restored one as in step 4. AWS
+Deploy the stack alone to {{ $ops.Backups.CopyToRegion }}
+(`cdk deploy -c tier=production --exclusively {{ .Container }}` with that region), then fill its new table from the restored one as in step 4. AWS
 Backup copies DynamoDB backups across regions only with its advanced
-features for DynamoDB on in the stack's region: a backup plan turns them on
-by itself, and AWS Backup's _Settings_ page says whether they are.
+features for DynamoDB on in the stack's region, an account setting per
+region that no stack makes: check AWS Backup's _Settings_ page there, or turn
+them on with
+`aws backup update-region-settings --resource-type-management-preference DynamoDB=true`.
+Without them the daily backups are made but never copied.
 {{- end }}
 {{- end }}
 
@@ -114,7 +119,7 @@ doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection, time to
 live (`expiration`, for the `Idempotency` table) and the three
 `c4factory:` tags, which the backup plan selects by. Deploy the stack again
-(`cdk deploy -c tier=production`) and check it reports no drift.
+(`{{ $deploy }}`) and check it reports no drift.
 
 ## Roll a deployment back
 
@@ -124,7 +129,7 @@ live (`expiration`, for the `Idempotency` table) and the three
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production`. The function, the API and the alarms go
+  `{{ $deploy }}`. The function, the API and the alarms go
   back; the data does not. If the bad version wrote bad data, restore the
   items as above to the moment it was deployed.
 - Never deploy a change that replaces a table (a new key, a new name): the
@@ -171,6 +176,11 @@ account, by its owner, and never by a stack here:
 - The cost allocation tags' activation: `c4factory:project`,
   `c4factory:system` and `c4factory:container` attribute costs only once the
   account activates them in Billing.
+{{- if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}
+- AWS Backup's advanced features for DynamoDB, on in the stack's region
+  (`aws backup update-region-settings --resource-type-management-preference DynamoDB=true`),
+  without which no backup is copied to {{ $ops.Backups.CopyToRegion }}.
+{{- end }}
 
 A vault lock on the backup vault is the account owner's call too: in
 compliance mode it can never be undone.
@@ -185,11 +195,13 @@ development stack the way an incident would, and answer it with this
 runbook alone.
 {{- else if eq .Framework "aws-ec2-ts" -}}
 {{- $ops := .Operations -}}
+{{- $deploy := printf "cdk deploy -c tier=production --all --parameters %s:CertificateArn=<arn>" .Container -}}
 # Runbook
 
 What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
-deployment back, and answer an alarm. It is written for the production tier
-(`cdk deploy -c tier=production`): a development stack keeps no data worth
+deployment back, and answer an alarm. It is written for the production tier,
+which `{{ $deploy }}` deploys (every stack, as one
+deploy needs `--all` when there are two): a development stack keeps no data worth
 restoring, and only its alarms and deployments apply. This file belongs to
 the Standard; a change to what the stacks keep or how they back it up
 changes it too, through a Standard change.
@@ -285,12 +297,16 @@ When: the damage is older than 35 days, or point-in-time recovery was off.
 When the stack's region is lost, the copies are in {{ $ops.Backups.CopyToRegion }}, in the vault
 of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that region,
 and give the restore an encryption key there (the vault's own key will do).
-Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
-region, and a certificate in it), then fill its new table from the restored
+Deploy the service stack alone to {{ $ops.Backups.CopyToRegion }}
+(`cdk deploy -c tier=production --exclusively {{ .Container }} --parameters CertificateArn=<arn>`
+with that region, and a certificate in it), then fill its new table from the restored
 one as in step 4, and point the service's domain at the new `EntryPoint`. AWS
 Backup copies DynamoDB backups across regions only with its advanced
-features for DynamoDB on in the stack's region: a backup plan turns them on
-by itself, and AWS Backup's _Settings_ page says whether they are.
+features for DynamoDB on in the stack's region, an account setting per
+region that no stack makes: check AWS Backup's _Settings_ page there, or turn
+them on with
+`aws backup update-region-settings --resource-type-management-preference DynamoDB=true`.
+Without them the daily backups are made but never copied.
 {{- end }}
 {{- end }}
 
@@ -306,7 +322,7 @@ doesn't carry: point-in-time recovery
 three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack again
-(`cdk deploy -c tier=production`) and check it reports no drift.
+(`{{ $deploy }}`) and check it reports no drift.
 
 ## Roll a deployment back
 
@@ -334,7 +350,7 @@ from it, which signal the same way.
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves later: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production --parameters CertificateArn=<arn>`. The
+  `{{ $deploy }}`. The
   instances, the load balancer and the alarms go back; the data does not.
   If the bad version wrote bad data, restore the items as above to the
   moment it was deployed.
@@ -395,6 +411,11 @@ account, by its owner, and never by a stack here:
 - The cost allocation tags' activation: `c4factory:project`,
   `c4factory:system` and `c4factory:container` attribute costs only once the
   account activates them in Billing.
+{{- if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}
+- AWS Backup's advanced features for DynamoDB, on in the stack's region
+  (`aws backup update-region-settings --resource-type-management-preference DynamoDB=true`),
+  without which no backup is copied to {{ $ops.Backups.CopyToRegion }}.
+{{- end }}
 - The ACM certificate the load balancer serves (the `CertificateArn`
   parameter) and the private DNS record pointing its domain at `EntryPoint`.
 

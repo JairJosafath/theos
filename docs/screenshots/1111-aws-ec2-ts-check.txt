@@ -8,7 +8,7 @@
 
 npm ci --no-audit --no-fund
 
-added 172 packages in 16s
+added 172 packages in 25s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -18,38 +18,41 @@ node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/ec2
 
- ✓ src/items.test.ts (25 tests) 38ms
- ✓ src/api.test.ts (13 tests) 23ms
- ✓ src/item_store.test.ts (4 tests) 12ms
- ✓ src/server.test.ts (6 tests) 92ms
+ ✓ src/items.test.ts (25 tests) 13ms
+ ✓ src/api.test.ts (13 tests) 16ms
+ ✓ src/item_store.test.ts (4 tests) 11ms
+ ✓ src/server.test.ts (6 tests) 83ms
 Bundling asset test/Server/Stage...
 Bundling asset sample-app/Server/Stage...
 Bundling asset test/Server/Stage...
 Bundling asset test/Server/Stage...
+Bundling asset test/Server/Stage...
 Bundling asset sample-app-development/Server/Stage...
 Bundling asset test/Server/Stage...
-Bundling asset test/Server/Stage...
- ✓ infra/standard.test.ts (47 tests) 4677ms
- ✓ infra/service_stack.test.ts (22 tests) 4692ms
+ ✓ infra/service_stack.test.ts (22 tests) 4395ms
    ✓ ServiceStack (16)
-     ✓ defaults the alert email to alerts.email 574ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 471ms
-     ✓ copies the backups to the vault in copyToRegion 461ms
+     ✓ defaults the alert email to alerts.email 389ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 453ms
+     ✓ copies the backups to the vault in copyToRegion 458ms
+ ✓ infra/standard.test.ts (47 tests) 4805ms
 
  Test Files  6 passed (6)
       Tests  117 passed (117)
-   Start at  12:00:19
-   Duration  13.03s (transform 46%, import 34%, tests 20%)
-
-  Transform  transforming modules took 22.48s · 46% of tracked time, re-done on every run
-             persist transforms across runs with fsModuleCache: true
-             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+   Start at  12:37:01
+   Duration  6.67s (tests 65%, import 17%, transform 17%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 Bundling asset sample-app/Server/Stage...
 Bundling asset sample-app-development/Server/Stage...
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Downloading sympy (6.0MiB)
+Downloading networkx (2.0MiB)
+Downloading cfn-lint (5.4MiB)
+ Downloaded networkx
+ Downloaded cfn-lint
+ Downloaded sympy
+Installed 9 packages in 64ms
 make check exit 0
 
 # The same with every field of spec.operations set:
@@ -116,6 +119,49 @@ AssertionError: expected { BackupPlanId: { …(1) }, …(1) } to deeply equal { 
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the instances > hold no data: their volumes go with them, and no backup selects them by tag
 AssertionError: sample-app/BackupsPlanTables8D417F20: expected [ { …(3) } ] to be undefined
       Tests  2 failed | 115 passed (117)
+
+# And when the stack has a table the backup plan doesn't name (an Orders table beside Items):
+# vitest run infra/standard.test.ts (NO_COLOR=1), the failures:
+
+--- a/infra/service_stack.ts
++++ b/infra/service_stack.ts
+@@ -130,6 +130,15 @@
+       removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+     });
+ 
++    const orders = new Table(this, 'Orders', {
++      partitionKey: { name: 'id', type: AttributeType.STRING },
++      billingMode: BillingMode.PAY_PER_REQUEST,
++      encryption: TableEncryption.AWS_MANAGED,
++      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: rules.pointInTimeRecovery },
++      deletionProtection: rules.keepData,
++      removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
++    });
++
+     // Two zones of isolated subnets and no NAT gateway: what the instances
+     // need from AWS comes through endpoints, and nothing else gets out.
+     const vpc = new Vpc(this, 'Network', {
+@@ -494,6 +503,14 @@
+         billingMode: BillingMode.PAY_PER_REQUEST,
+         addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
+         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
++        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
++      })
++      .monitorDynamoTable({
++        table: orders,
++        alarmFriendlyName: 'Orders',
++        billingMode: BillingMode.PAY_PER_REQUEST,
++        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
++        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+       });
+ 
+
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
+AssertionError: sample-app/OrdersA9B65338 is in no backup selection: expected false to be true // Object.is equality
+      Tests  1 failed | 46 passed (47)
 
 # The other AWS Frameworks at their versions in this tree (templates/versions.txt) with aws-standard
 # v1.7.0, each rendered with hack/render and checked with make check:

@@ -110,6 +110,8 @@ describe('ServiceStack', () => {
       MinSize: String(MIN_INSTANCES),
       MaxSize: '4',
       HealthCheckType: 'ELB',
+      // Ten minutes, past the boot and its five-minute health wait.
+      HealthCheckGracePeriod: 600,
     });
     production.hasResourceProperties('AWS::EC2::LaunchTemplate', {
       LaunchTemplateData: Match.objectLike({

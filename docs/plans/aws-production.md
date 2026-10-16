@@ -327,8 +327,8 @@ the evidence. What it settled beyond step 3:
   which carry the Container's tag too and hold no data, and the development
   stack's table (#1272). So `Backups` takes `tables` and selects them with
   `BackupResource.fromDynamoDbTable`, as #1267 decided for the Lambda
-  Frameworks. The Standard's test accepts a selection naming only the
-  stack's own tables, or else the tag (the Lambda Frameworks until #1267
+  Frameworks. The Standard's test accepts a selection naming only and all
+  of the stack's own tables, or else the tag (the Lambda Frameworks until #1267
   and #1272 move them), and refuses a tag selection in a stack with an
   Auto Scaling group, a launch template or an instance, whose launch
   template volumes must be deleted with their instance; that is decision
@@ -343,7 +343,8 @@ the evidence. What it settled beyond step 3:
   `waitOnResourceSignals`, `minInstancesInService` 2 (a replacement starts
   before an old instance stops, so the in-service alarm stays quiet) and a
   15-minute timeout; CDK grants `cloudformation:SignalResource` on the
-  stack.
+  stack. The group's health-check grace is 10 minutes, past the boot and
+  its health wait, so a slow boot isn't replaced before it signals.
 - **HTTPS only on the internal load balancer.** One listener on 443 with
   the `CertificateArn` parameter (no default, the pattern `aws-fargate-ts`
   uses) and the recommended TLS policy; no listener on 80, not even a
