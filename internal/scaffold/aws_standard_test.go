@@ -249,7 +249,7 @@ func TestAWSStandardNamesThePythonStandardItCopies(t *testing.T) {
 
 // TestAWSStandardWellArchitectedFitsTheLanguage checks that each Framework's
 // docs/well-architected.md gives build and cold-start advice for its own
-// language: a Go function names no Node tooling. Since aws-standard v1.7.0
+// language: a Go function names no Node tooling. Since aws-standard v1.8.0
 // the three Lambda Frameworks share the digest of the tiers, and only the
 // TypeScript and Python ones have Powertools: there is none for Go.
 func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
@@ -265,7 +265,7 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 			"no Powertools for Go", "`log/slog`", "Idempotency, by hand",
 		}, []string{"esbuild", "module scope", "npm", "bundle", "Powertools'", "Idempotency-Key"}},
 		{"aws-ec2-ts", []string{"esbuild"}, []string{"go build"}},
-		{"aws-fargate-ts", nil, []string{"go build", "bootstrap"}},
+		{"aws-fargate-ts", []string{"one per zone", "collector", "deployment alarm"}, []string{"go build", "bootstrap"}},
 		{"aws-lambda-py", []string{
 			"uv.lock", "module scope", "infra/operations.ts", "Powertools' Idempotency, in `app/once.py`",
 		}, []string{"esbuild", "go build", "bootstrap"}},

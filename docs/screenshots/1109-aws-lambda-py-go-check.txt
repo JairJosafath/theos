@@ -1,24 +1,35 @@
-# make check in scaffolded aws-lambda-py v1.1.0 and aws-lambda-go v1.1.0 Containers with aws-standard v1.7.0 (issue #1109)
-# go run ./hack/render -out /tmp/1109-std/py -type function Framework=aws-lambda-py Standard=aws-standard
-# go run ./hack/render -out /tmp/1109-std/go -type function Framework=aws-lambda-go Standard=aws-standard
+# make check in scaffolded aws-lambda-py v1.1.0 and aws-lambda-go v1.1.0 Containers with aws-standard v1.8.0 (issue #1109)
+# This branch numbered its Standard v1.7.0; #1274 (step 5, aws-fargate-ts v1.1.0) merged to main first
+# and took aws-standard v1.7.0, so after merging origin/main (fdd7d352) this branch's Standard is v1.8.0,
+# with step 5's aws-fargate-ts branches beside the three Lambda Frameworks' ones.
+# Redone after the merge, on aws-standard v1.8.0: "aws-lambda-py, the defaults", "aws-lambda-go, the
+# defaults", and aws-lambda-ts v1.1.0 and aws-fargate-ts v1.1.0 in the last section but one.
+# Run before the merge, on the branch's v1.7.0-numbered Standard (no aws-fargate-ts operations
+# branches yet), and not redone: the "every backups and alerts field set" runs, the two mutations of
+# the Standard's test, aws-ec2-ts v1.0.0 and aws-fargate-ts v1.0.0, and the aws-lambda-py and
+# aws-lambda-go v1.0.0 runs (the last section); those used /tmp/1109-std/ and /tmp/1109-bin.
+# After the merge:
+# go run ./hack/render -out ~/.cache/c4factory-1109/py -type function Framework=aws-lambda-py Standard=aws-standard
+# go run ./hack/render -out ~/.cache/c4factory-1109/go -type function Framework=aws-lambda-go Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then in each, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23, Python 3.14.4,
-# Go 1.26.9 and golangci-lint 2.13.1 (in /tmp/1109-bin):
-# env -i "PATH=/tmp/1109-bin:$PATH" HOME=<an empty dir> NO_COLOR=1 npm_config_cache=/tmp/npm-cache \
-#   UV_CACHE_DIR=/tmp/uv-cache GOCACHE=/tmp/1109-gocache GOMODCACHE=/tmp/1109-gomodcache make check
+# Go 1.26.9 and golangci-lint 2.13.1 (in ~/.cache/c4factory-1109/bin), outside any git repository:
+# env -i "PATH=<that bin>:$PATH" HOME=<an empty dir> NO_COLOR=1 npm_config_cache=<a cache> \
+#   UV_CACHE_DIR=<a cache> GOCACHE=<a cache> GOMODCACHE=<a cache> make check
 # on 2026-10-16. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
-# and cfn-lint lints both with --include-checks I. Trimmed: uv's package list, bundling lines.
+# and cfn-lint lints both with --include-checks I. Trimmed: npm's notices, uv's and Go's download
+# and package lists, cfn-lint's install, bundling lines.
 
 ## aws-lambda-py, the defaults
 
 npm ci --no-audit --no-fund
 
-added 141 packages in 12s
+added 141 packages in 31s
 uv sync --locked
 Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
 Creating virtual environment at: .venv
 Resolved 26 packages in 1ms
-Installed 24 packages in 33ms
+Installed 24 packages in 607ms
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -33,30 +44,30 @@ Success: no issues found in 10 source files
 uv run --no-sync pytest --strict-markers --strict-config
 ============================= test session starts ==============================
 platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
-collected 62 items
+collected 63 items
 
 tests/test_api.py .........                                              [ 14%]
 tests/test_item_store.py ....                                            [ 20%]
-tests/test_items.py ...................................                  [ 77%]
-tests/test_once.py ..............                                        [100%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
 
-============================== 62 passed in 0.55s ==============================
+============================= 63 passed in 35.90s ==============================
 node_modules/.bin/vitest run
 
- ✓ infra/standard.test.ts (45 tests) 6208ms
+ ✓ infra/standard.test.ts (51 tests) 18648ms
    ✓ the Standard, in production (9)
-     ✓ leaves no error or warning on any stack 512ms
+     ✓ leaves no error or warning on any stack 1341ms
    ✓ the Standard, in development (9)
-     ✓ leaves no error or warning on any stack 532ms
- ✓ infra/api_stack.test.ts (14 tests) 7178ms
+     ✓ leaves no error or warning on any stack 620ms
+ ✓ infra/api_stack.test.ts (14 tests) 19953ms
    ✓ ApiStack (12)
-     ✓ defaults the alert email to alerts.email 838ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 1745ms
-     ✓ copies the backups to the vault in copyToRegion 556ms
+     ✓ defaults the alert email to alerts.email 9222ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 2421ms
+     ✓ copies the backups to the vault in copyToRegion 1374ms
 
  Test Files  2 passed (2)
-      Tests  59 passed (59)
-   Duration  8.66s (tests 83%, import 10%, transform 7%)
+      Tests  65 passed (65)
+   Duration  36.70s (tests 85%, import 12%, transform 2%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
@@ -66,7 +77,7 @@ make check exit 0
 cdk.out/development/sample-app-development.template.json
 cdk.out/production/sample-app.template.json
 
-# The same with every backups and alerts field set:
+# The same with every backups and alerts field set (before the merge, on the v1.7.0-numbered Standard):
 # go run ./hack/render -out /tmp/1109-std/py-copy -type function -retention-days 7 \
 #   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-lambda-py Standard=aws-standard
 # make check (as above): the key lines, the templates synth wrote, and the exit status
@@ -90,7 +101,7 @@ make check exit 0
 
 npm ci --no-audit --no-fund
 
-added 141 packages in 6s
+added 141 packages in 18s
 cd src && go mod download
 cd src && go mod tidy -diff
 node_modules/.bin/prettier --check .
@@ -103,19 +114,19 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.026s
+ok  	c4factory.local/webshop/sample-app	1.044s
 node_modules/.bin/vitest run
 
- ✓ infra/standard.test.ts (45 tests) 4130ms
- ✓ infra/api_stack.test.ts (15 tests) 5289ms
+ ✓ infra/standard.test.ts (51 tests) 77322ms
+ ✓ infra/api_stack.test.ts (15 tests) 78122ms
    ✓ ApiStack (13)
-     ✓ defaults the alert email to alerts.email 885ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 607ms
-     ✓ copies the backups to the vault in copyToRegion 576ms
+     ✓ defaults the alert email to alerts.email 626ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 651ms
+     ✓ copies the backups to the vault in copyToRegion 511ms
 
  Test Files  2 passed (2)
-      Tests  60 passed (60)
-   Duration  6.55s (tests 81%, import 12%, transform 7%)
+      Tests  66 passed (66)
+   Duration  81.21s (tests 96%, import 3%, transform 1%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
@@ -125,7 +136,7 @@ make check exit 0
 cdk.out/development/sample-app-development.template.json
 cdk.out/production/sample-app.template.json
 
-# The same with every backups and alerts field set:
+# The same with every backups and alerts field set (before the merge, on the v1.7.0-numbered Standard):
 # go run ./hack/render -out /tmp/1109-std/go-copy -type function -retention-days 7 \
 #   -copy-to-region eu-central-1 -alert-email ops@example.com Framework=aws-lambda-go Standard=aws-standard
 # make check (as above, run alone: two golangci-lint runs at once refuse each other with
@@ -145,7 +156,7 @@ cdk.out/production/sample-app-backup-copy.template.json
 cdk.out/production/sample-app.template.json
 make check exit 0
 
-## The Standard's test catches a stack that breaks infra/operations.ts's promises
+## The Standard's test catches a stack that breaks infra/operations.ts's promises (before the merge, on the v1.7.0-numbered Standard)
 
 # aws-lambda-py: in /tmp/1109-std/py, the stack keeps its backups 30 days whatever
 # infra/operations.ts says (35). vitest run (NO_COLOR=1), the failures, then reverted:
@@ -207,7 +218,15 @@ AssertionError: sample-app-development/Handler886CB40B: expected true to be fals
       Tests  3 failed | 57 passed (60)
 vitest exit 1
 
-## The other AWS Frameworks on aws-standard v1.7.0
+## The other AWS Frameworks on aws-standard v1.8.0, after the merge
+
+# Rendered with hack/render as above from the merged working tree (aws-lambda-ts v1.1.0 and
+# aws-fargate-ts v1.1.0, as in templates/versions.txt, the operations block at its defaults;
+# aws-fargate-ts with -type service), each checked with make check as above:
+aws-lambda-ts v1.1.0: make check exit 0, Tests 109 passed (109)
+aws-fargate-ts v1.1.0: make check exit 0, Tests 130 passed (130)
+
+## The other AWS Frameworks on the v1.7.0-numbered Standard, before the merge
 
 # Rendered with hack/render as above from the working tree (aws-lambda-ts v1.1.0, aws-fargate-ts
 # v1.0.0 and aws-ec2-ts v1.0.0 as in templates/versions.txt), each checked with make check:

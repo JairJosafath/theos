@@ -1,6 +1,7 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
-{{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
-{{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
+{{- /* The Frameworks built for a tier from infra/operations.ts: the three
+     Lambda Frameworks and aws-fargate-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" -}}
 # Reviewer guide
 
 You review one pull request against the issue it closes: its acceptance
@@ -174,9 +175,9 @@ yourself; the full `make check` runs on the release's commit before its tag.
   `env` taken from the environment or a context lookup, which would need an
   AWS account to synthesize.
 {{- end }}
-{{- if $lambda }}
+{{- if $tiered }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
-  `RETAIN`, or never protected), a new function, table or API without its
+  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-fargate-ts" }}load balancer, service or table{{ else }}function, table or API{{ end }} without its
   alarms on the stack's topic, a context value read but `tier`, and a
   change to `infra/operations.ts` that its issue's change to the
   Container's `spec.operations` doesn't ask for. A change
