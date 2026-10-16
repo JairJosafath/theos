@@ -1,0 +1,10 @@
+# The checks a pull request to main waits for: each job of a workflow that
+# runs on pull requests, as "<workflow file> <job name:>". A workflow whose
+# paths a pull request misses gets no run on it.
+# hack/lib/github.sh land waits for them; a main ruleset requires them;
+# hack/check-workflows.sh keeps this list and the workflows in step.
+test.yml Tests
+lint.yml Lint
+lint.yml Shell tests
+ui.yml UI
+vulncheck.yml Vulnerabilities

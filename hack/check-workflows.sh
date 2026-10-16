@@ -7,21 +7,34 @@
 # branch carries the concurrency group ${{ github.workflow }}-${{ github.ref }}
 # (one pending run per branch; GitHub drops the superseded pending runs) or
 # ${{ github.workflow }}-${{ github.sha }} (one run per commit), without
-# cancel-in-progress, so a running job finishes. And the triggers (#1101):
-# Lint (lint.yml) and UI (ui.yml) run on pull requests to main with the same
-# paths as on pushes, Lint has a test-hack job running make test-hack, and
-# Tests (test.yml) runs on no pull request and groups by commit, so every
-# merge commit on main gets a verdict. Release (release.yml) has a step that
+# cancel-in-progress, so a running job on main finishes. The pull requests
+# (#1380): a workflow that runs on pull requests to main does so with the
+# same paths as on pushes, and carries cancel-in-progress
+# ${{ github.event_name == 'pull_request' }}, so a new push to a pull request
+# replaces its run and main's runs still finish. Lint (lint.yml), UI (ui.yml)
+# and Tests (test.yml) run on pull requests to main, Lint has a test-hack job
+# running make test-hack, and Tests groups main's runs by commit
+# (${{ github.workflow }}-${{ github.event_name == 'pull_request' &&
+# github.ref || github.sha }}), so every merge commit on main gets a verdict.
+# Every job of a workflow that runs on pull requests is listed, by its
+# workflow file and its name:, in .github/required-checks (the checks
+# hack/lib/github.sh land waits for), the names are distinct, and every line
+# there names such a job. Release (release.yml) has a step that
 # dispatches verify-release.yml for a minor tag only, `if:`
 # endsWith(github.ref_name, '.0'), in a job granted actions: write (#1105).
 # Prints each job or workflow that doesn't and exits 1.
 # hack/check-workflows_test.sh runs it in make check.
 #
-#   hack/check-workflows.sh [DIR]   the workflows in DIR (default .github/workflows)
+#   hack/check-workflows.sh [DIR]   the workflows in DIR (default .github/workflows),
+#                                   the list in DIR/../required-checks
 set -euo pipefail
 
 # shellcheck disable=SC2016 # the expressions are GitHub's, not the shell's
 BY_REF='${{ github.workflow }}-${{ github.ref }}' BY_SHA='${{ github.workflow }}-${{ github.sha }}'
+# shellcheck disable=SC2016
+BY_PR_SHA='${{ github.workflow }}-${{ github.event_name == '"'pull_request'"' && github.ref || github.sha }}'
+# shellcheck disable=SC2016
+ON_PR='${{ github.event_name == '"'pull_request'"' }}'
 
 # trigger FILE EVENT: the EVENT trigger of the workflow FILE, one line per
 # setting: "branches <list>" and "path <pattern>" for each path, or "none"
@@ -40,12 +53,29 @@ trigger() {
 }
 
 DIR=${1:-$(cd "$(dirname "$0")/.." && pwd)/.github/workflows}
+LIST=$(dirname "$DIR")/required-checks
+# The required checks, "FILE<TAB>NAME" per line, and the jobs of the workflows
+# that run on pull requests, in the same form.
+required=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/[[:space:]]*$//' -e 's/^\([^[:space:]]*\)[[:space:]][[:space:]]*/\1\t/' "$LIST" 2>/dev/null || true)
+pr_jobs=
 fail=0
 for f in "$DIR"/*.yml "$DIR"/*.yaml; do
   [ -e "$f" ] || continue
-  # One line per job: its name, its runs-on (or -), and kind when it makes a
-  # Kind cluster. A job that calls a reusable workflow (uses:) has no runs-on.
-  while IFS=$'\t' read -r job runs_on kind; do
+  pr=$(trigger "$f" pull_request)
+  # One line per job: its id, its runs-on (or -), kind when it makes a Kind
+  # cluster, and its name: (or -). A job that calls a reusable workflow
+  # (uses:) has no runs-on.
+  while IFS=$'\t' read -r job runs_on kind name; do
+    if [ "$pr" != none ]; then
+      pr_jobs+="${f##*/}"$'\t'"$name"$'\n'
+      if [ "$name" = - ]; then
+        echo "$f: job $job runs on pull requests without a name:" >&2
+        fail=1
+      elif ! grep -qxF "${f##*/}"$'\t'"$name" <<<"$required"; then
+        echo "$f: job $job ($name) runs on pull requests but isn't in $LIST" >&2
+        fail=1
+      fi
+    fi
     if [ "$runs_on" = - ]; then
       echo "$f: job $job has no runs-on" >&2
       fail=1
@@ -57,11 +87,12 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fail=1
     fi
   done < <(awk '
-    function flush() { if (job != "") print job "\t" (runs ? runs : "-") "\t" (kind ? "kind" : "-"); job = ""; runs = ""; kind = 0 }
+    function flush() { if (job != "") print job "\t" (runs ? runs : "-") "\t" (kind ? "kind" : "-") "\t" (name != "" ? name : "-"); job = ""; runs = ""; kind = 0; name = "" }
     /^[^ #]/ { flush(); injobs = ($0 ~ /^jobs:/); next }
     injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); next }
     job != "" && /^    runs-on:/ { runs = $0; sub(/^    runs-on:[[:space:]]*/, "", runs) }
     job != "" && /^    uses:/ { runs = "uses" }
+    job != "" && /^    name:/ { name = $0; sub(/^    name:[[:space:]]*/, "", name); gsub(/^["\x27]|["\x27]$/, "", name) }
     job != "" && /kind create cluster|make e2e/ { kind = 1 }
     END { flush() }
   ' "$f")
@@ -78,24 +109,34 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     top == "concurrency" && /^  cancel-in-progress:/ { cancel = $0; sub(/^  cancel-in-progress:[[:space:]]*/, "", cancel) }
     END { print (push ? "push" : "-") "\t" (group != "" ? group : "-") "\t" (cancel != "" ? cancel : "-") }
   ' "$f")
-  group=${group//\'/} group=${group//\"/}
+  group=${group#[\'\"]} group=${group%[\'\"]} cancel=${cancel#[\'\"]} cancel=${cancel%[\'\"]}
   if [ "$push" = push ]; then
-    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ]; then
-      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF or $BY_SHA" >&2
+    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ] && [ "$group" != "$BY_PR_SHA" ]; then
+      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF, $BY_SHA or $BY_PR_SHA" >&2
       fail=1
-    elif [ "$cancel" != - ] && [ "$cancel" != false ]; then
+    elif [ "$cancel" != - ] && [ "$cancel" != false ] && [ "$cancel" != "$ON_PR" ]; then
       echo "$f: cancels the run in progress (cancel-in-progress: $cancel); a running job on main must finish" >&2
+      fail=1
+    fi
+  fi
+  if [ "$pr" != none ]; then
+    if ! grep -qx 'branches \[main\]' <<<"$pr"; then
+      echo "$f: doesn't run on pull requests to main" >&2
+      fail=1
+    elif [ "$push" = push ] && [ "$(grep '^path ' <<<"$pr")" != "$(trigger "$f" push | grep '^path ')" ]; then
+      echo "$f: runs on pull requests with other paths than on pushes" >&2
+      fail=1
+    fi
+    if [ "$cancel" != "$ON_PR" ]; then
+      echo "$f: runs on pull requests without cancel-in-progress: $ON_PR, so a new push doesn't replace the old run" >&2
       fail=1
     fi
   fi
 
   case ${f##*/} in
-    lint.yml | ui.yml)
-      if ! grep -qx 'branches \[main\]' <<<"$(trigger "$f" pull_request)"; then
+    lint.yml | ui.yml | test.yml)
+      if [ "$pr" = none ]; then
         echo "$f: doesn't run on pull requests to main" >&2
-        fail=1
-      elif [ "$(trigger "$f" pull_request | grep '^path ')" != "$(trigger "$f" push | grep '^path ')" ]; then
-        echo "$f: runs on pull requests with other paths than on pushes" >&2
         fail=1
       fi
       ;;&
@@ -106,16 +147,26 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       ;;
     test.yml)
-      if [ "$(trigger "$f" pull_request)" != none ]; then
-        echo "$f: runs on pull requests; hack/lib/github.sh land runs make check instead" >&2
-        fail=1
-      fi
-      if [ "$group" != "$BY_SHA" ]; then
-        echo "$f: groups runs by $group, not $BY_SHA, so a merge commit on main can go without a verdict" >&2
+      if [ "$group" != "$BY_PR_SHA" ]; then
+        echo "$f: groups runs by $group, not $BY_PR_SHA, so a merge commit on main can go without a verdict" >&2
         fail=1
       fi
       ;;
   esac
+done
+
+# Each required check names a job of a workflow that runs on pull requests,
+# and no two of them share a name, so a ruleset can tell them apart.
+while IFS=$'\t' read -r file name; do
+  [ -n "$file" ] || continue
+  if ! grep -qxF "$file"$'\t'"$name" <<<"$pr_jobs"; then
+    echo "$LIST: $file $name is no job of a workflow that runs on pull requests" >&2
+    fail=1
+  fi
+done <<<"$required"
+for name in $(cut -f2 <<<"$required" | sort | uniq -d | tr ' ' '\001'); do
+  echo "$LIST: two required checks are named ${name//$'\001'/ }" >&2
+  fail=1
 done
 
 # Release's dispatch of Verify Release: the step's if and run, and whether its
