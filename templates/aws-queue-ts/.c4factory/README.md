@@ -1,74 +1,77 @@
-# aws-lambda-ts (Framework)
+# aws-queue-ts (Framework)
 
-A serverless HTTP API on AWS in TypeScript: a Lambda function behind an API
-Gateway HTTP API, keeping items in DynamoDB through the AWS SDK v3, with its
-infrastructure as a CDK app. Nothing deploys: the check synthesizes the
-CloudFormation offline.
+A queue consumer on AWS in TypeScript: an SQS queue whose messages a Lambda
+function consumes in batches, keeping the items they carry in DynamoDB
+through the AWS SDK v3, with a dead-letter queue for the messages that keep
+failing and its infrastructure as a CDK app. Nothing deploys: the check
+synthesizes the CloudFormation offline.
 
-- **Supports:** `function`
+- **Supports:** `worker`
 - **Layout:** `src/handler.ts` creates the DynamoDB client, Powertools'
-  `Logger` and `Metrics` and the idempotent PUT at module scope, reads
-  `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and passes each
-  `APIGatewayProxyEventV2` to `answer` in `src/api.ts` with a `route`:
-  for `PUT /items/{id}`, Powertools' `makeIdempotent` around `route` (keyed
-  by the `Idempotency-Key` header, validated against the path and body; a
-  request without the header is just run), with `src/once.ts` throwing a
-  refusal out of it so no record of it is kept and answering an
-  in-progress retry 409 and a reused key 422; `route` itself for the rest. `route` checks input and answers with status codes,
-  throwing what the store throws; `answer` logs that and answers 500. The
-  handler counts `AnsweredRequests` and `FailedRequests` and the cold start
-  with `Metrics`. `src/items.ts` holds the rules and imports neither the SDK
-  nor the `aws-lambda` types; `src/item_store.ts` wraps DynamoDB behind the
-  `ItemStore` interface. Tests next to the code (`*.test.ts`) use a fake
-  store and a fake document client; none calls AWS.
+  `Logger` and `Metrics` and the idempotent `consume` at module scope, reads
+  `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and passes each `SQSEvent` to
+  `consumeBatch` in `src/batch.ts`: Powertools' `BatchProcessor` and
+  `processPartialResponse` run the work on each message and answer the ones
+  that threw as `batchItemFailures`, and throw when all of them did. The
+  work is `consume` in `src/consume.ts` behind Powertools' `makeIdempotent`
+  (keyed by the `messageId`, so a message delivered twice is stored once,
+  and a failure keeps no record), wrapped in `reporting`, which counts
+  `ConsumedMessages` and `FailedMessages` with `Metrics` and logs a failure.
+  `consume` checks the body with `checkMessage` and stores the item, and
+  throws `Malformed` for a body that is no item. `src/items.ts` holds the
+  rules and imports neither the SDK nor the `aws-lambda` types;
+  `src/item_store.ts` wraps DynamoDB behind the `ItemStore` interface. Tests
+  next to the code (`*.test.ts`) use a fake store, a fake document client
+  and Powertools' real batch processor; none calls AWS.
 - **Operations:** `infra/operations.ts`, rendered from `.Operations` (the
   Container's `spec.operations` with the factory's defaults), exports one
   frozen `OPERATIONS` of the Standard's `Operations` type: `backups`
   (`retentionDays`, `copyToRegion`), `recovery` (`rpo`, `rto`) and `alerts`
-  (`email`), each string rendered with `ts`. The factory overwrites it when the block
-  changes; it is not a protected path.
+  (`email`), each string rendered with `ts`. The factory overwrites it when
+  the block changes; it is not a protected path.
 - **Infrastructure:** `infra/stacks.ts` exports `defineStacks(app: App, tier:
   Tier): Stack[]`, which adds one stack named after the package (the
   Container, and `<name>-development` in development, the Standard's
-  `stackNameFor`), `infra/api_stack.ts`, built for the tier with the
-  Standard's `TIER_RULES`, and in production with `copyToRegion` and backups set a
-  second, `<name>-backup-copy` in that region (`infra/backups.ts`'s
-  `BackupCopyStack`: the vault the backups are copied to, named
-  `<name>-copies`, a name over 43 characters cut with a hash, with its own key, both `RETAIN`), which the first depends
-  on. The stack has two on-demand DynamoDB tables, the items and
-  Powertools' idempotency records (TTL `expiration`), KMS-encrypted, with
-  point-in-time recovery, deletion protection and `RETAIN` in production
-  and none of them, `DESTROY`, in development; a `NodejsFunction`
-  (Node.js 24, arm64, 256 MB, 10 s, JSON logs to its own log group, X-Ray
-  `Active` in production only, its own role granted only `GetItem` and
+  `stackNameFor`), `infra/queue_stack.ts`, built for the tier with the
+  Standard's `TIER_RULES`, and in production with `copyToRegion` and backups
+  set a second, `<name>-backup-copy` in that region (`infra/backups.ts`'s
+  `BackupCopyStack`, as `aws-lambda-ts` has it), which the first depends on.
+  The stack has two SQS queues, the messages (kept 4 days, a visibility
+  timeout six times the function's 30 s) and their dead-letter queue (kept
+  14 days, after 5 deliveries), both with SQS-managed encryption, a queue
+  policy refusing requests without TLS (`enforceSSL`) and `RETAIN` in
+  production, `DESTROY` in development; two on-demand DynamoDB tables, the
+  items and Powertools' idempotency records (TTL `expiration`),
+  KMS-encrypted, with point-in-time recovery, deletion protection and
+  `RETAIN` in production and none of them, `DESTROY`, in development; a
+  `NodejsFunction` (Node.js 24, arm64, 256 MB, 30 s, JSON logs to its own
+  log group, X-Ray `Active` in production only, its own role granted only
   `PutItem` on the items, `GetItem`, `PutItem`, `UpdateItem` and
-  `DeleteItem` on the idempotency records, and writes to its log group); an
-  HTTP API with IAM authorization on every route, a throttled `$default`
-  stage and an access log; every log group kept one year in production and
-  one month in development. `infra/alarms.ts`'s `Alarms` makes the alarm
-  topic (encrypted with its own key, which CloudWatch may use, SSL only),
-  the `AlertEmail` parameter (default `OPERATIONS.alerts.email`) and an
-  email subscription under the condition `HasAlertEmail`, and
-  `cdk-monitoring-constructs`' `MonitoringFacade` with a dashboard named
-  after the stack: alarms on the API's 5xx, the function's errors,
-  throttles and p99 duration (over 8 s of its 10), and each table's read
+  `DeleteItem` on the idempotency records, consuming the queue and writing
+  its log group); and the event source mapping from the queue (batches of
+  10 within 5 s, `ReportBatchItemFailures`, at most 10 concurrent
+  invocations). `infra/alarms.ts`'s `Alarms` makes the alarm topic, the
+  `AlertEmail` parameter, the subscription under `HasAlertEmail` and the
+  `MonitoringFacade` with a dashboard named after the stack, as in
+  `aws-lambda-ts`: alarms on the oldest message's age (over 15 minutes),
+  the dead-letter queue's depth (any message), the function's errors,
+  throttles and p99 duration (over 24 s of its 30), and each table's read
   and write throttles and system errors, each on one bad five-minute
   period. In production with `retentionDays` over 0, `infra/backups.ts`'s
-  `Backups` adds an AWS Backup vault with its own key (both `RETAIN`), a
-  daily plan named after the stack keeping `retentionDays` and copying to
-  `copyToRegion`'s vault when it is set, and a selection by the
-  `c4factory:container` tag (its role's AWS managed policy acknowledged,
-  `AwsSolutions-IAM4`). The stack outputs `EntryPoint` (the API's URL) and
-  `AlarmTopicArn`. `infra/api_stack.test.ts` asserts it with
-  `Template.fromStack` for both tiers.
+  `Backups` adds the vault, the daily plan and the selection by the
+  `c4factory:container` tag, as in `aws-lambda-ts`. The stack outputs
+  `EntryPoint` (the queue's URL), `QueueArn` (what a producer's
+  `sqs:SendMessage` names) and `AlarmTopicArn`.
+  `infra/queue_stack.test.ts` asserts it with `Template.fromStack` for both
+  tiers.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
-  `infra/api_stack.ts`, `infra/api_stack.test.ts`, `infra/alarms.ts`,
+  `infra/queue_stack.ts`, `infra/queue_stack.test.ts`, `infra/alarms.ts`,
   `infra/backups.ts`, `infra/operations.ts`, `README.md`, `CHANGELOG.md`,
   `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients and
-  Powertools' `logger`, `metrics` and `idempotency` 2.36.0 are
+  Powertools' `batch`, `logger`, `metrics` and `idempotency` 2.36.0 are
   `dependencies`, which esbuild bundles into the function (not the
   runtime's copy); the CDK, CDK Nag, `cdk-monitoring-constructs` 10.3.2,
   tsx and the Standard's tools are `devDependencies`.
@@ -86,7 +89,7 @@ CloudFormation offline.
 - **Lockfile:** `package-lock.json` was generated by npm 11 on Node 24; only its
   two `name` fields are templated, so `npm ci` installs exactly the versions
   in `package.json`. `allowScripts` lets esbuild's install script run.
-- **Standard:** made for `aws-standard` v1.6.0 or later, which owns
+- **Standard:** made for `aws-standard` vSTD or later, the first that supports `worker` and this Framework, which owns
   `infra/main.ts`, `infra/standard.ts` (the tier, `TIER_RULES` and the
   `Operations` type this Framework imports) and `infra/standard.test.ts`. Lists its tools in
   `devDependencies` with exact versions: `eslint` 10.11.0, `@eslint/js`
