@@ -8,8 +8,8 @@ infrastructure as a CDK app. Scaffolded by C4 Factory.
 ## The events
 
 The rule is on the account's default event bus and matches the events
-whose `source` is `{{ .Container }}` and whose `detail-type` is
-`ItemSubmitted`: `eventPatternFor` in `infra/event_stack.ts` says which,
+whose `source` is `{{ .Container }}` (`{{ .Container }}-development` in
+development) and whose `detail-type` is `ItemSubmitted`: `eventPatternFor` in `infra/event_stack.ts` says which,
 and the stack's `EventPattern` output repeats it. A producer puts one with
 `PutEvents`, its `detail` an item:
 

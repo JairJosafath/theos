@@ -23,8 +23,10 @@ export function defineStacks(app: App, tier: Tier): Stack[] {
   const { backups } = OPERATIONS;
   const events = new EventStack(app, stackNameFor(name, tier), {
     description: `${packageJson.description} An EventBridge rule invoking a Lambda function, a dead-letter queue and a DynamoDB table.`,
-    // The events' source is the Container's name, in either tier.
-    source: name,
+    // The events' source is the stack's name: the Container's in
+    // production, with the tier in development, so a development stack in
+    // the production account never consumes production's events.
+    source: stackNameFor(name, tier),
     tier,
     operations: OPERATIONS,
     backupTag: [CONTAINER_TAG, STANDARD_TAGS[CONTAINER_TAG] ?? name],

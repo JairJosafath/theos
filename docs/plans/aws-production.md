@@ -593,8 +593,10 @@ copies step 10's two levels of retry and one dead-letter queue, and settled:
   `Ref` of `<bus>|<rule>`, which is not the `RuleName` dimension of the
   `AWS/Events` metrics, so its alarms would watch nothing; on the default
   bus `Ref` is the rule's name. The pattern matches `source` = the
-  Container's name and `detail-type` `ItemSubmitted`, and a producer puts
-  its events there with `events:PutEvents`.
+  stack's name (the Container's, with `-development` in development, so a
+  development stack in production's account never takes its events) and
+  `detail-type` `ItemSubmitted`, and a producer puts its events there with
+  `events:PutEvents`.
 - **Two levels of retry:** the rule's target retries handing an event to
   Lambda (10 attempts within an hour), and Lambda retries an invocation
   that threw (twice within an hour); the target's `DeadLetterConfig` and
