@@ -210,6 +210,35 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- if eq .Framework "aws-lambda-ts" }} The
+operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
+@aws-lambda-powertools/logger, metrics and idempotency 2.36.0.
+{{- end }}
+{{- end }}
+{{- if eq .Framework "aws-lambda-ts" }}
+
+## Operations (read 2026-10-16)
+
+Read for the tiers, the backups, the alarms and `docs/runbook.md`. The
+pricing pages were read for what costs more, not for figures: the digests
+give none.
+
+| Source                                                                                                                                                                                                                          | Version / date |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Reliability pillar, REL09 Back up data — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/back-up-data.html                                                                                                | live           |
+| Reliability pillar, REL13 Plan for disaster recovery — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/plan-for-disaster-recovery-dr.html                                                                 | live           |
+| Reliability pillar, REL06 Monitor workload resources — https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/monitor-workload-resources.html                                                                    | live           |
+| Operational excellence pillar, OPS08 workload observability (BP04 alerts, BP05 dashboards) — https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_alerts.html     | live           |
+| Serverless Applications Lens, structured logging — https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/opex-logging.html                                                                            | July 14, 2022  |
+| AWS Backup, advanced DynamoDB backup — https://docs.aws.amazon.com/aws-backup/latest/devguide/advanced-ddb-backup.html                                                                                                          | live           |
+| AWS Backup, restoring a DynamoDB table — https://docs.aws.amazon.com/aws-backup/latest/devguide/restoring-dynamodb.html                                                                                                         | live           |
+| AWS Backup, vault lock — https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html                                                                                                                                 | live           |
+| DynamoDB, point-in-time recovery — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html                                                                                                 | live           |
+| DynamoDB, restoring a table to a point in time — https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery.Tutorial.html                                                                             | live           |
+| cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                  | 10.3.2         |
+| Powertools for AWS Lambda (TypeScript), Idempotency — https://docs.aws.amazon.com/powertools/typescript/latest/features/idempotency/                                                                                            | 2.36.0         |
+| cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                        | 1.57.2         |
+| Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/ | live           |
 {{- end }}
 
 ## Cross-language (read 2026-09-30)

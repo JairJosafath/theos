@@ -1,9 +1,12 @@
-// What every stack of this Container gets from the Standard: the tags that
-// say whose it is, and CDK Nag's AWS Solutions checks, so an unacknowledged
-// finding fails `cdk synth`. Changing this file is the Standard's job, not a
-// task's.
+// What every stack of this Container gets from the Standard: the tier it is
+// synthesized for, what that tier means, the tags that say whose it is, and
+// CDK Nag's AWS Solutions checks, so an unacknowledged finding fails `cdk
+// synth`. Changing this file is the Standard's job, not a task's.
 import { Stack, Tags, Validations } from 'aws-cdk-lib';
 import type { App } from 'aws-cdk-lib';
+import { CfnTable } from 'aws-cdk-lib/aws-dynamodb';
+import { CfnPolicy } from 'aws-cdk-lib/aws-iam';
+import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { AwsSolutionsChecks } from 'cdk-nag';
 
 /** The tags on every stack, and on every resource in it that takes tags. */
@@ -13,14 +16,154 @@ export const STANDARD_TAGS: Readonly<Record<string, string>> = {
   'c4factory:container': '{{ .Container }}',
 };
 
-/** Tags every stack in `app` and checks the app with CDK Nag's AWS Solutions rules. */
-export function applyStandard(app: App): void {
+/**
+ * Where the app runs: the deploy target's choice, never the code's. `cdk synth
+ * -c tier=production` builds the production stacks; without the context value
+ * the tier is `development`. `make synth` writes both, into `cdk.out/<tier>/`.
+ */
+export type Tier = 'production' | 'development';
+
+/** Every tier, in the order `make synth` and the Standard's test build them. */
+export const TIERS: readonly Tier[] = ['production', 'development'];
+
+/** What a tier means for every stack; the Standard's test holds the stacks to it. */
+export interface TierRules {
+  /**
+   * Data (tables, backup vaults and their keys) outlives the stack, tables
+   * refuse deletion, and the stack has termination protection. Off, deleting
+   * the stack deletes the data.
+   */
+  readonly keepData: boolean;
+  /** Point-in-time recovery on every table. */
+  readonly pointInTimeRecovery: boolean;
+  /**
+   * An AWS Backup plan keeping daily backups for `OPERATIONS.backups.retentionDays`,
+   * in a vault with its own key, copied to `copyToRegion` when it is set.
+   */
+  readonly backups: boolean;
+  /** X-Ray tracing on every function. */
+  readonly tracing: boolean;
+  /** How long every log group keeps its entries. */
+  readonly logRetention: RetentionDays;
+}
+
+/** The tiers' rules. Alarms, the dashboard and the alarm topic are the same in both. */
+export const TIER_RULES: Readonly<Record<Tier, TierRules>> = {
+  production: {
+    keepData: true,
+    pointInTimeRecovery: true,
+    backups: true,
+    tracing: true,
+    logRetention: RetentionDays.ONE_YEAR,
+  },
+  development: {
+    keepData: false,
+    pointInTimeRecovery: false,
+    backups: false,
+    tracing: false,
+    logRetention: RetentionDays.ONE_MONTH,
+  },
+};
+
+/**
+ * The shape of `infra/operations.ts`, which the factory renders from the
+ * Container's `spec.operations`: what the app promises whatever tier runs it.
+ */
+export interface Operations {
+  readonly backups: {
+    /** Days AWS Backup keeps each daily backup in production; 0 is point-in-time recovery only. */
+    readonly retentionDays: number;
+    /** A second region the backups are copied to; empty is none. */
+    readonly copyToRegion: string;
+  };
+  readonly recovery: {
+    /** The most data a restore may lose, such as `1h`. */
+    readonly rpo: string;
+    /** The longest a restore may take, such as `4h`. */
+    readonly rto: string;
+  };
+  readonly alerts: {
+    /** Who the alarms tell, the default of each stack's `AlertEmail` parameter; empty is nobody. */
+    readonly email: string;
+  };
+}
+
+/** The tier `app` is synthesized for: its `tier` context value, `development` when it has none. */
+export function tierOf(app: App): Tier {
+  const value: unknown = app.node.tryGetContext('tier');
+  if (value === undefined) {
+    return 'development';
+  }
+  const tier = TIERS.find((t) => t === value);
+  if (tier === undefined) {
+    throw new Error(
+      `The tier ${JSON.stringify(value)} is not one of ${TIERS.join(', ')}: synthesize with -c tier=production, or with no tier for development.`,
+    );
+  }
+  return tier;
+}
+
+// The only actions X-Ray's tracing needs, which take no resource but `*`.
+const XRAY_WRITE_ACTIONS = ['xray:PutTelemetryRecords', 'xray:PutTraceSegments'];
+
+/** Whether `policy` grants a resource `*` to X-Ray's write actions, and to nothing else. */
+function onlyXrayTakesEveryResource(stack: Stack, policy: CfnPolicy): boolean {
+  const document: unknown = stack.resolve(policy.policyDocument);
+  const statements: unknown =
+    typeof document === 'object' && document !== null && 'Statement' in document
+      ? document.Statement
+      : [];
+  let xray = false;
+  for (const statement of Array.isArray(statements) ? (statements as unknown[]) : []) {
+    if (typeof statement !== 'object' || statement === null) {
+      continue;
+    }
+    const record = statement as Record<string, unknown>;
+    if (![record['Resource']].flat().includes('*')) {
+      continue;
+    }
+    const actions = [record['Action']].flat();
+    if (
+      !actions.every((action) => typeof action === 'string' && XRAY_WRITE_ACTIONS.includes(action))
+    ) {
+      return false;
+    }
+    xray = true;
+  }
+  return xray;
+}
+
+/**
+ * Tags every stack in `app`, protects it from termination in a tier that
+ * keeps data, and checks the app with CDK Nag's AWS Solutions rules,
+ * acknowledging what the tier decides: X-Ray's resource `*`, and tables
+ * without point-in-time recovery where the tier recovers no data.
+ */
+export function applyStandard(app: App, tier: Tier): void {
   for (const stack of app.node.findAll().filter((node) => Stack.isStack(node))) {
     for (const [key, value] of Object.entries(STANDARD_TAGS)) {
       // The stack's own tags, which CloudFormation copies to what it creates,
       // and each resource's in the template, for what it doesn't.
       stack.tags.setTag(key, value);
       Tags.of(stack).add(key, value);
+    }
+    stack.terminationProtection = TIER_RULES[tier].keepData;
+    if (!TIER_RULES[tier].pointInTimeRecovery) {
+      for (const table of stack.node.findAll().filter((node) => node instanceof CfnTable)) {
+        Validations.of(table).acknowledge({
+          id: 'AwsSolutions-DDB3',
+          reason: `The ${tier} tier keeps no data worth recovering: deleting the stack deletes its tables.`,
+        });
+      }
+    }
+    for (const policy of stack.node.findAll().filter((node) => node instanceof CfnPolicy)) {
+      if (onlyXrayTakesEveryResource(stack, policy)) {
+        Validations.of(policy).acknowledge({
+          id: 'AwsSolutions-IAM5[Resource::*]',
+          reason:
+            'X-Ray tracing writes segments with xray:PutTraceSegments and xray:PutTelemetryRecords, which take no resource but *; the Standard acknowledges it only on a policy where no other statement has the resource *.',
+        });
+      }
     }
   }
   Validations.of(app).addPlugins(new AwsSolutionsChecks(app));

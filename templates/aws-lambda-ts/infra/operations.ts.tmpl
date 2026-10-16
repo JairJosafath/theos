@@ -1,0 +1,21 @@
+// What this Container promises however it is deployed: its `spec.operations`
+// in C4 Factory, with the factory's defaults for what the block leaves out.
+// The factory renders this file from the block and overwrites it when the
+// block changes, so change the block, not this file. The stacks read it at
+// synth, and the Standard's test checks them against it. The tier is not
+// here: it is the deploy target's (`cdk synth -c tier=production`).
+import type { Operations } from './standard';
+
+export const OPERATIONS: Operations = Object.freeze({
+  backups: Object.freeze({
+    retentionDays: {{ .Operations.Backups.RetentionDays }},
+    copyToRegion: {{ ts .Operations.Backups.CopyToRegion }},
+  }),
+  recovery: Object.freeze({
+    rpo: {{ ts .Operations.Recovery.RPO }},
+    rto: {{ ts .Operations.Recovery.RTO }},
+  }),
+  alerts: Object.freeze({
+    email: {{ ts .Operations.Alerts.Email }},
+  }),
+});
