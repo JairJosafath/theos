@@ -100,10 +100,14 @@ while [ ${#names[@]} -gt 0 ]; do
 done
 
 if [ -n "$cover" ]; then
-  {
-    head -qn 1 "$work"/*.cover 2>/dev/null | head -n 1 | grep '^mode:' || echo "mode: set"
-    tail -qn +2 "$work"/*.cover 2>/dev/null
-  } >"$cover"
+  # One mode line, from one process: a pipe into head -n 1 under pipefail
+  # could SIGPIPE its writer and add a second one (#1378).
+  covers=("$work"/*.cover)
+  [ -e "${covers[0]}" ] || covers=()
+  awk 'FNR == 1 && /^mode:/ { if (mode == "") mode = $0; next }
+       { blocks[n++] = $0 }
+       END { print (mode == "" ? "mode: set" : mode); for (i = 0; i < n; i++) print blocks[i] }' \
+    "${covers[@]}" </dev/null >"$cover"
 fi
 
 # The parts' slowest specs as one report: the specs and the longest part's
