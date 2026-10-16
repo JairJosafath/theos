@@ -14,18 +14,23 @@
 # without it or hack/relay.sh failed: the watch starts it again for that issue
 # once the time has passed, not every minute.
 #
-# When nothing is ready and open issues wait in status/proposed, the watch
-# starts one triage session (hack/relay.sh --triage, in a free worker's
-# worktree): it reads each proposed issue against docs/design.md and the open
-# issues, readies the sound ones, comments on the others what they lack and
-# closes duplicates. It takes no issue and changes no code. Triage runs again,
-# at most every WATCH_TRIAGE seconds (default 1800), when a proposed issue it
-# hasn't seen appears, when one changed after it (its body, title, labels or a
-# comment that isn't the triage's own), when one waits on an issue that closed
-# after it (Depends on #M, or an #M in the triage's comment), and in any case
-# after WATCH_RETRIAGE seconds (default 10800, 3h); .relay/triaged keeps its
-# time and the issues it saw across restarts. status/needs-maintainer is the
-# maintainer's and status/needs-human stays the owner's.
+# Each round, busy or idle, ready issues or not (#1191), when open issues wait
+# in status/proposed, the watch may start one triage session (hack/relay.sh
+# --triage, in its own worktree, .claude/worktrees/relay-triage, so it needs no
+# free worker): it reads each proposed issue against docs/design.md and the
+# open issues, readies the sound ones, comments on the others what they lack
+# and closes duplicates. It takes no issue and changes no code. Triage runs
+# again, at most every WATCH_TRIAGE seconds (default 1800) and never while one
+# runs (.relay/triage.lock), when a proposed issue it hasn't seen appears, when
+# one changed after it (its body, title, labels or a comment that isn't the
+# triage's own), when one waits on an issue that closed after it (Depends on
+# #M, or an #M in the triage's comment), and in any case after WATCH_RETRIAGE
+# seconds (default 10800, 3h); .relay/triaged keeps its time and the issues it
+# saw across restarts. Once WATCH_TRIAGE has passed, it asks GitHub for the
+# proposed issues at most every WATCH_RETRY, not every round: the ask reads
+# every open issue and the comments since the last triage.
+# status/needs-maintainer is the maintainer's and status/needs-human stays the
+# owner's.
 #
 # On an idle round it also logs, once per change, what holds back the issues
 # pick skips for an open "Depends on #M" when nobody works #M (hack/lib/github.sh
@@ -156,6 +161,9 @@ worker_free() {
 # maintaining: whether the maintainer runs (it holds its lock).
 maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" true; }
 
+# triaging: whether a triage session runs (it holds its lock).
+triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
+
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
 # run_triage, run_maintain, trim_caches and report_note:
 # what the watch asks and starts (faked in the tests).
@@ -165,7 +173,7 @@ cycles() { "$REPO/hack/lib/github.sh" cycles --report; }
 parents() { "$REPO/hack/lib/github.sh" parents --apply; }
 proposed() { "$REPO/hack/lib/github.sh" proposed; }
 run_relay() { "$REPO/hack/relay.sh" --workers "$WORKERS"; }
-run_triage() { "$REPO/hack/relay.sh" --triage --workers "$WORKERS"; }
+run_triage() { "$REPO/hack/relay.sh" --triage; }
 activity() { "$REPO/hack/lib/github.sh" activity; }
 escalated() { "$REPO/hack/lib/github.sh" escalated; }
 run_maintain() { "$REPO/hack/relay.sh" --maintain; }
@@ -409,20 +417,26 @@ start() {
   [ "$rc" = 0 ] || log "hack/relay.sh failed (exit $rc)"
 }
 
-# triage NOW: with nothing ready, start a triage session, at most every
-# TRIAGE_EVERY seconds, when a proposed issue waits that the last triage didn't
-# see, one changed after it (not by the triage's own comment), one waits on an
-# issue that closed after it, or the last triage is RETRIAGE seconds old.
-# $DIR/triaged holds the last triage's time and issues, this watch's or one
-# started by hand (hack/relay.sh --triage writes it as its session starts);
-# when its session never ran, hack/relay.sh --triage keeps only the time there,
-# so the same issues start it again.
-TRIAGE_ERR=
+# triage NOW: ready issues or not, start a triage session, at most every
+# TRIAGE_EVERY seconds and not while one runs, when a proposed issue waits that
+# the last triage didn't see, one changed after it (not by the triage's own
+# comment), one waits on an issue that closed after it, or the last triage is
+# RETRIAGE seconds old. $DIR/triaged holds the last triage's time and issues,
+# this watch's or one started by hand (hack/relay.sh --triage writes it as its
+# session starts); when its session never ran, hack/relay.sh --triage keeps
+# only the time there, so the same issues start it again. TRIAGE_T keeps the
+# watch from asking for the proposed issues more often than every TRIAGE_ASK
+# (WATCH_RETRY): every round, busy ones too, would cost GitHub calls by the
+# dozen a minute.
+TRIAGE_ERR= TRIAGE_T=0 TRIAGE_ASK=$RETRY
 triage() {
   local now=$1 list= rc n changed closed why=() new= moved= freed= out t=0 seen= since=()
   [ -r "$DIR/triaged" ] && read -r t seen <"$DIR/triaged"
   t=${t:-0}
   [ $((now - t)) -ge "$TRIAGE_EVERY" ] || return 0
+  [ $((now - TRIAGE_T)) -ge "$TRIAGE_ASK" ] || return 0
+  triaging && return 0
+  TRIAGE_T=$now
   # Within RETRIAGE, ask what changed since the last triage too.
   [ "$t" -gt 0 ] && [ $((now - t)) -lt "$RETRIAGE" ] && since=(--since "$t")
   out=$(proposed "${since[@]}" 2>"$DIR/proposed.err")
@@ -552,6 +566,8 @@ round() {
   fi
   maintain "$now"
   tend "$now"
+  # The triage needs no free worker (#1191).
+  triage "$now"
   worker_free || { SAID=busy; return 0; }
   row=$(pick_next 2>&1)
   rc=$?
@@ -572,7 +588,6 @@ round() {
       [ "$SAID" = idle ] || log "nothing ready; waiting"
       SAID=idle
       held
-      triage "$now"
       ;;
     *)
       [ "$SAID" = err ] || log "could not ask GitHub for the next issue (exit $rc): ${row//$'\n'/; }"

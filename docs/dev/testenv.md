@@ -243,8 +243,9 @@ v0.19.0 (#912).
 
 GitHub workflows never run on pull requests. Lint, tests and UI checks run
 after a merge to main, each only when its paths change, or on demand. No
-workflow starts a Kind cluster on its own: *Test Chart*, *E2E Tests* and
-*Verify Release* run only when a human dispatches them. A pushed tag runs *Release*, which builds and
+workflow starts a Kind cluster on its own: *Test Chart* and *E2E Tests* run
+only when a human dispatches them, and *Verify Release* when a human does or
+*Release* has published a minor. A pushed tag runs *Release*, which builds and
 publishes and tests nothing. `make check` is the gate before a merge; it runs
 `make ui-test` (the UI workflow's `npm run check`: typecheck, eslint, Prettier
 and its tests) too, so a UI change can't merge with what would turn *UI* red
@@ -394,14 +395,21 @@ starts, finds nothing and stops every minute. It logs only changes, to `.relay/w
 minutes and restarts itself when that changed its code. Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour.
-With nothing ready, it starts a triage of the `status/proposed` issues: for a
-new one, for one that changed since the last triage or waits on an issue that
-closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
-`WATCH_TRIAGE` (30m). To triage now, say after a plan files its steps
-`status/proposed`, run `./dev run hack/relay.sh --triage --workers N`: it
-starts one triage session in the first free worker, and records its time and
-issues in `.relay/triaged` as the watch's does, so the watch starts no second
-triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+Busy or idle, with issues ready or not (#1191), it starts a triage of the
+`status/proposed` issues: for a new one, for one that changed since the last
+triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
+in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+`WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
+`WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
+`.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
+as the maintainer does: it needs no free worker, doesn't count against
+`RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
+goes through `admit` like any session and logs to `.relay/relay-triage.log`.
+To triage now, say after a plan files its steps `status/proposed`, run
+`./dev run hack/relay.sh --triage`: it starts one triage session unless one
+runs, and records its time and issues in `.relay/triaged` as the watch's does,
+so the watch starts no second triage for the same issues, only for one filed
+after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
@@ -526,10 +534,15 @@ guide names another version; `hack/release_test.sh` holds both to that, and
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has
 published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
-checks it twice, each on a Kind cluster of its own, building nothing. It
-starts Kind, so it runs only when a human dispatches it: Actions → Verify
-Release → Run workflow, or `gh workflow run verify-release.yml -f
-tag=vX.Y.Z`. Agents never dispatch it.
+checks it twice, each on a Kind cluster of its own, building nothing.
+*Release* dispatches it on main, with `from` empty, for every minor it
+publishes (`vX.Y.0`, #1105); `hack/check-workflows.sh` keeps that step and its
+condition. A patch isn't checked: it ships a fix within the hour on the
+upgrade path its minor checked. A human checks any other release by hand:
+Actions → Verify Release → Run workflow, or `gh workflow run
+verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
+main files (or comments on) `Release vX.Y.Z fails its check`, ready and
+urgent, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, both runners, the manager and the UI, and

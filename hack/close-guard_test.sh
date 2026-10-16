@@ -40,6 +40,8 @@ jq -n '{title: "docs(486): plan", body: "Refs #486"}' >"$FAKE/${R}_pulls_510"
 jq -n '[{commit: {message: "docs(486): plan\n\nSteps: #506 (turn on Ask by default, closes #486)"}}]' >"$FAKE/${R}_pulls_510_commits?per_page=100"
 jq -n '{title: "fix(300): it works", body: "Closes #300"}' >"$FAKE/${R}_pulls_511"
 jq -n '[{commit: {message: "fix(300): it works"}}]' >"$FAKE/${R}_pulls_511_commits?per_page=100"
+jq -n '{title: "fix(300): it works", body: "Closes #300"}' >"$FAKE/${R}_pulls_512"
+jq -n '[{commit: {message: "fix(300): the first part\n\nRefs #300"}}, {commit: {message: "fix(300): it works"}}]' >"$FAKE/${R}_pulls_512_commits?per_page=100"
 
 git init -q "$T/repo"
 git -C "$T/repo" remote add origin https://github.com/JairJosafath/c4factory.git
@@ -74,6 +76,9 @@ printf 'Refs #486\n\nfixes #486\n' >"$T/repo/body.md"
 hook 'gh pr edit 510 --body-file body.md'
 check "pr edit: a --body-file is read" "$(decision)" deny
 
+hook 'git commit -m "fix(300): it works" -m "Closes #300" -m "Refs #300"'
+check "commit: Closes #N beside Refs #N in one message is still denied" "$(decision) $(reason | grep -c 'the same text says Refs #300')" "deny 1"
+
 hook 'git -C . commit -q -m "feat(475): last step" -m "Closes #467"'
 check "commit: closes a parent with an open step, denied" "$(decision) $(reason | grep -c 'step #475 is open')" "deny 1"
 hook 'git commit -m "feat(475): last step" -m "Closes #475" -m "Closes #467"'
@@ -83,6 +88,8 @@ hook 'gh pr merge 510 --merge'
 check "pr merge: the pull request's commits are read, denied" "$(decision) $(reason | grep -c 'Steps: #506')" "deny 1"
 hook 'gh pr merge https://github.com/JairJosafath/c4factory/pull/511 --merge --delete-branch'
 check "pr merge: a clean pull request by URL, allowed" "$(decision)" none
+hook 'gh pr merge 512 --merge'
+check "pr merge: the body's Closes #N, a commit's Refs #N, allowed (#1200)" "$(decision)" none
 hook 'gh pr merge --merge --delete-branch 510'
 check "pr merge: the number after its flags" "$(decision)" deny
 echo 511 >"$FAKE/current"

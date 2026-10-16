@@ -1,7 +1,8 @@
 name: Verify Release
 
 # A release is checked, twice, on Kind clusters of its own, building nothing.
-# Like every workflow that needs Kind it runs only on demand (Actions → Verify
+# Release dispatches it on main for every minor it publishes (vX.Y.0, #1105);
+# a patch, or a release to check again, runs on demand (Actions → Verify
 # Release → Run workflow, or `gh workflow run verify-release.yml -f
 # tag=vX.Y.Z`), after Release has published the tag. "install" installs the published chart from GHCR into a fresh Kind
 # cluster, as a new device would; "upgrade" installs the previous release (the
