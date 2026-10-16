@@ -12,3 +12,7 @@
 {"number":12,"title":"docs(21): the design","branch":"docs/21-design","labels":[],"files":["docs/design.md"],"body":""}
 {"number":13,"title":"feat(22): the relay's watcher","branch":"feat/22-watch","labels":[],"files":["hack/relay-watch.sh","docs/dev/testenv.md",".claude/skills/handoff/SKILL.md",".relay/x"],"body":""}
 {"number":14,"title":"fix(23): a security hole in the relay","branch":"fix/23-relay","labels":[],"files":["hack/relay.sh"],"body":""}
+{"number":15,"title":"AWS: the Go Lambda Framework aws-lambda-go","branch":"feat/1034-aws-lambda-go","labels":[],"files":["dist/chart/values.yaml","docs/plans/aws.md"],"body":""}
+{"number":16,"title":"Envtest: a 30 s default Eventually timeout","branch":"chore/1099-envtest","labels":[],"files":["internal/controller/suite_test.go"],"body":""}
+{"number":17,"title":"Plan: take Gitea webhooks","branch":"feat/1084-webhooks","labels":[],"files":["docs/plans/git-events.md","docs/plans/done/old.md"],"body":""}
+{"number":18,"title":"Plan: AWS Containers fit for production","branch":"fix/1067-aws","labels":[],"files":["AGENTS.md","docs/architecture.md","docs/design.md","docs/plans/aws-production.md","docs/screenshots/1067.txt"],"body":""}
