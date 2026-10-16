@@ -57,6 +57,15 @@
 # WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
 # so it never turns main red. An open one is not filed again.
 #
+# In the same round it notices runners that are all offline: a queued run
+# never fails, so red sees nothing while the device's self-hosted runners are
+# down (Docker Desktop stopped). When a run on main has been queued for more
+# than WATCH_QUEUED minutes (default 30; hack/lib/github.sh queued), the watch
+# puts "Runners offline since T: N runs queued" under the Maintainer report's
+# Health and Needs you (hack/lib/github.sh report-note runners), one line each,
+# kept current while it lasts (.relay/runners-offline), and removes them in the
+# first round in which no run waits that long.
+#
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
@@ -119,6 +128,7 @@ TRIM_EVERY=${WATCH_TRIM_EVERY:-1800}
 MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 PARENTS_EVERY=${WATCH_PARENTS:-600}
 FLAKE_DAYS=${WATCH_FLAKE_DAYS:-7}
+QUEUED_MINUTES=${WATCH_QUEUED:-30}
 
 WORKERS=1 MODE=start
 while [ $# -gt 0 ]; do
@@ -147,7 +157,7 @@ worker_free() {
 maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" true; }
 
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
-# run_triage, run_maintain and trim_caches:
+# run_triage, run_maintain, trim_caches and report_note:
 # what the watch asks and starts (faked in the tests).
 pick_next() { "$REPO/hack/lib/github.sh" pick; }
 blocked() { "$REPO/hack/lib/github.sh" blocked --unworked; }
@@ -160,6 +170,7 @@ activity() { "$REPO/hack/lib/github.sh" activity; }
 escalated() { "$REPO/hack/lib/github.sh" escalated; }
 run_maintain() { "$REPO/hack/relay.sh" --maintain; }
 trim_caches() { "$REPO/hack/trim-go-cache.sh"; }
+report_note() { "$REPO/hack/lib/github.sh" report-note "$@"; }
 
 # trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
 # and log what it dropped (it says nothing when a cache is under its limit).
@@ -286,6 +297,51 @@ ci_round() {
   done < <(ci_workflows)
   [ -n "$unstarted$unread" ] || rm -f "$DIR/ci-stopped"
   CI_SAID=$said
+}
+
+# runner_round: say in the Maintainer report when runs on main have waited
+# QUEUED_MINUTES for a runner (see the top), and take it out again when they
+# start. The report is asked each round while the runners are offline, so a
+# sweep that rewrote it without the note gets it back; report-note edits only
+# when the note changes it. $DIR/runners-offline holds the note the report
+# carries, so a round with runners online asks GitHub nothing more. A failure
+# is logged once until it works again.
+RUNNERS_SAID=
+runner_round() {
+  local out rc since n note was= said=
+  [ -r "$DIR/runners-offline" ] && was=$(cat "$DIR/runners-offline")
+  out=$(github queued --minutes "$QUEUED_MINUTES" 2>&1)
+  rc=$?
+  case $rc in
+    0)
+      IFS=$'\t' read -r since n <<<"$out"
+      since=$(date -d "$since" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "$since")
+      note="Runners offline since $since: $n run$([ "$n" = 1 ] || echo s) queued"
+      if out=$(report_note runners "$note" "$note. Start Docker Desktop (WSL integration on for this distro) on the runners' device, then check \`make gh-runner-status\` (DEVELOPMENT.md)." 2>&1); then
+        [ -n "$was" ] || log "$note; said in the Maintainer report"
+        echo "$note" >"$DIR/runners-offline"
+      else
+        said=note
+        [ "$RUNNERS_SAID" = note ] || log "$note; could not say it in the Maintainer report: ${out//$'\n'/; }"
+      fi
+      ;;
+    1)
+      if [ -n "$was" ]; then
+        if out=$(report_note runners 2>&1); then
+          log "runners back: no run on main waits for one; the note left the Maintainer report"
+          rm -f "$DIR/runners-offline"
+        else
+          said=clear
+          [ "$RUNNERS_SAID" = clear ] || log "runners back; could not take the note out of the Maintainer report: ${out//$'\n'/; }"
+        fi
+      fi
+      ;;
+    *)
+      said=err
+      [ "$RUNNERS_SAID" = err ] || log "could not read the runs queued on main (queued, exit $rc): ${out//$'\n'/; }"
+      ;;
+  esac
+  RUNNERS_SAID=$said
 }
 
 # flake_round: record each spec that failed on main (hack/lib/github.sh
@@ -735,6 +791,7 @@ while :; do
     CI_T=$now
     ci_round
     flake_round
+    runner_round
   fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now

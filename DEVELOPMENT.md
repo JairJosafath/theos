@@ -115,3 +115,16 @@ What lives outside the folder belongs to the machine, not the project:
 - **Folder-open tasks don't start.** Set `"task.allowAutomaticTasks": "on"` in
   your user settings as well, or run **Dev: open** by hand.
 - **`./dev: Permission denied`.** Run `chmod +x dev` once (or `bash dev setup`).
+- **Runners offline: CI runs wait in the queue.** While the repository variable
+  `RUNS_ON` is `self-hosted`, every job runs on the runners in containers on
+  the device's Docker (`make gh-runner`, [docs/dev/testenv.md](docs/dev/testenv.md)).
+  On WSL that Docker is Docker Desktop, so the runners need it running, with
+  WSL integration on for this distro (Settings > Resources > WSL integration).
+  They stop when it stops and come back when it starts, and GitHub has no other
+  runner to fall back on: a queued run never fails, it waits. The relay watch
+  says "Runners offline since T: N runs queued" in the Maintainer report once
+  a run on main has waited 30 minutes. Run `make gh-runner-status`. It says
+  whether Docker answers from this distro, whether each container is up, and
+  whether GitHub sees each runner online, and what to do: start Docker
+  Desktop, or run `make gh-runner RUNNERS=N` to start the containers that are
+  down. Switching `RUNS_ON` back to GitHub's runners is the owner's call.

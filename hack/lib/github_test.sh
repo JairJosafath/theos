@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -536,6 +536,7 @@ check "intake leaves the report issue alone" "$(calls)" ""
       "POST $R/labels") touch "$T/report-label" ;;
       "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; echo "N7 https://x/issues/7" ;;
       "PATCH $R/issues/7") jq -r .body "$T/in" >"$T/body7"; echo https://x/issues/7 ;;
+      "GET $R/issues/7") cat "$T/body7" ;;
       "POST graphql") ;;
       "GET $R/issues?state=all"*) jq -r '[.[] | select(.labels | any(.name == "maintainer/report") | not) | .updated_at] | first // "none"' <<<'[{"updated_at":"2026-10-06T09:00:00Z","labels":[{"name":"maintainer/report"}]},{"updated_at":"2026-10-06T08:00:00Z","labels":[]}]' ;;
       "GET $R/commits/main") echo abc123 ;;
@@ -549,6 +550,49 @@ check "intake leaves the report issue alone" "$(calls)" ""
   echo "second" | gh_report - >"$T/out" 2>&1
   check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
+
+  # report-note: the watch's line under Health and Needs you (Nothing. goes),
+  # replaced, not added, by a new count, an edit only when it changes the
+  # body, and its removal giving the report back as it was.
+  printf '%s\n' '<!-- relay-maintainer -->' 'Updated 03:10' '' '## Needs you' '' "$GH_NOTHING" '' \
+    '## Health' 'Relay: 9 workers · main: green' '' '## Since 01:10' '- Decided: #1' >"$T/body7"
+  cp "$T/body7" "$T/sweep"
+  : >"$T/calls"
+  gh_report_note runners 'Runners offline since T: 2 runs queued' 'Runners offline since T: 2 runs queued. Start Docker.'
+  check "report-note: the lines in Health and Needs you" "$(cat "$T/body7")" "<!-- relay-maintainer -->
+Updated 03:10
+
+## Needs you
+
+- [ ] Runners offline since T: 2 runs queued. Start Docker. <!-- watch:runners -->
+
+## Health
+Runners offline since T: 2 runs queued <!-- watch:runners -->
+Relay: 9 workers · main: green
+
+## Since 01:10
+- Decided: #1"
+  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7,"
+  gh_report_note runners 'Runners offline since T: 3 runs queued'
+  check "report-note: a new count replaces the lines" "$(grep -c 'watch:runners' "$T/body7") $(grep -c '3 runs queued' "$T/body7")" "2 2"
+  : >"$T/calls"
+  gh_report_note runners 'Runners offline since T: 3 runs queued'
+  check "report-note: the same note edits nothing" "$(calls | grep -c PATCH)" 0
+  gh_report_note runners
+  check "report-note: removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  rm -f "$T/report"
+  check "report-note: no report fails" "$(gh_report_note runners x 2>&1; echo $?)" "github: no Maintainer report issue to note in
+1"
+  printf 'Just text\n' | gh_note_body runners A >"$T/out"
+  check "report-note: missing headings are added" "$(cat "$T/out")" "Just text
+
+## Needs you
+
+- [ ] A <!-- watch:runners -->
+
+## Health
+
+A <!-- watch:runners -->"
   exit $fail
 ) || fail=1
 
@@ -817,6 +861,31 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   rm -f "$T/merged"
   out=$(TURNS='[[]]' PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: nobody's turn merges" "$? | $(cat "$T/merged")" "0 | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  # A bug fix changes a test file, or says why not on a line No test: <why>.
+  # bugpr BODY LABEL FILES: a pull request closing #5, labeled LABEL, changing FILES.
+  bugpr() { jq -n --arg b "$1" --arg l "$2" --argjson f "$3" \
+    '{body: $b, baseRefName: "main", headRefOid: "h1", closingIssuesReferences: {nodes: [{number: 5, labels: {nodes: [{name: $l}, {name: "source/dev"}]}}]},
+      files: {totalCount: ($f | length), nodes: [$f[] | {path: .}]}, commits: {nodes: [{commit: {message: "fix: thing"}}]}}'; }
+  rm -f "$T/merged"
+  out=$(PR=$(bugpr 'Closes #5' kind/bug '["hack/lib/github.sh", "hack/lib/github_test.sh"]') gh_merge 17 2>&1)
+  check "merge: a bug fix touching a test file merges" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx; do
+    PR=$(bugpr 'Closes #5' kind/bug "[\"$f\"]") gh_merge 17 >/dev/null 2>&1; check "merge: $f is a test file" $? 0
+  done
+  rm -f "$T/merged"
+  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go", "docs/latest_test.md"]') gh_merge 17 2>&1)
+  check "merge: a bug fix touching no test file refuses, naming the rule" "$? $out | $(cat "$T/merged" 2>/dev/null)" \
+    '1 github: #17 closes #5, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why> | '
+  PR=$(bugpr $'Closes #5\n\nNo test: a docs-only fix' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
+  check "merge: No test: lets a bug fix through" $? 0
+  PR=$(bugpr $'Closes #5\n\nNo test:' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
+  check "merge: No test: with no reason refuses" $? 1
+  PR=$(bugpr $'Closes #5\n\nWe wrote no test: none' kind/bug '["docs/design.md"]') gh_merge 17 >/dev/null 2>&1
+  check "merge: No test: inside a line refuses" $? 1
+  out=$(PR=$(bugpr 'Closes #5' kind/feature '["internal/model/brief.go"]') gh_merge 17 2>&1)
+  check "merge: a kind/feature pull request needs no test" "$? $out" "0 "
+  PR=$(bugpr 'Closes #5' kind/bug '[]' | jq '.files.totalCount = 101') gh_merge 17 >/dev/null 2>&1
+  check "merge: more than 100 files is let through" $? 0
   exit $fail
 ) || fail=1
 
@@ -832,6 +901,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     '{id: $id, updated_at: $u, body: $b}' >"$Q/$1.json"; }
   gh_api() {
     local url= a m=GET q= data
+    # The pull request land reads before it queues: LANDPR, a feature by default.
+    [ "$1" = graphql ] && { echo "graphql" >>"$T/calls"; echo "${LANDPR:-$NOBUG}"; return; }
     for a in "$@"; do case $a in repos/*) url=$a ;; POST | PATCH | DELETE) m=$a ;; esac; done
     while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
     echo "$m $url" >>"$T/calls"
@@ -875,6 +946,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
   export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
   queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
+  NOBUG='{"body": "Closes #5", "closingIssuesReferences": {"nodes": [{"number": 5, "labels": {"nodes": [{"name": "kind/feature"}]}}]}, "files": {"totalCount": 1, "nodes": [{"path": "feat"}]}}'
 
   # Nobody holds it: take, merge main in, check, push, merge, give it up.
   : >"$T/calls"
@@ -968,6 +1040,15 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(gh_land 40 2>&1)
   check "land: refuses uncommitted changes" "$? $(queue)" "1 "
   g checkout -q -- feat
+  : >"$T/calls"
+  out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug"' <<<"$NOBUG") gh_land 40 2>&1)
+  check "land: refuses a bug fix without a test before it queues" "$? $(queue) $(grep -c '^POST ' "$T/calls")" "1  0"
+  grep -q '#40 closes #5, a kind/bug issue, but changes no test file' <<<"$out"; check "land: says the rule" $? 0
+  # (main conflicts with feat by now: queueing is as far as it gets.)
+  : >"$T/calls"
+  out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug" | .files.nodes[0].path = "feat_test.sh"' <<<"$NOBUG") gh_land 40 2>&1)
+  check "land: queues a bug fix with a test" "$(grep -c '^POST ' "$T/calls") $(grep -c 'kind/bug' <<<"$out")" "1 0"
+  g merge --abort 2>/dev/null; g reset -q --hard origin/feat
   gh_land x 2>/dev/null; check "land: bad argument" $? 64
   # A large pull request with no review pass is refused before it queues.
   echo '[{"filename":"a.go","additions":300,"deletions":101}]' >"$T/files-40"

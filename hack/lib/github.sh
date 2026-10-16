@@ -85,11 +85,14 @@
 #                                        for (prose such as "its PR closes #9"), naming the line to reword, and
 #                                        when its head is behind its base (main): two pull requests green alone can
 #                                        make main red together: land it instead. Refused as well while another
-#                                        pull request holds the merge turn (land), naming it
+#                                        pull request holds the merge turn (land), naming it, and when it closes a
+#                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts)
+#                                        and no line of its body says No test: <why>
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: wait for the merge turn (one pull request at a time,
 #                                        across every device, first come first served), then, in this checkout of
-#                                        PR's branch, git fetch (retried GH_LAND_FETCH_TRIES times) and merge
+#                                        PR's branch (a bug fix without a test is refused before it queues, as merge
+#                                        refuses it), git fetch (retried GH_LAND_FETCH_TRIES times) and merge
 #                                        origin/main, make check, push and merge PR,
 #                                        and give the turn up, merged or not (a conflict or a red check is said; make
 #                                        check's output is kept in .relay/land-PR.log). The turn is a comment on the
@@ -126,11 +129,22 @@
 #                                        SPEC<tab>RUN<tab>TIME for each [FAIL] line of each failed run's log.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
+#   hack/lib/github.sh queued [--minutes M]
+#                                        whether runs on main wait for a runner: when the oldest run queued on
+#                                        main was queued more than M minutes ago (default 30), prints
+#                                        OLDEST<tab>COUNT, its createdAt and how many runs are queued there.
+#                                        Exit 1: none waits that long. A queued run never fails, so red can't
+#                                        see runners that are all offline; the relay watch asks this
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
 #                                        maintainer/report, no status), creating and pinning it the first time;
 #                                        prints its URL
+#   hack/lib/github.sh report-note KEY [HEALTH [NEEDS]]
+#                                        put the line HEALTH under the Maintainer report's Health and NEEDS
+#                                        (default HEALTH) as a task under its Needs you, each marked
+#                                        <!-- watch:KEY --> and replacing the lines KEY marked before; with no
+#                                        text, remove them. The relay watch's notes; the maintainer keeps them
 #   hack/lib/github.sh intake N          label issue N by where it came from: a "### Reported by" name in its
 #                                        body gives user/<name> + source/user, else source/dev; adds
 #                                        status/proposed when it has no status. Only for issues from the
@@ -1511,6 +1525,8 @@ gh_close() {
 # fix's prose ("its PR closes #9") closes #9 too, and the message names the line.
 # Refused too when it would close an issue with a "Depends on #S" step still
 # open (gh_closes_check), or GitHub can't be asked whether it would.
+# Refused when it closes a kind/bug issue and changes no test file, unless its
+# body says why on a line No test: <why> (gh_bugfix_check).
 # Refused while another pull request holds the merge turn (gh_land), naming it.
 # Refused last when its head doesn't contain its base's current commit: two
 # pull requests that each pass make check alone can still fail together, so
@@ -1522,7 +1538,8 @@ gh_merge() {
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-      body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number } } commits(last: 100) { nodes { commit { message } } } } } }' \
+      body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
+      files(first: 100) { totalCount nodes { path } } commits(last: 100) { nodes { commit { message } } } } } }' \
     --jq .data.repository.pullRequest) || return 1
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
@@ -1553,6 +1570,8 @@ gh_merge() {
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
   gh_closes_check - <<<"$text" || return 1
+  # Nor may it fix a bug without a test.
+  gh_bugfix_check "$pr" "$view" || return 1
   # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
   turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
   if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
@@ -1571,6 +1590,36 @@ gh_merge() {
   fi
   gh_token || return 1
   gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
+}
+
+# gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
+# pull request that closes a kind/bug issue but changes no test file
+# (*_test.go, *_test.sh, *.test.ts or .tsx), unless a line of its body is
+# "No test: <why>" (a docs-only or chart-only fix says so). VIEW is the pull
+# request as gh_merge's GraphQL query reads it: body, closingIssuesReferences
+# with their labels, and files. Bugs came back after fixes with no test that
+# would have caught them (#606 then #864, #835 then #1019). A pull request of
+# more than 100 files is let through: the first 100 can't say it has none.
+gh_bugfix_check() {
+  local pr=$1 view=$2 bugs
+  bugs=$(jq -r '.closingIssuesReferences.nodes[]? | select(any(.labels.nodes[]?; .name == "kind/bug")) | "#\(.number)"' <<<"$view" | paste -sd, - | sed 's/,/, /g')
+  [ -n "$bugs" ] || return 0
+  jq -e '((.files.totalCount // 0) > 100) or any(.files.nodes[]?.path; test("(_test\\.(go|sh)|\\.test\\.tsx?)$"))' <<<"$view" >/dev/null && return 0
+  grep -qiE '^[[:space:]]*No test:[[:space:]]*[^[:space:]]' <<<"$(jq -r '.body // ""' <<<"$view")" && return 0
+  echo "github: #$pr closes $bugs, a kind/bug issue, but changes no test file (*_test.go, *_test.sh, *.test.ts): a bug fix adds a test that failed before the fix and names its issue (AGENTS.md, How to Work); if no test can, say why on a line of the body: No test: <why>" >&2
+  return 1
+}
+
+# gh_bugfix_pr PR: gh_bugfix_check for pull request PR, read from GitHub;
+# land runs it before it queues for the merge turn.
+gh_bugfix_pr() {
+  local pr=$1 view
+  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+    query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
+      body closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
+      files(first: 100) { totalCount nodes { path } } } } }' \
+    --jq .data.repository.pullRequest) || { echo "github: #$pr: could not ask GitHub what it closes and changes; land refused" >&2; return 1; }
+  gh_bugfix_check "$pr" "$view"
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
@@ -1646,6 +1695,66 @@ gh_report() {
   gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
     -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
   echo "$url"
+}
+
+# gh_note_body KEY [HEALTH [NEEDS]]: the report body on stdin with the lines
+# marked <!-- watch:KEY --> replaced by HEALTH, first under "## Health", and
+# "- [ ] NEEDS", first under "## Needs you" (see the usage above). A heading
+# the body lacks is added at its end. Needs you's "Nothing." line goes while
+# a note is there, and comes back when removing the note empties it.
+GH_NOTHING='Nothing. The project runs without you.'
+gh_note_body() {
+  local key="<!-- watch:${1:?usage: report-note KEY [HEALTH [NEEDS]]} -->" health=${2:-} needs=${3:-${2:-}}
+  H=$health N=$needs awk -v key="$key" -v nothing="$GH_NOTHING" '
+    { l[++n] = $0 }
+    # empty(J): whether the section after line J has no line but blank ones.
+    function empty(j) {
+      for (j++; j <= m && o[j] !~ /^## /; j++) if (o[j] !~ /^[ \t]*$/) return 0
+      return 1
+    }
+    # put(J, LINE): print heading J, its blank line, then LINE; return the last line printed.
+    function put(j, line) {
+      print o[j]
+      if (j < m && o[j + 1] ~ /^[ \t]*$/) print o[++j]
+      print line
+      return j
+    }
+    END {
+      h = ENVIRON["H"]; nd = ENVIRON["N"]
+      for (i = 1; i <= n; i++) {
+        if (index(l[i], key)) continue
+        if (l[i] ~ /^## /) sec = l[i]
+        if (h != "" && sec == "## Needs you" && index(l[i], nothing) == 1) continue
+        o[++m] = l[i]
+      }
+      while (m > 0 && o[m] ~ /^[ \t]*$/) m--
+      for (j = 1; j <= m; j++) {
+        if (h != "" && o[j] == "## Needs you" && !needs_done) { j = put(j, "- [ ] " nd " " key); needs_done = 1; continue }
+        if (h != "" && o[j] == "## Health" && !health_done) { j = put(j, h " " key); health_done = 1; continue }
+        if (h == "" && o[j] == "## Needs you" && empty(j)) {
+          print o[j]; print ""; print nothing
+          for (j++; j <= m && o[j] !~ /^## /; j++) ;
+          if (j <= m) { print ""; j-- }
+          continue
+        }
+        print o[j]
+      }
+      if (h != "" && !needs_done) { if (m) print ""; print "## Needs you"; print ""; print "- [ ] " nd " " key; m++ }
+      if (h != "" && !health_done) { if (m) print ""; print "## Health"; print ""; print h " " key }
+    }'
+}
+
+# gh_report_note KEY [HEALTH [NEEDS]]: see the usage above. The report is
+# edited only when the note changes it; exit 1 when there is no report.
+gh_report_note() {
+  local n body new
+  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
+  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+  new=$(gh_note_body "$@" <<<"$body") || return 1
+  [ "$new" != "$body" ] || return 0
+  jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
 }
 
 # The maintainer lease (#526): the maintainer runs once per project, not once
@@ -1897,6 +2006,7 @@ gh_land_turn() {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
   [ -z "$(git -C "$GH_LIB_ROOT" status --porcelain --untracked-files=no)" ] || {
     echo "github: this checkout has uncommitted changes: commit and push them, then land" >&2; return 1; }
+  gh_bugfix_pr "$pr" || return 1
   gh_review_check "$pr" || return 1
   n=$(gh_report_issue) || return 1
   id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
@@ -2054,6 +2164,26 @@ gh_red() {
   echo '```'
   echo
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
+}
+
+# gh_queued [--minutes M]: see the usage above; exit 2 when GitHub can't say.
+gh_queued() {
+  local minutes=30 runs
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --minutes) minutes=${2:?usage: queued [--minutes M]}; shift 2 ;;
+      *) echo "usage: queued [--minutes M]" >&2; return 64 ;;
+    esac
+  done
+  [[ $minutes =~ ^[0-9]+$ ]] || { echo "usage: queued [--minutes M]" >&2; return 64; }
+  gh_token || return 2
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status queued --limit 100 \
+    --json databaseId,status,createdAt) || return 2
+  runs=$(jq -r --argjson m "$minutes" '[.[] | select(.status == "queued")] | sort_by(.createdAt) |
+    select(length > 0 and (now - (.[0].createdAt | fromdateiso8601)) > $m * 60) | "\(.[0].createdAt)\t\(length)"' <<<"$runs") ||
+    return 2
+  [ -n "$runs" ] || return 1
+  echo "$runs"
 }
 
 # gh_fail_specs: the Ginkgo specs a failed log on stdin names in its
@@ -2233,8 +2363,10 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     intake) gh_intake "$@" ;;
     red) gh_red "$@" ;;
     flakes) gh_flakes "$@" ;;
+    queued) gh_queued "$@" ;;
     activity) gh_activity ;;
     report) gh_report "$@" ;;
+    report-note) gh_report_note "$@" ;;
     *)
       sed -n '2,/^$/{s/^# \{0,1\}//;p}' "$0"
       [ "$cmd" = help ] || exit 64

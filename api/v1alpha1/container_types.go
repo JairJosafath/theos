@@ -62,6 +62,78 @@ type ContainerSpec struct {
 	// +kubebuilder:default=EveryChange
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
+
+	// operations is what the application promises whatever tier runs it: how
+	// long its backups are kept and where they are copied, its recovery
+	// objectives and who its alarms tell. The tier itself is the deploy
+	// target's, never the Container's. A field left out takes the factory's
+	// default; a change after the scaffold shows on the condition
+	// OperationsApplied.
+	// +optional
+	Operations *OperationsSpec `json:"operations,omitempty"`
+}
+
+// OperationsSpec is what a Container promises in any tier. Every field is
+// optional: the factory fills in the defaults when it renders the block, and
+// never writes them back here.
+type OperationsSpec struct {
+	// backups says how long backups are kept and where they are copied.
+	// +optional
+	Backups *OperationsBackups `json:"backups,omitempty"`
+
+	// recovery states the recovery objectives the runbook, the alarms and the
+	// checks are written to.
+	// +optional
+	Recovery *OperationsRecovery `json:"recovery,omitempty"`
+
+	// alerts says who the alarms tell by default.
+	// +optional
+	Alerts *OperationsAlerts `json:"alerts,omitempty"`
+}
+
+// OperationsBackups is a Container's backup choices.
+type OperationsBackups struct {
+	// retentionDays is how many days daily backups are kept in production; 0
+	// means point-in-time recovery only. Left out, 35.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3650
+	// +optional
+	RetentionDays *int32 `json:"retentionDays,omitempty"`
+
+	// copyToRegion is a second AWS region the backups are copied to, such as
+	// eu-west-1; empty means none.
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`^([a-z]{2}(-[a-z]+)+-[0-9]+)?$`
+	// +optional
+	CopyToRegion string `json:"copyToRegion,omitempty"`
+}
+
+// OperationsRecovery is a Container's recovery objectives, each a number of
+// minutes (m), hours (h) or days (d).
+type OperationsRecovery struct {
+	// rpo is the recovery point objective: how much data a recovery may lose.
+	// Left out, 1h.
+	// +kubebuilder:validation:MaxLength=16
+	// +kubebuilder:validation:Pattern=`^[0-9]+(m|h|d)$`
+	// +optional
+	RPO string `json:"rpo,omitempty"`
+
+	// rto is the recovery time objective: how long a recovery may take. Left
+	// out, 4h.
+	// +kubebuilder:validation:MaxLength=16
+	// +kubebuilder:validation:Pattern=`^[0-9]+(m|h|d)$`
+	// +optional
+	RTO string `json:"rto,omitempty"`
+}
+
+// OperationsAlerts is who a Container's alarms tell.
+type OperationsAlerts struct {
+	// email is the address the alarms tell by default; a deploy target
+	// overrides it per environment. Empty means nobody is told.
+	// +kubebuilder:validation:MaxLength=254
+	// +kubebuilder:validation:Pattern=`^([^@\s]+@[^@\s]+)?$`
+	// +optional
+	Email string `json:"email,omitempty"`
 }
 
 // ChecksMode is when a Container's CI runs its full check.
@@ -279,6 +351,12 @@ type ContainerStatus struct {
 	// +optional
 	Standard *ContainerStandardStatus `json:"standard,omitempty"`
 
+	// operations is the operations block the scaffold rendered with, its
+	// defaults filled in. OperationsApplied compares spec.operations to it. A
+	// Container scaffolded before this was kept has none.
+	// +optional
+	Operations *OperationsSpec `json:"operations,omitempty"`
+
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional
 	ActiveSessions int32 `json:"activeSessions"`
@@ -288,7 +366,8 @@ type ContainerStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
-	// and, for a Container with a Standard, StandardUpdated and ChecksApplied.
+	// and, for a Container with a Standard, StandardUpdated and ChecksApplied;
+	// once scaffolded, OperationsApplied.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

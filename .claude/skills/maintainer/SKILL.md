@@ -92,6 +92,11 @@ unanswered for 14 days.
      [Kubernetes reviewer](https://www.kubernetes.dev/docs/guide/pull-requests/)
      would. Check for tests at the lowest tier that sees the rule, scope of one
      issue, docs that match, and claims in the body that the evidence backs.
+   - A merged fix of a `kind/bug` issue: its test names the issue, would
+     have failed before the fix and covers what the report says, not a
+     neighbour of it; a `No test:` line gives a reason that holds. When the
+     test is missing or misses the report, file a follow-up `kind/bug`
+     issue, ready, for the test.
    - A defect becomes a `kind/bug` issue, ready. Name good work, specifically,
      in the report.
 6. **Health:**
@@ -110,9 +115,11 @@ unanswered for 14 days.
      allocate memory`, or whose runner went offline during the run, is the
      device's, not the code's: file no bug; say it under Health with the
      device's name.
-   - Runs queued with no runner online: say so under Health, and once under
-     *Needs you* (the runners are the owner's device), kept until they are
-     back.
+   - Runs queued with no runner online: the relay watch says so under Health
+     and once under *Needs you* (the runners are the owner's device), in
+     lines ending `<!-- watch:runners -->`, and removes them when runs start
+     again. Copy them into your rewrite as they are; never write your own
+     line about it.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
@@ -242,7 +249,9 @@ The *Milestones* line comes from `hack/lib/github.sh milestones`: each open
 milestone, a short form of its title, and its open and closed issue counts.
 
 An item stays under *Needs you* until the owner answers it or it no longer
-applies.
+applies. Lines ending in a `<!-- watch:KEY -->` marker are the relay
+watch's (`hack/lib/github.sh report-note`): keep each in its section, word
+for word, marker included. The watch updates and removes them itself.
 
 ## Standards behind this
 
