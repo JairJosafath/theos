@@ -162,7 +162,9 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   hand, even when "its work was the design": it closes with its last step.
   `hack/close-guard.sh` (a hook) denies a `gh pr create`, `edit`, `merge` or
   `git commit` that would close it while a step is open, naming the line, and
-  `hack/lib/github.sh close N` refuses it, naming the open step.
+  a `gh issue close`, a `gh api` call setting `state=closed` or a
+  `hack/lib/github.sh duplicate` that would close it at once, naming the
+  open step; `hack/lib/github.sh close N` and `duplicate N M` refuse it too.
 - **Plan finished:** when the issue you close finishes a plan's last step,
   move the plan to `docs/plans/done/` in the same pull request (`git mv`),
   fix the relative links inside it, and update every link to it
