@@ -1512,6 +1512,23 @@ gh_pr_check() {
   gh_closes_check - "$body" <<<"$text"
 }
 
+# gh_close_check N [SKIP...]: refuse closing N by hand while a "Depends on
+# #S" step of its body is open, naming each step on stderr: the parent of a
+# plan closes itself when its last step closes, never by hand. A SKIP is an
+# issue the same command closes, counted as closed (gh_steps). close,
+# duplicate and close-guard ask it. Exit 1: refused; 2: GitHub could not be
+# asked.
+gh_close_check() {
+  local n=${1:?usage: close-check N [SKIP...]} steps s line
+  steps=$(gh_steps "$@") || { echo "github: could not read #$n's steps from GitHub" >&2; return 2; }
+  steps=$(awk -F'\t' '$2 == "open" { print $1 "\t" $3 }' <<<"$steps")
+  [ -n "$steps" ] || return 0
+  while IFS=$'\t' read -r s line; do
+    echo "github: refused to close #$n: its step #$s is open (\"$line\" in #$n's body). The parent of a plan closes itself when its last step closes, never by hand." >&2
+  done <<<"$steps"
+  return 1
+}
+
 # gh_close N FILE: comment what landed, close N as completed, drop its status
 # labels, then release the claim and the cluster lease if they are on N. Closing comes first: if it fails, the claim stays live, so pick does
 # not offer the open, in-progress issue again as abandoned work. A close that
@@ -1519,17 +1536,10 @@ gh_pr_check() {
 # answers 422) still drops the labels and releases. Last, the plan parents
 # whose last step N was close too (gh_parents); that failing is only said.
 # An N whose body has a "Depends on #S" step still open is refused, naming
-# it: the parent of a plan closes itself when its last step closes, never by hand.
+# it (gh_close_check).
 gh_close() {
-  local n=${1:?usage: close N FILE} steps s line
-  steps=$(gh_steps "$n") || return 1
-  steps=$(awk -F'\t' '$2 == "open" { print $1 "\t" $3 }' <<<"$steps")
-  if [ -n "$steps" ]; then
-    while IFS=$'\t' read -r s line; do
-      echo "github: refused to close #$n: its step #$s is open (\"$line\" in #$n's body). The parent of a plan closes itself when its last step closes, never by hand." >&2
-    done <<<"$steps"
-    return 1
-  fi
+  local n=${1:?usage: close N FILE}
+  gh_close_check "$n" || return 1
   gh_comment "$n" "${2:--}" || return 1
   if ! gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"'; then
@@ -1654,10 +1664,12 @@ gh_bugfix_pr() {
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
-# and drop its status labels.
+# and drop its status labels. Refused as close is when N has a step still
+# open (gh_close_check).
 gh_duplicate() {
   local n=${1:?usage: duplicate N M} m=${2:?usage: duplicate N M}
   [[ $n =~ ^[0-9]+$ && $m =~ ^[0-9]+$ && $n != "$m" ]] || { echo "github: duplicate takes two issue numbers" >&2; return 1; }
+  gh_close_check "$n" || return 1
   echo "Duplicate of #$m." | gh_comment "$n" - >/dev/null || return 1
   gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=not_planned --jq '"closed #\(.number) as a duplicate of #'"$m"'"' || return 1
