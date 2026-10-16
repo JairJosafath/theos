@@ -1,3 +1,7 @@
+// First: tracing patches node:http as it loads, so it starts before the
+// modules below load it.
+import { tracing } from './start_tracing';
+
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createServer } from 'node:http';
@@ -5,6 +9,7 @@ import { createServer } from 'node:http';
 import type { Log } from './api';
 import { DynamoDbItemStore } from './item_store';
 import { listener } from './server';
+import { stopTracing } from './tracing';
 
 // The entry point the image runs: wiring only, the work is in `listener`.
 // Configuration is read once, here, and the process fails at start-up when
@@ -41,6 +46,9 @@ server.listen(port, () => {
 // the requests in flight, take no new ones, and let the process end.
 process.once('SIGTERM', () => {
   log({ level: 'INFO', message: 'Stopping.' });
-  server.close();
+  // Once the last request is answered, send the spans not yet sent.
+  server.close(() => {
+    void stopTracing(tracing, log);
+  });
   server.closeIdleConnections();
 });
