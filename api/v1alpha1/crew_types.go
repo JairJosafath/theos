@@ -14,7 +14,8 @@ import (
 )
 
 // CrewSpec is who works on a Container's issues: the Agent that implements, the
-// Agent that reviews, and whether they pick up ready issues.
+// Agent that reviews, the Agents labelled issues go to instead, and whether they
+// pick up ready issues.
 // +kubebuilder:validation:XValidation:rule="!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)",message="publishReleases needs tagReleases: only a release the Crew tagged is published"
 type CrewSpec struct {
 	// containerRef names the Container whose repository's issues the Crew works
@@ -79,6 +80,36 @@ type CrewSpec struct {
 	// publishing; what is published stays.
 	// +optional
 	PublishReleases *CrewPublishReleases `json:"publishReleases,omitempty"`
+
+	// routes send the issues with a label to other Agents than implementer and
+	// reviewer, such as kind/docs to a cheaper model or a security label to a
+	// stronger reviewer. For each role, the first route in the list whose label
+	// the issue has and that names an Agent for the role decides; with none,
+	// the Crew's own Agent takes it. The labels are read as the Task starts,
+	// and its agentRef and reviewerRef name the Agents it got.
+	// +listType=map
+	// +listMapKey=label
+	// +kubebuilder:validation:MaxItems=20
+	// +optional
+	Routes []CrewRoute `json:"routes,omitempty"`
+}
+
+// CrewRoute sends a Crew's issues with a label to other Agents.
+// +kubebuilder:validation:XValidation:rule="has(self.implementer) || has(self.reviewer)",message="a route names an implementer, a reviewer or both"
+type CrewRoute struct {
+	// label is an issue label, such as kind/docs, matched exactly.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +required
+	Label string `json:"label"`
+
+	// implementer names the Agent that implements an issue with the label.
+	// +optional
+	Implementer *LocalRef `json:"implementer,omitempty"`
+
+	// reviewer names the Agent that reviews an issue with the label.
+	// +optional
+	Reviewer *LocalRef `json:"reviewer,omitempty"`
 }
 
 // CrewPublishReleases is where a Crew publishes its releases.

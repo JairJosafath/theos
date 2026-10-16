@@ -439,6 +439,19 @@ model and context it needs.
   pull request, a round with no commit has nothing to review
   ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
   backlog; Gitea 1.27 has no API for project boards.
+- **A Crew routes issues by label** (#1085). `spec.routes` sends the issues
+  with a label to another implementer, reviewer or both, such as `kind/docs`
+  to a cheaper model or a security label to a stronger reviewer. Each role is
+  decided on its own: the first route in the list whose label the issue has
+  and that names an Agent for the role wins, else the Crew's own Agent; an
+  issue labelled `kind/docs` and `security` so gets the docs route's
+  implementer and the security route's reviewer. Labels match exactly; the
+  CRD allows one route per label and refuses a route that names no Agent.
+  The labels are read as the Task starts, and its immutable `agentRef` and
+  `reviewerRef` record the Agents it got: a label changed later moves no
+  Task, and the next try reads them again. Every Agent a route names must
+  exist, as the Crew's own must; until it does the Crew waits (`Ready=False`,
+  reason `AgentNotFound`) and its creation wakes the Crew.
 - **Releases go in order.** A milestone with a due date is a release. The Crew
   starts ready issues release by release, the one due first first: the release
   in progress (the first that still has work: a ready issue, one waiting on
@@ -1044,10 +1057,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   and [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
 - **The loop is tested without a model.** A planner Agent with
   `harness: stand-in` plans from the catalog alone: a Container named after
-  the Brief on the first Framework, with an issue for it, and an issue for
-  each follow-up prompt and each request it takes. `make e2e` takes a Brief through two rounds that way,
-  with no token, and *Verify Release*, when a human dispatches it, takes one
-  through a round on the published chart, whose Agent `stand-in` any project can name.
+  the Brief on the first Framework a Deployment ships and a Standard fits,
+  with both and released (else on the first Framework, unreleased), with an issue for
+  it, and an issue for each follow-up prompt and each request it takes.
+  `make e2e` takes a Brief through two rounds that way, with no token, and
+  *Verify Release*, when a human dispatches it, follows
+  [getting-started.md](getting-started.md)'s *Without a token* on the
+  published chart, whose Agent `stand-in` any project can name, until the
+  Brief's app has a release on Gitea with its files (#1083).
   How well a real planner plans an idea is the person's run.
 - **The person answers the reviewers' suggestions in a prompt** (#375). A
   reviewer's follow-up waiting, `status/proposed`, in the repository of a

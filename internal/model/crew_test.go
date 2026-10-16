@@ -64,6 +64,10 @@ func TestNextCrewStep(t *testing.T) {
 		issue.Prepare = true
 		return issue
 	}
+	labelled := func(issue Issue, labels ...string) Issue {
+		issue.Labels = labels
+		return issue
+	}
 	tests := []struct {
 		name  string
 		facts CrewFacts
@@ -302,6 +306,13 @@ func TestNextCrewStep(t *testing.T) {
 			Issues: []Issue{in(v020, ready(44)), in(v011, ready(58))}},
 			want: CrewStep{Phase: CrewPaused, Ready: []int{58, 44},
 				Message: "Paused; not picking up issues"}},
+		{name: "a labelled issue starts on its route's Agents, the others on the Crew's (#1085)", facts: CrewFacts{
+			ContainerReady: true, Parallel: 2, Issues: []Issue{labelled(ready(4), "kind/docs"), ready(5)},
+			Routes: []AgentRoute{{Label: "kind/docs", Implementer: "haiku"}}},
+			want: CrewStep{Phase: CrewWorking, Start: []IssueStart{
+				{Issue: 4, Task: "cel-ls-4", Attempt: 1, Implementer: "haiku"},
+				{Issue: 5, Task: "cel-ls-5", Attempt: 1}},
+				Message: "Starting Task cel-ls-4 for issue #4 and Task cel-ls-5 for issue #5"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -310,6 +321,38 @@ func TestNextCrewStep(t *testing.T) {
 				t.Errorf("NextCrewStep()\n got %+v\nwant %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRouteAgents(t *testing.T) {
+	routes := []AgentRoute{
+		{Label: "security", Reviewer: "opus"},
+		{Label: "kind/docs", Implementer: "haiku", Reviewer: "sonnet"},
+		{Label: "kind/bug", Implementer: "sonnet"},
+	}
+	tests := []struct {
+		name                  string
+		labels                []string
+		implementer, reviewer string
+	}{
+		{"no label routes", []string{"status/ready", "kind/feature"}, "", ""},
+		{"one route names both roles", []string{"kind/docs"}, "haiku", "sonnet"},
+		{"a route naming one role leaves the other to the Crew", []string{"kind/bug"}, "sonnet", ""},
+		{"each role takes the first route that names one for it", []string{"kind/docs", "security"}, "haiku", "opus"},
+		{"the route listed first wins a role, whatever the labels' order", []string{"kind/bug", "kind/docs"}, "haiku", "sonnet"},
+		{"labels match exactly", []string{"Kind/Docs", "kind/docs-extra"}, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			implementer, reviewer := RouteAgents(routes, tt.labels)
+			if implementer != tt.implementer || reviewer != tt.reviewer {
+				t.Errorf("RouteAgents(%v) = %q, %q, want %q, %q", tt.labels, implementer, reviewer,
+					tt.implementer, tt.reviewer)
+			}
+		})
+	}
+	if implementer, reviewer := RouteAgents(nil, []string{"kind/docs"}); implementer != "" || reviewer != "" {
+		t.Errorf("RouteAgents(nil) = %q, %q, want the Crew's own", implementer, reviewer)
 	}
 }
 
