@@ -208,15 +208,23 @@ GH_NOW_JQ='
   def now: $ENV.GH_NOW // "" | if . == "" then _now else tonumber end;
 '
 
-# jq definitions over comments ({id, updated_at, body}); need --arg cm and --argjson ttl.
-GH_CLAIM_JQ=$GH_NOW_JQ'
-  def claim: .body | sub("^\\s+"; "") | startswith($cm);
-  def held: .body | test("\\*\\* works on this issue");
+# jq definitions over the comments a marker line starts ({id, updated_at,
+# body}): claims, the maintainer lease and merge turns. They need --arg m (the
+# marker) and --argjson ttl. A comment names its agent in bold and its fields
+# as NAME `VALUE`, and is fresh while it was edited within ttl seconds.
+GH_MARKED_JQ=$GH_NOW_JQ'
+  def marked: .body | sub("^\\s+"; "") | startswith($m);
   def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
-  def live: claim and held and fresh;
   def cname: [.body | capture("\\*\\*(?<n>[^*]+)\\*\\*") | .n] | first // "";
   def cfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
   def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
+'
+
+# Claims: GH_MARKED_JQ with --arg m "$GH_CLAIM_MARKER".
+GH_CLAIM_JQ=$GH_MARKED_JQ'
+  def claim: marked;
+  def held: .body | test("\\*\\* works on this issue");
+  def live: claim and held and fresh;
 '
 
 # name|color|description, the same words the factory uses in Gitea. GitHub
@@ -287,12 +295,13 @@ gh_labels() {
   done
 }
 
-# gh_seconds VALUE NAME: VALUE (2h, 90m, 300s or 300) in seconds; NAME is
+# gh_seconds VALUE NAME: VALUE (1d, 2h, 90m, 300s or 300) in seconds; NAME is
 # what the error message calls it.
 gh_seconds() {
   local t=$1
-  [[ $t =~ ^[0-9]+[smh]?$ ]] || { echo "github: $2 must look like 2h, 90m, 300s or 300" >&2; return 1; }
+  [[ $t =~ ^[0-9]+[smhd]?$ ]] || { echo "github: $2 must look like 1d, 2h, 90m, 300s or 300" >&2; return 1; }
   case $t in
+    *d) echo $((${t%d} * 86400)) ;;
     *h) echo $((${t%h} * 3600)) ;;
     *m) echo $((${t%m} * 60)) ;;
     *) echo "${t%s}" ;;
@@ -308,7 +317,7 @@ gh_recent_claims() {
   local since pages
   since=$(date -u -d "@$(($(gh_now) - $1))" +%Y-%m-%dT%H:%M:%SZ)
   pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
-  jq -c --arg cm "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'
+  jq -c --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'
     [.[][] | select(claim) | {id, issue: (.issue_url | sub(".*/"; "") | tonumber), updated_at, html_url, body}]' <<<"$pages"
 }
 
@@ -324,7 +333,7 @@ gh_pick() {
   issues=$(gh_api --paginate --slurp \
     "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  row=$(jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" "$GH_CLAIM_JQ"'
+  row=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" "$GH_CLAIM_JQ"'
     def has($l): .labels | any(. == $l);
     [.[][]] as $all
     | [$all[].number] as $open
@@ -374,7 +383,7 @@ gh_blocked() {
   ttl=$(gh_ttl) || return 2
   issues=$(gh_open_issues) || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
-  jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
+  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson claims "$claims" \
     --argjson unworked "$unworked" "$GH_CLAIM_JQ$GH_DEPS_JQ"'
     def has($l): .labels | any(.name == $l);
     def isopen($n): any(.[]; .number == $n);
@@ -473,7 +482,7 @@ gh_parents() {
         ttl=$(gh_ttl) || return 2
         claims=$(gh_recent_claims "$ttl") || return 2
       fi
-      if jq -e --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson n "$n" "$GH_CLAIM_JQ"'
+      if jq -e --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson n "$n" "$GH_CLAIM_JQ"'
         any(.[]; live and .issue == $n)' <<<"$claims" >/dev/null; then
         continue
       fi
@@ -705,7 +714,7 @@ gh_set_status() {
 
 # gh_unstatus N: drop every status/* label from N.
 gh_unstatus() {
-  local n=${1:?usage: closed N} labels
+  local n=${1:?usage: gh_unstatus N} labels
   labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
   grep -q '^status/' <<<"$labels" || return 0
   { grep -v '^status/' <<<"$labels" || :; } | gh_put_labels "$n"
@@ -724,6 +733,16 @@ gh_closed() {
 gh_edit_comment() {
   jq -n --arg b "$2" '{body: $b}' |
     gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/comments/$1" --input - >/dev/null
+}
+
+# gh_delete_comment ID: delete comment ID (a maintainer lease, a merge turn);
+# one already gone counts as deleted.
+gh_delete_comment() {
+  local out
+  out=$(gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/${1:?usage: gh_delete_comment ID}" 2>&1) && return 0
+  grep -q 'HTTP 404' <<<"$out" && return 0
+  echo "$out" >&2
+  return 1
 }
 
 # gh_claim_comment ID: comment ID as JSON {id, updated_at, body}, or nothing
@@ -754,7 +773,7 @@ gh_claim_held() {
   local c
   c=$(gh_claim_comment "$c_id") || return 2
   [ -n "$c" ] || return 1
-  jq -e --arg cm "$GH_CLAIM_MARKER" --argjson ttl 0 --arg name "$c_name" \
+  jq -e --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 --arg name "$c_name" \
     "$GH_CLAIM_JQ"'held and cname == $name' <<<"$c" >/dev/null || return 1
   echo "$c"
 }
@@ -831,7 +850,7 @@ gh_take_locked() {
 
   issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
   all=$(gh_comments "$n") || return 1
-  local q=(--arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
+  local q=(--arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl")
 
   # 1. Someone else holds it.
   holder=$(jq -r "${q[@]}" "$GH_CLAIM_JQ"'
@@ -1342,7 +1361,7 @@ gh_claims() {
   claims=$(gh_recent_claims $((7 * 86400))) || return 1
   open=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" |
     jq -c '[.[][].number]') || return 1
-  jq -r --arg cm "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson open "$open" "$GH_CLAIM_JQ"'
+  jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson open "$open" "$GH_CLAIM_JQ"'
     [group_by(.issue)[] | max_by(.id) | select(.issue as $i | $open | any(. == $i)) | select(held)]
     | sort_by(.issue)[]
     | ["#\(.issue)", cname, (if fresh then "live" else "stale" end), cfield("host"), "heartbeat \(age)", cfield("branch")]
@@ -1699,6 +1718,13 @@ gh_activity() {
   echo "$updated $sha"
 }
 
+# gh_report_find: the Maintainer report issue's number (the oldest open issue
+# labeled maintainer/report), or nothing when there is none.
+gh_report_find() {
+  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+    --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
+}
+
 # gh_report FILE: make FILE the body of the open issue labeled
 # maintainer/report, and print its URL. The first time there is none, create
 # it (and the label) and pin it; a pin that fails is said, not fatal. The issue
@@ -1707,8 +1733,7 @@ gh_report() {
   local body n url id line color desc
   body=$(gh_read "${1:?usage: report FILE}") || return 1
   [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
-  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
-    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  n=$(gh_report_find) || return 1
   if [ -n "$n" ]; then
     jq -n --arg b "$body" '{body: $b}' |
       gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
@@ -1781,8 +1806,7 @@ gh_note_body() {
 # edited only when the note changes it; exit 1 when there is no report.
 gh_report_note() {
   local n body new
-  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
-    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  n=$(gh_report_find) || return 1
   [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
   body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
   new=$(gh_note_body "$@" <<<"$body") || return 1
@@ -1800,24 +1824,20 @@ gh_report_note() {
 # (.relay/maintain.lock), takes it, so a live lease of this host is one a
 # crashed maintainer left: it is taken over like a stale one.
 GH_MAINT_MARKER='<!-- c4-maintainer -->'
-GH_MAINT_JQ=$GH_NOW_JQ'
-  def lease: .body | sub("^\\s+"; "") | startswith($mm);
-  def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
-  def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
-  def mine: lfield("host") == $host;
-  def age: (now - (.updated_at | fromdateiso8601)) / 60 | floor | "\(.)m ago";
+# GH_MARKED_JQ with --arg m "$GH_MAINT_MARKER" and --arg host.
+GH_MAINT_JQ=$GH_MARKED_JQ'
+  def lease: marked;
+  def mine: cfield("host") == $host;
 '
 
 # gh_report_issue: the Maintainer report issue's number, creating it (with a
 # placeholder the first sweep replaces) when there is none.
 gh_report_issue() {
   local n
-  n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
-    --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+  n=$(gh_report_find) || return 1
   if [ -z "$n" ]; then
     gh_report - <<<"No sweep has written this report yet." >/dev/null || return 1
-    n=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
-      --jq '[.[] | select(.pull_request | not) | .number] | min // empty') || return 1
+    n=$(gh_report_find) || return 1
   fi
   [ -n "$n" ] || { echo "github: no Maintainer report issue to hold the lease" >&2; return 1; }
   echo "$n"
@@ -1837,10 +1857,10 @@ gh_maint_take() {
   ttl=$(gh_ttl) || return 1
   n=$(gh_report_issue) || return 1
   all=$(gh_comments "$n") || return 1
-  local q=(--arg mm "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
+  local q=(--arg m "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
   holder=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
     [.[] | select(lease and fresh and (mine | not))] | min_by(.id) // empty
-    | "host \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+    | "host \(cfield("host")) (pid \(cfield("pid"))), heartbeat \(age)"' <<<"$all")
   if [ -n "$holder" ]; then
     echo "$holder"
     return 4
@@ -1855,14 +1875,14 @@ gh_maint_take() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
   sleep "$GH_CLAIM_SETTLE"
   if ! all=$(gh_comments "$n"); then
-    gh_maint_release "$id"
+    gh_delete_comment "$id"
     return 1
   fi
   winner=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
     [.[] | select(lease and fresh)] | min_by(.id) // empty
-    | "\(.id)\thost \(lfield("host")) (pid \(lfield("pid"))), heartbeat \(age)"' <<<"$all")
+    | "\(.id)\thost \(cfield("host")) (pid \(cfield("pid"))), heartbeat \(age)"' <<<"$all")
   if [ "${winner%%$'\t'*}" != "$id" ]; then
-    gh_maint_release "$id"
+    gh_delete_comment "$id"
     echo "${winner#*$'\t'}"
     return 4
   fi
@@ -1872,15 +1892,6 @@ gh_maint_take() {
 # gh_maint_beat ID: refresh lease ID's heartbeat. Exit 1: it is gone (another
 # host took it over as stale) or GitHub could not be asked.
 gh_maint_beat() { gh_edit_comment "${1:?usage: gh_maint_beat ID}" "$(gh_maint_body)"; }
-
-# gh_maint_release ID: delete lease ID; one already gone is released too.
-gh_maint_release() {
-  local out
-  out=$(gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/${1:?usage: gh_maint_release ID}" 2>&1) && return 0
-  grep -q 'HTTP 404' <<<"$out" && return 0
-  echo "$out" >&2
-  return 1
-}
 
 # The merge turn (#1037): merge refuses a pull request behind main, so with
 # several agents landing at once a branch's make check is outrun by the next
@@ -1901,34 +1912,26 @@ GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw th
 # so a fetch in another one at the same moment fails this one's ref update.
 GH_LAND_FETCH_TRIES=${GH_LAND_FETCH_TRIES:-5}
 GH_LAND_FETCH_PAUSE=${GH_LAND_FETCH_PAUSE:-5} # seconds between those tries
-GH_LAND_JQ=$GH_NOW_JQ'
-  def turn: .body | sub("^\\s+"; "") | startswith($lm);
-  def fresh: (.updated_at | fromdateiso8601) > (now - $ttl);
-  def lfield($f): [.body | capture($f + " `(?<v>[^`]+)`") | .v] | first // "";
-  def lname: [.body | capture("\\*\\*(?<n>[^*]+)\\*\\*") | .n] | first // "someone";
-  def who: "\(lname) lands #\(lfield("pull request")) (host \(lfield("host"))), heartbeat \((now - (.updated_at | fromdateiso8601)) / 60 | floor)m ago";
+# GH_MARKED_JQ with --arg m "$GH_LAND_MARKER".
+GH_LAND_JQ=$GH_MARKED_JQ'
+  def turn: marked;
+  def who: "\(cname | select(. != "") // "someone") lands #\(cfield("pull request")) (host \(cfield("host"))), heartbeat \(age)";
 '
-
-# gh_land_issue: the Maintainer report issue's number, or nothing when there is none.
-gh_land_issue() {
-  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
-    --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
-}
 
 # gh_land_queue N: the merge-turn comments on issue N, as JSON.
 gh_land_queue() {
   local all ttl
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 1
   all=$(gh_comments "$1") || return 1
-  jq -c --arg lm "$GH_LAND_MARKER" --argjson ttl "$ttl" "$GH_LAND_JQ"'
-    [.[] | select(turn) | . + {fresh: fresh, who: who, pr: lfield("pull request")}]' <<<"$all"
+  jq -c --arg m "$GH_LAND_MARKER" --argjson ttl "$ttl" "$GH_LAND_JQ"'
+    [.[] | select(turn) | . + {fresh: fresh, who: who, pr: cfield("pull request")}]' <<<"$all"
 }
 
 # gh_land_holder: who holds the merge turn, as PR<tab>WHO; nothing when nobody
 # does. Exit 1: GitHub could not be asked.
 gh_land_holder() {
   local n q
-  n=$(gh_land_issue) || return 1
+  n=$(gh_report_find) || return 1
   [ -n "$n" ] || return 0
   q=$(gh_land_queue "$n") || return 1
   jq -r '[.[] | select(.fresh)] | min_by(.id) // empty | "\(.pr)\t\(.who)"' <<<"$q"
@@ -2048,7 +2051,7 @@ gh_land_turn() {
   # Give the place up however this ends; jobs it forks inherit the trap, so only this shell runs it.
   me=$BASHPID
   GH_LAND_BEATER=
-  trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_maint_release "'"$id"'" >/dev/null 2>&1 ||
+  trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
     echo "github: could not delete the merge turn (comment '"$id"' on #'"$n"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
   trap 'exit 130' INT TERM
   t0=$SECONDS beat=$SECONDS
@@ -2056,7 +2059,7 @@ gh_land_turn() {
     q=$(gh_land_queue "$n") || { echo "github: could not read the merge queue on #$n" >&2; return 1; }
     while IFS=$'\t' read -r s who; do
       [ -n "$s" ] || continue
-      gh_maint_release "$s" >/dev/null && echo "github: dropped an abandoned merge turn: $who" >&2
+      gh_delete_comment "$s" >/dev/null && echo "github: dropped an abandoned merge turn: $who" >&2
     done < <(jq -r '.[] | select(.fresh | not) | "\(.id)\t\(.who)"' <<<"$q")
     jq -e --argjson id "$id" 'any(.[]; .id == $id and .fresh)' <<<"$q" >/dev/null || {
       echo "github: #$pr lost its place in the merge queue (its comment on #$n is gone or lapsed); land again" >&2; return 1; }

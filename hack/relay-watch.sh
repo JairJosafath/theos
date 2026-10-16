@@ -422,9 +422,9 @@ start() {
 # the last triage didn't see, one changed after it (not by the triage's own
 # comment), one waits on an issue that closed after it, or the last triage is
 # RETRIAGE seconds old. $DIR/triaged holds the last triage's time and issues,
-# this watch's or one started by hand (hack/relay.sh --triage writes it as its
-# session starts); when its session never ran, hack/relay.sh --triage keeps
-# only the time there, so the same issues start it again. TRIAGE_T keeps the
+# this watch's or one started by hand; only hack/relay.sh --triage writes it,
+# as its session starts, and when the session never ran it keeps only the
+# time there, so the same issues start it again. TRIAGE_T keeps the
 # watch from asking for the proposed issues more often than every TRIAGE_ASK
 # (WATCH_RETRY): every round, busy ones too, would cost GitHub calls by the
 # dozen a minute.
@@ -466,12 +466,10 @@ triage() {
   [ -n "$freed" ] && why+=("waited on a closed issue:$freed")
   [ ${#why[@]} -gt 0 ] || [ ${#since[@]} = 0 ] || return 0
   [ ${#why[@]} -gt 0 ] || why=("read again after $((RETRIAGE / 3600))h")
-  echo "$now $list" >"$DIR/triaged"
   out=$(run_triage 2>&1 8>&-)
   rc=$?
   why=$(printf '%s; ' "${why[@]}")
   log "triage: proposed #${list// / #} (${why%; }); hack/relay.sh --triage${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((TRIAGE_EVERY / 60))m)")"
-  [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
 # maintain NOW: start the maintainer when it is on, none runs, and an issue
