@@ -7,15 +7,16 @@ A digest of the AWS Well-Architected Framework and Amazon ECS's best
 practices, for this repository: one section per pillar, what the pillar asks
 of a container service on Fargate behind a load balancer, what each tier
 does about it, what `infra/operations.ts` changes, the CDK Nag rules
-(`AwsSolutions` pack) and the Standard's checks that enforce it, and what
-stays by hand, with the reason. Sources and the date they were read are in
+(`AwsSolutions` and `Serverless` packs) and the Standard's checks that
+enforce it, and what stays by hand, with the reason. Sources and the date they were read are in
 `docs/style/SOURCES.md`. This file belongs to the Standard: a task never
 changes it.
 
 `make check` synthesizes every stack for both tiers, into
 `cdk.out/production/` and `cdk.out/development/`, and runs CDK Nag's
-`AwsSolutions` checks on both (`infra/standard.ts`): a finding fails synth
-unless it is acknowledged, on one construct, with a reason.
+`AwsSolutions` and `Serverless` checks on both (`infra/standard.ts`): a
+finding fails synth unless it is acknowledged, on one construct, with a
+reason.
 `infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
 wildcard actions, encryption, log retention, removal policies, and every
 promise below. `cfn-lint --include-checks I` lints both, with I3011 (a
@@ -328,15 +329,16 @@ checks every one, and a vague reason ("not needed", "for now") is blocking.
 A digest of the AWS Well-Architected Framework, for this repository: one
 section per pillar, what the pillar asks of a service on EC2 instances in an
 Auto Scaling group behind a load balancer, what each tier does about it,
-what `infra/operations.ts` changes, the CDK Nag rules (`AwsSolutions` pack)
-and the Standard's checks that enforce it, and what stays by hand, with the
-reason. Sources and the date they were read are in `docs/style/SOURCES.md`.
+what `infra/operations.ts` changes, the CDK Nag rules (`AwsSolutions` and
+`Serverless` packs) and the Standard's checks that enforce it, and what
+stays by hand, with the reason. Sources and the date they were read are in `docs/style/SOURCES.md`.
 This file belongs to the Standard: a task never changes it.
 
 `make check` synthesizes every stack for both tiers, into
 `cdk.out/production/` and `cdk.out/development/`, and runs CDK Nag's
-`AwsSolutions` checks on both (`infra/standard.ts`): a finding fails synth
-unless it is acknowledged, on one construct, with a reason.
+`AwsSolutions` and `Serverless` checks on both (`infra/standard.ts`): a
+finding fails synth unless it is acknowledged, on one construct, with a
+reason.
 `infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
 wildcard actions, encryption, log retention, removal policies, and every
 promise below. `cfn-lint --include-checks I` lints both, with I3011 (a
@@ -617,21 +619,26 @@ _Minimize the environmental impact of the workload._
 A digest of the AWS Well-Architected Framework and its Serverless Applications
 Lens, for this repository: one section per pillar, what the pillar asks of a
 serverless {{ if $queue }}queue consumer{{ else if $schedule }}scheduled job{{ else }}API{{ end }}, what each tier does about it, what `infra/operations.ts`
-changes, the CDK Nag rules (`AwsSolutions` pack) and the Standard's checks
-that enforce it, and what stays by hand, with the reason. Sources and the
-date they were read are in `docs/style/SOURCES.md`. This file belongs to the
-Standard: a task never changes it.
+changes, the CDK Nag rules (`AwsSolutions` and `Serverless` packs) and the
+Standard's checks that enforce it, and what stays by hand, with the reason.
+Sources and the date they were read are in `docs/style/SOURCES.md`. This
+file belongs to the Standard: a task never changes it.
 
 `make check` synthesizes every stack for both tiers, into
 `cdk.out/production/` and `cdk.out/development/`, and runs CDK Nag's
-`AwsSolutions` checks on both (`infra/standard.ts`): a finding fails synth
-unless it is acknowledged, on one construct, with a reason.
+`AwsSolutions` and `Serverless` checks on both (`infra/standard.ts`): a
+finding fails synth unless it is acknowledged, on one construct, with a
+reason.
 `infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
 wildcard actions, encryption, log retention, removal policies, and every
 promise below. `cfn-lint --include-checks I` lints both, with I3011 (a
 stateful resource without a deletion policy) and I3013 (content that expires
 without a set retention). The Serverless pack's rules are named where they
-apply; it is not run, so they are review items.
+apply. The Standard acknowledges, on every stack, the five that check what an
+`AwsSolutions` rule checks too (`LambdaLatestVersion`, `LambdaStarPermissions`,
+`APIGWAccessLogging`, `SQSRedrivePolicy`, `StepFunctionStateMachineXray`), and
+on the one resource those that are wrong for it, each with its reason in
+`infra/standard.ts`.
 
 ## Tiers and the operations block
 
@@ -689,9 +696,15 @@ _Run and monitor the system, and improve it in small, reversible changes._
 {{- end }}
 {{- if not (or $queue $schedule) }}
   - `AwsSolutions-APIG1`: the API has access logging.
+  - Serverless `APIGWStructuredLogging`: an access log in JSON. The stage
+    writes the Common Log Format, which the Standard acknowledges: it
+    cannot tell a repository's Framework version, so it cannot hold an
+    older one to JSON. A new stage writes JSON.
 {{- end }}
-  - Serverless `CloudWatchLogGroupRetentionPeriod`{{ if not (or $queue $schedule) }}, `APIGWStructuredLogging`{{ end }}:
-    `infra/standard.test.ts` checks every log group keeps the tier's time.
+  - Serverless `LambdaTracing`: every function traces in production; the
+    Standard acknowledges it in development, which traces nothing.
+  - Serverless `CloudWatchLogGroupRetentionPeriod`: every log group has a
+    retention; `infra/standard.test.ts` checks it is the tier's time.
 - Alarms are code (OPS08-BP04, REL06-BP03), the same in both tiers:
   `cdk-monitoring-constructs` builds them on {{ if $queue }}the dead-letter queue's depth (any
   message), the oldest message's age (over 15 minutes), the function's
@@ -838,7 +851,9 @@ fails._
     never holds back its batch. `infra/standard.test.ts` checks every SQS
     event source sets it. Serverless `LambdaEventSourceMappingDestination`
     asks for an on-failure destination, which SQS sources don't take: their
-    dead-letter queue is the queue's.
+    dead-letter queue is the queue's, so the Standard acknowledges it on
+    every SQS event source, and `LambdaDLQ` on a function only the event
+    source calls.
   - The queue's visibility timeout is six times the function's timeout
     plus the batching window, so a message is not delivered again while a
     slow batch still holds it.
@@ -849,7 +864,9 @@ fails._
     retries a run that threw twice within an hour (its
     `EventInvokeConfig`). A run that fails every retry goes to the
     dead-letter queue: the schedule target's and the function's
-    `DeadLetterConfig` name the same one (Serverless `LambdaDLQ`), where it
+    `DeadLetterConfig` name the same one (Serverless `LambdaDLQ`; the
+    Standard acknowledges `LambdaAsyncFailureDestination`, as the queue
+    already holds what a destination would), where it
     waits 14 days and its first message fires an alarm; `docs/runbook.md`
     runs it again once the cause is fixed.
   - `infra/standard.test.ts` checks every schedule has a retry policy, a
@@ -858,9 +875,11 @@ fails._
     `OnFailure`, has its depth alarm. A run the Scheduler could not hand
     to the dead-letter queue is counted and alarmed on its group.
 {{- else }}
-  - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`,
-    `SQSRedrivePolicy`, `EventBusDLQ`: by hand, for asynchronous invocations;
-    an API Gateway call is synchronous, and its client retries.
+  - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`, `EventBusDLQ`:
+    an asynchronous invocation or an event bus rule a change adds has a
+    dead-letter queue. API Gateway's call is synchronous and its client
+    retries, so the Standard acknowledges `LambdaDLQ` on a function only
+    API Gateway calls.
 {{- end }}
 {{- if $schedule }}
 - Idempotency: EventBridge Scheduler and Lambda both deliver a run at least
@@ -873,7 +892,7 @@ fails._
 - Limits: a timeout on every function, 5 minutes for a run; the
   schedule's retries end within an hour of the scheduled time, and
   Lambda's within an hour of when it took the run.
-  Serverless `LambdaFunctionDefaultTimeout`: by hand.
+  Serverless `LambdaDefaultTimeout`: every function sets one.
 {{- else if $queue }}
 - Idempotency: SQS delivers a message at least once, so a message
   delivered again changes nothing twice. Powertools' Idempotency keys each
@@ -884,7 +903,7 @@ fails._
 - Limits: a timeout on every function, and the event source's maximum
   concurrency (10) leaves the account's concurrency for its other
   functions; the queue holds what waits. Serverless
-  `LambdaFunctionDefaultTimeout`: by hand.
+  `LambdaDefaultTimeout`: every function sets one.
 {{- else }}
 {{- if $go }}
 - Idempotency, by hand: a retried request changes nothing twice. There is
@@ -903,8 +922,9 @@ fails._
 {{- end }}
 - Limits: timeouts on every function, below the caller's (API Gateway: 30
   seconds); throttling on every API stage, so a burst can't exhaust the
-  account's concurrency. Serverless `LambdaFunctionDefaultTimeout`,
-  `APIGWDefaultThrottling`: by hand.
+  account's concurrency. Serverless `LambdaDefaultTimeout` and
+  `APIGWDefaultThrottling`: every function sets a timeout, every stage its
+  throttling.
 {{- end }}
 - By hand, and why: a restore drill (REL09-BP04, REL13-BP03), at least a
   quarter apart, and a game day once a year; only an account shows that a
@@ -917,7 +937,8 @@ _Use resources efficiently as demand changes and technology evolves._
 
 - The newest runtime: `AwsSolutions-L1`.
 - Size memory to the work (Lambda gives CPU in proportion); measure before
-  raising it. Serverless `LambdaDefaultMemorySize`: by hand, memory is set.
+  raising it. Serverless `LambdaDefaultMemorySize`: every function sets its
+  memory.
 {{- if $go }}
 - Cold starts: one static binary (`go build`, `CGO_ENABLED=0`,
   `-ldflags '-s -w'`, `-tags lambda.norpc`) named `bootstrap` on
@@ -998,15 +1019,16 @@ _Minimize the environmental impact of the workload._
 A digest of the AWS Well-Architected Framework, for this repository: one
 section per pillar, what the pillar asks of a static site served by
 CloudFront from an S3 bucket, what each tier does about it, what
-`infra/operations.ts` changes, the CDK Nag rules (`AwsSolutions` pack) and
-the Standard's checks that enforce it, and what stays by hand, with the
-reason. Sources and the date they were read are in `docs/style/SOURCES.md`.
+`infra/operations.ts` changes, the CDK Nag rules (`AwsSolutions` and
+`Serverless` packs) and the Standard's checks that enforce it, and what
+stays by hand, with the reason. Sources and the date they were read are in `docs/style/SOURCES.md`.
 This file belongs to the Standard: a task never changes it.
 
 `make check` builds the site with Vite and synthesizes the stack for both
 tiers, into `cdk.out/production/` and `cdk.out/development/`, and runs CDK
-Nag's `AwsSolutions` checks on both (`infra/standard.ts`): a finding fails
-synth unless it is acknowledged, on one construct, with a reason.
+Nag's `AwsSolutions` and `Serverless` checks on both (`infra/standard.ts`):
+a finding fails synth unless it is acknowledged, on one construct, with a
+reason.
 `infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
 wildcard actions, encryption, log retention, removal policies, the versions
 of the site's bucket, and every promise below. `cfn-lint --include-checks I`

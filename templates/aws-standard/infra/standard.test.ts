@@ -3,9 +3,18 @@
 // them. CDK Nag checks most AWS defaults; these check the rest, and that the
 // stacks keep what infra/operations.ts promises. A failing case here means a
 // stack breaks the Standard: fix the stack, never the test.
-import { App, Stack } from 'aws-cdk-lib';
+import { App, Duration, Stack } from 'aws-cdk-lib';
+import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
-import { existsSync, readFileSync } from 'node:fs';
+import { Code, Function as LambdaFunction, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
+import type { FunctionProps } from 'aws-cdk-lib/aws-lambda';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import { EmailSubscription, LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import { Queue } from 'aws-cdk-lib/aws-sqs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -958,3 +967,125 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
   },
 );
+
+/**
+ * The Serverless findings on a stack `define` builds, after the Standard, as
+ * `<rule> <construct path>`: synth writes them into the outdir's validation
+ * report, not into the error it throws.
+ */
+function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[] {
+  const outdir = mkdtempSync(path.join(tmpdir(), 'standard-'));
+  try {
+    const probe = new App({ outdir, context: { tier } });
+    define(new Stack(probe, 'probe'));
+    applyStandard(probe, tier);
+    try {
+      probe.synth();
+    } catch {
+      // Every finding fails synth; the report says which.
+    }
+    const report = path.join(outdir, 'validation-report.json');
+    const parsed: unknown = existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : {};
+    const plugins =
+      isRecord(parsed) && Array.isArray(parsed['pluginReports']) ? parsed['pluginReports'] : [];
+    return (plugins as unknown[])
+      .filter((plugin) => isRecord(plugin) && plugin['pluginName'] === 'Serverless')
+      .flatMap((plugin) =>
+        isRecord(plugin) && Array.isArray(plugin['violations'])
+          ? (plugin['violations'] as unknown[])
+          : [],
+      )
+      .flatMap((violation: unknown) =>
+        isRecord(violation) && Array.isArray(violation['violatingConstructs'])
+          ? (violation['violatingConstructs'] as unknown[]).map(
+              (construct) =>
+                `${String(violation['ruleName'])} ${isRecord(construct) ? String(construct['constructPath']) : ''}`,
+            )
+          : [],
+      )
+      .sort();
+  } finally {
+    rmSync(outdir, { recursive: true, force: true });
+  }
+}
+
+/** A function of `stack` with a timeout and memory, so only the rules under test find it. */
+function probeFunction(
+  stack: Stack,
+  id: string,
+  props: Partial<FunctionProps> = {},
+): LambdaFunction {
+  return new LambdaFunction(stack, id, {
+    runtime: Runtime.NODEJS_22_X,
+    handler: 'index.handler',
+    code: Code.fromInline('exports.handler = async () => ({});'),
+    timeout: Duration.seconds(10),
+    memorySize: 256,
+    ...props,
+  });
+}
+
+// The Serverless pack runs beside AwsSolutions where the Frameworks carry
+// operations, and the Standard acknowledges the rules that are wrong for a
+// resource or duplicate an AwsSolutions one (#1112).
+describe.runIf(operations !== undefined)('the Serverless rules', () => {
+  it('find an asynchronous function without a dead-letter queue, and not one only synchronous callers call', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      new HttpApi(stack, 'Api', {
+        defaultIntegration: new HttpLambdaIntegration('Called', probeFunction(stack, 'Called')),
+      });
+      const queue = new Queue(stack, 'Messages', { enforceSSL: true });
+      probeFunction(stack, 'Consumer').addEventSource(new SqsEventSource(queue));
+      new Topic(stack, 'Topic').addSubscription(
+        new LambdaSubscription(probeFunction(stack, 'Notified')),
+      );
+    });
+    expect(findings).toContain('Serverless-LambdaDLQ probe/Notified/Resource');
+    expect(findings.filter((finding) => finding.includes('/Called/'))).toEqual([]);
+    expect(findings.filter((finding) => finding.includes('/Consumer/'))).toEqual([]);
+    expect(findings.filter((finding) => finding.includes('EventSourceMapping'))).toEqual([]);
+  });
+
+  it('take a dead-letter queue for an asynchronous failure destination', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      probeFunction(stack, 'Retried', {
+        deadLetterQueue: new Queue(stack, 'DeadLetters', { enforceSSL: true }),
+        retryAttempts: 2,
+      });
+    });
+    expect(findings.filter((finding) => finding.includes('AsyncFailureDestination'))).toEqual([]);
+  });
+
+  it('leave an email subscription without a redrive policy, and not a function’s', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      const topic = new Topic(stack, 'Alarms');
+      topic.addSubscription(new EmailSubscription('alerts@example.com'));
+      topic.addSubscription(new LambdaSubscription(probeFunction(stack, 'Notified')));
+    });
+    expect(findings.filter((finding) => finding.startsWith('Serverless-SNSRedrivePolicy'))).toEqual(
+      ['Serverless-SNSRedrivePolicy probe/Notified/Alarms/Resource'],
+    );
+  });
+
+  it('leave to AwsSolutions the rules it checks too', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      probeFunction(stack, 'Old', { runtime: Runtime.NODEJS_20_X });
+      new Queue(stack, 'Lonely', { enforceSSL: true });
+    });
+    for (const rule of ['LambdaLatestVersion', 'SQSRedrivePolicy', 'LambdaStarPermissions']) {
+      expect(findings.filter((finding) => finding.includes(rule))).toEqual([]);
+    }
+  });
+
+  it('find an untraced function in production, and not in development', () => {
+    const untraced = (stack: Stack): void => {
+      probeFunction(stack, 'Untraced', { tracing: Tracing.DISABLED });
+    };
+    expect(serverlessFindings('production', untraced)).toContain(
+      'Serverless-LambdaTracing probe/Untraced/Resource',
+    );
+    expect(serverlessFindings('development', untraced)).not.toContain(
+      'Serverless-LambdaTracing probe/Untraced/Resource',
+    );
+  });
+});
