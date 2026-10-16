@@ -93,7 +93,7 @@ endif
 endif
 
 # TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
-# envtest suite, whose specs run one after another: 286 specs in 557 s on the CI
+# envtest suite, whose specs ran one after another: 286 specs in 557 s on the CI
 # runner in October 2026, and 665 s in a make check beside another one, as
 # HEAVY_JOBS allows (#843). 15m left that loaded run under 1.3 times its
 # runtime; 20m leaves it 1.75 times, and the CI run 2 times, and still ends a
@@ -137,11 +137,13 @@ TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
 # the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
 # and why. Go's test cache still answers the unchanged ones among them. With
 # COVER=1, cover.out covers the packages that ran, and is empty when none did.
+# The controller envtest suite runs in C4_TEST_PROCS processes at once (default
+# 2, 1 when memory is short), each a go test of part of it (hack/go-test.sh).
 test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
 	@pkgs="$$(hack/test-packages.sh)" || exit; \
 	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
 	set -x; \
-	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$pkgs $(TEST_FLAGS)
+	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" hack/go-test.sh $(GO_TRIM) $(TEST_FLAGS) -- $$pkgs
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
