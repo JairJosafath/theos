@@ -1,0 +1,58 @@
+name: Vulnerabilities
+
+# govulncheck (make vulncheck) on the Go code, the modules and go.mod's
+# toolchain. It fails on a known vulnerability the code reaches (#1148,
+# docs/openssf.md). It runs on pushes to main and pull requests to main that
+# change them, so a bump that brings one back answers before
+# hack/lib/github.sh land, and every Monday, so a new advisory shows up without
+# a change: two failed runs on main in a row file a "main is red" issue
+# (hack/relay-watch.sh).
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - Makefile
+      - .github/workflows/vulncheck.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+      - Makefile
+      - .github/workflows/vulncheck.yml
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+# One pending run per branch or pull request: a running one finishes, so main
+# keeps getting a verdict (hack/check-workflows.sh, docs/dev/testenv.md).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions: {}
+
+jobs:
+  govulncheck:
+    permissions:
+      contents: read
+    name: Run govulncheck
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Check for known vulnerabilities
+        run: make vulncheck

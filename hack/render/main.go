@@ -70,7 +70,7 @@ func main() {
 			mode = 0o755
 		}
 		dst := filepath.Join(*out, filepath.FromSlash(p))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // a rendered repository to read
 			fail(err)
 		}
 		if err := os.WriteFile(dst, f.Data, mode); err != nil {

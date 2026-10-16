@@ -141,7 +141,7 @@ func start(f flags, log *slog.Logger) {
 		log.Warn("Not starting the Session client", "reason", err)
 		return
 	}
-	logFile, err := os.OpenFile(f.logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(f.logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		log.Warn("Not starting the Session client", "reason", err)
 		return
@@ -154,7 +154,7 @@ func start(f flags, log *slog.Logger) {
 		return
 	}
 	args := append([]string{"run"}, os.Args[2:]...)
-	cmd := exec.Command(self, args...)
+	cmd := exec.Command(self, args...) //nolint:gosec // this binary, run again detached
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

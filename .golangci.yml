@@ -11,6 +11,7 @@ linters:
     - ginkgolinter
     - goconst
     - gocyclo
+    - gosec
     - govet
     - ineffassign
     - lll
@@ -92,6 +93,11 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/c4factory/internal
               desc: API types must not import internal packages (docs/architecture.md)
+    gosec:
+      excludes:
+        # Counts, rounds and issue numbers go from int into the API's int32
+        # fields, as Kubernetes API conventions ask; none comes near 2^31.
+        - G115
     revive:
       rules:
         - name: comment-spacings
@@ -112,6 +118,11 @@ linters:
       # Table tests repeat literals on purpose.
       - linters:
           - goconst
+        path: _test\.go
+      # Tests run on fixtures: fake tokens, temporary files, httptest servers
+      # and fake git objects. gosec guards the code that ships.
+      - linters:
+          - gosec
         path: _test\.go
     paths:
       - third_party$

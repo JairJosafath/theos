@@ -397,7 +397,7 @@ func agentGitSecret(container string) string {
 // annotationOldTokensBefore, on an agent Git Secret, is when its token was made
 // again (RFC 3339): the bot's tokens made before it, with other scopes, may
 // still be live in sandboxes started before it.
-const annotationOldTokensBefore = "c4.factory.io/old-tokens-before"
+const annotationOldTokensBefore = "c4.factory.io/old-tokens-before" //nolint:gosec // an annotation's name
 
 // revokeOldAgentTokens revokes the bot tokens of Container name made before
 // its Secret's annotationOldTokensBefore, once no sandbox of the Container may

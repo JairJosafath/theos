@@ -78,7 +78,7 @@ vet: ## Run go vet against code.
 ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
-HEAVY_GOALS = check test lint lint-fix docker-build deploy e2e test-e2e test-templates-operator
+HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $$PPID "make $(MAKECMDGOALS)" >&2)
@@ -184,6 +184,14 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
+
+# govulncheck reads the Go vulnerability database over the network, so it stays
+# out of make check; the Vulnerabilities workflow runs it on changes to the Go
+# code and the modules, and weekly. It fails on a vulnerability the code
+# reaches, in the modules or in the standard library of go.mod's toolchain.
+.PHONY: vulncheck
+vulncheck: govulncheck ## Check the modules and the Go toolchain for known vulnerabilities the code reaches (needs the network, not in make check).
+	"$(GOVULNCHECK)" ./...
 
 # The YAML checks of make check run offline, without a cluster
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
@@ -305,6 +313,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+GOVULNCHECK_VERSION ?= v1.9.0
 # The kubebuilder that make template-go-kubebuilder runs.
 KUBEBUILDER_VERSION ?= v4.16.0
 
@@ -320,6 +329,7 @@ GOLANGCI_LINT_BASE = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.yml | cut -d' ' -f1)
 KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder-$(KUBEBUILDER_VERSION)
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck-$(GOVULNCHECK_VERSION)
 GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
 
 # setup-envtest under a lock, so worktrees don't download the same Kubernetes
@@ -381,6 +391,11 @@ $(GOLANGCI_LINT): | $(GOLANGCI_LINT_BASE)
 	$(call install-tool,$@,echo "Building custom golangci-lint with plugins..."; \
 		"$(GOLANGCI_LINT_BASE)" custom --destination "$$tmp" --name golangci-lint)
 endif
+
+.PHONY: govulncheck
+govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
+$(GOVULNCHECK):
+	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 
 # install-tool makes the binary $(1) unless it exists: the shell commands $(2)
 # write it alone into the directory $$tmp, and it moves under its final name
