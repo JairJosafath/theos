@@ -62,7 +62,7 @@ func TestPlannerGuideStatesTheAWSQueueCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that consumes a queue on AWS, names SQS, or works through messages or jobs in the background on AWS is a `worker`",
 		"such as `aws-queue-ts`",
-		"A `worker` that names no AWS runs in the cluster.",
+		"A `service`, `static-site` or `worker` that names no AWS runs in the cluster",
 	} {
 		if !strings.Contains(guide, rule) {
 			t.Errorf("PLANNER.md doesn't say %q", rule)

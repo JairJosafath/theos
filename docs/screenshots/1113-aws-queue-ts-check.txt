@@ -1,4 +1,4 @@
-# make check in a scaffolded aws-queue-ts v1.0.0 + aws-standard v1.8.0 Container (issue #1113)
+# make check in a scaffolded aws-queue-ts v1.0.0 + aws-standard v1.9.0 Container (issue #1113)
 # go run ./hack/render -out /tmp/aws-1113 -type worker Framework=aws-queue-ts Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then, with no AWS variables and an empty HOME, Node v24.22.0:
@@ -7,7 +7,7 @@
 # and cfn-lint lints both with --include-checks I.
 
 npm ci --no-audit --no-fund
-added 180 packages in 21s
+added 180 packages in 52s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -15,20 +15,20 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
  RUN  v5.0.3 /tmp/aws-1113
- ✓ src/items.test.ts (26 tests) 59ms
- ✓ src/batch.test.ts (3 tests) 23ms
- ✓ src/consume.test.ts (9 tests) 36ms
- ✓ src/item_store.test.ts (1 test) 15ms
- ✓ infra/standard.test.ts (55 tests) 18950ms
- ✓ infra/queue_stack.test.ts (16 tests) 22595ms
+ ✓ src/batch.test.ts (3 tests) 24ms
+ ✓ src/items.test.ts (26 tests) 29ms
+ ✓ src/item_store.test.ts (1 test) 18ms
+ ✓ src/consume.test.ts (9 tests) 41ms
+ ✓ infra/standard.test.ts (57 tests) 12634ms
+ ✓ infra/queue_stack.test.ts (16 tests) 15914ms
    ✓ QueueStack (14)
-     ✓ defaults the alert email to alerts.email 1898ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 1614ms
-     ✓ copies the backups to the vault in copyToRegion 1517ms
+     ✓ defaults the alert email to alerts.email 2103ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1089ms
+     ✓ copies the backups to the vault in copyToRegion 1342ms
  Test Files  6 passed (6)
-      Tests  110 passed (110)
-   Start at  13:48:38
-   Duration  26.00s (tests 82%, import 11%, transform 7%)
+      Tests  112 passed (112)
+   Start at  15:07:37
+   Duration  19.77s (tests 74%, import 14%, transform 12%)
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
@@ -40,13 +40,13 @@ uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/product
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
  FAIL  infra/standard.test.ts > the Standard, in production > delivers again only the messages that failed, from every queue a function consumes
  FAIL  infra/standard.test.ts > the Standard, in development > delivers again only the messages that failed, from every queue a function consumes
-      Tests  2 failed | 53 passed (55)
+      Tests  2 failed | 55 passed (57)
 # the dead-letter queue's depth alarm removed
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the dead-letter queues > alarm on the first message in every dead-letter queue
  FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > the dead-letter queues > alarm on the first message in every dead-letter queue
-      Tests  2 failed | 53 passed (55)
+      Tests  2 failed | 55 passed (57)
 
 # With -copy-to-region eu-west-1 -alert-email ops@example.com (the backup-copy stack, the subscription):
 # node_modules/.bin/vitest run
-      Tests  110 passed (110)
+      Tests  112 passed (112)

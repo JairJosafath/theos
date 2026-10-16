@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    // Vite bundles the site and tsx runs the CDK app; tsc only type-checks.
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    // The CDK app names its stack from package.json.
+    "resolveJsonModule": true,
+    // engines.node >=22 and Vite's default build target, the browsers of the
+    // last few years, both have all of ES2023.
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // vite/client types the site's CSS and asset imports; node types the CDK
+    // app and the configs, which run in Node.
+    "types": ["vite/client", "node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // Off: aws-cdk-lib's own classes break it. A Bucket is not an IBucket
+    // under it (isWebsite), so no stack with a bucket type-checks.
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "infra", "vitest.config.mts"]
+}

@@ -27,10 +27,17 @@ Size it for one pull request: a few files, one concern.
 <!--
 Observable, testable outcomes, one unchecked checklist item each. Each becomes
 a test, and the reviewer reports each one as met or not met. For example:
-{{ if eq .Framework "aws-queue-ts" }}a message `{"id": "lamp-1", "delete": true}` deletes the item, a later message
+{{ if eq .Framework "aws-queue-ts" -}}
+a message `{"id": "lamp-1", "delete": true}` deletes the item, a later message
 for `lamp-1` stores it again, and the function's role may delete items but
-still not scan the table.{{ else }}`DELETE /items/{id}` answers 204 and a later `GET` answers 404, and the
-{{ if eq .Framework "aws-ec2-ts" }}instances'{{ else if eq .Framework "aws-fargate-ts" }}task's{{ else }}function's{{ end }} role may delete items but still not scan the table.{{ end }}
+still not scan the table.
+{{- else if eq .Framework "aws-static-site-ts" -}}
+a name of only spaces gets the plain greeting, and the page says so in its
+`aria-live` paragraph.
+{{- else -}}
+`DELETE /items/{id}` answers 204 and a later `GET` answers 404, and the
+{{ if eq .Framework "aws-ec2-ts" }}instances'{{ else if eq .Framework "aws-fargate-ts" }}task's{{ else }}function's{{ end }} role may delete items but still not scan the table.
+{{- end }}
 -->
 
 ## Out of scope
