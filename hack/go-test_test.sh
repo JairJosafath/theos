@@ -15,7 +15,8 @@ CTRL=github.com/JairJosafath/c4factory/internal/controller
 # The parts after the first run the suite alone, not the package's plain tests.
 R="-run ^TestControllers\$ $CTRL"
 # The fake go logs "SHARD args" per call; with a profile it writes one block
-# per package, with C4_SLOWEST_SPECS a part's report; FAIL_SHARD fails one.
+# per package, with C4_SLOWEST_SPECS a part's report; FAIL_SHARD fails one,
+# LONG_MODE pads one part's mode line past what a pipe holds (#1372).
 cat >"$T/go" <<'EOF'
 #!/usr/bin/env bash
 shift # test
@@ -31,7 +32,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ -n "$cover" ]; then
-  { echo "mode: set"; for a in "${args[@]}"; do echo "$a/x.go:1.1,2.2 1 1"; done; } >"$cover"
+  pad=0
+  [ "${LONG_MODE:-}" != "${C4_TEST_SHARD:--}" ] || pad=1048576
+  { printf 'mode: set%*s\n' "$pad" ''; for a in "${args[@]}"; do echo "$a/x.go:1.1,2.2 1 1"; done; } >"$cover"
 fi
 if [ -n "$C4_TEST_SHARD" ] && [ -n "${C4_SLOWEST_SPECS:-}" ] && [ "${NO_SLOW:-}" != "$C4_TEST_SHARD" ]; then
   i=${C4_TEST_SHARD%/*}
@@ -77,6 +80,11 @@ check "bad C4_TEST_PROCS" "$(C4_TEST_PROCS=x run -- $CTRL)" 2
 
 check "coverage" "$(run -coverprofile "$T/cover.out" -- a/b $CTRL)" 0
 check "coverage: the parts' mode line, every block" "$(LC_ALL=C sort "$T/cover.out" | paste -sd'|')" \
+  "a/b/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|mode: set"
+# The merge reads the first part's mode line and is done before a later
+# part's long one is written: one mode line still, the first part's (#1372).
+check "coverage, a later part's long mode line" "$(LONG_MODE=2/2 run -coverprofile "$T/cover.out" -- a/b $CTRL)" 0
+check "coverage, a later part's long mode line: one mode line" "$(LC_ALL=C sort "$T/cover.out" | paste -sd'|')" \
   "a/b/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|$CTRL/x.go:1.1,2.2 1 1|mode: set"
 
 # Many parts' profiles: a head -n 1 reading the first lines exits early, and
