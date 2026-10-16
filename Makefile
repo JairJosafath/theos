@@ -132,8 +132,16 @@ TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(i
 TEST_CACHE_HOME ?= $(or $(TMPDIR),/tmp)/c4factory-test-cache
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest install-helm ## Run tests; Go's test cache answers unchanged packages (FORCE=1 reruns them, COVER=1 writes cover.out).
-	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$(go list ./... | grep -v '/test/e2e$$') $(TEST_FLAGS)
+# make test tests only the packages the change since origin/main can affect,
+# and every package on main, after a change to go.mod, hack/, config/, api/ and
+# the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
+# and why. Go's test cache still answers the unchanged ones among them. With
+# COVER=1, cover.out covers the packages that ran, and is empty when none did.
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
+	@pkgs="$$(hack/test-packages.sh)" || exit; \
+	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
+	set -x; \
+	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $(GO_TRIM) $$pkgs $(TEST_FLAGS)
 
 # The shell tests of hack/ (hack/**/*_test.sh), all at once; each fakes what it
 # calls, so none needs a cluster or the network. make check runs them.
