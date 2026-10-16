@@ -309,15 +309,17 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 // crewAgentNames names every Agent a Crew may start a Task with: its own two
 // and those its routes name, each once.
 func crewAgentNames(spec *c4v1alpha1.CrewSpec) []string {
-	refs := []*c4v1alpha1.LocalRef{&spec.Implementer, &spec.Reviewer}
-	for _, route := range spec.Routes {
-		refs = append(refs, route.Implementer, route.Reviewer)
-	}
-	var names []string
-	for _, ref := range refs {
+	names := make([]string, 0, 2+2*len(spec.Routes))
+	add := func(ref *c4v1alpha1.LocalRef) {
 		if ref != nil && !slices.Contains(names, ref.Name) {
 			names = append(names, ref.Name)
 		}
+	}
+	add(&spec.Implementer)
+	add(&spec.Reviewer)
+	for _, route := range spec.Routes {
+		add(route.Implementer)
+		add(route.Reviewer)
 	}
 	return names
 }
