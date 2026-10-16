@@ -24,9 +24,18 @@ $(UI_KUBECTL) proxy --port $(UI_PROXY_PORT) >/dev/null 2>&1 & proxy=$$!; \
 trap 'kill $$proxy 2>/dev/null || true' EXIT; sleep 1;
 endef
 
-ui/node_modules: ui/package.json ui/package-lock.json
+# npm ci makes ui/node_modules and the touch marks it current. Anything there
+# but a directory is never current (#1133: an empty file a test once left made
+# every later ui-test skip the install): the rule removes it and installs, and
+# never touches a path npm ci did not make a directory.
+ui/node_modules: ui/package.json ui/package-lock.json $(if $(wildcard ui/node_modules/.),,ui-deps-missing)
+	@[ -d $@ ] || rm -f $@
 	cd ui && $(NPM) ci --no-audit --no-fund
+	@[ -d $@ ] || { echo "$@ is not a directory after npm ci; not marking it installed" >&2; exit 1; }
 	@touch $@
+
+.PHONY: ui-deps-missing
+ui-deps-missing:
 
 .PHONY: ui-deps
 ui-deps: ui/node_modules ## Install the UI's npm dependencies.
