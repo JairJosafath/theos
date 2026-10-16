@@ -104,6 +104,10 @@ var templateCombos = []struct {
 		{model.SideFramework, "aws-schedule-ts"},
 		{model.SideStandard, "aws-standard"},
 	}},
+	{"aws event consumer", "worker", []side{
+		{model.SideFramework, "aws-event-ts"},
+		{model.SideStandard, "aws-standard"},
+	}},
 	{"aws static site", "static-site", []side{
 		{model.SideFramework, "aws-static-site-ts"},
 		{model.SideStandard, "aws-standard"},

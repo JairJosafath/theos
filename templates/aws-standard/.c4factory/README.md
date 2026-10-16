@@ -1,7 +1,7 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda or a scheduled job on EventBridge Scheduler and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda, a scheduled job on EventBridge Scheduler and Lambda or an event consumer on EventBridge and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
@@ -25,7 +25,8 @@ byte for byte.
 - **Supports:** `function`, `service`, `static-site` (since v1.8.0),
   `worker` (since v1.9.0), `job` (since v1.10.0); Frameworks:
   `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`,
-  `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`
+  `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`,
+  `aws-event-ts` (since v1.11.0)
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -113,15 +114,28 @@ byte for byte.
   alarms on the runs the Scheduler lost; a dead-letter queue is any queue
   a `RedrivePolicy`, a `DeadLetterConfig` or an `OnFailure` names, and
   each has its alarm; and every schedule is retried, dead-lettered and in a
-  group of its stack. A Framework added later gets its branches in the
-  version that adds it.
+  group of its stack. `aws-event-ts` (since v1.11.0), a `worker`, is in
+  `$tiered` and shares `aws-lambda-ts`'s branches too; an `$event`
+  variable says event where those say API: the EventBridge event as the
+  boundary, its `id` as the idempotency key, `consume` in
+  `src/consume.ts` as where the work goes, the rule's resource policy and
+  the dead-letter queue's, the tables and dead-letter queue it keeps, its
+  alarms, re-running dead-lettered events, lost events and pausing the
+  consumer in the runbook, the rule and its dead-letter queue in
+  `docs/style/aws.md`, the EventBridge and asynchronous invocation sources
+  in `SOURCES.md`, the issue template's example and `eslint.config.mjs`'s
+  `process.exit` message. v1.11.0 adds that Framework and two rules to
+  `infra/standard.test.ts`, for every Framework: every EventBridge rule
+  alarms on the events it lost, and every rule's Lambda target is retried
+  and dead-lettered to a queue of its stack. A Framework added later gets
+  its branches in the version that adds it.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
-  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-queue-ts` and `aws-schedule-ts` also `docs/runbook.md`; for
+  `aws-lambda-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts` and `aws-event-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -194,7 +208,9 @@ byte for byte.
   `TargetResponseTime`, every target group's `UnHealthyHostCount`, every
   ECS service's `CPUUtilization`, `MemoryUtilization` and
   `RunningTaskCount`, every schedule group's `InvocationDroppedCount` and
-  `InvocationsFailedToBeSentToDeadLetterCount`; an alarm watches a resource
+  `InvocationsFailedToBeSentToDeadLetterCount`, every EventBridge rule's
+  `FailedInvocations` and `InvocationsFailedToBeSentToDlq` (by `Ref`, its
+  name on the default bus); an alarm watches a resource
   when its definition refers to it by `Ref` or by `Fn::GetAtt`, as a load
   balancer's and target group's full names and a service's name are, or by
   the `Name` it has in the template, as a schedule group's, which CDK makes
@@ -224,7 +240,11 @@ byte for byte.
   `DeadLetterConfig` and `OnFailure` as well as `RedrivePolicy`, and a test
   that every schedule's target has a `RetryPolicy` and a `DeadLetterConfig`
   naming a queue of its stack, and its `GroupName` a group of its stack; a
-  repository with no schedule passes them unchanged.
+  repository with no schedule passes them unchanged. v1.11.0 added the
+  rule's two metrics to `ALARMED_METRICS`, and a test that every target of
+  an `AWS::Events::Rule` that is a function of its stack has a
+  `RetryPolicy` and a `DeadLetterConfig` naming a queue of its stack; a
+  repository with no rule passes them unchanged.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, `cdk synth
   --quiet -c tier=<tier> -o cdk.out/<tier>` for `production` and
@@ -325,7 +345,7 @@ byte for byte.
   performance efficiency, cost optimization, sustainability), each naming the
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For `aws-lambda-ts`,
-  `aws-fargate-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
+  `aws-fargate-ts`, `aws-queue-ts`, `aws-schedule-ts` and `aws-event-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
@@ -335,8 +355,9 @@ byte for byte.
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
 - **Runbook:** `docs/runbook.md`, for `aws-lambda-ts`, `aws-fargate-ts`,
-  `aws-static-site-ts`, `aws-queue-ts` and `aws-schedule-ts` (a branch
-  each, but `aws-queue-ts` and `aws-schedule-ts` share `aws-lambda-ts`'s),
+  `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts` and
+  `aws-event-ts` (a branch each, but `aws-queue-ts`, `aws-schedule-ts` and
+  `aws-event-ts` share `aws-lambda-ts`'s),
   renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted

@@ -481,11 +481,11 @@ _Minimize the environmental impact of the workload._
   start-up.
 - No rule enforces these: review them.
 
-{{ else if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }}{{ $queue := eq .Framework "aws-queue-ts" }}{{ $schedule := eq .Framework "aws-schedule-ts" }}# Well-Architected
+{{ else if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" }}{{ $queue := eq .Framework "aws-queue-ts" }}{{ $schedule := eq .Framework "aws-schedule-ts" }}{{ $event := eq .Framework "aws-event-ts" }}# Well-Architected
 
 A digest of the AWS Well-Architected Framework and its Serverless Applications
 Lens, for this repository: one section per pillar, what the pillar asks of a
-serverless {{ if $queue }}queue consumer{{ else if $schedule }}scheduled job{{ else }}API{{ end }}, what each tier does about it, what `infra/operations.ts`
+serverless {{ if $queue }}queue consumer{{ else if $schedule }}scheduled job{{ else if $event }}event consumer{{ else }}API{{ end }}, what each tier does about it, what `infra/operations.ts`
 changes, the CDK Nag rules (`AwsSolutions` pack) and the Standard's checks
 that enforce it, and what stays by hand, with the reason. Sources and the
 date they were read are in `docs/style/SOURCES.md`. This file belongs to the
@@ -543,14 +543,14 @@ _Run and monitor the system, and improve it in small, reversible changes._
 - Changes are small, frequent and checked: `make check` synthesizes and
   lints every change for both tiers; nothing here deploys.
 - Observe (OPS08, REL06): structured JSON logs through Powertools' Logger,
-  with the {{ if $queue }}message id{{ else if $schedule }}run's event{{ else }}request id{{ end }} and the Lambda context; metrics through Powertools'
-  Metrics, written into the logs ({{ if $queue }}`ConsumedMessages`, `FailedMessages`{{ else if $schedule }}`CompletedRuns`, `FailedRuns`{{ else }}`AnsweredRequests`, `FailedRequests`{{ end }}, the
-  cold start); a log group per function{{ if or $queue $schedule }}{{ else }} and an access log per API stage{{ end }};
+  with the {{ if $queue }}message id{{ else if $schedule }}run's event{{ else if $event }}event id{{ else }}request id{{ end }} and the Lambda context; metrics through Powertools'
+  Metrics, written into the logs ({{ if $queue }}`ConsumedMessages`, `FailedMessages`{{ else if $schedule }}`CompletedRuns`, `FailedRuns`{{ else if $event }}`ConsumedEvents`, `FailedEvents`{{ else }}`AnsweredRequests`, `FailedRequests`{{ end }}, the
+  cold start); a log group per function{{ if or $queue $schedule $event }}{{ else }} and an access log per API stage{{ end }};
   X-Ray traces in production.
-{{- if not (or $queue $schedule) }}
+{{- if not (or $queue $schedule $event) }}
   - `AwsSolutions-APIG1`: the API has access logging.
 {{- end }}
-  - Serverless `CloudWatchLogGroupRetentionPeriod`{{ if not (or $queue $schedule) }}, `APIGWStructuredLogging`{{ end }}:
+  - Serverless `CloudWatchLogGroupRetentionPeriod`{{ if not (or $queue $schedule $event) }}, `APIGWStructuredLogging`{{ end }}:
     `infra/standard.test.ts` checks every log group keeps the tier's time.
 - Alarms are code (OPS08-BP04, REL06-BP03), the same in both tiers:
   `cdk-monitoring-constructs` builds them on {{ if $queue }}the dead-letter queue's depth (any
@@ -559,13 +559,16 @@ _Run and monitor the system, and improve it in small, reversible changes._
   EventBridge Scheduler lost (`InvocationDroppedCount` and
   `InvocationsFailedToBeSentToDeadLetterCount` of the schedule group), the
   dead-letter queue's depth (any message), the function's errors, throttles
-  and p99 duration (over 4 of its 5 minutes){{ else }}the API's 5xx, the function's
+  and p99 duration (over 4 of its 5 minutes){{ else if $event }}the events
+  the rule lost (`FailedInvocations` and `InvocationsFailedToBeSentToDlq`
+  of the rule), the dead-letter queue's depth (any message), the function's
+  errors, throttles and p99 duration (over 24 of its 30 seconds){{ else }}the API's 5xx, the function's
   errors, throttles and p99 duration (over 8 of its 10 seconds){{ end }}, and each
   table's read and write throttles and system errors, each firing on one bad
   five-minute period. Every alarm notifies the stack's one SNS topic,
   encrypted with its own key, and a dashboard per stack shows them
   (OPS08-BP05). `infra/standard.test.ts` checks that every function, table
-  and {{ if $queue }}dead-letter queue{{ else if $schedule }}dead-letter queue, and every schedule group,{{ else }}API{{ end }} has its alarms and that every alarm notifies the topic: a new
+  and {{ if $queue }}dead-letter queue{{ else if $schedule }}dead-letter queue, and every schedule group,{{ else if $event }}dead-letter queue, and every rule,{{ else }}API{{ end }} has its alarms and that every alarm notifies the topic: a new
   resource gets its alarms from the stack's `Alarms`
   (`alarms.monitoring.monitorDynamoTable(...)`).
 - Nobody is told without asking: the `AlertEmail` parameter subscribes one
@@ -574,7 +577,11 @@ _Run and monitor the system, and improve it in small, reversible changes._
   `QueueArn`), so a deploy target can subscribe its own channel and point
   producers at the queue{{ else if $schedule }}the schedule's ARN
   `EntryPoint` and the function's `FunctionName`, so a deploy target can
-  subscribe its own channel and a person can run the job by hand{{ else }}its URL `EntryPoint`, so a deploy
+  subscribe its own channel and a person can run the job by hand{{ else if $event }}the rule's ARN
+  `EntryPoint`, the `EventPattern` a producer's events must match and the
+  function's `FunctionName`, so a deploy target can subscribe its own
+  channel, a producer knows what to put on the default bus, and a person
+  can run a dead-lettered event again{{ else }}its URL `EntryPoint`, so a deploy
   target can subscribe its own channel and find the API{{ end }}.
 - A runbook: `docs/runbook.md` says what each alarm means and what to do
   first, how to restore the data and how to roll a deployment back. A
@@ -616,6 +623,12 @@ traceability, and protection at every layer._
   `lambda:InvokeFunction` on the one function's ARN and `sqs:SendMessage`
   on the dead-letter queue. The stack grants no one else
   `lambda:InvokeFunction`.
+{{- else if $event }}
+- Only the rule invokes the consumer: the function's resource policy lets
+  `events.amazonaws.com` invoke it only for the stack's rule (its
+  `SourceArn`), and the dead-letter queue's policy lets only that rule send
+  to it. A producer needs `events:PutEvents` on the default bus, which its
+  own role grants; the stack grants no one else `lambda:InvokeFunction`.
 {{- else }}
 - Authenticate every request: every route has an authorizer (IAM, JWT or a
   Lambda authorizer).
@@ -624,7 +637,7 @@ traceability, and protection at every layer._
 {{- end }}
 - Encrypt at rest and in transit.
   - `AwsSolutions-S10`, `AwsSolutions-SQS4`, `AwsSolutions-SNS3`: requests
-    must use TLS; the alarm topic{{ if $queue }} and both queues (`enforceSSL`) refuse{{ else if $schedule }} and the dead-letter queue (`enforceSSL`) refuse{{ else }} refuses{{ end }} any other.
+    must use TLS; the alarm topic{{ if $queue }} and both queues (`enforceSSL`) refuse{{ else if or $schedule $event }} and the dead-letter queue (`enforceSSL`) refuse{{ else }} refuses{{ end }} any other.
   - `AwsSolutions-SQS2`, `AwsSolutions-EFS1`: encryption at rest; DynamoDB
     is always encrypted, and `infra/standard.test.ts` requires a KMS key
     (`SSESpecification`) on every table, encryption on every bucket, queue
@@ -643,7 +656,8 @@ traceability, and protection at every layer._
   are its owner's, not a stack's: `docs/runbook.md` lists them.
 - By hand: validate all input at the boundary{{ if $queue }}, a message's body included,
   whoever sent it{{ else if $schedule }}, the event included, whoever
-  invoked the function{{ end }}; never log user data or
+  invoked the function{{ else if $event }}, the event's `detail`
+  included, whoever put it on the bus{{ end }}; never log user data or
   tokens; never return internal errors to a client.
 
 ## Reliability
@@ -651,7 +665,7 @@ traceability, and protection at every layer._
 _Recover from failure, scale with demand, and keep working when a part
 fails._
 
-- Managed, multi-AZ services: {{ if $schedule }}EventBridge Scheduler, Lambda, SQS{{ else }}Lambda, {{ if $queue }}SQS{{ else }}API Gateway{{ end }}{{ end }} and DynamoDB spread over
+- Managed, multi-AZ services: {{ if $schedule }}EventBridge Scheduler, Lambda, SQS{{ else if $event }}EventBridge, Lambda, SQS{{ else }}Lambda, {{ if $queue }}SQS{{ else }}API Gateway{{ end }}{{ end }} and DynamoDB spread over
   Availability Zones on their own.
 - Recovery objectives (REL13-BP01): `recovery.rpo` and `recovery.rto` say
   what a restore in production may lose and how long it may take;
@@ -717,6 +731,22 @@ fails._
     queue, found by a `RedrivePolicy`, a `DeadLetterConfig` or an
     `OnFailure`, has its depth alarm. A run the Scheduler could not hand
     to the dead-letter queue is counted and alarmed on its group.
+{{- else if $event }}
+  - Retries at two levels. The rule's target retry policy tries again to
+    invoke the function, up to 10 times within an hour, when Lambda
+    throttles the call or fails; the function, invoked asynchronously,
+    retries an event that threw twice within an hour (its
+    `EventInvokeConfig`). An event that fails every retry goes to the
+    dead-letter queue: the rule target's and the function's
+    `DeadLetterConfig` name the same one (Serverless `LambdaDLQ`,
+    `EventBusDLQ`), where it waits 14 days and its first message fires an
+    alarm; `docs/runbook.md` runs it again once the cause is fixed.
+  - `infra/standard.test.ts` checks every rule's Lambda target has a retry
+    policy and a dead-letter queue of its stack, and every dead-letter
+    queue, found by a `RedrivePolicy`, a `DeadLetterConfig` or an
+    `OnFailure`, has its depth alarm. An event the rule could not hand to
+    the dead-letter queue is counted (`InvocationsFailedToBeSentToDlq`) and
+    alarmed on the rule.
 {{- else }}
   - Serverless `LambdaDLQ`, `LambdaAsyncFailureDestination`,
     `SQSRedrivePolicy`, `EventBusDLQ`: by hand, for asynchronous invocations;
@@ -734,6 +764,18 @@ fails._
   schedule's retries end within an hour of the scheduled time, and
   Lambda's within an hour of when it took the run.
   Serverless `LambdaFunctionDefaultTimeout`: by hand.
+{{- else if $event }}
+- Idempotency: EventBridge and Lambda both deliver an event at least once,
+  so an event delivered again changes nothing twice. Powertools'
+  Idempotency keys each event by its `id`, which every retry at either
+  level keeps, and keeps the record for a day in the stack's idempotency
+  table, longer than the rule's hour and Lambda's hour of retries together;
+  a failed event keeps none, so its retry runs again. Storing an item puts
+  the whole item, so a producer that puts it twice leaves the same item.
+- Limits: a timeout on every function, 30 seconds for an event; the
+  rule's retries end within an hour of the event, and Lambda's within an
+  hour of when it took the event. Serverless
+  `LambdaFunctionDefaultTimeout`: by hand.
 {{- else if $queue }}
 - Idempotency: SQS delivers a message at least once, so a message
   delivered again changes nothing twice. Powertools' Idempotency keys each
@@ -772,7 +814,7 @@ _Use resources efficiently as demand changes and technology evolves._
 - Cold starts: SDK clients and Powertools at module scope, small bundles
   (esbuild, minified, only the clients used), no heavy work at import.
 - Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
-  never on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path.{{ if $queue }}
+  never on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else if $event }}event's{{ else }}request{{ end }} path.{{ if $queue }}
 - Batches: up to 10 messages per invocation, gathered for up to 5 seconds,
   so one cold start and one set of clients serve many messages.{{ end }}
 - Find where time goes with the production traces and the p99 duration
@@ -789,6 +831,10 @@ where the money goes._
 - Pay per use: on-demand DynamoDB, Lambda, and EventBridge Scheduler by
   the invocation, after a monthly free tier that a run a day stays far
   below; the dead-letter queue costs only the messages it gets.
+{{- else if $event -}}
+- Pay per use: on-demand DynamoDB, Lambda, and EventBridge by the event a
+  producer puts (a rule's delivery to Lambda costs nothing more); the
+  dead-letter queue costs only the messages it gets.
 {{- else if $queue -}}
 - Pay per use: on-demand DynamoDB, Lambda, and SQS by the request; the
   event source polls the queue for the function, and batching cuts the
@@ -813,7 +859,9 @@ where the money goes._
   account activates them as cost allocation tags.
 - {{ if $queue }}The event source's maximum concurrency caps what a flood of messages can
   spend; the queue holds the rest.{{ else if $schedule }}The schedule caps what the job can spend: one run per scheduled time,
-  and its retries within the hour.{{ else }}Throttling caps what a runaway client can spend.{{ end }}
+  and its retries within the hour.{{ else if $event }}The producers cap what the consumer can spend: one invocation per
+  event, and its retries within the hour; Lambda's account concurrency
+  holds a flood back, and the rule retries what it throttles.{{ else }}Throttling caps what a runaway client can spend.{{ end }}
 - By hand, and why: right-size memory and timeouts from measured load,
   which only a deployed function's metrics show; no provisioned concurrency
   or capacity unless the issue states the load that needs it.
@@ -828,7 +876,7 @@ _Minimize the environmental impact of the workload._
 - Keep what is needed, no longer: log retention by tier, backups for
   `retentionDays`, development keeping no backups, and no data stored that
   the system's needs don't ask for.
-- Efficient code: no polling{{ if $queue }} of its own (the event source polls){{ else if $schedule }} (the function runs only when a run is due){{ end }}, no work per {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} that can be done once at
+- Efficient code: no polling{{ if $queue }} of its own (the event source polls){{ else if $schedule }} (the function runs only when a run is due){{ else if $event }} (the function runs only when an event comes){{ end }}, no work per {{ if $queue }}message{{ else if $schedule }}run{{ else if $event }}event{{ else }}request{{ end }} that can be done once at
   start-up, small bundles.
 - No rule enforces these: review them.
 

@@ -1,9 +1,11 @@
-{{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+{{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
 {{- $ops := .Operations -}}
 {{- /* A queue consumer: an SQS queue and its dead-letter queue, no API. */ -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- /* A scheduled job: an EventBridge Scheduler schedule, its function and its dead-letter queue. */ -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- /* An event consumer: an EventBridge rule on the default bus, its function and its dead-letter queue. */ -}}
+{{- $event := eq .Framework "aws-event-ts" -}}
 {{- $items := "items" -}}
 {{- if $schedule -}}{{- $items = "runs" -}}{{- end -}}
 # Runbook
@@ -25,7 +27,7 @@ AWS, and no agent runs these commands.
 this list differ, it is right.
 
 - Recovery point objective (RPO): {{ $ops.Recovery.RPO }}, the most data a restore may lose.
-- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the {{ if $queue }}worker{{ else if $schedule }}job{{ else }}API{{ end }} may be without its data.
+- Recovery time objective (RTO): {{ $ops.Recovery.RTO }}, the longest the {{ if or $queue $event }}worker{{ else if $schedule }}job{{ else }}API{{ end }} may be without its data.
 {{- if eq $ops.Backups.RetentionDays 0 }}
 - Backups: point-in-time recovery only (`retentionDays` is 0); no AWS Backup plan.
 {{- else }}
@@ -70,6 +72,19 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 | alarm topic and its key | nothing                                   | deleted                           |
 | schedule and its group  | nothing                                   | deleted                           |
 
+{{ else if $event -}}
+| Resource                | Holds                                       | When the stack is deleted         |
+| ----------------------- | ------------------------------------------- | --------------------------------- |
+| `Items` table           | the items                                   | kept; deletion protection is on   |
+| `Idempotency` table     | the events consumed, for a day each         | kept; deletion protection is on   |
+| `DeadLetters` queue     | the events that failed every retry, 14 days | kept                              |
+{{- if ne $ops.Backups.RetentionDays 0 }}
+| backup vault and key    | the daily backups                           | kept, with every backup in it     |
+{{- end }}
+| log groups              | the function's logs                         | deleted; kept one year until then |
+| alarm topic and its key | nothing                                     | deleted                           |
+| `Events` rule           | nothing                                     | deleted                           |
+
 {{ else -}}
 | Resource                | Holds                                         | When the stack is deleted         |
 | ----------------------- | --------------------------------------------- | --------------------------------- |
@@ -85,11 +100,13 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 The physical names are in the stack:
 `aws cloudformation describe-stack-resources --stack-name {{ .Container }}`.
 The `Idempotency` table needs no restore: its records expire within the
-hour, and an empty one only means {{ if $queue }}a message delivered again is stored again, which
+{{ if or $schedule $event }}day{{ else }}hour{{ end }}, and an empty one only means {{ if $event }}an event delivered again is stored again, which
+puts the same item{{ else if $queue }}a message delivered again is stored again, which
 puts the same item{{ else if $schedule }}a run delivered again runs again, which
 puts the same record{{ else }}a repeated `PUT` runs again{{ end }}.{{ if $queue }} The queues are not backed up: a message lives
 days, not months, and its producer holds what it sent.{{ else if $schedule }} The dead-letter queue is not backed up: a run
-waits there 14 days at most, and its scheduled time is all it holds.{{ end }}
+waits there 14 days at most, and its scheduled time is all it holds.{{ else if $event }} The dead-letter queue is not backed up: an event
+waits there 14 days at most, and its producer holds what it put.{{ end }}
 
 ## Restore the {{ $items }} to a point in time
 
@@ -97,7 +114,7 @@ When: bad writes (a bug, a wrong script) or deleted {{ if $schedule }}records{{ 
 35 days.
 
 1. Find the last good moment: the deploy or script that did the damage, or
-   the first bad {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} in the function's logs.
+   the first bad {{ if $queue }}message{{ else if $schedule }}run{{ else if $event }}event{{ else }}request{{ end }} in the function's logs.
 2. Restore to a new table beside the live one:
    `aws dynamodb restore-table-to-point-in-time --source-table-name <{{ $items }} table> --target-table-name <{{ $items }} table>-restored --restore-date-time <time, ISO 8601>`.
    It takes minutes for a small table, longer for a large one; wait until
@@ -267,6 +284,89 @@ next scheduled time. The runs it skips are not run later.
   `infra/job_stack.ts` and run `cdk deploy -c tier=production`; the change
   is reviewed like any other.
 {{- end }}
+{{- if $event }}
+
+## Run dead-lettered events again
+
+When: the `DeadLetters-Queue-Message-Count-Max-Critical` alarm fired, and
+the cause is found. An event reaches the `DeadLetters` queue when it threw
+on its first invocation and on Lambda's two retries within the hour, or
+when the rule could not invoke the function in 10 attempts within the hour.
+It waits there 14 days, then SQS deletes it.
+
+1. Read why it failed: the function's logs say
+   `The event failed; Lambda retries it.` with the event and the error,
+   three times per event. A `Malformed` error is the producer's: its
+   `detail` is no item, or the function was invoked by hand with something
+   that is no EventBridge event; fix what it sends, and delete the message.
+   Any other error is the consumer's or DynamoDB's: fix and deploy first. A
+   message the rule sent says why in its attributes (`ERROR_CODE`,
+   `ERROR_MESSAGE`, `RETRY_ATTEMPTS`); one Lambda sent, in `ErrorCode` and
+   `ErrorMessage`.
+2. Read the messages without consuming them:
+   `aws sqs receive-message --queue-url <DeadLetters queue URL> --max-number-of-messages 10 --visibility-timeout 0 --message-attribute-names All`.
+   Each body is one event as the rule matched it:
+   `{"id": "...", "source": "{{ .Container }}", "detail-type": "ItemSubmitted", "detail": {...}, ...}`.
+3. Run each again: save the message body to `event.json`, unchanged, and
+   invoke the function (the stack's `FunctionName` output) with it:
+   `aws lambda invoke --function-name <FunctionName> --invocation-type Event --cli-binary-format raw-in-base64-out --payload file://event.json response.json`.
+   It runs as the rule's invocation would, retries and dead-letter queue
+   included; the function's logs say `The event was consumed.` with its
+   `eventId` when it was.
+4. Delete the message (`aws sqs delete-message` with its receipt handle)
+   once the event was consumed, or when no fix can save it; write down what
+   it held.
+
+An event already consumed is not stored again: Powertools' Idempotency
+keeps the record of each event consumed, by its `id`, for a day, and an
+event delivered again in that day does nothing. Keep the body's `id` as it
+is: an event given a new id is a new event. A dead-lettered event whose
+error is `IdempotencyAlreadyInProgressError` came while the same event was
+still being consumed: look for its item in the `Items` table before running
+it again. An event that failed keeps no record, so running it again always
+runs it. Running an event again puts its whole item under its id, over
+whatever later events stored there: check the item's newest state
+(`aws dynamodb get-item`) first.
+
+The queue's URL and ARN are in the stack:
+`aws cloudformation describe-stack-resources --stack-name {{ .Container }}`
+(`DeadLetters`).
+
+## Events the rule lost
+
+When: the `Rule-InvocationsFailedToBeSentToDlq-Critical` alarm fired, or
+`Rule-FailedInvocations-Critical` fired with nothing new in the
+`DeadLetters` queue. The rule gave up on an event and could not send it to
+the dead-letter queue: the event is in neither the function's logs nor the
+queue.
+
+1. Find why: the function's resource policy (`lambda:InvokeFunction` for
+   `events.amazonaws.com`, its `SourceArn` the rule) and the dead-letter
+   queue's policy and encryption, which a change outside the stack may have
+   broken; `aws cloudformation detect-stack-drift --stack-name {{ .Container }}` finds such
+   a change. Fix it and deploy.
+2. Find the events lost: the producer's own logs of what it put
+   (`PutEvents` answers each entry with its `EventId`) around the alarm's
+   time. EventBridge keeps no copy of an event it delivered or gave up on.
+3. Ask the producer to put them again (a new event, a new id), or invoke
+   the function with each, as in step 3 of
+   [Run dead-lettered events again](#run-dead-lettered-events-again).
+
+## Pause the consumer
+
+To stop consuming for a while (a broken dependency, a migration), disable
+the rule; nothing else changes, and enabling it again resumes with the next
+event put. The events put while it is disabled match nothing and are not
+delivered later: pause the producers too, or have them put those events
+again.
+
+- By hand: `aws events disable-rule --name <rule>`, and
+  `aws events enable-rule --name <rule>` to resume. A deploy that changes
+  the rule sets it back to what the stack says, enabled.
+- Through the stack: set the rule's `enabled: false` in
+  `infra/event_stack.ts` and run `cdk deploy -c tier=production`; the change
+  is reviewed like any other.
+{{- end }}
 
 ## Roll a deployment back
 
@@ -276,7 +376,7 @@ next scheduled time. The runs it skips are not run later.
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production`. The function, the {{ if $queue }}queues{{ else if $schedule }}schedule{{ else }}API{{ end }} and the alarms go
+  `cdk deploy -c tier=production`. The function, the {{ if $queue }}queues{{ else if $schedule }}schedule{{ else if $event }}rule{{ else }}API{{ end }} and the alarms go
   back; the data does not. If the bad version wrote bad data, restore the
   {{ $items }} as above to the moment it was deployed.
 - Never deploy a change that replaces a table (a new key, a new name): the
@@ -320,6 +420,19 @@ one is good. An alarm's name is the stack's, `{{ .Container }}-`, then the name 
 | `Runs-Read-Throttled-Events-Critical`, `-Write-`               | DynamoDB throttled reads or writes: a burst past on-demand's limits                       | on-demand adapts within minutes; the run fails and Lambda retries it                                      |
 | `Runs-SystemError-Count-Critical`                              | DynamoDB failed requests on its side                                                      | check the AWS Health Dashboard for DynamoDB in the region; the run fails and Lambda retries it            |
 | `Idempotency-...`                                              | the same, for the idempotency records                                                     | as for `Runs`; while it lasts, runs may fail and be retried                                               |
+
+{{ else if $event -}}
+| Alarm                                             | Means                                                                                | First                                                                                                                                                                    |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Rule-FailedInvocations-Critical`                 | the rule gave up handing an event to the function, after 10 attempts within the hour | look for the event in the `DeadLetters` queue and [run it again](#run-dead-lettered-events-again); if it is not there, see [Events the rule lost](#events-the-rule-lost) |
+| `Rule-InvocationsFailedToBeSentToDlq-Critical`    | the rule gave up on an event and could not send it to the dead-letter queue          | see [Events the rule lost](#events-the-rule-lost): the event is in neither the function's logs nor the queue                                                             |
+| `DeadLetters-Queue-Message-Count-Max-Critical`    | an event failed every retry and waits in the `DeadLetters` queue                     | read why in the function's logs, then [run it again](#run-dead-lettered-events-again)                                                                                    |
+| `Handler-Fault-Count-Critical`                    | an event failed: the function threw or timed out; Lambda retries it twice            | read the function's logs around the time; an error at start-up (a missing variable) means a broken deploy                                                                |
+| `Handler-Throttled-Count-Critical`                | Lambda refused calls: the account's or function's concurrency is used up             | check the account's concurrent executions; the rule and Lambda keep the event and try again within the hour                                                              |
+| `Handler-Latency-P99-Warning`                     | an event took over 24 of its 30 seconds                                              | check DynamoDB's latency on the dashboard and the function's duration in its logs; a timeout is next                                                                     |
+| `Items-Read-Throttled-Events-Critical`, `-Write-` | DynamoDB throttled reads or writes: a hot key or a burst past on-demand's limits     | find the key in the logs; on-demand adapts within minutes; the event fails and Lambda retries it                                                                         |
+| `Items-SystemError-Count-Critical`                | DynamoDB failed requests on its side                                                 | check the AWS Health Dashboard for DynamoDB in the region; the event fails and Lambda retries it                                                                         |
+| `Idempotency-...`                                 | the same, for the idempotency records                                                | as for `Items`; while it lasts, events may fail and be retried                                                                                                           |
 
 {{ else -}}
 | Alarm                                             | Means                                                                            | First                                                                                                           |

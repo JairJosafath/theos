@@ -59,6 +59,9 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
     'InvocationDroppedCount',
     'InvocationsFailedToBeSentToDeadLetterCount',
   ],
+  // A rule's metrics are per rule: an event it gave up on, or couldn't put
+  // in the dead-letter queue. On the default bus its Ref is its name.
+  'AWS::Events::Rule': ['FailedInvocations', 'InvocationsFailedToBeSentToDlq'],
 };
 
 // Where a message or event that failed for good goes: a queue's redrive
@@ -481,6 +484,32 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     }
   });
 
+  it('retries every rule’s Lambda target and sends what it could not deliver to a dead-letter queue', () => {
+    for (const [name, template] of app(tier).templates) {
+      const queues = deadLetterQueues(template);
+      const functions = resourcesOf(template, 'AWS::Lambda::Function').map(([id]) => id);
+      for (const [id, rule] of resourcesOf(template, 'AWS::Events::Rule')) {
+        const targets = rule.Properties?.['Targets'];
+        for (const target of Array.isArray(targets) ? (targets as unknown[]) : []) {
+          const arn = isRecord(target) ? JSON.stringify(target['Arn'] ?? '') : '';
+          if (!functions.some((fn) => refersTo(arn, fn))) {
+            continue;
+          }
+          const deadLetter = isRecord(target)
+            ? JSON.stringify(target['DeadLetterConfig'] ?? {})
+            : '';
+          expect(
+            [...queues].some((queue) => refersTo(deadLetter, queue)),
+            `${name}/${id} dead-letter queue`,
+          ).toBe(true);
+          expect(isRecord(target) && isRecord(target['RetryPolicy']), `${name}/${id} retries`).toBe(
+            true,
+          );
+        }
+      }
+    }
+  });
+
   it('says what happens to the data of every stateful resource when it is removed', () => {
     for (const [name, template] of app(tier).templates) {
       for (const [id, resource] of resourcesOf(template)) {
@@ -724,7 +753,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table, API, load balancer, target group, service, distribution and schedule group, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service, distribution, schedule group and rule, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
