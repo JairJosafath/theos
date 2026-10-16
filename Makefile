@@ -120,9 +120,8 @@ ENVTEST_ENV = KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=$(ENVTEST_START_TIMEOUT) \
 # same test binary, flags and environment variables, and the same size and
 # mtime of every file in the module the test read (the CRDs, templates/). So a
 # change to hack/, docs or the UI reruns no Go test. Coverage is collected only
-# when asked, COVER=1 (CI asks): its instrumented builds are not the ones vet
-# made, and locally nobody reads cover.out. FORCE=1 reruns every package
-# (-count=1); go clean -testcache forgets every result.
+# when asked, COVER=1 (CI asks); locally nobody reads cover.out. FORCE=1 reruns
+# every package (-count=1); go clean -testcache forgets every result.
 TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(if $(FORCE),-count=1)
 # envtest reserves each port it hands out as a file in
 # $XDG_CACHE_HOME/kubebuilder-envtest. ./dev puts XDG_CACHE_HOME in .dev/,
