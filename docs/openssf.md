@@ -95,7 +95,7 @@ because the form asks for them.
 | delivery_mitm | MUST | Met | images and the chart from `ghcr.io` over HTTPS; images pinned by digest where the chart or Dockerfile pins them |
 | delivery_unsigned | MUST | Met | downloaded tools are checked against pinned SHA-256 sums (`hack/testenv.mk`, the Helm download in the `Makefile`), never fetched over HTTP |
 | vulnerabilities_fixed_60_days | MUST | Met | `govulncheck ./...` on 2026-10-16 finds no vulnerability the code reaches ([docs/screenshots/1147-govulncheck.txt](screenshots/1147-govulncheck.txt)). #1147 fixed the 16 it found on 2026-10-15: Go 1.26.9 (`go.mod`'s `toolchain`, which CI's `setup-go` follows, and the images' builders), `golang.org/x/net`, `golang.org/x/crypto`, `google.golang.org/grpc`, `go.opentelemetry.io/otel` and `golang.org/x/image`. Two remain that the code doesn't reach: `github.com/google/cel-go` (fixed in v0.30.0; `k8s.io/apiserver` holds v0.29.2) and `golang.org/x/crypto/openpgp` (unmaintained, no fix; nothing imports it) |
-| vulnerabilities_critical_fixed | SHOULD | **Gap** | nothing runs `govulncheck` yet, so a new one goes unseen. Follow-up: #1148 |
+| vulnerabilities_critical_fixed | SHOULD | Met | the *Vulnerabilities* workflow runs `govulncheck ./...` (`make vulncheck`) on every change to the Go code or the modules and every Monday, and fails on a vulnerability the code reaches; two failed runs on main file an urgent "main is red" issue the relay takes first (#1148, [docs/screenshots/1148-vulncheck-gosec.txt](screenshots/1148-vulncheck-gosec.txt)) |
 | no_leaked_credentials | MUST | Met | the [`secrets` skill](../.claude/skills/secrets/SKILL.md), `make helm-lint` fails on a rendered Secret, GitGuardian on pull requests |
 
 ## Analysis
@@ -103,7 +103,7 @@ because the form asks for them.
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
 | static_analysis | MUST | Met | golangci-lint (staticcheck, govet, revive and more) in `make check` and the *Lint* workflow, before every release |
-| static_analysis_common_vulnerabilities | SUGGESTED | **Gap** | no security-focused analyser runs: `gosec` is off, though six `//nolint:gosec` comments remain. Follow-up: #1148 |
+| static_analysis_common_vulnerabilities | SUGGESTED | Met | `gosec` runs in golangci-lint (`make check`, the *Lint* workflow). `.golangci.yml` turns off G115 (int to the API's int32 fields) and gosec in tests; each other finding is fixed or carries a `//nolint:gosec // why` (#1148) |
 | static_analysis_fixed | MUST | Met | `make check` fails on a finding, so none merges |
 | static_analysis_often | SUGGESTED | Met | on every pull request |
 | dynamic_analysis | SUGGESTED | Met | envtest runs the reconcilers against a real API server; `make test-gitea` against a real Gitea |
@@ -114,7 +114,7 @@ because the form asks for them.
 ## For the owner
 
 Only the owner can close these. Nothing else stands between the repository and
-the passing badge once the follow-up #1148 lands.
+the passing badge.
 
 1. **Choose a FLOSS licence** (floss_license, floss_license_osi). The
    contributors already agreed to relicensing ([CONTRIBUTING.md](../CONTRIBUTING.md),

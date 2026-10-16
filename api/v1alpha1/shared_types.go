@@ -200,7 +200,7 @@ const BriefRoundKindTend = "tend"
 const (
 	// LabelSharedSecrets on a Namespace, "true", opts it in. Only an admin or
 	// the chart can label a Namespace, so a Project alone receives nothing.
-	LabelSharedSecrets = "c4.factory.io/shared-secrets"
+	LabelSharedSecrets = "c4.factory.io/shared-secrets" //nolint:gosec // a label's name, not a credential
 	// LabelSharedFrom marks a Secret the operator copied, naming its source.
 	// A Secret without it is the project's own, which the operator never touches.
 	LabelSharedFrom = "c4.factory.io/shared-from"
