@@ -1,5 +1,6 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
+{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") -}}
 # Implementer guide
 
 You implement one Gitea issue in this repository, as one pull request.
@@ -184,13 +185,16 @@ Task that reviews and merges it. Then:
   versions kept longer), updates `docs/runbook.md`'s steps in the same
   work, as a Standard change: the runbook is how the site comes back.
 {{- end }}
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if $tiered }}
 - The stacks take the tier from `defineStacks(app, tier)` and the
   Container's promises from `infra/operations.ts`. A new resource follows
   `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
   protection and point-in-time recovery by tier, its alarms from the
   stack's `Alarms`. `infra/standard.test.ts` checks both tiers. Never read
-  another context value or an environment variable at synth. The factory
+  another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
+  that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
+  `infra/service_stack.ts` by its name, never by a reference to the alarm,
+  which would make it and the service depend on each other.{{ end }} The factory
   renders `infra/operations.ts` from the Container's `spec.operations`:
   change it only when your issue changes that block, to what the block
   says, and never delete it.

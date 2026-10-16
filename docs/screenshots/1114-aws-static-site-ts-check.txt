@@ -1,18 +1,18 @@
-# make check (after the review fixes, 8cf7f4e3) in a scaffolded aws-static-site-ts v1.0.0 + aws-standard v1.7.0 Container (issue #1114)
-# go run ./hack/render -out /tmp/r4 -type static-site Framework=aws-static-site-ts Standard=aws-standard
+# make check in a scaffolded aws-static-site-ts v1.0.0 + aws-standard v1.8.0 Container (issue #1114),
+# rerun after merging main, whose aws-fargate-ts v1.1.0 brought aws-standard v1.7.0 (#1274)
+# go run ./hack/render -out /tmp/m-ss -type static-site Framework=aws-static-site-ts Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1:
 # env -i PATH=$PATH HOME=/tmp/ss-home NO_COLOR=1 npm_config_cache=/tmp/npm-cache UV_CACHE_DIR=/tmp/uv-cache make check
 # on 2026-10-16. synth builds the site with Vite and writes both tiers,
 # cdk.out/production/ and cdk.out/development/, and cfn-lint lints both with
 # --include-checks I. Exit status 0.
-# A second render with -retention-days 90 -copy-to-region eu-west-1 -rpo 15m
+# Before the merge, a second render with -retention-days 90 -copy-to-region eu-west-1 -rpo 15m
 # -rto 2h -alert-email "o'neil@example.com" passed the same make check
 # (65 tests), its production bucket keeping earlier versions 90 days.
-
 npm ci --no-audit --no-fund
 
-added 141 packages in 26s
+added 141 packages in 30s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -20,7 +20,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /tmp/r4
+ RUN  v5.0.3 /tmp/m-ss
 
  ✓ src/greeting.test.ts (5 tests) 14ms
 Bundling asset test/Deploy/Asset1/Stage...
@@ -28,19 +28,17 @@ Bundling asset sample-app/Deploy/Asset1/Stage...
 Bundling asset test/Deploy/Asset1/Stage...
 Bundling asset sample-app-development/Deploy/Asset1/Stage...
 Bundling asset test/Deploy/Asset1/Stage...
- ✓ infra/site_stack.test.ts (13 tests) 12357ms
+ ✓ infra/site_stack.test.ts (13 tests) 5968ms
    ✓ SiteStack (9)
-     ✓ keeps the site in a private, versioned bucket in production, earlier versions for a while 1757ms
- ✓ infra/standard.test.ts (47 tests) 12502ms
+     ✓ keeps the site in a private, versioned bucket in production, earlier versions for a while 1003ms
+ ✓ infra/standard.test.ts (53 tests) 6166ms
    ✓ the Standard, in production (9)
-     ✓ leaves no error or warning on any stack 620ms
-   ✓ the Standard, in development (9)
-     ✓ leaves no error or warning on any stack 328ms
+     ✓ leaves no error or warning on any stack 375ms
 
  Test Files  3 passed (3)
-      Tests  65 passed (65)
-   Start at  12:23:35
-   Duration  15.31s (tests 82%, import 13%, transform 4%)
+      Tests  71 passed (71)
+   Start at  13:52:17
+   Duration  8.97s (tests 68%, import 19%, transform 13%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true

@@ -3,15 +3,56 @@
 
 A digest of the AWS Well-Architected Framework and Amazon ECS's best
 practices, for this repository: one section per pillar, what the pillar asks
-of a container service on Fargate behind a load balancer, the CDK Nag rules (`AwsSolutions` pack) that enforce it when
-`cdk synth` runs, and what you do by hand where no rule does. Sources and the
-date they were read are in `docs/style/SOURCES.md`. This file belongs to the
-Standard: a task never changes it.
+of a container service on Fargate behind a load balancer, what each tier
+does about it, what `infra/operations.ts` changes, the CDK Nag rules
+(`AwsSolutions` pack) and the Standard's checks that enforce it, and what
+stays by hand, with the reason. Sources and the date they were read are in
+`docs/style/SOURCES.md`. This file belongs to the Standard: a task never
+changes it.
 
-`make check` runs CDK Nag's `AwsSolutions` checks on every stack
-(`infra/standard.ts`): a finding fails synth unless it is acknowledged, on
-one construct, with a reason. `infra/standard.test.ts` checks what CDK Nag
-doesn't: tags, wildcard actions, encryption, log retention, removal policies.
+`make check` synthesizes every stack for both tiers, into
+`cdk.out/production/` and `cdk.out/development/`, and runs CDK Nag's
+`AwsSolutions` checks on both (`infra/standard.ts`): a finding fails synth
+unless it is acknowledged, on one construct, with a reason.
+`infra/standard.test.ts` checks, for both tiers, what CDK Nag doesn't: tags,
+wildcard actions, encryption, log retention, removal policies, and every
+promise below. `cfn-lint --include-checks I` lints both, with I3011 (a
+stateful resource without a deletion policy) and I3013 (content that expires
+without a set retention).
+
+## Tiers and the operations block
+
+The tier is where the stacks run, and a deploy names it:
+`cdk deploy -c tier=production`, or `development` when it names none. The
+code never picks one, and nothing else is read at synth: a synth of a tier is
+the same on every machine. A development stack's name ends in
+`-development`, so a deploy that names no tier never changes a production
+stack. `infra/standard.ts` (`TIER_RULES`) says what each tier means, and
+the stack adds its NAT gateways:
+
+| Every stack                                                          | `production`                        | `development`   |
+| -------------------------------------------------------------------- | ----------------------------------- | --------------- |
+| Data: the table, the backup vault and its key                        | kept when the stack goes (`RETAIN`) | deleted with it |
+| Deletion protection on the table, and on the stack                   | on                                  | off             |
+| Point-in-time recovery on the table                                  | on                                  | off             |
+| AWS Backup                                                           | daily, for `retentionDays`, copied  | none            |
+| X-Ray tracing, through a collector in each task                      | on                                  | off             |
+| Log retention, and the access logs' expiry                           | one year                            | one month       |
+| NAT gateways                                                         | one per zone, two                   | one             |
+| Alarms, their topic, a dashboard, deployments that roll back on them | on                                  | on              |
+
+What the Container promises in either tier is `infra/operations.ts`, which
+the factory renders from its `spec.operations`; a change to the block is
+written into the file, never the other way.
+
+- `backups.retentionDays`: days AWS Backup keeps each daily backup in
+  production; 0 keeps point-in-time recovery only.
+- `backups.copyToRegion`: a second region every backup is copied to; empty
+  for none.
+- `recovery.rpo` and `recovery.rto`: the most data a restore may lose and
+  the longest it may take, which `docs/runbook.md` is written to.
+- `alerts.email`: the default of each stack's `AlertEmail` parameter, which
+  a deploy sets per environment; empty tells nobody.
 
 ## Operational excellence
 
@@ -20,27 +61,53 @@ _Run and monitor the system, and improve it in small, reversible changes._
 - Everything is code: the stacks in `infra/` are the only way resources are
   made. No change by hand in the console.
 - Changes are small, frequent and checked: `make check` synthesizes and
-  lints every change; nothing here deploys.
-- Observe: structured JSON logs with the request id, a log group per
-  container, the load balancer's access logs and the VPC's flow log, each
-  kept for a set time, and Container Insights on the cluster.
+  lints every change for both tiers; nothing here deploys.
+- Observe (OPS08, REL06): structured JSON logs with the request id, a log
+  group per container, the load balancer's access logs and the VPC's flow
+  log, each kept for the tier's time, and Container Insights on the
+  cluster. In production, OpenTelemetry traces of every request but the
+  health checks, through the AWS Distro for OpenTelemetry collector beside
+  the app, in X-Ray.
   - `AwsSolutions-ECS7`: every container logs.
   - `AwsSolutions-ECS4`: the cluster has Container Insights.
   - `AwsSolutions-ELB2`: the load balancer has access logs.
   - `AwsSolutions-VPC7`: the VPC has a flow log.
-  - `infra/standard.test.ts` checks that every log group has a retention.
+  - `infra/standard.test.ts` checks that every log group keeps the tier's
+    time, and that every task runs the collector where the tier traces and
+    none elsewhere.
+- Alarms are code (OPS08-BP04, REL06-BP03), the same in both tiers:
+  `cdk-monitoring-constructs` builds them on the load balancer's own 5xx,
+  the tasks' 5xx and p99 latency (over a second), the service's CPU and
+  memory (over 90 %) and running tasks (under two), and the table's read
+  and write throttles and system errors, each firing on one bad five-minute
+  period; and on the share of 5xx, from the load balancer and from the
+  tasks, over 5 % for three minutes in a row, and unhealthy tasks in two
+  minutes of three, the ones a deployment rolls back on. Every alarm
+  notifies the stack's one SNS
+  topic, encrypted with its own key, and a dashboard per stack shows them
+  (OPS08-BP05). `infra/standard.test.ts` checks that every load balancer,
+  target group, service and table has its alarms and that every alarm
+  notifies the topic: a new resource gets its alarms from the stack's
+  `Alarms`.
+- Nobody is told without asking: the `AlertEmail` parameter subscribes one
+  address to the topic, and an empty one none. The topic's ARN is the
+  stack's `AlarmTopicArn` output and the load balancer's DNS name
+  `EntryPoint`, so a deploy target can subscribe its own channel and point a
+  domain at the service.
 - Deploy safely: a deployment starts new tasks before stopping old ones
-  (minimum healthy 100 %), and the circuit breaker rolls it back when the new
-  tasks never pass the load balancer's health check.
-- Trace when the issue asks for it: X-Ray tracing (an AWS Distro for
-  OpenTelemetry collector beside the app in the task)
-  costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
-  (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
+  (minimum healthy 100 %), and rolls itself back when the circuit breaker
+  sees the new tasks fail to start or pass the health check, or when a
+  deployment alarm fires (the 5xx-share and unhealthy-task ones,
+  `ROLLBACK_ON_ALARM`; a stray 5xx only notifies).
+- A runbook: `docs/runbook.md` says what each alarm means and what to do
+  first, how to restore the data and how a deployment rolls back. A change
+  to what the stacks keep updates it, as a Standard change.
 - Tag everything so cost and ownership are traceable: every stack carries
   `c4factory:project`, `c4factory:system` and `c4factory:container`
   (`infra/standard.ts`, tested).
-- By hand: alarms on errors, 5xx answers, unhealthy targets and CPU, and a runbook, when the
-  system's needs ask for them.
+- By hand, and why: whether the alarms fire for the right reasons, and
+  which are missing (REL06-BP06), only a deployed stack's history shows;
+  review it after every incident.
 
 ## Security
 
@@ -50,12 +117,19 @@ traceability, and protection at every layer._
 - Least privilege: the task role, which the code runs as, is granted
   through CDK grants, such as
   `table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`, only the
-  calls the code makes; the execution role,
-  which ECS uses to pull the image and write logs, only what CDK grants it.
-  - `AwsSolutions-IAM4`: no AWS managed policies on a role.
+  calls the code makes, and in production X-Ray's two write actions; the
+  execution role, which ECS uses to pull the images and write logs, only
+  what CDK grants it.
+  - `AwsSolutions-IAM4`: no AWS managed policies on a role, but AWS
+    Backup's, whose `AWSBackupServiceRolePolicyForBackup` is acknowledged in
+    `infra/backups.ts`.
   - `AwsSolutions-IAM5`: no wildcard actions or resources without an
-    acknowledgement naming the one finding and why.
-  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere.
+    acknowledgement naming the one finding and why. X-Ray's write actions
+    take no resource but `*`: `infra/standard.ts` acknowledges that, in
+    production, on a policy where nothing else has it.
+  - `infra/standard.test.ts`: no `*` or `service:*` action anywhere, but a
+    key's default policy, which hands the key's use to the account's IAM;
+    no X-Ray writes where the tier doesn't trace.
 - Protect the network: the tasks run in private subnets without public IPs
   and take traffic only from the load balancer's security group; only the
   load balancer faces the internet.
@@ -73,11 +147,13 @@ traceability, and protection at every layer._
     (`SslPolicy.RECOMMENDED_TLS`); port 80 only redirects. The load balancer
     drops invalid header fields.
   - `AwsSolutions-S10`, `AwsSolutions-SQS4`, `AwsSolutions-SNS3`: requests
-    must use TLS.
+    must use TLS; the alarm topic refuses any other.
   - `AwsSolutions-SQS2`, `AwsSolutions-EFS1`: encryption at rest; DynamoDB
     is always encrypted, and `infra/standard.test.ts` requires a KMS key
     (`SSESpecification`) on every table, encryption on every bucket, queue
     and topic.
+  - Backups are encrypted with the vault's own key (REL09-BP02); the alarm
+    topic with its own, which CloudWatch may use to publish.
   - `AwsSolutions-KMS5`: customer-managed keys rotate.
 - Protect data from the public: `AwsSolutions-S2` (bucket public access
   blocked), `AwsSolutions-S5`, `AwsSolutions-EVB1` (no open event bus
@@ -87,9 +163,13 @@ traceability, and protection at every layer._
   start-up or passed as ECS `secrets`; never in an environment variable, the template, a log or the
   repository.
   `AwsSolutions-ECS2` flags every plain environment variable: acknowledge
-  it only when each one is plainly not a secret (a table's name), and say so.
-- The container runs as an unprivileged user on a read-only root file
-  system; the image holds the bundle and Node, nothing else.
+  it only when each one is plainly not a secret (a table's name, the
+  collector's address), and say so.
+- The containers run as unprivileged users on read-only root file systems;
+  the app's image holds the bundle and Node, nothing else, and the
+  collector's image is pinned by tag.
+- The account's own guards (GuardDuty, Security Hub, CloudTrail, AWS Config)
+  are its owner's, not a stack's: `docs/runbook.md` lists them.
 - By hand: validate all input at the boundary; never log user data or
   tokens; never return internal errors to a client.
 
@@ -100,19 +180,47 @@ fails._
 
 - Multiple Availability Zones: the VPC spans two, the load balancer serves
   from both and the service keeps at least two tasks, which ECS spreads over
-  them; DynamoDB spreads on its own. The one NAT gateway is in one zone: it
-  carries only image pulls and logs, and a second costs as much again.
+  them; DynamoDB spreads on its own. In production each zone has its own
+  NAT gateway, so a lost zone leaves the other's tasks their way to ECR,
+  CloudWatch and X-Ray; development's one NAT gateway is in one zone.
 - Health checks: the load balancer checks `/health` and replaces a task that
   fails; the check reads nothing, so a DynamoDB outage doesn't stop every
   task.
 - Scale with demand: the service scales on CPU between its bounds.
-- Back up data and recover it: point-in-time recovery on every table, and
-  data that outlives its stack.
-  - `AwsSolutions-DDB3`: point-in-time recovery.
-  - `AwsSolutions-RDS10`: deletion protection on databases; set it on tables
-    too (`deletionProtection: true`).
-  - `infra/standard.test.ts`: every stateful resource states its removal
-    policy; data is `RETAIN`.
+- Recovery objectives (REL13-BP01): `recovery.rpo` and `recovery.rto` say
+  what a restore in production may lose and how long it may take;
+  `docs/runbook.md` is written to them.
+- Back up data (REL09), in production:
+  - Point-in-time recovery on the table: any second of the last 35 days,
+    up to about five minutes before now, restored to a new table. It meets
+    an RPO of minutes.
+  - An AWS Backup plan (REL09-BP03): a daily backup at 05:00 UTC of every
+    resource carrying the Container's tag, so a new table is in it, kept
+    `retentionDays` in a vault with its own key (REL09-BP02); with
+    `copyToRegion`, each copied to a vault in that region (the
+    `<name>-backup-copy` stack), so a lost region loses no more than a day
+    (REL13-BP02, backup and restore).
+  - No vault lock: in compliance mode it can never be undone, which is the
+    account owner's decision.
+  - The tasks hold no data, and the load balancer's access logs are logs,
+    not data: they expire after the tier's log retention, their bucket is
+    kept in either tier, as a bucket holding objects can't be deleted, and
+    the backup plan leaves it out by its ARN, though it carries the tag.
+  - Development backs up nothing: its data goes with its stack.
+- Nothing of value is deleted by accident, in production: the table is
+  `RETAIN` with deletion protection, and the stack has termination
+  protection. A change that replaces the table (a new key) keeps the old one
+  but leaves it outside the stack, empty of the new one's data: review
+  every change to a table's key as a migration.
+  - `AwsSolutions-DDB3`: point-in-time recovery; `infra/standard.ts`
+    acknowledges it in development only.
+  - `infra/standard.test.ts`: per tier, the removal policies, the
+    protections, point-in-time recovery, the backup plan, its vault and its
+    copy, and that no load balancer's log bucket is backed up.
+  - cfn-lint I3011: every stateful resource has a deletion policy.
+- Restore by a written procedure (REL09-BP04, REL13-BP05):
+  `docs/runbook.md` restores the items to a point in time, from the vault,
+  from the copy, and a deleted table, and says how a deployment rolls back.
 - Handle failures in asynchronous work: a queue or event source has a
   dead-letter queue.
   - `AwsSolutions-SQS3`: a queue has a DLQ or is one.
@@ -121,7 +229,12 @@ fails._
 - Limits and shutdown: a body limit on every request; keep-alive longer than
   the load balancer's 60-second idle timeout; on `SIGTERM` the server stops
   taking requests and finishes those in flight, within the container's stop
-  timeout; ECS sends it only after the load balancer has drained the task.
+  timeout, then sends the spans it holds; ECS sends it only after the load
+  balancer has drained the task.
+- By hand, and why: a restore drill (REL09-BP04, REL13-BP03), at least a
+  quarter apart, and a game day once a year; only an account shows that a
+  restore works and how long it takes, so the RTO is a promise until a drill
+  measures it. `docs/runbook.md` says how.
 
 ## Performance efficiency
 
@@ -130,12 +243,18 @@ _Use resources efficiently as demand changes and technology evolves._
 - The newest Node.js LTS in the image (`node:24-alpine`); a bump is a
   change to the `Dockerfile`.
 - Size the task's CPU and memory to the work, and the service's scaling
-  bounds to the load the issue states; measure before raising them.
+  bounds to the load the issue states; measure before raising them. The
+  app's share is the same in both tiers (0.25 vCPU, 512 MiB): in
+  production the collector's own, 0.25 vCPU and at most 512 MiB, is added
+  to the task, so the app is measured in development as it runs in
+  production.
 - Start-up: SDK clients created once, in `src/main.ts`; a small image
   (esbuild's bundle on Alpine, no `node_modules`), so a new task starts
   fast.
 - Data access by key: `GetItem` and `Query` on keys and indexes; a `Scan` is
   never on a request path.
+- Find where time goes with the production traces and the p99 latency
+  alarm.
 - By hand: measure a stated budget with a benchmark, and say what only a
   deployed service can show (start-up, scaling, latency in AWS).
 
@@ -145,17 +264,30 @@ _Deliver value at the lowest price: pay only for what you use, and know
 where the money goes._
 
 - A service runs all the time, so it costs by the hour whether busy or not:
-  two small tasks, the load balancer and the NAT gateway are the floor.
+  two small tasks, the load balancer and the NAT gateways are the floor.
   Scale-out has a ceiling; DynamoDB is on demand.
 - `arm64` (Graviton) tasks: cheaper per vCPU-hour than x86.
 - The DynamoDB gateway endpoint is free and keeps table traffic off the NAT
-  gateway, which charges per gigabyte.
-- Log retention limits what storage costs grow to (`infra/standard.test.ts`);
-  access logs expire from their bucket after 30 days.
-- Tags attribute every cost to its project, system and container.
-- By hand: right-size the task and the scaling bounds; no second NAT
-  gateway, interface endpoints or larger tasks unless the issue states the
-  need.
+  gateways, which charge per gigabyte.
+- What production costs over development: a second NAT gateway, by the hour
+  and by the gigabyte; tasks twice the size (0.5 vCPU and 1 GB instead of
+  0.25 vCPU and 0.5 GB), half of it the collector's; X-Ray for every trace
+  past the free tier (every request but the health checks); point-in-time
+  recovery on the table (by its size, per month); AWS Backup's storage
+  (each daily backup is a full copy of the table, kept `retentionDays`, so
+  about that many times the table's size), and with `copyToRegion` the
+  transfer of each copy and its storage there; twelve months of logs and
+  access logs instead of one; and a KMS key per vault. The load balancer,
+  the alarms (each per month) and the dashboard cost the same in both
+  tiers. Lower `retentionDays` to pay less
+  for backups; 0 keeps point-in-time recovery alone.
+- Log retention limits what storage costs grow to (`infra/standard.test.ts`,
+  cfn-lint I3013); the access logs expire from their bucket with it.
+- Tags attribute every cost to its project, system and container, once the
+  account activates them as cost allocation tags.
+- By hand, and why: right-size the task and the scaling bounds from
+  measured load, which only a deployed service's metrics show; no interface
+  endpoints or larger tasks unless the issue states the need.
 
 ## Sustainability
 
@@ -164,8 +296,9 @@ _Minimize the environmental impact of the workload._
 - Fargate runs the tasks on shared infrastructure; scaling in to the
   minimum when idle keeps what runs to what the load needs.
 - `arm64` (Graviton) uses less energy for the same work.
-- Keep what is needed, no longer: log retention, and no data stored that
-  the system's needs don't ask for.
+- Keep what is needed, no longer: log retention by tier, backups for
+  `retentionDays`, development keeping no backups and tracing nothing, and
+  no data stored that the system's needs don't ask for.
 - Efficient code: no polling, no work per request that can be done once at
   start-up, small images.
 - No rule enforces these: review them.

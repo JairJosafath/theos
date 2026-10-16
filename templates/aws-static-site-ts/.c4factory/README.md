@@ -106,7 +106,7 @@ CloudFormation offline. Version v1.0.0.
   two `name` fields are templated, so `npm ci` installs exactly the versions
   in `package.json`. `allowScripts` lets esbuild's install script run: tsx
   needs esbuild.
-- **Standard:** made for `aws-standard` v1.7.0 or later, which owns
+- **Standard:** made for `aws-standard` v1.8.0 or later, which owns
   `infra/main.ts`, `infra/standard.ts` (the tier, `TIER_RULES` and the
   `Operations` type this Framework imports) and `infra/standard.test.ts`,
   whose data-bucket and distribution checks this stack needs. Lists its

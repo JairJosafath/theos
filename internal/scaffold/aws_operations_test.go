@@ -27,7 +27,35 @@ func renderOperations(t *testing.T, typ, framework string, c model.OperationsCho
 	return result
 }
 
-func TestAWSLambdaTSRendersTheOperationsBlock(t *testing.T) {
+// awsOperationsFrameworks is every AWS Framework that renders the block, with
+// the alarm its runbook branch must name and a line only that branch has, and
+// whether it keeps its data as a bucket's versions instead of in a backup plan.
+var awsOperationsFrameworks = []struct {
+	side
+	runbook  []string
+	versions bool
+}{
+	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}, false},
+	{side{model.TypeService, "aws-fargate-ts"}, []string{
+		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
+		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
+	}, false},
+	{side{model.TypeStaticSite, "aws-static-site-ts"}, []string{
+		"Site-Fault-Rate-Critical", "Deploy-Fault-Count-Critical", "list-object-versions", "create-invalidation",
+	}, true},
+}
+
+// hasOperations reports whether framework renders infra/operations.ts.
+func hasOperations(framework string) bool {
+	for _, f := range awsOperationsFrameworks {
+		if f.Name == framework {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAWSFrameworksRenderTheOperationsBlock(t *testing.T) {
 	week := int32(7)
 	tests := []struct {
 		name   string
@@ -48,17 +76,33 @@ func TestAWSLambdaTSRendersTheOperationsBlock(t *testing.T) {
 			`email: "o'neil@example.com",`,
 		}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := renderOperations(t, model.TypeFunction, "aws-lambda-ts", tt.block)
-			f, ok := r.Files["infra/operations.ts"]
-			if !ok {
-				t.Fatal("aws-lambda-ts writes no infra/operations.ts")
-			}
-			for _, w := range tt.wanted {
-				if !strings.Contains(string(f.Data), w) {
-					t.Errorf("infra/operations.ts lacks %q:\n%s", w, f.Data)
+	for _, fw := range awsOperationsFrameworks {
+		for _, tt := range tests {
+			t.Run(fw.Name+"/"+tt.name, func(t *testing.T) {
+				r := renderOperations(t, fw.Side, fw.Name, tt.block)
+				f, ok := r.Files["infra/operations.ts"]
+				if !ok {
+					t.Fatalf("%s writes no infra/operations.ts", fw.Name)
 				}
+				for _, w := range tt.wanted {
+					if !strings.Contains(string(f.Data), w) {
+						t.Errorf("infra/operations.ts lacks %q:\n%s", w, f.Data)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
+	for _, f := range awsFrameworks {
+		if hasOperations(f.Name) {
+			continue
+		}
+		t.Run(f.Name, func(t *testing.T) {
+			r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{})
+			if _, ok := r.Files["infra/operations.ts"]; ok {
+				t.Errorf("%s writes infra/operations.ts before its step of plans/aws-production.md", f.Name)
 			}
 		})
 	}
@@ -66,18 +110,22 @@ func TestAWSLambdaTSRendersTheOperationsBlock(t *testing.T) {
 
 // runbookSays is what each Framework with operations has its runbook say for
 // a Container whose block sets every field but retentionDays (35, the
-// default): the block's values, and the steps only that Framework has.
+// default): the block's values and the steps its kind of data shares;
+// awsOperationsFrameworks adds the lines only its own branch has.
 var runbookSays = map[string][]string{
-	"aws-lambda-ts": {
-		"(RPO): 15m", "(RTO): 2h", "kept 35 days, each copied to eu-west-1", "ops@example.com",
-		"restore-table-to-point-in-time", "continue-update-rollback", "GuardDuty",
-		"Api-Fault-Count-Critical",
-	},
+	"aws-lambda-ts":  tableRunbookSays,
+	"aws-fargate-ts": tableRunbookSays,
 	"aws-static-site-ts": {
 		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
-		"list-object-versions", "create-invalidation", "continue-update-rollback", "GuardDuty",
-		"Site-Fault-Rate-Critical", "Deploy-Fault-Count-Critical",
+		"continue-update-rollback", "GuardDuty",
 	},
+}
+
+// tableRunbookSays is what the runbook of a Framework keeping a table says.
+var tableRunbookSays = []string{
+	"(RPO): 15m", "(RTO): 2h", "kept 35 days, each copied to eu-west-1", "ops@example.com",
+	"restore-table-to-point-in-time", "continue-update-rollback", "GuardDuty",
+	"-backup-copy",
 }
 
 func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T) {
@@ -88,6 +136,9 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 			})
 			runbook, ok := r.Files["docs/runbook.md"]
 			wanted, has := runbookSays[f.Name]
+			if has != hasOperations(f.Name) {
+				t.Fatalf("runbookSays and awsOperationsFrameworks disagree on %s", f.Name)
+			}
 			if !has {
 				// The other Frameworks' branches come with their own steps.
 				if ok {
@@ -98,7 +149,13 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 			if !ok {
 				t.Fatalf("aws-standard writes no docs/runbook.md for %s", f.Name)
 			}
-			for _, w := range wanted {
+			var own []string
+			for _, o := range awsOperationsFrameworks {
+				if o.Name == f.Name {
+					own = o.runbook
+				}
+			}
+			for _, w := range append(append([]string{}, wanted...), own...) {
 				if !strings.Contains(string(runbook.Data), w) {
 					t.Errorf("docs/runbook.md lacks %q", w)
 				}
@@ -130,14 +187,23 @@ func TestAWSStandardRunbookKeepsTheSitesVersions(t *testing.T) {
 
 func TestAWSStandardRunbookSaysWhenThereAreNoBackups(t *testing.T) {
 	none := int32(0)
-	r := renderOperations(t, model.TypeFunction, "aws-lambda-ts", model.OperationsChoices{RetentionDays: &none})
-	runbook := string(r.Files["docs/runbook.md"].Data)
-	if !strings.Contains(runbook, "point-in-time recovery only") {
-		t.Error("docs/runbook.md doesn't say that retentionDays 0 keeps point-in-time recovery only")
-	}
-	for _, never := range []string{"## Restore from a backup in the vault", "The daily backups"} {
-		if strings.Contains(runbook, never) {
-			t.Errorf("docs/runbook.md says %q with no backups", never)
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // TestAWSStandardRunbookKeepsTheSitesVersions
 		}
+		t.Run(f.Name, func(t *testing.T) {
+			r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RetentionDays: &none})
+			runbook := string(r.Files["docs/runbook.md"].Data)
+			if !strings.Contains(runbook, "point-in-time recovery only") {
+				t.Error("docs/runbook.md doesn't say that retentionDays 0 keeps point-in-time recovery only")
+			}
+			for _, never := range []string{
+				"## Restore from a backup in the vault", "The daily backups", "AWS Backup's storage", "per vault",
+			} {
+				if strings.Contains(runbook, never) {
+					t.Errorf("docs/runbook.md says %q with no backups", never)
+				}
+			}
+		})
 	}
 }
