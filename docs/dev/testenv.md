@@ -103,6 +103,21 @@ controller suite ends itself 30 s before that, failing the spec that was running
 name. With `C4_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
 *Tests* workflow prints them, so a slow run's log says which specs to speed up.
 
+The controller suite runs its specs one after another, so `make test` runs it
+as `C4_TEST_PROCS` go tests at once (default 2), beside one go test of the
+other packages (`hack/go-test.sh`, #1283). Each part gets
+`C4_TEST_SHARD=i/n` and runs its share of the suite's top-level containers
+against its own control plane and manager; a container is never split, since
+Ginkgo already runs them in random order but the specs inside one may share
+state. The split is the same in every part, and a part that ran another
+number of specs than its containers hold fails. Go's test cache answers each
+part on its own, and their profiles (`COVER=1`) and slowest specs
+(`C4_SLOWEST_SPECS`) are merged into one. With `C4_TEST_PROCS` unset and less
+than `C4_TEST_MIN_MEM_GIB` (default 4) of `MemAvailable`, the suite runs in
+one process; `C4_TEST_PROCS=1` always does. A spec run outside `make test`
+(an IDE, `go test` by hand) runs the whole suite in one process, as before.
+What it costs is under [Memory on the cluster device](#memory-on-the-cluster-device).
+
 `make validate-yaml` checks the YAML without a cluster or a network, with
 `kubectl-validate` and `helm` from the device's tool directory: the samples, the e2e fixtures, the
 `kustomize build` of `config/default`, `config/gitea` and `config/ui`,
@@ -752,6 +767,24 @@ queue:
   sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
   and the waiters, the one going first marked `goes first` and the slot it
   took `went first`.
+- The controller suite runs in `C4_TEST_PROCS` processes (default 2), each
+  with its own control plane and manager (#1283). Measured on 2026-10-16 on
+  this device (9.6 GiB, `HEAVY_JOBS=1` then), the suite alone, the peak RSS
+  of its whole process tree (go test, the test binaries, etcd,
+  kube-apiserver):
+
+  | `C4_TEST_PROCS` | Wall time | Peak RSS |
+  | --- | --- | --- |
+  | 1 | 834 s | 1.0 GiB |
+  | 2 | 484 s | 2.2 GiB |
+  | 4 | 242 s | 4.4 GiB |
+
+  Each part costs about 1.1 GiB. Two checks at once at 2 take about 4.4 GiB
+  for their suites and leave the device above `RELAY_MIN_MEM_GIB`; at 4 they
+  would take 8.8 GiB, more than it has free. So the default is 2, and below
+  `C4_TEST_MIN_MEM_GIB` (4 GiB, two parts and the relay's 2 GiB of
+  headroom) of `MemAvailable` the suite runs in one process. A device with
+  memory to spare runs `C4_TEST_PROCS=4 make check`.
 - Two checks at once still start several envtest control planes at once, so
   `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
   start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout
