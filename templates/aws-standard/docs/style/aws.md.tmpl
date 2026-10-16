@@ -214,9 +214,10 @@ says why each rule matters.
 - What the page imports from `src/` is bundled and minified under hashed
   names; `public/` is copied as it is, so a file there is referenced by its
   path from the root (`/favicon.svg`). [review]
-- A deploy copies the build into the bucket (`BucketDeployment`), deletes
-  the files it lacks and clears CloudFront's cache (`/*`). Nothing else
-  writes to the bucket. [review]
+- A deploy copies the build into the bucket (`BucketDeployment`) beside
+  earlier builds' files, so a browser holding an earlier `index.html` still
+  finds its hashed assets, and clears CloudFront's cache (`/*`). Nothing
+  else writes to the bucket. [review]
 
 ## The S3 buckets
 

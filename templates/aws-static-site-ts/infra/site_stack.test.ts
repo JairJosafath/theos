@@ -182,11 +182,11 @@ describe('SiteStack', () => {
     development.resourceCountIs('AWS::WAFv2::WebACL', 0);
   });
 
-  it('copies the built site into the bucket on a deploy, and clears the cache', () => {
+  it('copies the built site into the bucket on a deploy, keeps earlier builds’ files, and clears the cache', () => {
     production.hasResourceProperties('Custom::CDKBucketDeployment', {
       DestinationBucketName: { Ref: resource(production, 'AWS::S3::Bucket', 'Site')[0] },
       DistributionPaths: ['/*'],
-      Prune: true,
+      Prune: false,
     });
     development.hasResourceProperties('Custom::CDKBucketDeployment', { RetainOnDelete: false });
   });

@@ -52,8 +52,9 @@ CloudFormation offline. Version v1.0.0.
     and a rate-based rule `RequestsPerAddress` blocking an address past
     2,000 requests in five minutes, with metrics and sampled requests;
   - `Deploy`, a `BucketDeployment` of the site built by Vite, which copies
-    it into the bucket on each deploy, deletes the files the build lacks
-    and invalidates `/*`. Its function has its own role (`DeployRole`,
+    it into the bucket on each deploy and invalidates `/*`. It keeps the
+    files earlier builds had (`prune: false`): a browser holding an earlier
+    `index.html` still finds the hashed assets it names. Its function has its own role (`DeployRole`,
     allowed to write only its log group, `DeployLogs`, kept for the tier's
     log retention) and X-Ray `Active` in production. In development
     `retainOnDelete` is false, so the files go with the stack and the bucket

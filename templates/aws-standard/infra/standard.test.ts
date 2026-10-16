@@ -449,10 +449,12 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the versions of data buckets', () => {
-      it('are kept, and the earlier ones expire, where the tier keeps data', () => {
+      it('are kept where the tier keeps data, the earlier ones as long as a table recovers or the backups last', () => {
         if (!rules.keepData) {
           return;
         }
+        // Point-in-time recovery's 35 days, or retentionDays when longer.
+        const days = Math.max(35, promised().backups.retentionDays);
         for (const [name, template] of app(tier).templates) {
           for (const [id, bucket] of dataBuckets(template)) {
             expect(bucket.Properties?.['VersioningConfiguration'], `${name}/${id}`).toEqual({
@@ -462,12 +464,14 @@ describe.runIf(operations !== undefined).each(TIERS)(
             const lifecycleRules: unknown[] = isRecord(lifecycle)
               ? [lifecycle['Rules']].flat()
               : [];
-            expect(lifecycleRules, `${name}/${id}`).toContainEqual(
-              expect.objectContaining({
-                Status: 'Enabled',
-                NoncurrentVersionExpiration: { NoncurrentDays: expect.any(Number) as unknown },
-              }),
-            );
+            const kept = lifecycleRules.flatMap((rule) => {
+              const expiry = isRecord(rule) ? rule['NoncurrentVersionExpiration'] : undefined;
+              return isRecord(rule) && rule['Status'] === 'Enabled' && isRecord(expiry)
+                ? [expiry['NoncurrentDays']]
+                : [];
+            });
+            expect(kept, `${name}/${id}: the days earlier versions are kept`).toHaveLength(1);
+            expect(kept[0], `${name}/${id}`).toBeGreaterThanOrEqual(days);
           }
         }
       });

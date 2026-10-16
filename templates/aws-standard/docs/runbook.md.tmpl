@@ -268,7 +268,7 @@ see [Roll a deployment back](#roll-a-deployment-back).
 - A deploy that succeeded but misbehaves: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
   `cdk deploy -c tier=production`. The deploy copies that commit's build
-  into the bucket, deletes the files it lacks, and clears the cache.
+  into the bucket, beside the files earlier builds had, and clears the cache.
 - Never change the `Site` bucket's logical id, or anything that replaces the
   bucket: the deploy makes a new, empty bucket and keeps the old one outside
   the stack, with every earlier version in it. If it happened by mistake,

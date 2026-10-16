@@ -669,7 +669,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   synthesizes and lints every change for both tiers; nothing here deploys.
 - One deploy, one version of the site: Vite builds it at synth, through CDK's
   local bundling (never Docker), and the deploy copies the build into the
-  bucket, deletes the files it lacks and clears CloudFront's cache (`/*`).
+  bucket beside earlier builds' files and clears CloudFront's cache (`/*`).
   A deploy that fails rolls back, earlier files included.
 - Observe (OPS08): the distribution's standard logs and the bucket's server
   access logs go to the `Logs` bucket (`cloudfront/`, `s3/`); the copying
@@ -795,7 +795,9 @@ _Use resources efficiently as demand changes and technology evolves._
   elsewhere waits longer.
 - Build small: Vite bundles and minifies `src/` into hashed files, so a
   page loads only what it imports.
-- Every deploy clears the cache, so visitors get the new files at once.
+- Every deploy clears CloudFront's cache, so the edge serves the new files
+  at once; a browser holding an earlier `index.html` still finds its assets,
+  since a deploy keeps earlier builds' files.
 - By hand: measure a stated budget (the page's size, its load time) on the
   built site, `npm run build` then `dist/`, and say what only a deployed site
   shows (load time from the edge, in a real browser).

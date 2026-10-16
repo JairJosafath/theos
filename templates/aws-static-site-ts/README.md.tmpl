@@ -62,8 +62,8 @@ distribution is done where the domain is hosted.
 
 Deploying (`cdk deploy`, after `cdk bootstrap` of the account in us-east-1)
 is for its owner, with their own credentials. Each deploy builds the site,
-copies it into the bucket, deletes the files the build lacks and clears
-CloudFront's cache.
+copies it into the bucket beside earlier builds' files, so a page a browser
+cached still finds its assets, and clears CloudFront's cache.
 
 ## Layout
 

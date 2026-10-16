@@ -88,11 +88,10 @@ export class SiteStack extends Stack {
       description:
         'The ARN of an ACM certificate in us-east-1 for DomainName; empty when DomainName is.',
     });
-    const hasDomain = new CfnCondition(this, 'HasDomain', {
-      expression: Fn.conditionNot(Fn.conditionEquals(domainName.valueAsString, '')),
-    });
+    const domainSet = Fn.conditionNot(Fn.conditionEquals(domainName.valueAsString, ''));
+    const hasDomain = new CfnCondition(this, 'HasDomain', { expression: domainSet });
     new CfnRule(this, 'DomainNeedsCertificate', {
-      ruleCondition: Fn.conditionNot(Fn.conditionEquals(domainName.valueAsString, '')),
+      ruleCondition: domainSet,
       assertions: [
         {
           assert: Fn.conditionNot(Fn.conditionEquals(certificateArn.valueAsString, '')),
@@ -146,6 +145,9 @@ export class SiteStack extends Stack {
     // firewall made in us-east-1, which is why the stack is there.
     const firewall = rules.keepData
       ? new CfnWebACL(this, 'Firewall', {
+          // The firewall's metrics are named after it, so the dashboard
+          // needs the name.
+          name: `${id}-firewall`,
           scope: 'CLOUDFRONT',
           defaultAction: { allow: {} },
           visibilityConfig: {
@@ -264,6 +266,9 @@ export class SiteStack extends Stack {
       destinationBucket: site,
       distribution,
       distributionPaths: ['/*'],
+      // A deploy keeps the files earlier builds had: a browser holding an
+      // earlier index.html still finds the hashed assets it names.
+      prune: false,
       // In development the files go with the stack, so the bucket is empty
       // when CloudFormation deletes it; in production both stay.
       retainOnDelete: rules.keepData,
@@ -271,12 +276,15 @@ export class SiteStack extends Stack {
       logGroup: deployLogs,
       memoryLimit: 512,
     });
-    const copier = Stack.of(this)
+    // BucketDeployment shares one function per memory limit; this stack
+    // has one, which gets the tracing and alarms every function has.
+    const copiers = Stack.of(this)
       .node.findAll()
       .filter((node) => node instanceof CfnFunction)
-      .find((fn) => fn.node.path.includes('CDKBucketDeployment'));
-    if (copier === undefined) {
-      throw new Error('BucketDeployment made no function.');
+      .filter((fn) => fn.node.path.includes('CDKBucketDeployment'));
+    const [copier] = copiers;
+    if (copiers.length !== 1 || copier === undefined) {
+      throw new Error(`Want one BucketDeployment function, found ${String(copiers.length)}.`);
     }
     if (rules.tracing) {
       copier.tracingConfig = { mode: 'Active' };
