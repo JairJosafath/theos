@@ -631,9 +631,10 @@ check "intake leaves the report issue alone" "$(calls)" ""
       "GET $R/issues?state=open&labels=maintainer%2Freport"*) [ ! -e "$T/report" ] || echo 7 ;;
       "GET $R/labels/maintainer%2Freport") [ -e "$T/report-label" ] ;;
       "POST $R/labels") touch "$T/report-label" ;;
-      "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; echo "N7 https://x/issues/7" ;;
+      "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; jq -r .body "$T/in" >"$T/body7"; echo "N7 https://x/issues/7" ;;
       "PATCH $R/issues/7") jq -r .body "$T/in" >"$T/body7"; echo https://x/issues/7 ;;
-      "GET $R/issues/7") cat "$T/body7" ;;
+      # $T/race, when there, becomes the body after this read: a sweep's report landing in between.
+      "GET $R/issues/7") cat "$T/body7"; [ ! -e "$T/race" ] || mv "$T/race" "$T/body7" ;;
       "POST graphql") ;;
       "GET $R/issues?state=all"*) jq -r '[.[] | select(.labels | any(.name == "maintainer/report") | not) | .updated_at] | first // "none"' <<<'[{"updated_at":"2026-10-06T09:00:00Z","labels":[{"name":"maintainer/report"}]},{"updated_at":"2026-10-06T08:00:00Z","labels":[]}]' ;;
       "GET $R/commits/main") echo abc123 ;;
@@ -645,7 +646,7 @@ check "intake leaves the report issue alone" "$(calls)" ""
   check "report: the issue's title and label" "$(cat "$T/report")" '{"title":"Maintainer report","labels":["maintainer/report"]}'
   : >"$T/calls"
   echo "second" | gh_report - >"$T/out" 2>&1
-  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
+  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
 
   # report-note: the watch's line under Health and Needs you (Nothing. goes),
@@ -669,7 +670,7 @@ Relay: 9 workers · main: green
 
 ## Since 01:10
 - Decided: #1"
-  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7,"
+  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,GET $R/issues/7,PATCH $R/issues/7,"
   gh_report_note runners 'Runners offline since T: 3 runs queued'
   check "report-note: a new count replaces the lines" "$(grep -c 'watch:runners' "$T/body7") $(grep -c '3 runs queued' "$T/body7")" "2 2"
   : >"$T/calls"
@@ -701,6 +702,39 @@ Relay: 9 workers · main: green
     "$(grep -c "^$GH_NOTHING$" "$T/body7") $(grep -c 'watch:runners' "$T/body7")" "1 1"
   gh_report_note runners
   check "report-note #1269: and removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  # #1212: a body that changes between report-note's read and its write
+  # keeps the change; a report without the watch's lines keeps them, each in
+  # its section, and one that has them takes its own.
+  gh_report_note runners A 'A. Start Docker.'
+  sed 's/Decided: #1/Decided: #2/' "$T/body7" >"$T/race"
+  gh_report_note runners B 'B. Start Docker.'
+  check "report-note #1212: a body changed between read and write keeps the change" \
+    "$(grep -c 'Decided: #2' "$T/body7") $(grep -c 'watch:runners' "$T/body7") $(grep -c '^B <!-- watch:runners -->$' "$T/body7")" "1 2 1"
+  gh_report_note tmp-h '/tmp on h is 93% full' ''
+  printf '%s\n' '<!-- relay-maintainer -->' 'Updated 05:10' '' '## Needs you' '' '- [ ] Decide #3' '' \
+    '## Health' 'Relay: 8 workers' '' '## Since 03:10' '- Decided: #3' >"$T/r2"
+  gh_report "$T/r2" >/dev/null
+  check "report #1212: a report without the watch's lines keeps them" "$(cat "$T/body7")" "<!-- relay-maintainer -->
+Updated 05:10
+
+## Needs you
+
+- [ ] B. Start Docker. <!-- watch:runners -->
+- [ ] Decide #3
+
+## Health
+/tmp on h is 93% full <!-- watch:tmp-h -->
+B <!-- watch:runners -->
+Relay: 8 workers
+
+## Since 03:10
+- Decided: #3"
+  printf '%s\n' '## Health' 'C <!-- watch:runners -->' 'Relay: 7 workers' >"$T/r3"
+  gh_report "$T/r3" >/dev/null
+  check "report #1212: a report with a watch line keeps its own" "$(cat "$T/body7")" "## Health
+/tmp on h is 93% full <!-- watch:tmp-h -->
+C <!-- watch:runners -->
+Relay: 7 workers"
   rm -f "$T/report"
   check "report-note: no report fails" "$(gh_report_note runners x 2>&1; echo $?)" "github: no Maintainer report issue to note in
 1"
@@ -736,7 +770,6 @@ A <!-- watch:tmp-h -->"
   NONE='{"jobs":[]}'
   gh() {
     case "$1 $2" in
-      "run list") echo "$RUNS" ;;
       "run view") echo "$3" >>"$T/asked"; jq -r "${@: -1}" <<<"${JOBS[$3]:-$NONE}" ;;
       *) return 1 ;;
     esac
@@ -744,6 +777,12 @@ A <!-- watch:tmp-h -->"
   gh_api() {
     local a q= p
     for a in "$@"; do [ "$p" != --jq ] || q=$a; p=$a; done
+    # The queued runs: RUNS split into pages of two, as GitHub's API names them.
+    if [[ " $* " == *" --paginate $R/actions/runs?branch=main&status=queued&per_page=100 "* ]]; then
+      jq -c '. as $a | range(0; length; 2) | $a[.:.+2] | {workflow_runs: [.[] | {id: .databaseId, status, created_at: .createdAt}]}' <<<"$RUNS" |
+        while IFS= read -r p; do jq -r "$q" <<<"$p"; done
+      return
+    fi
     [[ " $* " == *" $R/actions/runners?per_page=100 "* ]] || return 1
     echo runners >>"$T/asked"
     for p in "${PAGES[@]}"; do jq -r "$q" <<<"$p"; done
@@ -770,6 +809,12 @@ A <!-- watch:tmp-h -->"
     "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$t9d" "$t40m")|1 2 4 "
   check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
   check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
+  # #1212: 101 queued runs, newest first over pages: the oldest one's time.
+  t3h=$(ago '3 hours')
+  RUNS=$(jq -nc --arg o "$t3h" --arg y "$t40m" '[range(100) | {databaseId: (1000 + .), status: "queued", createdAt: $y}] +
+    [{databaseId: 7, status: "queued", createdAt: $o}]')
+  JOBS[7]='{"jobs":[{"status":"queued"}]}'
+  check "queued #1212: 101 runs give the oldest one's time and all of them" "$(queued | head -1)" "$(printf 'waiting\t%s\t101\t1' "$t3h")"
   exit $fail
 ) || fail=1
 
