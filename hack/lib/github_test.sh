@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -64,7 +64,7 @@ gh_api() {
       echo "[[{\"id\":999,\"created_at\":\"$now\",\"updated_at\":\"$now\",\"html_url\":\"u\",\"user\":{\"login\":\"x\"},\"body\":\"<!-- c4-claim -->\\n**otter-6x** works on this issue\"}]]" ;;
     */issues/comments/1) # the claim() comment: heron-73 and heron-74 still hold theirs
       if [[ " $* " == *" PATCH "* ]]; then cat >"$T/edited"; return; fi
-      echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue"}' |
+      echo '{"id":1,"updated_at":"'"$now"'","body":"<!-- c4-claim -->\n**heron-73** works on this issue · host `far` · branch `b`"}' |
         { [ -e "$T/hold74" ] && sed 's/heron-73/heron-74/' || cat; } ;;
     */issues/comments\?since*) echo "${CLAIMS:-[[]]}" ;;
     */issues/comments*) echo '[[]]' ;;
@@ -431,6 +431,8 @@ rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 claim "$T/main" 73 "$GH_NOW"
 gh_take 61 >/dev/null 2>&1; check "take, own claim on a closed issue" $? 0
 check "take, closed issue's claim released" "$(jq -r .body "$T/edited" | grep -c 'heron-73\*\* released this issue: finished')" 1
+check "take, the released claim keeps the host it was held on (#1199)" "$(jq -r .body "$T/edited" | sed -n 2p)" \
+  "**heron-73** released this issue: finished · host \`far\` · branch \`b\`"
 check "take, new claim" "$(jq .issue "$T/main/.relay/claim")" 61
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 touch "$T/hold74"; claim "$T/main" 74 "$GH_NOW"
@@ -629,9 +631,10 @@ check "intake leaves the report issue alone" "$(calls)" ""
       "GET $R/issues?state=open&labels=maintainer%2Freport"*) [ ! -e "$T/report" ] || echo 7 ;;
       "GET $R/labels/maintainer%2Freport") [ -e "$T/report-label" ] ;;
       "POST $R/labels") touch "$T/report-label" ;;
-      "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; echo "N7 https://x/issues/7" ;;
+      "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; jq -r .body "$T/in" >"$T/body7"; echo "N7 https://x/issues/7" ;;
       "PATCH $R/issues/7") jq -r .body "$T/in" >"$T/body7"; echo https://x/issues/7 ;;
-      "GET $R/issues/7") cat "$T/body7" ;;
+      # $T/race, when there, becomes the body after this read: a sweep's report landing in between.
+      "GET $R/issues/7") cat "$T/body7"; [ ! -e "$T/race" ] || mv "$T/race" "$T/body7" ;;
       "POST graphql") ;;
       "GET $R/issues?state=all"*) jq -r '[.[] | select(.labels | any(.name == "maintainer/report") | not) | .updated_at] | first // "none"' <<<'[{"updated_at":"2026-10-06T09:00:00Z","labels":[{"name":"maintainer/report"}]},{"updated_at":"2026-10-06T08:00:00Z","labels":[]}]' ;;
       "GET $R/commits/main") echo abc123 ;;
@@ -643,7 +646,7 @@ check "intake leaves the report issue alone" "$(calls)" ""
   check "report: the issue's title and label" "$(cat "$T/report")" '{"title":"Maintainer report","labels":["maintainer/report"]}'
   : >"$T/calls"
   echo "second" | gh_report - >"$T/out" 2>&1
-  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,PATCH $R/issues/7, | second"
+  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
 
   # report-note: the watch's line under Health and Needs you (Nothing. goes),
@@ -667,7 +670,7 @@ Relay: 9 workers · main: green
 
 ## Since 01:10
 - Decided: #1"
-  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7,"
+  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,GET $R/issues/7,PATCH $R/issues/7,"
   gh_report_note runners 'Runners offline since T: 3 runs queued'
   check "report-note: a new count replaces the lines" "$(grep -c 'watch:runners' "$T/body7") $(grep -c '3 runs queued' "$T/body7")" "2 2"
   : >"$T/calls"
@@ -699,6 +702,39 @@ Relay: 9 workers · main: green
     "$(grep -c "^$GH_NOTHING$" "$T/body7") $(grep -c 'watch:runners' "$T/body7")" "1 1"
   gh_report_note runners
   check "report-note #1269: and removed, the report is as it was" "$(diff "$T/sweep" "$T/body7")" ""
+  # #1212: a body that changes between report-note's read and its write
+  # keeps the change; a report without the watch's lines keeps them, each in
+  # its section, and one that has them takes its own.
+  gh_report_note runners A 'A. Start Docker.'
+  sed 's/Decided: #1/Decided: #2/' "$T/body7" >"$T/race"
+  gh_report_note runners B 'B. Start Docker.'
+  check "report-note #1212: a body changed between read and write keeps the change" \
+    "$(grep -c 'Decided: #2' "$T/body7") $(grep -c 'watch:runners' "$T/body7") $(grep -c '^B <!-- watch:runners -->$' "$T/body7")" "1 2 1"
+  gh_report_note tmp-h '/tmp on h is 93% full' ''
+  printf '%s\n' '<!-- relay-maintainer -->' 'Updated 05:10' '' '## Needs you' '' '- [ ] Decide #3' '' \
+    '## Health' 'Relay: 8 workers' '' '## Since 03:10' '- Decided: #3' >"$T/r2"
+  gh_report "$T/r2" >/dev/null
+  check "report #1212: a report without the watch's lines keeps them" "$(cat "$T/body7")" "<!-- relay-maintainer -->
+Updated 05:10
+
+## Needs you
+
+- [ ] B. Start Docker. <!-- watch:runners -->
+- [ ] Decide #3
+
+## Health
+/tmp on h is 93% full <!-- watch:tmp-h -->
+B <!-- watch:runners -->
+Relay: 8 workers
+
+## Since 03:10
+- Decided: #3"
+  printf '%s\n' '## Health' 'C <!-- watch:runners -->' 'Relay: 7 workers' >"$T/r3"
+  gh_report "$T/r3" >/dev/null
+  check "report #1212: a report with a watch line keeps its own" "$(cat "$T/body7")" "## Health
+/tmp on h is 93% full <!-- watch:tmp-h -->
+C <!-- watch:runners -->
+Relay: 7 workers"
   rm -f "$T/report"
   check "report-note: no report fails" "$(gh_report_note runners x 2>&1; echo $?)" "github: no Maintainer report issue to note in
 1"
@@ -734,7 +770,6 @@ A <!-- watch:tmp-h -->"
   NONE='{"jobs":[]}'
   gh() {
     case "$1 $2" in
-      "run list") echo "$RUNS" ;;
       "run view") echo "$3" >>"$T/asked"; jq -r "${@: -1}" <<<"${JOBS[$3]:-$NONE}" ;;
       *) return 1 ;;
     esac
@@ -742,6 +777,12 @@ A <!-- watch:tmp-h -->"
   gh_api() {
     local a q= p
     for a in "$@"; do [ "$p" != --jq ] || q=$a; p=$a; done
+    # The queued runs: RUNS split into pages of two, as GitHub's API names them.
+    if [[ " $* " == *" --paginate $R/actions/runs?branch=main&status=queued&per_page=100 "* ]]; then
+      jq -c '. as $a | range(0; length; 2) | $a[.:.+2] | {workflow_runs: [.[] | {id: .databaseId, status, created_at: .createdAt}]}' <<<"$RUNS" |
+        while IFS= read -r p; do jq -r "$q" <<<"$p"; done
+      return
+    fi
     [[ " $* " == *" $R/actions/runners?per_page=100 "* ]] || return 1
     echo runners >>"$T/asked"
     for p in "${PAGES[@]}"; do jq -r "$q" <<<"$p"; done
@@ -768,6 +809,12 @@ A <!-- watch:tmp-h -->"
     "$(printf 'no-jobs\t1\t%s\nno-jobs\t4\t%s\nexit 1' "$t9d" "$t40m")|1 2 4 "
   check "queued: none that old: nothing asked" "$(queued --minutes 20000)|$(asked)" "exit 1|"
   check "queued: GitHub can't list the runners: exit 2" "$(JOBS[4]='{"jobs":[{"status":"queued"}]}'; gh_api() { return 1; }; queued | tail -1)" "exit 2"
+  # #1212: 101 queued runs, newest first over pages: the oldest one's time.
+  t3h=$(ago '3 hours')
+  RUNS=$(jq -nc --arg o "$t3h" --arg y "$t40m" '[range(100) | {databaseId: (1000 + .), status: "queued", createdAt: $y}] +
+    [{databaseId: 7, status: "queued", createdAt: $o}]')
+  JOBS[7]='{"jobs":[{"status":"queued"}]}'
+  check "queued #1212: 101 runs give the oldest one's time and all of them" "$(queued | head -1)" "$(printf 'waiting\t%s\t101\t1' "$t3h")"
   exit $fail
 ) || fail=1
 
@@ -1431,7 +1478,7 @@ status/ready kind/docs source/dev"
   check "expiry: another checkout picks it after the TTL" "$(GH_NOW=$later gh_pick | cut -f1,4)" "$b	ready"
   check "expiry: this checkout no longer picks it first" "$(GH_NOW=$later as "$T/wt2" gh_pick | cut -f1,4)" "$b	ready"
   out=$(GH_NOW=$later gh_take "$b" 2>&1); check "expiry: another checkout takes it" "$? $out" "0 otter-$b	docs/$b-write-the-doc"
-  check "expiry: the reservation says it expired" "$(comments "$b" | sed -n 2p)" "**otter-151**'s reservation expired, taken over by otter-$b"
+  check "expiry: the reservation says it expired" "$(comments "$b" | sed -n 2p)" "**otter-151**'s reservation expired, taken over by otter-$b · host \`h\`"
   GH_NOW=$later as "$T/wt2" gh_next_drop 0 7200
   check "expiry: .relay/next drops it" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
 
@@ -1443,6 +1490,18 @@ status/ready kind/docs source/dev"
   check "create --next, no relay session: says so" "$(cat "$T/err")" "github: #$b is ready and not reserved: only a relay worker's session has a next session to reserve it for"
   b=$(C4_RELAY_WORKER=maintainer as "$T/wt2" gh_create --next "Maintainer filed" "$NX/body" kind/bug 2>/dev/null)
   check "create --next, the maintainer's session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/bug source/dev 0 "
+
+  # A claim past the TTL: another device's take expires it, and the comment
+  # keeps the host it was held on (#1199). Released, a claim keeps it too.
+  rm -rf "$T"/{main,wt2,wt3}/.relay
+  b=$(gh_create "Held elsewhere" "$NX/body" status/ready kind/chore 2>/dev/null)
+  C4_HOST=far as "$T/wt3" gh_take "$b" >/dev/null 2>&1
+  out=$(GH_NOW=$later gh_take "$b" 2>&1); check "expiry, a claim: another device takes it" "$? $out" "0 heron-$b	chore/$b-held-elsewhere"
+  check "expiry, a claim: keeps the host it was held on" "$(comments "$b" | sed -n 2p)" \
+    "**otter-$b** expired, taken over by heron-$b · host \`far\` · branch \`chore/$b-held-elsewhere\`"
+  out=$(C4_HEADLESS=1 gh_release "session ended without a handoff" 2>&1); check "release after a takeover" "$? $out" "0 released #$b (heron-$b): session ended without a handoff"
+  check "release: keeps the host it was held on" "$(comments "$b" | sed -n 3p)" \
+    "**heron-$b** released this issue: session ended without a handoff · host \`h\` · branch \`chore/$b-held-elsewhere\`"
   exit $fail
 ) || fail=1
 
@@ -1591,7 +1650,7 @@ status/ready kind/docs source/dev"
   out=$(gh_take 120 2>/dev/null)
   check "take, stale claim: taken over" "$?|$(tr '\t' ' ' <<<"$out")" "0|otter-120 chore/120-old"
   check "take, stale claim: marked expired" "$(grep "^PATCH $R/issues/comments/1 " "$TK/calls" | cut -d' ' -f3- | jq -r .body)" \
-    "$(printf '<!-- c4-claim -->\n**heron-120** expired, taken over by otter-120 · branch `chore/120-old`')"
+    "$(printf '<!-- c4-claim -->\n**heron-120** expired, taken over by otter-120 · host `h1` · branch `chore/120-old`')"
   check "take, stale claim: claim file and status" "$(jq -c '[.issue, .id, .name, .branch]' "$GH_CLAIM_FILE") $(grep '^status ' "$TK/calls")" '[120,500,"otter-120","chore/120-old"] status 120 in-progress'
   # The name: the next word of GH_NAMES no claim on the issue used, then
   # agentK-N. The branch: the newest earlier claim's, else one from the issue.
