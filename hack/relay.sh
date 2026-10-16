@@ -17,9 +17,13 @@
 # ready, a worker stops, without waiting in admit: it asks (pick is read-only)
 # before admit as well as after, so an idle worker takes no session-start slot.
 #
-# Triage: with nothing ready, hack/relay-watch.sh starts one triage session
-# (--triage) on the open status/proposed issues, which relay sessions file
-# their follow-ups as. Its worker switches its worktree to origin/main and runs
+# Triage: hack/relay-watch.sh starts one triage session (--triage) on the
+# open status/proposed issues, which relay sessions file their follow-ups as,
+# whether or not issues are ready (#1191). It runs in its own worktree,
+# .claude/worktrees/relay-triage, on origin/main for reading only, under its
+# own lock (.relay/triage.lock), as the maintainer does: it needs no free
+# worker and doesn't count against RELAY_MAX_WORKERS, and as it runs no make
+# it takes no heavy-job slot. It goes through admit like any session. It runs
 # one session that takes no issue and changes no code: the maintainer's triage
 # (the triage skill, .claude/skills/triage/SKILL.md, has its rules). It readies
 # each sound proposed issue, fills a gap it can write itself (a Depends on #M
@@ -75,8 +79,7 @@
 #
 #   hack/relay.sh                  start one worker
 #   hack/relay.sh --workers N      start N workers (1-99); workers already running are left alone
-#   hack/relay.sh --triage [--workers N]
-#                                  start one triage session in the first of workers 1-N that isn't running
+#   hack/relay.sh --triage         start one triage session, unless one runs
 #   hack/relay.sh --maintain       start one maintainer session, unless one runs
 #
 # On the device with the Kind cluster (C4_CLUSTER not none), memory is the
@@ -146,11 +149,14 @@ IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
 
 K=${C4_RELAY_WORKER:-1}
-# The maintainer is no numbered worker: its own worktree, log and lock.
+# The maintainer and the triage are no numbered workers: each has its own
+# worktree, log and lock.
+[ -n "$TRIAGE" ] && K=triage
 [ -n "$MAINTAIN" ] && K=maintainer
 WT="$REPO/.claude/worktrees/relay-$K"
 LOG="$DIR/relay-$K.log"
 LOCK="$DIR/lock-$K"
+[ -n "$TRIAGE" ] && LOCK="$DIR/triage.lock"
 [ -n "$MAINTAIN" ] && LOCK="$DIR/maintain.lock"
 
 # shellcheck source=hack/lib/github.sh
@@ -244,8 +250,8 @@ triage_prompt() {
   cat <<EOF
 You run headless, started by hack/relay-watch.sh (hack/relay.sh --triage)
 while the user sleeps; no person is watching and nobody can answer a question.
-You are the maintainer's triage session for $C4_GITHUB_REPO: no issue is
-ready for the relay, and these wait in status/proposed: $1.
+You are the maintainer's triage session for $C4_GITHUB_REPO, while the relay
+works the ready issues or waits for one; these wait in status/proposed: $1.
 Load the \`triage\` skill and follow it: ready each one that is sound, say on
 the others what they lack, and send what needs a decision to the maintainer.
 You take no issue, change no code, commit nothing and open no pull request;
@@ -770,11 +776,6 @@ triage() {
   local list id
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no triage"; untriaged; return 1; }
-    # What a dead session of this worker left behind isn't the triage's.
-    drop_lease "when worker $K started a triage"
-    if gh_claim_read; then
-      log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
-    fi
   fi
   flush || { log "GitHub can't be reached; no triage"; untriaged; return 1; }
   # List before admit too, so a triage with nothing to do takes no start slot.
@@ -796,7 +797,19 @@ triage() {
     { log "could not switch $WT to origin/main; no triage"; untriaged; return 1; }
   log "triage start: id $id, proposed $list, HEAD $(git -C "$WT" rev-parse --short HEAD)"
   triaged "$list"
-  session triage "$DIR/triage-$K-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
+  session triage "$DIR/triage-$(date +%Y%m%d-%H%M%S)" "$id" "$(triage_prompt "$list")"
+}
+
+# start_triage SCRIPT: start one triage session, detached, by running SCRIPT
+# (hack/relay.sh) in the background, in its own worktree under its own lock,
+# however many workers run (see the header); exit 1 when one runs already, so
+# the watch tries again for its issues after WATCH_TRIAGE.
+start_triage() {
+  [ -e "$STOP" ] && { echo "the stop file is there; no triage"; return 0; }
+  flock -n "$LOCK" true || { echo "relay: a triage runs already; no second one: tail -f $LOG" >&2; return 1; }
+  gh_token || return 1
+  C4_RELAY_CHILD=1 C4_RELAY_TRIAGE=1 setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  echo "triage started (pid $!): tail -f $LOG"
 }
 
 # maintained START ACTIVITY: tell the watch, and the next sweep's prompt, that
@@ -1003,24 +1016,10 @@ if [ -n "$MAINTAIN" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; th
   exit 0
 fi
 
-# --triage from a terminal or the watch: start one triage session, detached,
-# in the first worker that isn't running.
+# --triage from a terminal or the watch: start one triage session, detached.
 if [ -n "$TRIAGE" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
-  [ -e "$STOP" ] && { echo "the stop file is there; no triage"; exit 0; }
-  # On the device with the Kind cluster, the triage counts against RELAY_MAX_WORKERS too.
-  if [ "${C4_CLUSTER:-}" != none ] && [ "$(running_workers)" -ge "$MAX_WORKERS" ]; then
-    echo "relay: $MAX_WORKERS worker(s) run, RELAY_MAX_WORKERS; no triage" >&2
-    exit 1
-  fi
-  gh_token || exit 1
-  for k in $(seq 1 "$WORKERS"); do
-    flock -n "$DIR/lock-$k" true || continue
-    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k C4_RELAY_TRIAGE=1 setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
-    echo "triage started in worker $k (pid $!): tail -f $DIR/relay-$k.log"
-    exit 0
-  done
-  echo "relay: workers 1-$WORKERS all run; no triage" >&2
-  exit 1
+  start_triage "$0"
+  exit
 fi
 
 # Started from a terminal: start the workers that aren't running, detached,
@@ -1060,7 +1059,7 @@ if [ -n "$MAINTAIN" ]; then
 fi
 if [ -n "$TRIAGE" ]; then
   triage
-  log "worker $K finished the triage"
+  log "the triage finished"
   exit 0
 fi
 # Workers started together would all race for the same first issue.
