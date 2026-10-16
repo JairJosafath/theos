@@ -34,6 +34,12 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
 check "defaults: scratch in the user's cache (#1307)" "$(unset XDG_CACHE_HOME RELAY_SCRATCH; HOME=/h; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+# ./dev sets XDG_CACHE_HOME to the main checkout's .dev/cache; the scratch
+# stays out of it, in no git checkout (#1347).
+git init -q "$T/main" && mkdir -p "$T/home"
+scratch=$(unset RELAY_SCRATCH; HOME=$T/home XDG_CACHE_HOME=$T/main/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")
+check "defaults #1347: scratch not under ./dev's XDG_CACHE_HOME" "$scratch" "$T/home/.cache/c4factory/tmp"
+check "defaults #1347: scratch in no git checkout" "$(mkdir -p "$scratch" && cd "$scratch" && GIT_CEILING_DIRECTORIES=$T git rev-parse --show-toplevel 2>/dev/null)" ""
 
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
 # shellcheck source=hack/relay.sh
