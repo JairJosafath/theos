@@ -6,7 +6,7 @@
 #
 # Source it for the gh_* functions (hack/relay.sh), or run it:
 #
-#   hack/lib/github.sh labels            create the labels below, or update their descriptions (safe to repeat)
+#   hack/lib/github.sh labels            create the labels below, update their descriptions, delete the retired ones (safe to repeat)
 #   hack/lib/github.sh pick              the issue to work next: NUMBER TITLE URL STATUS, tab-separated
 #   hack/lib/github.sh blocked [--unworked]
 #                                        what holds back each ready or in-progress issue pick skips: N waits on M
@@ -279,6 +279,9 @@ GH_LABELS=(
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
 )
+# Labels gh_labels deletes from the repository when present: the old priority
+# words the 1-10 scale replaced (#1329).
+GH_RETIRED_LABELS=(priority/urgent priority/velocity)
 GH_REPORT_LABEL=maintainer/report
 GH_REPORT_TITLE='Maintainer report'
 
@@ -325,6 +328,11 @@ gh_labels() {
     gh_api --method POST "repos/$C4_GITHUB_REPO/labels" \
       -f name="$name" -f color="$color" -f description="$desc" >/dev/null || return 1
     echo "label $name: created"
+  done
+  for name in "${GH_RETIRED_LABELS[@]}"; do
+    grep -q -- "^$name"$'\t' <<<"$have" || continue
+    gh_api --method DELETE "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null || return 1
+    echo "label $name: retired"
   done
 }
 

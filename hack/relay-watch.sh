@@ -126,6 +126,10 @@
 # lock while a watch started by hand holds it. The crontab line runs it with
 # --cron: started detached unless a watch runs or .relay/stop is there.
 #
+# At start, the watch runs hack/lib/github.sh labels once, so the
+# repository's labels follow the code and retired ones go (#1329); a failure
+# is logged and the watch goes on.
+#
 # At start, the watch logs a warning when it lacks one of the user's groups in
 # /etc/group, and --install prints it when the systemd user manager does: a
 # manager that started before the user joined docker passes its groups to the
@@ -751,6 +755,20 @@ own_groups() {
   [ -z "$warning" ] || log "$warning"
 }
 
+# sync_labels: make the repository's labels hack/lib/github.sh's, once at start:
+# create the missing ones, update descriptions and delete the retired ones
+# (GH_RETIRED_LABELS, #1329). It logs what changed, and a failure, and the
+# watch goes on either way.
+sync_labels() {
+  local out
+  if out=$(github labels 2>&1); then
+    grep -v ': exists$' <<<"$out" | while IFS= read -r line; do [ -z "$line" ] || log "labels: $line"; done
+  else
+    log "labels failed; the watch goes on: $(tail -n 1 <<<"$out")"
+  fi
+  return 0
+}
+
 # manager_groups: the groups of this user's systemd user manager.
 manager_groups() {
   local pid
@@ -912,6 +930,7 @@ unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
 log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 own_groups
+sync_labels
 PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }

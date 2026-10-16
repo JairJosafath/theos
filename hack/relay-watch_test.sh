@@ -10,6 +10,7 @@
 # and when a /tmp at 90% goes under its Health only (how full /tmp is faked);
 # when it starts the maintainer, on a schedule or for an issue escalated to it,
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
+# that it syncs the labels at start (github faked);
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
 # stop file and the lock in a scratch copy of the watch, never this checkout's
 # .relay/; and the move to origin/main's code in relay-code from a checkout on
@@ -1051,6 +1052,17 @@ check "groups: the watch logs the missing group" \
 : >"$LOG"
 OWN="1000 4 27 1001" own_groups
 check "groups: all there, nothing logged" "$(cat "$LOG")" ""
+# At start it runs labels once (#1329): what changed is logged, a failure is
+# logged and the watch goes on.
+(
+  github() { echo "github $*" >>"$T/labels-calls"; printf 'label status/ready: exists\nlabel old/word: retired\n'; }
+  : >"$LOG"; sync_labels
+  check "labels: runs hack/lib/github.sh labels, logs what changed (#1329)" "$? $(cat "$T/labels-calls") $(grep -c 'labels: ' "$LOG") $(logged 'labels: label old/word: retired$')" "0 github labels 1 1"
+  github() { echo "github: HTTP 502" >&2; return 1; }
+  : >"$LOG"; sync_labels
+  check "labels: a failure is logged and the watch goes on (#1329)" "$? $(logged 'labels failed; the watch goes on: github: HTTP 502$')" "0 1"
+  exit $fail
+) || fail=1
 MANAGER="1000 4 27"
 manager_groups() { echo "$MANAGER"; }
 
