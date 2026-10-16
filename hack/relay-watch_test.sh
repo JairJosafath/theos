@@ -803,10 +803,13 @@ rm -f "$T"/jobs-*.json
 # run's log (gh writes its colour codes as the text "^[").
 SPEC="Brief apps copies a Crew's latest release to the Brief, and says an entry's app isn't made"
 ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
-failed() { # failed RUN AGO: RUN failed on main AGO ago
-  jq --argjson id "$1" --arg at "$(ago "$2")" '. + [{databaseId: $id, createdAt: $at}]' "$T/runs-.json" >"$T/runs.new" &&
+ran() { # ran CONCLUSION RUN AGO [WORKFLOW]: RUN of WORKFLOW (Tests) ended on main AGO ago
+  jq --argjson id "$2" --arg at "$(ago "$3")" --arg c "$1" --arg wf "${4:-Tests}" \
+    '. + [{databaseId: $id, createdAt: $at, conclusion: $c, workflowName: $wf, headSha: "sha\($id)"}]' "$T/runs-.json" >"$T/runs.new" &&
     mv "$T/runs.new" "$T/runs-.json"
 }
+failed() { ran failure "$@"; } # failed RUN AGO [WORKFLOW]
+passed() { ran success "$@"; } # passed RUN AGO [WORKFLOW]
 flaky_issues() { jq '[.[] | select(.title | startswith("Flaky: "))] | length' "$T/issues.json"; }
 echo '[]' >"$T/issues.json"
 echo '[]' >"$T/runs-.json"
@@ -814,15 +817,17 @@ echo '[]' >"$T/runs-.json"
 cp "$HERE/testdata/ginkgo-fail.log" "$T/log-801.txt"
 failed 801 '3 days'
 flake_round
-check "flake: one failure is recorded" "$(cat "$DIR/flakes.tsv")" "$SPEC	801	$(jq -r '.[0].createdAt' "$T/runs-.json")"
+check "flake: one failure is recorded" "$(cat "$DIR/flakes.tsv")" "$SPEC	801	$(jq -r '.[0].createdAt' "$T/runs-.json")	sha801"
 check "flake: one failure files nothing" "$(filed)" 0
 check "flake: logged" "$(logged "a spec failed on main: $SPEC$")" 1
 flake_round
 check "flake: a run's log is read once" "$(wc -l <"$T/log-reads")" 1
 check "flake: a run is recorded once" "$(wc -l <"$DIR/flakes.tsv")" 1
 
-# The same spec in a second run within seven days: one bug, priority/3 (#1329).
+# The same spec in a second run within seven days, after a pass: one bug,
+# priority/3 (#1329).
 sed 's/\^\[/\x1b/g' "$HERE/testdata/ginkgo-fail.log" >"$T/log-802.txt"
+passed 851 '2 days'
 failed 802 '1 hour'
 flake_round
 check "flake: the escape byte is read like its text" "$(cut -f1-2 "$DIR/flakes.tsv" | tail -1)" "$SPEC	802"
@@ -866,6 +871,7 @@ echo '[]' >"$T/runs-.json"
 printf '  ^[[38;5;9m[FAIL]^[[0m ^[[0mParse ^[[38;5;9m^[[1m[It] matches \\d+ and a\\nb^[[0m\r\n' >"$T/log-811.txt"
 tr -d '\r' <"$T/log-811.txt" >"$T/log-812.txt"
 failed 811 '2 hours'
+passed 851 '90 minutes'
 failed 812 '1 hour'
 touch "$T/post.fail"
 : >"$LOG"
@@ -895,6 +901,42 @@ failed 821 '1 hour'
 flake_round
 check "flake: a shell test's case is recorded" "$(cut -f1-2 "$DIR/flakes.tsv")" "hack/lib/github_test.sh: take: claims it	821"
 check "flake: --count lists it" "$("$HERE/lib/github.sh" flakes --count)" "1	hack/lib/github_test.sh: take: claims it"
+# A spec that fails in runs in a row is main being red, which "main is red"
+# tracks: no "Flaky:" bug, whether the runs are read in one round or two, and
+# a cancelled run between them, or a pass of another workflow, doesn't part
+# them. A pass of its workflow between two failures does (#1398).
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/runs-.json"
+echo '[]' >"$T/issues.json"
+for r in 831 832 833 834 835 836; do cp "$HERE/testdata/ginkgo-fail.log" "$T/log-$r.txt"; done
+passed 830 '5 hours' Lint
+failed 831 '4 hours' Lint
+failed 832 '3 hours' Lint
+flake_round
+check "flake: two failures in a row are no flake (#1398)" "$(flaky_issues)" 0
+check "flake: they share their streak (#1398)" "$(cut -f4 "$DIR/flakes.tsv" | sort -u)" sha831
+ran cancelled 837 '150 minutes' Lint
+passed 838 '140 minutes' Tests
+failed 833 '2 hours' Lint
+flake_round
+check "flake: a cancelled run, or another workflow's pass, doesn't end a red streak (#1398)" "$(flaky_issues)" 0
+passed 839 '90 minutes' Lint
+failed 834 '1 hour' Lint
+flake_round
+check "flake: a failure after a pass is a second time (#1398)" "$(flaky_issues)" 1
+check "flake: the bug says how many times (#1398)" "$(jq -r '.[0].body' "$T/issues.json" | grep -c 'failed on main 2 times in the last 7 days with a pass between them')" 1
+rm -f "$DIR/flakes.tsv" "$DIR/flakes-runs"
+echo '[]' >"$T/issues.json"
+echo '[]' >"$T/runs-.json"
+failed 835 '2 hours' Lint
+failed 836 '1 hour' Lint
+flake_round
+check "flake: a red streak read in one round is no flake (#1398)" "$(flaky_issues)" 0
+printf 'Old spec\t700\t%s\nOld spec\t701\t%s\n' "$(ago '2 days')" "$(ago '1 day')" >"$DIR/flakes.tsv"
+FLAKE_RETRY=$'Old spec\n'
+flake_round
+FLAKE_RETRY=
+check "flake: rows without a streak count a run each" "$(jq -r '.[].title' "$T/issues.json")" "Flaky: Old spec"
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 
