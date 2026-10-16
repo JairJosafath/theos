@@ -406,7 +406,7 @@ func (g *githubAPI) send(req *http.Request, want int, what string, out any) erro
 // do makes req and reads its response, at most githubMaxBody of it. An error
 // is the network's: no response came, or it broke off.
 func (g *githubAPI) do(req *http.Request) (*http.Response, []byte, error) {
-	resp, err := g.http.Do(req)
+	resp, err := g.http.Do(req) //nolint:gosec // to the configured GitHub API
 	if err != nil {
 		return nil, nil, err
 	}

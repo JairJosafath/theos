@@ -81,7 +81,7 @@
 # under the Maintainer report's Health only (hack/lib/github.sh report-note
 # tmp-<host>, with no Needs you line), kept current while it lasts
 # (.relay/tmp-full), and removes it when /tmp drops back. Relay sessions keep
-# their scratch in their worktree's .relay/tmp (#1269), so what fills /tmp is
+# their scratch in ~/.cache/c4factory/tmp (#1269, #1307), so what fills /tmp is
 # someone else's.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh

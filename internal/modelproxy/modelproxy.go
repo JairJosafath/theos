@@ -32,8 +32,8 @@ import (
 // The key files the proxy reads in its credentials directory. When both hold
 // a value, the OAuth token wins: it is the factory's default key.
 const (
-	OAuthTokenKey = "CLAUDE_CODE_OAUTH_TOKEN"
-	APIKeyKey     = "ANTHROPIC_API_KEY"
+	OAuthTokenKey = "CLAUDE_CODE_OAUTH_TOKEN" //nolint:gosec // a key file's name, not a credential
+	APIKeyKey     = "ANTHROPIC_API_KEY"       //nolint:gosec // a key file's name, not a credential
 )
 
 // OAuthBeta is the anthropic-beta value the API wants with an OAuth token.
@@ -172,7 +172,7 @@ func (p *Proxy) read(name string) string {
 		f.info.ModTime().Equal(info.ModTime()) && f.info.Size() == info.Size() {
 		return f.value
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // a key file of the proxy's own directory
 	if err != nil {
 		// Logged once per change of the file: the failure is cached too.
 		p.log.Error("Failed to read a key file", "error", err)

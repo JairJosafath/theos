@@ -70,8 +70,8 @@ Scratch goes under `$TMPDIR`: make it with `mktemp -d` (or `mktemp` for a
 file), never a literal `/tmp/...` path, and remove it before you land.
 `/tmp` is a small tmpfs every session on the device shares, and one
 session's copies and caches filled it and failed every `make check` (#1269).
-The relay points `$TMPDIR` at your worktree's `.relay/tmp` and removes it after
-the session.
+The relay points `$TMPDIR` at `~/.cache/c4factory/tmp/<worktree>`, outside any
+git checkout (#1307), and removes it after the session.
 
 ## Write a handoff
 
@@ -165,16 +165,23 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   (`git switch -c <branch>-2 origin/main`, cherry-pick the commits and
   `git commit --amend` or `git rebase` to reword the message), push it, open
   a fresh pull request saying `Refs #N`, and close the old one with a comment
-  naming the new one (`gh pr close OLD --comment ...`). Once it merges, add a `Depends on #S` line per step to N's body
+  naming the new one (`gh pr close OLD --comment ...`). The steps of a plan
+  for a decided issue (N ready or in progress) are decided design work
+  (AGENTS.md, "Designing is our job"): file each `status/ready`, never
+  `status/proposed`, with
+  `hack/lib/github.sh create TITLE FILE status/ready kind/<kind> source/dev`.
+  Each step's body names N, has a checkable *Done when*, and has a
+  `Depends on #S` line per earlier step it waits on, so they run in order.
+  Steps never say `Depends on #N` (that is a cycle). Once the plan's pull
+  request merges, add a `Depends on #S` line per step to N's body
   (`gh issue edit N --body-file FILE`, the rest kept), post a handoff naming
   the plan and the steps, then `hack/lib/github.sh status N waiting`: N stays
   open, waiting on its steps rather than on an agent, and `pick` skips it.
   When its last step closes, N closes itself with a comment naming the steps
   (`close`, the *Issue closed* workflow and the relay watch run
   `hack/lib/github.sh parents --apply`; the watch also moves a parent you left
-  in progress to waiting). Each step's body names N. Steps never say
-  `Depends on #N` (that is a cycle). Never close the parent of a plan by
-  hand, even when "its work was the design": it closes with its last step.
+  in progress to waiting). Never close the parent of a plan by hand, even
+  when "its work was the design": it closes with its last step.
   `hack/close-guard.sh` (a hook) denies a `gh pr create`, `edit`, `merge` or
   `git commit` that would close it while a step is open, naming the line, and
   a `gh issue close`, a `gh api` call setting `state=closed` or a
@@ -195,8 +202,9 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   sends the issue on to the owner (`status/needs-human`, which only it sets).
   How to build it is ours to decide (AGENTS.md, "Designing is our job"),
   never a question for the user.
-- **Follow-up found:** one rule, three cases. Don't start a filed one in this
-  session.
+- **Follow-up found:** work you find outside the issue and its plan (a
+  plan's own steps are filed as *Plan only* says). One rule, three cases.
+  Don't start a filed one in this session.
   - *Already there:* under about 30 changed lines, in a file your pull
     request already changes, inside the issue's scope: fix it in the same
     pull request and name it in the body under `Also fixes:`.

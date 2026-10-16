@@ -83,7 +83,7 @@ func imageAt(path string) (ChangedImage, error) {
 	if strings.EqualFold(filepath.Ext(path), ".svg") {
 		return img, nil
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // a changed file of the checkout
 	if err != nil {
 		return ChangedImage{}, err
 	}

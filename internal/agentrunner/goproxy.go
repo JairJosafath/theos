@@ -91,7 +91,7 @@ func (p *GoProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // to a configured upstream, by a cleaned path
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

@@ -58,7 +58,7 @@ func Agents(dir string) ([]c4v1alpha1.Agent, error) {
 		if err != nil || d.IsDir() || (!strings.HasSuffix(p, ".yaml") && !strings.HasSuffix(p, ".yml")) {
 			return err
 		}
-		f, err := os.Open(p)
+		f, err := os.Open(p) //nolint:gosec // a YAML file under the directory it walks
 		if err != nil {
 			return err
 		}
