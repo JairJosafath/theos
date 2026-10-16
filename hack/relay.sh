@@ -9,10 +9,12 @@
 # origin/main's code (see below) and starts its sessions, one after another, in its own git
 # worktree .claude/worktrees/relay-k, switched to each issue's branch; the
 # worktree's .relay/ holds its claim. Each round picks an issue
-# (hack/lib/github.sh pick: an in-progress one nobody holds, else the oldest
-# ready + urgent one, else the oldest ready one) and claims it (take); when
-# another agent claims it first, it picks again, up to 5 times. Claims keep the
-# workers and hand-started sessions off each other's issues. A session that ends
+# (hack/lib/github.sh pick: a ready one this worker's last session filed with
+# create --next, which reserves it for this worktree, else an in-progress one
+# nobody holds, else the oldest ready + urgent one, else the oldest ready one)
+# and claims it (take); when another agent claims it first, it picks again, up
+# to 5 times. Claims keep the workers and hand-started sessions off each
+# other's issues. A session that ends
 # still holding its claim or the cluster lease gets them released. With nothing
 # ready, a worker stops, without waiting in admit: it asks (pick is read-only)
 # before admit as well as after, so an idle worker takes no session-start slot.
@@ -182,11 +184,11 @@ GH_CLAIM_FILE="$GH_PENDING_DIR/claim"
 # N, worked by agent NAME on BRANCH.
 prompt() {
   local n=$1 title=$2 url=$3 how=$4 name=$5 branch=$6 start
-  if [ "$how" = in-progress ]; then
-    start="A session worked on it before you: continue from its newest handoff comment."
-  else
-    start="No session has worked on it yet: the issue body is the goal."
-  fi
+  case $how in
+    in-progress) start="A session worked on it before you: continue from its newest handoff comment." ;;
+    next) start="The session before you in this worktree found it and filed it with create --next: the issue body is the goal." ;;
+    *) start="No session has worked on it yet: the issue body is the goal." ;;
+  esac
   cat <<EOF
 You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
@@ -246,9 +248,14 @@ Rules for this headless run:
   gate, and Kind is a tier only a human runs. When only a real node would show
   something, land the code with the tests the lower tiers can give and say in
   the pull request what a human run of Kind would check.
-- Work you find outside #$n: file it with
-  \`hack/lib/github.sh create TITLE FILE status/proposed kind/<kind>\`; don't
-  start it.
+- Work you find outside #$n: under about 30 lines, in a file your pull
+  request already changes and inside #$n's scope, fix it in the pull request
+  and name it under \`Also fixes:\` in its body. Else, when it is decided (a
+  bug whose failing test you can name, a chore or doc whose Done-when you can
+  state), file it with \`hack/lib/github.sh create --next TITLE FILE
+  kind/<bug|chore|docs>\`: it is ready and this worktree's next session starts
+  on it. Anything that needs a decision: \`hack/lib/github.sh create TITLE
+  FILE status/proposed kind/<kind>\`. Don't start either.
 - End your turn with a short account of what you did and what is next; it is
   the relay's log of your session.
 EOF
@@ -345,8 +352,10 @@ flush() {
   return 1
 }
 
-# pick: set ISSUE, TITLE, URL and HOW (in-progress, ready-urgent, ready) to the
-# issue to work next. Exit 1: nothing to pick; exit 2: GitHub could not be asked.
+# pick: set ISSUE, TITLE, URL and HOW (next, in-progress, ready-urgent, ready)
+# to the issue to work next; next is one this worker's last session reserved
+# (create --next, .relay/next in its worktree).
+# Exit 1: nothing to pick; exit 2: GitHub could not be asked.
 pick() {
   local row rc
   row=$(gh_pick 2>"$DIR/pick.err")

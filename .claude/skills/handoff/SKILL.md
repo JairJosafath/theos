@@ -180,10 +180,25 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   sends the issue on to the owner (`status/needs-human`, which only it sets).
   How to build it is ours to decide (AGENTS.md, "Designing is our job"),
   never a question for the user.
-- **Follow-up found:** `hack/lib/github.sh create TITLE FILE status/proposed
-  kind/<kind>` (a body line `Depends on #M` if it waits on another issue). Don't start it in this
-  session. Write it so the relay's triage can ready it: one piece of work, a
-  checkable "Done when", and what it waits on.
+- **Follow-up found:** one rule, three cases. Don't start a filed one in this
+  session.
+  - *Already there:* under about 30 changed lines, in a file your pull
+    request already changes, inside the issue's scope: fix it in the same
+    pull request and name it in the body under `Also fixes:`.
+  - *Decided:* a `kind/bug` whose body names its failing test, or a
+    `kind/chore` or `kind/docs` whose Done-when you can state:
+    `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>`. It is
+    filed `status/ready` and, in a relay session, reserved for your worktree:
+    the relay starts your worker's next session on it (`.relay/next`, read
+    before `pick`), and every other worker's `pick` skips it for
+    `C4_LEASE_TTL` (2h), after which anyone picks it. `--next` refuses
+    another kind, a status other than ready, or no kind.
+  - *Needs a decision* (a design question, a feature, anything the reporter
+    must elaborate): `hack/lib/github.sh create TITLE FILE status/proposed
+    kind/<kind>`, written so the relay's triage can ready it: one piece of
+    work, a checkable "Done when", and what it waits on.
+
+  Either way, a body line `Depends on #M` if it waits on another issue.
 
 ## Refused
 

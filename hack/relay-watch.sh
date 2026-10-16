@@ -20,7 +20,7 @@
 # free worker): it reads each proposed issue against docs/design.md and the
 # open issues, readies the sound ones, comments on the others what they lack
 # and closes duplicates. It takes no issue and changes no code. Triage runs
-# again, at most every WATCH_TRIAGE seconds (default 1800) and never while one
+# again, at most every WATCH_TRIAGE seconds (default 600) and never while one
 # runs (.relay/triage.lock), when a proposed issue it hasn't seen appears, when
 # one changed after it (its body, title, labels or a comment that isn't the
 # triage's own), when one waits on an issue that closed after it (Depends on
@@ -138,7 +138,7 @@ STOP="$DIR/stop"
 LOG="$DIR/watch.log"
 EVERY=${WATCH_EVERY:-60}
 RETRY=${WATCH_RETRY:-600}
-TRIAGE_EVERY=${WATCH_TRIAGE:-1800}
+TRIAGE_EVERY=${WATCH_TRIAGE:-600}
 RETRIAGE=${WATCH_RETRIAGE:-10800}
 PULL_EVERY=${WATCH_PULL_EVERY:-300}
 CI_EVERY=${WATCH_CI_EVERY:-900}

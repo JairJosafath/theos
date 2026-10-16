@@ -279,7 +279,8 @@ hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cr
 touch .relay/stop                  # stop the watch, and every worker after its current session
 ```
 
-The relay picks the oldest `status/in-progress` issue nobody holds, else the
+The relay picks the issue its worker's last session reserved (`create --next`,
+below), else the oldest `status/in-progress` issue nobody holds, else the
 oldest `status/ready` + `priority/urgent` one, else the oldest `status/ready`
 one, skipping issues with a live claim or an open `Depends on #M`, and claims
 it (see [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
@@ -291,6 +292,17 @@ holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
 (`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
+A follow-up a session decided goes to the front of its own worker's queue:
+`hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
+`status/ready` and reserves it, with a claim comment that says "reserved this
+issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
+returns it before every other issue, urgent ones too, and its `take` turns
+the reservation into the claim; every other `pick` skips it and every other
+`take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
+which anyone picks it. The log shows such a session as `(next)`. Outside a
+relay session (`C4_HEADLESS` unset) `--next` files the issue ready and
+reserves nothing. Follow-ups that need a decision are still filed
+`status/proposed` for the triage.
 Worker k logs to `.relay/relay-k.log`, with one account per session next to
 it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
@@ -404,7 +416,7 @@ dropped: nine workers grow Go's build cache by gigabytes an hour.
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
 `status/proposed` issues: for a new one, for one that changed since the last
 triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
-in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
 `WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
 `WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
 `.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
