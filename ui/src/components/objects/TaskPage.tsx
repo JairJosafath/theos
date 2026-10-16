@@ -13,7 +13,8 @@ import { taskNextStep } from '../../model/lifecycle'
 import { AgentName, UsageLine, When } from '../bits'
 import { CommandLine, ObjectHeader, type ChildRef, type OutLink } from '../ObjectHeader'
 import { pageHref, storyHref } from './links'
-import { agentRuns, describeHandoffs, taskTimeline } from './rows'
+import { agentRuns, taskTimeline } from './rows'
+import { describeHandoffs } from '../../model/tokens'
 
 export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
   const ns = task.metadata.namespace ?? ''

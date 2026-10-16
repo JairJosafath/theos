@@ -512,6 +512,59 @@ var _ = Describe("Crew", func() {
 		}, "3s").Should(BeTrue())
 	})
 
+	It("refuses a route that names no Agent, and two routes for one label (#1085)", func() {
+		ns := newProjectNamespace()
+		crew := newCrew(ns)
+		crew.Spec.Routes = []c4v1alpha1.CrewRoute{{Label: "kind/docs"}}
+		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("a route names an implementer, a reviewer or both")))
+		haiku := &c4v1alpha1.LocalRef{Name: "haiku"}
+		crew = newCrew(ns)
+		crew.Spec.Routes = []c4v1alpha1.CrewRoute{{Label: "kind/docs", Implementer: haiku}, {Label: "kind/docs", Reviewer: haiku}}
+		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("Duplicate value")))
+	})
+
+	It("starts a labelled issue's Task on its route's Agent once it exists, and the others on its own (#1085)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		docs := gitFake.addIssue(ns, "orders-api", "Document orders", clearIssue, []string{model.LabelReady, "kind/docs"})
+		other := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		crew := newCrew(ns)
+		crew.Spec.Parallel = 2
+		crew.Spec.Routes = []c4v1alpha1.CrewRoute{
+			{Label: "security", Reviewer: &c4v1alpha1.LocalRef{Name: "reviewer"}},
+			{Label: "kind/docs", Implementer: &c4v1alpha1.LocalRef{Name: "haiku"}},
+		}
+		mustCreate(crew)
+
+		By("waiting for the Agent a route names")
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+			g.Expect(cond.Message).To(Equal("Agent haiku not found"))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1"), &c4v1alpha1.Task{}))).To(BeTrue())
+
+		By("running the labelled issue on the routed implementer and the Crew's reviewer, the other on the Crew's own")
+		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "haiku"),
+			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-haiku-4-5-20251001", MaxRounds: 2}})
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, fmt.Sprintf("orders-api-%d", docs))
+			g.Expect(task.Spec.AgentRef).To(Equal(c4v1alpha1.LocalRef{Name: "haiku"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1alpha1.LocalRef{Name: "reviewer"}))
+			task = getTask(g, ns, fmt.Sprintf("orders-api-%d", other))
+			g.Expect(task.Spec.AgentRef).To(Equal(c4v1alpha1.LocalRef{Name: "claude"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1alpha1.LocalRef{Name: "reviewer"}))
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(sandboxEnv(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", docs))).To(
+				ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-haiku-4-5-20251001"}))
+			g.Expect(sandboxEnv(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", other))).To(
+				ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-sonnet-5-5"}))
+		}).Should(Succeed())
+	})
+
 	It("waits for its Agents", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
