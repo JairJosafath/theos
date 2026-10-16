@@ -7,7 +7,7 @@
 # for flush releasing the claim of the handoff it posts,
 # for blocked naming what holds back the issues pick skips and cycles reporting the issues that wait on each other,
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
-# for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
+# for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
 # for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
@@ -34,12 +34,13 @@ gh_token() { :; }
 gh_api() {
   local url
   for a in "$@"; do case $a in repos/*) url=$a ;; esac; done
-  if [[ " $* " == *" --method POST "* || " $* " == *" --method DELETE "* ]]; then
+  if [[ " $* " == *" --method POST "* || " $* " == *" --method DELETE "* || " $* " == *" --method PUT "* ]]; then
     local m=POST in=
     [[ " $* " == *" --method DELETE "* ]] && m=DELETE
+    [[ " $* " == *" --method PUT "* ]] && m=PUT
     [[ " $* " == *" --input - "* ]] && in=" $(jq -c . </dev/stdin)"
     echo "$m $url$in" >>"$T/calls"
-    [ "$m" = DELETE ] && return 0
+    [ "$m" = POST ] || return 0
     [[ $url == */issues ]] && { echo 99; return 0; }
   fi
   case $url in
@@ -274,8 +275,7 @@ real_set_status 51 needs-maintainer >/dev/null 2>&1
 check "needs-maintainer drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
 check "needs-maintainer swaps the status" "$(cat "$T/calls")" \
-  "DELETE repos/JairJosafath/c4factory/issues/51/labels/status%2Fin-progress
-POST repos/JairJosafath/c4factory/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
+  "PUT repos/JairJosafath/c4factory/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
 clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human drops the lease and the claim" \
@@ -286,7 +286,7 @@ out=$(real_set_status 51 ready 2>&1); rc=$?
 check "ready without a kind label is refused" "$rc $(grep -c 'no kind/\* label' <<<"$out") $(grep -c . "$T/calls")" "1 1 0"
 clear; : >"$T/calls"
 real_set_status 72 ready >/dev/null 2>&1; rc=$?
-check "ready with a kind label" "$rc $(cat "$T/calls")" "0 DELETE repos/JairJosafath/c4factory/issues/72/labels/status%2Fin-progress"
+check "ready with a kind label" "$rc $(cat "$T/calls")" "0 PUT repos/JairJosafath/c4factory/issues/72/labels {\"labels\":[\"kind/bug\",\"status/ready\"]}"
 # Marking, handing off or closing another issue keeps this checkout's lease and claim.
 clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
@@ -304,6 +304,67 @@ clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps the lease" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
 rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
+
+# The status swap is one PUT of the whole label list, which GitHub applies
+# whole: a second writer that swaps #40's status between the first's read and
+# its write leaves the first's status, one label, never two or none. A
+# stateful fake keeps #40's labels in a file, answers a DELETE of a label #40
+# doesn't have with an error as GitHub does, and runs SECOND once, right after
+# the first writer's read.
+(
+  L=$T/labels-40
+  gh_api() {
+    local url m=GET st l s
+    for a in "$@"; do case $a in repos/*) url=$a ;; esac; done
+    [[ " $* " =~ \ --method\ ([A-Z]+)\  ]] && m=${BASH_REMATCH[1]}
+    echo "$m" >>"$T/methods"
+    case $m in
+      GET)
+        st=$(cat "$L")
+        if [ -n "${SECOND:-}" ]; then s=$SECOND; SECOND=; eval "$s" >/dev/null 2>&1; fi
+        echo "$st" ;;
+      PUT) [ -e "$T/put-fails" ] && return 1; jq -r '.labels[]' >"$L" ;;
+      POST) jq -r '.labels[]' >>"$L" ;;
+      DELETE)
+        l=${url##*/labels/}; l=${l//%2F//}
+        grep -qxF -- "$l" "$L" || return 1
+        { grep -vxF -- "$l" "$L" || :; } >"$L.new"; mv "$L.new" "$L" ;;
+    esac
+  }
+  # race START SECOND FIRST...: #40 labeled START, run FIRST with SECOND
+  # between its read and its write; prints FIRST's exit code and the labels.
+  race() {
+    local start=$1 second=$2 rc
+    shift 2
+    tr ' ' '\n' <<<"$start" >"$L"
+    SECOND=$second "$@" >/dev/null 2>&1; rc=$?
+    echo "$rc $(paste -sd' ' "$L")"
+  }
+  check "status, another status swapped in between: the first's" \
+    "$(race 'kind/bug priority/urgent status/ready' 'real_set_status 40 proposed' real_set_status 40 in-progress)" \
+    "0 kind/bug priority/urgent status/in-progress"
+  check "status, none before, another status added in between: one, the first's" \
+    "$(race kind/bug 'real_set_status 40 in-progress' real_set_status 40 ready)" "0 kind/bug status/ready"
+  check "status, closed's unstatus in between: the status" \
+    "$(race 'kind/bug status/ready' 'gh_unstatus 40' real_set_status 40 in-progress)" "0 kind/bug status/in-progress"
+  check "unstatus, a status swapped in between: none" \
+    "$(race 'kind/bug status/ready' 'real_set_status 40 in-progress' gh_unstatus 40)" "0 kind/bug"
+  check "unstatus, only status labels: none" "$(race 'status/ready status/in-progress' '' gh_unstatus 40)" "0 "
+  touch "$T/put-fails"
+  check "status, the write fails: the old status kept" \
+    "$(race 'kind/bug status/ready' '' real_set_status 40 in-progress)" "1 kind/bug status/ready"
+  rm "$T/put-fails"
+  : >"$T/methods"
+  check "status, already the only one: read, no write" \
+    "$(race 'kind/bug status/ready' '' real_set_status 40 ready) $(paste -sd' ' "$T/methods")" "0 kind/bug status/ready GET"
+  : >"$T/methods"
+  check "unstatus, no status label: read, no write" \
+    "$(race kind/bug '' gh_unstatus 40) $(paste -sd' ' "$T/methods")" "0 kind/bug GET"
+  check "status, two before: one" "$(race 'status/ready kind/bug status/in-progress' '' real_set_status 40 in-progress)" \
+    "0 kind/bug status/in-progress"
+  exit $fail
+) || fail=1
+rm -f "$T/labels-40" "$T/methods"
 
 # escalated: the open issues waiting on the maintainer, with when each last got
 # that label; one whose events don't say gets 0.
@@ -334,23 +395,19 @@ claim "$T/main" 72 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
 check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
 R=repos/$C4_GITHUB_REPO
-check "close drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
-DELETE $R/issues/72/labels/status%2Fready"
+check "close drops every status label" "$(grep PUT "$T/calls")" "PUT $R/issues/72/labels {\"labels\":[\"kind/bug\"]}"
 claim "$T/main" 75 "$GH_NOW"; lease "$T/main" 75 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 75 - >/dev/null 2>&1; check "close, already closed" $? 0
 check "close, already closed, claim and lease released" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released gone"
-check "close, already closed, drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/75/labels/status%2Fin-progress
-DELETE $R/issues/75/labels/status%2Fready"
+check "close, already closed, drops every status label" "$(grep PUT "$T/calls")" "PUT $R/issues/75/labels {\"labels\":[\"kind/bug\"]}"
 : >"$T/calls"
 gh_duplicate 72 61 >/dev/null 2>&1; check "duplicate" $? 0
-check "duplicate drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/72/labels/status%2Fin-progress
-DELETE $R/issues/72/labels/status%2Fready"
+check "duplicate drops every status label" "$(grep PUT "$T/calls")" "PUT $R/issues/72/labels {\"labels\":[\"kind/bug\"]}"
 # closed: what the Issue closed workflow runs after a pull request's Closes #N.
 : >"$T/calls"
 gh_closed 73 >/dev/null 2>&1; check "closed" $? 0
-check "closed drops every status label" "$(grep DELETE "$T/calls")" "DELETE $R/issues/73/labels/status%2Fin-progress
-DELETE $R/issues/73/labels/status%2Fready"
+check "closed drops every status label" "$(grep PUT "$T/calls")" "PUT $R/issues/73/labels {\"labels\":[\"kind/bug\"]}"
 : >"$T/calls"
 gh_closed 74 >/dev/null 2>&1; check "closed, open issue" "$? $(cat "$T/calls")" "0 "
 gh_closed x 2>/dev/null; check "closed, not a number" $? 1
@@ -623,7 +680,7 @@ check "labels: descriptions fit GitHub's 100 characters" "$long" ""
   xref() { local n=$1 out= x; shift; for x; do out+="${out:+,}{\"event\":\"cross-referenced\",\"source\":{\"issue\":{\"number\":${x#?},\"body\":\"Plan.\\nRefs #$n\",\"pull_request\":{\"merged_at\":$([ "${x:0:1}" = M ] && echo '"t"' || echo null)}}}}"; done; echo "[[{\"event\":\"labeled\"},$out]]"; }
   gh_api() {
     local url= a m=GET in=
-    for a in "$@"; do case $a in repos/*) url=$a ;; PATCH | POST | DELETE) m=$a ;; esac; done
+    for a in "$@"; do case $a in repos/*) url=$a ;; PATCH | POST | DELETE | PUT) m=$a ;; esac; done
     [ "$m" = GET ] || echo "$m $url" >>"$T/calls"
     [[ " $* " != *" --input - "* ]] || in=$(jq -r '.body // empty')
     case "$m $url" in
@@ -666,10 +723,9 @@ Its steps #121, #122 are all closed and its plan's pull request #130 merged: not
   check "parents --apply: the waiting comment names the steps left" "$(sed -n 2p "$T/comment-123")" "Waiting on its steps, not on an agent: #124 still open (of #124, #125). Its plan's pull request #131 merged, so it is status/waiting: pick skips it, and it closes itself when its last step closes."
   check "parents --apply: what it changed" "$(cat "$T/calls")" "POST $R/issues/120/comments
 PATCH $R/issues/120
-DELETE $R/issues/120/labels/status%2Fin-progress
+PUT $R/issues/120/labels
 POST $R/issues/123/comments
-DELETE $R/issues/123/labels/status%2Fin-progress
-POST $R/issues/123/labels"
+PUT $R/issues/123/labels"
   : >"$T/calls"
   check "parents --apply M: only M's parents" "$(gh_parents --apply 125 2>&1)" "#123 to status/waiting: waits on #124 (of #124, #125; plan #131)"
   check "parents --apply M: a step without parents" "$(gh_parents --apply 999 2>&1)" ""
