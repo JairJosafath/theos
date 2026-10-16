@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for hack/close-guard.sh, the PreToolUse hook that denies a gh pr
 # create, edit or merge or a git commit whose text would close the parent of a
-# plan too early, against a fake gh in a throwaway repository whose origin is
-# this one.
+# plan too early, and a gh issue close, a gh api call setting state=closed or a
+# hack/lib/github.sh duplicate that would close one by hand, against a fake gh
+# in a throwaway repository whose origin is this one.
 # Run: hack/close-guard_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -114,6 +115,57 @@ check "a command that only mentions git commit: allowed, no gh call" "$(decision
 
 hook 'git commit -m "x" -m "closes #467"' "$T/other"
 check "another repository: not guarded" "$(decision) $(calls)" "none 0"
+
+# Closing by hand (#1127): gh issue close, gh api setting state=closed, and
+# hack/lib/github.sh duplicate, on #467 whose step #475 is open.
+hook 'gh issue close 467'
+check "issue close: a parent with an open step is denied, naming it" "$(decision) $(reason | grep -c 'refused to close #467: its step #475 is open')" "deny 1"
+hook 'gh issue close 300 --reason completed'
+check "issue close: an issue without steps, allowed" "$(decision)" none
+hook 'gh issue close https://github.com/JairJosafath/c4factory/issues/467 -c "done; really"'
+check "issue close: by URL, a ; inside the comment" "$(decision)" deny
+hook 'gh issue close --reason "not planned" 467'
+check "issue close: the number after a quoted flag value" "$(decision)" deny
+hook 'gh issue close 467 -R someone/else'
+check "issue close: another repository's issue, no gh call" "$(decision) $(calls)" "none 0"
+hook 'for n in 467 300; do gh issue close "$n"; done'
+check "issue close: an issue it can't name is denied" "$(decision) $(reason | grep -c 'could not tell which issue `gh issue close $n` closes')" "deny 1"
+hook 'gh issue close 475 && gh issue close 467'
+check "issue close: the last step closed in the same command, allowed" "$(decision)" none
+hook 'grep -n "gh issue close 467" notes.txt'
+check "a command that only mentions gh issue close: allowed, no gh call" "$(decision) $(calls)" "none 0"
+hook "cat <<EOF >notes.txt
+it's done
+EOF
+gh issue close 467"
+check "issue close: an apostrophe in a heredoc before it doesn't hide it" "$(decision)" deny
+hook 'gh issue close 467' "$T/other"
+check "issue close: another repository's checkout, not guarded" "$(decision) $(calls)" "none 0"
+hook 'gh api -X PATCH repos/JairJosafath/c4factory/issues/467 -f state=closed'
+check "api: -f state=closed on a parent with an open step, denied" "$(decision) $(reason | grep -c 'its step #475 is open')" "deny 1"
+hook 'out=$(gh api repos/{owner}/{repo}/issues/467 -X PATCH -F state=closed -f state_reason=completed --jq .state)'
+check "api: {owner}/{repo}, -F, inside \$(...), denied" "$(decision)" deny
+hook "gh api --method PATCH /repos/JairJosafath/c4factory/issues/467 --input - <<'EOF'
+{\"state\": \"closed\"}
+EOF"
+check "api: a JSON body from a heredoc, denied" "$(decision)" deny
+printf '{"state":"closed","state_reason":"completed"}\n' >"$T/repo/close.json"
+hook 'gh api -X PATCH repos/JairJosafath/c4factory/issues/467 --input close.json'
+check "api: a JSON body from a file, denied" "$(decision)" deny
+hook 'gh api repos/JairJosafath/c4factory/issues/467 --jq .state'
+check "api: reading an issue, allowed, no gh call" "$(decision) $(calls)" "none 0"
+hook "gh api -X POST repos/JairJosafath/c4factory/issues/467/comments -f body='set state=closed later'"
+check "api: a comment, allowed, no gh call" "$(decision) $(calls)" "none 0"
+hook 'gh api -X PATCH repos/someone/else/issues/467 -f state=closed'
+check "api: another repository's issue, no gh call" "$(decision) $(calls)" "none 0"
+hook 'gh api -X PATCH "repos/$C4_GITHUB_REPO/issues/$n" -f state=closed'
+check "api: an issue it can't name is denied" "$(decision) $(reason | grep -c 'could not tell which issue')" "deny 1"
+hook 'hack/lib/github.sh duplicate 467 300'
+check "duplicate: a parent with an open step, denied" "$(decision) $(reason | grep -c 'its step #475 is open')" "deny 1"
+hook 'bash hack/lib/github.sh duplicate 300 467'
+check "duplicate: an issue without steps, allowed" "$(decision)" none
+hook 'gh issue close 999'
+check "issue close: GitHub can't be asked, denied" "$(decision) $(reason | grep -c 'could not be asked')" "deny 1"
 
 rm "$FAKE/${R}_issues_467"
 hook 'git commit -m "closes #467"'
