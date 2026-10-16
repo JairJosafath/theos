@@ -1,0 +1,107 @@
+# Evidence for #1148 by otter-1148, 2026-10-16, go1.26.9, govulncheck v1.9.0, golangci-lint v2.13.1.
+
+## make vulncheck on chore/1148-run-govulncheck-in-ci-and-turn-on-gosec (exit 0)
+Downloading golang.org/x/vuln/cmd/govulncheck@v1.9.0
+"<repo>/.dev/make/bin/govulncheck-v1.9.0" ./...
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 1 vulnerability in packages you import and 1 vulnerability
+in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.
+
+## govulncheck ./... on e4462eb, main before the bump of #1147 (#1195): exit 3, so the workflow fails
+# GOTOOLCHAIN=local govulncheck ./...   (the Found in/Fixed in lines of each vulnerability)
+Vulnerability #1: GO-2026-6617
+    Found in: golang.org/x/net@v0.57.0
+    Fixed in: golang.org/x/net@v0.60.0
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #2: GO-2026-6613
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #3: GO-2026-6612
+    Found in: golang.org/x/net@v0.57.0
+    Fixed in: golang.org/x/net@v0.60.0
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #4: GO-2026-6611
+    Found in: golang.org/x/net@v0.57.0
+    Fixed in: golang.org/x/net@v0.60.0
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #5: GO-2026-6610
+    Found in: golang.org/x/net@v0.57.0
+    Fixed in: golang.org/x/net@v0.60.0
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #6: GO-2026-6608
+    Found in: net/textproto@go1.26.8
+    Fixed in: net/textproto@go1.26.9
+Vulnerability #7: GO-2026-6607
+    Found in: crypto/tls@go1.26.8
+    Fixed in: crypto/tls@go1.26.9
+Vulnerability #8: GO-2026-6605
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #9: GO-2026-6603
+    Found in: golang.org/x/net@v0.57.0
+    Fixed in: golang.org/x/net@v0.60.0
+    Found in: net/http@go1.26.8
+    Fixed in: net/http@go1.26.9
+Vulnerability #10: GO-2026-6600
+    Found in: html/template@go1.26.8
+    Fixed in: html/template@go1.26.9
+Vulnerability #11: GO-2026-6599
+    Found in: html/template@go1.26.8
+    Fixed in: html/template@go1.26.9
+Vulnerability #12: GO-2026-6505
+    Found in: go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.44.0
+    Fixed in: go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.45.0
+    Found in: go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.44.0
+    Fixed in: go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.45.0
+    Found in: go.opentelemetry.io/otel/sdk@v1.44.0
+    Fixed in: go.opentelemetry.io/otel/sdk@v1.45.0
+Vulnerability #13: GO-2026-6355
+    Found in: golang.org/x/crypto@v0.54.0
+    Fixed in: golang.org/x/crypto@v0.56.0
+Vulnerability #14: GO-2026-6354
+    Found in: golang.org/x/crypto@v0.54.0
+    Fixed in: golang.org/x/crypto@v0.56.0
+Vulnerability #15: GO-2026-6348
+    Found in: google.golang.org/grpc@v1.82.1
+    Fixed in: google.golang.org/grpc@v1.83.1
+Vulnerability #16: GO-2026-6222
+    Found in: golang.org/x/image@v0.44.0
+    Fixed in: golang.org/x/image@v0.45.0
+Your code is affected by 16 vulnerabilities from 4 modules and the Go standard library.
+exit=3
+
+## gosec before this change: golangci-lint run --enable-only gosec ./... (195 issues)
+4	G101	shipped code
+3	G101	tests
+43	G115	shipped code
+16	G115	tests
+5	G204	shipped code
+30	G204	tests
+4	G301	shipped code
+7	G301	tests
+1	G302	shipped code
+7	G304	shipped code
+22	G304	tests
+2	G306	shipped code
+17	G306	tests
+1	G401	tests
+1	G505	tests
+2	G602	tests
+8	G703	tests
+2	G704	shipped code
+17	G704	tests
+3	G705	tests
+
+## After: .golangci.yml turns off G115 and gosec in _test.go; the rest fixed or //nolint:gosec // why
+# golangci-lint run ./...   (gosec on)
+0 issues.

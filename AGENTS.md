@@ -232,7 +232,7 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   allow rules in `.claude/settings.json` are the owner's: never edit them, and
   never do the refused thing through another command.
 - **On a device running many sessions, memory is the limit.** A session at rest is cheap;
-  heavy jobs (`make check`, `test`, `lint`, `docker-build`, `deploy`, `e2e`) are
+  heavy jobs (`make check`, `test`, `lint`, `vulncheck`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
   [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.

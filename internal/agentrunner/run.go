@@ -542,7 +542,7 @@ func agentFailed(result Result, err error) Result {
 }
 
 func runCheck(ctx context.Context, job Job, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, job.CheckCommand[0], job.CheckCommand[1:]...)
+	cmd := exec.CommandContext(ctx, job.CheckCommand[0], job.CheckCommand[1:]...) //nolint:gosec // the Standard's check; running it is the runner's job
 	cmd.Dir = dir
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
