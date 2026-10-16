@@ -174,7 +174,7 @@ spec:
                 type: integer
               paused:
                 description: |-
-                  paused stops the Brief's work in one step (docs/plans/upgrade-in-place.md):
+                  paused stops the Brief's work in one step (docs/plans/done/upgrade-in-place.md):
                   while true, the Brief pauses every Crew it made, marking each with
                   c4.factory.io/paused-by: brief, starts no new round (a new prompt waits)
                   and tends no failed issue; a planner Task already started runs to its
@@ -269,7 +269,7 @@ spec:
                     requests:
                       description: |-
                         requests says whether the Brief takes requests from the repository's
-                        GitHub issues, and whose (docs/plans/brief-requests.md). Unset takes
+                        GitHub issues, and whose (docs/plans/done/brief-requests.md). Unset takes
                         none.
                       properties:
                         accepted:
@@ -451,6 +451,25 @@ spec:
                     lastRelease:
                       description: lastRelease is the Crew's latest release.
                       properties:
+                        moduleMessage:
+                          description: moduleMessage says why the module isn't published,
+                            from the Crew.
+                          type: string
+                        modulePath:
+                          description: modulePath is the module path go.mod declares.
+                          type: string
+                        moduleState:
+                          description: |-
+                            moduleState is how publishing the release's Go module went, the Crew's
+                            status.lastRelease.goModule.state; empty when the Crew reports none.
+                          enum:
+                          - Published
+                          - NotGo
+                          - Invalid
+                          - Failed
+                          - Waiting
+                          - NotFetchable
+                          type: string
                         publishState:
                           description: |-
                             publishState is how publishing the release went: Pending, Publishing,
@@ -826,6 +845,17 @@ spec:
                           format: int32
                           type: integer
                       type: object
+                    unanswered:
+                      description: |-
+                        unanswered are the reviewers' suggestions a prompt named that the round
+                        couldn't answer, as the plan said (answer missing), in the operator's
+                        words with what it found.
+                      items:
+                        maxLength: 500
+                        type: string
+                      maxItems: 20
+                      type: array
+                      x-kubernetes-list-type: atomic
                   required:
                   - round
                   type: object
