@@ -11,13 +11,16 @@
 #
 #   hack/pull.sh             once; silent when main is already current
 #   hack/pull.sh --every N   every N seconds until killed; repeats a reason only when it changes
+#   C4_PULL_REPO=DIR hack/pull.sh
+#                            pull the checkout DIR, not this script's (the relay runs
+#                            origin/main's copy on the checkout it was started from)
 #
 # Every device runs it: VS Code from .vscode/tasks.json while the folder is open,
 # Claude Code at session start (.claude/settings.json), and hack/relay.sh before
 # each session.
 set -uo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=${C4_PULL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 cd "$REPO" || exit 1
 export GIT_TERMINAL_PROMPT=0
 LAST=

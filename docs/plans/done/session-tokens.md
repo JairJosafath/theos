@@ -143,7 +143,8 @@ Each step is its own issue and pull request, and leaves main working.
 
 A chart of tokens against rounds and failures: with the numbers on every
 Task and Brief round, the reporter can compare them; a Factory-view chart is
-its own issue once the numbers have been watched for a while. The stand-in
+its own issue once the numbers have been watched for a while (#1086,
+[token-chart.md](token-chart.md)). The stand-in
 harness reports no tokens. Whether 130k is the right default for every model
 is for the numbers to show; the Agent can change it. A Kind run, which only a
 human does, would show a real Claude Code session handing off in a sandbox.

@@ -40,5 +40,11 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(hack/lib/github.sh land:*)",
+      "Bash(hack/release.sh:*)"
+    ]
   }
 }
