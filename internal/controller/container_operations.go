@@ -9,6 +9,8 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -80,8 +82,9 @@ func operationsStatus(o model.Operations) *c4v1alpha1.OperationsSpec {
 	}
 }
 
-// scaffoldedOperations is the block the repository was rendered with, for a
-// Standard update to render the same; a Container scaffolded before the
+// scaffoldedOperations is the block the repository was last rendered with, at
+// the scaffold or by an operations update, for a Standard update to render the
+// same; a Container scaffolded before the
 // factory kept it renders its block as it is now.
 func scaffoldedOperations(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) model.Operations {
 	if status.Operations == nil {
@@ -90,35 +93,54 @@ func scaffoldedOperations(container *c4v1alpha1.Container, status *c4v1alpha1.Co
 	return model.ResolveOperations(operationsChoices(status.Operations))
 }
 
-// reportOperationsApplied sets OperationsApplied on a scaffolded Container:
-// True while spec.operations, the defaults filled in, is the block the
-// scaffold rendered with, and False, ChangedAfterScaffold, once it differs.
-// Nothing carries a change to the repository yet (plans/aws-production.md,
-// step 12), so a Task changes infra/operations.ts like any other code. A
-// Container scaffolded before the factory kept the block has the condition
-// only once spec.operations says something.
+// reportOperationsApplied sets OperationsApplied where no operations update
+// acts, and reports false where one does: spec.operations, the defaults
+// filled in, changed from the block the repository was last rendered with,
+// or an update hasn't ended. A Container that isn't scaffolded has no
+// condition. One scaffolded before the factory kept the block has it only
+// once spec.operations says something, and then False, ChangedAfterScaffold:
+// its repository has none of the block, so a Task changes it.
 func (r *ContainerReconciler) reportOperationsApplied(container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) {
+	status *c4v1alpha1.ContainerStatus) bool {
 	if status.Phase != c4v1alpha1.ContainerReady {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionOperationsApplied)
-		return
+		return true
 	}
 	if status.Operations == nil {
 		if operationsChoices(container.Spec.Operations) == (model.OperationsChoices{}) {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionOperationsApplied)
-			return
+			return true
 		}
 		r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionFalse,
 			c4v1alpha1.ReasonChangedAfterScaffold, "The Container was scaffolded before the factory kept "+
 				"spec.operations, so its repository has none of it; change infra/operations.ts by a Task")
-		return
+		return true
 	}
-	if specOperations(container) != scaffoldedOperations(container, status) {
-		r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionFalse,
-			c4v1alpha1.ReasonChangedAfterScaffold, "spec.operations changed after the scaffold, and the factory "+
-				"doesn't carry the change to the repository yet; change infra/operations.ts by a Task")
-		return
+	if model.NextOperationsStep(operationsFacts(container, status)).Action != model.OperationsUpToDate {
+		return false
 	}
-	r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionTrue,
-		c4v1alpha1.ReasonAppliedAtScaffold, "")
+	r.operationsUpToDate(container, status)
+	return true
+}
+
+// operationsUpToDate reports the repository's infra/operations.ts rendered
+// from spec.operations: at the scaffold, by the update that merged, or found
+// so on main.
+func (r *ContainerReconciler) operationsUpToDate(container *c4v1alpha1.Container,
+	status *c4v1alpha1.ContainerStatus) {
+	reason, message := c4v1alpha1.ReasonAppliedAtScaffold, ""
+	switch u := status.OperationsUpdate; {
+	case u != nil && u.MergeCommit != "" && u.PullRequestURL != "":
+		reason, message = c4v1alpha1.ReasonUpdateMerged, fmt.Sprintf(
+			"Pull request %s merged spec.operations into %s as %s", u.PullRequestURL, model.OperationsFile,
+			u.MergeCommit)
+	case u != nil && u.PullRequestURL != "":
+		// The host named no commit for the merge, and main couldn't be read.
+		reason, message = c4v1alpha1.ReasonUpdateMerged, fmt.Sprintf(
+			"Pull request %s merged spec.operations into %s", u.PullRequestURL, model.OperationsFile)
+	case u != nil && u.MergeCommit != "":
+		reason, message = c4v1alpha1.ReasonUpToDate, fmt.Sprintf("%s at %s already renders spec.operations",
+			model.OperationsFile, u.MergeCommit)
+	}
+	r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionTrue, reason, message)
 }
