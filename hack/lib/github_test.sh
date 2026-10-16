@@ -1147,8 +1147,22 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # main moves on: another pull request merged.
   git clone -q "$T/origin.git" "$T/other" 2>/dev/null
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
-  # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists.
-  printf '#!/bin/sh\necho "$*" >>"%s/checked"\nsleep "${CHECK_SLEEP:-0}"\n[ ! -e "%s/red" ]\n' "$T" "$T" >"$T/bin/check-make"
+  # The fake make: records it ran, fails when $T/red exists. With CHECK_BEATS=N
+  # it first waits (up to about 30 s) until land has beaten N times since it
+  # started, and writes the beats it saw to $T/beats: a loaded device slows the
+  # beats down, it doesn't drop them (#1192).
+  cat >"$T/bin/check-make" <<EOF
+#!/bin/sh
+echo "\$*" >>"$T/checked"
+if [ -n "\${CHECK_BEATS:-}" ]; then
+  b0=\$(grep -c '^PATCH ' "$T/calls") i=0
+  while n=\$((\$(grep -c '^PATCH ' "$T/calls") - b0)); [ "\$n" -lt "\$CHECK_BEATS" ] && [ "\$i" -lt 300 ]; do
+    sleep 0.1; i=\$((i + 1))
+  done
+  echo "\$n" >"$T/beats"
+fi
+[ ! -e "$T/red" ]
+EOF
   chmod +x "$T/bin/check-make"
   # land merges main in itself: give it an identity a device without a global one lacks.
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -1199,8 +1213,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "land: beats while it waits" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 1))" "4 1"
   rm "$Q/6.json" "$T/landed"
   : >"$T/calls"
-  out=$(GH_LAND_BEAT=0.2 CHECK_SLEEP=1.5 gh_land 40 2>&1)
-  check "land: beats while make check runs" "$? $(($(grep -c '^PATCH ' "$T/calls") >= 3))" "0 1"
+  out=$(GH_LAND_BEAT=0.2 CHECK_BEATS=2 gh_land 40 2>&1)
+  check "land: beats while make check runs" "$? $(($(cat "$T/beats" 2>/dev/null || echo 0) >= 2))" "0 1"
 
   # A fetch that races another worktree's fails once, then lands; one that
   # keeps failing gives the turn up after GH_LAND_FETCH_TRIES.
