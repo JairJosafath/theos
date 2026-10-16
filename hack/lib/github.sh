@@ -108,8 +108,12 @@
 #                                        dropped. Exit 4: not its turn within DURATION (default 2h); its place is
 #                                        given up. Refused before it queues when PR changes more than
 #                                        GH_REVIEW_LINES (400) lines in hand-written files and carries no review
-#                                        pass (review-check)
-#   hack/lib/github.sh review-check PR   whether PR may land as reviewed: the lines it changes in hand-written
+#                                        pass (review-check). A PR merged outside land (by hand) is finished
+#                                        work: land looks at its state at the start, every GH_LAND_BEAT seconds
+#                                        of a make check (stopping it), on every look at the queue and before each
+#                                        check under the turn, and exits 0 naming who merged it (#1369); one
+#                                        closed without a merge exits 1
+#   hack/lib/github.sh review-check PR  whether PR may land as reviewed: the lines it changes in hand-written
 #                                        files (zz_generated.*, config/crd/bases/, config/rbac/role.yaml,
 #                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
 #                                        needs a comment that starts with Review:, by the owner's account (an
@@ -2274,6 +2278,25 @@ gh_land_say() {
   [ -z "${GH_LAND_LOG:-}" ] || echo "land: #$1$2" >>"$GH_LAND_LOG"
 }
 
+# gh_land_done PR: whether PR is finished without land (#1369): the owner
+# merges a green pull request by hand, and a land that went on would check,
+# queue and check again under the turn for an hour before merge said so.
+# Exit 0: merged, who merged it and when said. Exit 1: closed without a
+# merge, said. Exit 2: open, or GitHub could not be asked.
+gh_land_done() {
+  local out state merged by at
+  out=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$1" \
+    --jq '"\(.state)\t\(.merged)\t\(.merged_by.login // "someone")\t\(.merged_at // "")"') || return 2
+  IFS=$'\t' read -r state merged by at <<<"$out"
+  if [ "$merged" = true ]; then
+    gh_land_say "$1" " was merged by $by at $at, outside land: nothing left to land"
+    return 0
+  fi
+  [ "$state" = closed ] || return 2
+  echo "github: #$1 was closed without a merge; nothing to land" >&2
+  return 1
+}
+
 # gh_land_fetch PR: git fetch origin, retried GH_LAND_FETCH_TRIES times.
 gh_land_fetch() {
   local try=1
@@ -2289,7 +2312,8 @@ gh_land_fetch() {
 # run make check, push, and wait until GitHub shows the push. With ID, the
 # merge-turn comment ID is heartbeaten while make check runs, and make check
 # goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
-# device's lands wait on it, and only the turn's one holder may.
+# device's lands wait on it, and only the turn's one holder may. Exit 3: PR
+# was merged outside land meanwhile, make check stopped (#1369).
 gh_land_sync() {
   local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self out
   # The tree is clean, so the copy at HEAD before the merge is the one running.
@@ -2312,25 +2336,32 @@ gh_land_sync() {
     trap - EXIT INT TERM
     GH_LAND_TURN=$id exec bash "$GH_LIB_ROOT/hack/lib/github.sh" land "$pr" --wait "${wait}s"
   fi
-  if [ -n "$id" ]; then
-    # The heartbeat; its sleep is killed with it, and holds no pipe of the caller's open.
-    (
-      trap 'kill "$s" 2>/dev/null; exit 0' TERM
-      while :; do
-        sleep "$GH_LAND_BEAT" &
-        s=$!
-        wait "$s"
-        gh_edit_comment "$id" "$(gh_land_body "$pr")"
-      done
-    ) >/dev/null 2>&1 &
-    GH_LAND_BEATER=$!
-  fi
+  # The watcher: every GH_LAND_BEAT seconds it heartbeats the turn (with ID)
+  # and looks whether PR got merged or closed meanwhile; then it stops make
+  # check, this shell's other child (#1369). Its sleep is killed with it, and it
+  # holds no pipe of the caller's open.
+  local parent=$BASHPID done=$GH_PENDING_DIR/land-$pr.done
+  rm -f "$done"
+  (
+    trap 'kill "$s" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep "$GH_LAND_BEAT" &
+      s=$!
+      wait "$s"
+      [ -z "$id" ] || gh_edit_comment "$id" "$(gh_land_body "$pr")"
+      GH_LAND_LOG= gh_land_done "$pr" && { : >"$done"; pgrep -P "$parent" | grep -vx "$BASHPID" | xargs -r kill; exit 0; }
+    done
+  ) >/dev/null 2>&1 &
+  GH_LAND_BEATER=$!
   C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
   rc=$?
-  if [ -n "$GH_LAND_BEATER" ]; then
-    kill "$GH_LAND_BEATER" 2>/dev/null
-    wait "$GH_LAND_BEATER" 2>/dev/null
-    GH_LAND_BEATER=
+  kill "$GH_LAND_BEATER" 2>/dev/null
+  wait "$GH_LAND_BEATER" 2>/dev/null
+  GH_LAND_BEATER=
+  if [ -e "$done" ]; then
+    rm -f "$done"
+    gh_land_say "$pr" ": stopped make check: the pull request was merged meanwhile"
+    gh_land_done "$pr" && return 3
   fi
   if [ "$rc" != 0 ]; then
     tail -40 "$GH_LAND_LOG" >&2
@@ -2350,6 +2381,9 @@ gh_land_turn() {
   local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat s who checked now t1 rechecks=0
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
+  gh_land_done "$pr"
+  s=$?
+  ((s == 2)) || return "$s"
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
   read -r state base head <<<"$info"
   [ "$state" = open ] || { echo "github: #$pr is $state; nothing to land" >&2; return 1; }
@@ -2381,7 +2415,10 @@ gh_land_turn() {
   gh_land_say "$pr" ": merging origin/$base, then make check, before queuing for the merge turn"
   gh_land_fetch "$pr" || return 1
   checked=$(git -C "$GH_LIB_ROOT" rev-parse "origin/$base") || return 1
-  gh_land_sync "$pr" "$base" "$branch" "$id" || return 1
+  gh_land_sync "$pr" "$base" "$branch" "$id"
+  s=$?
+  ((s == 3)) && return 0
+  ((s == 0)) || return 1
   if [ -z "$id" ]; then
     id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
       gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
@@ -2390,6 +2427,10 @@ gh_land_turn() {
   fi
   t0=$SECONDS beat=$SECONDS
   while :; do
+    # Merged by hand while it checked or waited: done, its place given up (#1369).
+    gh_land_done "$pr"
+    s=$?
+    ((s == 2)) || return "$s"
     q=$(gh_land_queue "$n") || { echo "github: could not read the merge queue on #$n" >&2; return 1; }
     while IFS=$'\t' read -r s who; do
       [ -n "$s" ] || continue
@@ -2426,11 +2467,17 @@ gh_land_turn() {
       gh_land_say "$pr" ": origin/$base moved again after $rechecks checks under the turn (something merges without land); gave the turn up after $((SECONDS - t1))s: land again"
       return 1
     fi
+    # main moves under the turn mostly by a merge outside land, maybe this one's (#1369).
+    gh_land_done "$pr"
+    s=$?
+    ((s == 2)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return "$s"; }
     ((rechecks++))
     ((rechecks > 2)) && gh_land_say "$pr" ": origin/$base moved under the turn again: check $rechecks of at most $GH_LAND_RECHECKS (over 2: something merges without land)"
     gh_land_say "$pr" ": its turn; origin/$base moved since the check (${checked:0:12} -> ${now:0:12}): merging it in and checking again, holding the turn"
     checked=$now
-    gh_land_sync "$pr" "$base" "$branch" "$id" || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return 1; }
+    gh_land_sync "$pr" "$base" "$branch" "$id"
+    s=$?
+    ((s == 0)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return $((s == 3 ? 0 : 1)); }
   done
   if ((rechecks == 0)); then
     gh_land_say "$pr" ": its turn; origin/$base is still ${checked:0:12}, as checked: merging at once"
