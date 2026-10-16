@@ -1,5 +1,6 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -183,7 +184,7 @@ says why each rule matters.
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
 Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
-handler pages, API Gateway's HTTP API docs{{ end }}, DynamoDB's developer guide, the
+handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
 {{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -264,9 +265,15 @@ says why each rule matters.
 - Don't keep request data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- else -}}
+{{ if $queue -}}
+- `src/handler.ts` exports `handler`, which takes an `SQSEvent`, a batch of
+  up to 10 messages, and returns an `SQSBatchResponse`: the ids of the
+  messages that failed, which SQS delivers again. [review]
+{{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
   Gateway's HTTP API sends payload format 2.0. [review]
+{{- end }}
 - Create SDK clients and read configuration at module scope, once per
   execution environment; warm invocations reuse them and their connections.
   Never create a client inside the handler. [review]
@@ -279,11 +286,28 @@ says why each rule matters.
   [lint: @typescript-eslint/no-floating-promises]
 - Never `process.exit()`: it kills the execution environment mid-invocation.
   [lint: no-restricted-properties]
-- Don't keep request data in module-scope variables: the next invocation in
+- Don't keep {{ if $queue }}message{{ else }}request{{ end }} data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- end }}
 
-{{ end }}## Requests and responses
+{{ end }}{{ if $queue }}## Messages
+
+- Validate every message at the boundary: its body and the attributes the
+  code reads, narrowed from `unknown` with runtime checks. The queue holds
+  whatever a producer sent. [review]
+- A message that fails throws, inside the work Powertools' batch processing
+  runs per message: the batch reports it in `batchItemFailures`, SQS
+  delivers it alone again, and after the queue's last delivery it waits in
+  the dead-letter queue. [test: every SQS source reports batch item
+  failures]
+- Never catch a failure and carry on: a message the handler returns as
+  done is deleted, and lost. [review]
+- A message is delivered at least once and in no set order: the work per
+  message is idempotent (Powertools' Idempotency, keyed by its `messageId`)
+  and never depends on another message coming first. [review]
+- Never log a message's body: it may hold user data. Log its `messageId`
+  and what failed. [review]
+{{ else }}## Requests and responses
 
 - Validate every input at the boundary: path parameters, query strings,
   headers and the body, {{ if $go }}decoded into typed values and checked{{ else if $py }}narrowed from `object` with `isinstance` checks{{ else }}narrowed from `unknown` with runtime checks{{ end }}. {{ if eq .Framework "aws-ec2-ts" }}The load balancer passes on{{ else }}API
@@ -296,7 +320,7 @@ says why each rule matters.
 - Never return a stack trace, an SDK error's text or an internal name to a
   client; log it instead, with the request id. [review]
 - Set `content-type` on every response. [review]
-
+{{ end }}
 ## Logs
 
 {{ if $go -}}
@@ -306,7 +330,7 @@ says why each rule matters.
 {{- else if $py -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `print`. [lint: T201]
-{{- else if eq .Framework "aws-lambda-ts" -}}
+{{- else if eq .Framework "aws-lambda-ts" "aws-queue-ts" -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
   which `src/handler.ts` makes and hands to the code as its `Log`; never
   `console`. [lint: no-console]
@@ -316,7 +340,7 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
 {{- end }}
-- Each entry has a `level`, a `message` and the request id; errors say what
+- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else }}request id{{ end }}; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
@@ -332,7 +356,7 @@ says why each rule matters.
 {{ end }}
 ## DynamoDB
 
-- Model the table for its access patterns: every read on a request path is
+- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else }}request{{ end }} path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
 {{ if $go -}}
 - Read and write items as `map[string]types.AttributeValue`, by hand or
@@ -355,10 +379,13 @@ says why each rule matters.
 - A route that changes data runs through Powertools' Idempotency, keyed by
   the request's `Idempotency-Key` header, as `PUT /items/{id}` does: a
   retry with the same key gets the first answer back. [review]
+{{- else if $queue }}
+- Each message runs through Powertools' Idempotency, keyed by its
+  `messageId`: a message delivered again writes nothing twice. [review]
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
@@ -369,7 +396,7 @@ says why each rule matters.
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if eq .Framework "aws-lambda-ts" }}
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -480,6 +507,29 @@ says why each rule matters.
   to anyone who can describe the launch template. Read them from Secrets
   Manager at start-up. [review]
 
+{{ else }}{{ if $queue }}## The queue and its event source
+
+- Every queue has a dead-letter queue, after a set number of deliveries
+  (`deadLetterQueue: { queue, maxReceiveCount }`), kept 14 days, the
+  longest SQS keeps a message. [nag: AwsSolutions-SQS3]
+- Every dead-letter queue alarms on its first message: from the stack's
+  `Alarms`, `monitorSqsQueueWithDlq` with `addDeadLetterQueueMaxSizeAlarm`.
+  [test: the dead-letter queues]
+- Queues are encrypted (`QueueEncryption.SQS_MANAGED` or a KMS key) and
+  refuse requests without TLS (`enforceSSL: true`). [nag: AwsSolutions-SQS2,
+  AwsSolutions-SQS4; test: encrypts every queue]
+- The event source reports batch item failures
+  (`reportBatchItemFailures: true`), and the handler answers them through
+  Powertools' batch processing. [test: every SQS source reports batch item
+  failures]
+- The queue's visibility timeout is at least six times the function's
+  timeout, so a message is not delivered again while a batch holds it.
+  [review]
+- The event source has a maximum concurrency, so a flood of messages
+  can't take the account's concurrency from its other functions. [review]
+- A queue holds messages not yet consumed, which are data: kept with the
+  stack in production, like the tables. [review]
+
 {{ else }}## API Gateway HTTP API
 
 - Every route is authorized: IAM (`HttpIamAuthorizer`), a JWT authorizer or a
@@ -491,7 +541,7 @@ says why each rule matters.
 - Routes name their method and path (`GET /items/{id}`); no `ANY /{proxy+}`
   that hands routing to the function. [review]
 
-## Lambda configuration in the stack
+{{ end }}## Lambda configuration in the stack
 
 {{ if $go -}}
 - A `Function` whose code is `Code.fromAsset` of `src/`, built by the
@@ -513,8 +563,9 @@ says why each rule matters.
 - The newest Node.js runtime. [nag: AwsSolutions-L1]
 {{- end }}
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
-- Memory and timeout set for the work, the timeout under API Gateway's 30
-  seconds. [review]
+- Memory and timeout set for the work, the timeout {{ if $queue }}a sixth of the queue's
+  visibility timeout{{ else }}under API Gateway's 30
+  seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.
   [nag: AwsSolutions-IAM4]
 - No wildcard permissions: grants (`table.grant(fn, 'dynamodb:GetItem')`),
@@ -544,7 +595,7 @@ says why each rule matters.
 - No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
-  issue needs (a route, a grant, a setting), not the whole template. [review]
+  issue needs ({{ if $queue }}a queue setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
 {{ if $go -}}
 - Code that calls AWS is tested through its interface with a fake that
   records the calls and answers from memory. [review]
@@ -562,7 +613,8 @@ says why each rule matters.
   records commands and answers from memory. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- Request handling is tested by calling `answer` with a request and checking
   the status code and body; `src/server.ts` over HTTP on a loopback port the
-  system picks. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  system picks. [review]{{ else if $queue }}- The work per message is tested with a fake store; the batch by building
+  an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}
