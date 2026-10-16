@@ -42,7 +42,7 @@ type Options struct {
 
 // FromIdentity fills Namespace and Container from a repository's identity file.
 func (o *Options) FromIdentity(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // the identity file the developer names
 	if err != nil {
 		return err
 	}

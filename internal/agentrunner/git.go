@@ -134,7 +134,7 @@ func (r *repo) changedPaths(ctx context.Context, base string) ([]string, error) 
 // sameTreeAsBase reports whether HEAD's files equal the base branch's, which
 // says the work branch adds nothing even when its commits differ.
 func (r *repo) sameTreeAsBase(ctx context.Context, base string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", "--quiet", "origin/"+base, "HEAD")
+	cmd := exec.CommandContext(ctx, "git", "diff", "--quiet", "origin/"+base, "HEAD") //nolint:gosec // origin/ keeps base from being an option
 	cmd.Dir = r.dir
 	err := cmd.Run()
 	var exit *exec.ExitError
@@ -247,7 +247,7 @@ func (r *repo) push(ctx context.Context, branch string) error {
 }
 
 func (r *repo) git(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git, with arguments the runner builds
 	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var stdout, stderr bytes.Buffer
