@@ -302,7 +302,7 @@ func (g *gitea) listRuns(ctx context.Context, repo Repository, commit string, qu
 	return out, nil
 }
 
-// runnerPages bounds the runners RunnersOnline reads.
+// runnerPages bounds the pages of runners RunnersOnline and Runners read.
 const runnerPages = 10
 
 // RunnersOnline returns how many of the instance's runners, global,
@@ -310,35 +310,20 @@ const runnerPages = 10
 // when Gitea doesn't say: an older Gitea without the call, a token that isn't
 // an admin's, or a failed call.
 func (g *gitea) RunnersOnline(ctx context.Context) (online int, known bool) {
-	for page := 1; page <= runnerPages; page++ {
-		status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners?"+pageQuery(page).Encode(), nil)
-		if err != nil || status != http.StatusOK {
-			return 0, false
-		}
-		var runners struct {
-			Runners []struct {
-				Status string `json:"status"`
-				Busy   bool   `json:"busy"`
-			} `json:"runners"`
-		}
-		if json.Unmarshal(data, &runners) != nil {
-			return 0, false
-		}
-		for _, r := range runners.Runners {
-			if runnerOnline(r.Status, r.Busy) {
-				online++
-			}
-		}
-		if len(runners.Runners) < issuePageSize {
-			break
+	runners, err := g.listRunners(ctx, "/api/v1/admin/actions/runners", "the instance")
+	if err != nil {
+		return 0, false
+	}
+	for _, r := range runners {
+		if r.Busy || r.online() {
+			online++
 		}
 	}
 	return online, true
 }
 
 // RunnerOnline reports whether runner id, global, organisation or repository,
-// is online, idle or busy: false for one that is offline or no longer
-// registered. known is false when Gitea doesn't say: an older Gitea without
+// is online: false for one that is offline or no longer registered. known is false when Gitea doesn't say: an older Gitea without
 // the call, a token that isn't an admin's, or a failed call.
 func (g *gitea) RunnerOnline(ctx context.Context, id int64) (online, known bool) {
 	status, data, err := g.do(ctx, http.MethodGet, "/api/v1/admin/actions/runners/"+strconv.FormatInt(id, 10), nil)
@@ -352,24 +337,12 @@ func (g *gitea) RunnerOnline(ctx context.Context, id int64) (online, known bool)
 	case status != http.StatusOK:
 		return false, false
 	}
-	var runner struct {
-		Status string `json:"status"`
-		Busy   bool   `json:"busy"`
-	}
+	var runner giteaRunner
 	if json.Unmarshal(data, &runner) != nil {
 		return false, false
 	}
-	return runnerOnline(runner.Status, runner.Busy), true
-}
-
-// runnerOnline reports whether a runner Gitea lists with status and busy is
-// online: idle or busy.
-func runnerOnline(status string, busy bool) bool {
-	switch {
-	case busy, status == "online", status == "idle", status == "active":
-		return true
-	}
-	return false
+	// Not Busy: a runner that stopped mid-job keeps the job Gitea gave it.
+	return runner.online(), true
 }
 
 // pageQuery asks for page of a list Gitea pages.

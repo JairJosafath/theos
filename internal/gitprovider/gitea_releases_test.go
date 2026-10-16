@@ -382,6 +382,8 @@ func TestRunnerOnline(t *testing.T) {
 		{name: "busy", status: http.StatusOK, body: `{"id":4,"status":"active","busy":true}`, wantOnline: true,
 			wantKnown: true},
 		{name: "offline", status: http.StatusOK, body: `{"id":4,"status":"offline","busy":false}`, wantKnown: true},
+		{name: "offline, busy with the job it stopped in", status: http.StatusOK,
+			body: `{"id":4,"status":"offline","busy":true}`, wantKnown: true},
 		{name: "deleted", status: http.StatusNotFound,
 			body: `{"message":"runner with id 4: resource does not exist"}`, wantKnown: true},
 		{name: "older Gitea", status: http.StatusNotFound, body: `{"message":"not found"}`},

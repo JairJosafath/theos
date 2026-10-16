@@ -632,6 +632,31 @@ model and context it needs.
   first 200, not at the upload. A false
   `ModulePublished` that waits on a person shows in *Needs you* and on the
   Brief. See [plans/done/module-fetchable.md](plans/done/module-fetchable.md).
+- **A released TypeScript or Python app is a package others can install**
+  (#1087). Once the release runs succeed, the Crew reads the release's files
+  and publishes each npm tarball, Python wheel and sdist among them to the
+  Git host's npm and PyPI registries (Gitea's, per owner). These are the files
+  the release run's `make dist` built and attached at the tag. The operator
+  builds nothing; it moves bytes with the credentials it holds. A file is
+  known by its content, and is published only at the tag's version (PEP 440
+  normalised for Python), once, never replaced. An npm package is named
+  `@c4factory/<container>`, the one scope pods and CI send to the owner's
+  registry; a tarball by another name is the app's own release file, and stays
+  unpublished. A PyPI package keeps its `pyproject.toml` name; the consumer
+  pins it to the owner's index, declared `explicit`, so it never comes from
+  pypi.org. `status.lastRelease.packages` records the state (`Waiting` until
+  the release runs succeed, `Published`, `NoPackage` when the release has no
+  package file, `Invalid` for a version that isn't the tag's, `Failed` while
+  the host can't be reached, retried each poll), a message, and the packages
+  published, each with its ecosystem, name and version. The condition
+  `PackagesPublished` says why they aren't published. An upload is a Normal
+  Event `PackagePublished` and the log line `Published package`; an invalid
+  file is a Warning Event `InvalidPackage`, once per release. Agent pods get
+  `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`, and c4agent writes `~/.npmrc` with
+  the scope and the bot's token (uv reads the `~/.netrc` it writes). The
+  TypeScript and Python Standards' checks and gitea-release's release run
+  write the same from the job's token. See
+  [plans/app-packages.md](plans/app-packages.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -980,13 +1005,20 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   with an issue of the round for it). When the Crew tags a release of a repository with a `go.mod` at its
   root, the operator publishes the module to the owner's Go registry in Gitea;
   agent pods and the Go Standard's CI fetch `c4factory.local/...` modules
-  through it. A `uses:` issue is filed without `status/ready` and labelled
-  ready only once each app it uses has a published version: the round's
-  release for an app the round releases, else its newest. Its body then gets
-  `Uses <module> <version>: go get it at that version.` per app. While it
-  waits, the Brief stays `Applying` and its message names the issue, the app
-  and why, such as a release that published no Go module. See
-  [plans/done/app-modules.md](plans/done/app-modules.md).
+  through it. A TypeScript or Python app's release publishes its npm or PyPI
+  package the same way (#1087), and the same pods and Standards install
+  `@c4factory/...` packages and the owner's index from it. A `uses:` issue is
+  filed without `status/ready` and labelled ready only once each app it uses
+  has a published version: the round's release for an app the round
+  releases, else its newest. A version counts as published once its Go module
+  and its packages have both settled and at least one was published. Its body
+  then gets a line per thing published, such as
+  `Uses <module> <version>: go get it at that version.`, or the npm or PyPI
+  line naming the package, its version and the install. While it waits, the
+  Brief stays `Applying` and its message names the issue, the app and why,
+  such as a release that published neither a Go module nor a package. See
+  [plans/done/app-modules.md](plans/done/app-modules.md) and
+  [plans/app-packages.md](plans/app-packages.md).
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the
@@ -1386,7 +1418,7 @@ Grouped by caller they fall into these ports:
 | Issues | issues, comments, labels, assignment, milestones, dependencies | Gitea, inside `Provider`; request intake on GitHub (`IssueTracker`) |
 | CI | workflow runs of a commit or tag, rerunning failed jobs, a job's log, runners online | Gitea Actions, inside `Provider` |
 | AgentAccess | a credential that writes to one Container's (or Brief's) repository only, and revoking it | Gitea bot users, inside `Provider` |
-| Registry | publishing a Go module, the Go proxy address; container images (#1069) | Gitea packages, inside `Provider` |
+| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); container images (#1069) | Gitea packages, inside `Provider` |
 | AgentRuntime | start a run, read its state and result, stop it, list the runs held | Agent Sandbox, hard-coded (`SandboxGVK`) |
 | Deployer | ship a release to a target, read back its state | the GitHub release copy (`ReleaseTarget`); #1068 |
 
@@ -1444,7 +1476,9 @@ meets other hosts:
 | Exclusive scoped labels | native | none | scoped labels (`a::b`) | adding a label removes the others of its scope; the adapter does it when the host doesn't |
 | Issue dependencies | native | "blocked by" | issue links that block | `OpenBlockers` and `AddIssueDependency` are part of Issues |
 | Runners online | admin API | runners API | runners API | may answer "unknown", as it can now |
+| A project's own runners | the organization's registration token and runners API; `--ephemeral` runners | the organization's, likewise | the group's runners | optional capability of CI, `OwnerRunners`: the owner's registration token, its runners and their state, delete one; a host without it gets no runner pool |
 | Go modules | the owner's Go registry | none: the module is fetched from its tag | Go proxy | optional capability of Registry |
+| npm and PyPI packages | the owner's npm and PyPI registries | npm in GitHub Packages, no PyPI | the project's npm and PyPI registries | optional capability of Registry, one per ecosystem |
 | Events | an organization webhook, signed (#1084) | webhooks | webhooks | polling is the contract; webhooks are Events, an optional capability of GitHost: register a hook, parse a signed delivery |
 
 **Events: the host calls back, and polling stays the contract.** A host that
