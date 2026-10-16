@@ -27,10 +27,6 @@ import (
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
 const AgentNetworkPolicyName = "c4-agent-sandbox"
 
-// privateRanges are the addresses agents can't reach over HTTPS: the cluster's
-// pods, services and nodes, and anything else on a private network.
-var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
-
 // ensureAgentNetwork fences agent sandboxes in the project: no traffic in, and
 // out only DNS, the in-cluster Git hosts of the project's GitProviders, and HTTPS
 // to public addresses (the model API, package registries). The Kubernetes API and
@@ -64,7 +60,8 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
 		},
 		{
-			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0", Except: privateRanges}}},
+			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{
+				CIDR: "0.0.0.0/0", Except: model.PrivateRanges()}}},
 			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &https}},
 		},
 	}
