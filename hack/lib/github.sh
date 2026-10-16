@@ -941,18 +941,21 @@ gh_take_locked() {
     [.[] | select(claim) | cfield("branch") | select(. != "")] | last // empty' <<<"$all")
   [ -n "$branch" ] || branch=$(gh_branch_name <<<"$issue")
 
-  # 2. Expire the claims and reservations past the TTL.
-  while IFS=$'\t' read -r id w stale; do
+  # 2. Expire the claims and reservations past the TTL. Each keeps the host it
+  # was held on, so whoever reads it knows which device's sessions stopped.
+  while IFS=$'\t' read -r id w host stale; do
     [ -n "$id" ] || continue
     if [ "$stale" = reserved ]; then
-      gh_edit_comment "$id" "$(printf '%s\n**%s**'"'"'s reservation expired, taken over by %s' "$GH_CLAIM_MARKER" "$w" "$name")" || return 1
+      gh_edit_comment "$id" "$(printf '%s\n**%s**'"'"'s reservation expired, taken over by %s · host `%s`' \
+        "$GH_CLAIM_MARKER" "$w" "$name" "$host")" || return 1
       continue
     fi
-    gh_edit_comment "$id" "$(printf '%s\n**%s** expired, taken over by %s · branch `%s`' \
-      "$GH_CLAIM_MARKER" "$w" "$name" "$stale")" || return 1
+    gh_edit_comment "$id" "$(printf '%s\n**%s** expired, taken over by %s · host `%s` · branch `%s`' \
+      "$GH_CLAIM_MARKER" "$w" "$name" "$host" "$stale")" || return 1
   done < <(jq -r "${q[@]}" "$GH_CLAIM_JQ"'
     .[] | select(claim and (held or reserved) and (fresh | not))
-    | [.id, cname, if reserved then "reserved" else cfield("branch") end] | @tsv' <<<"$all")
+    | [.id, cname, (cfield("host") | select(. != "") // "unknown"), if reserved then "reserved" else cfield("branch") end]
+    | @tsv' <<<"$all")
 
   # 3. Claim, wait, and keep it only if it is the oldest live claim. This
   # checkout's reservation becomes the claim: it is already the oldest.
@@ -1382,17 +1385,19 @@ gh_cluster() {
 
 # gh_release [REASON]: release this checkout's claim, and its cluster lease
 # (gh_headless); the claim's comment then says "**NAME** released this issue:
-# REASON". Without a claim there is nothing more to do.
+# REASON" and keeps the host it was held on. Without a claim there is nothing
+# more to do.
 gh_release() {
-  local reason=${1:-released} c_issue c_id c_name c_branch rc
+  local reason=${1:-released} c_issue c_id c_name c_branch rc c host
   if ! gh_headless; then gh_lease_release; fi
   gh_claim_read || return 0
-  gh_claim_held >/dev/null
+  c=$(gh_claim_held)
   rc=$?
   [ "$rc" = 2 ] && return 1
   if [ "$rc" = 0 ]; then
-    gh_edit_comment "$c_id" "$(printf '%s\n**%s** released this issue: %s · branch `%s`' \
-      "$GH_CLAIM_MARKER" "$c_name" "$reason" "$c_branch")" || return 1
+    host=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'cfield("host")' <<<"$c")
+    gh_edit_comment "$c_id" "$(printf '%s\n**%s** released this issue: %s · host `%s` · branch `%s`' \
+      "$GH_CLAIM_MARKER" "$c_name" "$reason" "${host:-${C4_HOST:-$(hostname)}}" "$c_branch")" || return 1
     echo "released #$c_issue ($c_name): $reason"
   else
     echo "github: $c_name's claim on #$c_issue was already released or taken over" >&2

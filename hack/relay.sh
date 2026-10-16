@@ -512,13 +512,39 @@ paused() {
   echo "$until $why"
 }
 
-# limit_message OUT: the line that says session OUT ended on a usage limit or a
-# failed login. It reads the CLI's own words only, never the agent's final
-# message (#655): the result when it is an error, or when the session exited
-# non-zero (S_RC) before any turn ran; and the tail of OUT.err when there is no
-# result or the session exited non-zero.
+# LIMITS: the limits a session can end on, each as WORDS:REGEX, most specific
+# first: REGEX matches the CLI's words for it (case-insensitive, extended), and
+# WORDS name it where its claim is released (#1199), as an expired login needs
+# another fix than a usage limit.
+LIMITS=(
+  'OAuth session expired:oauth session expired'
+  'OAuth token expired:oauth token (has )?expired'
+  'OAuth token revoked:oauth token (has )?revoked'
+  'invalid API key:invalid api key'
+  'not logged in:not logged in|please run /login'
+  'authentication failed:failed to authenticate|authentication_error'
+  'credit balance too low:credit balance (is )?too low'
+  "usage limit:you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached"
+)
+
+# limit_name MESSAGE: the WORDS of the first of LIMITS that MESSAGE matches.
+# Exit 1: none does.
+limit_name() {
+  local l
+  for l in "${LIMITS[@]}"; do
+    grep -qiE -- "${l#*:}" <<<"$1" && { echo "${l%%:*}"; return 0; }
+  done
+  return 1
+}
+
+# limit_message OUT: the line that says session OUT ended on one of LIMITS.
+# It reads the CLI's own words only, never the agent's final message (#655):
+# the result when it is an error, or when the session exited non-zero (S_RC)
+# before any turn ran; and the tail of OUT.err when there is no result or the
+# session exited non-zero.
 limit_message() {
-  local out=$1
+  local out=$1 l re=
+  for l in "${LIMITS[@]}"; do re+=${re:+|}${l#*:}; done
   {
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
       jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
@@ -526,7 +552,7 @@ limit_message() {
     else
       tail -n 20 "$out.err" 2>/dev/null
     fi
-  } | grep -m1 -iE "you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached|not logged in|please run /login|invalid api key|oauth token (has )?(expired|revoked)|oauth session expired|failed to authenticate|authentication_error|credit balance (is )?too low"
+  } | grep -m1 -iE -- "$re"
 }
 
 # reset_time MESSAGE: the epoch second a limit MESSAGE says it resets at
@@ -690,7 +716,8 @@ scratch_clear() {
 
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
-# and log its end as WHAT.
+# and log its end as WHAT. Exit 3: it ended on one of LIMITS, whose message
+# S_LIMIT holds.
 session() {
   local what=$1 out=$2 id=$3 rc t0 mins msg pid watch= idle kill_after tmp=$SCRATCH/${WT##*/}
   t0=$(date +%s)
@@ -738,8 +765,9 @@ session() {
   fi
   [ "$rc" = 124 ] && log "$what hit the $SESSION_TIMEOUT timeout"
   [ "$rc" = 143 ] && log "$what was killed (SIGTERM)"
-  S_RC=$rc S_MINS=$mins
+  S_RC=$rc S_MINS=$mins S_LIMIT=
   if msg=$(limit_message "$out"); then
+    S_LIMIT=$msg
     pause "$msg"
     return 3
   fi
@@ -972,7 +1000,7 @@ maintain() {
 
 # work: the worker's sessions, one after another (see the header).
 work() {
-  local i id rc try claim name branch before head refs out limited result reason released
+  local i id rc try claim name branch before head refs out limited limit result reason released
   for i in $(seq 1 "$MAX_SESSIONS"); do
     [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
     if [ -z "$DRY_RUN" ]; then
@@ -1044,7 +1072,13 @@ work() {
         handed-off) reason="handed off" ;;
         waiting) reason="waiting on its steps" ;;
         released) reason="set back to ready or proposed" ;;
-        *) reason="session ended without a handoff$([ "$limited" != 3 ] || echo " (a limit)")" ;;
+        *)
+          reason="session ended without a handoff"
+          if [ "$limited" = 3 ]; then
+            limit=$(limit_name "$S_LIMIT") || limit=
+            reason+=" (a limit${limit:+: $limit})"
+          fi
+          ;;
       esac
       if released=$(gh_release "$reason" 2>&1); then
         log "${released//$'\n'/; }"
