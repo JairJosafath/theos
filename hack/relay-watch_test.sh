@@ -596,6 +596,8 @@ case "$1 $2 $* " in
   *"/check-runs/"*)
     for a in "$@"; do [[ $a == */check-runs/* ]] && id=${a##*/check-runs/} id=${id%%/*}; done
     jq -r "$q" "$FAKE/annotations-$id.json" 2>/dev/null || echo '[]' | jq -r "$q" ;;
+  *"/actions/runs?"*) # the API's queued runs, one page: $FAKE/runs-.json renamed
+    jq '{workflow_runs: [.[] | {id: .databaseId, status, created_at: .createdAt}]}' "$FAKE/runs-.json" | jq -r "$q" ;;
   *"/actions/runners"*) jq -r "$q" "$FAKE/runners.json" ;;
   *" --method POST "*)
     [ -f "$FAKE/post.fail" ] && { echo "HTTP 502" >&2; exit 1; }
@@ -862,7 +864,7 @@ rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/fla
 echo '[]' >"$T/issues.json"
 
 # Runners offline: a run queued on main for 40 minutes puts the note in the
-# Maintainer report (report_note faked; the runs are gh run list's output,
+# Maintainer report (report_note faked; the runs are GitHub's actions/runs list,
 # read by the real hack/lib/github.sh queued), 10 minutes says nothing, and
 # runs that start again take it out. A failure is logged once.
 NOTE_RC=0

@@ -80,7 +80,7 @@ func sourcePublished(ns, repository, path string, app map[string]string) {
 		g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
 			HaveField("Reason", "SourcePublished"),
 			HaveField("Note", "The source of v0.1.0 is published at "+url))))
-	}, 30*time.Second).Should(Succeed())
+	}, publishWait).Should(Succeed())
 
 	Expect(source.Tag).To(Equal(sourceTag))
 	Expect(source.URL).To(Equal(url))
