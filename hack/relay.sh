@@ -94,14 +94,15 @@
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
 # without picking or claiming, and the watch starts nothing. A session that
 # ends without a handoff and without a new commit on the issue's branch (or on
-# <branch>-2 or <branch>-<name>, local or pushed) counts as failed, in
-# .relay/fails-<N>; at RELAY_MAX_FAILS (default 3) in a row the relay escalates
-# the issue to the maintainer (status/needs-maintainer) with a comment naming
-# each one. A session that leaves its issue in status/needs-maintainer,
+# <branch>-2 or <branch>-<name>, local or pushed) counts as failed: a strike, a
+# comment on the issue. At RELAY_MAX_FAILS (default 3) strikes, from any device
+# and none older than RELAY_STRIKE_TTL (default 24h), the relay escalates the
+# issue to the maintainer (status/needs-maintainer) with one comment linking
+# each. A session that leaves its issue in status/needs-maintainer,
 # status/needs-human or status/waiting has finished, as one that closes it or
 # hands it off; one that sets it back to status/ready or status/proposed isn't
-# counted. A handoff or a new commit resets the count; a paused session
-# doesn't count.
+# counted. A handoff or a new commit, on any device, resets the count; a paused
+# session doesn't count.
 # A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
 # changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
 # then SIGKILL after RELAY_IDLE_KILL) and counts it as failed, commit or not.
@@ -143,7 +144,8 @@ MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before 
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
-MAX_FAILS=${RELAY_MAX_FAILS:-3}     # failed sessions in a row before an issue goes to the maintainer
+MAX_FAILS=${RELAY_MAX_FAILS:-3}     # strikes (failed sessions) before an issue goes to the maintainer
+STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
@@ -717,50 +719,112 @@ session() {
   return 0
 }
 
-# failed N ID OUT: count session ID (output OUT, with S_RC and S_MINS) as one
-# more failed session in a row on issue N, in .relay/fails-N; at
-# RELAY_MAX_FAILS, escalate N to the maintainer (status/needs-maintainer) with
-# a comment naming them.
+# The relay's strike comments on an issue: one per failed session, one that
+# resets the count, one that sends the issue to the maintainer. They are read
+# back from the issue, so every device's strikes add up.
+STRIKE_MARKER='<!-- relay-strike -->'
+STRIKE_RESET_MARKER='<!-- relay-strike-reset -->'
+STRIKE_ESCALATED_MARKER='<!-- relay-strike-escalated -->'
+
+# strikes N: the URLs of issue N's strikes that count, oldest first: the
+# relay's strike comments, from any device, newer than RELAY_STRIKE_TTL and
+# after N's newest handoff, reset and escalation comments.
+strikes() {
+  local all ttl
+  ttl=$(gh_seconds "$STRIKE_TTL" RELAY_STRIKE_TTL) || return 1
+  all=$(gh_comments "$1") || return 1
+  jq -r --arg s "$STRIKE_MARKER" --arg h "$GH_HANDOFF_MARKER" --arg r "$STRIKE_RESET_MARKER" \
+    --arg e "$STRIKE_ESCALATED_MARKER" --argjson ttl "$ttl" '
+    def starts($m): .body | sub("^\\s+"; "") | startswith($m);
+    ([to_entries[] | select(.value | starts($h) or starts($r) or starts($e)) | .key] | last // -1) as $cut
+    | .[$cut + 1:][] | select(starts($s) and (.created_at | fromdateiso8601) > now - $ttl) | .html_url' <<<"$all"
+}
+
+# failed N ID OUT: count session ID (output OUT, with S_RC and S_MINS) as a
+# strike on issue N, a comment on N; at RELAY_MAX_FAILS strikes that count,
+# escalate N to the maintainer (status/needs-maintainer) with one comment
+# naming them. When that comment is posted but the status swap fails, the
+# next failed session retries the swap alone (.relay/escalated-N).
 failed() {
-  local n=$1 f="$DIR/fails-$1" count body url
-  printf '%s\t%s\t%s\t%s\n' "$2" "$S_RC" "$S_MINS" "$3" >>"$f"
-  count=$(wc -l <"$f")
-  if [ "$count" -lt "$MAX_FAILS" ]; then
-    log "#$n: $count failed session(s) in a row; status/needs-maintainer at $MAX_FAILS (RELAY_MAX_FAILS)"
+  local n=$1 url urls count
+  if [ -e "$DIR/escalated-$n" ]; then
+    escalate "$n" "$(cat "$DIR/escalated-$n")"
     return 0
   fi
-  body=$(fail_comment "$n" "$f")
-  if url=$(gh_comment "$n" - <<<"$body" 2>>"$LOG") && gh_set_status "$n" needs-maintainer >/dev/null 2>>"$LOG"; then
-    log "#$n failed $count sessions in a row; set it to status/needs-maintainer: $url"
-    rm -f "$f"
+  if ! url=$(strike_comment "$n" "$2" "$3" | gh_comment "$n" - 2>>"$LOG"); then
+    log "#$n: could not post the strike for session $2; it isn't counted"
+    return 0
+  fi
+  if ! urls=$(strikes "$n" 2>>"$LOG"); then
+    log "#$n: could not read its strikes; posted $url"
+    return 0
+  fi
+  count=$(grep -c . <<<"$urls")
+  if [ "$count" -lt "$MAX_FAILS" ]; then
+    log "#$n: $count strike(s) within $STRIKE_TTL, $url; status/needs-maintainer at $MAX_FAILS (RELAY_MAX_FAILS)"
+    return 0
+  fi
+  if url=$(escalation_comment "$n" "$urls" | gh_comment "$n" - 2>>"$LOG"); then
+    echo "$url" >"$DIR/escalated-$n"
+    escalate "$n" "$url"
   else
-    log "#$n failed $count sessions in a row, but setting it to status/needs-maintainer failed; trying again after the next"
+    log "#$n has $count strikes, but posting the comment for the maintainer failed; trying again after the next"
   fi
 }
 
-# fail_comment N FILE: the comment that hands issue N to the maintainer, naming each
-# failed session in FILE.
-fail_comment() {
-  local id rc mins out
-  echo "The relay on host \`$(hostname)\` stopped working #$1: $(wc -l <"$2") sessions in a row ended without a handoff and without a new commit on its branch. Each session is below; \`claude --resume <id>\` in the worker's worktree opens it. Maintainer: find what stops them, fix it or file the fix, then set the issue back to \`status/ready\`; send it to the owner only if that needs them."
-  while IFS=$'\t' read -r id rc mins out; do
-    echo
-    echo "### Session \`$id\`: exit $rc after ${mins}m"
-    echo
-    echo "stderr (\`$out.err\`), last lines:"
-    echo '```'
-    tail -n 10 "$out.err" 2>/dev/null | cut -c1-300
-    echo '```'
-    echo
-    echo "Account (\`$out.md\`), last lines:"
-    echo '```'
-    tail -n 10 "$out.md" 2>/dev/null | cut -c1-300
-    echo '```'
-  done <"$2"
+# escalate N URL: set N to status/needs-maintainer, its comment for the
+# maintainer at URL posted; keep .relay/escalated-N for a retry when that fails.
+escalate() {
+  if gh_set_status "$1" needs-maintainer >/dev/null 2>>"$LOG"; then
+    log "#$1 reached $MAX_FAILS strikes; set it to status/needs-maintainer: $2"
+    rm -f "$DIR/escalated-$1"
+  else
+    log "#$1 reached $MAX_FAILS strikes and has its comment ($2), but setting it to status/needs-maintainer failed; trying again after the next failed session"
+  fi
 }
 
-# forget_fails N: a handoff, a commit or a finish ends issue N's failures.
-forget_fails() { rm -f "$DIR/fails-$1"; }
+# strike_comment N ID OUT: the strike comment for session ID's failure on N,
+# with the last lines of its stderr and account.
+strike_comment() {
+  echo "$STRIKE_MARKER"
+  echo "**Strike:** session \`$2\` on host \`$(hostname)\` ended without a handoff and without a new commit on its branch: exit $S_RC after ${S_MINS}m. \`claude --resume $2\` in \`$WT\` on that host opens it. $MAX_FAILS strikes within $STRIKE_TTL, from any device, with no handoff, commit or finish between them, send the issue to the maintainer."
+  echo
+  echo "stderr (\`$3.err\`), last lines:"
+  echo '```'
+  tail -n 10 "$3.err" 2>/dev/null | cut -c1-300
+  echo '```'
+  echo
+  echo "Account (\`$3.md\`), last lines:"
+  echo '```'
+  tail -n 10 "$3.md" 2>/dev/null | cut -c1-300
+  echo '```'
+}
+
+# escalation_comment N URLS: the comment that hands issue N to the maintainer,
+# linking each strike in URLS.
+escalation_comment() {
+  echo "$STRIKE_ESCALATED_MARKER"
+  echo "The relay stopped working #$1: $(grep -c . <<<"$2") sessions within $STRIKE_TTL ended without a handoff and without a new commit on its branch. Each strike names its session, host, stderr and account:"
+  echo
+  sed 's/^/- /' <<<"$2"
+  echo
+  echo "Maintainer: find what stops them, fix it or file the fix, then set the issue back to \`status/ready\`; send it to the owner only if that needs them. This comment resets the count."
+}
+
+# forget_fails N: a handoff, a commit or a finish ends issue N's strikes: post
+# a reset comment when any count, so every device stops counting them.
+forget_fails() {
+  local urls
+  rm -f "$DIR/escalated-$1"
+  urls=$(strikes "$1" 2>>"$LOG") || { log "#$1: could not read its strikes to reset them"; return 0; }
+  [ -n "$urls" ] || return 0
+  if printf '%s\n%s\n' "$STRIKE_RESET_MARKER" "The relay on host \`$(hostname)\` saw a handoff, a commit or a finish on #$1; the $(grep -c . <<<"$urls") strike(s) before this comment no longer count." |
+    gh_comment "$1" - >/dev/null 2>>"$LOG"; then
+    log "#$1: reset its strikes"
+  else
+    log "#$1: could not post the reset of its strikes"
+  fi
+}
 
 # untriaged: tell the watch the triage session never ran: keep only the time
 # in .relay/triaged, so it starts one again after WATCH_TRIAGE.
