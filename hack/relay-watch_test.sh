@@ -11,7 +11,8 @@
 # with the activity, the escalated issues and hack/relay.sh --maintain faked;
 # --install and --uninstall with systemctl, loginctl and crontab faked; and the
 # stop file and the lock in a scratch copy of the watch, never this checkout's
-# .relay/.
+# .relay/; and the move to origin/main's code in relay-code from a checkout on
+# another branch, against a scratch origin.
 # Run: hack/relay-watch_test.sh
 T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
@@ -541,7 +542,7 @@ MAINTAIN_EVERY=0 ACT_RC=0
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in
 # $T/issues.json, and every issue filed appended there.
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=$T/repo
+REPO=$T/repo CODE=$T/repo
 mkdir -p "$REPO/.github/workflows" "$T/bin"
 printf 'name: Tests\non:\n  push:\n    branches: [main]\n  pull_request:\n' >"$REPO/.github/workflows/test.yml"
 printf 'name: Lint\non:\n  push:\n    branches:\n      - main\n' >"$REPO/.github/workflows/lint.yml"
@@ -1010,7 +1011,7 @@ export PATH=$SAVED_PATH HOME=$SAVED_HOME
 S=$T/scratch
 mkdir -p "$S/hack/lib" "$S/.relay"
 cp "$(dirname "$0")/relay-watch.sh" "$S/hack/"
-cp "$(dirname "$0")/lib/session-env.sh" "$S/hack/lib/"
+cp "$(dirname "$0")/lib/session-env.sh" "$(dirname "$0")/lib/relay-code.sh" "$S/hack/lib/"
 printf '#!/usr/bin/env bash\nenv >"%s.tmp" && mv "%s.tmp" "%s"\n' "$T/pull-env" "$T/pull-env" "$T/pull-env" >"$S/hack/pull.sh"
 chmod +x "$S/hack/pull.sh"
 touch "$S/.relay/stop"
@@ -1044,6 +1045,72 @@ check "foreground: says why" "$(grep -c 'stop file found; stopping' "$S/.relay/w
 check "foreground: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_SESSION_ID|CLAUDE_CODE_ENTRYPOINT|CLAUDE_EFFORT|VSCODE_PID|GIT_ASKPASS)=' "$T/pull-env")" ""
 check "foreground: keeps the Claude settings" "$(grep -c '^CLAUDE_CODE_OAUTH_TOKEN=kept$' "$T/pull-env")" 1
+
+# The watch runs origin/main's code whatever branch the checkout it was
+# started from has (#1126). A scratch origin whose main has the watch's
+# scripts, and a clone on a feature branch that edits it: the watch moves to
+# relay-code at its first pull, a worktree at origin/main, and the restarted
+# watch runs main's script there, with its state still in the clone; from
+# relay-code it restarts only when origin/main's code changes; RELAY_PULL=0
+# keeps it where it started. The stop file ends each restarted watch at its
+# first round.
+G=(env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git)
+"${G[@]}" init -q -b main "$T/code-src"
+mkdir -p "$T/code-src/hack/lib"
+cp "$HERE/relay-watch.sh" "$HERE/pull.sh" "$T/code-src/hack/"
+cp "$HERE/lib/session-env.sh" "$HERE/lib/relay-code.sh" "$T/code-src/hack/lib/"
+"${G[@]}" -C "$T/code-src" add -A && "${G[@]}" -C "$T/code-src" commit -qm main
+"${G[@]}" clone -q --bare "$T/code-src" "$T/code-origin.git"
+"${G[@]}" -C "$T/code-src" remote add origin "$T/code-origin.git"
+C=$T/checkout
+"${G[@]}" clone -q "$T/code-origin.git" "$C"
+"${G[@]}" -C "$C" switch -qc feature
+echo '# the feature branch' >>"$C/hack/relay-watch.sh"
+"${G[@]}" -C "$C" commit -qam feature
+mkdir -p "$C/.relay"
+touch "$C/.relay/stop"
+RC=$C/.claude/worktrees/relay-code
+# move SUM: run the watch's update from CODE_AT (default the clone) with the
+# code checksum SUM (default CODE_AT's), holding the watch's lock as the
+# watch does; prints "stayed" when it didn't restart.
+move() {
+  (
+    CODE=${CODE_AT:-$C} REPO=$C DIR=$C/.relay STOP=$C/.relay/stop LOG=$C/.relay/watch.log
+    PULLED= MODE=start WORKERS=2 PULL=${PULL_AT:-1}
+    CODE_SUM=${1:-$(code_sum)}
+    exec 8>"$DIR/watch.lock"
+    flock -n 8 || exit 1
+    update
+    echo stayed
+  ) 2>>"$T/move.err"
+}
+main=$(git -C "$T/code-src" rev-parse --short HEAD)
+PULL_AT=0
+check "relay code: RELAY_PULL=0 stays on the branch" "$(move) $([ -e "$RC" ] && echo moved)" "stayed "
+unset PULL_AT
+check "relay code: from a branch, restarts" "$(move)" ""
+check "relay code: relay-code at origin/main" "$(git -C "$RC" rev-parse --short HEAD)" "$main"
+check "relay code: relay-code has main's watch, not the branch's" \
+  "$(cmp -s "$RC/hack/relay-watch.sh" "$HERE/relay-watch.sh" && echo main)" main
+check "relay code: the clone stays on its branch" "$(git -C "$C" rev-parse --abbrev-ref HEAD)" feature
+check "relay code: says it moves" \
+  "$(grep -c "moving to origin/main's code ($RC at $main) from $C; restarting" "$C/.relay/watch.log")" 1
+check "relay code: the restarted watch runs relay-code's code, its state in the clone" \
+  "$(grep -c "watch started: pid .*, code $RC at $main, 2 worker(s)" "$C/.relay/watch.log") $(grep -c 'stop file found' "$C/.relay/watch.log")" "1 1"
+: >"$C/.relay/watch.log"
+CODE_AT=$RC
+check "relay code: in relay-code, nothing new on main: stays" "$(move)" stayed
+sum=$(CODE=$RC code_sum)
+echo '# a fix on main' >>"$T/code-src/hack/relay-watch.sh"
+"${G[@]}" -C "$T/code-src" commit -qam fix
+"${G[@]}" -C "$T/code-src" push -q origin main
+main=$(git -C "$T/code-src" rev-parse --short HEAD)
+check "relay code: main's code changed: restarts" "$(move "$sum")" ""
+check "relay code: says why, and runs the new main" \
+  "$(grep -c "the watch's code changed ($RC at $main); restarting" "$C/.relay/watch.log") $(grep -c "watch started: .*, code $RC at $main," "$C/.relay/watch.log")" "1 1"
+check "relay code: nothing on stderr" "$(cat "$T/move.err")" ""
+unset CODE_AT
 
 # Arguments.
 bash "$(dirname "$0")/relay-watch.sh" --workers 0 2>/dev/null
