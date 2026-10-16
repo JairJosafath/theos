@@ -3,6 +3,10 @@
 //
 //	go run ./hack/render -out /tmp/app -type cli \
 //	  Framework=go-cli Standard=go-standard Deployment=gitea-release
+//
+// The Container's spec.operations is the factory's defaults unless the
+// -retention-days, -copy-to-region, -rpo, -rto or -alert-email flags set a
+// field, as an AWS Framework renders it into infra/operations.ts.
 package main
 
 import (
@@ -25,6 +29,13 @@ func main() {
 	flag.StringVar(&in.Type, "type", "cli", "Container type")
 	flag.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
 	ci := flag.String("ci", model.CIGiteaActions, "the CI system the repository runs")
+	// The Container's spec.operations, each left out when empty (-retention-days -1).
+	var ops model.OperationsChoices
+	retention := flag.Int("retention-days", -1, "spec.operations.backups.retentionDays; -1 leaves it out")
+	flag.StringVar(&ops.CopyToRegion, "copy-to-region", "", "spec.operations.backups.copyToRegion")
+	flag.StringVar(&ops.RPO, "rpo", "", "spec.operations.recovery.rpo")
+	flag.StringVar(&ops.RTO, "rto", "", "spec.operations.recovery.rto")
+	flag.StringVar(&ops.Email, "alert-email", "", "spec.operations.alerts.email")
 	flag.Parse()
 	if *out == "" || flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
@@ -34,6 +45,17 @@ func main() {
 	if in.CI, err = model.CIByName(*ci); err != nil {
 		fail(err)
 	}
+	if *retention < -1 || *retention > int(model.MaxRetentionDays) {
+		fail(fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays))
+	}
+	if *retention >= 0 {
+		days := int32(*retention)
+		ops.RetentionDays = &days
+	}
+	if problems := model.OperationsProblems(ops); len(problems) > 0 {
+		fail(fmt.Errorf("spec.operations: %s", strings.Join(problems, "; ")))
+	}
+	in.Operations = model.ResolveOperations(ops)
 
 	layers := make([]scaffold.Layer, 0, flag.NArg())
 	for _, arg := range flag.Args() {

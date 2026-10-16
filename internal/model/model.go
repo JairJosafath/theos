@@ -474,6 +474,13 @@ func covers(prot, path string) bool {
 	return path == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(path, prot))
 }
 
+// PrivateRanges are the addresses the fences keep agents and CI jobs from over
+// HTTPS: the cluster's pods, services and nodes, and anything else on a
+// private network (docs/design.md, "The fence" and "The CI fence").
+func PrivateRanges() []string {
+	return []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
+}
+
 // ClusterNamespace returns the namespace of an in-cluster service address, such
 // as "gitea" for http://gitea.gitea.svc.cluster.local:3000.
 func ClusterNamespace(host string) (string, bool) {

@@ -4,7 +4,8 @@
 # `make check` before every commit. `make help` lists the targets.
 #
 # Nothing here deploys, bootstraps or calls AWS: `synth` only writes
-# CloudFormation into cdk.out/, offline, without Docker or credentials.
+# CloudFormation into cdk.out/, one folder per tier, offline, without Docker
+# or credentials.
 {{- $go := eq .Framework "aws-lambda-go" }}
 {{- $py := eq .Framework "aws-lambda-py" }}
 
@@ -12,6 +13,8 @@ NAME := {{ .Container }}
 BIN := node_modules/.bin
 # cfn-lint, pinned, run through uv like every Python tool on the runner.
 CFN_LINT := uvx cfn-lint==1.57.2
+# The tiers synth builds, as infra/standard.ts names them.
+TIERS := production development
 # The CDK CLI offline and quiet: no telemetry, no notices fetched, no check
 # for a newer CLI.
 CDK := CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true $(BIN)/cdk --no-notices
@@ -118,15 +121,19 @@ test: ## Run the unit tests and the stacks' assertions.
 	$(BIN)/vitest run
 {{- end }}
 
-synth: ## Write the CloudFormation templates into cdk.out/; fails on a CDK Nag finding.
+# A deploy target picks a tier's templates; a hand deploy names it the same
+# way, `cdk deploy -c tier=production`, and is development when it doesn't.
+synth: ## Write each tier's CloudFormation templates into cdk.out/<tier>/; fails on a CDK Nag finding.
 	rm -rf cdk.out
-	$(CDK) synth --quiet
+	$(foreach tier,$(TIERS),$(CDK) synth --quiet -c tier=$(tier) -o cdk.out/$(tier) &&) true
 
-# W3005: CDK makes a function depend on its role and the role's policy, which
-# it also references; cfn-lint calls the DependsOn redundant. It is harmless,
-# and not ours to change.
-cfn-lint: ## Lint the templates synth wrote.
-	$(CFN_LINT) --ignore-checks W3005 -- cdk.out/*.template.json
+# --include-checks I adds the informational checks the Standard wants:
+# I3011, a stateful resource without a deletion policy, and I3013, one whose
+# content expires without a set retention. W3005: CDK makes a function depend
+# on its role and the role's policy, which it also references; cfn-lint calls
+# the DependsOn redundant. It is harmless, and not ours to change.
+cfn-lint: ## Lint the templates synth wrote, for both tiers.
+	$(CFN_LINT) --include-checks I --ignore-checks W3005 -- $(foreach tier,$(TIERS),cdk.out/$(tier)/*.template.json)
 
 clean: ## Remove what synth wrote.
 	rm -rf cdk.out
