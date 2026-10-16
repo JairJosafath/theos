@@ -298,12 +298,17 @@ the limit resets (`.relay/paused-until`): every worker waits, and the watch
 starts nothing. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
 without a new commit on the issue's branch, or on `<branch>-2` or
-`<branch>-<name>` (local or pushed), is a failed one; at `RELAY_MAX_FAILS`
-(3) in a row the relay sets the issue to `status/needs-maintainer` with a
-comment naming each session, and a handoff or a commit resets the count. One
-that leaves the issue in `status/waiting` (a plan's parent) has finished, like
-a handoff; one that sets it back to `status/ready` or `status/proposed` isn't
-counted either way.
+`<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
+the issue naming the session, its host and the last lines of its stderr and
+account. The count is read from the issue, so every device's strikes add up;
+one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
+(3) the relay posts one comment linking them and sets the issue to
+`status/needs-maintainer`; when only that status swap fails, the next failed
+session retries it without a new comment (`.relay/escalated-<issue>`). A
+handoff, a commit or a finish on any device resets the count: the relay posts
+a reset comment when any strike counts. One that leaves the issue in
+`status/waiting` (a plan's parent) has finished, like a handoff; one that sets
+it back to `status/ready` or `status/proposed` isn't counted either way.
 
 ### Sharing the Kind clusters between checkouts
 
@@ -389,14 +394,21 @@ starts, finds nothing and stops every minute. It logs only changes, to `.relay/w
 minutes and restarts itself when that changed its code. Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour.
-With nothing ready, it starts a triage of the `status/proposed` issues: for a
-new one, for one that changed since the last triage or waits on an issue that
-closed since, and every `WATCH_RETRIAGE` (3h) in any case, at most every
-`WATCH_TRIAGE` (30m). To triage now, say after a plan files its steps
-`status/proposed`, run `./dev run hack/relay.sh --triage --workers N`: it
-starts one triage session in the first free worker, and records its time and
-issues in `.relay/triaged` as the watch's does, so the watch starts no second
-triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
+Busy or idle, with issues ready or not (#1191), it starts a triage of the
+`status/proposed` issues: for a new one, for one that changed since the last
+triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
+in any case, at most every `WATCH_TRIAGE` (30m) and never while one runs. Past
+`WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
+`WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
+`.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
+as the maintainer does: it needs no free worker, doesn't count against
+`RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
+goes through `admit` like any session and logs to `.relay/relay-triage.log`.
+To triage now, say after a plan files its steps `status/proposed`, run
+`./dev run hack/relay.sh --triage`: it starts one triage session unless one
+runs, and records its time and issues in `.relay/triaged` as the watch's does,
+so the watch starts no second triage for the same issues, only for one filed
+after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
 a workflow that runs on a push to main and failed its two newest finished runs
 there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
 ready and urgent, so the next session fixes main before anything else; a single
@@ -629,6 +641,11 @@ queue:
   (`ENVTEST_ETCD_ELECTION_TIMEOUT`, in ms), which makes its request timeout
   25 s instead of 7 s. Running a spec outside `make test` (an IDE) uses
   envtest's defaults.
+- The UI's unit tests run on three Vitest workers (`ui/vite.config.ts`),
+  not one per core but one: on a busy device eleven workers, each spawning a
+  process per file, stalled tests that take milliseconds past Vitest's 5 s
+  timeout (#1193). Three take half the memory and finish sooner on a busy
+  device, a few seconds later on a quiet one.
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,
