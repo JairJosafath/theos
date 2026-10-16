@@ -28,29 +28,38 @@ func renderOperations(t *testing.T, typ, framework string, c model.OperationsCho
 }
 
 // awsOperationsFrameworks is every AWS Framework that renders the block, with
-// the alarm its runbook branch must name and a line only that branch has, and
-// whether it keeps its data as a bucket's versions instead of in a backup plan.
+// the alarm its runbook branch must name and a line only that branch has,
+// whether it keeps its data as a bucket's versions instead of in a backup
+// plan, and whether its stack keeps Powertools' idempotency records in a table
+// of their own (Go has no Powertools, so its stack has no such table).
 var awsOperationsFrameworks = []struct {
 	side
-	runbook  []string
-	versions bool
+	runbook     []string
+	versions    bool
+	idempotency bool
 }{
-	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "Idempotency"}, false},
+	{side{model.TypeFunction, "aws-lambda-ts"}, []string{"Api-Fault-Count-Critical", "| `Items` table"}, false, true},
+	{side{model.TypeFunction, "aws-lambda-py"}, []string{"Api-Fault-Count-Critical", "| `Items` table"}, false, true},
+	{side{model.TypeFunction, "aws-lambda-go"}, []string{"Api-Fault-Count-Critical", "| `Items` table"}, false, false},
+	{side{model.TypeService, "aws-ec2-ts"}, []string{
+		"LoadBalancer-5xx-Critical", "Service-Unhealthy-Instances-Critical", "Instances-In-Service-Critical",
+		"resource signal", "never backed up", "CertificateArn", "terminate-instance-in-auto-scaling-group",
+	}, false, false},
 	{side{model.TypeService, "aws-fargate-ts"}, []string{
 		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
 		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
-	}, false},
+	}, false, false},
 	{side{model.TypeStaticSite, "aws-static-site-ts"}, []string{
 		"Site-Fault-Rate-Critical", "Deploy-Fault-Count-Critical", "list-object-versions", "create-invalidation",
-	}, true},
+	}, true, false},
 	{side{model.TypeWorker, "aws-queue-ts"}, []string{
 		"Messages-DLQ-Queue-Message-Count-Max-Critical", "Messages-Queue-Message-Age-Max-Warning",
 		"aws sqs start-message-move-task", "`DeadLetters` queue", "the longest the worker may be",
-	}, false},
+	}, false, true},
 	{side{model.TypeJob, "aws-schedule-ts"}, []string{
 		"Schedule-InvocationDroppedCount-Critical", "DeadLetters-Queue-Message-Count-Max-Critical",
 		"aws lambda invoke", "`DeadLetters` queue",
-	}, false},
+	}, false, true},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
@@ -122,6 +131,9 @@ func TestAWSFrameworksWithoutOperationsRenderNoBlock(t *testing.T) {
 // awsOperationsFrameworks adds the lines only its own branch has.
 var runbookSays = map[string][]string{
 	"aws-lambda-ts":   tableRunbookSays,
+	"aws-lambda-py":   tableRunbookSays,
+	"aws-lambda-go":   tableRunbookSays,
+	"aws-ec2-ts":      tableRunbookSays,
 	"aws-fargate-ts":  tableRunbookSays,
 	"aws-queue-ts":    tableRunbookSays,
 	"aws-schedule-ts": tableRunbookSays,
@@ -160,14 +172,21 @@ func TestAWSStandardWritesTheRunbookForTheFrameworksWithOperations(t *testing.T)
 				t.Fatalf("aws-standard writes no docs/runbook.md for %s", f.Name)
 			}
 			var own []string
+			idempotency := false
 			for _, o := range awsOperationsFrameworks {
 				if o.Name == f.Name {
-					own = o.runbook
+					own, idempotency = o.runbook, o.idempotency
 				}
 			}
+			doc := string(runbook.Data)
 			for _, w := range append(append([]string{}, wanted...), own...) {
-				if !strings.Contains(string(runbook.Data), w) {
+				if !strings.Contains(doc, w) {
 					t.Errorf("docs/runbook.md lacks %q", w)
+				}
+			}
+			for _, w := range []string{"| `Idempotency` table", "`Idempotency-...`", "for the `Idempotency` table"} {
+				if strings.Contains(doc, w) != idempotency {
+					t.Errorf("docs/runbook.md for %s says %q: %t, want %t", f.Name, w, !idempotency, idempotency)
 				}
 			}
 			if _, ok := r.Files["infra/operations.ts"]; !ok {
@@ -208,10 +227,51 @@ func TestAWSStandardRunbookSaysWhenThereAreNoBackups(t *testing.T) {
 				t.Error("docs/runbook.md doesn't say that retentionDays 0 keeps point-in-time recovery only")
 			}
 			for _, never := range []string{
-				"## Restore from a backup in the vault", "The daily backups", "AWS Backup's storage", "per vault",
+				"## Restore from a backup in the vault", "The daily backups", "backup vault and key",
+				"AWS Backup's storage", "per vault",
 			} {
 				if strings.Contains(runbook, never) {
 					t.Errorf("docs/runbook.md says %q with no backups", never)
+				}
+			}
+		})
+	}
+}
+
+// TestAWSStandardGuidesEveryFrameworkWithOperationsThroughTheTiers checks that
+// every file of aws-standard that says how to work with the tiers says it for
+// each Framework with operations (the three Lambda Frameworks, aws-fargate-ts
+// and aws-queue-ts), whose own branches (aws-lambda-go's notes, aws-fargate-ts's
+// digests) are easy to miss, and for no Framework without infra/operations.ts
+// yet. aws-static-site-ts, which keeps its data as a bucket's versions, has
+// whole files of its own that say it in their own words.
+func TestAWSStandardGuidesEveryFrameworkWithOperationsThroughTheTiers(t *testing.T) {
+	says := map[string]string{
+		"AGENTS.md":                  "`infra/operations.ts` is the factory's",
+		"docs/agents/implementer.md": "The stacks take the tier from `defineStacks(app, tier)`",
+		"docs/agents/reviewer.md":    "a resource that ignores the tier",
+		"docs/style/aws.md":          "Build it with the\n  tier's `TIER_RULES`",
+		"docs/style/SOURCES.md":      "## Operations (read 2026-10-16)",
+		"docs/well-architected.md":   "## Tiers and the operations block",
+	}
+	site := map[string]bool{}
+	for _, o := range awsOperationsFrameworks {
+		site[o.Name] = o.versions
+	}
+	for _, f := range awsFrameworks {
+		if site[f.Name] {
+			continue
+		}
+		t.Run(f.Name, func(t *testing.T) {
+			r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{})
+			tiered := hasOperations(f.Name)
+			for path, w := range says {
+				file, ok := r.Files[path]
+				if !ok {
+					t.Fatalf("aws-standard writes no %s for %s", path, f.Name)
+				}
+				if strings.Contains(string(file.Data), w) != tiered {
+					t.Errorf("%s for %s says %q: %t, want %t", path, f.Name, w, !tiered, tiered)
 				}
 			}
 		})

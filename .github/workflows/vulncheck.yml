@@ -28,10 +28,12 @@ on:
     - cron: '23 4 * * 1'
   workflow_dispatch:
 
-# One pending run per branch or pull request: a running one finishes, so main
-# keeps getting a verdict (hack/check-workflows.sh, docs/dev/testenv.md).
+# One group per branch or pull request: on main a running one finishes, so
+# main keeps getting a verdict; on a pull request a new push cancels the run
+# in progress (hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -39,7 +41,7 @@ jobs:
   govulncheck:
     permissions:
       contents: read
-    name: Run govulncheck
+    name: Vulnerabilities
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     steps:
       - name: Clone the code

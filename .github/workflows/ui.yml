@@ -15,11 +15,13 @@ on:
       - .github/workflows/ui.yml
   workflow_dispatch:
 
-# One pending run per branch or pull request: a running one finishes, so main
-# keeps getting a verdict, and GitHub cancels the older pending ones when a
-# newer push comes (hack/check-workflows.sh, docs/dev/testenv.md).
+# One group per branch or pull request. On main a running run finishes, so
+# main keeps getting a verdict, and GitHub cancels the older pending ones when
+# a newer push comes; on a pull request a new push cancels the run in
+# progress too (hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -27,7 +29,7 @@ jobs:
   check:
     permissions:
       contents: read
-    name: Typecheck, lint, test and build
+    name: UI
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     defaults:
       run:

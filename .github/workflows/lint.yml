@@ -46,11 +46,13 @@ on:
       - .github/workflows/**
   workflow_dispatch:
 
-# One pending run per branch or pull request: a running one finishes, so main
-# keeps getting a verdict, and GitHub cancels the older pending ones when a
-# newer push comes (hack/check-workflows.sh, docs/dev/testenv.md).
+# One group per branch or pull request. On main a running run finishes, so
+# main keeps getting a verdict, and GitHub cancels the older pending ones when
+# a newer push comes; on a pull request a new push cancels the run in
+# progress too (hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -58,7 +60,7 @@ jobs:
   lint:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    name: Lint
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     steps:
       - name: Clone the code
@@ -86,7 +88,7 @@ jobs:
   test-hack:
     permissions:
       contents: read
-    name: Shell tests of hack/
+    name: Shell tests
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     steps:
       - name: Clone the code

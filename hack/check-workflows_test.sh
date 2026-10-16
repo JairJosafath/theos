@@ -4,7 +4,10 @@
 # c4factory-kind label fails, and so does a workflow on pushes to a branch
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
-# test-hack job, and Tests on pull requests or grouped by branch fail (#1101);
+# test-hack job (#1101), and Tests off pull requests, grouped by branch, or
+# without cancel-in-progress on pull requests fail, and so does a job on pull
+# requests missing from .github/required-checks, a line there naming no job,
+# or two checks with one name (#1380);
 # and so does a release.yml that doesn't dispatch Verify Release for minors
 # only (#1105).
 # Run: hack/check-workflows_test.sh
@@ -106,47 +109,86 @@ rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [
 "$CHECK" "$T/wf" 2>/dev/null
 check "issues and tag pushes need no group" "$?" 0
 
-# real NAME SED: the repository's Lint, UI and Tests workflows, alone in a
-# directory, NAME.yml edited with the sed script SED.
+# real NAME SED: the repository's Lint, UI, Tests and Vulnerabilities
+# workflows and its required checks, alone in a directory, NAME.yml (or
+# required-checks for NAME list) edited with the sed script SED.
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 real() {
-  rm -rf "$T/wf" && mkdir "$T/wf" && cp "$REPO"/.github/workflows/{lint,ui,test}.yml "$T/wf/"
-  sed -i.bak "$2" "$T/wf/$1.yml" && rm "$T/wf/$1.yml.bak"
+  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck}.yml "$T/r/wf/"
+  cp "$REPO"/.github/required-checks "$T/r/"
+  local f="$T/r/wf/$1.yml"
+  [ "$1" = list ] && f=$T/r/required-checks
+  sed -i.bak "$2" "$f" && rm "$f.bak"
 }
 
 real lint ''
-"$CHECK" "$T/wf" 2>/dev/null
-check "Lint, UI and Tests as they are pass" "$?" 0
+"$CHECK" "$T/r/wf" 2>/dev/null
+check "Lint, UI, Tests and Vulnerabilities as they are pass" "$?" 0
+for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI'; do
+  check "the required checks list $c" "$(grep -cx "$c" "$REPO/.github/required-checks")" 1
+done
 
 real lint '/^  pull_request:/,/^  workflow_dispatch:/{/^  workflow_dispatch:/!d;}'
-out=$("$CHECK" "$T/wf" 2>&1)
+out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint off pull requests fails" "$?" 1
 check "Lint off pull requests says so" "$(grep -c "lint.yml: doesn't run on pull requests to main" <<<"$out")" 1
 
 real ui '/^  pull_request:/,/^  workflow_dispatch:/s/branches: \[main\]/branches: [dev]/'
-out=$("$CHECK" "$T/wf" 2>&1)
+out=$("$CHECK" "$T/r/wf" 2>&1)
 check "UI on pull requests to another branch fails" "$?" 1
 check "UI on pull requests to another branch says so" "$(grep -c "ui.yml: doesn't run on pull requests to main" <<<"$out")" 1
 
 real lint '/^  pull_request:/,/^  workflow_dispatch:/{/- hack\/\*\*/d;}'
-out=$("$CHECK" "$T/wf" 2>&1)
+out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint with fewer paths on pull requests fails" "$?" 1
 check "Lint with fewer paths says so" "$(grep -c 'lint.yml: runs on pull requests with other paths' <<<"$out")" 1
 
 real lint 's/run: make test-hack/run: make help/'
-out=$("$CHECK" "$T/wf" 2>&1)
+out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint without make test-hack fails" "$?" 1
 check "Lint without make test-hack says so" "$(grep -c 'lint.yml: has no test-hack job' <<<"$out")" 1
 
-real test 's/^  push:/  pull_request:/'
-out=$("$CHECK" "$T/wf" 2>&1)
-check "Tests on pull requests fails" "$?" 1
-check "Tests on pull requests says so" "$(grep -c 'test.yml: runs on pull requests' <<<"$out")" 1
+real test '/^  pull_request:/,/^  workflow_dispatch:/{/^  workflow_dispatch:/!d;}'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests off pull requests fails" "$?" 1
+check "Tests off pull requests says so" "$(grep -c "test.yml: doesn't run on pull requests to main" <<<"$out")" 1
 
 real test 's/github.sha }}/github.ref }}/'
-out=$("$CHECK" "$T/wf" 2>&1)
-check "Tests grouped by branch fails" "$?" 1
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests grouped by branch on main fails" "$?" 1
 check "Tests grouped by branch says so" "$(grep -c 'test.yml: groups runs by' <<<"$out")" 1
+
+real ui '/^  cancel-in-progress:/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "UI without cancel-in-progress fails" "$?" 1
+check "UI without cancel-in-progress says so" "$(grep -c 'ui.yml: runs on pull requests without cancel-in-progress' <<<"$out")" 1
+
+real test 's/^  cancel-in-progress:.*/  cancel-in-progress: true/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests cancelling main's runs fails" "$?" 1
+check "Tests cancelling main's runs says so" "$(grep -c 'test.yml: cancels the run in progress' <<<"$out")" 1
+
+real list '/^ui.yml UI$/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a pull-request job missing from the list fails" "$?" 1
+check "a pull-request job missing says so" "$(grep -c "ui.yml: job check (UI) runs on pull requests but isn't in" <<<"$out")" 1
+
+real list '$a\
+release.yml Build and publish'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a listed check naming no pull-request job fails" "$?" 1
+check "a listed check naming no job says so" "$(grep -c 'release.yml Build and publish is no job' <<<"$out")" 1
+
+real ui 's/^    name: UI$/    name: Lint/'
+sed -i 's/^ui.yml UI$/ui.yml Lint/' "$T/r/required-checks"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "two checks with one name fail" "$?" 1
+check "two checks with one name say so" "$(grep -c 'two required checks are named Lint' <<<"$out")" 1
+
+real lint '/^  test-hack:/,$s/^    name: .*//'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a pull-request job without a name fails" "$?" 1
+check "a pull-request job without a name says so" "$(grep -c 'job test-hack runs on pull requests without a name' <<<"$out")" 1
 
 # relwf PERMS IF: release.yml whose job grants PERMS and whose last step, under
 # IF, dispatches Verify Release.

@@ -260,9 +260,8 @@ token. Use it to check template work on any device: a wording fix, a new tag in
 and warns when a template no longer matches its tag. `hack/seed_test.sh`
 covers the file mode against a stand-in Gitea.
 
-No workflow runs on pull requests, so run `make test-gitea` before merging a
-change to `internal/gitprovider` or the seed; the Tests workflow runs it on
-main.
+The Tests workflow runs `make test-gitea` on pull requests to main and on
+main; run it yourself while you change `internal/gitprovider` or the seed.
 
 ## Deployment Workflow
 
@@ -317,8 +316,9 @@ lockfile lists for the platform is installed (`ui/scripts/check-native.mjs`):
 npm skips an optional package it fails to fetch without failing, which broke
 v0.19.0 (#912).
 
-GitHub workflows never run on pull requests. Lint, tests and UI checks run
-after a merge to main, each only when its paths change, or on demand. No
+Lint, Tests, UI and Vulnerabilities run on pull requests to main and after a
+merge to main, each only when its paths change, or on demand; the jobs a pull
+request waits for are listed in `.github/required-checks`. No
 workflow starts a Kind cluster on its own: *Test Chart* and *E2E Tests* run
 only when a human dispatches them, and *Verify Release* when a human does or
 *Release* has published a minor. A pushed tag runs *Release*, which builds and
@@ -1074,27 +1074,39 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
-- **Lint and UI run on pull requests too; Tests tests every merge commit its
-  `paths` match.**
-  *Lint* (with its `test-hack` job, `make test-hack`) and *UI* run on pushes
-  to main and on pull requests to main, with the same path filters, so vet,
-  lint and the shell tests answer before `hack/lib/github.sh land`. They carry
-  the `concurrency` group `${{ github.workflow }}-${{ github.ref }}` without
-  `cancel-in-progress`: a running job always finishes, and only the newest
-  pending run per branch or pull request waits; GitHub cancels the older
-  pending ones. *Tests* runs on pushes to main only (a run takes about twelve
-  minutes, and `land` runs `make check` on the merged tree), grouped by
-  `${{ github.workflow }}-${{ github.sha }}`, so no run is dropped and every
-  merge commit gets its own verdict. The "main is red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
+- **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
+  every merge commit its `paths` match.**
+  *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and
+  envtest suites and `make test-gitea`), *UI* and *Vulnerabilities* run on
+  pushes to main and on pull requests to main, with the same path filters, so
+  a pull request's own runs answer before `hack/lib/github.sh land` (#1380).
+  Each job a pull request runs has a distinct `name:` (*Tests*, *Lint*,
+  *Shell tests*, *UI*, *Vulnerabilities*), listed in `.github/required-checks`
+  as `<workflow file> <job name>`: the checks `land` waits for and a main
+  ruleset can require. A pull request whose changes miss a workflow's paths
+  gets no run of it. On a pull request, the `concurrency` group is one per
+  pull request with `cancel-in-progress: ${{ github.event_name ==
+  'pull_request' }}`, so a new push cancels the run in progress and only the
+  newest head counts. On main nothing is cancelled: Lint, UI and
+  Vulnerabilities group by `${{ github.workflow }}-${{ github.ref }}`, so a
+  running job always finishes and GitHub cancels only older pending runs;
+  Tests groups main's runs by commit (`${{ github.workflow }}-${{
+  github.event_name == 'pull_request' && github.ref || github.sha }}`), so no
+  run is dropped and every merge commit gets its own verdict. The "main is
+  red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
   and failed runs a self-hosted runner lost (`gh_lost`): a runner stopped
   mid-job cancels its step ("The operation was canceled.", Ginkgo prints
   "Interrupted by User"), and a job no runner took is cancelled without steps.
   Neither says anything about the code. *Issue intake*
   and *Issue closed* have no group, since each issue event must run.
   `hack/check-workflows.sh` fails a workflow on pushes to a branch without
-  one of the two groups, or with `cancel-in-progress`; Lint or UI off pull
-  requests to main or with other paths there; Lint without its `test-hack`
-  job; and Tests on pull requests or grouped by anything but the commit.
+  one of those groups, or cancelling a run on main; a workflow on pull
+  requests to another branch, with other paths there or without the
+  pull-request `cancel-in-progress`; Lint, UI or Tests off pull requests to
+  main; Lint without its `test-hack` job; Tests grouped on main by anything
+  but the commit; and a job on pull requests without a `name:` or missing
+  from `.github/required-checks`, a line there naming no such job, or two
+  checks with one name.
 - **Vulnerabilities runs govulncheck.** *Vulnerabilities* (`vulncheck.yml`)
   runs `make vulncheck` (`govulncheck ./...`, which needs the network and so
   stays out of `make check`) on pushes to main and pull requests to main that

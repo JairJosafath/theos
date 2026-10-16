@@ -1,6 +1,9 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
-{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-queue-ts") (eq .Framework "aws-schedule-ts") -}}
+{{- /* The Frameworks built for a tier from infra/operations.ts: the three
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
+     aws-schedule-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 # Reviewer guide
@@ -257,7 +260,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
 {{- end }}
 {{- if $tiered }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
-  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-fargate-ts" }}load balancer, service or table{{ else }}function, table or {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} without its
+  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-fargate-ts" }}load balancer, service or table{{ else if eq .Framework "aws-ec2-ts" }}load balancer, group or table{{ else }}function, table or {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} without its
   alarms on the stack's topic, a context value read but `tier`, and a
   change to `infra/operations.ts` that its issue's change to the
   Container's `spec.operations` doesn't ask for. A change
