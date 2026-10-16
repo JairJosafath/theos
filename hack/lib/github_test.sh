@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land waiting for the merge turn, taking over an abandoned one, heartbeating it, merging main in, retrying a failed fetch, checking and merging, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -745,15 +745,17 @@ POST $R/issues/123/labels"
       "GET $R/issues/474") [ -e "$T/474-open" ] && echo open || echo closed ;;
       "GET $R/issues/475") echo open ;;
       "GET $R/issues/47"[23]) echo closed ;;
-      "GET $R/pulls/510") printf 'docs(486): plan\nRefs #486\n' ;;
+      "GET $R/pulls/510") [[ " $* " == *' .title,'* ]] && echo 'docs(486): plan'; echo 'Refs #486' ;;
       "GET $R/pulls/510/commits"*) printf 'docs(486): plan\n\nSteps: #506 (turn on Ask by default, closes #486)\n' ;;
+      "GET $R/pulls/511") [[ " $* " == *' .title,'* ]] && echo 'fix(487): it works'; echo 'Closes #487' ;;
+      "GET $R/pulls/511/commits"*) printf 'fix(487): it works\n\nRefs #487\n' ;;
       "POST $R/issues/"*/comments) echo u ;;
       "PATCH $R/issues/"*) echo "closed #${url##*/}" ;;
     esac
   }
   out=$(printf 'docs(486): plan\n\nRefs #486\n\n- #506 (turn on `Ask` by default, closes #486)\n' | gh_closes_check - 2>&1)
   check "closes-check: closes #N in prose beside Refs #N is refused, naming the line" "$? $out" \
-    '1 github: refused: "- #506 (turn on `Ask` by default, closes #486)" closes #486 at merge, and the same text says Refs #486. A plan'"'"'s pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #486. If this pull request finishes #486, which has no plan, the Refs #486 is wrong: say Closes #486, never Refs #486; when a pushed commit says Refs #486, reword the history onto a new branch <branch>-2, open a fresh pull request and close this one (the handoff skill, Finish).'
+    '1 github: refused: "- #506 (turn on `Ask` by default, closes #486)" closes #486 at merge, and the same text says Refs #486. A plan'"'"'s pull request only refers to its parent: reword the line so no close, fix or resolve word sits before #486 (in a pushed commit: the handoff skill, Plan only). If this finishes #486, which has no plan, drop the Refs #486 and keep the Closes #486: Refs #486 is only a plan'"'"'s word.'
   check "closes-check: asks GitHub only for the body of the issue it closes" "$(cat "$T/calls")" "GET $R/issues/486"
   : >"$T/calls"
   out=$(printf 'feat(486): ask\n\nRefs #486\n' | gh_closes_check - 2>&1)
@@ -764,6 +766,13 @@ POST $R/issues/123/labels"
   check "closes-check: another repository's issue is not ours" "$? $out" "0 "
   out=$(gh_pr_check 510 2>&1)
   check "pr-check: a commit message's closes #N beside the body's Refs #N is refused" "$? $(grep -c 'refused: "Steps: #506' <<<"$out")" "1 1"
+  # A pull request's intent is its body: a commit's Refs #N closes nothing (#1200).
+  out=$(gh_pr_check 511 2>&1)
+  check "pr-check: the body's Closes #N passes though a commit says Refs #N (#1200)" "$? $out" "0 "
+  out=$(printf 'Closes #486\nfix(486): ask\n\nRefs #486\n' | gh_closes_check - 'Closes #486' 2>&1)
+  check "closes-check: with the body given, a commit's Refs #N is no plan's (#1200)" "$? $out" "0 "
+  out=$(printf 'Refs #486\ndocs(486): plan\n\nCloses #486\n' | gh_closes_check - 'Refs #486' 2>&1)
+  check "closes-check: the body's Refs #N beside a commit's Closes #N is refused" "$? $(grep -c '^github: refused: "Closes #486" closes #486 at merge, and the pull request.s body says Refs #486' <<<"$out")" "1 1"
   : >"$T/calls"
   printf 'feat(475): the last step\n\nCloses #475\ncloses #467\n' >"$T/last"
   out=$(gh_closes_check "$T/last" 2>&1)
@@ -821,6 +830,13 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
   out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9\nCloses #70' '[70]') gh_merge 12 2>&1)
   check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  rm -f "$T/merged"
+  # A pull request's intent is its body: a commit's Refs #N closes nothing (#1200).
+  out=$(PR=$(pr 'Closes #18' '[18]' $'fix(18): the first commit\n\nRefs #18') gh_merge 18 2>&1)
+  check "merge: the body's Closes #N merges though a commit says Refs #N (#1200)" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 18 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  rm -f "$T/merged"
+  out=$(PR=$(pr 'Refs #18' '[]' $'docs(18): plan\n\nCloses #18') gh_merge 18 2>&1)
+  check "merge: the body's Refs #N with a commit's Closes #N is still refused" "$? $out | $(cat "$T/merged" 2>/dev/null)" '1 github: #18 says Refs #18, but "Closes #18" in it closes #18 on merge; reword it (no close, fix or resolve word before #18) | '
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
   check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
