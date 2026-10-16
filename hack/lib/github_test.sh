@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), that check alone going first in the heavy-job queue, retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -357,8 +357,8 @@ rm -f "$LEASE" "$T/posted" "$T/edited" "$T/calls"
     echo "$rc $(paste -sd' ' "$L")"
   }
   check "status, another status swapped in between: the first's" \
-    "$(race 'kind/bug priority/urgent status/ready' 'real_set_status 40 proposed' real_set_status 40 in-progress)" \
-    "0 kind/bug priority/urgent status/in-progress"
+    "$(race 'kind/bug priority/1 status/ready' 'real_set_status 40 proposed' real_set_status 40 in-progress)" \
+    "0 kind/bug priority/1 status/in-progress"
   check "status, none before, another status added in between: one, the first's" \
     "$(race kind/bug 'real_set_status 40 in-progress' real_set_status 40 ready)" "0 kind/bug status/ready"
   check "status, closed's unstatus in between: the status" \
@@ -464,34 +464,54 @@ check "flush fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 77
 check "flush fails, pending kept" "$([ -e "$T/main/.relay/pending-handoff-77.md" ] && echo kept || echo gone)" kept
 rm -rf "$T"/{main,wt2,wt3}/.relay
 
-# Pick order: urgent first (in-progress nobody holds, else ready), else
-# velocity the same way, else an in-progress issue nobody holds, else ready,
-# oldest first; proposed and needs-human issues are never picked, nor ones
-# that depend on an open issue.
+# Pick order (#1329): by priority/N, 1 first, an issue with no priority label
+# counting as 5 and the lowest of several labels counting; within a number, an
+# in-progress issue nobody holds before a ready one, oldest first; proposed
+# and needs-human issues are never picked, nor ones that depend on an open
+# issue.
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted" "$T/edited"
 issues() { jq -c '[[.[] | {number: .[0], title: "t", html_url: "u", body: (.[2] // ""), labels: (.[1] | map({name: .}))}]]'; }
-all='[[80, ["status/needs-human"]], [81, ["status/proposed"]], [82, ["status/ready"]],
-  [83, ["status/ready", "priority/urgent"], "Depends on #81"], [84, ["status/ready", "priority/urgent"]],
+# picked JSON [N...]: what pick returns from the open issues JSON without N...
+picked() { OPEN=$(jq --argjson drop "[${2:-}]" 'map(select(.[0] as $n | $drop | index($n) | not))' <<<"$1" | issues) gh_pick | cut -f1,4; }
+all='[[80, ["status/needs-human", "priority/1"]], [81, ["status/proposed", "priority/1"]], [82, ["status/ready"]],
+  [83, ["status/ready", "priority/1"], "Depends on #81"], [84, ["status/ready", "priority/1"]],
   [85, ["status/in-progress"]]]'
-check "pick, ready + urgent first" "$(OPEN=$(issues <<<"$all") gh_pick | cut -f1,4)" "84	ready-urgent"
-check "pick, then in-progress" "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$all" | issues) gh_pick | cut -f1,4)" "85	in-progress"
-check "pick, in-progress + urgent before ready + urgent" \
-  "$(OPEN=$(jq '. + [[86, ["status/in-progress", "priority/urgent"]]]' <<<"$all" | issues) gh_pick | cut -f1,4)" "86	in-progress"
-check "pick, then ready" "$(OPEN=$(jq 'map(select(.[0] < 83))' <<<"$all" | issues) gh_pick | cut -f1,4)" "82	ready"
-OPEN=$(jq 'map(select(.[0] < 82))' <<<"$all" | issues) gh_pick >/dev/null
+check "pick, ready + priority/1 first (#1329)" "$(picked "$all")" "84	ready"
+check "pick, then in-progress" "$(picked "$all" 84)" "85	in-progress"
+check "pick, in-progress + priority/1 before ready + priority/1 (#1329)" \
+  "$(picked "$(jq '. + [[86, ["status/in-progress", "priority/1"]]]' <<<"$all")")" "86	in-progress"
+check "pick, then ready" "$(picked "$all" 83,84,85)" "82	ready"
+picked "$all" 82,83,84,85 >/dev/null
 check "pick, only proposed and needs-human" $? 1
 
-# Velocity (#1280): after urgent, before the rest, in-progress nobody holds
-# before ready; a plain ready issue older than it waits.
-velocity='[[82, ["status/ready"]], [84, ["status/ready", "priority/urgent"]],
-  [86, ["status/ready", "priority/velocity"]], [87, ["status/in-progress", "priority/velocity"]]]'
-check "pick, urgent before velocity" "$(OPEN=$(issues <<<"$velocity") gh_pick | cut -f1,4)" "84	ready-urgent"
-check "pick, in-progress + velocity before ready + velocity" \
-  "$(OPEN=$(jq 'map(select(.[0] != 84))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
-check "pick, in-progress + velocity nobody holds before an older ready" \
-  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 87))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "87	in-progress-velocity"
-check "pick, ready + velocity before an older ready" \
-  "$(OPEN=$(jq 'map(select(.[0] == 82 or .[0] == 86))' <<<"$velocity" | issues) gh_pick | cut -f1,4)" "86	ready-velocity"
+# The scale (#1329): 1 before 3 before none (5) before 7, oldest last here so
+# age never decides; 10 after 9, by number, not by text.
+scale='[[82, ["status/ready", "priority/7"]], [83, ["status/ready"]], [84, ["status/ready", "priority/3"]],
+  [85, ["status/ready", "priority/1"]]]'
+check "pick, priority/1 before 3 (#1329)" "$(picked "$scale")" "85	ready"
+check "pick, priority/3 before none (#1329)" "$(picked "$scale" 85)" "84	ready"
+check "pick, none (5) before priority/7 (#1329)" "$(picked "$scale" 84,85)" "83	ready"
+check "pick, priority/7 last (#1329)" "$(picked "$scale" 83,84,85)" "82	ready"
+check "pick, priority/9 before 10 (#1329)" \
+  "$(picked '[[82, ["status/ready", "priority/10"]], [83, ["status/ready", "priority/9"]]]')" "83	ready"
+check "pick, an older issue with none waits for a newer priority/4 (#1329)" \
+  "$(picked '[[82, ["status/ready"]], [89, ["status/ready", "priority/4"]]]')" "89	ready"
+check "pick, an older priority/6 waits for a newer one with none (#1329)" \
+  "$(picked '[[82, ["status/ready", "priority/6"]], [89, ["status/ready"]]]')" "89	ready"
+check "pick, the lowest of two labels counts (#1329)" \
+  "$(picked '[[82, ["status/ready", "priority/3"]], [83, ["status/ready", "priority/7", "priority/2"]]]')" "83	ready"
+check "pick, two at one number: the oldest (#1329)" \
+  "$(picked '[[82, ["status/ready", "priority/3"]], [83, ["status/ready", "priority/3"]]]')" "82	ready"
+
+# Within a number, an in-progress issue nobody holds comes before a ready one,
+# its STATUS in-progress at every number (#1309), but never before a lower
+# number.
+level='[[86, ["status/ready", "priority/3"]], [87, ["status/in-progress", "priority/3"]],
+  [88, ["status/in-progress"]], [89, ["status/ready"]]]'
+check "pick, in-progress before ready at priority/3 (#1329, #1309)" "$(picked "$level")" "87	in-progress"
+check "pick, ready + priority/3 before in-progress with none (#1329)" "$(picked "$level" 87)" "86	ready"
+check "pick, in-progress before an older ready at none (#1329)" \
+  "$(picked '[[82, ["status/ready"]], [88, ["status/in-progress"]]]')" "88	in-progress"
 
 # A parent issue split into a plan and steps stays open and in progress with
 # no claim, its body a "Depends on #S" line per step: pick skips it while a
@@ -1195,14 +1215,15 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # main moves on: another pull request merged.
   git clone -q "$T/origin.git" "$T/other" 2>/dev/null
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
-  # The fake make: records it ran, fails when $T/red exists, and while $T/move
+  # The fake make: records it ran (and whether it goes first in the heavy-job
+  # queue, C4_HEAVY_FIRST), fails when $T/red exists, and while $T/move
   # counts down, another pull request merges to main during it. A run that
   # moves nothing, with CHECK_BEATS=N, first waits (up to about 30 s) until land
   # has beaten N times since it started, and writes the beats it saw to
   # $T/beats: a loaded device slows the beats down, it doesn't drop them (#1192).
   cat >"$T/bin/check-make" <<MAKE
 #!/bin/sh
-echo "\$*" >>"$T/checked"
+echo "\$*\${C4_HEAVY_FIRST:+ (first)}" >>"$T/checked"
 if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
   echo \$((\$(cat "$T/move") - 1)) >"$T/move"
   git -C "$T/other" pull -q --no-rebase origin main && git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
@@ -1242,6 +1263,8 @@ MAKE
   check "land: main moved, checks again under the turn and merges" "$? | $(cat "$T/landed") | $(wc -l <"$T/checked")" \
     "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) | 2"
   check "land: the merged head has the moved main in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
+  check "land: only the check under the turn goes first in the heavy-job queue (#1290)" "$(paste -sd'|' "$T/checked")" \
+    "-C $T/land check|-C $T/land check (first)"
   check "land: beats while the check under the turn runs" "$(($(cat "$T/beats" 2>/dev/null || echo 0) >= 2))" 1
   grep -q '#40: its turn; origin/main moved since the check' <<<"$out"; check "land: says main moved" $? 0
   grep -q 'land: #40: merged; held the turn [0-9]*s, 1 check(s) under it' "$T/land/.relay/land-40.log"; check "land: logs the check under the turn" $? 0
@@ -1453,9 +1476,9 @@ status/ready kind/docs source/dev"
 
   gh_pick >/dev/null; check "pick, another checkout: skips it" $? 1
   check "claims: shows the reservation" "$(gh_claims | cut -f1-4)" "#151	heron-150	reserved	h"
-  gh_create Urgent "$NX/body" status/ready priority/urgent kind/bug >/dev/null # 153
-  check "pick, another checkout: the urgent one" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
-  check "pick, this checkout: its reservation first, before urgent" "$(as "$T/wt2" gh_pick | cut -f1,4)" "151	next"
+  gh_create Urgent "$NX/body" status/ready priority/1 kind/bug >/dev/null # 153
+  check "pick, another checkout: the priority/1 one" "$(gh_pick | cut -f1,4)" "153	ready"
+  check "pick, this checkout: its reservation first, before priority/1" "$(as "$T/wt2" gh_pick | cut -f1,4)" "151	next"
   check "pick, the watch: every worker's reservations count (GH_NEXT_FILES)" \
     "$(GH_NEXT_FILES="$T/none/.relay/next"$'\n'"$T/wt2/.relay/next" gh_pick | cut -f1,4)" "151	next"
   out=$(as "$T/wt3" gh_take 151 2>&1); check "take, another checkout: refused" "$? $(cut -d, -f1 <<<"$out")" "4 github: #151 is claimed by heron-150 on host h"
@@ -1468,7 +1491,7 @@ status/ready kind/docs source/dev"
   check "take, this checkout: the claim is the reservation's comment" "$(jq .id "$T/wt2/.relay/claim")" 1000
   check "take, this checkout: in progress" "$(labels 151)" "kind/bug source/dev status/in-progress"
   check "take, this checkout: .relay/next emptied" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
-  check "pick, another checkout, after: still skips it" "$(gh_pick | cut -f1,4)" "153	ready-urgent"
+  check "pick, another checkout, after: still skips it" "$(gh_pick | cut -f1,4)" "153	ready"
 
   # The reservation expires: after C4_LEASE_TTL anyone picks and takes it.
   b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
@@ -1737,6 +1760,14 @@ later"
   gh_labels >/dev/null 2>&1; check "labels: listing fails: exit 1, creates nothing" "$? $(calls '^POST ')" "1 0"
   rm "$TK/labels-fail"; again; touch "$TK/post-fails"
   gh_labels >/dev/null 2>&1; check "labels: a failing POST: exit 1, stops there" "$? $(calls '^POST ')" "1 1"
+  # The priority scale (#1329): priority/1 to priority/10, in order, and
+  # neither urgent nor velocity.
+  rm "$TK/post-fails"; again; : >"$TK/labels"; out=$(gh_labels)
+  check "labels: creates priority/1 to priority/10 (#1329)" \
+    "$(sed -n 's|^label \(priority/.*\): created$|\1|p' <<<"$out" | paste -sd' ')" "$(printf 'priority/%s ' {1..10} | sed 's/ $//')"
+  check "labels: the scale's colors (#1329)" \
+    "$(grep -o 'name=priority/[0-9]* color=[0-9a-f]*' "$TK/calls" | sed 's/.*color=//' | paste -sd' ')" \
+    "b60205 d73a4a e36209 f66a0a fbca04 e4e669 c5def5 bfdadc d4d4d4 ededed"
   exit $fail
 ) || fail=1
 exit $fail

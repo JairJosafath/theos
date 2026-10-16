@@ -9,7 +9,7 @@ trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi'
 HACK="$(cd "$(dirname "$0")" && pwd)"
 SLOT=$HACK/heavy-slot.sh
 export HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2 HEAVY_POLL=0.2
-unset C4_HEAVY_SLOT
+unset C4_HEAVY_SLOT C4_HEAVY_FIRST
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # job: start a stand-in heavy job; its PID in $job.
@@ -96,6 +96,42 @@ ls "$HEAVY_SLOTS_DIR" | grep -c "^wait-" >"$T/tickets"; check "no tickets left" 
 kill "$c" "$d" "$e"; wait "$c" "$d" "$e" 2>/dev/null
 until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
 
+# A --first waiter (land's check under the merge turn, #1290) takes the next
+# slot that frees ahead of older waiters, never a held one; the others keep
+# their order behind it.
+job; a=$job; job; b=$job; job; c=$job; job; d=$job; job; f=$job
+"$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
+"$SLOT" acquire "$c" older 2>"$T/older" &
+older=$!
+until_ok grep -q "waits for one" "$T/older"
+"$SLOT" acquire "$d" newer 2>"$T/newer" &
+newer=$!
+until_ok grep -q "waits for one" "$T/newer"
+"$SLOT" acquire --first "$f" "make check" 2>"$T/first" &
+first=$!
+until_ok grep -q "waits for one" "$T/first"
+grep -q "\`make check\` waits for one, with 0 job(s) waiting ahead of it; it goes first, ahead of 2 other waiting job(s)" "$T/first"
+check "--first, slots taken: says it goes first, ahead of the older waiters" $? 0
+until_ok grep -q "with 1 job(s) waiting ahead" "$T/older"; check "older waiter: says the --first one waits ahead of it" $? 0
+"$SLOT" status | grep -q "waiting 1: pid $f .*\`make check\`, since [0-9:]*, goes first$"; check "status: the --first waiter first, marked" $? 0
+"$SLOT" status | grep -q "waiting 2: pid $c .*\`older\`"; check "status: the older waiters after it" $? 0
+"$SLOT" status | grep -q "waiting 3: pid $d .*\`newer\`"; check "status: the newer waiter last" $? 0
+sleep 1
+kill -0 "$first" 2>/dev/null; check "--first: never takes a held slot" $? 0
+kill "$a"; wait "$a" 2>/dev/null
+until_ok eval '! kill -0 $first 2>/dev/null'; check "--first: takes the next free slot ahead of older waiters" $? 0
+wait "$first"; check "--first: acquire succeeds" $? 0
+kill -0 "$older" 2>/dev/null && kill -0 "$newer" 2>/dev/null; check "--first: the older waiters keep waiting" $? 0
+"$SLOT" status | grep -q "slot [12]: pid $f .*\`make check\`, since [0-9:]*, went first$"; check "status: shows the job that went first" $? 0
+kill "$b"; wait "$b" 2>/dev/null
+until_ok eval '! kill -0 $older 2>/dev/null'; check "after --first: the oldest ordinary waiter takes the next slot" $? 0
+kill -0 "$newer" 2>/dev/null; check "after --first: the newer ordinary waiter keeps waiting" $? 0
+kill "$f"; wait "$f" 2>/dev/null
+until_ok eval '! kill -0 $newer 2>/dev/null'; check "after --first: the newer ordinary waiter takes the slot after" $? 0
+ls "$HEAVY_SLOTS_DIR" | grep -c "^first-\|^wait-" >"$T/tickets"; check "--first: no tickets left" "$(cat "$T/tickets")" 0
+kill "$c" "$d"; wait "$c" "$d" 2>/dev/null
+until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
+
 # Both slots taken again, for the Makefile below.
 job; a=$job; job; b=$job
 "$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
@@ -122,6 +158,10 @@ make_waits() {
   return "$rc"
 }
 make_waits lint; check "make lint, slots taken: says it waits, and waits" $? 0
+grep -q "goes first" "$T/make"; check "make lint: does not go first" $? 1
+C4_HEAVY_FIRST=1 make_waits lint && grep -q "it goes first" "$T/make"; check "C4_HEAVY_FIRST=1 make lint: waits, going first" $? 0
+check "C4_HEAVY_FIRST: the recipes don't inherit it" \
+  "$(C4_HEAVY_FIRST=1 C4_HEAVY_SLOT=1 timeout 120 make -s --no-print-directory --eval 'heavy-first: ; @echo "[$$C4_HEAVY_FIRST]"' heavy-first 2>/dev/null)" "[]"
 make_waits manifests generate check; check "make manifests generate check: says it waits, and waits" $? 0
 timeout 120 make -n manifests generate >/dev/null 2>&1; check "make manifests generate: no wait" $? 0
 C4_HEAVY_SLOT=1 timeout 120 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0

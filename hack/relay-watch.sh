@@ -46,7 +46,7 @@
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
 # newest finished runs on main failed (hack/lib/github.sh red) gets an issue
-# titled "main is red: <workflow>", status/ready and priority/urgent, so pick
+# titled "main is red: <workflow>", status/ready and priority/1, so pick
 # takes it first. hack/lib/github.sh create skips a title that is open, so a
 # red main that lasts, or both devices' watches, file one issue; a single
 # failure files nothing. The session that fixes main closes it. When GitHub
@@ -58,7 +58,7 @@
 #
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
-# bug, status/ready and priority/velocity, not urgent, when one failed in two
+# bug, status/ready and priority/3, not 1, when one failed in two
 # runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
 # twice in a row, so it never turns main red. An open one is not filed again.
 #
@@ -265,7 +265,7 @@ ci_workflows() {
   done
 }
 
-# ci_round: file an urgent issue for each workflow that is red on main. When
+# ci_round: file a priority/1 issue for each workflow that is red on main. When
 # GitHub started none of a workflow's jobs (red exits 3), the code isn't at
 # fault: it files one "GitHub Actions starts no jobs" issue for the maintainer
 # instead, which every such workflow shares. CI_SAID holds the workflows whose
@@ -294,7 +294,7 @@ ci_round() {
     rc=$?
     case $rc in
       0)
-        out=$(github create "main is red: $name" - status/ready priority/urgent kind/bug source/dev <<<"$body" 2>&1)
+        out=$(github create "main is red: $name" - status/ready priority/1 kind/bug source/dev <<<"$body" 2>&1)
         rc=$?
         if [ "$rc" != 0 ]; then
           said+=" fail:$file"
@@ -446,7 +446,7 @@ tmp_round() {
 # flake_round: record each spec that failed on main (hack/lib/github.sh
 # flakes, which reads each failed run's log once: $DIR/flakes-runs) in
 # $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME, and file a "Flaky: <spec>" bug,
-# status/ready and not urgent, for a spec just recorded that failed twice in
+# status/ready and priority/3, for a spec just recorded that failed twice in
 # FLAKE_DAYS days. A flake rarely fails two runs in a row, so ci_round's "main
 # is red" misses it. hack/lib/github.sh create leaves an open issue with the
 # title alone, so a spec that fails again files nothing new while its bug is
@@ -486,7 +486,7 @@ $(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4fac
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
-    out=$(github create "$title" - status/ready priority/velocity kind/bug source/dev <<<"$body" 2>&1)
+    out=$(github create "$title" - status/ready priority/3 kind/bug source/dev <<<"$body" 2>&1)
     rc=$?
     if [ "$rc" = 0 ]; then
       log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; issue #${out##*$'\n'}"

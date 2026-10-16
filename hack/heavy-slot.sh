@@ -12,9 +12,17 @@
 # (wait-NNNNNNNNNN, flock'd while it waits) and takes a free slot only when
 # fewer older live waiters are ahead of it than slots are free. A waiter that
 # dies drops its ticket's lock, and the next waiter to look removes it.
+# A waiter with --first holds a first-NNNNNNNNNN ticket, ordered before every
+# wait- one: it takes the next slot that frees, ahead of older waiters, and
+# never one that is held. Only the check land runs under the merge turn goes
+# first (C4_HEAVY_FIRST, the Makefile; #1290): one pull request at a time holds
+# the turn across every device, so the other waiters can't starve.
 #
-#   hack/heavy-slot.sh acquire PID JOB   wait for a slot and hold it while PID lives; once per PID
-#   hack/heavy-slot.sh status            who holds the slots and who waits; exit 1 when a new job would wait
+#   hack/heavy-slot.sh acquire [--first] PID JOB
+#                                        wait for a slot and hold it while PID lives; once per PID;
+#                                        --first takes the next one that frees, ahead of the waiters
+#   hack/heavy-slot.sh status            who holds the slots and who waits, the one going first marked;
+#                                        exit 1 when a new job would wait
 #
 #   HEAVY_JOBS       slots on the device (default 2); 0 turns the queue off
 #   HEAVY_SLOTS_DIR  where the slots live (default <git common dir>/heavy-slots; the tests set it)
@@ -47,11 +55,11 @@ holders() {
   done
 }
 
-# waiters: the live tickets, oldest first; removes the dead ones. Call it with
-# the queue lock held.
+# waiters: the live tickets, the first- ones first, then oldest first; removes
+# the dead ones. Call it with the queue lock held.
 waiters() {
   local t
-  for t in "$DIR"/wait-*; do
+  for t in "$DIR"/first-* "$DIR"/wait-*; do
     [ -e "$t" ] || continue
     if flock -n "$t" true; then rm -f "$t"; else echo "$t"; fi
   done
@@ -64,15 +72,15 @@ free_slots() {
   echo "$free"
 }
 
-# hold I PID JOB: take slot I if it is free and keep it while PID lives.
+# hold I PID JOB [NOTE]: take slot I if it is free and keep it while PID lives.
 hold() {
-  local i=$1 pid=$2 job=$3 fd
+  local i=$1 pid=$2 job=$3 note=${4:-} fd
   exec {fd}>>"$DIR/slot-$i" || return 1
   if ! flock -n "$fd"; then
     exec {fd}>&-
     return 1
   fi
-  printf 'pid %s in %s, `%s`, since %s\n' "$pid" "$CHECKOUT" "$job" "$(date '+%H:%M')" >"$DIR/slot-$i.who"
+  printf 'pid %s in %s, `%s`, since %s%s\n' "$pid" "$CHECKOUT" "$job" "$(date '+%H:%M')" "$note" >"$DIR/slot-$i.who"
   # The watcher keeps the lock's file open; nothing else of ours, so whoever
   # waits on our output (make's $(shell)) is not held up by it.
   (
@@ -85,7 +93,9 @@ hold() {
 }
 
 acquire() {
-  local pid=${1:?usage: acquire PID JOB} job=${2:-a heavy job} i who seen= now t0
+  local first= kind=wait
+  [ "${1:-}" = --first ] && { first=1 kind=first; shift; }
+  local pid=${1:?usage: acquire [--first] PID JOB} job=${2:-a heavy job} i who seen= now t0
   [ "$JOBS" -eq 0 ] && return 0
   # Once per PID: make can read its Makefile twice, and must not wait on itself.
   for ((i = 1; i <= JOBS; i++)); do
@@ -100,27 +110,28 @@ acquire() {
   local seq tmp ticket
   seq=$(($(cat "$DIR/queue.seq" 2>/dev/null || echo 0) + 1))
   echo "$seq" >"$DIR/queue.seq"
-  ticket=$(printf '%s/wait-%010d' "$DIR" "$seq")
+  ticket=$(printf '%s/%s-%010d' "$DIR" "$kind" "$seq")
   tmp=$DIR/.ticket-$$
   exec {TFD}>"$tmp" && flock -n "$TFD" || { flock -u "$QFD"; return 1; }
-  printf 'pid %s in %s, `%s`, since %s\n' "$pid" "$CHECKOUT" "$job" "$(date '+%H:%M')" >&"$TFD"
+  printf 'pid %s in %s, `%s`, since %s%s\n' "$pid" "$CHECKOUT" "$job" "$(date '+%H:%M')" "${first:+, goes first}" >&"$TFD"
   mv "$tmp" "$ticket"
   # Expanded now: $ticket is local, and gone by the time the shell exits.
   trap "rm -f $(printf %q "$ticket")" EXIT
-  local ahead free q
+  local ahead n free q behind
   while :; do
     # Under the queue lock: count the live waiters ahead, and take a slot only
     # when fewer of them wait than slots are free.
     flock "$QFD"
-    ahead=0
+    ahead= n=0
     while read -r q; do
-      [ "$q" = "$ticket" ] && break
-      ahead=$((ahead + 1))
+      [ "$q" = "$ticket" ] && ahead=$n
+      n=$((n + 1))
     done < <(waiters)
+    ahead=${ahead:-$n} behind=$((n - ahead - 1))
     free=$(free_slots)
     if [ "$ahead" -lt "$free" ]; then
       for ((i = 1; i <= JOBS; i++)); do
-        if hold "$i" "$pid" "$job"; then
+        if hold "$i" "$pid" "$job" "${first:+, went first}"; then
           rm -f "$ticket"
           flock -u "$QFD"
           [ -n "$seen" ] && echo "heavy-slot: got slot $i after $(($(date +%s) - t0))s; \`$job\` starts" >&2
@@ -133,11 +144,11 @@ acquire() {
     now="$(holders)"$'\n'"$ahead"
     if [ "$now" != "$seen" ]; then
       if [ "$free" -gt 0 ]; then
-        printf 'heavy-slot: %s of %s heavy-job slots free, but %s older job(s) wait ahead of `%s`; it waits its turn. Waiting is not a hang. Held by:\n%s\n' \
-          "$free" "$JOBS" "$ahead" "$job" "$(holders)" >&2
+        printf 'heavy-slot: %s of %s heavy-job slots free, but %s older job(s) wait ahead of `%s`; it waits its turn%s. Waiting is not a hang. Held by:\n%s\n' \
+          "$free" "$JOBS" "$ahead" "$job" "${first:+; it goes first, ahead of $behind other waiting job(s)}" "$(holders)" >&2
       else
-        printf 'heavy-slot: all %s heavy-job slots on this device are taken (HEAVY_JOBS); `%s` waits for one, with %s job(s) waiting ahead of it. Waiting is not a hang. Held by:\n%s\n' \
-          "$JOBS" "$job" "$ahead" "$(holders)" >&2
+        printf 'heavy-slot: all %s heavy-job slots on this device are taken (HEAVY_JOBS); `%s` waits for one, with %s job(s) waiting ahead of it%s. Waiting is not a hang. Held by:\n%s\n' \
+          "$JOBS" "$job" "$ahead" "${first:+; it goes first, ahead of $behind other waiting job(s), and takes the next slot that frees}" "$(holders)" >&2
       fi
       seen=$now
     fi
@@ -150,7 +161,7 @@ status() {
   [ "$JOBS" -eq 0 ] && { echo "heavy-slot: the queue is off (HEAVY_JOBS=0)"; return 0; }
   free=$(free_slots)
   # Waiters are listed without the queue lock: status only reads.
-  for t in "$DIR"/wait-*; do
+  for t in "$DIR"/first-* "$DIR"/wait-*; do
     [ -e "$t" ] && ! flock -n "$t" true || continue
     n=$((n + 1))
     waiting+="  waiting $n: $(cat "$t" 2>/dev/null || echo unknown)"$'\n'
@@ -167,5 +178,5 @@ CHECKOUT=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
 case ${1:-} in
   acquire) shift; acquire "$@" ;;
   status) status ;;
-  *) echo "usage: hack/heavy-slot.sh acquire PID JOB | status" >&2; exit 64 ;;
+  *) echo "usage: hack/heavy-slot.sh acquire [--first] PID JOB | status" >&2; exit 64 ;;
 esac
