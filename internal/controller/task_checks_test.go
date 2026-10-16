@@ -50,6 +50,7 @@ func (g *fakeGit) setRunnersOnline(n int) {
 // setRunJobs sets the jobs of run id, and marks the runners online until the
 // spec ends.
 //
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) setRunJobs(owner, name string, id int64, online []int64, jobs ...gitprovider.WorkflowJob) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
