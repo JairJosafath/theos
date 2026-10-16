@@ -18,6 +18,17 @@ func TestStandInPlan(t *testing.T) {
 		{Side: SideCompute, Name: "small", SupportedTypes: []string{TypeCLI}},
 	}
 	noStandard := []CatalogEntry{{Side: SideFramework, Name: "go-cli", SupportedTypes: []string{TypeCLI}}}
+	// A Deployment ships worker and service, but a-cloud deploys itself, no
+	// Standard fits b-bare, and c-tool's first type is cli: the stand-in takes
+	// c-tool as a worker.
+	withDeployment := []CatalogEntry{
+		{Side: SideFramework, Name: "a-cloud", SupportedTypes: []string{TypeService}, DeploysItself: true},
+		{Side: SideFramework, Name: "b-bare", SupportedTypes: []string{TypeWorker}},
+		{Side: SideFramework, Name: "b-web", SupportedTypes: []string{TypeStaticSite}},
+		{Side: SideFramework, Name: "c-tool", SupportedTypes: []string{TypeWorker, TypeCLI}},
+		{Side: SideStandard, Name: "c-standard", SupportedTypes: []string{TypeWorker}, SupportedFrameworks: []string{"c-tool"}},
+		{Side: SideDeployment, Name: "z-ship", SupportedTypes: []string{TypeService, TypeWorker}},
+	}
 	system := PlanObject{Kind: KindSoftwareSystem, Name: "tools"}
 	lend := PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeCLI,
 		GitProvider: "gitea", Framework: "go-cli"}
@@ -32,9 +43,26 @@ func TestStandInPlan(t *testing.T) {
 		created   []string
 		container PlanObject
 		// issues are Container: title.
-		issues     []string
+		issues []string
+		// releases are the Containers releases.yaml names.
+		releases   []string
 		needsInput bool
 	}{
+		{
+			name:    "idea, on the first Framework and type a Deployment ships, released (#1083)",
+			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: withDeployment, Objects: []PlanObject{system}},
+			created: []string{"Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeWorker,
+				GitProvider: "gitea", Framework: "c-tool", Standard: "c-standard", Deployment: "z-ship"},
+			issues:   []string{"lend: Stand-in: start lend"},
+			releases: []string{"lend"},
+		},
+		{
+			name: "prompts, the Container released already: nothing released again",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", IdeaPlanned: true, Catalog: withDeployment,
+				Objects: []PlanObject{system, lend}, Prompts: []string{"Add a calendar."}},
+			issues: []string{"lend: Stand-in: Add a calendar."},
+		},
 		{
 			name:    "idea, in the first SoftwareSystem, with the first Standard that fits",
 			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: withStandard, Objects: []PlanObject{system}},
@@ -162,6 +190,9 @@ func TestStandInPlan(t *testing.T) {
 			}
 			if !slices.Equal(gotIssues, tc.issues) {
 				t.Errorf("issues\n got %q\nwant %q", gotIssues, tc.issues)
+			}
+			if !slices.Equal(plan.Releases, tc.releases) {
+				t.Errorf("releases %q, want %q", plan.Releases, tc.releases)
 			}
 			if len(plan.Choices) == 0 || !strings.Contains(plan.Choices[0], "stand-in") {
 				t.Errorf("choices %q, want the stand-in to say what it chose", plan.Choices)

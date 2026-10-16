@@ -392,7 +392,13 @@ instead: every minute it asks `pick` (which changes nothing) and, when there is
 an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
 running workers alone. Asking first keeps the relay's logs free of a worker that
 starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code. Every 30 minutes
+minutes and restarts itself when that changed its code. The watch and the
+workers run origin/main's scripts, whatever branch the main checkout has
+(#1126): from the worktree `.claude/worktrees/relay-code`, which each pull moves
+to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
+the main checkout. One started from the checkout moves there at its first pull,
+and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
+the code where they were started, to try relay changes from a branch. Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour.
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
@@ -551,8 +557,15 @@ scaffolds the release's `orders-api` sample. Then it follows
 Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through
 it) and `config/samples/first-app/`, set to the release's agent tag and
 template refs, until `orders-cli` is scaffolded and its Crew is `Idle`; no
-Agent runs, as CI has no Claude token. A tag without `first-app` skips that
-part and says so.
+Claude Agent runs, as CI has no Claude token. A tag without `first-app` skips that
+part and says so. Then it follows the guide's *Without a token* command for
+command: a Brief on the chart's Agent `stand-in` plans, its Crew's stand-in
+Tasks merge the issue and "Prepare v0.1.0", the Crew tags `v0.1.0` and the
+release run puts the binaries and `SHA256SUMS` on the Gitea release, in up to
+75 minutes (#1083). `test/chart/verify_release_guide_test.go` holds that step
+to the guide's commands. A tag whose stand-in releases nothing stops at the
+Crew's first Task. Publishing to GitHub isn't checked: it needs a repository
+and token of the owner's (#1216).
 
 The upgrade check takes the path a device takes: `helm upgrade` from the
 release it already runs. It installs the previous release (the highest

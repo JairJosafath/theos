@@ -23,7 +23,9 @@ name: Verify Release
 # catalog and Agents; an older tag's samples pinned to the release: the
 # agent-go tag and the template refs from its templates/versions.txt), until
 # orders-cli is scaffolded and its Crew is Idle. The Agent isn't run: CI has no
-# Claude token.
+# Claude token. install then follows the guide's "Without a token": a Brief on
+# the chart's Agent stand-in, from the idea to the app's release v0.1.0 on
+# Gitea with its binaries.
 #
 # install takes the guide's samples: the dispatched ref's, so dispatching on
 # main checks the guide against a release. A tag
@@ -386,44 +388,106 @@ jobs:
             { $KUBECTL -n webshop get crew orders-cli -o yaml | tail -30; exit 1; }
           $KUBECTL -n webshop get crew orders-cli -o wide
 
-      # docs/getting-started.md, "Without a token": the chart's Agent stand-in
-      # plans the tag's config/samples/brief/stand-in.yaml from the catalog, its
-      # Container scaffolds, and its Crew starts a Task for the issue the Brief
-      # filed. The Brief loop on the published chart, with no Claude token. A
-      # release without the sample or the Agent skips it and says so.
+      # docs/getting-started.md, "Without a token", command for command, from
+      # the guide's clone: the chart's Agent stand-in plans
+      # config/samples/brief/stand-in.yaml from the catalog, its Container
+      # scaffolds on go-cli with gitea-release, its Crew merges the issue,
+      # prepares and tags v0.1.0, and the release run puts the binaries on the
+      # Gitea release. A device's Brief, from the idea to the app's release,
+      # with the published chart and the guide alone and no Claude token
+      # (#1083). test/chart/verify_release_guide_test.go holds this step to the
+      # section: every command of it, kubectl as $KUBECTL, and no other change
+      # to the cluster. A release without the sample or the Agent skips the
+      # check; one whose stand-in releases nothing stops at the Crew's first
+      # Task. Both say so.
       - name: "Getting started: a Brief without a token"
         if: matrix.check == 'install' && env.GUIDE == 'run'
+        working-directory: guide
         run: |
-          sample=guide/config/samples/brief/stand-in.yaml
-          if [ ! -f "$sample" ] || ! $KUBECTL -n webshop get agent stand-in >/dev/null 2>&1; then
+          report() { echo "$*" | tee -a "$RUNNER_TEMP/brief.md"; }
+          if [ ! -f config/samples/brief/stand-in.yaml ] || ! $KUBECTL -n webshop get agent stand-in >/dev/null 2>&1; then
             echo "::notice::$TAG has no config/samples/brief/stand-in.yaml or Agent stand-in: the Brief check is skipped"
-            echo "No stand-in Brief in $TAG: the Brief check is skipped." >>"$GITHUB_STEP_SUMMARY"
+            report "Skipped: $TAG has no stand-in Brief."
             exit 0
           fi
-          brief=$($KUBECTL apply -f "$sample" -o jsonpath='{.metadata.name}')
-          get() { $KUBECTL -n webshop get brief "$brief" -o jsonpath="$1"; }
-          for i in $(seq 1 90); do
-            phase=$(get '{.status.phase}')
-            case $phase in Planned | Failed | NeedsInput) break ;; esac
-            sleep 10
-          done
-          echo "Brief $brief: ${phase:-no phase}"
-          [ "$phase" = Planned ] || { $KUBECTL -n webshop get brief "$brief" -o yaml | tail -40; exit 1; }
-          get '{range .status.choices[*]}- {@}{"\n"}{end}'
-          container=$(get '{.status.created[?(@.kind=="Container")].name}')
-          crew=$(get '{.status.created[?(@.kind=="Crew")].name}')
-          issue=$(get '{.status.issues[0].number}')
+          get() { $KUBECTL -n webshop get "$1" -o jsonpath="$2"; }
+          # until OBJECT FIELD MINUTES WANT STOP...: polls FIELD until it is
+          # WANT or one of STOP, so a guide wait that would sit out its
+          # timeout on a failure ends at once.
+          until_field() {
+            local object=$1 field=$2 minutes=$3 want=$4 value
+            shift 4
+            for i in $(seq 1 $((minutes * 6))); do
+              value=$(get "$object" "$field")
+              [ "$value" = "$want" ] && return 0
+              for stop; do
+                [ "$value" = "$stop" ] && { echo "::error::$object is $value"; return 1; }
+              done
+              sleep 10
+            done
+            echo "::error::$object's $field is ${value:-unset}, not $want, after $minutes minutes"
+            return 1
+          }
+          $KUBECTL apply -f config/samples/brief/stand-in.yaml
+          until_field brief/stand-in-demo '{.status.phase}' 15 Planned Failed NeedsInput ||
+            { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
+          $KUBECTL -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=15m ||
+            { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
+          $KUBECTL -n webshop get c4
+          get brief/stand-in-demo '{range .status.choices[*]}- {@}{"\n"}{end}'
+          container=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Container")].name}')
+          crew=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Crew")].name}')
+          issue=$(get brief/stand-in-demo '{.status.issues[0].number}')
+          # The guide's commands name them after the Brief, as the stand-in does.
+          if [ "$container $crew" != "stand-in-demo stand-in-demo" ]; then
+            echo "::error::Brief stand-in-demo made Container $container and Crew $crew; the guide waits on stand-in-demo"
+            exit 1
+          fi
           $KUBECTL -n webshop wait "container/$container" --for=jsonpath='{.status.phase}'=Ready --timeout=5m ||
             { $KUBECTL -n webshop describe container "$container" | tail -30; exit 1; }
-          task=
-          for i in $(seq 1 60); do
-            task=$($KUBECTL -n webshop get tasks -l "c4.factory.io/crew=$crew,c4.factory.io/issue=$issue" -o name)
-            [ -n "$task" ] && break
-            sleep 10
-          done
-          [ -n "$task" ] || { $KUBECTL -n webshop get crew "$crew" -o yaml | tail -30; exit 1; }
-          echo "Crew $crew started $task for issue $issue"
-          $KUBECTL -n webshop get briefs,containers,crews,tasks -o wide
+          # An older stand-in releases nothing: its Crew starting a Task for
+          # the Brief's issue is as far as it goes.
+          if [ "$(get "crew/$crew" '{.spec.tagReleases}')" != true ]; then
+            task=
+            for i in $(seq 1 60); do
+              task=$($KUBECTL -n webshop get tasks -l "c4.factory.io/crew=$crew,c4.factory.io/issue=$issue" -o name)
+              [ -n "$task" ] && break
+              sleep 10
+            done
+            [ -n "$task" ] || { $KUBECTL -n webshop get crew "$crew" -o yaml | tail -30; exit 1; }
+            echo "::notice::$TAG's stand-in releases nothing: the Brief check stops at the Crew's first Task"
+            report "Brief stand-in-demo planned; Crew $crew started $task for issue $issue." \
+              "$TAG's stand-in releases nothing, so the check stops there."
+            exit 0
+          fi
+          until_field crew/stand-in-demo '{.status.lastRelease.run}' 60 Succeeded Failed ||
+            { $KUBECTL -n webshop get crew stand-in-demo -o yaml | tail -60; $KUBECTL -n webshop get tasks -o wide; exit 1; }
+          $KUBECTL -n webshop wait crew/stand-in-demo --for=jsonpath='{.status.lastRelease.run}'=Succeeded --timeout=60m ||
+            { $KUBECTL -n webshop get crew stand-in-demo -o yaml | tail -60; $KUBECTL -n webshop get tasks -o wide; exit 1; }
+          $KUBECTL -n webshop get brief stand-in-demo
+          $KUBECTL -n webshop get brief stand-in-demo -o jsonpath='{range .status.apps[*]}{.container}: {.message}{"\n"}{end}'
+          # The guide says the release run put the binaries and SHA256SUMS on
+          # the tag's Gitea release.
+          tag=$(get crew/stand-in-demo '{.status.lastRelease.tag}')
+          # Gitea's pod may have restarted in the hour, and the earlier
+          # port-forward with it.
+          echo "GITEA_PORT=3002" >>"$GITHUB_ENV"
+          GITEA_PORT=3002
+          $KUBECTL -n gitea port-forward service/gitea 3002:3000 >/dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:3002/api/v1/version >/dev/null 2>&1 && break; sleep 2; done
+          user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
+          pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::$pass"
+          curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/webshop/$container/releases/tags/$tag" \
+            >"$RUNNER_TEMP/brief-release.json"
+          files=$(jq -r '.assets[].name' "$RUNNER_TEMP/brief-release.json")
+          echo "$files"
+          if ! grep -qx SHA256SUMS <<<"$files" || [ "$(wc -l <<<"$files")" -lt 2 ]; then
+            echo "::error::The Gitea release $tag of webshop/$container has no binaries and SHA256SUMS"
+            exit 1
+          fi
+          report "Brief stand-in-demo released $container $tag on Gitea, with $(wc -l <<<"$files") files" \
+            "($(paste -sd ' ' <<<"$files"))."
 
       # What a device has before it upgrades: every c4 object with its phase
       # and Ready condition, Gitea's repositories with their head commits, and
@@ -565,6 +629,12 @@ jobs:
             $KUBECTL -n webshop get crew orders-cli -o yaml >crew-orders-cli.yaml 2>&1 || true
             cp "$RUNNER_TEMP/first-app.diff" first-app.diff 2>/dev/null || true
           fi
+          if [ "$CHECK" = install ] && [ "$GUIDE" = run ]; then
+            $KUBECTL -n webshop get briefs,containers,crews,tasks -o wide >brief.txt 2>&1 || true
+            $KUBECTL -n webshop get brief stand-in-demo -o yaml >brief-stand-in-demo.yaml 2>&1 || true
+            $KUBECTL -n webshop get crew stand-in-demo -o yaml >crew-stand-in-demo.yaml 2>&1 || true
+            cp "$RUNNER_TEMP/brief-release.json" brief-release.json 2>/dev/null || true
+          fi
           helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system status c4-factory >helm-status.txt 2>&1 || true
           helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory >helm-history.txt 2>&1 || true
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || true)
@@ -619,6 +689,12 @@ jobs:
               fi
             else
               echo "Skipped: $GUIDE_SKIPPED."
+            fi
+            if [ "$CHECK" = install ] && [ "$GUIDE" = run ]; then
+              echo "### A Brief without a token"
+              echo
+              cat "$RUNNER_TEMP/brief.md" 2>/dev/null || echo "The check did not get as far as the Brief's release."
+              echo; echo '```'; cat brief.txt; echo '```'
             fi
             echo "### Pods"; echo '```'; cat pods.txt; echo '```'
           } | tee summary.md >>"$GITHUB_STEP_SUMMARY"
