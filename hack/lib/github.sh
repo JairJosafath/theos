@@ -2277,10 +2277,18 @@ gh_land_fetch() {
 # goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
 # device's lands wait on it, and only the turn's one holder may.
 gh_land_sync() {
-  local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self
+  local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self out
   # The tree is clean, so the copy at HEAD before the merge is the one running.
   self=$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)
-  if ! git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" >&2; then
+  if ! out=$(git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" 2>&1); then
+    echo "$out" >&2
+    # A merge that stops on no conflict (no committer identity, #1289) says
+    # what stopped it, not "conflicts".
+    if [ -z "$(git -C "$GH_LIB_ROOT" diff --name-only --diff-filter=U)" ]; then
+      git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
+      gh_land_say "$pr" ": merging origin/$base into $branch failed, with no conflict: $(grep -m1 '^fatal' <<<"$out" || tail -n1 <<<"$out")"
+      return 1
+    fi
     git -C "$GH_LIB_ROOT" merge --abort 2>/dev/null
     gh_land_say "$pr" ": merging origin/$base into $branch conflicts; merge it by hand (git merge origin/$base), make check, push and land again"
     return 1

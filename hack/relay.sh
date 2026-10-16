@@ -102,6 +102,9 @@
 # session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
 # waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
 # lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
+# A worker whose worktree has no git committer identity (#1289) starts no
+# session, logs why, stops, and puts a line under the Maintainer report's
+# Needs you naming the host and worktree, until the identity is back.
 # A session that ends on a usage limit or a failed login pauses the device: it
 # writes .relay/paused-until (the reset time the message gives, else now plus
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
@@ -408,6 +411,34 @@ share_dev() {
     log "freed ${freed:-?} in $dev, a .dev/ of its own; linked it to $main (#1246)"
   fi
   ln -s "$main" "$dev" 2>>"$LOG" || log "could not link $dev to $main"
+}
+
+# can_commit: whether a session in the worktree could commit (#1289): git var
+# GIT_COMMITTER_IDENT there, in the environment the session gets, sees the
+# global, XDG and repository configs alike. When it can't, log git's reason
+# and put a line under the Maintainer report's Needs you, once, naming the
+# host and the worktree; when it can again, take the line away. The mark file
+# remembers the note, so a worktree that can commit asks GitHub nothing.
+can_commit() {
+  local err key="ident-$(hostname)-${WT##*/}" mark=$DIR/no-ident-$K
+  if err=$(git -C "$WT" var GIT_COMMITTER_IDENT 2>&1 >/dev/null); then
+    if [ -e "$mark" ] && gh_report_note "$key" >/dev/null 2>>"$LOG"; then
+      rm -f "$mark"
+      log "git has a committer identity in $WT again; took the report note away"
+    fi
+    return 0
+  fi
+  log "git has no committer identity in $WT, so no session could commit: $(grep fatal <<<"$err" || tail -n1 <<<"$err")"
+  if [ ! -e "$mark" ]; then
+    if gh_report_note "$key" "\`$(hostname)\`: git has no committer identity in \`$WT\`; relay worker $K starts no session there" \
+      "Set git's user.name and user.email on \`$(hostname)\` (\`git -C $WT var GIT_COMMITTER_IDENT\` must pass): relay worker $K starts no session in \`$WT\` until then" \
+      >/dev/null 2>>"$LOG"; then
+      : >"$mark"
+    else
+      log "could not put the missing identity in the Maintainer report"
+    fi
+  fi
+  return 1
 }
 
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
@@ -1054,6 +1085,7 @@ work() {
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
+      can_commit || { log "stopping: a session here couldn't commit"; break; }
     fi
     flush || { log "GitHub can't be reached; stopping"; break; }
 

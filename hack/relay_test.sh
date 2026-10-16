@@ -13,7 +13,8 @@
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; a
-# worktree's own .dev/, which becomes the link to the main checkout's; and idle workers,
+# worktree's own .dev/, which becomes the link to the main checkout's; the worktree
+# with no git identity, which starts no session (#1289); and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -369,7 +370,8 @@ limit_name "the build failed" >/dev/null; check "limit_name: no limit" $? 1
 # GitHub faked: one ready issue, #175 on branch b.
 WT=$T/wt
 git init -q -b b "$WT"
-git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+git -C "$WT" commit -q --allow-empty -m first
 git init -q --bare "$T/origin.git"
 git -C "$WT" remote add origin "$T/origin.git"
 mkdir -p "$T/bin"
@@ -448,6 +450,28 @@ takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
 : >"$LOG"
 ADMIT_GAP=0 MAX_SESSIONS=1 MEM_POLL=1
+
+# A worktree where git has no committer identity starts no session (#1289):
+# the worker logs why, puts one line under Needs you naming the host and the
+# worktree, once, and takes it away when the identity is back.
+gh_report_note() { echo "$*" >>"$T/notes"; }
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+git -C "$WT" config --unset user.name && git -C "$WT" config --unset user.email
+echo handoff >"$FAKE"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work; work)
+check "no identity (#1289): no claim, no session" "$(takes) $(grep -c 'session 1 start' "$LOG")" "0 0"
+grep -q "git has no committer identity in $WT, so no session could commit: fatal: no email was given" "$LOG"; check "no identity (#1289): logs git's reason" $? 0
+check "no identity (#1289): one report note, naming host and worktree" \
+  "$(grep -c . "$T/notes") $(grep -c "^ident-$(hostname)-wt .*$(hostname).*$WT" "$T/notes")" "1 1"
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity back (#1289): the note goes, a session starts" \
+  "$(tail -n1 "$T/notes") $(takes) $(grep -c 'session 1 start' "$LOG")" "ident-$(hostname)-wt 1 1"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity (#1289): asks GitHub nothing once the note is gone" "$(grep -c . "$T/notes") $(takes)" "2 2"
+unset -f gh_report_note
+rm -f "$T/takes"
+: >"$LOG"
 
 # A usage limit pauses the device until the time it names, and isn't counted.
 # The claim's release names the limit (#1199).
