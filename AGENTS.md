@@ -29,9 +29,10 @@ task. Read the rest when the task needs it:
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. Run `make check` before finishing a change; a tree that already
-passed on this device answers from the cache, which counts as a pass
-(`FORCE=1 make check` reruns it).
+the layering. `make check` gates every change; `hack/lib/github.sh land` runs it
+before it merges, so run it by hand only when you need its whole output. A tree
+that already passed on this device answers from the cache, which counts as a
+pass (`FORCE=1 make check` reruns it).
 
 ## Critical Rules
 
@@ -92,7 +93,7 @@ make lint-fix   # Auto-fix code style
 make test       # Run unit and envtest tests
 ```
 
-**Before finishing any change:**
+**Before finishing any change** (`land` runs it for you):
 ```
 make check      # manifests, generate, fmt, vet, lint, test and the UI's check in one go
 ```
@@ -132,10 +133,14 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
 - **Small pull requests to main.** One branch per issue, the one `take` names
   (`<type>/<N>-<slug>`, from an up-to-date main), pushed after every commit; a
   pull request to main whose body says `Closes #N`, merged with
-  `hack/lib/github.sh land PR` once `make check` passes (`land` takes the merge
-  turn, one across every device, merges `origin/main` in, reruns `make check`
-  and merges; over 400 changed lines it wants a review pass first, the
-  `handoff` skill's "Review before landing"). No long-lived or stacked branches. A plan's pull request says
+  `hack/lib/github.sh land PR`. `land`'s check is the check: while you work,
+  run the targeted tests (`make test-hack`, `go test ./internal/...`,
+  `make ui-test`), then land; `land` merges `origin/main` in and runs
+  `make check` before it queues, then takes the merge turn, one across every
+  device, and merges at once, checking again under the turn only when main
+  moved. Run `make check` by hand only when `land` failed and you need the
+  whole output. Over 400 changed lines it wants a review pass first, the
+  `handoff` skill's "Review before landing". No long-lived or stacked branches. A plan's pull request says
   `Refs #N` and never a closing word next to `#N`; the parent gets a
   `Depends on #S` line per step, goes `status/waiting` and closes itself when
   its last step closes. Never close a parent by hand (`hack/close-guard.sh`
