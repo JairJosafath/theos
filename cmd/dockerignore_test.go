@@ -61,11 +61,15 @@ func TestDockerContextHasEmbeddedFiles(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^COPY go\.mod\b`).MatchString(text) {
 			continue
 		}
-		var targets []string
+		// Each go build is listed on its own: one go list can't mix a file
+		// (cmd/main.go) with a package (./cmd/model-proxy).
+		var builds [][]string
 		for _, m := range goBuild.FindAllStringSubmatch(text, -1) {
-			targets = append(targets, buildTargets(m[1])...)
+			if targets := buildTargets(m[1]); len(targets) > 0 {
+				builds = append(builds, targets)
+			}
 		}
-		if len(targets) == 0 {
+		if len(builds) == 0 {
 			continue
 		}
 		t.Run(filepath.ToSlash(rel), func(t *testing.T) {
@@ -75,15 +79,17 @@ func TestDockerContextHasEmbeddedFiles(t *testing.T) {
 			}
 			ignoreRel, _ := filepath.Rel(root, ignore)
 			pm := readIgnore(t, ignore)
-			for _, file := range embedFiles(t, root, targets) {
-				embedded++
-				excluded, err := pm.MatchesOrParentMatches(file)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if excluded {
-					t.Errorf("%s is embedded (//go:embed) in %s but %s leaves it out of the image build; re-include it there",
-						file, strings.Join(targets, " "), filepath.ToSlash(ignoreRel))
+			for _, targets := range builds {
+				for _, file := range embedFiles(t, root, targets) {
+					embedded++
+					excluded, err := pm.MatchesOrParentMatches(file)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if excluded {
+						t.Errorf("%s is embedded (//go:embed) in %s but %s leaves it out of the image build; re-include it there",
+							file, strings.Join(targets, " "), filepath.ToSlash(ignoreRel))
+					}
 				}
 			}
 		})
