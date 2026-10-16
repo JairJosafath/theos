@@ -3,7 +3,8 @@
 # same bytes its old mtime back, and for the Makefile's use of it and of Go's
 # test cache: manifests and generate keep the mtimes of what they regenerate,
 # make test passes no -coverprofile unless COVER=1 and -count=1 only for
-# FORCE=1, and runs the tests with a cache home outside the module (#1282).
+# FORCE=1, and runs the tests with one cache home per device, outside the
+# module, whatever the session's TMPDIR (#1282, #1314).
 # Run: hack/keep-mtime_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
