@@ -4,7 +4,8 @@
 # commit) in this repository, it runs hack/lib/github.sh closes-check over the
 # text that would land: the command itself, where a --body, -m or heredoc
 # puts it, and the files a --body-file, -F or --file names; for gh pr merge,
-# also the pull request's title, body and commit messages on GitHub. A
+# also the pull request's title, body and commit messages on GitHub, whose
+# Refs #N then count only in the body (a commit's Refs #N closes nothing). A
 # closing keyword (closes, fixed, resolves, ...) for an issue the same text
 # says Refs, or for an issue with a "Depends on #S" step still open, would
 # close the parent of a plan before its steps land; the hook denies the
@@ -48,7 +49,7 @@ while IFS= read -r f; do
   [ -n "$f" ] && [ "$f" != - ] && [ -f "$f" ] && text+=$'\n'$(cat -- "$f")
 done < <(grep -oE "(--body-file|--file|-F)[= ]+(\"[^\"]*\"|'[^']*'|[^[:space:];&|]+)" <<<"$cmd")
 
-merge=
+merge= body=
 if [[ $what == *merge ]]; then
   merge=1
   # The pull request is the first word after merge that is not a flag or a
@@ -85,12 +86,13 @@ if [[ $what == *merge ]]; then
     n=$(gh pr view ${arg:+"$arg"} --json number --jq .number 2>/dev/null)
   fi
   [[ ${n:-} =~ ^[0-9]+$ ]] || deny "close-guard: could not tell which pull request \`gh pr merge\` merges, so it could not check that merging it closes no plan's parent too early. Name the pull request: gh pr merge N."
-  more=$(gh_pr_text "$n" 2>/dev/null) ||
+  more=$(gh_pr_text "$n" 2>/dev/null) && body=$(gh_pr_body "$n" 2>/dev/null) ||
     deny "close-guard: could not read pull request #$n from GitHub to check that merging it closes no plan's parent too early; try again."
   text+=$'\n'$more
 fi
 
-out=$(gh_closes_check - <<<"$text" 2>&1)
+# A merge's Refs #N count only in the pull request's body (gh_closes_check BODY).
+out=$(gh_closes_check - ${merge:+"$body"} <<<"$text" 2>&1)
 case $? in
   0) exit 0 ;;
   1) deny "$out" ;;
