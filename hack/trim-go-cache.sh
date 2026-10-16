@@ -13,12 +13,13 @@
 # last one or two, so what builds use now stays, and worktrees don't all
 # recompile client-go at once.
 #
-# Usage: hack/trim-go-cache.sh [DIR...]  (default: GOCACHE and the
-# golangci-lint cache)
+# Usage: hack/trim-go-cache.sh [DIR...]  (default: GOCACHE, the golangci-lint
+# cache and Go's default cache ~/.cache/go-build, which go runs outside ./dev
+# fill, when GOCACHE is elsewhere)
 set -uo pipefail
 max_kb=$((${C4_GOCACHE_MAX_MB:-$((${C4_GOCACHE_MAX_GB:-4} * 1024))} * 1024))
 
-size_kb() { du -sk "$1" 2>/dev/null | cut -f1; }
+size_kb() { du -skH "$1" 2>/dev/null | cut -f1; }
 mb() { echo "$(($1 / 1024)) MB"; }
 # ago HOURS: "7+ days" or "12+ hours".
 ago() { if [ $(($1 % 24)) = 0 ]; then echo "$(($1 / 24))+ days"; else echo "$1+ hours"; fi; }
@@ -33,7 +34,7 @@ trim() {
   [ "$before" -lt "$max_kb" ] && return 0
   kb=$before
   for hours in 168 72 24 12 6 3 2; do
-    dropped=$((dropped + $(find "$dir" -mindepth 2 -type f -mmin +$((hours * 60)) -printf '%k\n' -delete 2>/dev/null | awk '{s += $1} END {print s + 0}')))
+    dropped=$((dropped + $(find -H "$dir" -mindepth 2 -type f -mmin +$((hours * 60)) -printf '%k\n' -delete 2>/dev/null | awk '{s += $1} END {print s + 0}')))
     kb=$(size_kb "$dir")
     [ "$kb" -lt "$max_kb" ] && break
   done
@@ -43,6 +44,9 @@ trim() {
 
 if [ $# -eq 0 ]; then
   command -v go >/dev/null || exit 0
-  set -- "$(go env GOCACHE)" "${GOLANGCI_LINT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/golangci-lint}"
+  gocache=$(go env GOCACHE)
+  set -- "$gocache" "${GOLANGCI_LINT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/golangci-lint}"
+  def=$HOME/.cache/go-build
+  [ "$def" = "$gocache" ] || [ "$def" -ef "$gocache" ] || set -- "$@" "$def"
 fi
 for dir in "$@"; do trim "$dir"; done

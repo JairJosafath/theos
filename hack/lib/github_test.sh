@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), that check alone going first in the heavy-job queue, retrying a failed fetch, and giving the turn up merged, red, conflicting, unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description and creating the missing ones, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), that check alone going first in the heavy-job queue, retrying a failed fetch, and giving the turn up merged, red, conflicting, failing to merge with no conflict (no committer identity, said as such), unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description, creating the missing ones and deleting the retired ones present, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -528,6 +528,20 @@ check "proposed" "$(OPEN=$(jq '. + [[86, ["status/proposed", "kind/bug"]]]' <<<"
 check "proposed, none" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_proposed)" ""
 gh_proposed --since soon 2>/dev/null
 check "proposed --since takes epoch seconds" $? 1
+# #1359: a busy evening's listings pass Linux's 128 KiB per-argument limit;
+# jq reads them from files, not argv.
+pad=$(head -c 200000 /dev/zero | tr '\0' x)
+padded() { jq -Rc --argjson c "$(claimed "$1")" '. as $p | $c | .[0][0].body += $p' <<<"$pad"; }
+check "proposed --since, listings over 128 KiB (#1359)" "$(
+  gh_api() {
+    case $* in
+      *issues\?state=open*) jq -c '.[0][0] += {updated_at: "2026-10-06T07:00:00Z"}' <<<"$(issues <<<'[[81, ["status/proposed"], "Depends on #9"]]')" ;;
+      *issues\?state=closed*) echo '[[{"number": 9, "closed_at": "2026-10-06T08:30:00Z"}]]' ;;
+      *issues/comments\?since*) jq -Rc '[[{issue_url: "x/issues/81", updated_at: "2026-10-06T08:20:00Z", body: .}]]' <<<"$pad" ;;
+      */issues/81/comments*) jq -Rc '[[{body: "<!-- relay-triage -->\n\(.)"}]]' <<<"$pad" ;;
+    esac
+  }
+  gh_proposed --since $((GH_NOW - 3600)) 2>&1)" "81 $(date -d 2026-10-06T08:20:00Z +%s) $(date -d 2026-10-06T08:30:00Z +%s)"
 
 # Blocked: what holds back each ready or in-progress issue that pick skips for
 # an open dependency, with the blocker's status, claim and own dependencies;
@@ -553,6 +567,11 @@ check "blocked --unworked" "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 104 107)
 check "blocked, a claimed blocker not in progress is unworked" \
   "$(OPEN=$(issues <<<"$dep") CLAIMS=$(claimed 101) gh_blocked --unworked | head -1)" "100 waits on 101 (status/proposed, claimed by otter-101)"
 check "blocked, none" "$(OPEN=$(issues <<<"$all") gh_blocked)" "83 waits on 81 (status/proposed, no claim)"
+# Not exported: jq would get it in its environment, as long a string.
+check "pick, claims over 128 KiB (#1359)" "$(OPEN=$(issues <<<'[[82, ["status/ready"]]]') CLAIMS=$(padded 83)
+  gh_pick 2>&1 | cut -f1)" "82"
+check "blocked, claims over 128 KiB (#1359)" "$(OPEN=$(issues <<<'[[82, ["status/ready"], "Depends on #83"], [83, ["status/in-progress"]]]') CLAIMS=$(padded 83)
+  gh_blocked 2>&1)" "82 waits on 83 (status/in-progress, claimed by otter-83)"
 check "blocked, the blocker closed" "$(OPEN=$(jq 'map(select(.[0] != 81))' <<<"$all" | issues) gh_blocked)" ""
 gh_blocked --bogus 2>/dev/null
 check "blocked, unknown flag" $? 1
@@ -1411,6 +1430,19 @@ MAKE
   : >"$T/calls"
   out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug" | .files.nodes[0].path = "feat_test.sh"' <<<"$NOBUG") gh_land 40 2>&1)
   check "land: queues a bug fix with a test" "$(grep -c '^POST ' "$T/calls") $(grep -c 'kind/bug' <<<"$out")" "1 0"
+  # A merge that fails on no conflict, here git having no committer identity
+  # (#1289), says what stopped it, not that it conflicts.
+  rm -f "$T/landed"
+  echo ident >"$T/other/ident" && git -C "$T/other" add ident && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m ident && git -C "$T/other" push -q origin main
+  printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+  g config --unset user.name && g config --unset user.email
+  out=$(unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+    GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none gh_land 40 2>&1)
+  check "land: no identity fails before it queues, merges nothing (#1289)" "$? $(cat "$T/landed" 2>/dev/null) | $(queue) | $(g status --porcelain --untracked-files=no)" "1  |  | "
+  grep -q '#40: merging origin/main into feat failed, with no conflict: fatal: no email was given' <<<"$out"; check "land: says why, not conflicts (#1289)" $? 0
+  grep -q conflicts <<<"$out"; check "land: no identity isn't called a conflict (#1289)" $? 1
+  g config user.name t && g config user.email t@t
+  g reset -q --hard origin/feat
   # A conflict with main is aborted, before it queues, and merges nothing.
   rm -f "$T/landed"
   echo main >"$T/other/feat" && git -C "$T/other" add feat && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m clash && git -C "$T/other" push -q origin main
@@ -1676,6 +1708,7 @@ status/ready kind/docs source/dev"
       "GET $R/issues/"*) cat "$TK/issue" ;;
       "GET $R/labels?"*) [ ! -e "$TK/labels-fail" ] && cat "$TK/labels" ;;
       "POST $R/labels") [ ! -e "$TK/post-fails" ] ;;
+      "DELETE $R/labels/"*) [ ! -e "$TK/delete-fails" ] ;;
       *) return 1 ;;
     esac
   }
@@ -1811,6 +1844,21 @@ later"
   check "labels: the scale's colors (#1329)" \
     "$(grep -o 'name=priority/[0-9]* color=[0-9a-f]*' "$TK/calls" | sed 's/.*color=//' | paste -sd' ')" \
     "b60205 d73a4a e36209 f66a0a fbca04 e4e669 c5def5 bfdadc d4d4d4 ededed"
+  # The retired words (#1329): none present, nothing deleted or said; each
+  # present one DELETEd, the slash escaped, and said; a failing DELETE exits 1.
+  check "labels: no retired label present: no DELETE, no word (#1329)" "$(calls '^DELETE ') $(grep -c ': retired$' <<<"$out")" "0 0"
+  check "labels: retires priority/urgent and priority/velocity (#1329)" "${GH_RETIRED_LABELS[*]}" "priority/urgent priority/velocity"
+  u=${GH_RETIRED_LABELS[0]} v=${GH_RETIRED_LABELS[1]}
+  printf '%s\tx\n%s\ty\n' "$u" "$v" >"$TK/labels"
+  again; out=$(gh_labels)
+  check "labels: each retired one present is deleted and said (#1329)" "$?|$(grep ': retired$' <<<"$out" | paste -sd'|')|$(grep '^DELETE ' "$TK/calls" | paste -sd'|')" \
+    "0|label $u: retired|label $v: retired|DELETE $R/labels/${u//\//%2F}|DELETE $R/labels/${v//\//%2F}"
+  printf '%s\ty\n' "$v" >"$TK/labels"
+  again; out=$(gh_labels)
+  check "labels: a missing retired one says nothing (#1329)" "$(grep ': retired$' <<<"$out" | paste -sd'|') $(calls '^DELETE ')" "label $v: retired 1"
+  again; touch "$TK/delete-fails"
+  gh_labels >/dev/null 2>&1; check "labels: a failing DELETE: exit 1 (#1329)" "$?" "1"
+  rm "$TK/delete-fails"
   exit $fail
 ) || fail=1
 exit $fail

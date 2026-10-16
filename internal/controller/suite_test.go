@@ -83,6 +83,9 @@ var (
 	// managerCfg is cfg as the operator's ServiceAccount, bound to the generated
 	// role: a call the role doesn't grant fails the reconciler that makes it.
 	managerCfg *rest.Config
+	// managerClient is the manager's cached client, the reconcilers' view: a
+	// spec waits on it when a reconcile must not see an object it deleted (#1300).
+	managerClient client.Client
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -280,6 +283,7 @@ var _ = BeforeSuite(func() {
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
 	Expect(err).NotTo(HaveOccurred())
+	managerClient = mgr.GetClient()
 	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()

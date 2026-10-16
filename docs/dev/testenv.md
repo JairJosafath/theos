@@ -81,16 +81,31 @@ base, with uncommitted and untracked files) can affect: a package with a changed
 file (its directory or one below it, so embedded files count) and every package
 whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
 prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
-internal/model`, or `testing every package (21): <reason>`. It tests every
-package on `main`, without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
+internal/model`, or `testing every package (21): <reason>`. A changed non-Go
+file in a package, or a changed `//go:embed` line, also tests `cmd`: its
+`TestDockerContextHasEmbeddedFiles` checks the embeds of every package a
+Dockerfile builds without linking them (#1321). A file directly under
+`test/e2e/` (the e2e suite) tests nothing; one in `test/e2e/standin/` tests
+that package. It tests every package on the branch `main` (a detached HEAD at
+main's commit is no branch: it diffs against `origin/main` and tests no
+package), without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
 after a change to a file a Go test may read without importing it: `go.mod`,
-`go.sum`, the `Makefile`, `hack/`, `config/` (the CRDs and RBAC envtest loads),
-`api/`, `dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
+`go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
+`hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
+`hack/go-test.sh`), `config/` (the CRDs and RBAC envtest loads), `api/`,
+`dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
 Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
 A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
-`.github/` or a top-level `*.md` tests no package. `land`'s `make check` selects
-the same way; the *Tests* workflow sets `TEST_ALL=1`, so every merge to main
-still runs every package and catches what a selection missed. With `COVER=1`,
+`.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
+tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
+that names a new `hack/` path fails `hack/test-packages_test.sh` until the
+path joins that list. `land`'s `make check` selects
+the same way. The *Tests* workflow sets `TEST_ALL=1`, so a merge to main it
+runs on tests every package and catches what a selection missed; but its
+`paths` filter skips a merge that changes only `*.md`, `docs/`, `ui/`,
+`config/ui/`, `config/samples/`, `test/e2e/`, the linter configs, `hack/` (but
+the four files it names), `dev`, `.vscode/` or `.github/` (but its own
+workflow) files, so such a merge gets only `land`'s selection. With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
 did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
 selects the same way, but it loads every package of every module in the build
@@ -351,7 +366,17 @@ or an open `Depends on #M`, and claims it (see
 [docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
 k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
 to the issue's branch; uncommitted changes a dead session left there are
-stashed, not dropped. Claims keep workers and hand-started sessions off each
+stashed, not dropped. Before it claims anything, a worker checks that a
+session there could commit (#1289): `git -C <worktree> var
+GIT_COMMITTER_IDENT`, in the environment the session gets, which sees the
+global, `$XDG_CONFIG_HOME/git/config` and repository configs alike. When git
+has no committer identity there, the worker logs git's reason, starts no
+session and stops, and puts one line under the Maintainer report's *Needs
+you* naming the host and the worktree (`report-note ident-<host>-relay-k`),
+so the owner sets `user.name` and `user.email`; the line goes away at the
+first check that passes again. Triage and maintainer sessions commit nothing
+and skip the check. `land`'s own merge of main says what stopped it when it
+fails with no conflict, such as `fatal: empty ident name`. Claims keep workers and hand-started sessions off each
 other's issues, so the relay starts right away. A session that ends still
 holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
@@ -496,8 +521,22 @@ to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
 the main checkout. One started from the checkout moves there at its first pull,
 and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
 the code where they were started, to try relay changes from a branch. Every 30 minutes
-(`WATCH_TRIM_EVERY`) it runs `hack/trim-go-cache.sh` and logs what that
-dropped: nine workers grow Go's build cache by gigabytes an hour.
+(`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
+dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
+Docker Desktop's disk images never shrink (#1343). It prunes:
+- with `hack/trim-go-cache.sh`, Go's build cache (`GOCACHE`), golangci-lint's
+  and Go's default cache `~/.cache/go-build`, which `go` runs outside `./dev`
+  fill, to `C4_GOCACHE_MAX_GB` (4) each; `C4_TRIM_GO=0` turns it off;
+- the GH runners' cache volume `c4factory-gh-runner-cache`: the same trim over
+  its `go-build` and `golangci-lint`, in a throwaway container of the runner
+  image, keeping what was used in the last two hours, so a running job keeps
+  its cache; skipped without the volume or the image,
+  `C4_PRUNE_RUNNER_CACHE=0` turns it off;
+- Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
+  builds stay warm) and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
+
+Without `docker` it skips the last two.
+
 Busy or idle, with issues ready or not (#1191), it starts a triage of the
 `status/proposed` issues: for a new one, for one that changed since the last
 triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
@@ -867,6 +906,55 @@ the tiers: which keys a change under `ui/`, `hack/`, `config/`, `docs/` or a
 package `hack/render` builds moves, a hit that doesn't run the tier, `FORCE=1`
 and a failure that do, and the Makefile's cached and dry-run paths.
 
+### Disk space on WSL
+
+On 2026-10-16 the Windows drive C: filled while the relay ran; the machine had
+to be powered off, and tracked files in two checkouts came back 0 bytes
+(#1344). Inside WSL `df /` showed 930 GB free the whole time: WSL's disk is a
+dynamic `ext4.vhdx` on C: (74 GB, 60 GB in use), and Docker Desktop's
+`docker_data.vhdx` another (22.5 GB). Neither file shrinks when files inside
+are deleted, so the real limit is the drive that holds them.
+
+So before each session, where it waits for memory, a worker checks the free
+space on each watched filesystem: `/`, the checkouts' and, under WSL, the
+drive of each distro's `BasePath` (Docker Desktop's included), read from
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` with `reg.exe` and
+mapped with `wslpath`, or `/mnt/c` when that fails. `RELAY_DISK_PATHS`
+(space-separated) overrides the list. While one has less than
+`RELAY_MIN_FREE_GB` (default 30) free, the worker starts no session, logs the
+path, its free space and the minimum (at most once per path an hour, across
+workers: `.relay/disk-low-<path>`), and prunes the caches at once
+(`hack/prune-caches.sh`). The wait counts toward `RELAY_MEM_WAIT` like the
+wait for memory. Sessions already running go on.
+
+Deleting files inside WSL frees space in the distro, not on C:. Only
+compacting the `.vhdx` returns it to Windows:
+
+1. Quit Docker Desktop, then in PowerShell `wsl --shutdown`.
+2. In an administrator `diskpart`, for WSL's disk (its folder is the
+   distro's `BasePath`, `%LOCALAPPDATA%\wsl\{<guid>}\ext4.vhdx` on a
+   recent WSL):
+
+   ```
+   select vdisk file="C:\Users\<you>\AppData\Local\wsl\{<guid>}\ext4.vhdx"
+   attach vdisk readonly
+   compact vdisk
+   detach vdisk
+   ```
+
+3. The same for Docker Desktop's disk,
+   `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`, with Docker Desktop
+   still quit.
+
+WSL's own `wsl --manage <distro> --set-sparse true` would shrink the disk as
+it goes, but WSL marks sparse VHDs unsafe (they can corrupt the disk), so
+compact by hand instead.
+
+`hack/relay_test.sh` tests the guard with a stub `df`: no session below the
+minimum on any watched path and the path in the log, sessions above it, the
+settings, one line an hour; and the `.vhdx` lookup with stub `reg.exe` and
+`wslpath`, the `/mnt/c` fallback included.
+
 ### CPU on the cluster device
 
 The Kind node has 12 cores and runs etcd, the API server, Gitea, the operator,
@@ -981,7 +1069,8 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
-- **Lint and UI run on pull requests too; Tests tests every merge commit.**
+- **Lint and UI run on pull requests too; Tests tests every merge commit its
+  `paths` match.**
   *Lint* (with its `test-hack` job, `make test-hack`) and *UI* run on pushes
   to main and on pull requests to main, with the same path filters, so vet,
   lint and the shell tests answer before `hack/lib/github.sh land`. They carry

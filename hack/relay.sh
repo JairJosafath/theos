@@ -100,8 +100,15 @@
 # not a count, holds them). On every device a worker waits before each pick
 # until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
 # session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
-# waiting RELAY_MEM_WAIT seconds (default 3600). Heavy jobs (make check, test,
+# waiting RELAY_MEM_WAIT seconds (default 3600). It also waits while a watched
+# filesystem has less than RELAY_MIN_FREE_GB free (default 30): /, the
+# checkouts' and, under WSL, the Windows drives holding the distros' .vhdx
+# files, whose free space df / never shows (#1344); RELAY_DISK_PATHS overrides
+# the list. Heavy jobs (make check, test,
 # lint, deploy, ...) queue device-wide for HEAVY_JOBS slots (hack/heavy-slot.sh).
+# A worker whose worktree has no git committer identity (#1289) starts no
+# session, logs why, stops, and puts a line under the Maintainer report's
+# Needs you naming the host and worktree, until the identity is back.
 # A session that ends on a usage limit or a failed login pauses the device: it
 # writes .relay/paused-until (the reset time the message gives, else now plus
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
@@ -157,6 +164,9 @@ ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across worke
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
+MIN_FREE_GB=${RELAY_MIN_FREE_GB:-30} # GB free each watched filesystem needs before a session starts (#1344)
+DISK_PATHS=${RELAY_DISK_PATHS:-}     # the watched paths, space-separated; empty: disk_paths finds them
+OSRELEASE=${RELAY_OSRELEASE:-/proc/sys/kernel/osrelease}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
 MAX_FAILS=${RELAY_MAX_FAILS:-3}     # strikes (failed sessions) before an issue goes to the maintainer
 STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
@@ -410,6 +420,34 @@ share_dev() {
   ln -s "$main" "$dev" 2>>"$LOG" || log "could not link $dev to $main"
 }
 
+# can_commit: whether a session in the worktree could commit (#1289): git var
+# GIT_COMMITTER_IDENT there, in the environment the session gets, sees the
+# global, XDG and repository configs alike. When it can't, log git's reason
+# and put a line under the Maintainer report's Needs you, once, naming the
+# host and the worktree; when it can again, take the line away. The mark file
+# remembers the note, so a worktree that can commit asks GitHub nothing.
+can_commit() {
+  local err key="ident-$(hostname)-${WT##*/}" mark=$DIR/no-ident-$K
+  if err=$(git -C "$WT" var GIT_COMMITTER_IDENT 2>&1 >/dev/null); then
+    if [ -e "$mark" ] && gh_report_note "$key" >/dev/null 2>>"$LOG"; then
+      rm -f "$mark"
+      log "git has a committer identity in $WT again; took the report note away"
+    fi
+    return 0
+  fi
+  log "git has no committer identity in $WT, so no session could commit: $(grep fatal <<<"$err" || tail -n1 <<<"$err")"
+  if [ ! -e "$mark" ]; then
+    if gh_report_note "$key" "\`$(hostname)\`: git has no committer identity in \`$WT\`; relay worker $K starts no session there" \
+      "Set git's user.name and user.email on \`$(hostname)\` (\`git -C $WT var GIT_COMMITTER_IDENT\` must pass): relay worker $K starts no session in \`$WT\` until then" \
+      >/dev/null 2>>"$LOG"; then
+      : >"$mark"
+    else
+      log "could not put the missing identity in the Maintainer report"
+    fi
+  fi
+  return 1
+}
+
 # code_sum: a checksum of the relay's own code, to see whether a pull changed it.
 code_sum() {
   cat "$CODE/hack/relay.sh" "$CODE/hack/lib/github.sh" "$CODE/hack/lib/session-env.sh" "$CODE/hack/lib/relay-code.sh" 2>/dev/null | cksum
@@ -522,6 +560,69 @@ mem_gib() {
   awk '/^MemAvailable:/ { print int($2 / 1048576); found = 1 } END { exit !found }' "$MEMINFO"
 }
 
+# vhdx_dirs: under WSL, the Linux paths of the directories holding each
+# distro's virtual disk (Docker Desktop's included): their BasePath under
+# HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss, from reg.exe, mapped
+# with wslpath. /mnt/c when neither gives one. Nothing outside WSL.
+vhdx_dirs() {
+  local base out=
+  grep -qi microsoft "$OSRELEASE" 2>/dev/null || return 0
+  while read -r base; do
+    base=$(wslpath -u "${base#\\\\?\\}" 2>/dev/null) && [ -n "$base" ] && out+="$base"$'\n'
+  done < <(timeout 20 reg.exe query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' /s /v BasePath 2>/dev/null |
+    tr -d '\r' | sed -n 's/^ *BasePath  *REG_[A-Z_]*  *//p')
+  if [ -n "$out" ]; then printf '%s' "$out"; else echo /mnt/c; fi
+}
+
+# disk_paths: the watched paths, one per line: RELAY_DISK_PATHS, else /, the
+# checkouts' and vhdx_dirs. Looked up once per worker: reg.exe is slow.
+disk_paths() {
+  if [ -z "$DISK_PATHS" ]; then
+    DISK_PATHS=$({ echo /; echo "$REPO"; vhdx_dirs; } | tr '\n' ' ')
+  fi
+  printf '%s\n' $DISK_PATHS
+}
+
+# disk_low: print PATH<tab>GB-free for each watched filesystem with less than
+# RELAY_MIN_FREE_GB free, one per filesystem (the first path naming it). A
+# path df can't read is skipped.
+disk_low() {
+  local p line mounts=$'\n' free mnt
+  while read -r p; do
+    line=$(df -Pk "$p" 2>/dev/null | tail -n +2 | tail -n 1) && [ -n "$line" ] || continue
+    free=$(awk '{ print int($4 / 1048576) }' <<<"$line")
+    mnt=$(awk '{ print $NF }' <<<"$line")
+    [[ $mounts == *$'\n'"$mnt"$'\n'* ]] && continue
+    mounts+="$mnt"$'\n'
+    [ "$free" -lt "$MIN_FREE_GB" ] && printf '%s\t%s\n' "$p" "$free"
+  done < <(disk_paths)
+}
+
+# trim_caches: prune the device's build caches (hack/prune-caches.sh, #1343),
+# so a disk below RELAY_MIN_FREE_GB may pass the next check.
+trim_caches() { "$CODE/hack/prune-caches.sh" 2>&1 | while read -r l; do log "$l"; done; }
+
+# disk_wait: exit 0 while a watched filesystem is below RELAY_MIN_FREE_GB. The
+# first time a path is low, and then at most once an hour across workers
+# (.relay/disk-low-<path>), it logs the path, its free space and the minimum,
+# and trims the caches at once.
+disk_wait() {
+  local p free low= mark now said= hint=
+  grep -qi microsoft "$OSRELEASE" 2>/dev/null &&
+    hint="; under WSL only compacting the .vhdx returns space to Windows: docs/dev/testenv.md, \"Disk space on WSL\""
+  now=$(date +%s)
+  while IFS=$'\t' read -r p free; do
+    low=1
+    mark="$DIR/disk-low-${p//[^a-zA-Z0-9]/-}"
+    [ $((now - $(stat -c %Y "$mark" 2>/dev/null || echo 0))) -lt 3600 ] && continue
+    [ -n "$DRY_RUN" ] || touch "$mark"
+    log "waiting for disk: $p has ${free} GB free, a session needs ${MIN_FREE_GB} (RELAY_MIN_FREE_GB); starting no session$hint"
+    said=1
+  done < <(disk_low)
+  [ -n "$said" ] && [ -z "$DRY_RUN" ] && trim_caches
+  [ -n "$low" ]
+}
+
 # paused: print the time .relay/paused-until holds and why, and exit 0, while
 # the device is paused for a limit.
 paused() {
@@ -608,7 +709,8 @@ pause() {
 }
 
 # admit: wait until the device has headroom for one more session: no pause for
-# a limit (.relay/paused-until), MemAvailable at least RELAY_MIN_MEM_GIB, and
+# a limit (.relay/paused-until), each watched disk at least RELAY_MIN_FREE_GB
+# free (disk_wait), MemAvailable at least RELAY_MIN_MEM_GIB, and
 # the last session start across workers at least RELAY_ADMIT_GAP seconds ago,
 # so one session's build shows in memory before the next starts. Polls every
 # RELAY_MEM_POLL seconds; exit 1 when the stop file appears or the wait for
@@ -648,6 +750,13 @@ admit_wait() {
       continue
     fi
     [ -n "$said" ] && { log "the pause is over"; said=; }
+    if disk_wait; then
+      [ -n "$DRY_RUN" ] && return 1
+      [ -e "$STOP" ] && { log "stop file found while waiting for disk"; return 1; }
+      [ $(($(date +%s) - t0)) -ge "$MEM_WAIT" ] && { log "no disk space after $((MEM_WAIT / 60))m"; return 1; }
+      sleep "$MEM_POLL"
+      continue
+    fi
     mem=$(mem_gib) || { log "could not read MemAvailable from $MEMINFO; starting anyway"; return 0; }
     now=$(date +%s)
     exec 8>"$DIR/admit.lock"
@@ -1054,6 +1163,7 @@ work() {
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
+      can_commit || { log "stopping: a session here couldn't commit"; break; }
     fi
     flush || { log "GitHub can't be reached; stopping"; break; }
 

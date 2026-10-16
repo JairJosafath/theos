@@ -107,8 +107,9 @@
 # branch this checkout has, and keep their state (.relay/) here (#1126,
 # hack/lib/relay-code.sh). RELAY_PULL=0 keeps it on the code where it was
 # started, to try relay changes from a branch. Every WATCH_TRIM_EVERY seconds
-# (default 1800) it runs hack/trim-go-cache.sh: nine workers' builds grow Go's
-# build cache by gigabytes an hour, faster than opening VS Code trims it.
+# (default 1800) it runs hack/prune-caches.sh: nine workers' builds grow Go's
+# build cache by gigabytes an hour, faster than opening VS Code trims it, and
+# the GH runners' cache volume and Docker's build cache grow too (#1343).
 #
 #   hack/relay-watch.sh                start the watch, detached, for one worker
 #   hack/relay-watch.sh --workers N    for N workers (1-99); on the cluster device RELAY_MAX_WORKERS (default 9)
@@ -124,6 +125,10 @@
 # The unit runs the watch with --foreground: in its own process, waiting for the
 # lock while a watch started by hand holds it. The crontab line runs it with
 # --cron: started detached unless a watch runs or .relay/stop is there.
+#
+# At start, the watch runs hack/lib/github.sh labels once, so the
+# repository's labels follow the code and retired ones go (#1329); a failure
+# is logged and the watch goes on.
 #
 # At start, the watch logs a warning when it lacks one of the user's groups in
 # /etc/group, and --install prints it when the systemd user manager does: a
@@ -206,7 +211,7 @@ run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
-trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
+trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
 # tmp_use: the percent of /tmp's filesystem in use, a bare number.
 tmp_use() { df -P /tmp | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'; }
@@ -750,6 +755,20 @@ own_groups() {
   [ -z "$warning" ] || log "$warning"
 }
 
+# sync_labels: make the repository's labels hack/lib/github.sh's, once at start:
+# create the missing ones, update descriptions and delete the retired ones
+# (GH_RETIRED_LABELS, #1329). It logs what changed, and a failure, and the
+# watch goes on either way.
+sync_labels() {
+  local out
+  if out=$(github labels 2>&1); then
+    grep -v ': exists$' <<<"$out" | while IFS= read -r line; do [ -z "$line" ] || log "labels: $line"; done
+  else
+    log "labels failed; the watch goes on: $(tail -n 1 <<<"$out")"
+  fi
+  return 0
+}
+
 # manager_groups: the groups of this user's systemd user manager.
 manager_groups() {
   local pid
@@ -911,6 +930,7 @@ unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
 log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 own_groups
+sync_labels
 PULL_T=0 PULLED= CI_T=0
 while :; do
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for the relay's memory guard in hack/relay.sh: the worker cap on the
 # device with the Kind cluster, and the wait for headroom before a pick, with a
-# faked /proc/meminfo; the flush of a kept handoff, which releases the
+# faked /proc/meminfo; the disk guard, with a stub df, and its .vhdx lookup,
+# with stub reg.exe and wslpath (#1344); the flush of a kept handoff, which releases the
 # session's claim so the relay has none left to release; the prompts, which
 # never send a session to a cluster; the triage of the
 # proposed issues and the maintainer's prompt, as dry runs; the triage's own
@@ -13,7 +14,8 @@
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
 # session the relay ends when its transcript stops growing, and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; a
-# worktree's own .dev/, which becomes the link to the main checkout's; and idle workers,
+# worktree's own .dev/, which becomes the link to the main checkout's; the worktree
+# with no git identity, which starts no session (#1289); and idle workers,
 # which stop without taking a session-start slot; the maintainer, which goes
 # first in admit; the maintainer lease, which keeps a second device's
 # maintainer from starting while one runs; a maintainer sweep, which
@@ -24,7 +26,7 @@ T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
-unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN
+unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # Jobs killed as soon as they start, as maintain kills its heartbeat and
@@ -33,9 +35,17 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" kept
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
-check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP")" "9 2 120"
+check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 30"
+check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
 check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+# With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
+# scratch is in no git checkout (#1347).
+git init -q "$T/main" && mkdir -p "$T/home"
+scratch=$(unset RELAY_SCRATCH; HOME=$T/home XDG_CACHE_HOME=$T/main/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")
+check "defaults #1347: scratch in no git checkout" "$(mkdir -p "$scratch" && cd "$scratch" && GIT_CEILING_DIRECTORIES=$T git rev-parse --show-toplevel 2>/dev/null)" ""
 
+# No disk is low unless a test says so; the disk guard's own tests stub df.
+export RELAY_MIN_FREE_GB=0 RELAY_DISK_PATHS=/
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_MEM_POLL=1 RELAY_MEM_WAIT=30
 # shellcheck source=hack/relay.sh
 . "$(dirname "$0")/relay.sh"
@@ -84,6 +94,84 @@ meminfo 1
 MEM_WAIT=1 admit; check "admit: gives up" $? 1
 touch "$STOP"
 admit; check "admit: stop file" $? 1
+
+# The disk guard (#1344): a stub df reports each path's mount and free GB from
+# $T/df (PATH MOUNT GB lines); a stub trim records its runs.
+rm -f "$STOP" "$DIR/admitted"
+mkdir -p "$T/dfbin"
+cat >"$T/dfbin/df" <<'STUB'
+#!/usr/bin/env bash
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+awk -v p="${@: -1}" '$1 == p { printf "dev 1 1 %d 1%% %s\n", $3 * 1048576, $2; found = 1 } END { exit !found }' "$DF"
+STUB
+chmod +x "$T/dfbin/df"
+export DF=$T/df
+printf '/ / 100\n/repo / 100\n/mnt/c/wsl /mnt/c 12\n/mnt/d /mnt/d 50\n' >"$DF"
+trim_caches() { echo trim >>"$T/trims"; }
+disk() { PATH=$T/dfbin:$PATH "$@"; }
+meminfo 8
+OSRELEASE=$T/osrelease
+echo 'Linux 6.8.0-generic' >"$OSRELEASE"
+MIN_FREE_GB=30 DISK_PATHS='/ /repo /mnt/d'
+disk admit; check "disk: above the minimum, a session starts" $? 0
+check "disk: no trim above it" "$(cat "$T/trims" 2>/dev/null)" ""
+rm -f "$DIR/admitted"
+DISK_PATHS='/ /repo /mnt/c/wsl /mnt/d'
+: >"$LOG"
+MEM_WAIT=1 disk admit; check "disk: below on one path, no session" $? 1
+check "disk: no start slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
+check "disk: the log names the path, its free space and the minimum" \
+  "$(grep -c 'waiting for disk: /mnt/c/wsl has 12 GB free, a session needs 30 (RELAY_MIN_FREE_GB)' "$LOG")" 1
+check "disk: names no path above it" "$(grep -c 'waiting for disk: /mnt/c/wsl' "$LOG") $(grep -c 'waiting for disk' "$LOG")" "1 1"
+check "disk: trims the caches at once" "$(wc -l <"$T/trims")" 1
+MEM_WAIT=1 disk admit; check "disk: still below" $? 1
+check "disk: the line repeats at most once an hour" "$(grep -c 'waiting for disk' "$LOG")" 1
+check "disk: so does the trim" "$(wc -l <"$T/trims")" 1
+touch -d '-61 minutes' "$DIR/disk-low--mnt-c-wsl"
+MEM_WAIT=1 disk admit
+check "disk: after an hour it says it again" "$(grep -c 'waiting for disk' "$LOG")" 2
+check "disk: and trims again" "$(wc -l <"$T/trims")" 2
+check "disk: outside WSL no word of the .vhdx" "$(grep -c vhdx "$LOG")" 0
+echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
+rm -f "$DIR"/disk-low-*
+: >"$LOG"
+MEM_WAIT=1 disk admit
+check "disk: under WSL it says only compacting the .vhdx helps" "$(grep -c 'only compacting the .vhdx.*docs/dev/testenv.md' "$LOG")" 1
+MIN_FREE_GB=10 disk admit; check "disk: RELAY_MIN_FREE_GB lowers the minimum" $? 0
+rm -f "$DIR/admitted" "$DIR"/disk-low-*
+printf '/mnt/c/wsl /mnt/c 12\n/mnt/c/docker /mnt/c 12\n' >"$DF"
+: >"$LOG"
+MEM_WAIT=1 DISK_PATHS='/mnt/c/wsl /mnt/c/docker' disk admit
+check "disk: one line per filesystem, for the first path on it" "$(grep 'waiting for disk' "$LOG" | sed 's/.*disk: \([^ ]*\).*/\1/')" /mnt/c/wsl
+rm -f "$DIR/admitted" "$DIR"/disk-low-*
+echo 'Linux 6.8.0-generic' >"$OSRELEASE"
+
+# The .vhdx lookup: stub reg.exe and wslpath; /mnt/c when they give nothing.
+mkdir -p "$T/regbin"
+cat >"$T/regbin/reg.exe" <<'STUB'
+#!/usr/bin/env bash
+[ -n "$REG_FAIL" ] && exit 1
+printf '\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\{0283}\r\n'
+printf '    BasePath    REG_SZ    C:\\Users\\j\\AppData\\Local\\wsl\\{0283}\r\n\r\n'
+printf 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\{6923}\r\n'
+printf '    BasePath    REG_SZ    \\\\?\\D:\\Docker\\wsl\\main\r\n\r\nEnd of search: 2 match(es) found.\r\n'
+STUB
+cat >"$T/regbin/wslpath" <<'STUB'
+#!/usr/bin/env bash
+[ -n "$WSLPATH_FAIL" ] && exit 1
+[ "$1" = -u ] && shift
+case $1 in [A-Z]:\\*) d=${1%%:*}; r=${1#?:}; echo "/mnt/${d,,}${r//\\//}" ;; *) exit 1 ;; esac
+STUB
+chmod +x "$T/regbin/reg.exe" "$T/regbin/wslpath"
+vhdx() { PATH=$T/regbin:$PATH vhdx_dirs | paste -sd' '; }
+check "vhdx: nothing outside WSL" "$(vhdx)" ""
+echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
+check "vhdx: each distro's BasePath, mapped" "$(vhdx)" "/mnt/c/Users/j/AppData/Local/wsl/{0283} /mnt/d/Docker/wsl/main"
+check "vhdx: /mnt/c when reg.exe fails" "$(REG_FAIL=1 vhdx)" /mnt/c
+check "vhdx: /mnt/c when wslpath fails" "$(WSLPATH_FAIL=1 vhdx)" /mnt/c
+check "vhdx: watched with / and the checkouts" "$(DISK_PATHS= REPO=/repo PATH=$T/regbin:$PATH disk_paths | paste -sd' ')" "/ /repo /mnt/c/Users/j/AppData/Local/wsl/{0283} /mnt/d/Docker/wsl/main"
+OSRELEASE=/proc/sys/kernel/osrelease
+MIN_FREE_GB=0 DISK_PATHS=/
 
 # The maintainer goes first (#262): while it waits in admit, no worker takes
 # the start slot; a crashed maintainer's file holds no one.
@@ -369,7 +457,8 @@ limit_name "the build failed" >/dev/null; check "limit_name: no limit" $? 1
 # GitHub faked: one ready issue, #175 on branch b.
 WT=$T/wt
 git init -q -b b "$WT"
-git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m first
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+git -C "$WT" commit -q --allow-empty -m first
 git init -q --bare "$T/origin.git"
 git -C "$WT" remote add origin "$T/origin.git"
 mkdir -p "$T/bin"
@@ -448,6 +537,28 @@ takes() { cat "$T/takes" 2>/dev/null | wc -l | tr -d ' '; }
 rm -f "$STOP" "$DIR/admitted"
 : >"$LOG"
 ADMIT_GAP=0 MAX_SESSIONS=1 MEM_POLL=1
+
+# A worktree where git has no committer identity starts no session (#1289):
+# the worker logs why, puts one line under Needs you naming the host and the
+# worktree, once, and takes it away when the identity is back.
+gh_report_note() { echo "$*" >>"$T/notes"; }
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+git -C "$WT" config --unset user.name && git -C "$WT" config --unset user.email
+echo handoff >"$FAKE"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work; work)
+check "no identity (#1289): no claim, no session" "$(takes) $(grep -c 'session 1 start' "$LOG")" "0 0"
+grep -q "git has no committer identity in $WT, so no session could commit: fatal: no email was given" "$LOG"; check "no identity (#1289): logs git's reason" $? 0
+check "no identity (#1289): one report note, naming host and worktree" \
+  "$(grep -c . "$T/notes") $(grep -c "^ident-$(hostname)-wt .*$(hostname).*$WT" "$T/notes")" "1 1"
+git -C "$WT" config user.name t && git -C "$WT" config user.email t@t
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity back (#1289): the note goes, a session starts" \
+  "$(tail -n1 "$T/notes") $(takes) $(grep -c 'session 1 start' "$LOG")" "ident-$(hostname)-wt 1 1"
+(export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/none; work)
+check "identity (#1289): asks GitHub nothing once the note is gone" "$(grep -c . "$T/notes") $(takes)" "2 2"
+unset -f gh_report_note
+rm -f "$T/takes"
+: >"$LOG"
 
 # A usage limit pauses the device until the time it names, and isn't counted.
 # The claim's release names the limit (#1199).
