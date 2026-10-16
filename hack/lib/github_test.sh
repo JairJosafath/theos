@@ -1148,16 +1148,24 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # main moves on: another pull request merged.
   git clone -q "$T/origin.git" "$T/other" 2>/dev/null
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
-  # The fake make: records it ran, sleeps CHECK_SLEEP, fails when $T/red exists,
-  # and while $T/move counts down, another pull request merges to main during it.
+  # The fake make: records it ran, fails when $T/red exists, and while $T/move
+  # counts down, another pull request merges to main during it. A run that
+  # moves nothing, with CHECK_BEATS=N, first waits (up to about 30 s) until land
+  # has beaten N times since it started, and writes the beats it saw to
+  # $T/beats: a loaded device slows the beats down, it doesn't drop them (#1192).
   cat >"$T/bin/check-make" <<MAKE
 #!/bin/sh
 echo "\$*" >>"$T/checked"
 if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
   echo \$((\$(cat "$T/move") - 1)) >"$T/move"
   git -C "$T/other" pull -q --no-rebase origin main && git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
+elif [ -n "\${CHECK_BEATS:-}" ]; then
+  b0=\$(grep -c '^PATCH ' "$T/calls") i=0
+  while n=\$((\$(grep -c '^PATCH ' "$T/calls") - b0)); [ "\$n" -lt "\$CHECK_BEATS" ] && [ "\$i" -lt 300 ]; do
+    sleep 0.1; i=\$((i + 1))
+  done
+  echo "\$n" >"$T/beats"
 fi
-sleep "\${CHECK_SLEEP:-0}"
 [ ! -e "$T/red" ]
 MAKE
   chmod +x "$T/bin/check-make"
@@ -1178,15 +1186,16 @@ MAKE
   grep -q 'land: #40: its turn; origin/main is still [0-9a-f]\{12\}, as checked: merging at once' "$T/land/.relay/land-40.log"; check "land: main unchanged, merges at once" $? 0
   grep -q 'land: #40: merged; held the turn [0-9]*s, 0 check(s) under it' "$T/land/.relay/land-40.log"; check "land: logs how long it held the turn" $? 0
 
-  # Main moved during the check before the turn: a second check runs under it (#1281).
-  rm -f "$T/landed" "$T/checked"
+  # Main moved during the check before the turn: a second check runs under it
+  # (#1281), and waits until land has beaten twice while it runs (#1192).
+  rm -f "$T/landed" "$T/checked" "$T/beats"
   echo 1 >"$T/move"
   : >"$T/calls"
-  out=$(GH_LAND_BEAT=0.2 CHECK_SLEEP=1.5 gh_land 40 2>&1)
+  out=$(GH_LAND_BEAT=0.2 CHECK_BEATS=2 gh_land 40 2>&1)
   check "land: main moved, checks again under the turn and merges" "$? | $(cat "$T/landed") | $(wc -l <"$T/checked")" \
     "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) | 2"
   check "land: the merged head has the moved main in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
-  check "land: beats while the check under the turn runs" "$(($(grep -c '^PATCH ' "$T/calls") >= 3))" 1
+  check "land: beats while the check under the turn runs" "$(($(cat "$T/beats" 2>/dev/null || echo 0) >= 2))" 1
   grep -q '#40: its turn; origin/main moved since the check' <<<"$out"; check "land: says main moved" $? 0
   grep -q 'land: #40: merged; held the turn [0-9]*s, 1 check(s) under it' "$T/land/.relay/land-40.log"; check "land: logs the check under the turn" $? 0
   check "land: gives the turn up after checking under it" "$(queue)" ""
