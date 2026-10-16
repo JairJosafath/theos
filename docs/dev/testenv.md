@@ -832,6 +832,7 @@ make gh-runner-status                       # whether Docker answers, their cont
 gh variable delete RUNS_ON                  # back to ubuntu-latest
 make gh-runner-down                         # stop them all and remove them from GitHub
 docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
+hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that are gone, every 2 minutes
 ```
 
 - Runner *i* is the container `c4factory-gh-runner-i`, registered as
@@ -844,7 +845,8 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   and GitHub has no runner to fall back on.
 - The runners run on the device's Docker. On WSL that is Docker Desktop, with
   WSL integration on for the distro. The containers (`--restart
-  unless-stopped`) stop when it stops and start again with it. The relay watch
+  unless-stopped`) stop when it stops and start again with it, unless it
+  comes back without them (the keeper, below). The relay watch
   notes runs queued on main for over 30 minutes in the Maintainer report
   (above). `make gh-runner-status` then says which part is down. Docker not
   answering from this distro means starting Docker Desktop. A container down
@@ -852,6 +854,33 @@ docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
   its container is up has its reason in `docker logs --tail 50
   c4factory-gh-runner-i`. It exits 1 unless every runner is online. Setting
   `RUNS_ON` back is the owner's call.
+- **The keeper.** Docker Desktop on WSL loses its data disk now and then
+  (2026-10-08, 10-09, 10-12, 10-15): it comes back without the containers,
+  volumes and image, so `--restart unless-stopped` has nothing to restart,
+  and jobs waited hours. `hack/gh-runner/gh-runner.sh install`, run once per
+  device from the main checkout, installs a systemd user timer
+  (`c4factory-gh-runner-keep.timer`; without systemd, a crontab line) that
+  runs `gh-runner.sh keep` every 2 minutes. `make gh-runner RUNNERS=N` records
+  N, with the names, work directories and repository it used, in
+  `~/.local/state/c4factory/gh-runner/runners`; `keep` starts the recorded
+  runners whose container is gone or not up (building the image and
+  registering them again when those went too), and nothing else:
+  - it never recreates a container that is up, which would kill its job,
+    even when the checkout's image is newer;
+  - it never changes the count, and `make gh-runner-down` removes the
+    record, so the runners stay down until the next `make gh-runner`;
+  - with Docker not reachable it starts nothing and logs that once: only the
+    owner restarts Docker Desktop (after a data-disk failure, `wsl
+    --shutdown`), and the relay watch's *Runners offline* note is the alarm;
+  - it skips its turn while `make gh-runner` or `make gh-runner-down` runs.
+
+  Its log is `~/.local/state/c4factory/gh-runner/keep.log`, under `$HOME`
+  since `./dev` points the XDG folders into `.dev/`. It runs without `./dev
+  run`, with the installer's `PATH` and the device's `gh` login. The systemd
+  user manager needs the `docker` group, and `install` warns when it lacks it
+  (as `hack/relay-watch.sh --install` does). A container stopped by hand with
+  `docker stop` starts again; `make gh-runner-down` is the way to keep them
+  down. `gh-runner.sh uninstall` removes the keeper.
 - `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
   N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
   the single runner from before (container `c4factory-gh-runner`, named
