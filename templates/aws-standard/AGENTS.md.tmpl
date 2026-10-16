@@ -1,5 +1,6 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
+{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-queue-ts") -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 # Agent guide
 
@@ -66,10 +67,10 @@ machine.{{ end }}
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
-   `docs/well-architected.md`, {{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
+   `docs/well-architected.md`, {{ if $tiered }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
    to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
    what the checks check and which CDK behaviour the app gets: don't loosen them.
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
+{{- if $tiered }}
    `infra/operations.ts` is the factory's: it renders the file from the
    Container's `spec.operations`. Change it only to what that block says,
    when an issue changes the block, and never delete it; the stacks read it.
@@ -243,12 +244,13 @@ machine.{{ end }}
     secret in an environment variable or the template: secrets are read from
     Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}. Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" }}
+{{- if $tiered }}
     The stacks are built for a tier, `production` or `development`, which a
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keep what `infra/operations.ts` promises: data
-    kept, protected and backed up in production; every function, table and
-    {{ if $queue }}dead-letter queue{{ else }}API{{ end }} with its alarms on the stack's topic; every stack with its
+    kept, protected and backed up in production; every {{ if eq .Framework "aws-fargate-ts" }}load balancer,
+    target group, service and table{{ else }}function, table and
+    {{ if $queue }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
     `EntryPoint` and `AlarmTopicArn` outputs. `infra/standard.test.ts` checks
     both tiers. Nothing at synth reads a context value but `tier`, or an
     environment variable. A change to what the stacks keep, or how, updates
@@ -297,7 +299,7 @@ Offline digests (read the one for what you are touching):
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
   enforce each
-{{ if eq .Framework "aws-lambda-ts" "aws-queue-ts" -}}
+{{ if $tiered -}}
 - `docs/runbook.md`: restoring the data, rolling a deployment back, and what
   each alarm means
 {{ end -}}
