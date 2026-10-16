@@ -1,5 +1,50 @@
 {{- if .Values.gitea.enabled }}
 {{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $enabled := list }}
+{{- range $label, $r := .Values.runners }}{{ if $r.enabled }}{{ $enabled = append $enabled $label }}{{ end }}{{ end }}
+{{- if $enabled }}
+---
+# The CI fence (docs/design.md, as config/runner/network-policy.yaml): a job
+# runs the agents' code, so the runner pods take no traffic in and reach only
+# DNS, Gitea (its pod's port 3000: Git, the API and the package registries)
+# and HTTPS to public addresses (the Go proxy, npm, PyPI), as the agent
+# sandboxes do. The Kubernetes API and every other in-cluster service stay
+# out of reach. make validate-yaml checks it (hack/runner-fence).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ci-runner
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "ci-runner" "context" $) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ci-runner
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gitea
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+      ports:
+        - {protocol: TCP, port: 3000}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+{{- end }}
 {{- range $label, $r := .Values.runners }}
 {{- if $r.enabled }}
 {{- $name := printf "gitea-runner-%s" $label }}
@@ -21,7 +66,8 @@ data:
 {{- end }}
 ---
 # The CI runner labelled {{ $label }} (config/runner/{{ $label }}.yaml in the Kind
-# test environment). It registers with the token in Secret gitea-runner.
+# test environment). Its init container registers with the token in Secret
+# gitea-runner; the runner container, where jobs run, never gets it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,8 +91,28 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- include "c4-factory.imagePullSecrets" $ | nindent 6 }}
-      {{- if $r.goCache }}
       initContainers:
+        # Registers the runner, writing /data/.runner: the only container given
+        # the registration token, which the jobs in the runner container must
+        # not read (hack/runner/register.sh).
+        - name: register
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          command: [c4-runner-register]
+          env:
+            - name: GITEA_INSTANCE
+              value: {{ include "c4-factory.giteaURL" $ | quote }}
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: {{ printf "%s:host" $label | quote }}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      {{- if $r.goCache }}
         # Seeds the node's Go build cache from the image's warm one.
         - name: go-cache
           image: {{ $image | quote }}
@@ -60,13 +126,6 @@ spec:
         - name: runner
           image: {{ $image | quote }}
           imagePullPolicy: {{ $r.image.pullPolicy }}
-          env:
-            - name: GITEA_INSTANCE
-              value: {{ include "c4-factory.giteaURL" $ | quote }}
-            - name: RUNNER_TOKEN
-              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
-            - name: RUNNER_LABELS
-              value: {{ printf "%s:host" $label | quote }}
           resources:
             {{- toYaml $r.resources | nindent 12 }}
           volumeMounts:
