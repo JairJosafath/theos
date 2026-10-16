@@ -799,11 +799,13 @@ strikes() {
 # strike on issue N, a comment on N; at RELAY_MAX_FAILS strikes that count,
 # escalate N to the maintainer (status/needs-maintainer) with one comment
 # naming them. When that comment is posted but the status swap fails, the
-# next failed session retries the swap alone (.relay/escalated-N).
+# next failed session on any device retries the swap alone (unescalated).
 failed() {
   local n=$1 url urls count
-  if [ -e "$DIR/escalated-$n" ]; then
-    escalate "$n" "$(cat "$DIR/escalated-$n")"
+  if ! url=$(unescalated "$n" 2>>"$LOG"); then
+    log "#$n: could not read whether its escalation is still to swap; counting the session"
+  elif [ -n "$url" ]; then
+    escalate "$n" "$url"
     return 0
   fi
   if ! url=$(strike_comment "$n" "$2" "$3" | gh_comment "$n" - 2>>"$LOG"); then
@@ -820,19 +822,44 @@ failed() {
     return 0
   fi
   if url=$(escalation_comment "$n" "$urls" | gh_comment "$n" - 2>>"$LOG"); then
-    echo "$url" >"$DIR/escalated-$n"
     escalate "$n" "$url"
   else
     log "#$n has $count strikes, but posting the comment for the maintainer failed; trying again after the next"
   fi
 }
 
+# unescalated N: the URL of N's escalation comment when its status swap never
+# happened, or nothing: the newest of N's handoff, reset and escalation
+# comments is an escalation, and N wasn't labeled status/needs-maintainer at
+# or after it. Read from the issue, so any device retries the swap (#1213);
+# one the maintainer set back to ready after the swap isn't escalated again.
+unescalated() {
+  local all esc at url
+  all=$(gh_comments "$1") || return 1
+  esc=$(jq -r --arg h "$GH_HANDOFF_MARKER" --arg r "$STRIKE_RESET_MARKER" --arg e "$STRIKE_ESCALATED_MARKER" '
+    def starts($m): .body | sub("^\\s+"; "") | startswith($m);
+    [.[] | select(starts($h) or starts($r) or starts($e))] | last // empty
+    | select(starts($e)) | "\(.created_at) \(.html_url)"' <<<"$all") || return 1
+  [ -n "$esc" ] || return 0
+  read -r at url <<<"$esc"
+  all=$(label_events "$1") || return 1
+  jq -e --arg at "$at" 'any(.[]; .event == "labeled" and .label.name == "status/needs-maintainer" and .created_at >= $at)' \
+    <<<"$all" >/dev/null && return 0
+  echo "$url"
+}
+
+# label_events N: issue N's events as one JSON array.
+label_events() {
+  local pages
+  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/events?per_page=100") || return 1
+  jq -c '[.[][] | {event, created_at, label: {name: .label.name}}]' <<<"$pages"
+}
+
 # escalate N URL: set N to status/needs-maintainer, its comment for the
-# maintainer at URL posted; keep .relay/escalated-N for a retry when that fails.
+# maintainer at URL posted; when that fails, the next failed session retries.
 escalate() {
   if gh_set_status "$1" needs-maintainer >/dev/null 2>>"$LOG"; then
     log "#$1 reached $MAX_FAILS strikes; set it to status/needs-maintainer: $2"
-    rm -f "$DIR/escalated-$1"
   else
     log "#$1 reached $MAX_FAILS strikes and has its comment ($2), but setting it to status/needs-maintainer failed; trying again after the next failed session"
   fi
@@ -870,7 +897,6 @@ escalation_comment() {
 # a reset comment when any count, so every device stops counting them.
 forget_fails() {
   local urls
-  rm -f "$DIR/escalated-$1"
   urls=$(strikes "$1" 2>>"$LOG") || { log "#$1: could not read its strikes to reset them"; return 0; }
   [ -n "$urls" ] || return 0
   if printf '%s\n%s\n' "$STRIKE_RESET_MARKER" "The relay on host \`$(hostname)\` saw a handoff, a commit or a finish on #$1; the $(grep -c . <<<"$urls") strike(s) before this comment no longer count." |

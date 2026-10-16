@@ -395,7 +395,9 @@ account. The count is read from the issue, so every device's strikes add up;
 one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
 (3) the relay posts one comment linking them and sets the issue to
 `status/needs-maintainer`; when only that status swap fails, the next failed
-session retries it without a new comment (`.relay/escalated-<issue>`). A
+session on any device retries it without a new strike or comment: the newest
+of the issue's handoff, reset and escalation comments is the escalation, and
+the issue wasn't labeled `status/needs-maintainer` after it. A
 handoff, a commit or a finish on any device resets the count: the relay posts
 a reset comment when any strike counts. One that leaves the issue in
 `status/waiting` (a plan's parent) has finished, like a handoff; one that sets
