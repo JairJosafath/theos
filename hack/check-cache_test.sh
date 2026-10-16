@@ -65,6 +65,62 @@ fi
 git worktree add -q "$T/other" HEAD 2>/dev/null
 (cd "$T/other" && "$CACHE" lookup >/dev/null); check "other worktree, same tree: hit" $? 0
 
+# The tiers (#1285): each key moves with its own inputs only. A module whose
+# hack/render builds internal/scaffold, as validate-yaml's go run does.
+mkdir -p ui hack/render hack/runner-fence internal/scaffold internal/other config docs/dev
+printf 'module example.com/r\n\ngo 1.22\n' >go.mod
+printf 'package scaffold\n' >internal/scaffold/s.go
+printf 'package other\n' >internal/other/o.go
+printf 'package main\n\nimport _ "example.com/r/internal/scaffold"\n\nfunc main() {}\n' >hack/render/main.go
+printf 'package main\n\nfunc main() {}\n' >hack/runner-fence/main.go
+for f in ui/app.ts hack/x.sh config/a.yaml docs/notes.md docs/dev/testenv.md; do echo 1 >"$f"; done
+git add -A && git commit -qm tiers
+keys() { local t; for t in ui-test test-hack validate-yaml; do "$CACHE" key "$t" || echo "$t: no key"; done; }
+k0=$(keys)
+check "key: three distinct keys" "$(sort -u <<<"$k0" | wc -l)" 3
+check "key: stable" "$(keys)" "$k0"
+# moved FILE: which tiers' keys a change to FILE moves, then FILE back.
+moved() {
+  local before k i=0 out=
+  before=$(cat "$1")
+  echo 2 >>"$1"
+  for k in $(keys); do
+    [ "$k" != "$(sed -n "$((i + 1))p" <<<"$k0")" ] && out+=$(sed -n "$((i + 1))p" <<<$'ui-test\ntest-hack\nvalidate-yaml')" "
+    i=$((i + 1))
+  done
+  printf '%s\n' "$before" >"$1"
+  echo "${out% }"
+}
+check "ui/ changed: only ui-test" "$(moved ui/app.ts)" "ui-test"
+check "hack/ changed: only test-hack" "$(moved hack/x.sh)" "test-hack"
+check "config/ changed: test-hack and validate-yaml" "$(moved config/a.yaml)" "test-hack validate-yaml"
+check "docs/ changed: none" "$(moved docs/notes.md)" ""
+check "docs/dev/testenv.md changed: test-hack, whose tests read it" "$(moved docs/dev/testenv.md)" "test-hack"
+check "a package hack/render builds changed: validate-yaml" "$(moved internal/scaffold/s.go)" "validate-yaml"
+check "a package nothing renders with changed: none" "$(moved internal/other/o.go)" ""
+echo x >ui/new.ts
+check "untracked file under ui/: ui-test" "$([ "$("$CACHE" key ui-test)" != "$(head -1 <<<"$k0")" ] && echo moved)" moved
+rm ui/new.ts
+"$CACHE" key nope >/dev/null 2>&1; check "key: unknown tier fails" $? 64
+
+# run: a miss runs and records, a hit doesn't run, FORCE=1 runs, a failure
+# records nothing and keeps its exit code.
+ran() { rm -f "$T/ran"; "$CACHE" run "$1" sh -c "touch '$T/ran'; exit ${2:-0}"; }
+out=$(ran ui-test); check "run, miss: exit 0" $? 0
+[ -e "$T/ran" ]; check "run, miss: runs the command" $? 0
+out=$(ran ui-test); check "run, hit: exit 0" $? 0
+[ ! -e "$T/ran" ]; check "run, hit: doesn't run it" $? 0
+[[ $out == "ui-test: cached (ui/ unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
+check "run, hit: says so in one line" $? 0
+FORCE=1 ran ui-test >/dev/null; [ -e "$T/ran" ]; check "run, FORCE=1: runs it" $? 0
+echo 2 >>hack/x.sh
+ran test-hack 3 >/dev/null; check "run, failing: its exit code" $? 3
+ran test-hack >/dev/null; [ -e "$T/ran" ]; check "run, after a failure: runs it again" $? 0
+echo 2 >>ui/app.ts
+ran ui-test >/dev/null; [ -e "$T/ran" ]; check "run, ui/ changed since: runs it" $? 0
+git checkout -q -- hack/x.sh ui/app.ts
+ran ui-test >/dev/null; [ ! -e "$T/ran" ]; check "run, back to inputs that passed before: cached" $? 0
+
 # The Makefile: a cached plain `make check` answers without a heavy slot; a
 # miss or FORCE=1 queues for one. The one slot is held while it runs.
 cd "$HACK/.." || exit 1
@@ -76,5 +132,20 @@ out=$(timeout 5 make check 2>&1); check "make check, cached: exit 0 without a sl
 check "make check, cached: says so" "$(grep -c '(cached); FORCE=1 to rerun' <<<"$out")" 1
 FORCE=1 timeout 5 make -n check >/dev/null 2>&1; check "FORCE=1 make check: waits for a slot" $? 124
 timeout 5 make -n manifests check >/dev/null 2>&1; check "make manifests check: not answered from the cache" $? 124
+kill "$holder"
+
+# The Makefile's tier rule: a tier whose key passed answers without running
+# it (NPM=false would fail it), and a dry run records nothing.
+skip="-o manifests -o generate -o fmt"
+"$CACHE" run ui-test true >/dev/null
+out=$(timeout 30 make -s $skip check-tier-ui-test NPM=false 2>&1); check "make check-tier-ui-test, cached: exit 0" $? 0
+check "make check-tier-ui-test, cached: says so" "$(grep -c '^ui-test: cached (ui/ unchanged since ' <<<"$out")" 1
+rm -rf "$CHECK_CACHE_DIR/tiers"
+timeout 30 make -n $skip check-tier-ui-test >/dev/null 2>&1
+[ ! -e "$CHECK_CACHE_DIR/tiers" ]; check "make -n check-tier-ui-test: records nothing" $? 0
+rule=$(make -pq help 2>/dev/null | grep -m1 '^check:')
+for t in validate-yaml test-hack; do
+  [[ " $rule " == *" check-tier-$t "* ]]; check "check runs $t through the tier cache" $? 0
+done
 
 exit $fail
