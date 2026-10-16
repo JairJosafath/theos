@@ -63,6 +63,13 @@ const INSTANCE_TYPES = [
   'AWS::EC2::Instance',
 ];
 
+// The image of the AWS Distro for OpenTelemetry collector, which a task
+// runs beside its app to send the app's traces to X-Ray.
+const COLLECTOR_IMAGE = 'public.ecr.aws/aws-observability/aws-otel-collector:';
+
+// The actions that write traces to X-Ray.
+const XRAY_WRITE_ACTIONS = ['xray:PutTraceSegments', 'xray:PutTelemetryRecords'];
+
 /** The feature flags `cdk synth` reads from cdk.json, so the tests build the same app. */
 function cdkContext(): Record<string, unknown> {
   const cdkJson: unknown = JSON.parse(
@@ -164,6 +171,47 @@ function only<T>(items: readonly T[], what: string): T {
 }
 
 /**
+ * The resources a backup selection names one by one, by ARN: none when it
+ * takes every resource (`*`), as a selection by a tag condition does.
+ */
+function namedResources(selection: unknown): unknown[] {
+  const resources: unknown[] = isRecord(selection) ? [selection['Resources'] ?? []].flat() : [];
+  return resources.includes('*') ? [] : resources;
+}
+
+/**
+ * Whether a backup selection takes exactly the resources carrying the tag
+ * `key` = `value`: by `ListOfTags`, or by that one condition on every
+ * resource (`*`), the form that can leave some out by `NotResources`.
+ */
+function selectsByTag(selection: unknown, key: string, value: string | undefined): boolean {
+  if (!isRecord(selection) || value === undefined) {
+    return false;
+  }
+  const tags: unknown[] = [selection['ListOfTags'] ?? []].flat();
+  const conditions = selection['Conditions'];
+  const equal: unknown[] = isRecord(conditions) ? [conditions['StringEquals'] ?? []].flat() : [];
+  const [tag] = tags;
+  const [condition] = equal;
+  const byList =
+    tags.length === 1 &&
+    isRecord(tag) &&
+    tag['ConditionKey'] === key &&
+    tag['ConditionType'] === 'STRINGEQUALS' &&
+    tag['ConditionValue'] === value;
+  const byCondition =
+    tags.length === 0 &&
+    JSON.stringify(selection['Resources']) === '["*"]' &&
+    isRecord(conditions) &&
+    Object.keys(conditions).join() === 'StringEquals' &&
+    equal.length === 1 &&
+    isRecord(condition) &&
+    condition['ConditionKey'] === `aws:ResourceTag/${key}` &&
+    condition['ConditionValue'] === value;
+  return byList || byCondition;
+}
+
+/**
  * Whether `json`, a part of a template, refers to the resource `id`: by
  * `Ref`, as a table's or function's name, or by `Fn::GetAtt`, as a load
  * balancer's or target group's full name and a service's name.
@@ -173,6 +221,12 @@ function refersTo(json: string, id: string): boolean {
     json.includes(JSON.stringify({ Ref: id })) ||
     json.includes(`{"Fn::GetAtt":[${JSON.stringify(id)},`)
   );
+}
+
+/** The container definitions of a task definition, as records. */
+function containersOf(taskDefinition: Resource): Record<string, unknown>[] {
+  const containers = taskDefinition.Properties?.['ContainerDefinitions'];
+  return Array.isArray(containers) ? (containers as unknown[]).filter(isRecord) : [];
 }
 
 /** A stack that holds only the vault a backup is copied to, and its key: it serves nothing. */
@@ -473,10 +527,11 @@ describe.runIf(operations !== undefined).each(TIERS)(
           }
           // The plan backs up the stack's own tables, named by ARN, or what
           // carries the Container's tag, which the Standard puts on every
-          // resource of every stack of the Container.
+          // resource: as a tag (`ListOfTags`), or as a condition on every
+          // resource, which can leave some out.
           const selection = only(selections, `${name}'s backup selections`)[1];
-          const chosen = selection.Properties?.['BackupSelection'];
-          const named: unknown[] = isRecord(chosen) ? [chosen['Resources'] ?? []].flat() : [];
+          const backupSelection = selection.Properties?.['BackupSelection'];
+          const named = namedResources(backupSelection);
           if (named.length > 0) {
             const tables = resourcesOf(template, 'AWS::DynamoDB::Table').map(([id]) => id);
             for (const resource of named) {
@@ -495,18 +550,14 @@ describe.runIf(operations !== undefined).each(TIERS)(
                 `${name}/${id} is in no backup selection`,
               ).toBe(true);
             }
-            expect(chosen, name).not.toHaveProperty('ListOfTags');
-            expect(chosen, name).not.toHaveProperty('Conditions');
+            expect(backupSelection, name).not.toHaveProperty('ListOfTags');
+            expect(backupSelection, name).not.toHaveProperty('Conditions');
           } else {
-            expect(chosen, name).toMatchObject({
-              ListOfTags: [
-                {
-                  ConditionKey: 'c4factory:container',
-                  ConditionType: 'STRINGEQUALS',
-                  ConditionValue: STANDARD_TAGS['c4factory:container'],
-                },
-              ],
-            });
+            const container = STANDARD_TAGS['c4factory:container'];
+            expect(
+              selectsByTag(backupSelection, 'c4factory:container', container),
+              `${name}: ${JSON.stringify(backupSelection)}`,
+            ).toBe(true);
           }
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
@@ -516,6 +567,40 @@ describe.runIf(operations !== undefined).each(TIERS)(
           expect(copyStacks.map((stack) => stack.region)).toEqual([copyToRegion]);
         } else {
           expect(copyStacks).toEqual([]);
+        }
+      });
+
+      it("leave every load balancer's log bucket out: logs, not data", () => {
+        for (const [name, template] of app(tier).templates) {
+          const selections = resourcesOf(template, 'AWS::Backup::BackupSelection');
+          for (const [balancerId, balancer] of resourcesOf(
+            template,
+            'AWS::ElasticLoadBalancingV2::LoadBalancer',
+          )) {
+            const attributes = balancer.Properties?.['LoadBalancerAttributes'];
+            const bucket = (Array.isArray(attributes) ? (attributes as unknown[]) : [])
+              .filter(isRecord)
+              .find((attribute) => attribute['Key'] === 'access_logs.s3.bucket')?.['Value'];
+            if (!isRecord(bucket) || typeof bucket['Ref'] !== 'string') {
+              continue;
+            }
+            // Every resource carries the tag a selection backs up by, so a
+            // selection by tag leaves the bucket out by name; one that names
+            // its resources by ARN leaves it out by not naming it.
+            for (const [id, selection] of selections) {
+              const backupSelection = selection.Properties?.['BackupSelection'];
+              const named = namedResources(backupSelection);
+              const notResources = isRecord(backupSelection)
+                ? backupSelection['NotResources']
+                : undefined;
+              expect(
+                named.length > 0
+                  ? !refersTo(JSON.stringify(named), bucket['Ref'])
+                  : refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
+                `${name}/${id} selects ${balancerId}'s log bucket ${bucket['Ref']}`,
+              ).toBe(true);
+            }
+          }
         }
       });
     });
@@ -550,14 +635,14 @@ describe.runIf(operations !== undefined).each(TIERS)(
               }
             }
           }
-          // A tag selection would back up every instance and volume that
-          // carries the Container's tag.
+          // A tag selection, by `ListOfTags` or by a condition on every
+          // resource, would back up every instance and volume that carries
+          // the Container's tag: the plan names its tables instead.
           for (const [id, selection] of resourcesOf(template, 'AWS::Backup::BackupSelection')) {
             const chosen = selection.Properties?.['BackupSelection'];
-            expect(
-              isRecord(chosen) ? chosen['ListOfTags'] : undefined,
-              `${name}/${id}`,
-            ).toBeUndefined();
+            expect(namedResources(chosen).length, `${name}/${id}`).toBeGreaterThan(0);
+            expect(chosen, `${name}/${id}`).not.toHaveProperty('ListOfTags');
+            expect(chosen, `${name}/${id}`).not.toHaveProperty('Conditions');
           }
         }
       });
@@ -630,6 +715,47 @@ describe.runIf(operations !== undefined).each(TIERS)(
             const config = fn.Properties?.['TracingConfig'];
             const active = isRecord(config) && config['Mode'] === 'Active';
             expect(active, `${name}/${id}`).toBe(rules.tracing);
+          }
+        }
+      });
+
+      it('traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere', () => {
+        for (const [name, template] of app(tier).templates) {
+          for (const [id, task] of resourcesOf(template, 'AWS::ECS::TaskDefinition')) {
+            const containers = containersOf(task);
+            const collectors = containers.filter(
+              (container) =>
+                typeof container['Image'] === 'string' &&
+                container['Image'].startsWith(COLLECTOR_IMAGE),
+            );
+            const sending = containers.filter((container) =>
+              JSON.stringify(container['Environment'] ?? []).includes(
+                '"Name":"OTEL_EXPORTER_OTLP_ENDPOINT"',
+              ),
+            );
+            if (rules.tracing) {
+              expect(collectors.length, `${name}/${id} collectors`).toBe(1);
+              expect(
+                sending.length,
+                `${name}/${id} containers sending to the collector`,
+              ).toBeGreaterThan(0);
+            } else {
+              expect([collectors, sending], `${name}/${id}`).toEqual([[], []]);
+            }
+          }
+        }
+      });
+
+      it('grants no X-Ray writes where the tier does not trace', () => {
+        if (rules.tracing) {
+          return;
+        }
+        for (const [name, template] of app(tier).templates) {
+          for (const statement of statementsIn(template.toJSON())) {
+            const actions = [statement['Action'] ?? []].flat();
+            for (const action of XRAY_WRITE_ACTIONS) {
+              expect(actions, name).not.toContain(action);
+            }
           }
         }
       });

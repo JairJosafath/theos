@@ -62,14 +62,27 @@
 # WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails twice in a row,
 # so it never turns main red. An open one is not filed again.
 #
-# In the same round it notices runners that are all offline: a queued run
-# never fails, so red sees nothing while the device's self-hosted runners are
-# down (Docker Desktop stopped). When a run on main has been queued for more
-# than WATCH_QUEUED minutes (default 30; hack/lib/github.sh queued), the watch
-# puts "Runners offline since T: N runs queued" under the Maintainer report's
-# Health and Needs you (hack/lib/github.sh report-note runners), one line each,
-# kept current while it lasts (.relay/runners-offline), and removes them in the
-# first round in which no run waits that long.
+# In the same round it notices runs on main that wait for a runner: a queued
+# run never fails, so red sees nothing while the device's self-hosted runners
+# are down (Docker Desktop stopped). When a run on main has had a job queued
+# for more than WATCH_QUEUED minutes (default 30; hack/lib/github.sh queued),
+# the watch puts a note under the Maintainer report's Health and Needs you
+# (hack/lib/github.sh report-note runners), one line each, kept current while
+# it lasts (.relay/runners-offline), and removes them in the first round in
+# which no run waits that long. With no runner of the repository online the
+# note says "Runners offline since T: N runs queued" and asks for Docker
+# Desktop; with some online, "N runs queued since T with M runners online":
+# they are busy, or none has the labels the jobs ask for. A run GitHub made
+# no jobs for waits for good, as no runner can take it: the watch logs it once
+# and never notes it (#1236).
+#
+# In the same round it notes when /tmp on this device is at least
+# WATCH_TMP_FULL percent full (default 90), naming its three largest entries,
+# under the Maintainer report's Health only (hack/lib/github.sh report-note
+# tmp-<host>, with no Needs you line), kept current while it lasts
+# (.relay/tmp-full), and removes it when /tmp drops back. Relay sessions keep
+# their scratch in their worktree's .dev/tmp (#1269), so what fills /tmp is
+# someone else's.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
@@ -142,6 +155,10 @@ MAINTAIN_EVERY=${WATCH_MAINTAIN:-7200}
 PARENTS_EVERY=${WATCH_PARENTS:-600}
 FLAKE_DAYS=${WATCH_FLAKE_DAYS:-7}
 QUEUED_MINUTES=${WATCH_QUEUED:-30}
+TMP_FULL=${WATCH_TMP_FULL:-90}
+# The report is every device's: each device's /tmp has its own line.
+TMP_HOST=$(hostname -s)
+TMP_KEY=tmp-$TMP_HOST
 PULL=${RELAY_PULL:-1}
 
 WORKERS=1 MODE=start
@@ -174,7 +191,7 @@ maintaining() { [ -e "$DIR/maintain.lock" ] && ! flock -n "$DIR/maintain.lock" t
 triaging() { [ -e "$DIR/triage.lock" ] && ! flock -n "$DIR/triage.lock" true; }
 
 # pick_next, proposed, blocked, cycles, parents, activity, escalated, run_relay,
-# run_triage, run_maintain, trim_caches and report_note:
+# run_triage, run_maintain, trim_caches, report_note, tmp_use and tmp_largest:
 # what the watch asks and starts (faked in the tests).
 pick_next() { github pick; }
 blocked() { github blocked --unworked; }
@@ -188,6 +205,10 @@ escalated() { github escalated; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
 trim_caches() { "$CODE/hack/trim-go-cache.sh"; }
 report_note() { github report-note "$@"; }
+# tmp_use: the percent of /tmp's filesystem in use, a bare number.
+tmp_use() { df -P /tmp | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'; }
+# tmp_largest: /tmp's three largest entries, SIZE<tab>PATH, largest first.
+tmp_largest() { du -sxh /tmp/* /tmp/.[!.]* 2>/dev/null | sort -rh | head -n 3; }
 
 # trim NOW: trim the build caches when the last trim is TRIM_EVERY seconds old,
 # and log what it dropped (it says nothing when a cache is under its limit).
@@ -319,23 +340,41 @@ ci_round() {
 
 # runner_round: say in the Maintainer report when runs on main have waited
 # QUEUED_MINUTES for a runner (see the top), and take it out again when they
-# start. The report is asked each round while the runners are offline, so a
-# sweep that rewrote it without the note gets it back; report-note edits only
-# when the note changes it. $DIR/runners-offline holds the note the report
-# carries, so a round with runners online asks GitHub nothing more. A failure
-# is logged once until it works again.
+# start. The report is asked each round while they wait, so a sweep that
+# rewrote it without the note gets it back; report-note edits only when the
+# note changes it. $DIR/runners-offline holds the note the report carries, so
+# a round with nothing waiting asks GitHub nothing more. A run GitHub made no
+# jobs for waits for good and no runner can take it (#1236): it is logged once,
+# by id ($DIR/runs-without-jobs), and never noted. A failure is logged once
+# until it works again.
 RUNNERS_SAID=
 runner_round() {
-  local out rc since n note was= said=
+  local out rc tag since n online id at s note needs was= said= ghosts=
   [ -r "$DIR/runners-offline" ] && was=$(cat "$DIR/runners-offline")
   out=$(github queued --minutes "$QUEUED_MINUTES" 2>&1)
   rc=$?
+  if [ "$rc" -le 1 ]; then
+    while IFS=$'\t' read -r tag id at; do
+      [ "$tag" = no-jobs ] || continue
+      ghosts+=$id$'\n'
+      grep -qxF "$id" "$DIR/runs-without-jobs" 2>/dev/null ||
+        log "run $id on main, queued since $(date -d "$at" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "$at"), has no jobs: no runner can take it, so the runner note doesn't count it (GitHub's, not the runners')"
+    done <<<"$out"
+    if [ -n "$ghosts" ]; then printf '%s' "$ghosts" >"$DIR/runs-without-jobs"; else rm -f "$DIR/runs-without-jobs"; fi
+  fi
   case $rc in
     0)
-      IFS=$'\t' read -r since n <<<"$out"
+      IFS=$'\t' read -r tag since n online < <(grep $'^waiting\t' <<<"$out")
       since=$(date -d "$since" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "$since")
-      note="Runners offline since $since: $n run$([ "$n" = 1 ] || echo s) queued"
-      if out=$(report_note runners "$note" "$note. Start Docker Desktop (WSL integration on for this distro) on the runners' device, then check \`make gh-runner-status\` (DEVELOPMENT.md)." 2>&1); then
+      s=$([ "$n" = 1 ] || echo s)
+      if [ "$online" = 0 ]; then
+        note="Runners offline since $since: $n run$s queued"
+        needs="$note. Start Docker Desktop (WSL integration on for this distro) on the runners' device, then check \`make gh-runner-status\` (DEVELOPMENT.md)."
+      else
+        note="$n run$s queued since $since with $online runner$([ "$online" = 1 ] || echo s) online"
+        needs="$note: they are busy, or none has the labels the jobs ask for. Look at the oldest run's jobs, and \`make gh-runner-status\` on the runners' devices (DEVELOPMENT.md)."
+      fi
+      if out=$(report_note runners "$note" "$needs" 2>&1); then
         [ -n "$was" ] || log "$note; said in the Maintainer report"
         echo "$note" >"$DIR/runners-offline"
       else
@@ -360,6 +399,45 @@ runner_round() {
       ;;
   esac
   RUNNERS_SAID=$said
+}
+
+# tmp_round: say under the Maintainer report's Health, and not under Needs
+# you, when /tmp on this device is TMP_FULL percent full or more, with its
+# three largest entries (see the top), and take it out again when it drops
+# back. The report is asked each round while /tmp is full, as runner_round
+# does. $DIR/tmp-full holds the note the report carries. A failure is logged
+# once until it works again.
+TMP_SAID=
+tmp_round() {
+  local use out size path largest= note was= said=
+  [ -r "$DIR/tmp-full" ] && was=$(cat "$DIR/tmp-full")
+  if ! use=$(tmp_use 2>&1) || ! [[ $use =~ ^[0-9]+$ ]]; then
+    [ "$TMP_SAID" = err ] || log "could not read how full /tmp is: ${use//$'\n'/; }"
+    TMP_SAID=err
+    return 0
+  fi
+  if [ "$use" -ge "$TMP_FULL" ]; then
+    while IFS=$'\t' read -r size path; do
+      [ -n "$path" ] && largest+="${largest:+, }$path ($size)"
+    done < <(tmp_largest)
+    note="/tmp on $TMP_HOST is $use% full${largest:+; largest: $largest}"
+    if out=$(report_note "$TMP_KEY" "$note" "" 2>&1); then
+      [ -n "$was" ] || log "$note; said under the Maintainer report's Health"
+      echo "$note" >"$DIR/tmp-full"
+    else
+      said=note
+      [ "$TMP_SAID" = note ] || log "$note; could not say it in the Maintainer report: ${out//$'\n'/; }"
+    fi
+  elif [ -n "$was" ]; then
+    if out=$(report_note "$TMP_KEY" 2>&1); then
+      log "/tmp on $TMP_HOST is back under $TMP_FULL%; the note left the Maintainer report"
+      rm -f "$DIR/tmp-full"
+    else
+      said=clear
+      [ "$TMP_SAID" = clear ] || log "/tmp on $TMP_HOST is back under $TMP_FULL%; could not take the note out of the Maintainer report: ${out//$'\n'/; }"
+    fi
+  fi
+  TMP_SAID=$said
 }
 
 # flake_round: record each spec that failed on main (hack/lib/github.sh
@@ -432,9 +510,9 @@ start() {
 # the last triage didn't see, one changed after it (not by the triage's own
 # comment), one waits on an issue that closed after it, or the last triage is
 # RETRIAGE seconds old. $DIR/triaged holds the last triage's time and issues,
-# this watch's or one started by hand (hack/relay.sh --triage writes it as its
-# session starts); when its session never ran, hack/relay.sh --triage keeps
-# only the time there, so the same issues start it again. TRIAGE_T keeps the
+# this watch's or one started by hand; only hack/relay.sh --triage writes it,
+# as its session starts, and when the session never ran it keeps only the
+# time there, so the same issues start it again. TRIAGE_T keeps the
 # watch from asking for the proposed issues more often than every TRIAGE_ASK
 # (WATCH_RETRY): every round, busy ones too, would cost GitHub calls by the
 # dozen a minute.
@@ -476,12 +554,10 @@ triage() {
   [ -n "$freed" ] && why+=("waited on a closed issue:$freed")
   [ ${#why[@]} -gt 0 ] || [ ${#since[@]} = 0 ] || return 0
   [ ${#why[@]} -gt 0 ] || why=("read again after $((RETRIAGE / 3600))h")
-  echo "$now $list" >"$DIR/triaged"
   out=$(run_triage 2>&1 8>&-)
   rc=$?
   why=$(printf '%s; ' "${why[@]}")
   log "triage: proposed #${list// / #} (${why%; }); hack/relay.sh --triage${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((TRIAGE_EVERY / 60))m)")"
-  [ "$rc" = 0 ] || echo "$now" >"$DIR/triaged"
 }
 
 # maintain NOW: start the maintainer when it is on, none runs, and an issue
@@ -775,8 +851,10 @@ uninstall_watch() {
 # Sourced (hack/relay-watch_test.sh): the functions only.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 # Whoever starts the watch, a Claude Code session among them, the watch and the
-# relay it starts run as from a plain project shell (#645).
+# relay it starts run as from a plain project shell (#645), headless: no
+# cluster lease code (gh_headless in hack/lib/github.sh).
 drop_session_env
+export C4_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
@@ -839,6 +917,7 @@ while :; do
     ci_round
     flake_round
     runner_round
+    tmp_round
   fi
   if [ $((now - PULL_T)) -ge "$PULL_EVERY" ]; then
     PULL_T=$now

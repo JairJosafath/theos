@@ -1,5 +1,5 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
-{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-ec2-ts") -}}
+{{- $tiered := or (eq .Framework "aws-lambda-ts") (eq .Framework "aws-fargate-ts") (eq .Framework "aws-ec2-ts") -}}
 # Implementer guide
 
 You implement one Gitea issue in this repository, as one pull request.
@@ -168,7 +168,10 @@ Task that reviews and merges it. Then:
   `TIER_RULES` as the ones beside it do: a table's removal policy, deletion
   protection and point-in-time recovery by tier, its alarms from the
   stack's `Alarms`. `infra/standard.test.ts` checks both tiers. Never read
-  another context value or an environment variable at synth.{{ if eq .Framework "aws-ec2-ts" }} The
+  another context value or an environment variable at synth.{{ if eq .Framework "aws-fargate-ts" }} An alarm
+  that should roll a deployment back joins `DEPLOYMENT_ALARMS` in
+  `infra/service_stack.ts` by its name, never by a reference to the alarm,
+  which would make it and the service depend on each other.{{ else if eq .Framework "aws-ec2-ts" }} The
   instances hold no data: a feature that keeps a file keeps it in S3 or
   DynamoDB, and the boot script keeps its health wait last, since the
   instance's `cfn-signal` follows it.{{ end }} The factory

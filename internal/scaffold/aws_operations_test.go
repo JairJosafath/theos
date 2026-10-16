@@ -38,6 +38,10 @@ var awsOperationsFrameworks = []struct {
 		"LoadBalancer-5xx-Critical", "Service-Unhealthy-Instances-Critical", "Instances-In-Service-Critical",
 		"resource signal", "never backed up", "CertificateArn", "terminate-instance-in-auto-scaling-group",
 	}},
+	{side{model.TypeService, "aws-fargate-ts"}, []string{
+		"Service-Unhealthy-Tasks-Critical", "LoadBalancer-5xx-Rate-Critical", "Service-Running-Tasks-Critical",
+		"rolloutState", "circuit breaker", "in each of its two zones", "CollectorLogs",
+	}},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
