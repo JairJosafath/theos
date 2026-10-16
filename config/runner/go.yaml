@@ -2,7 +2,9 @@
 # (hack/toolchain-go), labelled go, for Containers written in Go or TypeScript.
 # It has uv too, so a Python project checks and releases here as well.
 # `make runner-go` builds it and applies this, it is applied by that target alone.
-# It registers with the token the seed Job stores in Secret gitea/gitea-runner.
+# Its init container registers with the token the seed Job stores in Secret
+# gitea/gitea-runner; the runner container, where jobs run, never gets it.
+# config/runner/network-policy.yaml fences it.
 #
 # Jobs keep their Go build cache on the node (/var/cache/c4factory/go/ci), so a
 # job compiles only what changed since the last. Only this runner mounts it:
@@ -42,9 +44,31 @@ spec:
       labels:
         app.kubernetes.io/name: gitea-runner-go
         app.kubernetes.io/part-of: c4factory-testenv
+        # The CI fence selects it: config/runner/network-policy.yaml.
+        app.kubernetes.io/component: ci-runner
     spec:
       automountServiceAccountToken: false
       initContainers:
+        # Registers the runner, writing /data/.runner: the only container given
+        # the registration token, which the jobs in the runner container must
+        # not read (hack/runner/register.sh).
+        - name: register
+          image: c4factory/gitea-runner-go:dev
+          imagePullPolicy: Never
+          command: [c4-runner-register]
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: go:host
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
         - name: go-cache
           image: c4factory/gitea-runner-go:dev
           imagePullPolicy: Never
@@ -56,13 +80,6 @@ spec:
         - name: runner
           image: c4factory/gitea-runner-go:dev
           imagePullPolicy: Never
-          env:
-            - name: GITEA_INSTANCE
-              value: http://gitea.gitea.svc.cluster.local:3000
-            - name: RUNNER_TOKEN
-              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
-            - name: RUNNER_LABELS
-              value: go:host
           # A job takes at most 4 of the node's cores, so a build can't starve etcd,
           # the API server and Gitea: docs/dev/testenv.md, "CPU on the cluster device".
           resources:

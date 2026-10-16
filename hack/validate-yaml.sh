@@ -225,6 +225,14 @@ for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.
 done
 echo "The manager shares claude-credentials into the labeled sample namespaces"
 
+# The CI fence (docs/design.md): the chart's runners and config/runner's take
+# no traffic in, reach only DNS, Gitea and public HTTPS, and only the init
+# container that registers gets the registration token (#1138).
+for f in chart-gitea chart-gitea-bare; do
+	go run ./hack/runner-fence "$OUT/$f.yaml"
+done
+go run ./hack/runner-fence config/runner/*.yaml "$OUT/kustomize-gitea.yaml"
+
 # test/invalid holds YAML each create-time CEL rule must reject: each file's
 # first line says "# expect: <message>", which the rejection must contain.
 checked=0

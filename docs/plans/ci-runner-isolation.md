@@ -87,7 +87,8 @@ rule and no longer calls the runner open. `make check` passes on each.
 4. **A runner pool per project.** The operator registers each project's pool
    to the project's Git organization (the GitProvider's `owner`), with an
    organization registration token it reads through its admin token
-   (`GET /orgs/{org}/actions/runners/registration-token`), so a project's
+   (`POST /orgs/{org}/actions/runners/registration-token`: Gitea 1.27 serves it
+   on POST only), so a project's
    jobs run only on its own pods and a job's registration reach, if it ever
    leaked, is its own organization. The pods run in the project's namespace,
    next to its sandboxes, so the per-project machinery (the namespace's
@@ -129,7 +130,7 @@ rule and no longer calls the runner open. `make check` passes on each.
 | --- | --- | --- | --- |
 | This plan | #1076 (`Refs`) | | it merges |
 | Fence the shared runners: NetworkPolicy and registration in an init container, in the chart and `config/runner/`; `docs/design.md` states the rule (decision 1) and what is still open | #1138 | | `make validate-yaml` checks the rendered chart's runner NetworkPolicy and that no runner container has `RUNNER_TOKEN` |
-| Gitea client: an organization's runner registration token, and a runner's state | #1139 | #1093 | `make test-gitea`: an ephemeral runner registered to an organization shows in that organization's runners and not in another's |
+| Gitea client: an organization's runner registration token, and a runner's state: `gitprovider.OwnerRunners`, an optional capability of the CI port, with its fake | #1139 | #1093 | `make test-gitea`: an ephemeral runner registered to an organization shows in that organization's runners and not in another's |
 | The operator keeps a per-project pool of single-job runner pods, under a per-project CI NetworkPolicy and a per-project Go cache | #1140 | #1139 | table tests of the pod and NetworkPolicy specs; envtest: a pool kept at its size, an ended pod replaced, the pool gone with the project; `docs/design.md` drops "open" for the runner |
 | Releases on `go-release`, a pool label with no shared cache | #1141 | #1140 | table test of the `go-release` pod spec (an emptyDir cache); `internal/scaffold` test that `gitea-release` runs on it; `make validate-yaml` for the template tag |
 

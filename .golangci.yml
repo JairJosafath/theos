@@ -86,6 +86,27 @@ linters:
               desc: the runner must not depend on controllers (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
               desc: the runner uses git and its token only; the operator talks to the Git host API (docs/architecture.md)
+        model-proxy-stands-alone:
+          files:
+            - "**/internal/modelproxy/**"
+            - "**/cmd/model-proxy/**"
+          deny:
+            - pkg: k8s.io
+              desc: the model proxy reads one Secret file and forwards to one upstream; it needs no cluster access (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: the model proxy needs no cluster access (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: the model proxy knows no resources; it takes its flags and one Secret file (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: the model proxy must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+              desc: the model proxy talks to the Claude API only, never to the Git host (docs/architecture.md)
+        model-proxy-handler-is-a-leaf:
+          files:
+            - "**/internal/modelproxy/**"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/internal
+              desc: the model proxy's handler uses the standard library only (docs/architecture.md)
         api-stands-alone:
           files:
             - "**/api/**"
