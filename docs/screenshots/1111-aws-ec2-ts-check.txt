@@ -169,3 +169,47 @@ aws-lambda-ts v1.1.0: make check exit 0, Tests  105 passed (105)
 aws-fargate-ts v1.0.0: make check exit 0, Tests  78 passed | 26 skipped (104)
 aws-lambda-py v1.0.0: make check exit 0, Tests  26 passed | 26 skipped (52)
 aws-lambda-go v1.0.0: golangci-lint is not on this device, so make test synth cfn-lint instead: exit 0, Tests  27 passed | 26 skipped (53)
+
+# ---------------------------------------------------------------------------
+# After merging main (#1274: aws-fargate-ts v1.1.0, aws-standard v1.7.0) on 2026-10-16:
+# aws-standard is now v1.8.0. Each Framework rendered with go run ./hack/render as above
+# (defaults), then make check in the copy, as above. Agent: heron-1111.
+
+## aws-ec2-ts: make check exit 0
+   ✓ src/items.test.ts (25 tests) 27ms
+   ✓ src/api.test.ts (13 tests) 27ms
+   ✓ src/item_store.test.ts (4 tests) 18ms
+   ✓ src/server.test.ts (6 tests) 178ms
+   ✓ infra/standard.test.ts (53 tests) 6853ms
+   ✓ infra/service_stack.test.ts (22 tests) 7028ms
+   Test Files  6 passed (6)
+        Tests  123 passed (123)
+  CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+  uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+  Downloading cfn-lint (5.4MiB)
+   Downloaded cfn-lint
+
+## aws-fargate-ts: make check exit 0
+   Test Files  7 passed (7)
+        Tests  132 passed (132)
+
+## aws-lambda-ts: make check exit 0
+   Test Files  6 passed (6)
+        Tests  111 passed (111)
+
+## aws-lambda-py: make check exit 0
+  ============================== 48 passed in 0.14s ==============================
+   Test Files  2 passed (2)
+        Tests  26 passed | 32 skipped (58)
+
+## aws-lambda-go: make test synth cfn-lint exit 0 (golangci-lint isn't on this device, so make check stops at go-fmt-check)
+   Test Files  2 passed (2)
+        Tests  27 passed | 32 skipped (59)
+
+## aws-ec2-ts with its selection changed to #1274's tag condition on * (no NotResources):
+## vitest run infra/standard.test.ts fails the two checks the merge combined
+  × leave every load balancer's log bucket out: logs, not data
+  × hold no data: their volumes go with them, and no backup selects them by tag
+  AssertionError: sample-app/BackupsPlanTables8D417F20 selects LoadBalancerBE9EEC3A's log bucket AccessLogs8B620ECA: expected false to be true
+  AssertionError: sample-app/BackupsPlanTables8D417F20: expected 0 to be greater than 0
+        Tests  2 failed | 51 passed (53)
