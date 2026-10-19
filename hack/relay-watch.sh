@@ -59,8 +59,10 @@
 # In the same round it records each Ginkgo spec that failed on main
 # (hack/lib/github.sh flakes) in .relay/flakes.tsv, and files a "Flaky: <spec>"
 # bug, status/ready and priority/3, not 1, when one failed in two
-# runs within WATCH_FLAKE_DAYS days (default 7): a flaky spec rarely fails
-# twice in a row, so it never turns main red. An open one is not filed again.
+# runs within WATCH_FLAKE_DAYS days (default 7) with a pass of the workflow
+# between them: a flaky spec rarely fails twice in a row, so it never turns
+# main red, and failures in a row are main being red, which "main is red"
+# tracks (#1398). An open one is not filed again.
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -450,10 +452,12 @@ tmp_round() {
 
 # flake_round: record each spec that failed on main (hack/lib/github.sh
 # flakes, which reads each failed run's log once: $DIR/flakes-runs) in
-# $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME, and file a "Flaky: <spec>" bug,
-# status/ready and priority/3, for a spec just recorded that failed twice in
-# FLAKE_DAYS days. A flake rarely fails two runs in a row, so ci_round's "main
-# is red" misses it. hack/lib/github.sh create leaves an open issue with the
+# $DIR/flakes.tsv, SPEC<tab>RUN<tab>TIME<tab>STREAK, and file a "Flaky: <spec>"
+# bug, status/ready and priority/3, for a spec just recorded that failed in two
+# red streaks in FLAKE_DAYS days. A flake rarely fails two runs in a row, so
+# ci_round's "main is red" misses it; failures in a row share their STREAK and
+# count once, since they are main being red, not a flake (#1398). A row
+# without a STREAK, written before it was kept, counts as a streak of its own. hack/lib/github.sh create leaves an open issue with the
 # title alone, so a spec that fails again files nothing new while its bug is
 # open. GitHub caps a title at 256 characters: a longer spec is cut, at 240
 # characters whatever the locale, the same way each time. A failure to read
@@ -477,13 +481,13 @@ flake_round() {
   while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     # The spec goes in through the environment: awk -v would read its backslashes.
-    n=$(S=$spec awk -F'\t' -v t="$since" '$1 == ENVIRON["S"] && $3 >= t { r[$2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
+    n=$(S=$spec awk -F'\t' -v t="$since" '$1 == ENVIRON["S"] && $3 >= t { r[NF > 3 ? $4 : $2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
     if [ "$n" -lt 2 ]; then
       log "a spec failed on main: $spec"
       continue
     fi
     title="Flaky: $(LC_ALL=C.UTF-8 bash -c 'printf %s "${1:0:240}"' _ "$spec")"
-    body="The spec \`$spec\` failed on main in $n runs in the last $FLAKE_DAYS days, yet main isn't red twice in a row: it is flaky.
+    body="The spec \`$spec\` failed on main $n times in the last $FLAKE_DAYS days with a pass between them, so main wasn't red: it is flaky.
 
 ## Runs
 

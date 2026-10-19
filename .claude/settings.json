@@ -44,7 +44,13 @@
   "permissions": {
     "allow": [
       "Bash(hack/lib/github.sh land:*)",
-      "Bash(hack/release.sh:*)"
+      "Bash(hack/release.sh:*)",
+      "Bash(hack/lib/github.sh:*)",
+      "Bash(hack/relay-watch.sh:*)",
+      "Bash(hack/relay.sh:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh api repos/JairJosafath/c4factory/milestones:*)"
     ]
   }
 }

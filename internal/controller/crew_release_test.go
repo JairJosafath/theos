@@ -707,13 +707,16 @@ var _ = Describe("Crew release preparation", func() {
 			}
 		}, 3*time.Second).Should(Succeed())
 
+		// The Task closes its issue before it records the merge, as the Task
+		// reconciler does: the other order let a reconcile between the two
+		// file the prepare issue without the fix under load (#956, #1363).
+		Expect(gitFake.closeIssue(ns, "orders-api", fix)).To(Succeed())
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, task.Name)
 			completed := metav1.Now()
 			task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, "fix-merge", &completed
 			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 		}).Should(Succeed())
-		Expect(gitFake.closeIssue(ns, "orders-api", fix)).To(Succeed())
 		Eventually(func(g Gomega) {
 			issues := prepareIssues(ns)
 			g.Expect(issues).To(HaveLen(1))

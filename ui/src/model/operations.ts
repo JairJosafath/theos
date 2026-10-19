@@ -1,7 +1,8 @@
 // A Container's operations (spec.operations): backups, recovery and alarms.
 // What the page shows is what the Container asks for: the spec with the
 // operator's defaults filled in (model.ResolveOperations), and OperationsApplied
-// when False (the block was changed after the scaffold). Pure, and read only from the Container.
+// when False (a changed block whose pull request hasn't merged, or can't be made). Pure, and read
+// only from the Container.
 
 import type { Condition, Container } from '../k8s/types'
 import { findCondition } from '../k8s/types'
@@ -20,7 +21,7 @@ export interface OperationRow {
 
 export interface OperationsView {
   rows: OperationRow[]
-  /** OperationsApplied when False: the block changed after the scaffold. */
+  /** OperationsApplied when False: a changed block not yet in the repository. */
   notApplied?: Condition
 }
 

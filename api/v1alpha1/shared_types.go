@@ -119,8 +119,9 @@ const (
 	// already does; False with the update in flight or its stop while not.
 	ConditionChecksApplied = "ChecksApplied"
 	// ConditionOperationsApplied is True when a scaffolded Container's
-	// spec.operations is the block its repository was rendered with; False
-	// with reason ChangedAfterScaffold once the block changes.
+	// spec.operations is the block its repository's infra/operations.ts was
+	// last rendered with; False with reason Updating while the pull request
+	// that renders a changed block waits for CI, or with why it stopped.
 	ConditionOperationsApplied = "OperationsApplied"
 )
 
@@ -173,9 +174,15 @@ const (
 	// the Container's checks to its repository hasn't merged yet.
 	ReasonPending = "Pending"
 	// ReasonChangedAfterScaffold: OperationsApplied is False because the
-	// Container's spec.operations changed after its scaffold, and nothing yet
-	// carries the change to its repository.
+	// Container's spec.operations changed after its scaffold and the operator
+	// can't carry the change to its repository: the Container was scaffolded
+	// before the factory kept the block, or its Framework renders no
+	// infra/operations.ts. A Task changes the file.
 	ReasonChangedAfterScaffold = "ChangedAfterScaffold"
+	// ReasonUpdateMerged: OperationsApplied is True because the operations
+	// update that renders spec.operations into infra/operations.ts merged; the
+	// message names the commit.
+	ReasonUpdateMerged = "UpdateMerged"
 )
 
 // Labels the operator sets so a resource can be found by its ancestors.

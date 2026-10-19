@@ -481,6 +481,8 @@ case $(cat "$FAKE") in
   oauth-ok) echo '{"is_error":false,"result":"fixed the failed to authenticate matcher","num_turns":9}' ;;
   oauth-quoted) echo '{"is_error":false,"result":"stopped: the Gitea call said failed to authenticate","num_turns":9}'; exit 1 ;;
   oauth-noturn) echo '{"is_error":false,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
+  login-result) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":0,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-quoted) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":9,"duration_api_ms":81234,"result":"stopped: the CLI said Not logged in · Please run /login"}'; exit 1 ;;
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   stray) echo x >"$MAIN/stray"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"strayed","num_turns":1}' ;;
@@ -623,6 +625,21 @@ LIMIT_WAIT=10m work
 check "oauth-noturn: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
 check "oauth-noturn: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
+# #1396: the CLI's login error as the result of a session that exited 1 after
+# a turn, is_error false, pauses too: no API call ran (duration_api_ms 0), so
+# the words are the CLI's.
+echo login-result >"$FAKE"
+LIMIT_WAIT=10m work
+check "login-result #1396: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "login-result #1396: not counted" "$(counted)" 0
+check "login-result #1396: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
+rm -f "$DIR/paused-until"
+# One whose API calls ran and whose final message quotes it pauses nothing (#655).
+echo login-quoted >"$FAKE"
+work
+check "login-quoted #1396: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "login-quoted #1396: counted" "$(counted)" 1
+no_strikes
 # So does the CLI's login error on stderr of a session that exited non-zero.
 echo login-err >"$FAKE"
 LIMIT_WAIT=10m work

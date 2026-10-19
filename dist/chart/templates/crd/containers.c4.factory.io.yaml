@@ -140,8 +140,10 @@ spec:
                   long its backups are kept and where they are copied, its recovery
                   objectives and who its alarms tell. The tier itself is the deploy
                   target's, never the Container's. A field left out takes the factory's
-                  default; a change after the scaffold shows on the condition
-                  OperationsApplied.
+                  default. A change after the scaffold reaches the repository's
+                  infra/operations.ts through a pull request the operator opens and
+                  merges, as a Standard bump does; the condition OperationsApplied says
+                  where it stands.
                 properties:
                   alerts:
                     description: alerts says who the alarms tell by default.
@@ -373,9 +375,11 @@ spec:
                 type: integer
               operations:
                 description: |-
-                  operations is the operations block the scaffold rendered with, its
-                  defaults filled in. OperationsApplied compares spec.operations to it. A
-                  Container scaffolded before this was kept has none.
+                  operations is the operations block the repository's
+                  infra/operations.ts was last rendered with, its defaults filled in: at
+                  the scaffold, then by each operations update that merged.
+                  OperationsApplied compares spec.operations to it. A Container scaffolded
+                  before this was kept has none.
                 properties:
                   alerts:
                     description: alerts says who the alarms tell by default.
@@ -428,6 +432,100 @@ spec:
                         pattern: ^[0-9]+(m|h|d)$
                         type: string
                     type: object
+                type: object
+              operationsUpdate:
+                description: |-
+                  operationsUpdate is the pull request the operator opened to render
+                  infra/operations.ts again from a changed spec.operations: in flight,
+                  stopped, or merged. A merged one stays, naming the commit it made, until
+                  the next change replaces it.
+                properties:
+                  branch:
+                    description: branch is the update's branch, and commit the one
+                      commit on it.
+                    type: string
+                  commit:
+                    type: string
+                  mergeCommit:
+                    description: |-
+                      mergeCommit is the commit on main that holds the block: the one the
+                      pull request's merge made, or main's head when main already held it.
+                      It is set once the update merged.
+                    type: string
+                  operations:
+                    description: |-
+                      operations is the block the pull request renders, every field set as
+                      status.operations records it.
+                    properties:
+                      alerts:
+                        description: alerts says who the alarms tell by default.
+                        properties:
+                          email:
+                            description: |-
+                              email is the address the alarms tell by default; a deploy target
+                              overrides it per environment. Empty means nobody is told.
+                            maxLength: 254
+                            pattern: ^([^@\s]+@[^@\s]+)?$
+                            type: string
+                        type: object
+                      backups:
+                        description: backups says how long backups are kept and where
+                          they are copied.
+                        properties:
+                          copyToRegion:
+                            description: |-
+                              copyToRegion is a second AWS region the backups are copied to, such as
+                              eu-west-1; empty means none.
+                            maxLength: 32
+                            pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                            type: string
+                          retentionDays:
+                            description: |-
+                              retentionDays is how many days daily backups are kept in production; 0
+                              means point-in-time recovery only. Left out, 35.
+                            format: int32
+                            maximum: 3650
+                            minimum: 0
+                            type: integer
+                        type: object
+                      recovery:
+                        description: |-
+                          recovery states the recovery objectives the runbook, the alarms and the
+                          checks are written to.
+                        properties:
+                          rpo:
+                            description: |-
+                              rpo is the recovery point objective: how much data a recovery may lose.
+                              Left out, 1h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                          rto:
+                            description: |-
+                              rto is the recovery time objective: how long a recovery may take. Left
+                              out, 4h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                        type: object
+                    type: object
+                  pullRequest:
+                    description: |-
+                      pullRequest is the number of the update's pull request, and pullRequestURL
+                      its address. Both are empty when main already held the file as the block
+                      renders it.
+                    format: int32
+                    type: integer
+                  pullRequestURL:
+                    type: string
+                  stopped:
+                    description: |-
+                      stopped is why the update stopped without merging, such as UpdateClosed,
+                      UpdateRefused or Failed; a stopped update waits for spec.operations to
+                      change again.
+                    type: string
+                required:
+                - operations
                 type: object
               phase:
                 description: phase is Pending, Scaffolding, then Ready or Failed.
