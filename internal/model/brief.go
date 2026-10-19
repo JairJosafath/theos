@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -69,9 +70,12 @@ type PlanObject struct {
 
 	DisplayName string
 	Description string
-	// Needs and KPIs are a SoftwareSystem's.
-	Needs []string
-	KPIs  []string
+	// Needs, KPIs and Location are a SoftwareSystem's. A plan's Location is
+	// LocationInternal when model.yaml leaves it out; a round sets it only on
+	// a system it creates, and later rounds keep the one it has.
+	Needs    []string
+	KPIs     []string
+	Location string
 
 	// SoftwareSystem is a Container's or DataStore's.
 	SoftwareSystem string
@@ -350,6 +354,7 @@ type planSystemSpec struct {
 	planText `yaml:",inline"`
 	Needs    []string `yaml:"needs"`
 	KPIs     []string `yaml:"kpis"`
+	Location string   `yaml:"location"`
 }
 
 type planContainerSpec struct {
@@ -493,6 +498,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 			return err
 		}
 		o.DisplayName, o.Description, o.Needs, o.KPIs = spec.DisplayName, spec.Description, spec.Needs, spec.KPIs
+		o.Location = cmp.Or(spec.Location, LocationInternal)
 	case KindContainer:
 		if hasTier(node) {
 			return errPlanTier
@@ -668,6 +674,9 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 			refuse(subject, "%s", reason)
 		}
 		checkSpecLimits(o, refuse)
+		if l := SystemLocation(o); o.Kind == KindSoftwareSystem && l != LocationInternal && l != LocationExternal {
+			refuse(subject, "location %q is not a SoftwareSystem location: write Internal or External", l)
+		}
 	}
 	for _, o := range current.Objects {
 		if !seen[o.Ref()] {
@@ -733,8 +742,19 @@ func checkParallel(plan Plan, current CurrentModel, refuse func(string, string, 
 func checkCreated(plan Plan, current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
 	subject := o.Ref().String()
 	needSystem := func() {
-		if _, ok := findObject(plan.Objects, Ref{KindSoftwareSystem, o.SoftwareSystem}); !ok {
+		ref := Ref{KindSoftwareSystem, o.SoftwareSystem}
+		system, ok := findObject(plan.Objects, ref)
+		if !ok {
 			refuse(subject, "softwareSystemRef names %q, which is not a SoftwareSystem of the plan", o.SoftwareSystem)
+			return
+		}
+		// An existing system keeps its location, whatever the plan says.
+		if before, ok := findObject(current.Objects, ref); ok {
+			system = before
+		}
+		if SystemLocation(system) == LocationExternal {
+			refuse(subject, "softwareSystemRef names %q, which is External: the factory builds nothing for a "+
+				"system the story only names, so put the %s in an Internal system", o.SoftwareSystem, o.Kind)
 		}
 	}
 	switch o.Kind {
@@ -879,6 +899,10 @@ func checkCreatedRelationship(plan Plan, current CurrentModel, o PlanObject, ref
 		}
 	}
 }
+
+// SystemLocation is a SoftwareSystem's location, LocationInternal when it
+// has none, as the API defaults it.
+func SystemLocation(o PlanObject) string { return cmp.Or(o.Location, LocationInternal) }
 
 var containerTypes = []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, TypeMobileApp, TypeCLI, TypeExtension, TypeOperator, TypeFunction}
 
