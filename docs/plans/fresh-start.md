@@ -1,22 +1,64 @@
 # Fresh start: the reference app is the definition of done
 
-Parent issue: #1426. Written 2026-10-19 by
-a session the owner ran, at the owner's request, for the session that
-orchestrates it. That session is one the owner starts in this checkout and
-hands this file to; the hand-over is the owner's word to take the parent
-issue and work the orchestrator's steps (AGENTS.md, "Issues are the relay's").
+Parent issue: #1426, pull request #1427. Written 2026-10-19 by a session
+the owner ran, and revised the same evening after a first run of its step 0
+showed what the process must handle. The owner's words for it: "please
+autonomously make decisions and act during the plan, I do not want to be
+involved, I just want to check when all is done."
 
-## How to run this plan
+## How this plan runs without the owner
 
-- Read "The owner's checklist" first and check each line. What is not done
-  there, say in your first handoff. Steps 11 and 12 wait on it; nothing else
-  does.
-- One step per session, the `handoff` skill between them. Step 0 and step 1
-  fit one session. Steps marked *relay* are issues you file; the relay works
-  them. Steps marked *owner* are the owner's: you file the issue and send it
-  to the maintainer, who sends it to the owner.
-- Every command below runs in the project shell (`./dev shell`, or
-  `./dev run CMD`), from this checkout.
+There is no orchestrator agent. The relay and its maintainer are the
+orchestrator (GOVERNANCE.md); a plan only has to be written so that they
+can run it. The roles:
+
+| Role | Who | Does |
+| --- | --- | --- |
+| Owner | the person | States the goal. Marks the plan binding once. Keeps Claude Code logged in. Starts the verifier session when a step needs a cluster. Reads the pinned Maintainer report when they choose. |
+| Planning session | a session the owner runs | Writes the plan with every decision made. Never executes it. |
+| Step-0 session | one headless session, under an hour | Files what the plan says, lands the plan, readies the steps, installs the relay watch, hands off, ends. |
+| Relay workers | `hack/relay.sh` | Work the step issues, one per session. |
+| Maintainer | `hack/relay.sh --maintain` | Closes what finishes, decides escalations, lists what only the owner can do under *Needs you*, cuts releases. |
+| Verifier session | one session the owner starts with `C4_HUMAN_CLUSTER=1` | The one agent that touches a cluster: builds the reference app on Kind, judges it, files the gaps, releases the cluster, ends. |
+
+The rules, each from something the first run hit on 2026-10-19:
+
+1. **The plan decides; nobody asks the owner.** What GOVERNANCE.md reserves
+   to the owner is either decided in the plan (priorities, abandoning a
+   plan) and covered by the owner's one `binding` comment on the parent
+   issue, or left out (deleting a branch, credentials, money).
+2. **Sessions start from the project environment, and run project
+   commands bare.** The allow rules in `.claude/settings.json` match the
+   literal start of a command: `hack/lib/github.sh close 1388 FILE`
+   matches, `cd ~/c4factory && ./dev run hack/lib/github.sh close ...`
+   does not, and auto mode's classifier then refuses closes, branch
+   deletions and more. `jq` and the tools live in `.dev/bin`, so the
+   session is started through `./dev run` (below), and inside it every
+   project command is written bare, with no `cd ... &&`, `./dev run` or
+   `VAR=... ` in front.
+3. **The allow rules are committed before any session lands.** `land`
+   refuses while a file is uncommitted, and committing
+   `.claude/settings.json` is refused to agents (self-modification). That
+   commit is the owner's, once.
+4. **Issues close through the process, not by hand.** A session closes the
+   issue it took with `hack/lib/github.sh close`; a plan's parent closes
+   with its last step; the maintainer closes what a plan abandons. A
+   session never closes an issue it neither filed nor took.
+5. **An agent never speaks as the owner.** A comment that says "Owner's
+   note" or binds the maintainer is refused (instruction poisoning) and
+   would be wrong anyway. The owner's `binding` comment is the owner's
+   word; agents cite it.
+6. **A cluster is touched by the verifier session only,** which the owner
+   starts. AGENTS.md gets that exception (step 0 adds it to this pull
+   request before landing).
+
+What was already done on 2026-10-19 by the stopped first run, and stays:
+the milestone *Reference app: the webshop ships* (number 12); the step
+issues #1428 to #1433, now `status/proposed`; the priority moves of step 2;
+the comments of steps 1, 2, 9 and 10 on #1112, #1116, #1424, #1425, #1379
+and #261; the git identity in this checkout's repository config on 3st8JJ.
+Not done: landing this plan and #1412, the AGENTS.md exception, readying
+the steps, installing the watch, closing #1388 and #1389, removing `dev`.
 
 ## Goal
 
@@ -24,8 +66,8 @@ The factory's work is judged by one application it builds, the webshop, and
 by nothing else: every open issue either closes a gap between what the
 factory builds from the webshop's Brief and what a senior engineer would
 ship, or waits. The spec agents read describes the factory as it is. The
-relay runs again, small, on a device that is logged in, and grows only while
-the webshop's gap list shrinks.
+relay runs again, small, on a logged-in device, and grows only while the
+webshop's gap list shrinks.
 
 ## What was found (2026-10-19)
 
@@ -38,12 +80,11 @@ the webshop's gap list shrinks.
 | `docs/dev/testenv.md` | 1,165 lines, half of them one device's memory, disk and CPU tuning |
 | Templates under `templates/` | 29 |
 | Full sample applications | 1, `config/samples/webshop`, with one Container |
-| Open issues | 84: 2 at priority/1, 29 at priority/2, 38 at 5, 13 at 8 and 9 |
-| Open plans | 12: 4 have closed parents (#1425 moves them), 1 is ci-gate, 1 is the model proxy on the 1.0 path |
-| Open pull requests | 3: #1412 green; #1423 fails Vulnerabilities; #1411 fails Tests |
-| Relay | stopped since 2026-10-17 06:10 on every device; the last incident, the night of 2026-10-16: Skinny-vivobook ran logged out, about 190 strike comments and 15 false escalations across 19 issues |
-| Relay login | the installed watch (`hack/relay-watch.sh --install`) gives its unit PATH but not `CLAUDE_CONFIG_DIR`, so its sessions use `~/.claude`, VS Code's login; a watch started by hand from the project shell would use `.dev/claude` (hack/dev/env.sh), which does not exist on 3st8JJ |
-| Git identity on 3st8JJ in the project shell | none: `git var GIT_COMMITTER_IDENT` fails, so the relay would start no worker there (#1289) |
+| Open issues before this plan | 84: 2 at priority/1, 29 at priority/2, 38 at 5, 13 at 8 and 9 |
+| Open pull requests | #1412 green; #1423 fails Vulnerabilities; #1411 fails Tests |
+| Relay | stopped since 2026-10-17 06:10 on every device; the night of 2026-10-16 Skinny-vivobook ran logged out: about 190 strike comments, 15 false escalations across 19 issues |
+| Relay login | the installed watch (`hack/relay-watch.sh --install`) gives its unit PATH but no `CLAUDE_CONFIG_DIR`, so its sessions use `~/.claude`, the same login as VS Code; the project shell's `CLAUDE_CONFIG_DIR=.dev/claude` is a separate, empty login on 3st8JJ |
+| Git identity on 3st8JJ | was missing in every shell; set in this checkout's repository config on 2026-10-19, which the relay's worktrees share (#1289) |
 | Self-hosted runners | 3st8JJ's three online; Skinny-vivobook's and gray-lenovo's offline |
 | `main` | green: test.yml passed on de933e4b; v0.27.0 is the newest tag |
 | ci-gate | half-built: #1381 on `dev` only, `dev` 25 commits behind main, no `promote`, `dev` unprotected, default branch still main |
@@ -58,290 +99,215 @@ quality of the applications.
 1. **No new repository, no rewrite.** The operator, the templates and the
    tests are sound. What changes is what "done" means, the spec and how the
    relay runs.
-2. **The webshop is the reference application and defines done.** A
-   milestone, *Reference app: the webshop ships*, holds its path. Its issues
-   carry `priority/2`. Every other issue at `priority/2` today that is not a
-   `kind/bug` whose fix is under `templates/` moves to `priority/4`: above
-   the default, below the webshop. The owner's sweep of 2026-10-19 put all
-   of them at 2 for the same goal; this narrows it to one application at a
-   time, because a relay of two workers closes a handful of issues a day and
-   the order decides what the next release shows. A template bug stays at 2:
-   it is the quality of what the templates build. The owner's comment on the
-   Maintainer report (#261, the checklist) makes this binding for triage and
-   the maintainer.
+2. **The webshop is the reference application and defines done.** The
+   milestone *Reference app: the webshop ships* holds its path at
+   `priority/2`, and so does a `kind/bug` whose fix is under `templates/`.
+   Every other issue that was at 2 moved to `priority/4`: above the default,
+   below the webshop. The owner's sweep of 2026-10-19 put all of them at 2
+   for the same goal; this narrows it to one application at a time, because
+   a relay of two workers closes a handful of issues a day and the order
+   decides what the next release shows.
 3. **The webshop deploys to Kubernetes, the Kind cluster it is built on.**
    Not AWS: an AWS account is money and credentials, reserved to the owner,
    and the AWS templates have their own open bugs. #1072 is its deploy plan;
-   #1070 and #1071 go to 4.
-4. **ci-gate is abandoned unless the owner says finish.** Its goal was for
-   merging to wait on nothing, so that six workers could land faster. With
-   two workers the merge turn it removes is no longer the bottleneck, and a
-   main that is always green is worth more to a released template than
-   minutes per merge. This reverses the owner's word of 2026-10-16, so it is
-   the owner's: their comment on #1379 decides. Abandoning loses only
-   #1381's changes to `hack/pull.sh` and `hack/relay.sh`, which exist on
-   `dev` alone and nothing uses.
-5. **The relay restarts small.** One device whose `.dev/claude` is logged
-   in, two workers, triage on, one maintainer sweep a day
-   (`WATCH_MAINTAIN=86400`). It restarts after #1421 lands, so a zero-turn
-   failed session pauses its device instead of striking the issue. It grows
-   by one worker at a time, only while test.yml on main has been green for
-   three days and the milestone's open count fell in the last week.
+   #1070 and #1071 are at 4.
+4. **ci-gate is abandoned.** Its goal was for merging to wait on nothing, so
+   that six workers could land faster. With two workers the merge turn it
+   removes is no longer the bottleneck, and a main that is always green is
+   worth more to a released template than minutes per merge. This reverses
+   the owner's word of 2026-10-16; the owner's `binding` comment on #1426
+   covers it. The maintainer closes #1388 and #1389 as not built (asked on
+   #1379); #1379 closes with them. `dev` holds only #1381's change
+   (5fd71b34, PR #1414), which nothing uses; it stays until the owner
+   removes it, and nothing waits on that.
+5. **The relay restarts small.** One device whose `~/.claude` is logged in
+   (3st8JJ), two workers, triage on, the maintainer sweep at its default
+   (every two hours). It grows by one worker at a time, only while test.yml
+   on main has been green for three days and the milestone's open count
+   fell in the last week, and shrinks on any strike from a login or
+   identity failure. #1421 (a zero-turn failed session must pause its
+   device, not strike) is priority/1 and the relay's first or second pick.
 6. **The spec is rewritten in the present tense.** `docs/design.md` becomes
    what the factory is now, under 600 lines; the old text moves to
    `docs/design-history.md` unchanged. Every agent session reads the spec;
    four stacked versions cost every one of them.
-7. **One Kind run per reference-app release is the owner's.** It is the only
-   thing in the project that waits on Kind, and it waits on the owner, never
-   on an agent (AGENTS.md: agents never touch a cluster). Its evidence, the
-   gaps, is what the relay works.
+7. **The verifier session is the one agent that touches a cluster.** The
+   owner starts it with one command when #1429 reaches *Needs you* and
+   leaves it alone. It is the only thing in the plan that waits on Kind.
 8. **No new relay, landing or CI feature until the milestone closes.** The
-   rule goes into AGENTS.md through #1424, which already rewrites the
-   priority rule there. The 2026-10-16 incident came from that machinery.
+   rule goes into AGENTS.md through #1424 (asked there).
 9. **The 190 strike comments stay.** They are the relay's record.
 
 ## Steps
 
-Who does each: *orchestrator* is the session the owner hands this file to;
-*relay* is an issue the orchestrator files `status/ready` for the relay;
-*owner* is the owner at a keyboard.
+### Step 0: the step-0 session
 
-### Step 0: file and land this plan (orchestrator)
+Started by the owner, from a plain shell in the checkout on 3st8JJ, after
+the owner's part below is done:
 
-1. `hack/pull.sh`, then file the parent:
-   `hack/lib/github.sh create "Fresh start: the reference app is the definition of done" FILE status/ready kind/chore source/dev priority/2`,
-   FILE being the Goal and the Decisions above in short, with the line
-   "The plan is docs/plans/fresh-start.md". Write its number at the top of
-   this file.
-2. `hack/lib/github.sh take N`, commit this file on the branch it names, push,
-   open a pull request whose body says `Refs #N` (never a closing word next
-   to #N), and `hack/lib/github.sh land PR`.
-3. File steps 3, 6, 7 and 8 as issues now (their commands are in their
-   steps), each with the `Depends on #S` lines its step says. Then add a
-   `Depends on #S` line per step to N's body (`gh issue edit N --body-file
-   FILE`, the rest kept), post a handoff, and `hack/lib/github.sh status N
-   waiting`. Never close N by hand; it closes with its last step.
+```bash
+cd ~/c4factory && ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
+  claude -p --permission-mode auto --model opus \
+  "Run step 0 of docs/plans/fresh-start.md, then end. Project commands bare, as the plan says."
+```
 
-### Step 1: clear the deck (orchestrator, same session)
+The session, every command bare:
 
-1. `hack/lib/github.sh land 1412`: it closes #1408, the only priority/1 fix.
-   `hack/lib/github.sh red test.yml` after it, to see main stayed green.
-2. #1423 (for #1112) fails Vulnerabilities and #1411 (for #1116) fails Tests.
-   Don't land them. Comment on #1112 and #1116 what fails and that the branch
-   must merge main first; the one that lands second takes aws-standard
-   v1.14.0 (said there already). They keep `priority/2`.
-3. ci-gate, by the owner's comment on #1379:
-   - *abandon* (the recommendation): the owner deletes `dev`
-     (`git push origin --delete dev`, reserved to the owner; or their comment
-     says you may). Then `hack/lib/github.sh close 1388 FILE` and
-     `hack/lib/github.sh close 1389 FILE`, in that order (1389 depends on
-     1388), FILE saying "Superseded by docs/plans/fresh-start.md, decision 4:
-     not built." #1379 closes itself (`parents --apply`). Step 9 moves
-     `docs/plans/ci-gate.md`.
-   - *finish*: `hack/lib/github.sh status 1388 ready`, leave #1389 as it is;
-     the relay works them at their priority. Decision 5 still holds.
-   - no comment yet: leave the three as they are and say so in the handoff;
-     nothing else waits on it.
+1. `hack/pull.sh`. `git status --short` must print nothing; if it prints
+   `.claude/settings.json`, stop and say so in a comment on #1426: the
+   owner's commit (their part, item 1) is pending.
+2. `hack/lib/github.sh take 1426`, `git switch chore/1426-fresh-start-the-reference-app-is-the`,
+   `git merge origin/main`. Add to AGENTS.md, at the end of "Agents Never
+   Touch a Cluster": *The one exception is a verifier session: one the
+   owner starts from their own shell with `C4_HUMAN_CLUSTER=1` to run one
+   plan step that needs a cluster (its issue names the step). It leases a
+   pool cluster, does only what the step says, releases the cluster and
+   ends.* Commit with an `Agent:` trailer, push, `hack/lib/github.sh land 1427`.
+3. `gh pr checkout 1412`, `hack/lib/github.sh land 1412`. It closes #1408,
+   the only priority/1 fix besides #1421. `hack/lib/github.sh red test.yml`
+   after it.
+4. Ready the steps: `hack/lib/github.sh status N ready` for 1428, 1430,
+   1431, 1432 and 1433. For 1429: `hack/lib/github.sh status 1429
+   needs-maintainer` after a comment saying "verifier session: needs the
+   owner to start it when #1428 is closed; please list it under *Needs
+   you* with the command from the plan's owner's part."
+5. Add to #1426's body (`gh issue edit 1426 --body-file FILE`, the rest
+   kept) one line each: `Depends on #1428`, `#1429`, `#1430`, `#1431`,
+   `#1432`. Post a handoff naming the steps, then
+   `hack/lib/github.sh status 1426 waiting`. Never close #1426 by hand.
+6. `RELAY_DRY_RUN=1 hack/relay.sh` to see the first pick (expected: #1421,
+   else the milestone). Then `hack/relay-watch.sh --install --workers 2`.
+   If the install is refused, `hack/relay-watch.sh --workers 2` in the
+   same session and say so in the handoff: the owner installs it later.
+7. Hand off on #1426 (the `handoff` skill) with: what landed, the first
+   pick, the device, and anything refused. End.
 
-### Step 2: the milestone and the priorities (orchestrator)
+### Step 1: clear the deck (done, except the lands)
 
-1. `gh api repos/JairJosafath/c4factory/milestones -X POST -f title="Reference app: the webshop ships" -f description="Done when: the webshop Brief in config/samples/webshop builds four Containers, a DataStore and a Kubernetes deploy on a Kind cluster from the published release; every gap the owner found in that build is closed; and a release ships it as the getting-started example."`
-2. Into it, with `hack/lib/github.sh milestone N "Reference app: the webshop ships"`:
-   the issues of steps 3, 4 and 6; #1072, #1161, #1162, #1163 and #1069 (the
-   deploy chain, for Kubernetes); #1150 if the webshop's Brief names an external system (step 3
-   decides). Every issue in it carries `priority/2`. #1215 and #1286 stay in the
-   1.0 milestone (an issue has one milestone); #1215 stays at 2.
-3. Every other open issue at `priority/2` that is not a `kind/bug` under
-   `templates/` goes to 4: `hack/lib/github.sh label N priority/4`, then
-   `gh issue edit N --remove-label priority/2`. Today: #1393, #1394, #1229 to
-   #1234, #1070, #1071, #1420, #1209, #1210, #1150 (unless in the milestone),
-   #1388 and #1389 if still open. Stay at 2: #1424 (carries the rule), #1112
-   and #1116 (template features with open pull requests), #1305, #1267,
-   #1266, #1249 and #1215 (template bugs). Say the lists in the handoff.
-4. Comment on #1424 with decision 2 in one paragraph, so the rule it writes
-   into ROADMAP.md and the skills says: the milestone's issues and template
-   bugs first, at 2; the rest of the goal's work at 4; refactors at 8 and 9.
+#1112 and #1116 carry the comment that their pull requests fail checks and
+that the second to land takes aws-standard v1.13.0's successor. #1379
+carries decision 4. Landing #1412 is step 0's.
 
-### Step 3: the reference Brief (relay, `kind/feature`, in the milestone)
+### Step 2: the milestone and the priorities (done)
 
-Title: "The webshop is the reference application: four Containers, a
-DataStore and a Kubernetes deploy target in config/samples/webshop". Body:
-the webshop's `story.yaml` grows to a storefront (react-vite), orders-api
+Milestone *Reference app: the webshop ships*, holding #1072, #1161, #1162,
+#1163, #1069, #1150, #1428, #1429 and #1430 at `priority/2`. Moved from 2
+to 4: #1393, #1394, #1229 to #1234, #1070, #1071, #1420, #1209, #1210.
+Stayed at 2: #1424, #1112, #1116, #1305, #1267, #1266, #1249, #1215.
+#1424 carries the narrowed rule to write into ROADMAP.md and the skills.
+
+### Step 3: the reference Brief (#1428, relay)
+
+`config/samples/webshop` grows to a storefront (react-vite), orders-api
 (python-fastapi, as today), a worker (python-cli or node-cli) and a Postgres
-DataStore (the `postgres` template), with Relationships between them, and a
-deploy to the Kind cluster through `k8s-manifests` once #1162 lands; until
-then the Brief says what it will deploy to. The Brief's words describe the
-shop a customer uses, not the stack. Done when `make validate-yaml` and
-`make check` pass with the sample, `docs/getting-started.md` names it as the
-example, and the stand-in planner's plan for the Brief lists the four
-Containers. Depends on nothing; the deploy line follows #1162 later.
+DataStore (the `postgres` template), with the Relationships between them;
+a Brief next to the model whose words describe the shop a customer uses,
+with an external payment provider; and a deploy to the Kind cluster through
+`k8s-manifests` once #1162 lands. Done when `make validate-yaml` and `make
+check` pass with it, `docs/getting-started.md` names it as the example, and
+the stand-in planner's plan lists the four Containers and the DataStore.
 
-### Step 4: build it on Kind and write down every gap (owner)
+### Step 4: the verifier session (#1429, the owner starts it)
 
-File it `kind/chore`, in the milestone, `Depends on #<step 3>`, then
-`hack/lib/github.sh status N needs-maintainer` with a comment: "Needs the
-owner at the cluster device; agents never touch a cluster." The maintainer
-sends it to the owner under *Needs you*.
+The owner's one command, from their own shell on 3st8JJ, once #1428 is
+closed and #1429 is under *Needs you*:
 
-The owner, on 3st8JJ, in their own shell with `C4_HUMAN_CLUSTER=1`:
-`hack/lib/github.sh cluster acquire --fresh --bare`, install the newest
-release as `docs/getting-started.md` says, apply the webshop Brief, let the
-Crews build it and release it (the `factory-ops` skill). They comment on the
-issue what came out: each repository's CI result, what the app does when
-run, and what is missing against what they would ship (tests, a README that
-works, migrations, auth, logging, a deploy that comes up, a storefront that
-orders). Then `hack/lib/github.sh cluster release`. Done when that comment
-exists.
+```bash
+cd ~/c4factory && C4_HUMAN_CLUSTER=1 ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
+  claude -p --permission-mode auto --model opus \
+  "You are the verifier session of docs/plans/fresh-start.md, step 4, issue #1429. Take it, do what it says, close it when its Done when holds, end."
+```
 
-### Step 5: the gaps become issues (orchestrator, or the owner's session)
+The session leases a fresh bare pool cluster, installs the newest release
+as `docs/getting-started.md` says, applies the webshop Brief, lets the
+Crews build and release it (the `factory-ops` skill), judges what came out
+against what a senior engineer would ship, files one issue per gap in the
+milestone at `priority/2` with the evidence, lists them in a comment,
+releases the cluster and closes #1429. The issue body has the detail.
 
-From the step 4 comment, one issue per gap:
-`hack/lib/github.sh create TITLE FILE status/ready kind/<bug|feature> source/dev priority/2`,
-milestone set, body quoting the evidence. A gap in a template is a template
-bug; a gap in what the Crews did is a factory issue; a gap in the Brief's
-plan is a planner issue. Done when every gap in the comment has an issue
-number next to it.
+### Step 5: the gaps (folded into step 4)
 
-### Step 6: the template scorecard (relay, `kind/docs`, in the milestone)
+### Step 6: the template scorecard (#1430, relay)
 
-`docs/templates.md`: one row per template under `templates/`: what it is
-(Standard, Framework, Connector, deploy target); whether its scaffold passes
-its own CI, has tests, lint, a README a person can follow, a deploy, logging,
-and auth where it serves users. Each cell says where the evidence is (a test
-name, a workflow). Empty cells are the gaps; each gets an issue at 2 if the
-webshop uses that template, else at 4. Done when every template has a row
+`docs/templates.md`: one row per template, one column per promise (CI
+passes, tests, lint, README, deploy, logging, auth), each filled cell naming
+its evidence, each empty cell an issue. Done when every template has a row
 and every empty cell has an issue number.
 
-### Step 7: the spec in the present tense (relay, `kind/docs`, priority/2)
+### Step 7: the spec in the present tense (#1431, relay)
 
-`docs/design.md` is rewritten as what the factory is now: the model, how it
-works, agents and Crews, Briefs, the UI, components, deploys, distribution,
-compatibility, test tiers; one section per thing, no version headings, under
-600 lines. The old file moves to `docs/design-history.md` unchanged, with
-one line at its top. Every link to a `docs/design.md` anchor still resolves
-(`grep -rn 'design.md#'` over the repo and `.claude/skills`). Over 400
-changed lines, so it needs a review pass before `land` (the `handoff` skill,
-"Review before landing"). Done when `make check` passes, the file is under
-600 lines, and `grep -c '^## v' docs/design.md` prints 0.
+`docs/design.md` rewritten as what the factory is, under 600 lines, no
+version headings; the old text to `docs/design-history.md`; every anchor
+link still resolves; a review pass before `land` (over 400 lines).
 
-### Step 8: the test environment doc (relay, `kind/docs`, priority/4)
+### Step 8: the test environment doc (#1432, relay, after #1431)
 
-`docs/dev/testenv.md` keeps the tiers, local Gitea, deploys, the relay and
-the runners; the device tuning (memory, disk and CPU on the cluster device)
-moves to `docs/dev/devices.md`, and AGENTS.md's table gets the new file.
-Done when testenv.md is under 700 lines and every link resolves. Depends on
-#<step 7>, so the two don't collide.
+The device tuning moves to `docs/dev/devices.md`; testenv.md under 700
+lines.
 
-### Step 9: plans off the path (orchestrator, a comment on #1425)
+### Step 9: plans off the path (done)
 
-#1425 already moves the four finished plans. Comment that it also moves
-`docs/plans/ci-gate.md` (once step 1 abandoned it) and
-`docs/plans/ci-runner-isolation.md` when its issues are closed or at 8 or
-lower, each with one line at the top: "Superseded 2026-10-19 by
-fresh-start.md; reopens when the reference app needs it."
-`git-host-ports.md` and `git-events.md` stay: their chains are open at 8 and
-9. `model-proxy.md` stays: it is on the 1.0 path.
+#1425 carries the two extra plans to move: `ci-gate.md` and
+`ci-runner-isolation.md`. `git-host-ports.md`, `git-events.md` and
+`model-proxy.md` stay.
 
-### Step 10: the rule in AGENTS.md (through #1424)
+### Step 10: the rules in AGENTS.md (done, through #1424 and step 0)
 
-Comment on #1424: its AGENTS.md change also adds, under "How to Work", one
-line: "No new relay, landing or CI feature until the reference-app milestone
-closes; file the idea `status/proposed` at priority/8."
+#1424 carries decision 8's line. Step 0 adds the verifier exception.
 
-### Step 11: restart the relay (orchestrator, after the checklist and #1421)
+### Step 11: the relay (step 0, item 6)
 
-1. Wait for #1421 to close: the relay's own bug, so a zero-turn exit-1
-   session pauses its device and never strikes. If the relay is not yet up
-   your next session may take it (`hack/lib/github.sh take 1421`); it is
-   priority/1.
-2. On the device the owner logged in (3st8JJ today; Skinny-vivobook once the
-   owner logs it in): `./dev run claude -p ok` answers;
-   `./dev run git var GIT_COMMITTER_IDENT` prints a name;
-   `hack/lib/github.sh claims` shows nothing stale.
-3. `RELAY_DRY_RUN=1 hack/relay.sh` shows the issue the first session would
-   get; it should be at priority/1 or in the milestone.
-4. `WATCH_MAINTAIN=86400 hack/relay-watch.sh --workers 2`, in the project
-   shell, in a terminal that stays open (`tmux`). After a day without a
-   strike from a login or identity failure,
-   `hack/relay-watch.sh --install --workers 2` keeps it up across reboots.
-   `touch .relay/stop` stops it.
-5. Say in the parent's handoff: the device, the workers, the first issue
-   picked.
+### Step 12: grow, and the first release (maintainer)
 
-### Step 12: grow, and the first release (maintainer, by the rule)
+The maintainer's sweep raises `--workers` by one, on 3st8JJ or a second
+logged-in device, only when test.yml on main has been green for three days
+and the milestone's open count fell in the last week; it lowers it on any
+strike from a login or identity failure. The first release after #1429's
+gap issues close ships the webshop as the getting-started example and names
+the milestone. #1433 (the workflow filters ci-gate left) is an ordinary
+ready chore at 4.
 
-The maintainer's sweep raises `--workers` by one, on the same device or a
-second logged-in one, only when test.yml on main has been green for three
-days and the milestone's open count fell in the last week; it lowers it on
-any strike from a login or identity failure. The first release after step
-5's issues close ships the webshop as the getting-started example and names
-the milestone.
+## The owner's part
 
-## The owner's checklist
+Three things, once. Then nothing until *Needs you* says so.
 
-Only the owner can do these (GOVERNANCE.md, "Reserved to the owner"). Each
-line says how to check it.
+1. **One commit on main, by you,** of `.claude/settings.json` as you
+   already edited it (the six added allow rules) and of GOVERNANCE.md with
+   two changes: the sentence under "Reserved to the owner" that names the
+   two allowed commands becomes *Today they allow `hack/lib/github.sh`,
+   `hack/relay.sh`, `hack/relay-watch.sh`, `hack/release.sh`, `gh issue
+   edit`, `gh pr edit` and the milestones API, which the owner gave the
+   relay and the sessions that run a binding plan; no agent widens them*;
+   and under "How decisions are made" one bullet: *A binding plan is the
+   owner's word. When the owner comments `binding` on a plan's parent
+   issue, the plan's decisions are the owner's: the maintainer and triage
+   follow them, and a session may make the calls the plan assigns it
+   without a further owner comment.* Agents cannot make this commit.
+2. **One comment on #1426**, from your account, saying `binding`.
+3. **Start the step-0 session** with the command in step 0. Later, when
+   #1429 is under *Needs you*, start the verifier session with the command
+   in step 4.
 
-1. **Keep Claude Code logged in on each relay device.** The installed watch
-   runs its sessions with `~/.claude`, the same login as VS Code; Skinny-vivobook
-   ran logged out on 2026-10-16 because that login had expired there. Install
-   the watch (`--install`) rather than starting it by hand from the project
-   shell, whose `CLAUDE_CONFIG_DIR=.dev/claude` is a separate, empty login.
-   Check: `claude -p ok` from a plain shell prints an answer, not "Not logged in".
-2. **Give git an identity on each relay device.** In a plain shell, not the
-   project shell, so it lands in `~/.gitconfig`, which both read:
-   `git config --global user.name "..."` and
-   `git config --global user.email "..."`. Check:
-   `./dev run git var GIT_COMMITTER_IDENT` prints it. Without it the relay
-   starts no worker (#1289).
-3. **Allow the orchestrator's commands in `.claude/settings.json`.** Today
-   it allows only `hack/lib/github.sh land` and `hack/release.sh`; auto mode
-   may refuse the rest, and no agent widens the list. Add to
-   `permissions.allow`:
-
-   ```json
-   "Bash(hack/lib/github.sh:*)",
-   "Bash(hack/relay-watch.sh:*)",
-   "Bash(hack/relay.sh:*)",
-   "Bash(gh issue edit:*)",
-   "Bash(gh pr edit:*)",
-   "Bash(gh api repos/JairJosafath/c4factory/milestones:*)"
-   ```
-
-   The hooks (`close-guard`, `heavy-guard`, the heartbeat) still run on every
-   call, and `github.sh`'s own refusals stay. Update the sentence in
-   GOVERNANCE.md that names the two commands; only the owner edits that
-   file. Commit both on main, or let the orchestrator carry them in step 0's
-   pull request.
-4. **Decide ci-gate on #1379** with one comment in your own account and no
-   `Agent:` line: "abandon: delete dev" or "finish". If abandon, delete the
-   branch yourself or say the orchestrator may.
-5. **Make this plan binding** with one comment on #261, the Maintainer
-   report: "docs/plans/fresh-start.md is the owner's decision; the
-   maintainer and triage follow its decisions 2 to 9 until I say
-   otherwise." Without it the maintainer may read decision 2 as reversing
-   your 2026-10-19 sweep.
-6. **Money.** Two workers on `--model opus` bill your account; starting the
-   watch is the approval. The Kind run in step 4 is yours too.
-7. **The Kind run** (step 4), when its issue reaches *Needs you*.
+Optional, whenever convenient: remove the `dev` branch (`git push origin
+--delete dev`); keep Claude Code logged in on 3st8JJ (`claude -p ok` from a
+plain shell answers); log it in on Skinny-vivobook before any relay runs
+there.
 
 ## Done when
 
-- #1412 landed and main green; ci-gate finished or abandoned, with none of
-  its issues half-built.
-- The milestone exists with its Done when, holds the webshop's path, and
-  every issue in it is at priority/2; every other issue at 2 is a template
-  bug, a template pull request or #1424.
+- This plan and #1412 landed; main green; #1388, #1389 and #1379 closed.
+- The milestone holds the webshop's path at `priority/2`; every other
+  issue at 2 is a template bug, a template pull request or #1424.
 - `config/samples/webshop` describes the four-Container webshop and passes
-  `make check`.
-- The owner built it once on Kind from the published release, and every gap
-  is an issue in the milestone.
-- `docs/templates.md` has a row per template, and every empty cell has an
-  issue.
+  `make check` (#1428).
+- The verifier session built it once on Kind from the published release and
+  every gap is an issue in the milestone (#1429).
+- `docs/templates.md` has a row per template with an issue per empty cell
+  (#1430).
 - `docs/design.md` is under 600 lines with no version headings, and
-  `docs/design-history.md` holds the old text.
-- The relay runs on one logged-in device with two workers and a daily
-  maintainer sweep, and no strike since the restart came from a login or
-  identity failure.
+  `docs/design-history.md` holds the old text (#1431); testenv.md is split
+  (#1432).
+- The relay runs on 3st8JJ with two workers under the installed watch, and
+  no strike since the restart came from a login or identity failure.
 - The first release after the milestone closes ships the webshop as the
   example in `docs/getting-started.md`.
