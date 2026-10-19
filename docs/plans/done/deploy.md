@@ -30,10 +30,10 @@ remote cluster.
   the release copy to github.com, run by the operator so the token never
   reaches agent code (`docs/plans/done/release-publishing.md`).
 - **The AWS Frameworks deploy themselves** (`deploysItself`) and nothing
-  deploys them; [aws-production.md](aws-production.md) gives each stack a
+  deploys them; [aws-production.md](../aws-production.md) gives each stack a
   tier read from the `tier` context, outputs and CloudFormation parameters,
   and leaves environments, approval and the place to #1068.
-- **The ports are decided** ([design.md](../design.md#factory-components-ports-and-adapters),
+- **The ports are decided** ([design.md](../../design.md#factory-components-ports-and-adapters),
   #1093): the Deployer is a port, its credential is the target's Secret, read
   by the operator only, and "deploys get a new kind whose targets are a union
   keyed by field name; #1068 names it and its members". `internal/ports` does
@@ -55,7 +55,7 @@ remote cluster.
      member's (`token` for `github`). It is read by the operator only and
      never mounted in a sandbox or passed to a CI job.
    - `tier`: `development` (the default) or `production`. This is the tier of
-     [aws-production.md](aws-production.md) decision 1: the AWS adapter
+     [aws-production.md](../aws-production.md) decision 1: the AWS adapter
      synthesizes nothing, it ships the template CI synthesized for that tier
      (`cdk.out/<tier>/`).
    - `approval`: `Required` or `None`. Empty means `Required` for a
@@ -243,7 +243,7 @@ remote cluster.
      `ErrArtifactMissing`. It runs against the fake and the GitHub adapter
      (on the fake GitHub server the publish tests use) in `make test`, and
      against each adapter #1071 and #1072 add.
-   - **The Ports table** row in [architecture.md](../architecture.md#ports)
+   - **The Ports table** row in [architecture.md](../../architecture.md#ports)
      names the DeployTarget's member as what picks it.
 
    If #1094 hasn't made `internal/ports` yet, step 2 makes the package with

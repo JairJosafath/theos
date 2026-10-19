@@ -184,7 +184,7 @@ const WAITING_REASONS = new Set([
   'WaitingForScaffold',
   'Scaffolding',
   'NotFound',
-  // A Container's Deployed while a deploy is on its way or held (docs/plans/deploy.md, decision 6).
+  // A Container's Deployed while a deploy is on its way or held (docs/plans/done/deploy.md, decision 6).
   'WaitingForApproval',
   'WaitingForPrevious',
   'Deploying',

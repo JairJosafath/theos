@@ -36,7 +36,7 @@ const (
 
 // DeployTargetSpec is a place Containers are shipped to: exactly one member,
 // keyed by field name, says which tool owns the place and where in it. Each
-// member is added with the adapter that ships to it (docs/plans/deploy.md).
+// member is added with the adapter that ships to it (docs/plans/done/deploy.md).
 // +kubebuilder:validation:XValidation:rule="[has(self.github)].exists_one(x, x)",message="set exactly one target member: github"
 type DeployTargetSpec struct {
 	// github ships each release as a GitHub release of a repository: its tag,

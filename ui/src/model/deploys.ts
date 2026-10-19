@@ -1,4 +1,4 @@
-// Where a Container ships and what runs there (docs/plans/deploy.md, decision
+// Where a Container ships and what runs there (docs/plans/done/deploy.md, decision
 // 6): a DeployTarget's member, tier, approval and Ready, and a Container's
 // deploys with the approval a person gives. Pure, and read only from spec and
 // status: the operator decides what ships, and the CRD and RBAC who may approve.

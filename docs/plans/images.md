@@ -1,7 +1,7 @@
 # Plan: build each Container's image on release
 
 GitHub issue #1069, filed by the owner (`source/dev`). Agent: otter-1069. It
-builds on the deploy model of [deploy.md](deploy.md) (#1068): CI builds what
+builds on the deploy model of [deploy.md](done/deploy.md) (#1068): CI builds what
 ships with no deploy credential, and the operator ships it.
 
 ## Goal

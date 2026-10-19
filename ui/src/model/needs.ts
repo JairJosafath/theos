@@ -182,7 +182,7 @@ function containerNeeds(c: Container): Need[] {
   return items
 }
 
-/** The Deployed reasons that wait on a person (docs/plans/deploy.md, decision 6). */
+/** The Deployed reasons that wait on a person (docs/plans/done/deploy.md, decision 6). */
 export const DEPLOY_HELD = ['WaitingForApproval', 'DeployFailed']
 
 /**

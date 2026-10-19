@@ -325,7 +325,7 @@ describe('needs', () => {
         place: 'Crew',
       },
     },
-    // A deploy waiting on a person (#1163, docs/plans/deploy.md decision 6).
+    // A deploy waiting on a person (#1163, docs/plans/done/deploy.md decision 6).
     {
       name: 'a Container whose prod deploy waits for approval',
       input: input({
