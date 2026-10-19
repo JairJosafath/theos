@@ -63,8 +63,6 @@ export interface JobStackProps extends StackProps {
   readonly tier: Tier;
   /** What the Container promises whatever the tier: `OPERATIONS`. */
   readonly operations: Operations;
-  /** The tag, key and value, every resource of the stack carries: what its backups select. */
-  readonly backupTag: readonly [string, string];
 }
 
 /**
@@ -290,7 +288,8 @@ export class JobStack extends Stack {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tag: props.backupTag,
+        // The data tables, by ARN; the idempotency records expire and need no restore.
+        tables: [table],
       });
     }
 

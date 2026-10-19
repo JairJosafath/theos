@@ -1,0 +1,539 @@
+# aws-standard v1.17.0 and the AWS Frameworks' backup selections (issue #1267), on 2026-10-19, Node v24.22.0, go1.26.9, golangci-lint 2.13.1.
+# Each copy: go run ./hack/render -out $TMPDIR/<scratch>/<name> -type <type> -container <name> Framework=<framework> Standard=aws-standard [Connector=dynamodb]
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email), committed to a fresh git repository, then
+# env -i PATH=... HOME=$TMPDIR/<scratch>/home NO_COLOR=1 make check   (no AWS variables). Bundling and download lines are cut.
+
+## 1. aws-lambda-ts v1.3.0, with the dynamodb Connector (its table is backed up with Items): make check passes
+
+Rendered 48 files from aws-lambda-ts@local, aws-standard@local, dynamodb@local into $TMPDIR/<scratch>/lambda-ts
+npm ci --no-audit --no-fund
+added 178 packages in 1m
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/lambda-ts
+ ✓ src/items.test.ts (25 tests) 23ms
+ ✓ src/api.test.ts (8 tests) 39ms
+ ✓ src/item_store.test.ts (4 tests) 15ms
+ ✓ src/once.test.ts (7 tests) 30ms
+ ✓ infra/connector_dynamodb.test.ts (3 tests) 10821ms
+   ✓ connectDynamoDB (3)
+     ✓ keeps an on-demand table keyed by pk and sk, kept and recoverable in production 10524ms
+ ✓ infra/standard.test.ts (75 tests) 29072ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 779ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 643ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 438ms
+ ✓ infra/api_stack.test.ts (16 tests) 34018ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 3111ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1884ms
+     ✓ copies the backups to the vault in copyToRegion 1206ms
+   ✓ ApiStack data stores (2)
+     ✓ connects the function to each Connector's data store and alarms on its table 1530ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 1353ms
+ Test Files  7 passed (7)
+      Tests  138 passed (138)
+   Start at  23:49:13
+   Duration  38.36s (tests 82%, import 11%, transform 7%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+lambda-ts exit 0
+
+## 2. aws-lambda-py v1.2.0: make check passes
+
+Rendered 52 files from aws-lambda-py@local, aws-standard@local into $TMPDIR/<scratch>/lambda-py
+npm ci --no-audit --no-fund
+added 141 packages in 15s
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 26 packages in 1ms
+Installed 24 packages in 772ms
+ + ast-serialize==0.13.0
+ + aws-lambda-powertools==3.36.0
+ + boto3==1.43.112
+ + botocore==1.43.112
+ + botocore-stubs==1.43.112
+ + iniconfig==2.3.1
+ + jmespath==1.1.0
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + python-dateutil==2.9.0.post0
+ + ruff==0.16.10
+ + s3transfer==0.19.2
+ + six==1.17.0
+ + types-boto3==1.43.112
+ + types-boto3-dynamodb==1.43.106
+ + types-s3transfer==0.19.2
+ + typing-extensions==4.16.0
+ + urllib3==2.8.0
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: $TMPDIR/<scratch>/lambda-py
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+============================== 63 passed in 1.55s ==============================
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/lambda-py
+ ✓ infra/api_stack.test.ts (14 tests) 15840ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 1749ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1428ms
+     ✓ copies the backups to the vault in copyToRegion 1684ms
+ ✓ infra/standard.test.ts (75 tests) 16540ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 1255ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 836ms
+ Test Files  2 passed (2)
+      Tests  89 passed (89)
+   Start at  23:51:33
+   Duration  21.75s (tests 77%, import 21%, transform 2%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+lambda-py exit 0
+
+## 3. aws-lambda-go v1.2.0: make check passes
+
+Rendered 47 files from aws-lambda-go@local, aws-standard@local into $TMPDIR/<scratch>/lambda-go
+npm ci --no-audit --no-fund
+added 141 packages in 19s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/lambda-go	1.376s
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/lambda-go
+ ✓ infra/standard.test.ts (75 tests) 50889ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 317ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 305ms
+ ✓ infra/api_stack.test.ts (15 tests) 52657ms
+   ✓ ApiStack (13)
+     ✓ defaults the alert email to alerts.email 1599ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 945ms
+     ✓ copies the backups to the vault in copyToRegion 980ms
+ Test Files  2 passed (2)
+      Tests  90 passed (90)
+   Start at  23:54:37
+   Duration  59.68s (tests 89%, import 8%, transform 3%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+lambda-go exit 0
+
+## 4. aws-queue-ts v1.1.0: make check passes
+
+Rendered 45 files from aws-queue-ts@local, aws-standard@local into $TMPDIR/<scratch>/queue-ts
+npm ci --no-audit --no-fund
+added 180 packages in 13s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/queue-ts
+ ✓ src/items.test.ts (26 tests) 17ms
+ ✓ src/consume.test.ts (9 tests) 26ms
+ ✓ src/batch.test.ts (3 tests) 18ms
+ ✓ src/item_store.test.ts (1 test) 5ms
+ ✓ infra/standard.test.ts (75 tests) 5329ms
+ ✓ infra/queue_stack.test.ts (16 tests) 6616ms
+   ✓ QueueStack (14)
+     ✓ defaults the alert email to alerts.email 802ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1031ms
+     ✓ copies the backups to the vault in copyToRegion 859ms
+ Test Files  6 passed (6)
+      Tests  130 passed (130)
+   Start at  23:56:39
+   Duration  8.26s (tests 77%, import 17%, transform 5%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+queue-ts exit 0
+
+## 5. aws-schedule-ts v1.1.0: make check passes
+
+Rendered 43 files from aws-schedule-ts@local, aws-standard@local into $TMPDIR/<scratch>/schedule-ts
+npm ci --no-audit --no-fund
+added 178 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/schedule-ts
+ ✓ src/job.test.ts (8 tests) 17ms
+ ✓ src/runs.test.ts (21 tests) 19ms
+ ✓ src/run_store.test.ts (1 test) 7ms
+ ✓ infra/standard.test.ts (75 tests) 4003ms
+ ✓ infra/job_stack.test.ts (17 tests) 4761ms
+   ✓ JobStack (15)
+     ✓ defaults the alert email to alerts.email 816ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 570ms
+     ✓ copies the backups to the vault in copyToRegion 526ms
+ Test Files  5 passed (5)
+      Tests  122 passed (122)
+   Start at  23:57:26
+   Duration  6.15s (tests 73%, import 20%, transform 8%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+schedule-ts exit 0
+
+## 6. aws-fargate-ts v1.2.0: make check passes
+
+Rendered 50 files from aws-fargate-ts@local, aws-standard@local into $TMPDIR/<scratch>/fargate-ts
+npm ci --no-audit --no-fund
+added 194 packages in 11s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/fargate-ts
+ ✓ src/items.test.ts (25 tests) 15ms
+ ✓ src/api.test.ts (12 tests) 19ms
+ ✓ src/server.test.ts (8 tests) 37ms
+ ✓ src/item_store.test.ts (4 tests) 10ms
+ ✓ src/tracing.test.ts (4 tests) 13ms
+ ✓ infra/service_stack.test.ts (26 tests) 2643ms
+ ✓ infra/standard.test.ts (75 tests) 3092ms
+ Test Files  7 passed (7)
+      Tests  154 passed (154)
+   Start at  23:58:13
+   Duration  4.49s (tests 63%, import 27%, transform 9%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+fargate-ts exit 0
+
+## 7. aws-event-ts v1.1.0: make check passes
+
+Rendered 43 files from aws-event-ts@local, aws-standard@local into $TMPDIR/<scratch>/event-ts
+npm ci --no-audit --no-fund
+added 178 packages in 8s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/event-ts
+ ✓ src/items.test.ts (36 tests) 14ms
+ ✓ src/consume.test.ts (12 tests) 15ms
+ ✓ src/item_store.test.ts (1 test) 6ms
+ ✓ infra/standard.test.ts (75 tests) 4056ms
+ ✓ infra/event_stack.test.ts (17 tests) 4774ms
+   ✓ EventStack (15)
+     ✓ defaults the alert email to alerts.email 666ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 653ms
+     ✓ copies the backups to the vault in copyToRegion 498ms
+ Test Files  5 passed (5)
+      Tests  141 passed (141)
+   Start at  23:58:54
+   Duration  6.06s (tests 74%, import 18%, transform 7%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+event-ts exit 0
+
+## 8. aws-ec2-ts v1.1.0 (unchanged), against the new Standard: make check passes
+
+Rendered 47 files from aws-ec2-ts@local, aws-standard@local into $TMPDIR/<scratch>/ec2-ts
+npm ci --no-audit --no-fund
+added 172 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/ec2-ts
+ ✓ src/items.test.ts (25 tests) 13ms
+ ✓ src/api.test.ts (13 tests) 15ms
+ ✓ src/server.test.ts (6 tests) 62ms
+ ✓ src/item_store.test.ts (4 tests) 10ms
+ ✓ infra/service_stack.test.ts (22 tests) 2769ms
+   ✓ ServiceStack (16)
+     ✓ keeps only point-in-time recovery when retentionDays is 0 359ms
+ ✓ infra/standard.test.ts (75 tests) 3056ms
+ Test Files  6 passed (6)
+      Tests  145 passed (145)
+   Start at  23:59:37
+   Duration  4.26s (tests 69%, import 23%, transform 7%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VE
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+ec2-ts exit 0
+
+## 9. aws-lambda-ts v1.3.0 with infra/backups.ts's selection put back to the tag alone: make check fails
+# sed: props.tables.map((table) => BackupResource.fromArn(table.tableArn)) -> [BackupResource.fromTag('c4factory:container', 'tagged')]
+
+Rendered 46 files from aws-lambda-ts@local, aws-standard@local into $TMPDIR/<scratch>/tagged
+85:      resources: [BackupResource.fromTag('c4factory:container', 'tagged')],
+npm ci --no-audit --no-fund
+added 178 packages in 9s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $TMPDIR/<scratch>/tagged
+ ✓ src/api.test.ts (8 tests) 14ms
+ ✓ src/items.test.ts (25 tests) 15ms
+ ✓ src/once.test.ts (7 tests) 13ms
+ ✓ src/item_store.test.ts (4 tests) 8ms
+ ❯ infra/standard.test.ts (75 tests | 1 failed) 3330ms
+   ✓ a backup selection (7)
+     ✓ that names the stack's data table has the faults it lists 5ms
+     ✓ that names the idempotency table too has the faults it lists 1ms
+     ✓ that selects the Container's tag alone, which the development stack's tables carry too (#1267) has the faults it lists 1ms
+     ✓ that takes every resource with the tag by a condition (#1267) has the faults it lists 1ms
+     ✓ that names the development stack's tables by an ARN written out (#1267) has the faults it lists 1ms
+     ✓ that leaves the data table out has the faults it lists 0ms
+     ✓ that leaves out a data table whose items expire has a fault: it still holds data 0ms
+   ✓ the tier (3)
+     ✓ is development when the app names none 1ms
+     ✓ is the one the tier context names 1ms
+     ✓ refuses a tier it does not know 2ms
+   ✓ the Standard, in production (12)
+     ✓ has at least one stack 0ms
+     ✓ leaves no error or warning on any stack 123ms
+     ✓ tags every stack with its project, system and container 1ms
+     ✓ tags every resource that takes a list of tags 2ms
+     ✓ grants no IAM action with a wildcard service or action 2ms
+     ✓ encrypts every table, bucket, queue and topic at rest 1ms
+     ✓ keeps every log group for a set time, and gives every function one 1ms
+     ✓ delivers again only the messages that failed, from every queue a function consumes 0ms
+     ✓ retries every schedule’s target, sends what it could not deliver to a dead-letter queue, and keeps it in a group of its stack 1ms
+     ✓ retries every rule’s Lambda target and sends what it could not deliver to a dead-letter queue 1ms
+     ✓ says what happens to the data of every stateful resource when it is removed 1ms
+     ✓ protects every stack from termination where the tier keeps data 0ms
+   ✓ the Standard, in development (12)
+     ✓ has at least one stack 0ms
+     ✓ leaves no error or warning on any stack 125ms
+     ✓ tags every stack with its project, system and container 0ms
+     ✓ tags every resource that takes a list of tags 1ms
+     ✓ grants no IAM action with a wildcard service or action 0ms
+     ✓ encrypts every table, bucket, queue and topic at rest 0ms
+     ✓ keeps every log group for a set time, and gives every function one 0ms
+     ✓ delivers again only the messages that failed, from every queue a function consumes 0ms
+     ✓ retries every schedule’s target, sends what it could not deliver to a dead-letter queue, and keeps it in a group of its stack 0ms
+     ✓ retries every rule’s Lambda target and sends what it could not deliver to a dead-letter queue 0ms
+     ✓ says what happens to the data of every stateful resource when it is removed 0ms
+     ✓ protects every stack from termination where the tier keeps data 0ms
+   ❯ what infra/operations.ts promises, in production (18)
+     ✓ the stack names (1)
+       ✓ name every stack for the tier, so a deploy without one never changes production's 0ms
+     ✓ the removal policies (1)
+       ✓ keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them 1ms
+     ✓ deletion and termination protection (1)
+       ✓ protect every table and stack where the tier keeps data, and nothing else 0ms
+     ✓ point-in-time recovery (2)
+       ✓ is on for every table in production when the RPO is under a day 0ms
+       ✓ is on for every table where the tier recovers data, and off elsewhere 0ms
+     ✓ the versions of data buckets (1)
+       ✓ are kept where the tier keeps data, the earlier ones as long as a table recovers or the backups last 0ms
+     ❯ the backup plan and vault (2)
+       × back up daily for retentionDays in a vault with its own key, copied to copyToRegion 6ms
+       ✓ leave every load balancer's log bucket out: logs, not data 0ms
+     ✓ the instances (1)
+       ✓ hold no data: their volumes go with them 0ms
+     ✓ the runbook (1)
+       ✓ restores from the copy region, when there is one 0ms
+     ✓ the alarms and topic (1)
+       ✓ alarm on every function, table, API, load balancer, target group, service, Auto Scaling group, distribution, schedule group and rule, to the one encrypted topic, with a dashboard 1ms
+     ✓ the dead-letter queues (1)
+       ✓ alarm on the first message in every dead-letter queue 0ms
+     ✓ the subscription (1)
+       ✓ emails the AlertEmail parameter, which defaults to alerts.email, only when it is set 1ms
+     ✓ tracing (3)
+       ✓ traces every function with X-Ray where the tier traces, and none elsewhere 0ms
+       ✓ traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere 0ms
+       ✓ grants no X-Ray writes where the tier does not trace 0ms
+     ✓ log retention (1)
+       ✓ keeps every log group for the tier's time 0ms
+     ✓ the two outputs (1)
+       ✓ name every serving stack's entry point and its alarm topic 1ms
+   ✓ what infra/operations.ts promises, in development (18)
+     ✓ the stack names (1)
+       ✓ name every stack for the tier, so a deploy without one never changes production's 0ms
+     ✓ the removal policies (1)
+       ✓ keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them 0ms
+     ✓ deletion and termination protection (1)
+       ✓ protect every table and stack where the tier keeps data, and nothing else 0ms
+     ✓ point-in-time recovery (2)
+       ✓ is on for every table in production when the RPO is under a day 0ms
+       ✓ is on for every table where the tier recovers data, and off elsewhere 0ms
+     ✓ the versions of data buckets (1)
+       ✓ are kept where the tier keeps data, the earlier ones as long as a table recovers or the backups last 0ms
+     ✓ the backup plan and vault (2)
+       ✓ back up daily for retentionDays in a vault with its own key, copied to copyToRegion 1ms
+       ✓ leave every load balancer's log bucket out: logs, not data 0ms
+     ✓ the instances (1)
+       ✓ hold no data: their volumes go with them 0ms
+     ✓ the runbook (1)
+       ✓ restores from the copy region, when there is one 0ms
+     ✓ the alarms and topic (1)
+       ✓ alarm on every function, table, API, load balancer, target group, service, Auto Scaling group, distribution, schedule group and rule, to the one encrypted topic, with a dashboard 1ms
+     ✓ the dead-letter queues (1)
+       ✓ alarm on the first message in every dead-letter queue 0ms
+     ✓ the subscription (1)
+       ✓ emails the AlertEmail parameter, which defaults to alerts.email, only when it is set 0ms
+     ✓ tracing (3)
+       ✓ traces every function with X-Ray where the tier traces, and none elsewhere 0ms
+       ✓ traces every task through an ADOT collector beside the app where the tier traces, and none elsewhere 0ms
+       ✓ grants no X-Ray writes where the tier does not trace 1ms
+     ✓ log retention (1)
+       ✓ keeps every log group for the tier's time 0ms
+     ✓ the two outputs (1)
+       ✓ name every serving stack's entry point and its alarm topic 0ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 61ms
+     ✓ take a dead-letter queue for an asynchronous failure destination 38ms
+     ✓ leave an email subscription without a redrive policy, and not a function’s 23ms
+     ✓ leave to AwsSolutions the rules it checks too 19ms
+     ✓ find an untraced function in production, and not in development 37ms
+ ❯ infra/api_stack.test.ts (16 tests | 2 failed) 4906ms
+   ❯ ApiStack (12)
+     ✓ keeps items and idempotency records in on-demand tables, kept and recoverable in production 8ms
+     ✓ throws the tables away with the stack in development 1ms
+     ✓ runs the handler on arm64 and the newest Node, with its limits and Powertools set 1ms
+     ✓ traces with X-Ray in production only 2ms
+     ✓ lets the handler only get and put items, keep idempotency records, and write its logs 5ms
+     ✓ routes GET and PUT /items/{id} to the handler, signed with IAM 2ms
+     ✓ logs every request and throttles the stage 1ms
+     ✓ alarms on the API, the function and both tables, in either tier 2ms
+     ✓ defaults the alert email to alerts.email 569ms
+     × backs up daily for retentionDays in production, and not at all in development 7ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 469ms
+     ✓ copies the backups to the vault in copyToRegion 437ms
+   ❯ ApiStack data stores (2)
+     × connects the function to each Connector's data store and alarms on its table 485ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 441ms
+   ✓ copyVaultName (2)
+     ✓ names the copy vault after the stack 0ms
+     ✓ keeps a long name within 50 characters, and two long names apart 1ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  infra/api_stack.test.ts > ApiStack > backs up daily for retentionDays in production, and not at all in development
+AssertionError: Template has 1 resources with type AWS::Backup::BackupSelection, but none match as expected.
+The 1 closest matches:
+BackupsPlanTables8D417F20 :: {
+  "Properties": {
+    "BackupPlanId": { "Fn::GetAtt": [ "BackupsPlanAF2A6E1B", "BackupPlanId" ] },
+    "BackupSelection": {
+      "IamRoleArn": { "Fn::GetAtt": [ "BackupsPlanTablesRole58972E9D", "Arn" ] },
+!!     Received [object Object], but key should be absent
+      "ListOfTags": [
+        { ... }
+      ],
+!!     Missing key 'Resources'
+      "Resources": undefined,
+      "SelectionName": "Tables"
+    }
+  },
+  "Type": "AWS::Backup::BackupSelection"
+}
+ ❯ Template.hasResourceProperties node_modules/aws-cdk-lib/assertions/lib/template.js:1:4243
+ ❯ infra/api_stack.test.ts:192:16
+    190|     expect([data, others]).toEqual([expect.any(String), []]);
+    191|     production.resourceCountIs('AWS::Backup::BackupSelection', 1);
+    192|     production.hasResourceProperties('AWS::Backup::BackupSelection', {
+       |                ^
+    193|       BackupSelection: Match.objectLike({
+    194|         Resources: [{ 'Fn::GetAtt': [data, 'Arn'] }],
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+ FAIL  infra/api_stack.test.ts > ApiStack data stores > connects the function to each Connector's data store and alarms on its table
+AssertionError: Template has 1 resources with type AWS::Backup::BackupSelection, but none match as expected.
+The 1 closest matches:
+BackupsPlanTables8D417F20 :: {
+  "Properties": {
+    "BackupPlanId": { "Fn::GetAtt": [ "BackupsPlanAF2A6E1B", "BackupPlanId" ] },
+    "BackupSelection": {
+      "IamRoleArn": { "Fn::GetAtt": [ "BackupsPlanTablesRole58972E9D", "Arn" ] },
+      "ListOfTags": [ { ... } ],
+!!     Missing key 'Resources'
+      "Resources": undefined,
+      "SelectionName": "Tables"
+    }
+  },
+  "Type": "AWS::Backup::BackupSelection"
+}
+ ❯ Template.hasResourceProperties node_modules/aws-cdk-lib/assertions/lib/template.js:1:4243
+ ❯ infra/api_stack.test.ts:251:14
+    249|     const tables = Object.keys(template.findResources('AWS::DynamoDB::…
+    250|     const backedUp = ['Items', 'Store'].map((name) => tables.find((id)…
+    251|     template.hasResourceProperties('AWS::Backup::BackupSelection', {
+       |              ^
+    252|       BackupSelection: Match.objectLike({
+    253|         Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] }…
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > the backup plan and vault > back up daily for retentionDays in a vault with its own key, copied to copyToRegion
+AssertionError: tagged: expected [ …(2) ] to deeply equal []
+- Expected
++ Received
+- []
++ [
++   "selects by ListOfTags, which reaches every stack of the Container",
++   "Items5C12978B is in no backup selection",
++ ]
+ ❯ infra/standard.test.ts:811:78
+    809|           const selection = only(selections, `${name}'s backup selecti…
+    810|           const backupSelection = selection.Properties?.['BackupSelect…
+    811|           expect(selectionFaults(backupSelection, tablesOf(template)),…
+       |                                                                              ^
+    812|         }
+    813|         const copyStacks = app(tier).stacks.filter((stack) =>
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+ Test Files  2 failed | 4 passed (6)
+      Tests  3 failed | 132 passed (135)
+   Start at  00:00:16
+   Duration  6.00s (tests 76%, import 17%, transform 6%)
+make: *** [Makefile:46: test] Error 1
+tagged exit 2

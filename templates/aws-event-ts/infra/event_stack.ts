@@ -261,7 +261,8 @@ export class EventStack extends Stack {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table, idempotency],
+        // The data tables, by ARN; the idempotency records expire and need no restore.
+        tables: [table],
       });
     }
 

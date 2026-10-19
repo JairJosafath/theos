@@ -199,44 +199,58 @@ function only<T>(items: readonly T[], what: string): T {
 }
 
 /**
- * The resources a backup selection names one by one, by ARN: none when it
- * takes every resource (`*`), as a selection by a tag condition does.
+ * Whether the table `id` may be left out of the backups: Powertools'
+ * idempotency table, whose records expire (TTL) and need no restore. A data
+ * table that expires some items still holds data.
  */
-function namedResources(selection: unknown): unknown[] {
-  const resources: unknown[] = isRecord(selection) ? [selection['Resources'] ?? []].flat() : [];
-  return resources.includes('*') ? [] : resources;
+function needsNoBackup(id: string, properties: unknown): boolean {
+  const ttl = isRecord(properties) ? properties['TimeToLiveSpecification'] : undefined;
+  return id.startsWith('Idempotency') && isRecord(ttl) && ttl['Enabled'] === true;
 }
 
 /**
- * Whether a backup selection takes exactly the resources carrying the tag
- * `key` = `value`: by `ListOfTags`, or by that one condition on every
- * resource (`*`), the form that can leave some out by `NotResources`.
+ * What is wrong with a backup selection in a stack whose tables are `tables`,
+ * each one's logical id and properties. It names the stack's own tables by
+ * `Fn::GetAtt` and nothing else, every one but the idempotency table among
+ * them (`needsNoBackup`). A tag
+ * (`ListOfTags`), a condition, `*` or an ARN written out reaches past the
+ * stack: its `<name>-development` stack in the same account carries the same
+ * tag and names its tables alike (#1267).
  */
-function selectsByTag(selection: unknown, key: string, value: string | undefined): boolean {
-  if (!isRecord(selection) || value === undefined) {
-    return false;
+function selectionFaults(
+  selection: unknown,
+  tables: readonly (readonly [string, unknown])[],
+): string[] {
+  if (!isRecord(selection)) {
+    return ['no BackupSelection'];
   }
-  const tags: unknown[] = [selection['ListOfTags'] ?? []].flat();
-  const conditions = selection['Conditions'];
-  const equal: unknown[] = isRecord(conditions) ? [conditions['StringEquals'] ?? []].flat() : [];
-  const [tag] = tags;
-  const [condition] = equal;
-  const byList =
-    tags.length === 1 &&
-    isRecord(tag) &&
-    tag['ConditionKey'] === key &&
-    tag['ConditionType'] === 'STRINGEQUALS' &&
-    tag['ConditionValue'] === value;
-  const byCondition =
-    tags.length === 0 &&
-    JSON.stringify(selection['Resources']) === '["*"]' &&
-    isRecord(conditions) &&
-    Object.keys(conditions).join() === 'StringEquals' &&
-    equal.length === 1 &&
-    isRecord(condition) &&
-    condition['ConditionKey'] === `aws:ResourceTag/${key}` &&
-    condition['ConditionValue'] === value;
-  return byList || byCondition;
+  const faults: string[] = [];
+  for (const key of ['ListOfTags', 'Conditions']) {
+    if (key in selection) {
+      faults.push(`selects by ${key}, which reaches every stack of the Container`);
+    }
+  }
+  const named: unknown[] = [selection['Resources'] ?? []].flat();
+  const arnOf = (id: string): string => JSON.stringify({ 'Fn::GetAtt': [id, 'Arn'] });
+  for (const resource of named) {
+    if (!tables.some(([id]) => JSON.stringify(resource) === arnOf(id))) {
+      faults.push(`${JSON.stringify(resource)} is none of the stack's tables`);
+    }
+  }
+  for (const [id, properties] of tables) {
+    if (
+      !needsNoBackup(id, properties) &&
+      !named.some((resource) => JSON.stringify(resource) === arnOf(id))
+    ) {
+      faults.push(`${id} is in no backup selection`);
+    }
+  }
+  return faults;
+}
+
+/** Each table of `template`: its logical id and properties. */
+function tablesOf(template: Template): [string, unknown][] {
+  return resourcesOf(template, 'AWS::DynamoDB::Table').map(([id, table]) => [id, table.Properties]);
 }
 
 /**
@@ -368,6 +382,79 @@ beforeAll(() => {
   for (const tier of TIERS) {
     built.set(tier, build(tier));
   }
+});
+
+// The rule a backup selection keeps, case by case: the stack's own data
+// tables by ARN, never what could reach another stack of the Container.
+describe('a backup selection', () => {
+  const expiring = { TimeToLiveSpecification: { AttributeName: 'expiration', Enabled: true } };
+  const tables = [
+    ['ItemsA1B2', {}],
+    ['IdempotencyC3D4', expiring],
+  ] as const;
+  const arn = (id: string): unknown => ({ 'Fn::GetAtt': [id, 'Arn'] });
+  const development = 'arn:aws:dynamodb:eu-west-1:123456789012:table/orders-development-Items*';
+  it.each([
+    ["names the stack's data table", { Resources: [arn('ItemsA1B2')] }, []],
+    [
+      'names the idempotency table too',
+      { Resources: [arn('ItemsA1B2'), arn('IdempotencyC3D4')] },
+      [],
+    ],
+    [
+      "selects the Container's tag alone, which the development stack's tables carry too (#1267)",
+      {
+        ListOfTags: [
+          {
+            ConditionKey: 'c4factory:container',
+            ConditionType: 'STRINGEQUALS',
+            ConditionValue: 'orders',
+          },
+        ],
+      },
+      [
+        'selects by ListOfTags, which reaches every stack of the Container',
+        'ItemsA1B2 is in no backup selection',
+      ],
+    ],
+    [
+      'takes every resource with the tag by a condition (#1267)',
+      {
+        Resources: ['*'],
+        Conditions: {
+          StringEquals: [
+            { ConditionKey: 'aws:ResourceTag/c4factory:container', ConditionValue: 'orders' },
+          ],
+        },
+      },
+      [
+        'selects by Conditions, which reaches every stack of the Container',
+        '"*" is none of the stack\'s tables',
+        'ItemsA1B2 is in no backup selection',
+      ],
+    ],
+    [
+      "names the development stack's tables by an ARN written out (#1267)",
+      { Resources: [arn('ItemsA1B2'), development] },
+      [`${JSON.stringify(development)} is none of the stack's tables`],
+    ],
+    [
+      'leaves the data table out',
+      { Resources: [arn('IdempotencyC3D4')] },
+      ['ItemsA1B2 is in no backup selection'],
+    ],
+  ])('that %s has the faults it lists', (_, selection, faults) => {
+    expect(selectionFaults(selection, tables)).toEqual(faults);
+  });
+
+  it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
+    expect(
+      selectionFaults({ Resources: [arn('IdempotencyC3D4')] }, [
+        ['ItemsA1B2', expiring],
+        ['IdempotencyC3D4', expiring],
+      ]),
+    ).toEqual(['ItemsA1B2 is in no backup selection']);
+  });
 });
 
 describe('the tier', () => {
@@ -718,40 +805,10 @@ describe.runIf(operations !== undefined).each(TIERS)(
               expect(JSON.stringify(copies), name).toContain(`:backup:${copyToRegion}:`);
             }
           }
-          // The plan backs up the stack's own tables, named by ARN, or what
-          // carries the Container's tag, which the Standard puts on every
-          // resource: as a tag (`ListOfTags`), or as a condition on every
-          // resource, which can leave some out.
+          // The plan backs up the stack's own data tables, named by ARN.
           const selection = only(selections, `${name}'s backup selections`)[1];
           const backupSelection = selection.Properties?.['BackupSelection'];
-          const named = namedResources(backupSelection);
-          if (named.length > 0) {
-            const tables = resourcesOf(template, 'AWS::DynamoDB::Table').map(([id]) => id);
-            for (const resource of named) {
-              expect(
-                tables.some((id) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`),
-                `${name}: ${JSON.stringify(resource)} is none of the stack's tables`,
-              ).toBe(true);
-            }
-            // And every table of the stack is named: a table left out
-            // would go unbacked.
-            for (const id of tables) {
-              expect(
-                named.some(
-                  (resource) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`,
-                ),
-                `${name}/${id} is in no backup selection`,
-              ).toBe(true);
-            }
-            expect(backupSelection, name).not.toHaveProperty('ListOfTags');
-            expect(backupSelection, name).not.toHaveProperty('Conditions');
-          } else {
-            const container = STANDARD_TAGS['c4factory:container'];
-            expect(
-              selectsByTag(backupSelection, 'c4factory:container', container),
-              `${name}: ${JSON.stringify(backupSelection)}`,
-            ).toBe(true);
-          }
+          expect(selectionFaults(backupSelection, tablesOf(template)), name).toEqual([]);
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -777,21 +834,13 @@ describe.runIf(operations !== undefined).each(TIERS)(
             if (!isRecord(bucket) || typeof bucket['Ref'] !== 'string') {
               continue;
             }
-            // Every resource carries the tag a selection backs up by, so a
-            // selection by tag leaves the bucket out by name; one that names
-            // its resources by ARN leaves it out by not naming it.
+            // A selection names the stack's tables only, never the bucket.
             for (const [id, selection] of selections) {
               const backupSelection = selection.Properties?.['BackupSelection'];
-              const named = namedResources(backupSelection);
-              const notResources = isRecord(backupSelection)
-                ? backupSelection['NotResources']
-                : undefined;
               expect(
-                named.length > 0
-                  ? !refersTo(JSON.stringify(named), bucket['Ref'])
-                  : refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
+                refersTo(JSON.stringify(backupSelection), bucket['Ref']),
                 `${name}/${id} selects ${balancerId}'s log bucket ${bucket['Ref']}`,
-              ).toBe(true);
+              ).toBe(false);
             }
           }
         }
@@ -799,7 +848,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the instances', () => {
-      it('hold no data: their volumes go with them, and no backup selects them by tag', () => {
+      it('hold no data: their volumes go with them', () => {
         for (const [name, template] of app(tier).templates) {
           if (!INSTANCE_TYPES.some((type) => resourcesOf(template, type).length > 0)) {
             continue;
@@ -827,15 +876,6 @@ describe.runIf(operations !== undefined).each(TIERS)(
                 expect(ebs, `${name}/${id}`).toMatchObject({ DeleteOnTermination: true });
               }
             }
-          }
-          // A tag selection, by `ListOfTags` or by a condition on every
-          // resource, would back up every instance and volume that carries
-          // the Container's tag: the plan names its tables instead.
-          for (const [id, selection] of resourcesOf(template, 'AWS::Backup::BackupSelection')) {
-            const chosen = selection.Properties?.['BackupSelection'];
-            expect(namedResources(chosen).length, `${name}/${id}`).toBeGreaterThan(0);
-            expect(chosen, `${name}/${id}`).not.toHaveProperty('ListOfTags');
-            expect(chosen, `${name}/${id}`).not.toHaveProperty('Conditions');
           }
         }
       });

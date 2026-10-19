@@ -166,7 +166,16 @@ byte for byte.
   cover damage older than 35 days only when `retentionDays` is over 35, and
   at 35 or less that they are a second copy inside point-in-time recovery's
   window; with `copyToRegion` and `retentionDays` 0 it says no copy is made;
-  and `infra/standard.test.ts` is in `protectedPaths` (#1266).
+  and `infra/standard.test.ts` is in `protectedPaths` (#1266). Since
+  v1.17.0 the test refuses a backup selection by the Container's tag, which
+  a `<name>-development` stack in the same account carries too, and takes
+  the `Idempotency` table, whose records expire, left out of it; the
+  runbook, `docs/style/aws.md` and `docs/well-architected.md` say the plan
+  names the data tables by ARN (#1267). A Container scaffolded from an
+  earlier `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`,
+  `aws-queue-ts`, `aws-schedule-ts` or `aws-fargate-ts` fails the test on
+  this update until its `infra/backups.ts` names its tables as those
+  Frameworks' new versions do: the failure is the bug.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -251,17 +260,16 @@ byte for byte.
   production with `retentionDays` over 0, in a stack holding a resource of
   `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
-  with its own key, one selection naming every one of the stack's own
-  tables by ARN and nothing else (since v1.11.0), or else of exactly what
-  carries the `c4factory:container` tag, as `ListOfTags` or as one
-  `aws:ResourceTag` condition on `*`, and a copy stack in that region; else
-  none; and no load balancer's access-log bucket in any selection's reach:
-  a selection by ARN doesn't name it, one by tag names it in
-  `NotResources`), the instances (since v1.11.0: in a stack with an Auto
-  Scaling group, a launch template or an instance, no EBS volume of its
-  own, every launch template's or instance's volume deleted with its
-  instance, and no backup selection by tag, which would back the instances
-  up), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  with its own key, one selection naming the stack's own tables by ARN
+  (`Fn::GetAtt`) and nothing else, every table but an `Idempotency` one
+  with TTL on among them, and a copy stack in that region; else none; since
+  v1.17.0 a selection by tag (`ListOfTags`), by a condition, by `*` or by
+  an ARN written out fails, as it reaches a `<name>-development` stack's
+  tables in the same account (#1267), table cases test that rule; and no
+  load balancer's access-log bucket in any selection), the instances
+  (since v1.11.0: in a stack with an Auto Scaling group, a launch template
+  or an instance, no EBS volume of its own, every launch template's or
+  instance's volume deleted with its instance), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
   `SystemErrors`, every HTTP API's `5xx`, every load balancer's

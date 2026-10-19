@@ -522,7 +522,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: aws-lambda-ts
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Serverless API on AWS (Lambda, TypeScript)
         description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
@@ -540,7 +540,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-fargate-ts
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
         description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development."
@@ -549,7 +549,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-lambda-go
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Serverless API on AWS (Lambda, Go)
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, slog's JSON logs, alarms and a dashboard, and its CDK stack in TypeScript in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
@@ -558,7 +558,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-lambda-py
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Serverless API on AWS (Lambda, Python)
         description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its TypeScript CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
@@ -576,7 +576,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
         description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
@@ -585,7 +585,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
         description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
@@ -594,7 +594,7 @@ catalog:
         deploysItself: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
         description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
@@ -649,7 +649,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.16.0
+      ref: v1.17.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."

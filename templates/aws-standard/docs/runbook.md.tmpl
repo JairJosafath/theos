@@ -203,9 +203,9 @@ with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection,{{ if $idempotency }} time to
 live (`expiration`, for the `Idempotency` table){{ end }} and the three
-`c4factory:` tags{{ if $event }}. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the tables by their ARNs, which a
+`c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names each table that holds data by its ARN, which a
 table restored under the same name in the same account and region keeps,
-so it is backed up again from the next day. {{ end }}Deploy{{ else }}, which the backup plan selects by. Deploy{{ end }} the stack again
+so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
 {{- if $queue }}
 
@@ -659,7 +659,9 @@ point-in-time recovery from the deleted table's system backup
 with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection and the
-three `c4factory:` tags, which the backup plan selects by. Deploy the stack
+three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
+table restored under the same name in the same account and region keeps,
+so it is backed up again from the next day. {{ end }}Deploy the stack
 again (`cdk deploy -c tier=production`) and check it reports no drift.
 
 ## Roll a deployment back
