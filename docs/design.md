@@ -1624,7 +1624,7 @@ the agents wrote. Each port names its Secret and who reads it:
 The owner wants each app the factory builds shipped where it runs: open-source
 code to GitHub (#1070), an AWS app to an account (#1071), a Kubernetes app to
 a cluster (#1072), with images built on release (#1069). This section is the
-model they share; [plans/deploy.md](plans/deploy.md) has the reasons and the
+model they share; [plans/done/deploy.md](plans/done/deploy.md) has the reasons and the
 steps.
 
 - **A place is a `DeployTarget`,** namespaced and shared by any number of

@@ -1,4 +1,4 @@
-// Where Containers ship (docs/plans/deploy.md, decision 6): a DeployTarget's
+// Where Containers ship (docs/plans/done/deploy.md, decision 6): a DeployTarget's
 // page (its member, tier, approval, Ready and the Containers that ship to it;
 // of its credentials only the Secret's name: the UI never reads Secrets), the
 // Project page's list of them, and the Container page's deploys, one per

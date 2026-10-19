@@ -1,5 +1,5 @@
 # Where orders-cli's releases ship to: a GitHub repository whose releases are
-# the deploys (docs/plans/deploy.md). It needs Secret orders-cli-deploy, with
+# the deploys (docs/plans/done/deploy.md). It needs Secret orders-cli-deploy, with
 # the key token, a fine-grained token for that repository alone with Contents
 # read and write, which you create yourself; Ready says whether GitHub takes
 # it. Container orders-cli names it in spec.deploy (story.yaml), and each of

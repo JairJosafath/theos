@@ -158,7 +158,7 @@ export interface Container extends K8sObject {
     checks?: ChecksMode
     /** Backups, recovery and alerts; any field left out takes its default. */
     operations?: Operations
-    /** The DeployTargets each release ships to, in order (docs/plans/deploy.md). */
+    /** The DeployTargets each release ships to, in order (docs/plans/done/deploy.md). */
     deploy?: ContainerDeploy[]
   }
   status?: {
