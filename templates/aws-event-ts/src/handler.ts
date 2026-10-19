@@ -6,7 +6,7 @@ import { Logger } from '@aws-lambda-powertools/logger';
 import { Metrics, MetricUnit } from '@aws-lambda-powertools/metrics';
 import type { Context } from 'aws-lambda';
 
-import { checkingFirst, consume, reporting } from './consume';
+import { checkingFirst, consume, counting, reporting } from './consume';
 import type { Report } from './consume';
 import { DynamoDbItemStore } from './item_store';
 
@@ -29,13 +29,18 @@ const metrics = new Metrics();
 const report: Report = {
   consumed: (event) => {
     metrics.addMetric('ConsumedEvents', MetricUnit.Count, 1);
-    logger.info('The event was consumed.', { eventId: event.id, itemId: event.item.id });
+    logger.info('The event was consumed.', {
+      eventId: event.id,
+      itemId: event.item.id,
+    });
   },
   failed: (event, error) => {
     metrics.addMetric('FailedEvents', MetricUnit.Count, 1);
-    // Only the event's id: its detail may hold user data.
-    const eventId =
+    // Only the event's id: its detail may hold user data. An id that is no
+    // string is left out, since it may be anything a caller sent.
+    const id: unknown =
       typeof event === 'object' && event !== null && 'id' in event ? event.id : undefined;
+    const eventId = typeof id === 'string' ? id : undefined;
     logger.error('The event failed; Lambda retries it.', { eventId, error });
   },
 };
@@ -50,13 +55,16 @@ const idempotency = new IdempotencyConfig({
   eventKeyJmesPath: 'id',
   expiresAfterSeconds: 24 * 60 * 60,
 });
-const consumeOnce = makeIdempotent((event: unknown) => consume(event, store), {
-  persistenceStore: new DynamoDBPersistenceLayer({
-    tableName: setting('IDEMPOTENCY_TABLE_NAME'),
-    awsSdkV3Client: dynamoDb,
-  }),
-  config: idempotency,
-});
+const consumeOnce = makeIdempotent(
+  counting((event: unknown) => consume(event, store), report),
+  {
+    persistenceStore: new DynamoDBPersistenceLayer({
+      tableName: setting('IDEMPOTENCY_TABLE_NAME'),
+      awsSdkV3Client: dynamoDb,
+    }),
+    config: idempotency,
+  },
+);
 
 /**
  * The Lambda entry point the stack names, which the rule invokes

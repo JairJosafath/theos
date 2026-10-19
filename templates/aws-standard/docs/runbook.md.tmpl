@@ -181,7 +181,9 @@ with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection,{{ if $idempotency }} time to
 live (`expiration`, for the `Idempotency` table){{ end }} and the three
-`c4factory:` tags, which the backup plan selects by. Deploy the stack again
+`c4factory:` tags{{ if $event }}. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the tables by their ARNs, which a
+table restored under the same name in the same account and region keeps,
+so it is backed up again from the next day. {{ end }}Deploy{{ else }}, which the backup plan selects by. Deploy{{ end }} the stack again
 (`{{ $deploy }}`) and check it reports no drift.
 {{- if $queue }}
 
@@ -303,8 +305,9 @@ when the rule could not invoke the function in 10 attempts within the hour.
 It waits there 14 days, then SQS deletes it.
 
 1. Read why it failed: the function's logs say
-   `The event failed; Lambda retries it.` with the event and the error,
-   three times per event. A `Malformed` error is the producer's: its
+   `The event failed; Lambda retries it.` with the event's id and the
+   error, three times per event (the event's `detail` is in the
+   dead-lettered message's body, not in the logs). A `Malformed` error is the producer's: its
    `detail` is no item, or the function was invoked by hand with something
    that is no EventBridge event; fix what it sends, and delete the message.
    Any other error is the consumer's or DynamoDB's: fix and deploy first. A

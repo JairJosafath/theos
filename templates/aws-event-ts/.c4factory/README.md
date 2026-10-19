@@ -11,12 +11,13 @@ deploys: the check synthesizes the CloudFormation offline.
   `Logger` and `Metrics` and the idempotent `consume` at module scope, reads
   `TABLE_NAME` and `IDEMPOTENCY_TABLE_NAME`, and runs each event through
   `reporting(checkingFirst(consumeOnce))`: `checkingFirst` refuses an event
-  that carries no item before it is recorded, `consumeOnce` is `consume`
-  behind Powertools' `makeIdempotent` (keyed by the EventBridge event's
-  `id`, which every retry keeps, records kept a day, so an event delivered
-  twice is stored once, and a failure keeps no record), and `reporting`
-  counts `ConsumedEvents` and `FailedEvents` with `Metrics` and logs a
-  failure, throwing again so Lambda retries the event. `consume` in
+  that carries no item before it is recorded, `consumeOnce` is
+  `counting(consume)` behind Powertools' `makeIdempotent` (keyed by the
+  EventBridge event's `id`, which every retry keeps, records kept a day, so
+  an event delivered twice is stored and counted once, and a failure keeps
+  no record), `counting` counts `ConsumedEvents` with `Metrics` and logs
+  the event's id, and `reporting` counts `FailedEvents` and logs a failure
+  with the event's id alone, throwing again so Lambda retries the event. `consume` in
   `src/consume.ts` checks the event with `checkEvent` and stores the item
   of its `detail`, where a Container's own work goes, and throws `Malformed`
   for an event that carries none. `src/items.ts` holds the rules (an
@@ -37,14 +38,16 @@ deploys: the check synthesizes the CloudFormation offline.
   Tier): Stack[]`, which adds one stack named after the package (the
   Container, and `<name>-development` in development, the Standard's
   `stackNameFor`), `infra/event_stack.ts`, built for the tier with the
-  Standard's `TIER_RULES` and the package's name as the events' `source`,
+  Standard's `TIER_RULES` and the stack's name as the events' `source` (the
+  Container's, `<name>-development` in development, so a development stack
+  never takes production's events),
   and in production with `copyToRegion` and backups set a second,
   `<name>-backup-copy` in that region (`infra/backups.ts`'s
   `BackupCopyStack`, as `aws-lambda-ts` has it), which the first depends on.
   The stack has one EventBridge rule, `Events`, on the account's default
   event bus, where a rule's `Ref` is its name and so the `RuleName` of its
   metrics (on a custom bus it is `bus|rule`); its pattern is
-  `eventPatternFor(source)`, `{"source": [<the Container>], "detail-type":
+  `eventPatternFor(source)`, `{"source": [<the stack's name>], "detail-type":
   ["ItemSubmitted"]}`. Its target is the function, with a retry policy (10
   attempts within an hour) and the dead-letter queue; CDK's target adds the
   function's resource policy for `events.amazonaws.com` with the rule's ARN

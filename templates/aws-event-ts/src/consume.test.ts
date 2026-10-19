@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkingFirst, consume, eventOf, itemOf, Malformed, reporting } from './consume';
+import { checkingFirst, consume, counting, eventOf, itemOf, Malformed, reporting } from './consume';
 import type { Report } from './consume';
 import type { Item, ItemEvent } from './items';
 import type { ItemStore } from './item_store';
@@ -108,13 +108,53 @@ describe('checkingFirst', () => {
   });
 });
 
-describe('reporting', () => {
+describe('counting', () => {
   it('reports a consumed event', async () => {
+    const recorder = new Recorder();
+
+    await counting(() => Promise.resolve(), recorder)(LAMP);
+
+    expect(recorder.lines).toEqual(['consumed e1: i1']);
+  });
+
+  it('reports nothing when the work throws, and throws its error on', async () => {
+    const recorder = new Recorder();
+    const work = counting(() => Promise.reject(new Error('throttled')), recorder);
+
+    await expect(work(LAMP)).rejects.toThrow('throttled');
+    expect(recorder.lines).toEqual([]);
+  });
+
+  it('counts a redelivered event once when the record answers it', async () => {
+    // A stand-in for Powertools' Idempotency: the second delivery of an id
+    // returns the stored result without running the work.
+    const recorder = new Recorder();
+    const seen = new Set<string>();
+    const once =
+      (work: (event: unknown) => Promise<void>) =>
+      async (event: unknown): Promise<void> => {
+        const id = eventOf(event).id;
+        if (!seen.has(id)) {
+          await work(event);
+          seen.add(id);
+        }
+      };
+    const work = reporting(once(counting(() => Promise.resolve(), recorder)), recorder);
+
+    await work(LAMP);
+    await work(LAMP);
+
+    expect(recorder.lines).toEqual(['consumed e1: i1']);
+  });
+});
+
+describe('reporting', () => {
+  it('reports nothing for an event that was consumed', async () => {
     const recorder = new Recorder();
 
     await reporting(() => Promise.resolve(), recorder)(LAMP);
 
-    expect(recorder.lines).toEqual(['consumed e1: i1']);
+    expect(recorder.lines).toEqual([]);
   });
 
   it('reports a failed event and throws its error on', async () => {

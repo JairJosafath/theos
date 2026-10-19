@@ -63,8 +63,20 @@ export function checkingFirst(work: Work): Work {
   };
 }
 
-/** `work`, telling `report` how each event went, and throwing on what it throws. */
-export function reporting(work: Work, report: Report): Work {
+/**
+ * `work`, telling `report` of each event it consumed. The handler runs it
+ * inside the idempotent wrapper, so an event delivered again, which its
+ * record answers without running the work, is not counted twice.
+ */
+export function counting(work: Work, report: Pick<Report, 'consumed'>): Work {
+  return async (event) => {
+    await work(event);
+    report.consumed(eventOf(event));
+  };
+}
+
+/** `work`, telling `report` of each event that failed, and throwing on what it throws. */
+export function reporting(work: Work, report: Pick<Report, 'failed'>): Work {
   return async (event) => {
     try {
       await work(event);
@@ -72,6 +84,5 @@ export function reporting(work: Work, report: Report): Work {
       report.failed(event, error);
       throw error;
     }
-    report.consumed(eventOf(event));
   };
 }
