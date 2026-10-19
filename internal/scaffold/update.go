@@ -314,3 +314,21 @@ func joinAnd(items []string) string {
 	}
 	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
+
+// trailerOperations marks the operator's commit that renders infra/operations.ts
+// again from a changed spec.operations, as the block it renders.
+const trailerOperations = "Operations-Update"
+
+// OperationsMessage is the message of the commit that renders in's
+// infra/operations.ts again from in.Operations, a block changed from from.
+func OperationsMessage(in Input, from model.Operations) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n", model.OperationsUpdateTitle())
+	fmt.Fprintf(&b, "The factory rendered %s again from the spec.operations of Container %s; no other file "+
+		"changes.\nFrom: %s.\nTo: %s.\n", model.OperationsFile, in.Container, model.OperationsSummary(from),
+		model.OperationsSummary(in.Operations))
+	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
+	fmt.Fprintf(&b, "%s: %s\n", trailerOperations, strings.TrimPrefix(model.OperationsUpdateBranch(in.Operations),
+		"operations-update/"))
+	return b.String()
+}

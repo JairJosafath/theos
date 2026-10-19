@@ -927,9 +927,12 @@ model and context it needs.
   The block renders into `infra/operations.ts`, which the stacks read and
   the Standard's test enforces; a change to the block reaches the
   repository by a pull request the operator opens and merges, as a Standard
-  bump does. The Container's `OperationsApplied` says whether it has: until
-  that pull request exists (the plan's step 12), a change after the
-  scaffold leaves it False, reason `ChangedAfterScaffold`. What the block
+  bump does: the operator renders the Framework at its scaffolded ref with
+  the new block, writes only `infra/operations.ts`, and records the pull
+  request in `status.operationsUpdate`. The Container's `OperationsApplied`
+  says whether it has: False, `Updating`, while CI runs, and True,
+  `UpdateMerged`, naming the merged commit; a Framework that renders no such
+  file leaves it False, reason `ChangedAfterScaffold`. What the block
   leaves out, `internal/model` fills in (35 days, `1h`, `4h`), never CRD
   defaulting, so the Container reads back as it was written. Deploy-time values (an alert email, a certificate) are
   CloudFormation parameters a deploy target overrides. Every AWS
@@ -1774,6 +1777,8 @@ The webshop sample uses the smallest set of seeded templates that exercises ever
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
 - `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
 - `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
+
+An AWS data store is a DataStore too. The `dynamodb` Connector writes `infra/connector_dynamodb.ts`, which adds a DynamoDB table to the CDK stack of a Container on an AWS Framework, grants the function the item calls and hands it the table's name. The table follows the tier like the Framework's own tables: in production it is kept, deletion-protected, has point-in-time recovery and is picked up by the stack's backup plan. A Framework wires the Connectors it knows in its `infra/connectors.ts`, rendered from the Connector list; `aws-lambda-ts` does.
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 

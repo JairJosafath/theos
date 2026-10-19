@@ -2,6 +2,7 @@ python-fastapi v1.3.0
 small v1.1.0
 k8s-manifests v1.2.1
 postgres v1.1.0
+dynamodb v1.0.0
 go-cli v1.0.0
 go-kubebuilder v1.0.1
 go-standard v1.3.0
@@ -11,7 +12,7 @@ react-vite v1.0.0
 node-cli v1.0.0
 python-cli v1.0.0
 ts-standard v1.5.0
-aws-lambda-ts v1.1.0
+aws-lambda-ts v1.2.0
 aws-ec2-ts v1.1.0
 aws-event-ts v1.0.0
 aws-fargate-ts v1.1.0

@@ -481,7 +481,14 @@ case $(cat "$FAKE") in
   oauth-ok) echo '{"is_error":false,"result":"fixed the failed to authenticate matcher","num_turns":9}' ;;
   oauth-quoted) echo '{"is_error":false,"result":"stopped: the Gitea call said failed to authenticate","num_turns":9}'; exit 1 ;;
   oauth-noturn) echo '{"is_error":false,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
+  login-result) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":0,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-quoted) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":9,"duration_api_ms":81234,"result":"stopped: the CLI said Not logged in · Please run /login"}'; exit 1 ;;
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
+  login-trust) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":0,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-api) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":312,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-nodur) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"Not logged in · Please run /login\n"}'; exit 1 ;;
+  login-account) echo '{"is_error":false,"num_turns":9,"duration_api_ms":81234,"result":"Not logged in to Gitea, so I stopped.\nThe CLI said: please run /login"}'; exit 1 ;;
+  noapi) echo 'Error: could not start' >&2; echo '{"is_error":false,"num_turns":0,"result":"Error: could not start"}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   stray) echo x >"$MAIN/stray"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"strayed","num_turns":1}' ;;
   env) env >"$FAKE.env"; (cd - >/dev/null && pwd) >"$FAKE.cd"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
@@ -623,11 +630,66 @@ LIMIT_WAIT=10m work
 check "oauth-noturn: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
 check "oauth-noturn: not counted" "$(counted)" 0
 rm -f "$DIR/paused-until"
+# #1396: the CLI's login error as the result of a session that exited 1 after
+# a turn, is_error false, pauses too: no API call ran (duration_api_ms 0), so
+# the words are the CLI's.
+echo login-result >"$FAKE"
+LIMIT_WAIT=10m work
+check "login-result #1396: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "login-result #1396: not counted" "$(counted)" 0
+check "login-result #1396: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
+rm -f "$DIR/paused-until"
+# One whose API calls ran and whose final message quotes it pauses nothing (#655).
+echo login-quoted >"$FAKE"
+work
+check "login-quoted #1396: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "login-quoted #1396: counted" "$(counted)" 1
+no_strikes
 # So does the CLI's login error on stderr of a session that exited non-zero.
 echo login-err >"$FAKE"
 LIMIT_WAIT=10m work
 check "login-err: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
 check "login-err: not counted" "$(counted)" 0
+rm -f "$DIR/paused-until"
+# #1396 follow-up (#1421): on Skinny-vivobook the CLI's login error still
+# struck issues after #1396's fix: exit 1 after 0m, an account that is only
+# the CLI's line, and the trust warning on stderr. limit_message matched the
+# result, but grep -m1 then closed the pipe on the tail of stderr, and under
+# pipefail the SIGPIPE made the match a miss. And a result that is one line
+# starting with a limit's words is the CLI's, whatever is_error, num_turns and
+# duration_api_ms say.
+for shape in login-trust login-api login-nodur; do
+  echo "$shape" >"$FAKE"
+  LIMIT_WAIT=10m work
+  check "$shape #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+  check "$shape #1396 follow-up: not counted" "$(counted)" 0
+  check "$shape #1396 follow-up: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
+  rm -f "$DIR/paused-until"
+done
+# An account of the agent's own that only starts with the words, on more
+# lines, after API calls, still pauses nothing (#655).
+echo login-account >"$FAKE"
+work
+check "login-account #1396 follow-up: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "login-account #1396 follow-up: counted" "$(counted)" 1
+no_strikes
+# A session that exits non-zero before any API call failed on the device, not
+# on its issue, whatever the CLI said (#1421): it pauses and strikes nothing,
+# and the release says so; so does one that wrote no result in its first minute.
+echo noapi >"$FAKE"
+LIMIT_WAIT=10m work
+check "noapi #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "noapi #1396 follow-up: not counted" "$(counted)" 0
+check "noapi #1396 follow-up: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: no API call)"
+grep -q "paused the relay until .*: no API call: the session exited 1 before any API call: Error: could not start" "$LOG"
+check "noapi #1396 follow-up: logged" $? 0
+rm -f "$DIR/paused-until"
+echo crash >"$FAKE"
+LIMIT_WAIT=10m work
+check "crash #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "crash #1396 follow-up: not counted" "$(counted)" 0
+grep -q "paused the relay until .*: no API call: the session exited 1 before any API call: crashed" "$LOG"
+check "crash #1396 follow-up: logged" $? 0
 rm -f "$DIR/paused-until"
 
 # A relay started from a Claude Code session in VS Code gives its sessions none

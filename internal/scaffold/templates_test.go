@@ -80,6 +80,11 @@ var templateCombos = []struct {
 		{model.SideFramework, "aws-lambda-ts"},
 		{model.SideStandard, "aws-standard"},
 	}},
+	{"aws lambda function with dynamodb", "function", []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws ec2 service", "service", []side{
 		{model.SideFramework, "aws-ec2-ts"},
 		{model.SideStandard, "aws-standard"},

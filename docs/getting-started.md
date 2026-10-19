@@ -729,10 +729,15 @@ states, and never a tier. The Container's page shows the block.
 
 The block renders into the repository when the Container is scaffolded, and
 its `OperationsApplied` condition is True. Change it afterwards and the
-condition turns False, reason `ChangedAfterScaffold`: the factory doesn't
-carry the change to the repository yet, so file an issue in the app that
-changes `infra/operations.ts`. Only the AWS templates read the block, from
-their next releases on.
+operator renders `infra/operations.ts` again from the new block, opens a
+pull request with that file alone, and merges it once CI passes:
+`OperationsApplied` is False, reason `Updating`, with the pull request's
+address while CI runs, then True, reason `UpdateMerged`, naming the commit.
+Failed CI leaves it False, reason `ChecksFailed`, with the pull request;
+re-run CI and it merges. A Framework that renders no `infra/operations.ts`
+leaves it False, reason `ChangedAfterScaffold`: file an issue in the app
+that changes the file. Only the AWS templates read the block, from their
+next releases on.
 
 ## Upgrading
 

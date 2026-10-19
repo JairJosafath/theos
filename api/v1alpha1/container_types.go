@@ -67,8 +67,10 @@ type ContainerSpec struct {
 	// long its backups are kept and where they are copied, its recovery
 	// objectives and who its alarms tell. The tier itself is the deploy
 	// target's, never the Container's. A field left out takes the factory's
-	// default; a change after the scaffold shows on the condition
-	// OperationsApplied.
+	// default. A change after the scaffold reaches the repository's
+	// infra/operations.ts through a pull request the operator opens and
+	// merges, as a Standard bump does; the condition OperationsApplied says
+	// where it stands.
 	// +optional
 	Operations *OperationsSpec `json:"operations,omitempty"`
 }
@@ -312,6 +314,44 @@ type StandardUpdateStatus struct {
 	Stopped string `json:"stopped,omitempty"`
 }
 
+// OperationsUpdateStatus is one operations update: a pull request the operator
+// opened that renders infra/operations.ts again from spec.operations, and
+// nothing else.
+type OperationsUpdateStatus struct {
+	// operations is the block the pull request renders, every field set as
+	// status.operations records it.
+	// +required
+	Operations *OperationsSpec `json:"operations"`
+
+	// branch is the update's branch, and commit the one commit on it.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// pullRequest is the number of the update's pull request, and pullRequestURL
+	// its address. Both are empty when main already held the file as the block
+	// renders it.
+	// +optional
+	PullRequest int32 `json:"pullRequest,omitempty"`
+
+	// +optional
+	PullRequestURL string `json:"pullRequestURL,omitempty"`
+
+	// stopped is why the update stopped without merging, such as UpdateClosed,
+	// UpdateRefused or Failed; a stopped update waits for spec.operations to
+	// change again.
+	// +optional
+	Stopped string `json:"stopped,omitempty"`
+
+	// mergeCommit is the commit on main that holds the block: the one the
+	// pull request's merge made, or main's head when main already held it.
+	// It is set once the update merged.
+	// +optional
+	MergeCommit string `json:"mergeCommit,omitempty"`
+}
+
 // ContainerStatus defines the observed state of Container.
 type ContainerStatus struct {
 	// phase is Pending, Scaffolding, then Ready or Failed.
@@ -351,11 +391,20 @@ type ContainerStatus struct {
 	// +optional
 	Standard *ContainerStandardStatus `json:"standard,omitempty"`
 
-	// operations is the operations block the scaffold rendered with, its
-	// defaults filled in. OperationsApplied compares spec.operations to it. A
-	// Container scaffolded before this was kept has none.
+	// operations is the operations block the repository's
+	// infra/operations.ts was last rendered with, its defaults filled in: at
+	// the scaffold, then by each operations update that merged.
+	// OperationsApplied compares spec.operations to it. A Container scaffolded
+	// before this was kept has none.
 	// +optional
 	Operations *OperationsSpec `json:"operations,omitempty"`
+
+	// operationsUpdate is the pull request the operator opened to render
+	// infra/operations.ts again from a changed spec.operations: in flight,
+	// stopped, or merged. A merged one stays, naming the commit it made, until
+	// the next change replaces it.
+	// +optional
+	OperationsUpdate *OperationsUpdateStatus `json:"operationsUpdate,omitempty"`
 
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional

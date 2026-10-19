@@ -243,7 +243,10 @@ jobs:
       # The pull secret covers the chart's pods; the agent images run in
       # Sandboxes outside the chart, so they are loaded (dist/chart/README.md,
       # "Private images"), both releases' for the upgrade. Each one leaves
-      # Docker once Kind has it, for disk.
+      # Docker once Kind has it, for disk. hack/load-images.sh is the guide's
+      # (the dispatched ref's): the installed release's tree may not have it.
+      # It tries a failed pull again, as a runner's containerd can lose a
+      # snapshot mid-extract (#1408).
       - name: Pull the release's images
         env:
           TOKEN: ${{ github.token }}
@@ -258,13 +261,11 @@ jobs:
           done
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+          images=()
           for version in $(printf '%s\n' "$FROM_VERSION" "$VERSION" | sort -u); do
-            for name in agent-base agent-go; do
-              docker pull "$REGISTRY/$name:$version"
-              kind load docker-image --name "$KIND_CLUSTER_NAME" "$REGISTRY/$name:$version"
-              docker rmi "$REGISTRY/$name:$version"
-            done
+            images+=("$REGISTRY/agent-base:$version" "$REGISTRY/agent-go:$version")
           done
+          guide/hack/load-images.sh "$KIND_CLUSTER_NAME" "${images[@]}"
           df -h /
 
       - name: Install the chart

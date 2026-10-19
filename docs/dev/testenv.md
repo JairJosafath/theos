@@ -418,7 +418,9 @@ it. A handoff that couldn't reach GitHub waits in the worktree's
 `.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
 A session that ends on a usage limit or a failed login pauses the relay until
 the limit resets (`.relay/paused-until`): every worker waits, and the watch
-starts nothing. Its claim's comment then names the limit and keeps its host,
+starts nothing. So does one that exits non-zero before any API call, whatever
+the CLI said (`a limit: no API call`, `RELAY_LIMIT_WAIT`): that is the device
+failing, not the issue (#1421). Its claim's comment then names the limit and keeps its host,
 as every released or expired claim does: `released this issue: session ended
 without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
 (45m) is ended and counts as failed. A session that ends without a handoff and
@@ -570,9 +572,11 @@ other while the outage lasts, even after the issue is closed as a duplicate.
 A flaky spec rarely fails twice in a row, so in the same round the watch
 records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
 run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time, and files `Flaky: <spec>`, a ready `kind/bug` with `priority/3`,
-when one failed in two runs within `WATCH_FLAKE_DAYS` days (7);
-while it is open, a third failure files nothing.
+time and red streak, and files `Flaky: <spec>`, a ready `kind/bug` with
+`priority/3`, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7)
+with a pass of the workflow between them; failures in a row (a cancelled run
+between them counts as neither) are main being red, which `main is red`
+tracks, and count once (#1398). While it is open, a third failure files nothing.
 `hack/lib/github.sh flakes --count` lists the specs that failed on main this
 week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is

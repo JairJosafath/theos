@@ -109,8 +109,9 @@
 # A worker whose worktree has no git committer identity (#1289) starts no
 # session, logs why, stops, and puts a line under the Maintainer report's
 # Needs you naming the host and worktree, until the identity is back.
-# A session that ends on a usage limit or a failed login pauses the device: it
-# writes .relay/paused-until (the reset time the message gives, else now plus
+# A session that ends on a usage limit or a failed login, or exits non-zero
+# before any API call (#1421), pauses the device: it writes
+# .relay/paused-until (the reset time the message gives, else now plus
 # RELAY_LIMIT_WAIT, default 30m), and until then every worker waits in admit
 # without picking or claiming, and the watch starts nothing. A session that
 # ends without a handoff and without a new commit on the issue's branch (or on
@@ -635,7 +636,8 @@ paused() {
 # LIMITS: the limits a session can end on, each as WORDS:REGEX, most specific
 # first: REGEX matches the CLI's words for it (case-insensitive, extended), and
 # WORDS name it where its claim is released (#1199), as an expired login needs
-# another fix than a usage limit.
+# another fix than a usage limit. The last is limit_message's own line for a
+# session that failed before any API call (#1421).
 LIMITS=(
   'OAuth session expired:oauth session expired'
   'OAuth token expired:oauth token (has )?expired'
@@ -645,6 +647,7 @@ LIMITS=(
   'authentication failed:failed to authenticate|authentication_error'
   'credit balance too low:credit balance (is )?too low'
   "usage limit:you've hit your|you've reached your|you're out of usage|out of usage credits|usage limit reached"
+  'no API call:^no API call: '
 )
 
 # limit_name MESSAGE: the WORDS of the first of LIMITS that MESSAGE matches.
@@ -659,20 +662,47 @@ limit_name() {
 
 # limit_message OUT: the line that says session OUT ended on one of LIMITS.
 # It reads the CLI's own words only, never the agent's final message (#655):
-# the result when it is an error, or when the session exited non-zero (S_RC)
-# before any turn ran; and the tail of OUT.err when there is no result or the
-# session exited non-zero.
+# the result when it is an error, when the session exited non-zero (S_RC)
+# before any turn ran, or when it made no API call (duration_api_ms 0), as a
+# login failure ends with num_turns 1 and is_error false on some CLI versions
+# (#1396); the result of a session that exited non-zero when it is one line
+# that starts with a limit's words, whatever is_error, num_turns and
+# duration_api_ms say, as an agent's account never does (#1421); and the tail
+# of OUT.err when there is no result or the session exited non-zero.
+# A session that exited non-zero before any API call, with no limit's words,
+# failed on the device, not on its issue (#1421): no result within its first
+# minute, num_turns 0 or duration_api_ms 0, unless it timed out, was killed or
+# was stopped idle (S_IDLE). Its line names "no API call", the exit and the
+# last thing the CLI said.
 limit_message() {
-  local out=$1 l re=
+  local out=$1 l re= rc=${S_RC:-0} said=
   for l in "${LIMITS[@]}"; do re+=${re:+|}${l#*:}; done
-  {
+  # Read from the output, not the pipeline's status: grep -m1 stops at the
+  # first match, so under pipefail a tail still writing after it fails with
+  # SIGPIPE, and a login result with the trust warning on stderr paused
+  # nothing (#1421).
+  said=$({
     if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
-      jq -r --arg rc "${S_RC:-0}" 'select(.is_error == true or ($rc != "0" and (.num_turns // 0) == 0)) | .result // empty' "$out.json"
-      [ "${S_RC:-0}" = 0 ] || tail -n 20 "$out.err" 2>/dev/null
+      jq -r --arg rc "$rc" --arg re "^\\s*($re)" '
+        select(.is_error == true or .duration_api_ms == 0 or ($rc != "0" and (.num_turns // 0) == 0)
+          or ($rc != "0" and ((.result // "") | tostring | (split("\n") | map(select(test("\\S"))) | length) == 1 and test($re; "i"))))
+        | .result // empty' "$out.json"
+      [ "$rc" = 0 ] || tail -n 20 "$out.err" 2>/dev/null
     else
       tail -n 20 "$out.err" 2>/dev/null
     fi
-  } | grep -m1 -iE -- "$re"
+  } | grep -m1 -iE -- "$re")
+  [ -n "$said" ] && { echo "$said"; return 0; }
+  case $rc in 0 | 124 | 137 | 143) return 1 ;; esac
+  [ -z "${S_IDLE:-}" ] || return 1
+  if jq -e 'has("result")' "$out.json" >/dev/null 2>&1; then
+    jq -e '(.num_turns // 0) == 0 or .duration_api_ms == 0' "$out.json" >/dev/null 2>&1 || return 1
+    said=$(jq -r '.result // empty | tostring' "$out.json" | grep . | head -n 1)
+  else
+    [ "${S_MINS:-0}" = 0 ] || return 1
+  fi
+  [ -n "$said" ] || said=$(grep . "$out.err" 2>/dev/null | tail -n 1)
+  echo "no API call: the session exited $rc before any API call${said:+: $said}"
 }
 
 # reset_time MESSAGE: the epoch second a limit MESSAGE says it resets at
