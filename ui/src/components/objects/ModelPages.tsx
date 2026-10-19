@@ -17,6 +17,7 @@ import {
 import { appliesConnector, relationshipPhase, type NextStep } from '../../model/lifecycle'
 import { ObjectHeader, type ChildRef, type OutLink } from '../ObjectHeader'
 import { CatalogList } from './CatalogPages'
+import { DeployTargetList } from './DeployPages'
 import { pageHref, projectCrumb, storyHref } from './links'
 import { When } from '../bits'
 
@@ -98,6 +99,8 @@ export function ProjectPage({
       </section>
 
       <CatalogList ns={ns} data={data} connection={connection} />
+
+      <DeployTargetList ns={ns} data={data} connection={connection} />
     </main>
   )
 }

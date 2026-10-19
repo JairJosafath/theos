@@ -158,6 +158,8 @@ export interface Container extends K8sObject {
     checks?: ChecksMode
     /** Backups, recovery and alerts; any field left out takes its default. */
     operations?: Operations
+    /** The DeployTargets each release ships to, in order (docs/plans/deploy.md). */
+    deploy?: ContainerDeploy[]
   }
   status?: {
     phase?: ContainerPhase
@@ -217,9 +219,71 @@ export interface Container extends K8sObject {
         stopped?: string
       }
     }
+    /** The newest release whose runs succeeded: the version an unpinned spec.deploy entry follows. */
+    newestRelease?: string
+    /** What runs at each of spec.deploy's targets, in its order. */
+    deploys?: ContainerDeployStatus[]
     activeSessions?: number
     observedGeneration?: number
     conditions?: Condition[]
+  }
+}
+
+/** One place a Container's releases ship to. */
+export interface ContainerDeploy {
+  /** The DeployTarget, in the Container's namespace. */
+  target: string
+  /** An earlier entry's target: a version ships here only once that entry runs it. */
+  after?: string
+  /** A pinned release tag; empty follows the newest release. */
+  version?: string
+  /** The version a person let in, where the target needs approval. */
+  approved?: string
+}
+
+export type DeployPhase = 'Waiting' | 'Deploying' | 'Deployed' | 'Failed'
+export type DeployHealth = 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown'
+
+/** What runs at one of a Container's targets. */
+export interface ContainerDeployStatus {
+  target: string
+  /** The version running there, as its tool last reported. */
+  version?: string
+  /** The version the entry should run: its pin, else the newest release. */
+  wantedVersion?: string
+  phase: DeployPhase
+  /** What the target's tool reports of what runs there. */
+  health?: DeployHealth
+  /** Where the app, or its release, answers, when the tool knows it. */
+  url?: string
+  reason?: string
+  message?: string
+  /** When the phase, reason or wanted version last changed. */
+  since?: string
+}
+
+/**
+ * A place Containers are shipped to: exactly one member says which tool owns
+ * it. Its Secret is named, never read: the UI's proxy serves only
+ * c4.factory.io, so no Secret data reaches the browser.
+ */
+export interface DeployTarget extends K8sObject {
+  spec: {
+    /** Ships each release as a GitHub release of a repository. */
+    github?: { repository: string }
+    credentialsSecretRef: LocalRef
+    /** development (the default) or production. */
+    tier?: 'development' | 'production'
+    /** Required or None; empty is the tier's default. */
+    approval?: 'Required' | 'None'
+    /** Deploy-time values that differ per place and are not secret. */
+    parameters?: Record<string, string>
+  }
+  status?: {
+    /** Ready: whether its Secret holds the member's keys and the target accepts them. */
+    conditions?: Condition[]
+    /** When the operator last asked the target whether it accepts the credential. */
+    checkedTime?: string
   }
 }
 
@@ -305,6 +369,7 @@ export const RESOURCES = {
   computes: 'computes',
   deployments: 'deployments',
   gitProviders: 'gitproviders',
+  deployTargets: 'deploytargets',
   tasks: 'tasks',
   agents: 'agents',
   crews: 'crews',

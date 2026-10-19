@@ -38,6 +38,7 @@ const writer: ContainerWriter = {
   retry: async () => undefined,
   answerStandard: async () => undefined,
   setChecks: async () => undefined,
+  approveDeploy: async () => undefined,
   startTask: async () => 'orders-api-x7k2p',
 }
 const serviceAccount: UiSession = { actions: true, mode: 'service-account', user: null }

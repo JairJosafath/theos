@@ -31,6 +31,7 @@ function container(asked?: ChecksMode, runs: ChecksMode = 'EveryChange', conditi
 const writer: ContainerWriter = {
   retry: async () => undefined,
   setChecks: async () => undefined,
+  approveDeploy: async () => undefined,
   answerStandard: async () => undefined,
   startTask: async () => 'orders-api-x7k2p',
 }

@@ -49,6 +49,28 @@ const input = (part: Partial<NeedsInput>): NeedsInput => ({
   ...part,
 })
 
+/** A Ready Container shipping to deploy, with what its status says of each entry. */
+const deploying = (
+  deploy: NonNullable<Container['spec']['deploy']>,
+  deploys: NonNullable<NonNullable<Container['status']>['deploys']>,
+  deployed: Condition,
+): Container => ({
+  ...container({ phase: 'Ready', newestRelease: 'v1.3.0', deploys, conditions: [deployed] }),
+  spec: { ...container(undefined).spec, deploy },
+})
+const deployed = (target: string): NonNullable<NonNullable<Container['status']>['deploys']>[number] => ({
+  target,
+  version: 'v1.3.0',
+  wantedVersion: 'v1.3.0',
+  phase: 'Deployed',
+  health: 'Healthy',
+  reason: 'Deployed',
+  message: `${target} runs v1.3.0`,
+  since: T,
+})
+const approvalMessage =
+  "v1.3.0 waits for a person's approval to ship to prod: set approved to v1.3.0 in its spec.deploy entry"
+
 const repo = { repositoryURL: 'https://git.example/shop/api' }
 const makefileBehind: StandardFile = {
   path: 'Makefile',
@@ -303,6 +325,88 @@ describe('needs', () => {
         place: 'Crew',
       },
     },
+    // A deploy waiting on a person (#1163, docs/plans/deploy.md decision 6).
+    {
+      name: 'a Container whose prod deploy waits for approval',
+      input: input({
+        containers: [
+          deploying(
+            [{ target: 'staging' }, { target: 'prod', after: 'staging' }],
+            [
+              deployed('staging'),
+              {
+                target: 'prod',
+                wantedVersion: 'v1.3.0',
+                phase: 'Waiting',
+                reason: 'WaitingForApproval',
+                message: approvalMessage,
+                since: T,
+              },
+            ],
+            cond('Deployed', 'False', 'WaitingForApproval', approvalMessage),
+          ),
+        ],
+      }),
+      want: {
+        kind: 'Container',
+        reason: 'WaitingForApproval',
+        message: approvalMessage,
+        command:
+          'kubectl -n shop patch container api --type=json -p \'[{"op":"test","path":"/spec/deploy/1/target","value":"prod"},{"op":"add","path":"/spec/deploy/1/approved","value":"v1.3.0"}]\'',
+        place: 'Container',
+      },
+    },
+    {
+      name: 'a Container whose deploy failed',
+      input: input({
+        containers: [
+          deploying(
+            [{ target: 'oss' }],
+            [
+              {
+                target: 'oss',
+                wantedVersion: 'v1.3.0',
+                phase: 'Failed',
+                reason: 'TagTaken',
+                message: 'Shipping v1.3.0 to oss failed: a release v1.3.0 the factory didn’t make is there',
+                url: 'https://github.com/acme/api/releases/tag/v1.3.0',
+                since: T,
+              },
+            ],
+            cond('Deployed', 'False', 'DeployFailed', 'Shipping v1.3.0 to oss failed'),
+          ),
+        ],
+      }),
+      want: {
+        kind: 'Container',
+        reason: 'TagTaken',
+        message: 'Shipping v1.3.0 to oss failed: a release v1.3.0 the factory didn’t make is there',
+        links: ['https://github.com/acme/api/releases/tag/v1.3.0'],
+        place: 'Container',
+      },
+    },
+    {
+      name: 'a Container whose Deployed waits for approval with no entry saying which',
+      input: input({
+        containers: [
+          deploying([{ target: 'prod' }], [], cond('Deployed', 'False', 'WaitingForApproval', approvalMessage)),
+        ],
+      }),
+      want: { kind: 'Container', reason: 'WaitingForApproval', message: approvalMessage, place: 'Container' },
+    },
+    {
+      name: 'a Container running degraded at a target',
+      input: input({
+        containers: [
+          deploying(
+            [{ target: 'prod' }],
+            [{ ...deployed('prod'), health: 'Degraded', message: 'prod runs v1.3.0' }],
+            cond('Deployed', 'True', 'Deployed', 'Every target runs its version'),
+          ),
+        ],
+      }),
+      want: { kind: 'Container', reason: 'Degraded', message: 'prod runs v1.3.0', place: 'Container' },
+    },
     ...(['InvalidModule', 'NotFetchable'] as const).map((reason) => ({
       name: `a Crew whose Go module is ${reason}`,
       input: input({
@@ -412,6 +516,60 @@ describe('needs', () => {
       }),
     )
     expect(items).toEqual([])
+  })
+
+  it('lists no deploy the factory still works on or holds for a reason of its own (#1163)', () => {
+    for (const reason of ['WaitingForPrevious', 'Deploying', 'NoRelease', 'TargetNotReady', 'Incompatible']) {
+      const c = deploying(
+        [{ target: 'prod' }],
+        [{ target: 'prod', wantedVersion: 'v1.3.0', phase: 'Waiting', reason, message: 'held', since: T }],
+        cond('Deployed', 'False', reason, 'held'),
+      )
+      expect(needs(input({ containers: [c] })), reason).toEqual([])
+    }
+  })
+
+  it('lists an approval waiting while Deployed names another target’s reason first (#1163)', () => {
+    // Deployed gives the first reason in its order: staging unreachable hides prod's approval there.
+    const c = deploying(
+      [{ target: 'staging' }, { target: 'prod', version: 'v1.3.0', approved: 'v1.2.0' }],
+      [
+        { target: 'staging', phase: 'Waiting', reason: 'Unreachable', message: 'unreachable', since: T },
+        { target: 'prod', wantedVersion: 'v1.3.0', phase: 'Waiting', reason: 'WaitingForApproval', since: T },
+        { target: 'oss', wantedVersion: 'v1.3.0', phase: 'Failed', reason: 'ArtifactMissing', since: T },
+      ],
+      cond('Deployed', 'False', 'TargetNotReady', 'staging unreachable'),
+    )
+    const items = needs(input({ containers: [c] }))
+    expect(items.map((n) => n.title)).toEqual([
+      'waits for your approval of v1.3.0 at prod',
+      'failed to deploy v1.3.0 to oss',
+    ])
+    // The approval it replaces is tested, so a copied line can't take back a newer one.
+    expect(items[0].command).toContain('{"op":"test","path":"/spec/deploy/1/approved","value":"v1.2.0"}')
+  })
+
+  it('lists each target waiting for approval, and a degraded one besides (#1163)', () => {
+    const waiting = (target: string) => ({
+      target,
+      wantedVersion: 'v1.3.0',
+      phase: 'Waiting' as const,
+      reason: 'WaitingForApproval',
+      message: 'approve it',
+      since: T,
+    })
+    const c = deploying(
+      [{ target: 'eu' }, { target: 'us' }, { target: 'staging' }],
+      [waiting('eu'), waiting('us'), { ...deployed('staging'), health: 'Degraded' }],
+      cond('Deployed', 'False', 'WaitingForApproval', 'eu waits'),
+    )
+    expect(
+      needs(input({ containers: [c] })).map((n) => [n.title, n.command?.match(/deploy\/(\d)\/approved/)?.[1]]),
+    ).toEqual([
+      ['waits for your approval of v1.3.0 at eu', '0'],
+      ['waits for your approval of v1.3.0 at us', '1'],
+      ['runs v1.3.0 degraded at staging', undefined],
+    ])
   })
 
   it('drops a Failed Task once a newer Task works its issue', () => {
