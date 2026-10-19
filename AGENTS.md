@@ -77,7 +77,10 @@ one, and never run `make e2e`; `hack/lib/github.sh cluster acquire` refuses
 without `C4_HUMAN_CLUSTER=1`, which only a human sets in their own shell. The
 human runs `make e2e` against a Kind cluster of the device's pool, never a
 real dev or prod cluster. What only a real node would catch is not tested
-before release.
+before release. The one exception is a verifier session: one the owner
+starts from their own shell with `C4_HUMAN_CLUSTER=1` to run one plan step
+that needs a cluster (its issue names the step). It leases a pool cluster,
+does only what the step says, releases the cluster and ends.
 
 ## After Making Changes
 
