@@ -100,8 +100,8 @@ says why each rule matters.
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan, which names it by ARN in `Backups`' `tables`, never by
-  a tag the development stack's tables carry too (a table whose records
-  expire, as idempotency records do, is left out); in development none of
+  a tag the development stack's tables carry too (Powertools' `Idempotency`
+  table, whose records expire, is left out); in development none of
   it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's table is. [test: the removal
   policies, deletion protection, point-in-time recovery, the backup plan and
@@ -693,8 +693,8 @@ says why each rule matters.
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan, which names it by ARN in `Backups`' `tables`, never by
-  a tag the development stack's tables carry too (a table whose records
-  expire, as idempotency records do, is left out); in development none of
+  a tag the development stack's tables carry too (Powertools' `Idempotency`
+  table, whose records expire, is left out); in development none of
   it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's {{ if eq .Framework "aws-ec2-ts" }}table is{{ else }}tables are{{ end }}. [test: the removal
   policies, deletion protection, point-in-time recovery, the backup plan and

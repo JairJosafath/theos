@@ -503,6 +503,9 @@ task size, as said here):
   form, exactly the tag either way, and checks per tier that every load
   balancer's access-log bucket is in each selection's `NotResources`.
   Step 6's load balancer is held to it.
+  Superseded by #1267: `aws-fargate-ts` v1.2.0 names its table by ARN, so
+  the bucket is in no selection, `exclude` is gone, and aws-standard
+  v1.17.0's test refuses either tag form.
 - **The app's room is the same in both tiers.** The app container has 256
   CPU units and a 512 MiB reservation in either tier, the whole task in
   development; in production the collector's 256 CPU units and a hard limit
@@ -654,7 +657,8 @@ the evidence. What it settled beyond step 3:
   EBS root is not backed up", enforced. Step 5's check that a selection
   leaves the load balancer's access-log bucket out holds for a selection by
   ARN when it doesn't name the bucket, and for one by tag, as before, when
-  its `NotResources` does.
+  its `NotResources` does. Since #1267 (aws-standard v1.17.0) every Framework
+  names its tables by ARN and the test refuses a tag in either form.
 - **`cfn-signal` through a CloudFormation endpoint.** The instances have no
   way out, so the VPC gets a CloudFormation interface endpoint beside the
   Logs one. `aws-cfn-bootstrap` is installed first (`INSTALL_COMMAND`), the

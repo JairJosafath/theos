@@ -514,7 +514,9 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 // frameworkNotFoundError is a Container's Framework that doesn't exist.
 type frameworkNotFoundError struct{ name string }
 
-func (e *frameworkNotFoundError) Error() string { return notFoundMessage([]string{"Framework " + e.name}) }
+func (e *frameworkNotFoundError) Error() string {
+	return notFoundMessage([]string{"Framework " + e.name})
+}
 
 // frameworkRenderError is a Framework that fetched but didn't render at the
 // ref the Container was scaffolded at.

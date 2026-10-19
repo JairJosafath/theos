@@ -169,7 +169,7 @@ byte for byte.
   and `infra/standard.test.ts` is in `protectedPaths` (#1266). Since
   v1.17.0 the test refuses a backup selection by the Container's tag, which
   a `<name>-development` stack in the same account carries too, and takes
-  a table whose items expire (the idempotency records) left out of it; the
+  the `Idempotency` table, whose records expire, left out of it; the
   runbook, `docs/style/aws.md` and `docs/well-architected.md` say the plan
   names the data tables by ARN (#1267). A Container scaffolded from an
   earlier `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`,
@@ -261,8 +261,8 @@ byte for byte.
   `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
   with its own key, one selection naming the stack's own tables by ARN
-  (`Fn::GetAtt`) and nothing else, every table whose items don't expire
-  (no TTL) among them, and a copy stack in that region; else none; since
+  (`Fn::GetAtt`) and nothing else, every table but an `Idempotency` one
+  with TTL on among them, and a copy stack in that region; else none; since
   v1.17.0 a selection by tag (`ListOfTags`), by a condition, by `*` or by
   an ARN written out fails, as it reaches a `<name>-development` stack's
   tables in the same account (#1267), table cases test that rule; and no

@@ -24,8 +24,7 @@ export interface BackupsProps {
   readonly copyToRegion: string;
   /**
    * The stack's own tables that hold data: the only resources backed up. Not
-   * a table whose records expire and need no restore, as Powertools'
-   * idempotency records do.
+   * Powertools' idempotency table, whose records expire and need no restore.
    */
   readonly tables: readonly Table[];
 }

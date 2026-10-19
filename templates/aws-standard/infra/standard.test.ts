@@ -199,17 +199,27 @@ function only<T>(items: readonly T[], what: string): T {
 }
 
 /**
- * What is wrong with a backup selection in a stack whose tables are `tables`:
- * each one's logical id, and whether its items expire (TTL), as Powertools'
- * idempotency records do. It names the stack's own tables by `Fn::GetAtt`
- * and nothing else, every table whose items don't expire among them. A tag
+ * Whether the table `id` may be left out of the backups: Powertools'
+ * idempotency table, whose records expire (TTL) and need no restore. A data
+ * table that expires some items still holds data.
+ */
+function needsNoBackup(id: string, properties: unknown): boolean {
+  const ttl = isRecord(properties) ? properties['TimeToLiveSpecification'] : undefined;
+  return id.startsWith('Idempotency') && isRecord(ttl) && ttl['Enabled'] === true;
+}
+
+/**
+ * What is wrong with a backup selection in a stack whose tables are `tables`,
+ * each one's logical id and properties. It names the stack's own tables by
+ * `Fn::GetAtt` and nothing else, every one but the idempotency table among
+ * them (`needsNoBackup`). A tag
  * (`ListOfTags`), a condition, `*` or an ARN written out reaches past the
  * stack: its `<name>-development` stack in the same account carries the same
  * tag and names its tables alike (#1267).
  */
 function selectionFaults(
   selection: unknown,
-  tables: readonly (readonly [string, boolean])[],
+  tables: readonly (readonly [string, unknown])[],
 ): string[] {
   if (!isRecord(selection)) {
     return ['no BackupSelection'];
@@ -227,20 +237,20 @@ function selectionFaults(
       faults.push(`${JSON.stringify(resource)} is none of the stack's tables`);
     }
   }
-  for (const [id, expires] of tables) {
-    if (!expires && !named.some((resource) => JSON.stringify(resource) === arnOf(id))) {
+  for (const [id, properties] of tables) {
+    if (
+      !needsNoBackup(id, properties) &&
+      !named.some((resource) => JSON.stringify(resource) === arnOf(id))
+    ) {
       faults.push(`${id} is in no backup selection`);
     }
   }
   return faults;
 }
 
-/** Each table of `template`: its logical id, and whether its items expire (TTL). */
-function tablesOf(template: Template): [string, boolean][] {
-  return resourcesOf(template, 'AWS::DynamoDB::Table').map(([id, table]) => {
-    const ttl = table.Properties?.['TimeToLiveSpecification'];
-    return [id, isRecord(ttl) && ttl['Enabled'] === true];
-  });
+/** Each table of `template`: its logical id and properties. */
+function tablesOf(template: Template): [string, unknown][] {
+  return resourcesOf(template, 'AWS::DynamoDB::Table').map(([id, table]) => [id, table.Properties]);
 }
 
 /**
@@ -377,9 +387,10 @@ beforeAll(() => {
 // The rule a backup selection keeps, case by case: the stack's own data
 // tables by ARN, never what could reach another stack of the Container.
 describe('a backup selection', () => {
+  const expiring = { TimeToLiveSpecification: { AttributeName: 'expiration', Enabled: true } };
   const tables = [
-    ['ItemsA1B2', false],
-    ['IdempotencyC3D4', true],
+    ['ItemsA1B2', {}],
+    ['IdempotencyC3D4', expiring],
   ] as const;
   const arn = (id: string): unknown => ({ 'Fn::GetAtt': [id, 'Arn'] });
   const development = 'arn:aws:dynamodb:eu-west-1:123456789012:table/orders-development-Items*';
@@ -434,6 +445,15 @@ describe('a backup selection', () => {
     ],
   ])('that %s has the faults it lists', (_, selection, faults) => {
     expect(selectionFaults(selection, tables)).toEqual(faults);
+  });
+
+  it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
+    expect(
+      selectionFaults({ Resources: [arn('IdempotencyC3D4')] }, [
+        ['ItemsA1B2', expiring],
+        ['IdempotencyC3D4', expiring],
+      ]),
+    ).toEqual(['ItemsA1B2 is in no backup selection']);
   });
 });
 
