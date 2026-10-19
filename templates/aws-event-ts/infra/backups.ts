@@ -1,6 +1,7 @@
 import { Aws, Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
 import { BackupPlan, BackupPlanRule, BackupResource, BackupVault } from 'aws-cdk-lib/aws-backup';
+import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Schedule } from 'aws-cdk-lib/aws-events';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
@@ -21,13 +22,16 @@ export interface BackupsProps {
   readonly retentionDays: number;
   /** The region the backups are copied to, whose `BackupCopyStack` holds the vault; empty for none. */
   readonly copyToRegion: string;
-  /** The tag, key and value, of the resources to back up: the Container's, which the Standard sets. */
-  readonly tag: readonly [string, string];
+  /**
+   * The stack's own tables: the only resources backed up. Named by ARN, not
+   * by the Container's tag, which a `<name>-development` stack in the same
+   * account carries too (#1267).
+   */
+  readonly tables: readonly Table[];
 }
 
 /**
- * Daily AWS Backup backups of every resource carrying the Container's tag, in
- * a vault with its own key, kept `retentionDays` and copied to `copyToRegion`
+ * Daily AWS Backup backups of the stack's own tables, named by ARN, in a vault with its own key, kept `retentionDays` and copied to `copyToRegion`
  * when it is set. Backups are data: the vault and its key outlive the stack.
  * No vault lock, which can never be undone: that is the account owner's call.
  */
@@ -74,9 +78,8 @@ export class Backups extends Construct {
         copyActions,
       }),
     );
-    const [tagKey, tagValue] = props.tag;
-    const selection = this.plan.addSelection('Tagged', {
-      resources: [BackupResource.fromTag(tagKey, tagValue)],
+    const selection = this.plan.addSelection('Tables', {
+      resources: props.tables.map((table) => BackupResource.fromArn(table.tableArn)),
     });
     Validations.of(selection).acknowledge({
       id: 'AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]',

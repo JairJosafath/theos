@@ -73,7 +73,8 @@ deploys: the check synthesizes the CloudFormation offline.
   30), and each table's read and write throttles and system errors, each on
   one bad five-minute period. In production with `retentionDays` over 0,
   `infra/backups.ts`'s `Backups` adds the vault, the daily plan and the
-  selection by the `c4factory:container` tag, as in `aws-lambda-ts`. The
+  selection of its two tables by ARN, as in `aws-ec2-ts`, never by the
+  Container's tag, which a development stack carries too (#1267). The
   stack outputs `EntryPoint` (the rule's ARN), `EventPattern` (the pattern
   as EventBridge's JSON, what a producer's events on the default bus must
   match), `FunctionName` (what a person invokes to run a dead-lettered event

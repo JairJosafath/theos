@@ -716,6 +716,12 @@ copies step 10's two levels of retry and one dead-letter queue, and settled:
 - **Outputs:** `EntryPoint` is the rule's ARN; `EventPattern` is the
   pattern a producer's events must match, and `FunctionName` the function
   a person invokes to run a dead-lettered event again.
+- **Backups select its two tables by ARN,** as `aws-ec2-ts` does, not by
+  the Container's tag, which a `<name>-development` stack in the same
+  account carries too: #1267's selection, so this Framework needs no bump
+  when that issue changes the others. Until #1267 changes the Standard,
+  whose test wants every table of the stack named, the idempotency table is
+  among them.
 
 ## Design
 

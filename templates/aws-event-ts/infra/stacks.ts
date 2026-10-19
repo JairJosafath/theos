@@ -4,11 +4,8 @@ import packageJson from '../package.json' with { type: 'json' };
 import { BackupCopyStack } from './backups';
 import { EventStack } from './event_stack';
 import { OPERATIONS } from './operations';
-import { STANDARD_TAGS, stackNameFor, TIER_RULES } from './standard';
+import { stackNameFor, TIER_RULES } from './standard';
 import type { Tier } from './standard';
-
-// The tag every resource carries, which the backups select by.
-const CONTAINER_TAG = 'c4factory:container';
 
 /**
  * Every stack of this Container for `tier`, added to `app`. `infra/main.ts`
@@ -29,7 +26,6 @@ export function defineStacks(app: App, tier: Tier): Stack[] {
     source: stackNameFor(name, tier),
     tier,
     operations: OPERATIONS,
-    backupTag: [CONTAINER_TAG, STANDARD_TAGS[CONTAINER_TAG] ?? name],
   });
   if (!TIER_RULES[tier].backups || backups.retentionDays === 0 || backups.copyToRegion === '') {
     return [events];

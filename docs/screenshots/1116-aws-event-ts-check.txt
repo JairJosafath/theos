@@ -3,17 +3,12 @@
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then, in a fresh git repository, with no AWS variables and an empty HOME, Node v24:
 # env -i PATH=$PATH HOME=$TMPDIR/<scratch>/home NO_COLOR=1 make check
-# on 2026-10-17. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
+# on 2026-10-19, after the backups moved to a selection by table (#1267). synth writes both tiers, cdk.out/production/ and cdk.out/development/,
 # and cfn-lint lints both with --include-checks I.
 
 npm ci --no-audit --no-fund
 
-added 178 packages in 51s
-npm notice
-npm notice New major version of npm available! 11.19.1 -> 12.2.0
-npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
-npm notice To update run: npm install -g npm@12.2.0
-npm notice
+added 178 packages in 30s
 node_modules/.bin/prettier --check .
 Checking formatting...
 All matched files use Prettier code style!
@@ -21,83 +16,79 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-1/tmp.3hPfAYlL13/app
+ RUN  v5.0.3 $TMPDIR/<scratch>/app
 
- ✓ src/consume.test.ts (9 tests) 40ms
- ✓ src/items.test.ts (36 tests) 57ms
- ✓ src/item_store.test.ts (1 test) 16ms
+ ✓ src/consume.test.ts (9 tests) 10ms
+ ✓ src/items.test.ts (36 tests) 14ms
+ ✓ src/item_store.test.ts (1 test) 5ms
 Bundling asset test/Handler/Code/Stage...
 Bundling asset order-events/Handler/Code/Stage...
 
-  ...2ba53087104dbbb111bcdaad43f78129b4554104d12bfc-building/index.js  595.8kb
-  ...3087104dbbb111bcdaad43f78129b4554104d12bfc-building/index.js.map    2.4mb
+  ...99c362e958fea3a63b6678566be5b41431ce5dafdc3e3b-building/index.js  595.8kb
+  ...62e958fea3a63b6678566be5b41431ce5dafdc3e3b-building/index.js.map    2.4mb
 
-⚡ Done in 234ms
+⚡ Done in 106ms
 
-  ...8ccec6dc9586262bb7529f964b3bf01756df92f8f5bf64-building/index.js  595.8kb
-  ...c6dc9586262bb7529f964b3bf01756df92f8f5bf64-building/index.js.map    2.4mb
+  ...01491add7e92078433aa723cd1b038556d2ab702fdda0a-building/index.js  595.8kb
+  ...1add7e92078433aa723cd1b038556d2ab702fdda0a-building/index.js.map    2.4mb
 
-⚡ Done in 222ms
+⚡ Done in 100ms
 Bundling asset test/Handler/Code/Stage...
+
+  ...fbaf96ab30a3d1d92b8a77031d52670e732ca06649c933-building/index.js  595.8kb
+  ...96ab30a3d1d92b8a77031d52670e732ca06649c933-building/index.js.map    2.4mb
+
+⚡ Done in 162ms
 Bundling asset order-events-development/Handler/Code/Stage...
-
-  ...95db0e831fe24fb6d7bdb4d337b32048917018cb82d916-building/index.js  595.8kb
-  ...0e831fe24fb6d7bdb4d337b32048917018cb82d916-building/index.js.map    2.4mb
-
-⚡ Done in 1265ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...616d9b50327fae9894490e4210411714d54346a19b0635-building/index.js  595.8kb
-  ...9b50327fae9894490e4210411714d54346a19b0635-building/index.js.map    2.4mb
+  ...66d535b288044982525ce26f096cb2e25addd004239a4d-building/index.js  595.8kb
+  ...35b288044982525ce26f096cb2e25addd004239a4d-building/index.js.map    2.4mb
 
-⚡ Done in 1639ms
+⚡ Done in 136ms
 
-  ...6a0f2fdfbac0cc3bf26f01ada75611e4a66c68f82155fa-building/index.js  595.8kb
-  ...2fdfbac0cc3bf26f01ada75611e4a66c68f82155fa-building/index.js.map    2.4mb
+  ...3b79e9b09ea5d1f3c89a62db5e7418fb28f69628b97921-building/index.js  595.8kb
+  ...e9b09ea5d1f3c89a62db5e7418fb28f69628b97921-building/index.js.map    2.4mb
 
-⚡ Done in 850ms
+⚡ Done in 106ms
 Bundling asset test/Handler/Code/Stage...
- ✓ infra/standard.test.ts (63 tests) 16316ms
-   ✓ the Standard, in production (12)
-     ✓ leaves no error or warning on any stack 563ms
-   ✓ the Standard, in development (12)
-     ✓ leaves no error or warning on any stack 563ms
+ ✓ infra/standard.test.ts (63 tests) 3243ms
 
-  ...bc4d412792f4362e084eca36ddee175d50bb4ae08fcbd2-building/index.js  595.8kb
-  ...412792f4362e084eca36ddee175d50bb4ae08fcbd2-building/index.js.map    2.4mb
+  ...6fd31a6cfe3b8b9bd463f6504b3b119fcfc0e15186da1a-building/index.js  595.8kb
+  ...1a6cfe3b8b9bd463f6504b3b119fcfc0e15186da1a-building/index.js.map    2.4mb
 
-⚡ Done in 189ms
+⚡ Done in 84ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...695e1f7923e630a52de1c2f14cce3906f2452c0045fbb7-building/index.js  595.8kb
-  ...1f7923e630a52de1c2f14cce3906f2452c0045fbb7-building/index.js.map    2.4mb
+  ...0cb4ebd068a3544762723fa7b2bd05450e9b462294dfc1-building/index.js  595.8kb
+  ...ebd068a3544762723fa7b2bd05450e9b462294dfc1-building/index.js.map    2.4mb
 
-⚡ Done in 188ms
- ✓ infra/event_stack.test.ts (17 tests) 19067ms
+⚡ Done in 87ms
+ ✓ infra/event_stack.test.ts (17 tests) 4011ms
    ✓ EventStack (15)
-     ✓ defaults the alert email to alerts.email 3958ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 1915ms
-     ✓ copies the backups to the vault in copyToRegion 1163ms
+     ✓ defaults the alert email to alerts.email 603ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 519ms
+     ✓ copies the backups to the vault in copyToRegion 454ms
 
  Test Files  5 passed (5)
       Tests  126 passed (126)
-   Start at  00:59:24
-   Duration  24.58s (tests 76%, import 14%, transform 10%)
+   Start at  21:33:04
+   Duration  5.39s (tests 65%, import 19%, transform 16%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 Bundling asset order-events/Handler/Code/Stage...
 
-  ...c25d82f016fee4b3636aee3b52f083a7ead22092e7df87-building/index.js  595.8kb
-  ...82f016fee4b3636aee3b52f083a7ead22092e7df87-building/index.js.map    2.4mb
+  ...83c416d3fa7b16ec886e9bcf16a0f643191bb5128ebe6f-building/index.js  595.8kb
+  ...16d3fa7b16ec886e9bcf16a0f643191bb5128ebe6f-building/index.js.map    2.4mb
 
-⚡ Done in 201ms
+⚡ Done in 100ms
 Bundling asset order-events-development/Handler/Code/Stage...
 
-  ...79406a943bbc275eef7c1e8136c031f0abd82d4282ac54-building/index.js  595.8kb
-  ...6a943bbc275eef7c1e8136c031f0abd82d4282ac54-building/index.js.map    2.4mb
+  ...94f3492225cc36dbc25b2fea342f8813b9003c86fdd514-building/index.js  595.8kb
+  ...492225cc36dbc25b2fea342f8813b9003c86fdd514-building/index.js.map    2.4mb
 
-⚡ Done in 260ms
+⚡ Done in 79ms
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
 Downloading networkx (2.0MiB)
 Downloading sympy (6.0MiB)
@@ -105,10 +96,52 @@ Downloading cfn-lint (5.4MiB)
  Downloaded networkx
  Downloaded cfn-lint
  Downloaded sympy
-Installed 9 packages in 317ms
-exit=0
+Installed 9 packages in 74ms
+exit 0
 
-# With aws-standard v1.13.0, the siblings' make check, rendered the same way:
+# The same copy with infra/backups.ts's selection put back to BackupResource.fromTag('c4factory:container', 'order-events'):
+# node_modules/.bin/vitest run infra/
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  infra/event_stack.test.ts > EventStack > backs up daily for retentionDays in production, and not at all in development
+AssertionError: Template has 1 resources with type AWS::Backup::BackupSelection, but none match as expected.
+The 1 closest matches:
+BackupsPlanTables8D417F20 :: {
+  "Properties": {
+    "BackupPlanId": { "Fn::GetAtt": [ "BackupsPlanAF2A6E1B", "BackupPlanId" ] },
+    "BackupSelection": {
+      "IamRoleArn": { "Fn::GetAtt": [ "BackupsPlanTablesRole58972E9D", "Arn" ] },
+!!     Received [object Object], but key should be absent
+      "ListOfTags": [
+        { ... }
+      ],
+!!     Missing key 'Resources'
+      "Resources": undefined,
+      "SelectionName": "Tables"
+    }
+  },
+  "Type": "AWS::Backup::BackupSelection"
+}
+ ❯ Template.hasResourceProperties node_modules/aws-cdk-lib/assertions/lib/template.js:1:4243
+ ❯ infra/event_stack.test.ts:300:16
+    298|     expect(tables).toHaveLength(2);
+    299|     production.resourceCountIs('AWS::Backup::BackupSelection', 1);
+    300|     production.hasResourceProperties('AWS::Backup::BackupSelection', {
+       |                ^
+    301|       BackupSelection: Match.objectLike({
+    302|         Resources: tables.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 79 passed (80)
+   Start at  21:33:33
+   Duration  4.96s (tests 77%, import 15%, transform 8%)
+
+exit 1
+
+# With aws-standard v1.13.0, the siblings' make check, rendered the same way on 2026-10-17 (the Standard has not changed since):
 # aws-schedule-ts (-type job -container nightly-report): Tests 110 passed (110), exit=0
 # aws-lambda-py (-type function -container items-api): pytest 63 passed, vitest Tests 77 passed (77), exit=0
 # aws-lambda-go (-type function -container items-api, golangci-lint 2.13.1 on PATH): go test ok, Tests 78 passed (78), exit=0
