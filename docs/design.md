@@ -329,7 +329,12 @@ enforces.
   only DNS, Gitea's pod on port 3000 and HTTPS to public addresses, and
   Gitea's instance-wide registration token goes only to the init container
   that registers, never to the container the jobs run in. `make
-  validate-yaml` checks both, in the chart and in `config/runner/`. Still
+  validate-yaml` checks both, in the chart and in `config/runner/`. The
+  `image` runner that builds release images (#1069,
+  [plan](plans/images.md#decisions)) runs rootless BuildKit, which makes user
+  namespaces, so its job container alone runs with seccomp and AppArmor
+  `Unconfined`, never privileged and with no added capability, and holds no
+  credential beyond the job token; the same check holds it to that. Still
   open: each label has one long-lived runner in host mode that every
   project's jobs and the releases share, one job after another, so a job can
   leave a process or a file for the next, act with the runner's own token,
@@ -882,7 +887,9 @@ model and context it needs.
   `install.yaml` (the CRDs, RBAC and the manager, from kubebuilder's
   `make build-installer`) and `SHA256SUMS`. No image is built or pushed:
   `install.yaml` names the image `controller:<tag>`, and the operator's README
-  says to build and push the image and set it there before applying it. Until a catalog entry supports
+  says to build and push the image and set it there before applying it; with
+  [plans/images.md](plans/images.md) (#1069) its release builds the image and
+  `install.yaml` names it by digest. Until a catalog entry supports
   a type, the planner answers that it needs input rather than planning it.
   GitHub issue #723 has the plan, [plans/done/kubebuilder-operators.md](plans/done/kubebuilder-operators.md).
 - **A Container type `function`:** serverless code on AWS (Lambda behind an
@@ -1444,7 +1451,7 @@ Grouped by caller they fall into these ports:
 | Issues | issues, comments, labels, assignment, milestones, dependencies | Gitea, inside `Provider`; request intake on GitHub (`IssueTracker`) |
 | CI | workflow runs of a commit or tag, rerunning failed jobs, a job's log, runners online | Gitea Actions, inside `Provider` |
 | AgentAccess | a credential that writes to one Container's (or Brief's) repository only, and revoking it | Gitea bot users, inside `Provider` |
-| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); container images (#1069) | Gitea packages, inside `Provider` |
+| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); pushing a release's image archive by digest, the image registry address (#1069) | Gitea packages, inside `Provider` |
 | AgentRuntime | start a run, read its state and result, stop it, list the runs held | Agent Sandbox, hard-coded (`SandboxGVK`) |
 | Deployer | ship a release to a target, read back its state | the GitHub release copy (`ReleaseTarget`); #1068 |
 
@@ -1640,6 +1647,19 @@ steps.
   target (the GitHub API, CloudFormation, Argo CD or Flux); it never builds,
   runs repository code or writes rollouts. A user's credential never reaches
   code the agents wrote.
+- **A release's image** (#1069). A Container whose catalog choice builds one
+  (`k8s-manifests`, and `gitea-release` for an operator; a table in
+  `internal/model`) has its image built by a release run on the `image`
+  runner: rootless BuildKit, daemonless, for `linux/amd64` and `linux/arm64`
+  without emulation (a Dockerfile `RUN`s only on `$BUILDPLATFORM`), with an
+  SBOM and provenance in the index. The run attaches the OCI layout archive
+  (`<repository>-<tag>.oci.tar`) to the release; once the release's runs
+  succeed, the operator streams it by digest into the owner's container
+  registry on the Git host with the GitProvider's credential, tagged with
+  the release tag, once and never replaced. `status.image` names the
+  repository, digest and platforms, the condition `ImagePublished` says why
+  it isn't pushed (`NoImage`, `Invalid`, `TagTaken`, `Failed`), and each
+  deploy ships that digest. [plans/images.md](plans/images.md).
 - **On each release, in order.** The release is the one the Container's
   Crew tagged, once its release runs succeed. Each entry ships its pinned
   version or the newest, after its `after` entry runs it and, where needed,
@@ -1745,7 +1765,7 @@ default means are left to review.
 
 ## Out of scope for v1
 
-- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets.
+- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets, with the image CI built for it (#1069).
 - **Runtime health of the apps.** The factory shows only what a deploy target's tool reports (Argo CD's health, a stack's status); monitoring the app itself is left to existing tools. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.
