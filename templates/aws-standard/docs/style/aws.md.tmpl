@@ -230,7 +230,8 @@ says why each rule matters.
 
 ## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
@@ -377,7 +378,8 @@ says why each rule matters.
 
 ## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stack is in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - No account in `env`, no `fromLookup`, so synth needs no account. The
@@ -975,7 +977,8 @@ says why each rule matters.
 
 {{ end }}## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no

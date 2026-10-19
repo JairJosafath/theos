@@ -627,7 +627,8 @@ describe.runIf(operations !== undefined).each(TIERS)(
       it('is on for every table in production when the RPO is under a day', () => {
         const [, count = '', unit = ''] = /^(\d+)([mhd])$/.exec(promised().recovery.rpo) ?? [];
         const minutes = Number(count) * ({ m: 1, h: 60, d: 1440 }[unit] ?? Number.NaN);
-        expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toBeGreaterThan(0);
+        // An RPO of 0 asks for the least loss there is: point-in-time recovery, as under a day (#1266).
+        expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toBeGreaterThanOrEqual(0);
         if (tier !== 'production' || minutes >= 1440) {
           return;
         }
