@@ -19,6 +19,8 @@ type Deployer struct {
 	Hold bool
 
 	mu sync.Mutex
+	// held are the targets, by name, whose new deploys stay Deploying.
+	held map[string]bool
 	// refused are the targets, by name, that refuse their credential; fail
 	// the error each other target's calls fail with.
 	refused map[string]bool
@@ -60,6 +62,16 @@ func (d *Deployer) Fail(target string, err error) {
 		delete(d.fail, target)
 		delete(d.refused, target)
 	}
+}
+
+// HoldAt keeps each new deploy at target Deploying, as Hold does everywhere.
+func (d *Deployer) HoldAt(target string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.held == nil {
+		d.held = map[string]bool{}
+	}
+	d.held[target] = true
 }
 
 // SetState sets what target reports for app.
@@ -140,7 +152,7 @@ func (d *Deployer) Ship(_ context.Context, t ports.Target, s ports.Shipment) err
 	}
 	d.shipped = append(d.shipped, Shipped{Target: t.Name, Shipment: s})
 	st := ports.DeployState{Version: s.Version, Phase: ports.PhaseDeployed, Health: ports.HealthHealthy}
-	if d.Hold {
+	if d.Hold || d.held[t.Name] {
 		st = ports.DeployState{Version: s.Version, Phase: ports.PhaseDeploying, Health: ports.HealthProgressing}
 	}
 	if d.states == nil {

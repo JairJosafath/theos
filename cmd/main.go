@@ -289,6 +289,8 @@ func main() {
 		setupLog.Error(err, "Failed to load the Session feature")
 		os.Exit(1)
 	}
+	// Each DeployTarget member's adapter, by the member's name.
+	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -296,6 +298,7 @@ func main() {
 		Git:             gitprovider.Client{},
 		ScaffoldOptions: scaffoldOptions,
 		Recorder:        mgr.GetEventRecorder("container"),
+		Deployers:       deployers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
 		os.Exit(1)
@@ -336,8 +339,6 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
 	}
-	// Each DeployTarget member's adapter, by the member's name.
-	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
 	if err := (&controller.CrewReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),

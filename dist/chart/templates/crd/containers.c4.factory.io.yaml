@@ -90,6 +90,57 @@ spec:
                 required:
                 - name
                 type: object
+              deploy:
+                description: |-
+                  deploy names the DeployTargets each release of the Container's Crew
+                  ships to, in order. The operator ships the newest release whose runs
+                  succeeded, or an entry's pinned version, through the target's tool, and
+                  reports it in status.deploys and the condition Deployed. The list may
+                  change at any time and never scaffolds again; removing an entry stops
+                  shipping there and leaves what runs there alone.
+                items:
+                  description: ContainerDeploy is one place a Container's releases
+                    ship to.
+                  properties:
+                    after:
+                      description: |-
+                        after names an earlier entry's target: a version ships here only once
+                        that entry runs it, healthy where its target reads health.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    approved:
+                      description: |-
+                        approved is the version a person let in. Where the target needs
+                        approval, a version ships only when approved names it.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                    target:
+                      description: target names the DeployTarget, in the Container's
+                        namespace.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    version:
+                      description: |-
+                        version pins a release tag; empty follows the newest release whose runs
+                        succeeded. Pinning an older tag rolls back.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                  required:
+                  - target
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: after must name an entry earlier in deploy
+                  rule: '[0, 1, 2, 3, 4].all(i, i >= self.size() || !has(self[i].after)
+                    || [0, 1, 2, 3, 4].exists(j, j < i && self[j].target == self[i].after))'
               deploymentRef:
                 description: 'deploymentRef names the Deployment catalog entry: how
                   the application ships.'
@@ -309,7 +360,7 @@ spec:
                 description: |-
                   conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
                   and, for a Container with a Standard, StandardUpdated and ChecksApplied;
-                  once scaffolded, OperationsApplied.
+                  once scaffolded, OperationsApplied; with spec.deploy, Deployed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -367,6 +418,68 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
+                x-kubernetes-list-type: map
+              deploys:
+                description: deploys is what runs at each of spec.deploy's targets,
+                  in its order.
+                items:
+                  description: ContainerDeployStatus is what runs at one of a Container's
+                    targets.
+                  properties:
+                    health:
+                      description: health is what the target's tool reports of what
+                        runs there.
+                      enum:
+                      - Healthy
+                      - Progressing
+                      - Degraded
+                      - Unknown
+                      type: string
+                    message:
+                      description: message says it for a person.
+                      type: string
+                    phase:
+                      description: |-
+                        phase is Waiting while the wanted version is held, Deploying while the
+                        target's tool ships it, Deployed once it runs, and Failed when the tool
+                        or the call failed.
+                      enum:
+                      - Waiting
+                      - Deploying
+                      - Deployed
+                      - Failed
+                      type: string
+                    reason:
+                      description: reason says why the entry is in its phase, in CamelCase.
+                      type: string
+                    since:
+                      description: since is when the phase, reason or wanted version
+                        last changed.
+                      format: date-time
+                      type: string
+                    target:
+                      description: target is the entry's DeployTarget.
+                      type: string
+                    url:
+                      description: url is where the app, or its release, answers,
+                        when the tool knows it.
+                      type: string
+                    version:
+                      description: version is the version running there, as its tool
+                        last reported.
+                      type: string
+                    wantedVersion:
+                      description: |-
+                        wantedVersion is the version the entry should run: its pin, else the
+                        newest release.
+                      type: string
+                  required:
+                  - phase
+                  - target
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
                 x-kubernetes-list-type: map
               observedGeneration:
                 description: observedGeneration is the spec generation the status

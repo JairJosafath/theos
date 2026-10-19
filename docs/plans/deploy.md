@@ -287,6 +287,57 @@ What #1161 settled that the decisions above left open:
   use. The controllers' tests may import adapters to wire them onto fakes;
   their code may not (depguard `controllers-take-ports`).
 
+## Step 3 as built
+
+What #1162 settled that the decisions above left open:
+
+- **The deploy loop is the Container reconciler's,** in its Ready branch
+  (`container_deploy.go`), since the Container's status has one writer: a
+  merge patch replaces `conditions` whole, so a second controller would drop
+  the other's. Only a Ready Container deploys. It wakes on a Crew whose last
+  release or its runs changed, on a DeployTarget made, changed or whose
+  `Ready` changed, and polls every 15 seconds while a deploy is in flight or
+  a target can't be reached, else at the checks' recheck (a minute). The
+  Framework isn't watched once the Container is Ready, so `Incompatible`
+  follows a change at the next poll.
+- **The newest release** is the newest `lastRelease`, by time, among the
+  Container's Crews whose runs `Succeeded`. A pin ships any tag the Git host
+  has a release of, a Crew's or not: it is a person's choice. A tag without
+  a release fails `ReleaseNotFound` and is looked for again each poll.
+- **An entry's `reason`** is its condition reason, except where the entry
+  failed or a call didn't reach the target: `Unreachable` (the target's tool,
+  condition `TargetNotReady`), `GitHostUnreachable` (the release's files,
+  condition `Deploying`), `CredentialRefused`, `ArtifactMissing`,
+  `ReleaseNotFound`, the tool's own reason for a failed rollout, or
+  `DeployFailed` (condition `DeployFailed` for all of these). Shipped again
+  on the next poll: the unreachable ones, a refused credential and a missing
+  release, which the tool never had. Held until another version is wanted
+  (a newer release, or a pin): a rollout the tool reports failed, a missing
+  file, and any other failure (a GitHub release of the tag the factory didn't
+  make, `TagTaken`). A `State` call that fails keeps the entry's last phase,
+  with `TargetNotReady`.
+- **The order of holds:** the target (missing, `Incompatible`, not checked
+  or not `Ready`), then a release, then a deploy in flight (it goes on, even
+  past an approval taken back, and the wanted version waits for it), then
+  `after`, then approval, so `ApprovalNeeded` comes once approving is the
+  last thing in the way. `after`'s entry must report the version
+  `Deployed` with health `Healthy` or `Unknown` (a tool that reads none).
+- **Events:** `Deployed` and `ApprovalNeeded` are Normal, `DeployFailed`
+  Warning; each is said once, the reconciler remembering the last one per
+  Container and target, as the Crew's publish Events do.
+- **RBAC:** the Container reconciler gets `crews` and `deploytargets`
+  get, list and watch, and Events; the target's Secret is read live through
+  the API reader, by the `get` it already has, only when the entry reads
+  what runs at the target.
+- **Tests** give the reconciler a member table (`DeployMembers`) whose
+  `github` row needs a Framework that leaves deploying to the target, since no
+  real member needs anything yet; `Incompatible` is seen through it.
+- **Known limits, filed as follow-ups:** the GitHub member's `State` is the
+  newest marked release, so a pin to an older published release re-ships
+  each poll and stays `Deploying`; and the Container reconciler runs one
+  worker, so a long GitHub upload holds the other Containers' reconciles for
+  its length, as a Crew's upload held the Crews before `crewWorkers`.
+
 ## Steps
 
 Each step is a GitHub issue that names #1068, lands on its own with `make
