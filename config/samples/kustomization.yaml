@@ -2,4 +2,5 @@
 # The webshop story from docs/design.md. Apply with: make sample
 resources:
 - webshop
+- c4_v1alpha1_deploytarget.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

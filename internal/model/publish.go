@@ -248,7 +248,17 @@ func ReleaseName(app, tag string) string {
 // PublishMarker is the hidden line that ends the body of a release the
 // operator publishes, so a retry finds its draft and knows the release is its own.
 func PublishMarker(namespace, container, tag string) string {
-	return fmt.Sprintf("<!-- c4factory: %s/%s %s -->", namespace, container, tag)
+	return ShipMarker(namespace+"/"+container, tag)
+}
+
+// ShipMarker is PublishMarker of app, namespace/name, at tag.
+func ShipMarker(app, tag string) string {
+	return fmt.Sprintf("<!-- c4factory: %s %s -->", app, tag)
+}
+
+// ShipMarkerPrefix is the start of every ShipMarker of app, whatever its tag.
+func ShipMarkerPrefix(app string) string {
+	return fmt.Sprintf("<!-- c4factory: %s ", app)
 }
 
 // ReleaseNotes are the notes the operator writes for a release nobody wrote
@@ -338,10 +348,7 @@ func NextPublishStep(f PublishFacts) PublishStep {
 		target = src.Commit
 	}
 	if ours != nil {
-		if target != "" && ours.Target != target {
-			return PublishStep{Action: PublishRetargetDraft, Release: ours.ID, Target: target}
-		}
-		return draftStep(f.Gitea.Assets, ours, f.Latest)
+		return NextReleaseStep(ReleaseShip{Commit: target, Files: f.Gitea.Assets, Latest: f.Latest}, ours)
 	}
 
 	notes := f.Gitea.Body
@@ -355,12 +362,44 @@ func NextPublishStep(f PublishFacts) PublishStep {
 			return PublishStep{Action: PublishWriteNotes, Tag: f.Tag, Body: ReleaseNotes(f.Issues)}
 		}
 	}
+	return NextReleaseStep(ReleaseShip{Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: ReleaseBody(notes, marker),
+		Commit: target}, nil)
+}
+
+// ReleaseShip is a release shipped as a GitHub release: its tag, name and
+// body, marker included, the commit its tag goes on ("" for the default
+// branch's head), its files and whether it becomes the repository's Latest.
+type ReleaseShip struct {
+	Tag, Name, Body, Commit string
+	Files                   []ReleaseAsset
+	Latest                  bool
+}
+
+// NextReleaseStep is the next write of the draft, upload and publish sequence
+// that ships r, given ours, the release whose body holds r's marker, nil when
+// there is none: create the draft, retarget it to r's commit, upload the first
+// file it lacks or has at another size, or publish it once it has them all.
+// A published release is PublishDone at its URL.
+func NextReleaseStep(r ReleaseShip, ours *TargetRelease) PublishStep {
+	switch {
+	case ours == nil:
+		return PublishStep{Action: PublishCreateDraft, Tag: r.Tag, Name: r.Name, Body: r.Body, Target: r.Commit}
+	case !ours.Draft:
+		return PublishStep{Action: PublishDone, URL: ours.URL}
+	case r.Commit != "" && ours.Target != r.Commit:
+		return PublishStep{Action: PublishRetargetDraft, Release: ours.ID, Target: r.Commit}
+	}
+	return draftStep(r.Files, ours, r.Latest)
+}
+
+// ReleaseBody is the body of a release the operator ships: its notes, then
+// marker on a line of its own.
+func ReleaseBody(notes, marker string) string {
 	body := marker + "\n"
 	if strings.TrimSpace(notes) != "" {
 		body = strings.TrimRight(notes, "\n") + "\n\n" + body
 	}
-	return PublishStep{Action: PublishCreateDraft, Tag: tag, Name: ReleaseName(f.App, f.Tag), Body: body,
-		Target: target}
+	return body
 }
 
 // repositoryStep reads the repository GitHub answers for the target, and
@@ -539,4 +578,39 @@ func runState(result string) string {
 		return "failed, and it waits for a re-run to succeed"
 	}
 	return strings.ToLower(result)
+}
+
+// ShipCommit is the commit the release's tag goes on: its source's, once the
+// Crew put the source out, else "" for the default branch's head.
+func ShipCommit(f PublishFacts) string {
+	if f.Source == nil {
+		return ""
+	}
+	if _, src := sourceStep(f, GitHubTag(f.TagPrefix, f.Tag)); src != nil {
+		return src.Commit
+	}
+	return ""
+}
+
+// ShippedFileName is the name, among files, of the file GitHub stored as name:
+// GitHub turns a space, and other characters it doesn't keep in a file name,
+// into a dot. A name no file maps to is itself.
+func ShippedFileName(files []ReleaseAsset, name string) string {
+	for _, a := range files {
+		if GitHubAssetName(a.Name) == name {
+			return a.Name
+		}
+	}
+	return name
+}
+
+// GitHubAssetName is the name GitHub gives a file uploaded as name.
+func GitHubAssetName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._+-", r):
+			return r
+		}
+		return '.'
+	}, name)
 }

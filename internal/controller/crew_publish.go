@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // ConditionPublished says how publishing a Crew's last release went, and why it
@@ -274,28 +276,12 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 		if err == nil {
 			p.source = p.r.sourcePublished(p.log, p.crew, *p.facts, step, p.private)
 		}
-	case model.PublishRetargetDraft:
-		if _, err = p.target.RetargetDraft(ctx, step.Release, step.Target); err == nil {
-			p.log.Info("Retargeted release draft", "draft", step.Release, "commit", step.Target)
-		}
-	case model.PublishCreateDraft:
-		var draft gitprovider.TargetRelease
-		if draft, err = p.target.CreateDraft(ctx, step.Tag, step.Name, step.Body, step.Target); err == nil {
-			p.log.Info("Created release draft", "draft", draft.ID)
-		}
-	case model.PublishUploadAsset:
-		var giteaErr error
-		if giteaErr, err = uploadAsset(ctx, p.provider, p.repo, p.target, p.gitea, step); giteaErr != nil {
-			// Gitea's side: not a GitHub failure, tried again on the next poll.
-			p.log.Error(giteaErr, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+	case model.PublishRetargetDraft, model.PublishCreateDraft, model.PublishUploadAsset, model.PublishDraft:
+		// The draft, upload and publish sequence is the github member's
+		// Deployer's: it takes the same step from the same reads.
+		var ok bool
+		if ok, err = p.ship(ctx, step); !ok {
 			return false, nil
-		}
-		if err == nil {
-			p.log.Info("Uploaded release file", "file", step.Asset.Name, "size", step.Asset.Size)
-		}
-	case model.PublishDraft:
-		if _, err = p.target.PublishRelease(ctx, step.Release, step.Latest); err == nil {
-			p.log.Info("Published release draft", "draft", step.Release, "latest", step.Latest)
 		}
 	}
 	return true, err
@@ -447,56 +433,56 @@ func targetReleases(ctx context.Context, target gitprovider.ReleaseTarget,
 	return &model.TargetReleases{Releases: []model.TargetRelease{rel}}, nil
 }
 
-// sourceName is the name of the Gitea file GitHub stored as name: GitHub turns
-// a space, and other characters it doesn't keep in a file name, into a dot.
+// sourceName is the name of the Gitea file GitHub stored as name.
 func sourceName(gitea *model.SourceRelease, name string) string {
-	if gitea != nil {
-		for _, a := range gitea.Assets {
-			if githubAssetName(a.Name) == name {
-				return a.Name
-			}
-		}
+	if gitea == nil {
+		return name
 	}
-	return name
+	return model.ShippedFileName(gitea.Assets, name)
 }
 
-func githubAssetName(name string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._+-", r):
-			return r
-		}
-		return '.'
-	}, name)
-}
-
-// uploadAsset streams a Gitea release file to the draft, deleting the draft's
-// file of that name first when it has one. It returns Gitea's failure apart
-// from GitHub's.
-func uploadAsset(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	target gitprovider.ReleaseTarget, gitea *gitprovider.Release, step model.PublishStep) (giteaErr, err error) {
-	var asset *gitprovider.ReleaseAsset
-	for i, a := range gitea.Assets {
-		if a.ID == step.Asset.ID {
-			asset = &gitea.Assets[i]
-		}
-	}
-	if asset == nil {
-		return fmt.Errorf("gitea release %s has no file %s", gitea.Tag, step.Asset.Name), nil
-	}
-	if step.Replace != nil {
-		if err := target.DeleteAsset(ctx, step.Replace.ID); err != nil {
-			return nil, err
-		}
-	}
-	body, size, err := provider.OpenReleaseAsset(ctx, repo, *asset)
+// ship takes the next write of shipping the release to GitHub through the
+// github member's Deployer, streaming its files from Gitea; false ends the
+// pass on a failure the operator's or Gitea's side, tried again on the next
+// poll. A failed GitHub write is returned, for the rule to read as a fact.
+func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, error) {
+	deployer, err := p.r.Deployers.For(model.DeployMemberGitHub)
 	if err != nil {
-		return err, nil
+		p.log.Error(err, "Failed to find the GitHub deployer")
+		return false, nil
 	}
-	defer func() { _ = body.Close() }()
-	_, err = target.UploadAsset(ctx, step.Release, asset.Name, size, body)
-	return nil, err
+	settings := map[string]string{model.GitHubSettingRepository: p.spec.GitHub.Repository,
+		model.GitHubSettingTagPrefix: p.facts.TagPrefix}
+	if !p.facts.Latest {
+		settings[model.GitHubSettingLatest] = "false"
+	}
+	target := ports.Target{Name: p.crew.Namespace + "/" + p.crew.Name, Member: model.DeployMemberGitHub,
+		Settings: settings, Secret: map[string][]byte{publishTokenKey: []byte(p.token)}}
+	shipment := ports.Shipment{App: p.crew.Namespace + "/" + p.facts.Container, DisplayName: p.facts.App,
+		Version: p.tag, Commit: model.ShipCommit(*p.facts), Notes: p.gitea.Body}
+	for _, a := range p.gitea.Assets {
+		shipment.Files = append(shipment.Files, ports.File{Name: a.Name, Size: a.Size,
+			Open: func(ctx context.Context) (io.ReadCloser, int64, error) {
+				body, size, err := p.provider.OpenReleaseAsset(ctx, p.repo, a)
+				if err != nil {
+					return nil, 0, giteaError{err}
+				}
+				return body, size, nil
+			}})
+	}
+	err = deployer.Ship(logr.NewContext(ctx, p.log), target, shipment)
+	if ge, ok := errors.AsType[giteaError](err); ok {
+		// Gitea's side: not a GitHub failure.
+		p.log.Error(ge.error, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+		return false, nil
+	}
+	return true, err
 }
+
+// giteaError is a release file Gitea failed to give.
+type giteaError struct{ error }
+
+func (e giteaError) Unwrap() error { return e.error }
 
 // eventReleaseTargetDiffers is the Warning Event of a Crew held because its
 // release target differs from its Brief's.
