@@ -352,21 +352,26 @@ What #1163 settled that the decisions above left open:
 
 - **The approve action tests the entry first.** A JSON patch addresses a
   list entry by index, so the action is a `test` that `/spec/deploy/N/target`
-  is the target the page showed, then its one write, `add` at
-  `/spec/deploy/N/approved`; a list reordered since the page read it is
-  refused by the API server rather than approving another target. The
+  is the target the page showed, then, when the entry had an approval, a
+  `test` that `approved` is still what the page showed, then its one write,
+  `add` at `/spec/deploy/N/approved`. A list reordered since the page read
+  it is refused by the API server rather than approving another target, and
+  a stale page or a copied line can't take back an approval made since (a
+  first approval, with nothing to test, can still race another). The
   `kubectl patch` line *Needs you* and the Container page give is the same
   patch. The UI's actions ClusterRole already has `patch` on Containers.
-- **Needs you itemizes by entry.** A Container whose `Deployed` is
-  `WaitingForApproval` gets an item per entry whose reason is
-  `WaitingForApproval`, each with its version and command; `DeployFailed`
-  an item per `Failed` entry, with its own reason (`TagTaken`,
-  `ArtifactMissing`, ...) and URL; a `Degraded` deploy an item whatever
-  `Deployed` says. When the condition says it and no entry does (a status
-  written between the two), one item from the condition. A hold the
-  factory clears by itself (`WaitingForPrevious`, `Deploying`, `NoRelease`)
-  or a person fixes elsewhere (`TargetNotReady`, `Incompatible`, seen on
-  the DeployTarget and the Container page) is not an item.
+- **Needs you reads each entry, not `Deployed`.** Decision 6 names
+  `Deployed`'s reasons, but the condition gives only the first in its
+  order, so a target that can't be reached would hide another's approval.
+  An entry whose reason is `WaitingForApproval` is an item with its version
+  and command; a `Failed` entry an item with its own reason (`TagTaken`,
+  `ArtifactMissing`, ...) and URL; a `Degraded` deploy an item. When
+  `Deployed` says `WaitingForApproval` or `DeployFailed` and no entry does
+  (a status written between the two), one item from the condition. A hold
+  the factory clears by itself (`WaitingForPrevious`, `Deploying`,
+  `NoRelease`) or a person fixes elsewhere (`TargetNotReady`,
+  `Incompatible`, seen on the DeployTarget and the Container page) is not
+  an item.
 - **Approval unset reads as the tier's default** on the DeployTarget page,
   in words ("Not set: production's default, a person approves each
   version"); the rule stays `internal/model`'s, and the operator's

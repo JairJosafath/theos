@@ -345,22 +345,23 @@ function createsObject(kind, specFields, fixed = {}) {
 
 /**
  * A JSON patch approving a version at one spec.deploy entry: a `test` that the
- * entry at index N names a target (a string), then its only write, an `add`
- * of a string at /spec/deploy/N/approved, the same N. The test keeps a list
- * reordered since the page read it from approving another target. Returns
- * the patch, or undefined.
+ * entry at index N names a target (a string), optionally a `test` of the
+ * entry's approved as it was (a string), then its only write, an `add` of a
+ * string at /spec/deploy/N/approved, the same N throughout. The tests keep a
+ * list reordered since the page read it from approving another target, and a
+ * stale page from taking back a newer approval. Returns the patch, or undefined.
  */
 function approvesDeploy(body) {
-  if (!Array.isArray(body) || body.length !== 2) return undefined
-  const [test, add] = body
+  if (!Array.isArray(body) || body.length < 2 || body.length > 3) return undefined
   const op = (o, name, field) => {
     if (!isObject(o) || o.op !== name || Object.keys(o).sort().join() !== 'op,path,value') return undefined
     if (typeof o.value !== 'string') return undefined
     const m = typeof o.path === 'string' ? /^\/spec\/deploy\/(0|[1-9][0-9]?)\/([a-z]+)$/.exec(o.path) : null
     return m && m[2] === field ? m[1] : undefined
   }
-  const index = op(test, 'test', 'target')
-  return index !== undefined && op(add, 'add', 'approved') === index ? body : undefined
+  const index = op(body[0], 'test', 'target')
+  if (index === undefined || op(body.at(-1), 'add', 'approved') !== index) return undefined
+  return body.length === 2 || op(body[1], 'test', 'approved') === index ? body : undefined
 }
 
 /**
@@ -529,7 +530,7 @@ const ACTIONS = [
     check: addsFields({ '/spec/checks': 'string' }),
   },
   {
-    what: "approve a version at one of a Container's /spec/deploy entries (a test of /spec/deploy/N/target, then an add at /spec/deploy/N/approved)",
+    what: "approve a version at one of a Container's /spec/deploy entries (a test of /spec/deploy/N/target, optionally a test of /spec/deploy/N/approved, then an add at /spec/deploy/N/approved)",
     method: 'PATCH',
     path: resourcePath('containers', true),
     type: JSON_PATCH,

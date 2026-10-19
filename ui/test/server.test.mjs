@@ -539,6 +539,17 @@ describe('server.mjs', () => {
         [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 'v1.3.0')],
       ],
       [
+        "a Container's approval after a test of the approval it replaces (#1163)",
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [
+          { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+          { op: 'test', path: '/spec/deploy/1/approved', value: 'v1.2.0' },
+          add('/spec/deploy/1/approved', 'v1.3.0'),
+        ],
+      ],
+      [
         "a Container's take of its Standard's files left out",
         'PATCH',
         '/containers/orders-api',
@@ -854,6 +865,22 @@ describe('server.mjs', () => {
         [
           'an approval tested with a number',
           [{ op: 'test', path: '/spec/deploy/1/target', value: 1 }, add('/spec/deploy/1/approved', 'v1')],
+        ],
+        [
+          'an approval after a test of another entry’s approval',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/0/approved', value: 'v1' },
+            add('/spec/deploy/1/approved', 'v2'),
+          ],
+        ],
+        [
+          'an approval with two writes of it',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            add('/spec/deploy/1/approved', 'v1'),
+            add('/spec/deploy/1/approved', 'v2'),
+          ],
         ],
         [
           'an approval with an extra key',

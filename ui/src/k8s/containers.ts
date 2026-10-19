@@ -79,8 +79,18 @@ export interface ContainerWriter {
   /** Takes or keeps the files left out at `ref`, the Standard's ref in the Container's status. */
   answerStandard(namespace: string, name: string, answer: StandardAnswer, ref: string): Promise<void>
   setChecks(namespace: string, name: string, checks: ChecksMode): Promise<void>
-  /** Approves `version` at spec.deploy's entry `index`, which must still name `target`. */
-  approveDeploy(namespace: string, name: string, index: number, target: string, version: string): Promise<void>
+  /**
+   * Approves `version` at spec.deploy's entry `index`, which must still name
+   * `target` and, when given, still have `approved`, the approval the page showed.
+   */
+  approveDeploy(
+    namespace: string,
+    name: string,
+    index: number,
+    target: string,
+    version: string,
+    approved?: string,
+  ): Promise<void>
   /** Resolves to the new Task's name. */
   startTask(namespace: string, container: string, crew: Crew, goal: string): Promise<string>
 }
@@ -128,12 +138,19 @@ export class LiveContainerWriter implements ContainerWriter {
     })
   }
 
-  async approveDeploy(namespace: string, name: string, index: number, target: string, version: string): Promise<void> {
+  async approveDeploy(
+    namespace: string,
+    name: string,
+    index: number,
+    target: string,
+    version: string,
+    approved?: string,
+  ): Promise<void> {
     const path = `${resourcePath(RESOURCES.containers, namespace)}/${encodeURIComponent(name)}`
     await this.send(`${this.baseUrl}${path}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-      body: JSON.stringify(approvePatch(index, target, version)),
+      body: JSON.stringify(approvePatch(index, target, version, approved)),
     })
   }
 

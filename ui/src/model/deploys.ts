@@ -107,25 +107,29 @@ export function shippingTo(target: string, containers: Container[]): Container[]
   return containers.filter((c) => c.spec.deploy?.some((d) => d.target === target))
 }
 
-/** The JSON patch operation that sets one spec.deploy entry's approved, after a test that the entry is the target's. */
-export type ApprovePatch = [{ op: 'test'; path: string; value: string }, { op: 'add'; path: string; value: string }]
+/** A JSON patch operation of the approval. */
+export type ApproveOp = { op: 'test' | 'add'; path: string; value: string }
 
 /**
  * The patch that approves `version` at the entry `index` of spec.deploy: its
  * only write sets that entry's approved, after a test that the entry still
  * names `target`, so a list reordered since the page read it is refused, not
- * approved at another target.
+ * approved at another target; and, when the entry had an approval, a test that
+ * it still has `approved`, so a stale page or a copied line can't take back
+ * a newer approval someone made since.
  */
-export function approvePatch(index: number, target: string, version: string): ApprovePatch {
+export function approvePatch(index: number, target: string, version: string, approved?: string): ApproveOp[] {
+  const at = `/spec/deploy/${index}`
   return [
-    { op: 'test', path: `/spec/deploy/${index}/target`, value: target },
-    { op: 'add', path: `/spec/deploy/${index}/approved`, value: version },
+    { op: 'test', path: `${at}/target`, value: target },
+    ...(approved ? [{ op: 'test' as const, path: `${at}/approved`, value: approved }] : []),
+    { op: 'add', path: `${at}/approved`, value: version },
   ]
 }
 
 /** The kubectl line that approves the version waiting at a Container's entry. */
 export function approveCommand(container: Container, row: DeployRow, version: string): string {
   const ns = container.metadata.namespace ?? ''
-  const patch = JSON.stringify(approvePatch(row.index, row.target, version))
+  const patch = JSON.stringify(approvePatch(row.index, row.target, version, row.approved))
   return `kubectl -n ${ns} patch container ${container.metadata.name} --type=json -p '${patch}'`
 }

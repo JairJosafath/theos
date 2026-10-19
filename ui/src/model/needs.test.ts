@@ -529,6 +529,26 @@ describe('needs', () => {
     }
   })
 
+  it('lists an approval waiting while Deployed names another target’s reason first (#1163)', () => {
+    // Deployed gives the first reason in its order: staging unreachable hides prod's approval there.
+    const c = deploying(
+      [{ target: 'staging' }, { target: 'prod', version: 'v1.3.0', approved: 'v1.2.0' }],
+      [
+        { target: 'staging', phase: 'Waiting', reason: 'Unreachable', message: 'unreachable', since: T },
+        { target: 'prod', wantedVersion: 'v1.3.0', phase: 'Waiting', reason: 'WaitingForApproval', since: T },
+        { target: 'oss', wantedVersion: 'v1.3.0', phase: 'Failed', reason: 'ArtifactMissing', since: T },
+      ],
+      cond('Deployed', 'False', 'TargetNotReady', 'staging unreachable'),
+    )
+    const items = needs(input({ containers: [c] }))
+    expect(items.map((n) => n.title)).toEqual([
+      'waits for your approval of v1.3.0 at prod',
+      'failed to deploy v1.3.0 to oss',
+    ])
+    // The approval it replaces is tested, so a copied line can't take back a newer one.
+    expect(items[0].command).toContain('{"op":"test","path":"/spec/deploy/1/approved","value":"v1.2.0"}')
+  })
+
   it('lists each target waiting for approval, and a degraded one besides (#1163)', () => {
     const waiting = (target: string) => ({
       target,

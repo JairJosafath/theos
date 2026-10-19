@@ -306,7 +306,8 @@ function DeployItem({
         ) : null}
       </dl>
       {row.awaiting && row.index >= 0 ? (
-        <Approve container={container} row={row} version={row.awaiting} writer={writer} />
+        // Keyed by the version, so a newer one waiting starts afresh, not as approved.
+        <Approve key={row.awaiting} container={container} row={row} version={row.awaiting} writer={writer} />
       ) : null}
     </li>
   )
@@ -359,7 +360,7 @@ function Approve({
   async function approve() {
     setSending(true)
     try {
-      await writer.approveDeploy(ns, name, row.index, row.target, version)
+      await writer.approveDeploy(ns, name, row.index, row.target, version, row.approved)
       setSent(true)
     } catch (err) {
       setError(writeError(err))

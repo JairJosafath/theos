@@ -186,9 +186,13 @@ function containerNeeds(c: Container): Need[] {
 export const DEPLOY_HELD = ['WaitingForApproval', 'DeployFailed']
 
 /**
- * A Container whose Deployed waits for an approval or says a deploy failed: an
- * item per entry in that state, with the kubectl line that approves the version
- * waiting; and an item per deploy whose target's tool reports it Degraded.
+ * A Container's deploys that wait on a person: an item per entry waiting for
+ * approval, with the kubectl line that approves its version, per entry Failed,
+ * and per deploy whose target's tool reports it Degraded. Each is read from its
+ * own entry, not from Deployed, which names only the first reason in its order:
+ * a target that can't be reached would otherwise hide another's approval. A
+ * Deployed that waits for approval or says a deploy failed with no entry saying
+ * which is one item from the condition.
  */
 function deployNeeds(c: Container, place: Need['place']): Need[] {
   const deployed = findCondition(c.status?.conditions, 'Deployed')
@@ -203,7 +207,7 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
   const link = (row: (typeof rows)[number]) =>
     row.status?.url ? [{ label: `At ${row.target}`, url: row.status.url }] : []
   for (const row of rows) {
-    if (held === 'WaitingForApproval' && row.awaiting && row.index >= 0) {
+    if (row.awaiting && row.index >= 0) {
       items.push({
         ...base('Container', c, `Approve|${row.target}`),
         title: `waits for your approval of ${row.awaiting} at ${row.target}`,
@@ -213,7 +217,7 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
         command: approveCommand(c, row, row.awaiting),
       })
     }
-    if (held === 'DeployFailed' && row.status?.phase === 'Failed') {
+    if (row.status?.phase === 'Failed') {
       items.push({
         ...base('Container', c, `DeployFailed|${row.target}`),
         title: `failed to deploy${row.status.wantedVersion ? ` ${row.status.wantedVersion}` : ''} to ${row.target}`,
@@ -224,7 +228,9 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
     }
   }
   // Status that names no entry in that state still says the Container waits: one item from the condition.
-  if (held && !items.length) {
+  const named =
+    held === 'WaitingForApproval' ? rows.some((r) => r.awaiting) : rows.some((r) => r.status?.phase === 'Failed')
+  if (held && !named) {
     items.push({
       ...base('Container', c, `Deployed|${held}`),
       title: held === 'WaitingForApproval' ? 'has a deploy waiting for your approval' : 'has a deploy that failed',

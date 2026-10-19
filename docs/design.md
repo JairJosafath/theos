@@ -1316,10 +1316,10 @@ only when `status` carries the effective one. The plan behind it is
   the resources flag for a person (`ui/src/model/needs.ts`): a Brief whose
   `NeedsInput` or `NeedsYou` is True; a Container `Failed`, or whose
   `StandardUpdated` says its update pull request waits on a person or its
-  Standard files are behind (`FilesBehind`), or whose `Deployed` is
-  `WaitingForApproval` (with the `kubectl patch` line that approves the
-  version waiting) or `DeployFailed`, an item per entry in that state, or
-  one of whose `status.deploys` is `Degraded`; a Task
+  Standard files are behind (`FilesBehind`), or one of whose
+  `status.deploys` waits for approval (`WaitingForApproval`, with the
+  `kubectl patch` line that approves the version waiting), is `Failed` or
+  runs `Degraded`, an item per entry; a Task
   `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
   Crew whose `Released` leaves a release to a person, whose
   `status.lastRelease.run` is `Failed`, or whose `ModulePublished` is False
@@ -1395,7 +1395,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
-  | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of that entry's `target` |
+  | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of that entry's `target` and, when it had one, of its `approved` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 

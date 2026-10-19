@@ -97,10 +97,18 @@ describe('the approval', () => {
     ])
   })
 
+  it('tests the approval it replaces, when the entry has one (#1163)', () => {
+    expect(approvePatch(0, 'prod', 'v1.3.0', 'v1.2.0')).toEqual([
+      { op: 'test', path: '/spec/deploy/0/target', value: 'prod' },
+      { op: 'test', path: '/spec/deploy/0/approved', value: 'v1.2.0' },
+      { op: 'add', path: '/spec/deploy/0/approved', value: 'v1.3.0' },
+    ])
+  })
+
   it('is the same patch as a kubectl line', () => {
-    const c = container([{ target: 'staging' }, { target: 'prod' }])
+    const c = container([{ target: 'staging' }, { target: 'prod', approved: 'v1.2.0' }])
     expect(approveCommand(c, deploysOf(c)[1], 'v1.3.0')).toBe(
-      `kubectl -n shop patch container api --type=json -p '${JSON.stringify(approvePatch(1, 'prod', 'v1.3.0'))}'`,
+      `kubectl -n shop patch container api --type=json -p '${JSON.stringify(approvePatch(1, 'prod', 'v1.3.0', 'v1.2.0'))}'`,
     )
   })
 })
