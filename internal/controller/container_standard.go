@@ -46,9 +46,6 @@ type standardUpdate struct {
 	r         *ContainerReconciler
 	container *c4v1alpha1.Container
 	status    *c4v1alpha1.ContainerStatus
-	// framework is the Container's Framework, whose render at the ref it was
-	// scaffolded at tells the Standard what the Framework has.
-	framework *c4v1alpha1.Framework
 	// git reaches the Container's Git host; it is built on first use.
 	git *gitAccess
 	// frameworkPaths are framework's paths at its scaffolded ref, read on
@@ -109,18 +106,6 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 			c4v1alpha1.ReasonNotFound, notFoundMessage([]string{"Standard " + name}))
 		return false
 	}
-	var framework c4v1alpha1.Framework
-	found, err = r.lookup(ctx, container.Namespace, container.Spec.FrameworkRef.Name, &framework)
-	if err != nil {
-		logf.FromContext(ctx).Info("Could not read Framework", "framework", container.Spec.FrameworkRef.Name,
-			"error", err.Error())
-		return false
-	}
-	if !found {
-		r.condition(container, status, c4v1alpha1.ConditionStandardUpdated, metav1.ConditionFalse,
-			c4v1alpha1.ReasonNotFound, notFoundMessage([]string{"Framework " + container.Spec.FrameworkRef.Name}))
-		return false
-	}
 
 	if !live() {
 		return false
@@ -129,7 +114,7 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	// Git calls get a deadline of their own, so the status write after them still lands.
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
-	u := &standardUpdate{r: r, container: container, status: status, framework: &framework}
+	u := &standardUpdate{r: r, container: container, status: status}
 	u.run(ctx, gitCtx, &standard)
 	return u.answered
 }
@@ -292,14 +277,10 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), to.Checks,
 		scaffoldedOperations(u.container, u.status))
-	in.FrameworkFiles, err = u.frameworkFiles(gitCtx, git)
+	in.FrameworkFiles, err = u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
-		if errors.As(err, new(*frameworkRenderError)) {
-			s.Update = stopped(c4v1alpha1.ReasonFailed)
-			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFailed, err.Error())
-			return
-		}
-		u.gitError(ctx, err)
+		// Not the Standard's version's fault: the next pass plans it again.
+		u.renderFailed(ctx, err)
 		return
 	}
 	render := func(v model.StandardVersion, files scaffold.Tree) (scaffold.Tree, bool) {
@@ -507,7 +488,7 @@ func (e *renderError) Error() string { return fmt.Sprintf("at %s: %v", e.ref, e.
 
 // renders renders standard for the Container, fetching its template with the
 // Git host's credentials when it lives on the same host.
-func (u *standardUpdate) renders(ctx context.Context, git *gitAccess,
+func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	standard *c4v1alpha1.Standard) (*standardRenders, error) {
 	var creds *gitprovider.Credentials
 	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
@@ -515,7 +496,7 @@ func (u *standardUpdate) renders(ctx context.Context, git *gitAccess,
 	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status),
 		scaffoldedOperations(u.container, u.status))
-	paths, err := u.frameworkFiles(ctx, git)
+	paths, err := u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		return nil, err
 	}
@@ -529,6 +510,11 @@ func (u *standardUpdate) renders(ctx context.Context, git *gitAccess,
 		trees:    map[string]scaffold.Tree{},
 	}, nil
 }
+
+// frameworkNotFoundError is a Container's Framework that doesn't exist.
+type frameworkNotFoundError struct{ name string }
+
+func (e *frameworkNotFoundError) Error() string { return notFoundMessage([]string{"Framework " + e.name}) }
 
 // frameworkRenderError is a Framework that fetched but didn't render at the
 // ref the Container was scaffolded at.
@@ -546,18 +532,26 @@ func (e *frameworkRenderError) Error() string {
 // scaffold.Input.FrameworkFiles, as it did at the scaffold: a Standard
 // update brings files for the Framework's version the repository has, not
 // its newest. A scaffold that recorded no Framework ref has none.
-func (u *standardUpdate) frameworkFiles(ctx context.Context, git *gitAccess) ([]string, error) {
+func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAccess) ([]string, error) {
 	if u.frameworkRead {
 		return u.frameworkPaths, nil
 	}
-	name := u.framework.Name
+	name := u.container.Spec.FrameworkRef.Name
 	ref := model.ScaffoldedRef(u.status.ScaffoldedFrom, name)
 	if ref != "" {
+		var framework c4v1alpha1.Framework
+		found, err := u.r.lookup(ctx, u.container.Namespace, name, &framework)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, &frameworkNotFoundError{name: name}
+		}
 		var creds *gitprovider.Credentials
-		if gitprovider.SameHost(git.gitProvider.Spec.URL, u.framework.Spec.Template.URL) {
+		if gitprovider.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 			creds = &git.creds
 		}
-		files, err := u.r.Git.FetchTemplate(ctx, u.framework.Spec.Template.URL, ref, creds)
+		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -619,6 +613,8 @@ func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
 			fmt.Sprintf("Could not render the Standard %s %v", s.Name, err))
 	case errors.As(err, new(*frameworkRenderError)):
 		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonFailed, err.Error())
+	case errors.As(err, new(*frameworkNotFoundError)):
+		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, err.Error())
 	default:
 		u.gitError(ctx, err)
 	}
@@ -688,7 +684,7 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	behind := behindFiles(s)
-	renders, err := u.renders(gitCtx, git, standard)
+	renders, err := u.renders(ctx, gitCtx, git, standard)
 	var next scaffold.Tree
 	if err == nil {
 		next, err = renders.at(gitCtx, s.Ref)
