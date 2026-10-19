@@ -15,7 +15,9 @@ else on _Story_:
 - **Needs you**, across all projects, grouped by project: what waits on a
   person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
   Brief needing input or a decision, a Container that failed to scaffold or
-  whose Standard update pull request waits, a Task blocked or failed (until a
+  whose Standard update pull request waits, or one whose deploy waits for a
+  person's approval, failed or runs degraded (with the `kubectl patch` line
+  that approves the version waiting), a Task blocked or failed (until a
   newer Task or a round answers it), a Crew that left a release to a person or
   whose release run failed. Each item says why in the condition's own words,
   since when, and where it is done: the object's page, a link out, or a
@@ -57,7 +59,8 @@ else on _Story_:
   and release notes, and to the repository.
 
 **Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
-Relationship, Session, Standard, Compute, Deployment and GitProvider each have
+Relationship, Session, Standard, Compute, Deployment, GitProvider and
+DeployTarget each have
 a page that opens with the same header
 ([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
 name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
@@ -68,7 +71,13 @@ conditions, timeline, children and links out. The Task page adds its rounds,
 checks, review and agent runs; the Crew page its slots, Tasks and last release;
 the Container page, for a Container with a Standard, when CI runs its full
 check (`spec.checks`), what its repository runs now and `ChecksApplied` when
-False, with a choice that sets it when actions are on.
+False, with a choice that sets it when actions are on; and where it ships:
+each `spec.deploy` entry's target, the version running and wanted, phase,
+health and URL, and for a version waiting for approval the `kubectl patch`
+line, or with actions on an Approve button. The DeployTarget page shows its
+tool and where (the `github` repository), tier, approval, `Ready` and the
+Containers that ship to it, and of its credentials the Secret's name only; the
+Project page lists its DeployTargets.
 
 **Versions.** The footer of every page shows the UI's version (stamped by its
 build, `dev` otherwise), the operator's and the chart's (from Project status,
@@ -163,6 +172,7 @@ takes more writes, each one method, path, content type and body shape:
 | Crew      | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` alone                                                                                                                                                                                                                                                |
 | Container | `PATCH`, merge patch | one annotation alone: `c4.factory.io/retry`, or the answer to its Standard's bump, `c4.factory.io/standard-take` or `c4.factory.io/standard-keep`                                                                                                                                             |
 | Container | `PATCH`, JSON patch  | `add` at `/spec/checks`                                                                                                                                                                                                                                                                       |
+| Container | `PATCH`, JSON patch  | the approval of a deploy: a `test` of `/spec/deploy/N/target` (a string), then its one write, `add` of a string at `/spec/deploy/N/approved`, the same N; the test refuses a list reordered since the page read it                                                                            |
 | Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                                                                                                                                                                             |
 | Standard  | `PATCH`, JSON patch  | `add` at `/spec/template/ref`                                                                                                                                                                                                                                                                 |
 
@@ -275,6 +285,7 @@ src/model/factory.ts    Work: stages, timelines, stats, the board and the agent 
 src/model/needs.ts      the Needs you items, from status
 src/model/lifecycle.ts  each kind's lifecycle and next step, for the object pages
 src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
+src/model/deploys.ts    a DeployTarget's member, tier, approval and Ready; a Container's deploys and the approve patch
 src/demo/               the demo fixture; in demo mode the Brief writes stay in memory,
                         refused by the CRD's limits (limits.ts) as the API server would
 src/components/         the shell (Shell.tsx), the areas, the diagram and side panels;

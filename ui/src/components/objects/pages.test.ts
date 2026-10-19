@@ -6,10 +6,13 @@ import type { ContainerWriter } from '../../k8s/containers'
 import type { CrewWriter } from '../../k8s/crews'
 import type { Connection, StoryData } from '../../k8s/sources'
 import type { StandardWriter } from '../../k8s/standards'
-import type { GitProvider } from '../../k8s/types'
+import type { UiSession } from '../../k8s/session'
+import type { DeployTarget, GitProvider } from '../../k8s/types'
+import { SessionContext } from '../../lib/hooks'
 import { demoStory } from '../../demo/fixture'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { GitProviderPage } from './CatalogPages'
+import { DeployTargetPage } from './DeployPages'
 import { ObjectPage } from './ObjectPage'
 
 const NOW = Date.parse('2026-06-01T12:00:00Z')
@@ -27,18 +30,28 @@ afterAll(() => {
   vi.unstubAllGlobals()
 })
 
-function page(kind: LifecycleKind, name: string, data: StoryData = demoStory(NOW), connection = LIVE) {
+function page(
+  kind: LifecycleKind,
+  name: string,
+  data: StoryData = demoStory(NOW),
+  connection = LIVE,
+  session?: UiSession,
+) {
   return renderToStaticMarkup(
-    createElement(ObjectPage, {
-      kind,
-      name,
-      data,
-      connection,
-      writer: WRITER,
-      containerWriter: CONTAINER_WRITER,
-      crewWriter: CREW_WRITER,
-      standardWriter: STANDARD_WRITER,
-    }),
+    createElement(
+      SessionContext.Provider,
+      { value: session },
+      createElement(ObjectPage, {
+        kind,
+        name,
+        data,
+        connection,
+        writer: WRITER,
+        containerWriter: CONTAINER_WRITER,
+        crewWriter: CREW_WRITER,
+        standardWriter: STANDARD_WRITER,
+      }),
+    ),
   )
 }
 
@@ -57,6 +70,7 @@ describe('the read-only object pages', () => {
     ['Compute', 'small', 'Its template'],
     ['Deployment', 'k8s-manifests', 'Its template'],
     ['GitProvider', 'gitea', 'Where repositories go'],
+    ['DeployTarget', 'prod', 'Where it ships'],
   ] as const)('opens a %s page', (kind, name, section) => {
     const html = page(kind, name)
     expect(html).toContain(`aria-label="${kind} ${name}"`)
@@ -131,6 +145,81 @@ describe('the GitProvider page', () => {
     expect(text(html)).toContain('Secret gitea-credentials')
     expect(text(html)).toContain('the UI never reads Secrets')
     expect(html).not.toMatch(/sekrit|c2Vrcml0/)
+  })
+})
+
+describe('deploys (#1163)', () => {
+  it('shows a DeployTarget’s member, tier, approval, Ready and the Containers that ship to it', () => {
+    const t = text(page('DeployTarget', 'prod'))
+    expect(t).toContain('Tool GitHub releases (github)')
+    expect(t).toContain('Where webshop-co/orders-api')
+    expect(t).toContain('Tier production')
+    expect(t).toContain('Approval Not set: production’s default, a person approves each version')
+    expect(t).toContain('Ready Ready GitHub accepts the token for webshop-co/orders-api')
+    expect(t).toContain('Secret github-prod')
+    expect(t).toContain('domain: orders.webshop.example')
+    expect(t).toContain('orders-api · Waiting, runs v0.1.0')
+  })
+
+  it('names a DeployTarget’s Secret and renders none of its data or any field it does not name', () => {
+    const prod = demoStory(NOW).deployTargets[1]
+    const leaky = {
+      ...prod,
+      metadata: { ...prod.metadata, annotations: { token: 'sekrit-annotation' } },
+      spec: { ...prod.spec, token: 'sekrit-token' },
+      data: { token: btoa('sekrit-data') },
+    } as DeployTarget
+    const html = renderToStaticMarkup(createElement(DeployTargetPage, { target: leaky, containers: [] }))
+    expect(text(html)).toContain('Secret github-prod')
+    expect(html).not.toMatch(/sekrit|c2Vrcml0/)
+  })
+
+  it('lists the Project’s deploy targets with their member, tier, approval and Ready', () => {
+    const html = page('Project', 'webshop')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=DeployTarget&amp;name=staging"')
+    expect(text(html)).toContain(
+      'prod Ready · GitHub releases webshop-co/orders-api · production · Not set: production’s default',
+    )
+  })
+
+  it('shows a Container’s deploys, and the kubectl line that approves the version waiting, with actions off', () => {
+    const html = page('Container', 'orders-api')
+    const t = text(html)
+    expect(t).toContain('Where it ships')
+    expect(t).toContain('staging Deployed Healthy')
+    expect(html).toContain('href="https://github.com/webshop-co/orders-staging/releases/tag/v0.2.0"')
+    expect(t).toContain('prod Waiting Healthy')
+    expect(t).toContain('Runs v0.1.0 Wanted v0.2.0 After staging Approved v0.1.0')
+    expect(t).toContain('v0.2.0 waits for a person’s approval to ship to prod. To approve it, run:')
+    expect(html).toContain('/spec/deploy/1/approved')
+    expect(html).not.toContain('Approve v0.2.0')
+  })
+
+  it('offers the approval as a button with actions on', () => {
+    const html = page('Container', 'orders-api', demoStory(NOW), LIVE, {
+      actions: true,
+      mode: 'service-account',
+      user: null,
+    })
+    expect(text(html)).toContain('Approve v0.2.0…')
+    expect(text(html)).toContain('Ship v0.2.0 of orders-api to prod?')
+    expect(html).not.toContain('kubectl -n webshop patch')
+  })
+
+  it('asks a person signed out to sign in, and still gives the kubectl line', () => {
+    const html = page('Container', 'orders-api', demoStory(NOW), LIVE, {
+      actions: true,
+      mode: 'oidc',
+      user: null,
+      login: '/ui/login',
+      logout: '/ui/logout',
+    })
+    expect(text(html)).toContain('Sign in to approve it here, or run:')
+    expect(html).toContain('kubectl -n webshop patch container orders-api')
+  })
+
+  it('shows no deploys on a Container that names no target', () => {
+    expect(text(page('Container', 'storefront'))).not.toContain('Where it ships')
   })
 })
 

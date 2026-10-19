@@ -3,6 +3,8 @@
 // the repository, and on Failed the retry kubectl line), then its template
 // refs and its Standard with the update pull request in flight, and when CI
 // runs its full check (ContainerChecks, which sets it with UI actions on);
+// where it ships and what runs there (ContainerDeploys, which approves a
+// version waiting with UI actions on);
 // with UI actions on, a scaffold retry, an answer to the Standard's files left
 // out and a Task from a goal (ContainerActions). The files left out show what
 // the Standard changed in each, beside the take and keep buttons, or on their
@@ -10,7 +12,7 @@
 
 import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
-import type { Brief, CatalogEntry, Container, Crew, Relationship, Session } from '../../k8s/types'
+import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Relationship, Session } from '../../k8s/types'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
@@ -21,6 +23,7 @@ import { ObjectHeader, type OutLink } from '../ObjectHeader'
 import { answersLeftOut, ContainerActions } from './ContainerActions'
 import { ContainerChecks } from './ContainerChecks'
 import { ContainerOperations } from './ContainerOperations'
+import { ContainerDeploys } from './DeployPages'
 import { relationshipsOf } from './rows'
 import { pageHref, storyHref } from './links'
 import '../briefs.css'
@@ -32,6 +35,7 @@ export function ContainerPage({
   frameworks,
   briefs,
   crews,
+  deployTargets,
   writer,
 }: {
   container: Container
@@ -40,6 +44,7 @@ export function ContainerPage({
   frameworks: CatalogEntry[]
   briefs: Brief[]
   crews: Crew[]
+  deployTargets: DeployTarget[]
   writer: ContainerWriter
 }) {
   const session = useContext(SessionContext)
@@ -175,6 +180,8 @@ export function ContainerPage({
       {container.spec.standardRef ? <ContainerChecks container={container} writer={writer} /> : null}
 
       <ContainerOperations container={container} />
+
+      <ContainerDeploys container={container} targets={deployTargets} writer={writer} />
 
       {update && described ? (
         <section className="panel" aria-labelledby="container-standard">

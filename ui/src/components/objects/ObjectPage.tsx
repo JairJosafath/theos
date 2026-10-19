@@ -12,6 +12,7 @@ import type { LifecycleKind } from '../../model/lifecycle'
 import { BriefPage } from './BriefPage'
 import { CatalogPage, GitProviderPage } from './CatalogPages'
 import { ContainerPage } from './ContainerPage'
+import { DeployTargetPage } from './DeployPages'
 import { CrewPage } from './CrewPage'
 import { ProjectPage, RelationshipPage, SessionPage, SystemPage } from './ModelPages'
 import { ReadProblems } from '../Status'
@@ -33,6 +34,7 @@ const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resour
   Compute: { list: (d) => d.computes, resource: RESOURCES.computes },
   Deployment: { list: (d) => d.deployments, resource: RESOURCES.deployments },
   GitProvider: { list: (d) => d.gitProviders, resource: RESOURCES.gitProviders },
+  DeployTarget: { list: (d) => d.deployTargets, resource: RESOURCES.deployTargets },
 }
 
 export function ObjectPage({
@@ -107,6 +109,7 @@ function pageFor(
             frameworks={data.frameworks}
             briefs={data.briefs}
             crews={data.crews}
+            deployTargets={data.deployTargets}
             writer={containerWriter}
           />
         )
@@ -173,6 +176,10 @@ function pageFor(
     case 'GitProvider': {
       const provider = named(data.gitProviders)
       return provider && <GitProviderPage provider={provider} containers={data.containers} />
+    }
+    case 'DeployTarget': {
+      const target = named(data.deployTargets)
+      return target && <DeployTargetPage target={target} containers={data.containers} />
     }
   }
 }

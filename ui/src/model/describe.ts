@@ -161,6 +161,11 @@ const WORDING: Record<string, Wording> = {
     no: 'Not built into the repository',
     unknown: 'Not known yet whether this is built into the repository',
   },
+  Deployed: {
+    yes: 'Every deploy target runs the version it should',
+    no: 'A deploy target does not run the version it should yet',
+    unknown: 'Not known yet what runs at its deploy targets',
+  },
 }
 
 // Reasons that change the wording of a False condition.
@@ -175,7 +180,16 @@ const REASON_WORDING: Record<string, string> = {
 }
 
 // Reasons that mean "not yet" rather than "wrong".
-const WAITING_REASONS = new Set(['WaitingForScaffold', 'Scaffolding', 'NotFound'])
+const WAITING_REASONS = new Set([
+  'WaitingForScaffold',
+  'Scaffolding',
+  'NotFound',
+  // A Container's Deployed while a deploy is on its way or held (docs/plans/deploy.md, decision 6).
+  'WaitingForApproval',
+  'WaitingForPrevious',
+  'Deploying',
+  'NoRelease',
+])
 
 // A Brief's conditions that flag something for a person: False is the calm state.
 const FLAGS = new Set(['NeedsInput', 'NeedsYou', 'IssuesFailed', 'Paused'])

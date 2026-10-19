@@ -78,6 +78,19 @@ describe('LiveContainerWriter', () => {
     expect(checksPatch('EveryChange')).toEqual([{ op: 'add', path: '/spec/checks', value: 'EveryChange' }])
   })
 
+  it('approves a deploy with a JSON patch of one entry’s approved, after a test of its target (#1163)', async () => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveContainerWriter('k8s', fetchImpl).approveDeploy('webshop', 'orders-api', 1, 'prod', 'v1.3.0')
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+      body: JSON.stringify([
+        { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+        { op: 'add', path: '/spec/deploy/1/approved', value: 'v1.3.0' },
+      ]),
+    })
+  })
+
   it('creates the Task and resolves to the name the API server gave it', async () => {
     const fetchImpl = vi.fn(async () => respond(201, { metadata: { name: 'orders-api-x7k2p' } }))
     const name = await new LiveContainerWriter('k8s', fetchImpl).startTask('webshop', 'orders-api', crew, 'Add paging')
