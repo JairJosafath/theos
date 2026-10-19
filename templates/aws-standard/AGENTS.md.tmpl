@@ -36,7 +36,7 @@ and the system's needs: follow those.
 `eslint.config.mjs` on the CDK app (typescript-eslint strict, no warnings
 allowed), `go vet`, golangci-lint with `.golangci.yml`, `tsc` with the strict
 `tsconfig.json`, the function's Go tests (`go test -race`), the stacks'
-vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
+vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions and Serverless
 {{- else if $py -}}
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json` and `uv.lock` (and fails when `uv.lock` is stale), then
@@ -44,13 +44,13 @@ runs Prettier and `ruff format` (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict) and ruff with `ruff.toml` (every rule), no findings
 allowed, `tsc` with the strict `tsconfig.json` and mypy `--strict` with
 `mypy.ini`, the function's pytest tests and the stacks' vitest
-`Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
+`Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions and Serverless
 {{- else -}}
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest tests (the code's and the stacks'
-`Template.fromStack` assertions), `cdk synth`{{ if $site }}, which builds the site with Vite,{{ end }} with CDK Nag's AWS Solutions
+`Template.fromStack` assertions), `cdk synth`{{ if $site }}, which builds the site with Vite,{{ end }} with CDK Nag's AWS Solutions and Serverless
 {{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
 `cfn-lint` on the templates synth wrote. CI runs the same command, and nothing

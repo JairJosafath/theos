@@ -4,7 +4,7 @@ How a program on AWS in a C4 Factory Container (a Lambda function, a service
 on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda or a scheduled job on EventBridge Scheduler and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
-checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
+and Serverless checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
 `make check` contract CI runs. Nothing deploys, bootstraps or calls AWS.
@@ -178,8 +178,23 @@ byte for byte.
   `PutTraceSegments` and `PutTelemetryRecords`, and `AwsSolutions-DDB3` on
   every table where the tier has no point-in-time recovery, and adds CDK
   Nag's `AwsSolutions` to the app as a policy validation plugin
-  (`Validations.of(app).addPlugins`, cdk-nag 3), so a finding not
-  acknowledged with a reason fails synth. `infra/main.ts` makes the `App`,
+  (`Validations.of(app).addPlugins`, cdk-nag 3), and `Serverless` when
+  `infra/operations.ts` exists, so a finding not acknowledged with a reason
+  fails synth (a warning too). Of the Serverless rules it acknowledges, on
+  every stack, the five an `AwsSolutions` rule checks too
+  (`LambdaLatestVersion` for L1, `LambdaStarPermissions` for IAM5,
+  `APIGWAccessLogging` for APIG1, `SQSRedrivePolicy` for SQS3, which knows a
+  dead-letter queue needs none, `StepFunctionStateMachineXray` for SF2); and
+  on the one resource: `LambdaDLQ` on a function only synchronous callers
+  call (API Gateway, a load balancer, an SQS event source mapping) or
+  CloudFormation for a custom resource; `LambdaEventSourceMappingDestination`
+  on an SQS event source, which takes none; `LambdaAsyncFailureDestination`
+  on a function's `EventInvokeConfig` when the function has a dead-letter
+  queue; `SNSRedrivePolicy` on an email subscription; `LambdaTracing` on
+  every function in a tier without tracing; and `APIGWStructuredLogging` on
+  an HTTP API stage whose access log is not JSON. It reads the resources'
+  properties one at a time, resolved, never a whole resource, which would
+  cache its lazy values before the synth's aspects. `infra/main.ts` makes the `App`,
   reads the tier, calls the Framework's `defineStacks(app, tier)` (through a
   type with both parameters, so a `stacks.ts` written before tiers, taking
   the app alone, still fits), then `applyStandard(app, tier)`, then
