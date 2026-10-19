@@ -446,7 +446,8 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 	}
 	for _, o := range systems.Items {
 		out = append(out, model.PlanObject{Kind: model.KindSoftwareSystem, Name: o.Name,
-			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs})
+			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs,
+			Location: string(o.Spec.Location)})
 	}
 	var containers c4v1alpha1.ContainerList
 	if err := c.List(ctx, &containers, in); err != nil {

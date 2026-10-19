@@ -212,3 +212,21 @@ func TestPlannerGuideLeavesReleasingToTheFactory(t *testing.T) {
 		}
 	}
 }
+
+// TestPlannerGuideSaysWhenASystemIsExternal: the guide tells the planner to
+// mark a system someone else runs External, and shows one (#1150).
+func TestPlannerGuideSaysWhenASystemIsExternal(t *testing.T) {
+	for _, want := range []string{"**A system someone else runs is External.**", "location: External",
+		"a later round keeps it"} {
+		if !strings.Contains(plannerGuideText, want) {
+			t.Errorf("PLANNER.md doesn't say %q", want)
+		}
+	}
+	plan, err := ParsePlan(guideExampleFiles(t, plannerGuideText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := findObject(plan.Objects, Ref{KindSoftwareSystem, "payments"}); !ok || o.Location != LocationExternal {
+		t.Errorf("the example plan has no External system: %+v", o)
+	}
+}

@@ -136,7 +136,8 @@ func TestParsePlan(t *testing.T) {
 		web.SoftwareSystem != "shop" || web.GitProvider != "gitea" || web.DisplayName != "Web" {
 		t.Errorf("web = %+v", web)
 	}
-	if s := plan.Objects[1]; !reflect.DeepEqual(s.KPIs, []string{"orders per day"}) || s.Description != "Sells things" {
+	if s := plan.Objects[1]; !reflect.DeepEqual(s.KPIs, []string{"orders per day"}) || s.Description != "Sells things" ||
+		s.Location != LocationInternal {
 		t.Errorf("system = %+v", s)
 	}
 	if r := plan.Objects[5]; r.Source != (Ref{KindContainer, "api"}) || r.Target != (Ref{KindDataStore, "db"}) {
@@ -155,6 +156,34 @@ func TestParsePlan(t *testing.T) {
 	}
 	if plan.Summary != "Planned the shop: a web site and an API." {
 		t.Errorf("summary %q", plan.Summary)
+	}
+}
+
+// TestParsePlanLocation: a plan's SoftwareSystem carries its location, and
+// one the planner leaves out is Internal (#1150).
+func TestParsePlanLocation(t *testing.T) {
+	system := func(location string) string {
+		return "apiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem\nmetadata:\n  name: payments\nspec:\n" +
+			"  description: Takes the money\n" + location
+	}
+	tests := []struct {
+		name, spec, want string
+	}{
+		{"left out", "", LocationInternal},
+		{"Internal", "  location: Internal\n", LocationInternal},
+		{"External", "  location: External\n", LocationExternal},
+		{"another word, for the check to refuse", "  location: Outside\n", "Outside"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects, err := parsePlanModel(system(tt.spec))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := objects[0].Location; got != tt.want {
+				t.Errorf("location %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -253,6 +282,10 @@ func TestCheckPlan(t *testing.T) {
 			Source: Ref{KindContainer, "web"}, Target: Ref{KindContainer, "api"}, Description: "Reads orders"})
 		p.Releases = []string{"api"}
 		p.Issues[0].Uses = []string{"api"}
+	}
+	payments := func(location string) PlanObject {
+		return PlanObject{APIVersion: PlanAPIVersion, Kind: KindSoftwareSystem, Name: "payments",
+			Description: "Takes the money", Location: location}
 	}
 	tests := []struct {
 		name    string
@@ -440,6 +473,31 @@ func TestCheckPlan(t *testing.T) {
 		{"a SoftwareSystem with more than 20 kpis", func(p *Plan, _ *CurrentModel) {
 			object(p, "SoftwareSystem/shop").KPIs = make([]string, 21)
 		}, "SoftwareSystem/shop", "spec.kpis has 21 items; it may have at most 20"},
+		{"#1150: a new External SoftwareSystem", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, payments(LocationExternal))
+		}, "", ""},
+		{"#1150: a SoftwareSystem location that is neither", func(p *Plan, _ *CurrentModel) {
+			object(p, "SoftwareSystem/shop").Location = "Outside"
+		}, "SoftwareSystem/shop", `location "Outside" is not a SoftwareSystem location: write Internal or External`},
+		{"#1150: a new Container in a new External system", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, payments(LocationExternal))
+			object(p, "Container/web").SoftwareSystem = "payments"
+		}, "Container/web", `softwareSystemRef names "payments", which is External`},
+		{"#1150: a new DataStore in a new External system", func(p *Plan, _ *CurrentModel) {
+			p.Objects = append(p.Objects, payments(LocationExternal))
+			object(p, "DataStore/db").SoftwareSystem = "payments"
+		}, "DataStore/db", `softwareSystemRef names "payments", which is External: the factory builds nothing`},
+		{"#1150: a new Container in an External system the plan calls Internal", func(p *Plan, c *CurrentModel) {
+			p.Objects = append(p.Objects, payments(LocationInternal))
+			c.Objects = append(c.Objects, payments(LocationExternal))
+			c.Objects[len(c.Objects)-1].APIVersion = ""
+			object(p, "Container/web").SoftwareSystem = "payments"
+		}, "Container/web", `softwareSystemRef names "payments", which is External`},
+		{"#1150: a later round calling an External system Internal", func(p *Plan, c *CurrentModel) {
+			p.Objects = append(p.Objects, payments(LocationInternal))
+			c.Objects = append(c.Objects, payments(LocationExternal))
+			c.Objects[len(c.Objects)-1].APIVersion = ""
+		}, "", ""},
 		{"a new Container's displayName over 100 characters", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").DisplayName = strings.Repeat("x", 101)
 		}, "Container/web", "spec.displayName is 101 characters"},

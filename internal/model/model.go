@@ -156,6 +156,13 @@ const (
 	KindDataStore      = "DataStore"
 )
 
+// SoftwareSystem locations, mirroring the API: an Internal system is one the
+// factory builds, an External one the story only names.
+const (
+	LocationInternal = "Internal"
+	LocationExternal = "External"
+)
+
 // Ref names a story element.
 type Ref struct {
 	Kind string
