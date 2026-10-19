@@ -913,9 +913,13 @@ func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 			if err := yaml.Unmarshal(data, &crd); err != nil {
 				t.Fatal(err)
 			}
+			// Fields a plan never writes: a Brief names no deploy target
+			// (docs/plans/deploy.md, decision 2).
+			unplanned := map[string]bool{"deploy": kind == KindContainer}
 			want := map[string]string{}
 			for field, schema := range crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties {
 				switch {
+				case unplanned[field]:
 				case schema.MaxLength != nil:
 					want[field] = fmt.Sprintf("%d characters", *schema.MaxLength)
 				case schema.MaxItems != nil:

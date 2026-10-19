@@ -123,6 +123,10 @@ const (
 	// last rendered with; False with reason Updating while the pull request
 	// that renders a changed block waits for CI, or with why it stopped.
 	ConditionOperationsApplied = "OperationsApplied"
+	// ConditionDeployed is True when each entry of a Ready Container's
+	// spec.deploy runs its wanted version; False with the first reason that
+	// holds, in the order of internal/model's DeployedCondition.
+	ConditionDeployed = "Deployed"
 )
 
 // Condition reasons.

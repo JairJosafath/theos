@@ -73,6 +73,93 @@ type ContainerSpec struct {
 	// where it stands.
 	// +optional
 	Operations *OperationsSpec `json:"operations,omitempty"`
+
+	// deploy names the DeployTargets each release of the Container's Crew
+	// ships to, in order. The operator ships the newest release whose runs
+	// succeeded, or an entry's pinned version, through the target's tool, and
+	// reports it in status.deploys and the condition Deployed. The list may
+	// change at any time and never scaffolds again; removing an entry stops
+	// shipping there and leaves what runs there alone.
+	// +kubebuilder:validation:MaxItems=5
+	// +kubebuilder:validation:XValidation:rule="[0, 1, 2, 3, 4].all(i, i >= self.size() || !has(self[i].after) || [0, 1, 2, 3, 4].exists(j, j < i && self[j].target == self[i].after))",message="after must name an entry earlier in deploy"
+	// +listType=map
+	// +listMapKey=target
+	// +optional
+	Deploy []ContainerDeploy `json:"deploy,omitempty"`
+}
+
+// ContainerDeploy is one place a Container's releases ship to.
+type ContainerDeploy struct {
+	// target names the DeployTarget, in the Container's namespace.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Target string `json:"target"`
+
+	// after names an earlier entry's target: a version ships here only once
+	// that entry runs it, healthy where its target reads health.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	After string `json:"after,omitempty"`
+
+	// version pins a release tag; empty follows the newest release whose runs
+	// succeeded. Pinning an older tag rolls back.
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9._+-]*$`
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// approved is the version a person let in. Where the target needs
+	// approval, a version ships only when approved names it.
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9._+-]*$`
+	// +optional
+	Approved string `json:"approved,omitempty"`
+}
+
+// ContainerDeployStatus is what runs at one of a Container's targets.
+type ContainerDeployStatus struct {
+	// target is the entry's DeployTarget.
+	// +required
+	Target string `json:"target"`
+
+	// version is the version running there, as its tool last reported.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// wantedVersion is the version the entry should run: its pin, else the
+	// newest release.
+	// +optional
+	WantedVersion string `json:"wantedVersion,omitempty"`
+
+	// phase is Waiting while the wanted version is held, Deploying while the
+	// target's tool ships it, Deployed once it runs, and Failed when the tool
+	// or the call failed.
+	// +kubebuilder:validation:Enum=Waiting;Deploying;Deployed;Failed
+	// +required
+	Phase string `json:"phase"`
+
+	// health is what the target's tool reports of what runs there.
+	// +kubebuilder:validation:Enum=Healthy;Progressing;Degraded;Unknown
+	// +optional
+	Health string `json:"health,omitempty"`
+
+	// url is where the app, or its release, answers, when the tool knows it.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// reason says why the entry is in its phase, in CamelCase.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// message says it for a person.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// since is when the phase, reason or wanted version last changed.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
 }
 
 // OperationsSpec is what a Container promises in any tier. Every field is
@@ -406,6 +493,18 @@ type ContainerStatus struct {
 	// +optional
 	OperationsUpdate *OperationsUpdateStatus `json:"operationsUpdate,omitempty"`
 
+	// newestRelease is the newest release of the Container's Crews whose runs
+	// succeeded, kept while a newer release's runs haven't: the version an
+	// unpinned spec.deploy entry follows.
+	// +optional
+	NewestRelease string `json:"newestRelease,omitempty"`
+
+	// deploys is what runs at each of spec.deploy's targets, in its order.
+	// +listType=map
+	// +listMapKey=target
+	// +optional
+	Deploys []ContainerDeployStatus `json:"deploys,omitempty"`
+
 	// activeSessions is the number of Active Sessions on this Container.
 	// +optional
 	ActiveSessions int32 `json:"activeSessions"`
@@ -416,7 +515,7 @@ type ContainerStatus struct {
 
 	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
 	// and, for a Container with a Standard, StandardUpdated and ChecksApplied;
-	// once scaffolded, OperationsApplied.
+	// once scaffolded, OperationsApplied; with spec.deploy, Deployed.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
