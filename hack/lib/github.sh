@@ -142,8 +142,11 @@
 #                                        spending limit); prints an issue body with their annotation
 #   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count]
 #                                        the Ginkgo specs and shell test cases (TEST FILE: CASE) that failed on
-#                                        main in the last N days (default 7): SPEC<tab>RUN<tab>TIME for each
-#                                        [FAIL] line, and each FAIL line test-hack.sh shows, of each failed run's log.
+#                                        main in the last N days (default 7): SPEC<tab>RUN<tab>TIME<tab>STREAK for
+#                                        each [FAIL] line, and each FAIL line test-hack.sh shows, of each failed
+#                                        run's log. STREAK is the commit of the first failure in the run's red
+#                                        streak, the failed runs of its workflow with no pass between them
+#                                        (cancelled and skipped runs are neither): failures in a row share it.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
 #                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
 #   hack/lib/github.sh queued [--minutes M]
@@ -2622,7 +2625,10 @@ gh_fail_specs() {
 
 # gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run
 # whose log can't be read is left out of FILE, so the next call reads it again;
-# FILE keeps only the runs still in the window.
+# FILE keeps only the runs still in the window. Every run on main in the
+# window is listed, not just the failed ones, so a failure's streak can be
+# told (#1398): a run still going is neither a pass nor a failure, so one that
+# fails after it joins the streak before it.
 gh_flakes() {
   local days=7 seen= count= since runs id at log out= read=
   while [ $# -gt 0 ]; do
@@ -2635,9 +2641,16 @@ gh_flakes() {
   done
   gh_token || return 1
   since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ) || return 1
-  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --status failure --created ">=${since%%T*}" --limit 100 \
-    --json databaseId,createdAt --jq ".[] | select(.createdAt >= \"$since\") | \"\(.databaseId)\t\(.createdAt)\"") || return 1
-  while IFS=$'\t' read -r id at; do
+  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --created ">=${since%%T*}" --limit 1000 \
+    --json databaseId,createdAt,conclusion,workflowName,headSha) || return 1
+  runs=$(jq -r --arg since "$since" 'group_by(.workflowName)[] | sort_by(.createdAt) |
+    reduce .[] as $r ({streak: null, out: []};
+      if $r.conclusion == "failure" or $r.conclusion == "timed_out" then
+        .streak //= $r.headSha | .out += [[$r.databaseId, $r.createdAt, .streak]]
+      elif $r.conclusion == "success" then .streak = null
+      else . end) |
+    .out[] | select(.[1] >= $since) | @tsv' <<<"$runs") || return 1
+  while IFS=$'\t' read -r id at streak; do
     [ -n "$id" ] || continue
     if [ -n "$seen" ] && grep -qxF "$id" "$seen" 2>/dev/null; then
       read+="$id"$'\n'
@@ -2645,7 +2658,7 @@ gh_flakes() {
     fi
     log=$(gh run view "$id" --repo "$C4_GITHUB_REPO" --log-failed 2>/dev/null) || continue
     read+="$id"$'\n'
-    out+=$(gh_fail_specs <<<"$log" | awk -v r="$id" -v t="$at" '{ print $0 "\t" r "\t" t }')$'\n'
+    out+=$(gh_fail_specs <<<"$log" | awk -v r="$id" -v t="$at" -v k="$streak" '{ print $0 "\t" r "\t" t "\t" k }')$'\n'
   done <<<"$runs"
   [ -z "$seen" ] || printf '%s' "$read" | grep -v '^$' >"$seen"
   out=$(grep -v '^$' <<<"$out")

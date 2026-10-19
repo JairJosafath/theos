@@ -104,6 +104,22 @@ func (g *fakeGit) addTemplate(url, ref string, tree scaffold.Tree) {
 	g.templates[url+"@"+ref] = tree
 }
 
+// dropTemplate removes the template at url and ref, as a host that lost it
+// would: fetching it fails until it is added again.
+func (g *fakeGit) dropTemplate(url, ref string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.templates, url+"@"+ref)
+}
+
+// leaveMergeCommitsUnnamed makes reading a pull request of owner/name leave
+// out the commit its merge made, as a host that doesn't say would.
+func (g *fakeGit) leaveMergeCommitsUnnamed(owner, name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.agentState().unnamed[owner+"/"+name] = true
+}
+
 // seedRepo creates a repository with one commit, as if someone else made it.
 //
 //nolint:unparam // takes owner and name like the other helpers
@@ -402,6 +418,7 @@ type fakeAgentState struct {
 	conflicts map[string]bool                       // owner/name#N -> conflicts with its base
 	gone      map[string]bool                       // owner/name#number -> pull request deleted
 	readErrs  map[string]int                        // owner/name#number -> reads left to fail
+	unnamed   map[string]bool                       // owner/name -> merge commits the host doesn't name
 	// edits are what the commit PushBranch made on a branch changes on main,
 	// by owner/name@branch: a path's new file, or nil when it removes it.
 	edits map[string]map[string]*scaffold.File
@@ -421,8 +438,8 @@ func (g *fakeGit) agentState() *fakeAgentState {
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 			texts: map[string][2]string{},
 			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
-			readErrs: map[string]int{},
-			edits:    map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
+			readErrs: map[string]int{}, unnamed: map[string]bool{},
+			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 		}
 	}
 	return g.agent
@@ -712,7 +729,11 @@ func (p *fakeProvider) GetPullRequest(_ context.Context, repo gitprovider.Reposi
 	if err != nil {
 		return gitprovider.PullRequest{}, err
 	}
-	return *pr, nil
+	read := *pr
+	if p.git.agentState().unnamed[repo.Owner+"/"+repo.Name] {
+		read.MergeCommit = ""
+	}
+	return read, nil
 }
 
 func (p *fakeProvider) CommentPullRequest(_ context.Context, repo gitprovider.Repository, number int, body string) error {
@@ -856,6 +877,10 @@ func (p *fakeProvider) HasBranch(_ context.Context, repo gitprovider.Repository,
 func (p *fakeProvider) BranchCommit(_ context.Context, repo gitprovider.Repository, branch string) (string, error) {
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
+	if r := p.git.repos[repo.Owner+"/"+repo.Name]; branch == gitprovider.DefaultBranch && r != nil &&
+		len(r.commits) > 0 {
+		return r.commits[len(r.commits)-1].Hash, nil
+	}
 	return p.git.agentState().branches[repo.Owner+"/"+repo.Name+"@"+branch], nil
 }
 
@@ -888,6 +913,23 @@ func (g *fakeGit) hasBranch(owner, name, branch string) bool {
 	defer g.mu.Unlock()
 	_, ok := g.agentState().branches[owner+"/"+name+"@"+branch]
 	return ok
+}
+
+// branchEdits are the files the commit PushBranch made on branch of owner/name
+// writes, nil for a path it removes.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) branchEdits(owner, name, branch string) map[string]*scaffold.File {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return maps.Clone(g.agentState().edits[owner+"/"+name+"@"+branch])
+}
+
+// template is the template registered at url and ref.
+func (g *fakeGit) template(url, ref string) scaffold.Tree {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.templates[url+"@"+ref]
 }
 
 // setCheckLog sets the log the fake host serves for every CI job.
