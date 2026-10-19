@@ -1,0 +1,199 @@
+# make check in a scaffolded copy of each AWS Framework with aws-standard v1.13.0 (issue #1112)
+# go run ./hack/render -out DIR -type TYPE Framework=FW Standard=aws-standard, then make check in DIR,
+# on 2026-10-19, Node v24.22.0, after merging main. Bundler, download and blank lines are cut;
+# aws-lambda-go's ran with golangci-lint v2.13.1 on PATH.
+# The synth step runs CDK Nag's AwsSolutions and Serverless packs; under cdk-nag 3 an unacknowledged
+# finding of either fails it, so each exit 0 is the pack passing on that Framework's stacks.
+
+## aws-lambda-ts
+npm ci --no-audit --no-fund
+added 178 packages in 36s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  6 passed (6)
+      Tests  126 passed (126)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Installed 9 packages in 81ms
+exit 0
+
+## aws-lambda-go
+npm ci --no-audit --no-fund
+added 141 packages in 8s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/sample-app	1.019s
+node_modules/.bin/vitest run
+ Test Files  2 passed (2)
+      Tests  81 passed (81)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-lambda-py
+npm ci --no-audit --no-fund
+added 141 packages in 9s
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 26 packages in 8ms
+Prepared 23 packages in 9.70s
+Installed 24 packages in 200ms
+ + ast-serialize==0.13.0
+ + aws-lambda-powertools==3.36.0
+ + boto3==1.43.112
+ + botocore==1.43.112
+ + botocore-stubs==1.43.112
+ + iniconfig==2.3.1
+ + jmespath==1.1.0
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + python-dateutil==2.9.0.post0
+ + ruff==0.16.10
+ + s3transfer==0.19.2
+ + six==1.17.0
+ + types-boto3==1.43.112
+ + types-boto3-dynamodb==1.43.106
+ + types-s3transfer==0.19.2
+ + typing-extensions==4.16.0
+ + urllib3==2.8.0
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: DIR/aws-lambda-py
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+============================== 63 passed in 0.53s ==============================
+node_modules/.bin/vitest run
+ Test Files  2 passed (2)
+      Tests  80 passed (80)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-ec2-ts
+npm ci --no-audit --no-fund
+added 172 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  6 passed (6)
+      Tests  136 passed (136)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-fargate-ts
+npm ci --no-audit --no-fund
+added 194 packages in 12s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  7 passed (7)
+      Tests  145 passed (145)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-static-site-ts
+npm ci --no-audit --no-fund
+added 141 packages in 9s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  3 passed (3)
+      Tests  84 passed (84)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-queue-ts
+npm ci --no-audit --no-fund
+added 180 packages in 11s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  6 passed (6)
+      Tests  121 passed (121)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## aws-schedule-ts
+npm ci --no-audit --no-fund
+added 178 packages in 11s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+ Test Files  5 passed (5)
+      Tests  113 passed (113)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## the probe in aws-lambda-ts's copy: vitest run infra/standard.test.ts -t Serverless --reporter=verbose
+ ✓ infra/standard.test.ts > the Serverless rules > find an asynchronous function without a dead-letter queue, and not one only synchronous callers call
+ ✓ infra/standard.test.ts > the Serverless rules > take a dead-letter queue for an asynchronous failure destination
+ ✓ infra/standard.test.ts > the Serverless rules > leave an email subscription without a redrive policy, and not a function’s
+ ✓ infra/standard.test.ts > the Serverless rules > leave to AwsSolutions the rules it checks too
+ ✓ infra/standard.test.ts > the Serverless rules > find an untraced function in production, and not in development
+ Test Files  1 passed (1)

@@ -308,3 +308,31 @@ func TestAWSStandardWellArchitectedFitsTheLanguage(t *testing.T) {
 		})
 	}
 }
+
+// TestAWSStandardRunsServerlessChecks checks that every AWS Framework's
+// stacks synthesize under CDK Nag's Serverless pack beside AwsSolutions, and
+// that the digest no longer leaves to review what a Serverless rule checks
+// (#1112).
+func TestAWSStandardRunsServerlessChecks(t *testing.T) {
+	for _, fw := range awsFrameworks {
+		t.Run(fw.Name, func(t *testing.T) {
+			_, r := renderCombo(t, fw.Side, []side{{model.SideFramework, fw.Name}, {model.SideStandard, "aws-standard"}})
+			standard := string(r.Files["infra/standard.ts"].Data)
+			for _, w := range []string{"new ServerlessChecks(app)", "carriesOperations()", "'Serverless-LambdaDLQ'"} {
+				if !strings.Contains(standard, w) {
+					t.Errorf("infra/standard.ts for %s doesn't say %q", fw.Name, w)
+				}
+			}
+			doc := string(r.Files["docs/well-architected.md"].Data)
+			if !strings.Contains(doc, "`AwsSolutions` and `Serverless` checks on both") {
+				t.Errorf("docs/well-architected.md for %s doesn't say both packs run", fw.Name)
+			}
+			for _, n := range []string{"it is not run", "DefaultTimeout`: by hand", "`APIGWDefaultThrottling`: by hand",
+				"`LambdaDefaultMemorySize`: by hand", "`EventBusDLQ`: by hand"} {
+				if strings.Contains(doc, n) {
+					t.Errorf("docs/well-architected.md for %s says %q, which a Serverless rule now checks", fw.Name, n)
+				}
+			}
+		})
+	}
+}

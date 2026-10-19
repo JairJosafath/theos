@@ -4,7 +4,7 @@ How a program on AWS in a C4 Factory Container (a Lambda function, a service
 on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda, a scheduled job on EventBridge Scheduler and Lambda or an event consumer on EventBridge and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
-checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
+and Serverless checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
 `make check` contract CI runs. Nothing deploys, bootstraps or calls AWS.
@@ -26,7 +26,7 @@ byte for byte.
   `worker` (since v1.9.0), `job` (since v1.10.0); Frameworks:
   `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`,
   `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`,
-  `aws-event-ts` (since v1.13.0)
+  `aws-event-ts` (since v1.14.0)
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -137,7 +137,7 @@ byte for byte.
   still passes `make check` on v1.12.0. `SOURCES.md` adds Powertools for
   Python 3.36.0's Logger, Metrics and Idempotency pages (read 2026-10-16),
   and cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions.
-  `aws-event-ts` (since v1.13.0), a `worker`, is in
+  `aws-event-ts` (since v1.14.0), a `worker`, is in
   `$tiered` and shares `aws-lambda-ts`'s branches too; an `$event`
   variable says event where those say API: the EventBridge event as the
   boundary, its `id` as the idempotency key, `consume` in
@@ -147,7 +147,7 @@ byte for byte.
   consumer in the runbook, the rule and its dead-letter queue in
   `docs/style/aws.md`, the EventBridge and asynchronous invocation sources
   in `SOURCES.md`, the issue template's example and `eslint.config.mjs`'s
-  `process.exit` message. v1.13.0 adds that Framework and two rules to
+  `process.exit` message. v1.14.0 adds that Framework and two rules to
   `infra/standard.test.ts`, for every Framework: every EventBridge rule
   alarms on the events it lost, and every rule's Lambda target is retried
   and dead-lettered to a queue of its stack. A Framework added later gets
@@ -193,8 +193,23 @@ byte for byte.
   `PutTraceSegments` and `PutTelemetryRecords`, and `AwsSolutions-DDB3` on
   every table where the tier has no point-in-time recovery, and adds CDK
   Nag's `AwsSolutions` to the app as a policy validation plugin
-  (`Validations.of(app).addPlugins`, cdk-nag 3), so a finding not
-  acknowledged with a reason fails synth. `infra/main.ts` makes the `App`,
+  (`Validations.of(app).addPlugins`, cdk-nag 3), and `Serverless` when
+  `infra/operations.ts` exists, so a finding not acknowledged with a reason
+  fails synth (a warning too). Of the Serverless rules it acknowledges, on
+  every stack, the five an `AwsSolutions` rule checks too
+  (`LambdaLatestVersion` for L1, `LambdaStarPermissions` for IAM5,
+  `APIGWAccessLogging` for APIG1, `SQSRedrivePolicy` for SQS3, which knows a
+  dead-letter queue needs none, `StepFunctionStateMachineXray` for SF2); and
+  on the one resource: `LambdaDLQ` on a function only synchronous callers
+  call (API Gateway, a load balancer, an SQS event source mapping) or
+  CloudFormation for a custom resource; `LambdaEventSourceMappingDestination`
+  on an SQS event source, which takes none; `LambdaAsyncFailureDestination`
+  on a function's `EventInvokeConfig` when the function has a dead-letter
+  queue; `SNSRedrivePolicy` on an email subscription; `LambdaTracing` on
+  every function in a tier without tracing; and `APIGWStructuredLogging` on
+  an HTTP API stage whose access log is not JSON. It reads the resources'
+  properties one at a time, resolved, never a whole resource, which would
+  cache its lazy values before the synth's aspects. `infra/main.ts` makes the `App`,
   reads the tier, calls the Framework's `defineStacks(app, tier)` (through a
   type with both parameters, so a `stacks.ts` written before tiers, taking
   the app alone, still fits), then `applyStandard(app, tier)`, then
@@ -240,7 +255,7 @@ byte for byte.
   ECS service's `CPUUtilization`, `MemoryUtilization` and
   `RunningTaskCount`, since v1.11.0 every Auto Scaling group's
   `CPUUtilization` and `GroupInServiceInstances`, every schedule group's `InvocationDroppedCount` and
-  `InvocationsFailedToBeSentToDeadLetterCount`, since v1.13.0 every
+  `InvocationsFailedToBeSentToDeadLetterCount`, since v1.14.0 every
   EventBridge rule's `FailedInvocations` and `InvocationsFailedToBeSentToDlq`
   (by `Ref`, its name on the default bus); an alarm watches a resource
   when its definition refers to it by `Ref` or by `Fn::GetAtt`, as a load
@@ -272,7 +287,7 @@ byte for byte.
   `DeadLetterConfig` and `OnFailure` as well as `RedrivePolicy`, and a test
   that every schedule's target has a `RetryPolicy` and a `DeadLetterConfig`
   naming a queue of its stack, and its `GroupName` a group of its stack; a
-  repository with no schedule passes them unchanged. v1.13.0 added the
+  repository with no schedule passes them unchanged. v1.14.0 added the
   rule's two metrics to `ALARMED_METRICS`, and a test that every target of
   an `AWS::Events::Rule` that is a function of its stack has a
   `RetryPolicy` and a `DeadLetterConfig` naming a queue of its stack; a

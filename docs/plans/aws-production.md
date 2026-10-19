@@ -233,7 +233,7 @@ What each existing Framework gets, as #1067's *Done when* asks:
 | --- | --- | --- | --- | --- | --- |
 | `infra/operations.ts`, backups, alarms, topic, dashboard, outputs, termination protection, runbook | step 3 | step 4 | step 4 | step 5 | step 6 |
 | Powertools (Logger, Metrics, Idempotency) | step 3 | step 4 | no (none for Go) | no (not Lambda) | no |
-| `ServerlessChecks` pack | step 7 | step 7 | step 7 | no | no |
+| `ServerlessChecks` pack | step 7 (the Standard, every Framework with `infra/operations.ts`) | | | | |
 | `cfn-lint --include-checks I` | step 3 (the Standard, every Framework) | | | | |
 | X-Ray by tier | step 3 | step 4 | step 4 | step 5 (ADOT collector) | no |
 | Framework-specific | | | | NAT per zone in production; ECS deployment alarm kept | TLS on the internal ALB (`CertificateArn`); `cfn-signal` so a rolling update stops on a failed health check |
@@ -685,9 +685,68 @@ the evidence. What it settled beyond step 3:
   `docs/runbook.md` gives it a branch of its own after step 9's. Its table
   is step 9's `BACKED_UP_TYPES`, so the plan's checks apply to it as before.
 
+### Step 7, as built
+
+`aws-standard` v1.13.0 (agent otter-1112;
+`docs/screenshots/1112-serverless-checks.txt` has the evidence):
+
+- **The pack runs for every Framework with `infra/operations.ts`**, not only
+  the three `function` ones the table first named: its rules touch only
+  serverless resources, and the others have some (the alarm topic's email
+  subscription everywhere, the static site's `BucketDeployment` function, the
+  queue's and the schedule's functions and dead-letter queues).
+  `standard.ts` stays free of Framework branches. A repository without the
+  file was scaffolded before the block and keeps `AwsSolutions` alone, so a
+  Standard update never fails its synth.
+- **A Serverless warning fails synth too:** under cdk-nag 3 any finding makes
+  the plugin's report a failure, so a warning needs a fix or an
+  acknowledgement like an error.
+- **The five duplicates** are acknowledged on every stack, with the
+  `AwsSolutions` rule that checks the same: `LambdaLatestVersion` (L1),
+  `LambdaStarPermissions` (IAM5), `APIGWAccessLogging` (APIG1),
+  `SQSRedrivePolicy` (SQS3, which knows a dead-letter queue needs none),
+  `StepFunctionStateMachineXray` (SF2). An acknowledgement nothing matches
+  is silent, so a stack without the resource is fine.
+- **Acknowledged on the one resource, found from its properties:**
+  `LambdaDLQ` on a function whose only callers are synchronous (a
+  permission for API Gateway or a load balancer, an SQS event source
+  mapping) or CloudFormation for a custom resource, and never when a
+  permission names another principal or an event rule, pipe, schedule, SNS
+  subscription or `EventInvokeConfig` names the function;
+  `LambdaEventSourceMappingDestination` on an SQS event source (what the
+  template can't show, code that invokes a function with
+  `InvocationType: 'Event'` through an IAM grant, is the reviewer's to see;
+  a caller the Standard doesn't know, such as a permission on an alias or a
+  function URL, leaves the finding standing, which fails closed);
+  `LambdaAsyncFailureDestination` on an `EventInvokeConfig` whose function
+  has a `DeadLetterConfig` (aws-schedule-ts); `SNSRedrivePolicy` on an
+  email subscription (an alarm email the inbox refused, kept where nobody
+  reads it, helps no one; the topic's ARN is an output for a target's own
+  channel); `LambdaTracing` on every function where the tier doesn't trace,
+  as `DDB3` is where it doesn't recover.
+- **`APIGWStructuredLogging` is acknowledged on a stage that logs CLF.** The
+  three Lambda Frameworks' v1.1.0 write the Common Log Format; the Standard
+  can't tell a repository's Framework version (#1249), so it can't fail an
+  older one. #1420 makes the three write JSON.
+- **Properties are read one at a time.** `standard.ts` resolves only the
+  properties it reads (`FunctionName`, `Principal`, `EventSourceArn`, ...)
+  through each resource's `cfnProperties`: resolving a whole resource at
+  `applyStandard` would cache its lazy values before the synth's aspects.
+- **The test reads the validation report.** `synth` throws a bare
+  `ValidationFailed`, so `standard.test.ts` gives a probe app its own
+  outdir and reads `validation-report.json`: an asynchronous function
+  without a dead-letter queue is found, a function only API Gateway or an
+  SQS event source calls is not, nor an email subscription, nor the
+  duplicates, and an untraced function is found in production only.
+- **The digest's by-hand list** loses the Serverless items a rule now
+  checks: timeouts, memory, throttling, dead-letter queues for
+  asynchronous invocations. What stays by hand is what no rule checks: a
+  restore drill and a game day, whether the alarms fire for the right
+  reasons, right-sizing from measured load, input validation.
+
 ### Step 11, as built
 
-`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.13.0
+`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.14.0
 (`docs/screenshots/1116-aws-event-ts-check.txt` has the evidence). It
 copies step 10's two levels of retry and one dead-letter queue, and settled:
 

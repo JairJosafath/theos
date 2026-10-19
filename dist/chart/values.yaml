@@ -649,10 +649,10 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.13.0
+      ref: v1.14.0
       spec:
         displayName: AWS quality standard
-        description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions pack, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
+        description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
         supportedTypes: [function, service, static-site, worker, job]
         supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts, aws-queue-ts, aws-schedule-ts, aws-event-ts]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
