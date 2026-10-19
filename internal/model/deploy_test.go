@@ -1,6 +1,7 @@
 package model
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -144,5 +145,58 @@ func TestDeployCheckMessage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The draft, upload and publish sequence the github member's adapter and the
+// Crew's release copy share.
+func TestNextReleaseStep(t *testing.T) {
+	files := []ReleaseAsset{{ID: 0, Name: "app.tar.gz", Size: 10}, {ID: 1, Name: "SHA256SUMS", Size: 2}}
+	ship := ReleaseShip{Tag: "v1.0.0", Name: "Orders v1.0.0", Body: "notes\n\n<!-- m -->\n", Files: files,
+		Latest: true}
+	draft := func(target string, assets ...ReleaseAsset) *TargetRelease {
+		return &TargetRelease{ID: 7, Draft: true, Target: target, Assets: assets}
+	}
+	tests := []struct {
+		name string
+		r    ReleaseShip
+		ours *TargetRelease
+		want PublishStep
+	}{
+		{name: "no draft: create it at the default branch", r: ship, want: PublishStep{Action: PublishCreateDraft,
+			Tag: "v1.0.0", Name: "Orders v1.0.0", Body: ship.Body}},
+		{name: "no draft: create it at the commit", r: ReleaseShip{Tag: "v1.0.0", Commit: "abc"},
+			want: PublishStep{Action: PublishCreateDraft, Tag: "v1.0.0", Target: "abc"}},
+		{name: "a draft at another commit is retargeted", r: ReleaseShip{Commit: "abc", Files: files},
+			ours: draft("main"), want: PublishStep{Action: PublishRetargetDraft, Release: 7, Target: "abc"}},
+		{name: "a draft is left where it is when no commit is wanted", r: ship, ours: draft("main"),
+			want: PublishStep{Action: PublishUploadAsset, Release: 7, Asset: files[0]}},
+		{name: "the next missing file", r: ship, ours: draft("", ReleaseAsset{ID: 9, Name: "app.tar.gz", Size: 10}),
+			want: PublishStep{Action: PublishUploadAsset, Release: 7, Asset: files[1]}},
+		{name: "a file of another size is replaced", r: ship,
+			ours: draft("", ReleaseAsset{ID: 9, Name: "app.tar.gz", Size: -1}),
+			want: PublishStep{Action: PublishUploadAsset, Release: 7, Asset: files[0],
+				Replace: &ReleaseAsset{ID: 9, Name: "app.tar.gz", Size: -1}}},
+		{name: "every file there: publish", r: ship, ours: draft("", files...),
+			want: PublishStep{Action: PublishDraft, Release: 7, Latest: true}},
+		{name: "published: done", r: ship, ours: &TargetRelease{ID: 7, URL: "https://github.com/o/r/releases/tag/v1.0.0"},
+			want: PublishStep{Action: PublishDone, URL: "https://github.com/o/r/releases/tag/v1.0.0"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NextReleaseStep(tt.r, tt.ours); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NextReleaseStep() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+	if got := ReleaseBody("", "<!-- m -->"); got != "<!-- m -->\n" {
+		t.Errorf("ReleaseBody without notes = %q", got)
+	}
+	if got := ReleaseBody("notes\n\n", "<!-- m -->"); got != "notes\n\n<!-- m -->\n" {
+		t.Errorf("ReleaseBody = %q", got)
+	}
+	if got := PublishMarker("ns", "app", "v1"); got != ShipMarker("ns/app", "v1") ||
+		!strings.HasPrefix(got, ShipMarkerPrefix("ns/app")) {
+		t.Errorf("PublishMarker = %q, ShipMarker = %q", got, ShipMarker("ns/app", "v1"))
 	}
 }

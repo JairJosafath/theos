@@ -58,8 +58,8 @@ type DeployMember struct {
 	Tool string
 	// SecretKeys are the keys the target's credentialsSecretRef holds.
 	SecretKeys []string
-	// Credential says what the Secret's credential is, for a message.
-	Credential string
+	// Holds says what the Secret holds, for a message.
+	Holds string
 	// Needs are what a Container must have to be shipped there; none for a
 	// member that ships the release alone.
 	Needs []DeployNeed
@@ -83,7 +83,7 @@ const (
 // deployMembers are the members the factory ships to, by name.
 var deployMembers = map[string]DeployMember{
 	DeployMemberGitHub: {Name: DeployMemberGitHub, Tool: "GitHub", SecretKeys: []string{"token"},
-		Credential: "a fine-grained token for the repository alone, with Contents read and write"},
+		Holds: "a fine-grained token for the repository alone, with Contents read and write"},
 }
 
 // DeployMemberByName returns the member name names.
@@ -147,7 +147,7 @@ const (
 	DeployTargetReady             = "Ready"
 	DeployTargetSecretMissing     = "SecretMissing"
 	DeployTargetSecretIncomplete  = "SecretIncomplete"
-	DeployTargetCredentialRefused = "CredentialRefused"
+	DeployTargetCredentialRefused = "CredentialRefused" //nolint:gosec // a reason, not a credential
 	DeployTargetUnreachable       = "Unreachable"
 )
 
@@ -163,15 +163,15 @@ func DeployCheckMessage(reason string, c DeployCheck) string {
 	switch reason {
 	case DeployTargetSecretMissing:
 		return fmt.Sprintf("Secret %s, with the key %s, is missing; whoever owns DeployTarget %s creates it "+
-			"holding %s for %s", c.Secret, keys, c.Target, c.Member.Credential, c.Where)
+			"holding %s for %s", c.Secret, keys, c.Target, c.Member.Holds, c.Where)
 	case DeployTargetSecretIncomplete:
 		return fmt.Sprintf("Secret %s of DeployTarget %s has no %s %s; whoever owns the target sets it to %s for %s",
 			c.Secret, c.Target, plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "),
-			c.Member.Credential, c.Where)
+			c.Member.Holds, c.Where)
 	case DeployTargetCredentialRefused:
 		return fmt.Sprintf("%s refused the credential in Secret %s of DeployTarget %s for %s%s. Whoever owns "+
 			"DeployTarget %s sets Secret %s to %s for %s", c.Member.Tool, c.Secret, c.Target, c.Where, detail,
-			c.Target, c.Secret, c.Member.Credential, c.Where)
+			c.Target, c.Secret, c.Member.Holds, c.Where)
 	case DeployTargetUnreachable:
 		return fmt.Sprintf("%s could not be reached to check DeployTarget %s for %s%s; checked again on the next poll",
 			c.Member.Tool, c.Target, c.Where, detail)
