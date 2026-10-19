@@ -250,6 +250,43 @@ remote cluster.
    only the Deployer and the depguard rule its row in architecture.md
    states; #1094 adds its ports beside it.
 
+## Step 2 as built
+
+What #1161 settled that the decisions above left open:
+
+- **Ship is one write per call where the adapter is the tool.** The GitHub
+  adapter is GitHub's release API itself, so `Ship` takes the next write of
+  the draft, upload and publish sequence (`model.NextReleaseStep`) and
+  returns; repeating it goes on with the one release. Step 3 ships each
+  poll while `State` says `Deploying`. An adapter whose tool runs the deploy
+  (CloudFormation, Argo CD) starts it in one call.
+- **`State` is the app's newest deploy.** For GitHub, the release with the
+  highest id whose body holds the app's marker: a draft newer than the
+  newest published release is `Deploying`, a published one `Deployed` and
+  `Healthy`, with its page as the URL.
+- **`Target.Settings` carry the member's fields** (`repository`). The
+  Crew's copy also passes `tagPrefix` and `latest`, which the DeployTarget's
+  `github` member doesn't have until #1070 decides them. The Crew still
+  reads what its rule needs (the repository's id, the release, the source)
+  itself; the release writes go through `Ship`, which reads the release
+  again and takes the same step.
+- **A missing file** is a shipment without files: a GitHub release needs
+  them. A 401, 403 or 404 (a repository the token can't see) is
+  `ErrCredentialRefused`; a 5xx, a rate limit or the network is
+  `ErrUnreachable`. A published release of the tag the factory didn't make
+  fails with reason `TagTaken`. A bare tag without a release is checked by
+  the Crew before it ships, not by the adapter; step 3 decides what a
+  `spec.deploy` entry does with one.
+- **The operator caches no Secrets,** so the DeployTarget reconciler reads
+  the Secret live every minute and asks the target again when the Secret's
+  `resourceVersion` or the spec's generation changed, else every 10
+  minutes; an `Unreachable` target is asked again on the next poll, and
+  after a restart each target is checked once.
+- **The GitHub adapter's contract test** runs in `internal/controller`
+  (`deployer_contract_test.go`), beside the fake GitHub the publish tests
+  use. The controllers' tests may import adapters to wire them onto fakes;
+  their code may not (depguard `controllers-take-ports`).
+
 ## Steps
 
 Each step is a GitHub issue that names #1068, lands on its own with `make

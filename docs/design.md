@@ -1640,8 +1640,9 @@ steps.
   Crew tagged, once its release runs succeed. Each entry ships its pinned
   version or the newest, after its `after` entry runs it and, where needed,
   once `approved` names it. Shipping starts the deploy and the operator reads
-  the state back each poll; a rollout the tool reports failed is not retried
-  by itself.
+  the state back each poll; where the adapter is the tool itself (GitHub
+  releases) each poll's ship takes the next write. A rollout the tool
+  reports failed is not retried by itself.
 - **Targets need files, they never write them.** What a target's tool reads
   comes from the Container's Deployment or self-deploying Framework at
   scaffold. A table in `internal/model` says what each member needs; a

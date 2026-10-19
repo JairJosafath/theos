@@ -158,4 +158,13 @@ resources:
   kind: Brief
   path: github.com/JairJosafath/c4factory/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: factory.io
+  group: c4
+  kind: DeployTarget
+  path: github.com/JairJosafath/c4factory/api/v1alpha1
+  version: v1alpha1
 version: "3"
