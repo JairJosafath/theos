@@ -1,10 +1,10 @@
 # aws-standard (Standard)
 
 How a program on AWS in a C4 Factory Container (a Lambda function, a service
-on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda or a scheduled job on EventBridge Scheduler and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
+on EC2, a container service on Fargate, a static site on S3 and CloudFront, a queue consumer on SQS and Lambda, a scheduled job on EventBridge Scheduler and Lambda or an event consumer on EventBridge and Lambda) is written, checked and reviewed, its code in TypeScript or Go and its CDK app in TypeScript:
 ts-standard's TypeScript rules (typescript-eslint's strictest configs,
 Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
-checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
+and Serverless checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
 `make check` contract CI runs. Nothing deploys, bootstraps or calls AWS.
@@ -25,7 +25,8 @@ byte for byte.
 - **Supports:** `function`, `service`, `static-site` (since v1.8.0),
   `worker` (since v1.9.0), `job` (since v1.10.0); Frameworks:
   `aws-lambda-ts`, `aws-lambda-go`, `aws-ec2-ts`, `aws-fargate-ts`,
-  `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`
+  `aws-lambda-py`, `aws-static-site-ts`, `aws-queue-ts`, `aws-schedule-ts`,
+  `aws-event-ts` (since v1.14.0)
 - **Per Framework:** `aws-lambda-go` (since v1.1.0) branches on `.Framework`
   in the `Makefile` (the Go targets), `AGENTS.md`, the role guides,
   `docs/style/aws.md` and `SOURCES.md` (the Go handler, `slog`, the SDK for
@@ -135,8 +136,46 @@ byte for byte.
   Framework renders it. A v1.0.0 of either, with no `infra/operations.ts`,
   still passes `make check` on v1.12.0. `SOURCES.md` adds Powertools for
   Python 3.36.0's Logger, Metrics and Idempotency pages (read 2026-10-16),
-  and cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions. A
-  Framework added later gets its branches in the version that adds it.
+  and cdk-monitoring-constructs 10.3.2 to the two Frameworks' versions.
+  `aws-event-ts` (since v1.14.0), a `worker`, is in
+  `$tiered` and shares `aws-lambda-ts`'s branches too; an `$event`
+  variable says event where those say API: the EventBridge event as the
+  boundary, its `id` as the idempotency key, `consume` in
+  `src/consume.ts` as where the work goes, the rule's resource policy and
+  the dead-letter queue's, the tables and dead-letter queue it keeps, its
+  alarms, re-running dead-lettered events, lost events and pausing the
+  consumer in the runbook, the rule and its dead-letter queue in
+  `docs/style/aws.md`, the EventBridge and asynchronous invocation sources
+  in `SOURCES.md`, the issue template's example and `eslint.config.mjs`'s
+  `process.exit` message. v1.14.0 adds that Framework and two rules to
+  `infra/standard.test.ts`, for every Framework: every EventBridge rule
+  alarms on the events it lost, and every rule's Lambda target is retried
+  and dead-lettered to a queue of its stack. A Framework added later gets
+  its branches in the version that adds it. Since v1.15.0 the operations
+  docs and rules (`docs/runbook.md`, the tiers, alarms, backups and
+  Powertools in `AGENTS.md`, the role guides, `docs/style/aws.md`,
+  `SOURCES.md` and `docs/well-architected.md`) render only for a Framework
+  whose files (`.FrameworkFiles`, at the version the Container was
+  scaffolded from) include `infra/operations.ts`; a Framework version from
+  before it gets the earlier text, and `docs/well-architected.md` the
+  digest v1.6.0 wrote for it, so an update of the Standard brings a
+  repository nothing about operations it lacks (#1249). Since v1.16.0 an
+  `rpo` of 0 (`0m`, `0h`, `0d`), which the API accepts, passes
+  `infra/standard.test.ts` as under a day, and the runbook says it is read as
+  point-in-time recovery's five minutes; the runbook says the daily backups
+  cover damage older than 35 days only when `retentionDays` is over 35, and
+  at 35 or less that they are a second copy inside point-in-time recovery's
+  window; with `copyToRegion` and `retentionDays` 0 it says no copy is made;
+  and `infra/standard.test.ts` is in `protectedPaths` (#1266). Since
+  v1.17.0 the test refuses a backup selection by the Container's tag, which
+  a `<name>-development` stack in the same account carries too, and takes
+  the `Idempotency` table, whose records expire, left out of it; the
+  runbook, `docs/style/aws.md` and `docs/well-architected.md` say the plan
+  names the data tables by ARN (#1267). A Container scaffolded from an
+  earlier `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`,
+  `aws-queue-ts`, `aws-schedule-ts` or `aws-fargate-ts` fails the test on
+  this update until its `infra/backups.ts` names its tables as those
+  Frameworks' new versions do: the failure is the bug.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -144,8 +183,8 @@ byte for byte.
   `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
   `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`,
-  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts`
-  also `docs/runbook.md`; for
+  `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts`, `aws-schedule-ts`
+  and `aws-event-ts` also `docs/runbook.md`; for
   `aws-lambda-go` also `.golangci.yml` and `docs/style/go.md`; for
   `aws-lambda-py` also `ruff.toml`, `mypy.ini` and `docs/style/python.md`
 - **Lints:** ESLint 10 with `@eslint/js` recommended, typescript-eslint
@@ -178,13 +217,28 @@ byte for byte.
   `PutTraceSegments` and `PutTelemetryRecords`, and `AwsSolutions-DDB3` on
   every table where the tier has no point-in-time recovery, and adds CDK
   Nag's `AwsSolutions` to the app as a policy validation plugin
-  (`Validations.of(app).addPlugins`, cdk-nag 3), so a finding not
-  acknowledged with a reason fails synth. `infra/main.ts` makes the `App`,
+  (`Validations.of(app).addPlugins`, cdk-nag 3), and `Serverless` when
+  `infra/operations.ts` exists, so a finding not acknowledged with a reason
+  fails synth (a warning too). Of the Serverless rules it acknowledges, on
+  every stack, the five an `AwsSolutions` rule checks too
+  (`LambdaLatestVersion` for L1, `LambdaStarPermissions` for IAM5,
+  `APIGWAccessLogging` for APIG1, `SQSRedrivePolicy` for SQS3, which knows a
+  dead-letter queue needs none, `StepFunctionStateMachineXray` for SF2); and
+  on the one resource: `LambdaDLQ` on a function only synchronous callers
+  call (API Gateway, a load balancer, an SQS event source mapping) or
+  CloudFormation for a custom resource; `LambdaEventSourceMappingDestination`
+  on an SQS event source, which takes none; `LambdaAsyncFailureDestination`
+  on a function's `EventInvokeConfig` when the function has a dead-letter
+  queue; `SNSRedrivePolicy` on an email subscription; `LambdaTracing` on
+  every function in a tier without tracing; and `APIGWStructuredLogging` on
+  an HTTP API stage whose access log is not JSON. It reads the resources'
+  properties one at a time, resolved, never a whole resource, which would
+  cache its lazy values before the synth's aspects. `infra/main.ts` makes the `App`,
   reads the tier, calls the Framework's `defineStacks(app, tier)` (through a
   type with both parameters, so a `stacks.ts` written before tiers, taking
   the app alone, still fits), then `applyStandard(app, tier)`, then
-  `app.synth()`. `infra/standard.test.ts`, not protected like ts-standard's
-  tests, builds the app the same way with `cdk.json`'s context, once per
+  `app.synth()`. `infra/standard.test.ts`, protected like ts-standard's
+  tests since v1.16.0, builds the app the same way with `cdk.json`'s context, once per
   tier, and asserts on every stack of both: `tierOf` defaults and refuses;
   synth passes CDK Nag; no error or warning annotation; the three tags on
   the stack and on every resource with a `Tags` list; no IAM action `*` or
@@ -200,23 +254,22 @@ byte for byte.
   stack names (`stackNameFor`), the removal policies (tables and data
   buckets `Retain` or `Delete` by tier, every backup vault and its key
   `Retain`), deletion and termination protection, point-in-time recovery
-  (and on in production when `rpo` is under a day), the versions of data
+  (and on in production when `rpo` is under a day, 0 included), the versions of data
   buckets (where the tier keeps data, versioning `Enabled` and a lifecycle
   rule expiring noncurrent versions), the backup plan and vault (in
   production with `retentionDays` over 0, in a stack holding a resource of
   `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
-  with its own key, one selection naming every one of the stack's own
-  tables by ARN and nothing else (since v1.11.0), or else of exactly what
-  carries the `c4factory:container` tag, as `ListOfTags` or as one
-  `aws:ResourceTag` condition on `*`, and a copy stack in that region; else
-  none; and no load balancer's access-log bucket in any selection's reach:
-  a selection by ARN doesn't name it, one by tag names it in
-  `NotResources`), the instances (since v1.11.0: in a stack with an Auto
-  Scaling group, a launch template or an instance, no EBS volume of its
-  own, every launch template's or instance's volume deleted with its
-  instance, and no backup selection by tag, which would back the instances
-  up), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
+  with its own key, one selection naming the stack's own tables by ARN
+  (`Fn::GetAtt`) and nothing else, every table but an `Idempotency` one
+  with TTL on among them, and a copy stack in that region; else none; since
+  v1.17.0 a selection by tag (`ListOfTags`), by a condition, by `*` or by
+  an ARN written out fails, as it reaches a `<name>-development` stack's
+  tables in the same account (#1267), table cases test that rule; and no
+  load balancer's access-log bucket in any selection), the instances
+  (since v1.11.0: in a stack with an Auto Scaling group, a launch template
+  or an instance, no EBS volume of its own, every launch template's or
+  instance's volume deleted with its instance), the runbook (naming the copy region when there is one), the alarms and topic (one topic, a dashboard, every alarm notifying
   the topic, alarms on every function's `Errors`, `Throttles` and
   `Duration`, every table's `ReadThrottleEvents`, `WriteThrottleEvents` and
   `SystemErrors`, every HTTP API's `5xx`, every load balancer's
@@ -225,7 +278,9 @@ byte for byte.
   ECS service's `CPUUtilization`, `MemoryUtilization` and
   `RunningTaskCount`, since v1.11.0 every Auto Scaling group's
   `CPUUtilization` and `GroupInServiceInstances`, every schedule group's `InvocationDroppedCount` and
-  `InvocationsFailedToBeSentToDeadLetterCount`; an alarm watches a resource
+  `InvocationsFailedToBeSentToDeadLetterCount`, since v1.14.0 every
+  EventBridge rule's `FailedInvocations` and `InvocationsFailedToBeSentToDlq`
+  (by `Ref`, its name on the default bus); an alarm watches a resource
   when its definition refers to it by `Ref` or by `Fn::GetAtt`, as a load
   balancer's and target group's full names and a service's name are, or by
   the `Name` it has in the template, as a schedule group's, which CDK makes
@@ -255,7 +310,11 @@ byte for byte.
   `DeadLetterConfig` and `OnFailure` as well as `RedrivePolicy`, and a test
   that every schedule's target has a `RetryPolicy` and a `DeadLetterConfig`
   naming a queue of its stack, and its `GroupName` a group of its stack; a
-  repository with no schedule passes them unchanged.
+  repository with no schedule passes them unchanged. v1.14.0 added the
+  rule's two metrics to `ALARMED_METRICS`, and a test that every target of
+  an `AWS::Events::Rule` that is a function of its stack has a
+  `RetryPolicy` and a `DeadLetterConfig` naming a queue of its stack; a
+  repository with no rule passes them unchanged.
 - **Check contract:** `make check` = `npm ci`, `prettier --check`,
   `eslint --max-warnings 0`, `tsc --noEmit`, `vitest run`, `cdk synth
   --quiet -c tier=<tier> -o cdk.out/<tier>` for `production` and
@@ -358,7 +417,7 @@ byte for byte.
   CDK Nag rules that enforce it and what the agent does by hand where none
   does. It is self-contained: agents have no internet. For the Lambda
   Frameworks (`aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`),
-  `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts` and `aws-schedule-ts` it also says what each tier does per pillar and what `infra/operations.ts`
+  `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts`, `aws-schedule-ts` and `aws-event-ts` it also says what each tier does per pillar and what `infra/operations.ts`
   changes, its Reliability section names the RPO and RTO, the backup plan,
   the copy and the restore procedure, its Cost section says in words what
   production costs over development, and what stays by hand (a restore
@@ -368,10 +427,11 @@ byte for byte.
   bucket's versions instead of a backup plan, and the firewall, the
   versions and a year of logs as what production costs more.
 - **Runbook:** `docs/runbook.md`, for the three Lambda Frameworks,
-  `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts` and
-  `aws-schedule-ts` (a branch each: one for the Lambda Frameworks, which
-  `aws-queue-ts` and `aws-schedule-ts` share, one each for
-  `aws-fargate-ts`, `aws-ec2-ts` and `aws-static-site-ts`), renders the
+  `aws-fargate-ts`, `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts`,
+  `aws-schedule-ts` and `aws-event-ts` (a branch each: one for the Lambda
+  Frameworks, which `aws-queue-ts`, `aws-schedule-ts` and `aws-event-ts`
+  share, one each for `aws-fargate-ts`, `aws-ec2-ts` and
+  `aws-static-site-ts`), renders the
   Container's operations block and says how to restore the items to a point
   in time, from the vault and from the copy, how to bring back a deleted
   table, how to roll a deployment back (for `aws-fargate-ts`, what the
@@ -396,7 +456,8 @@ byte for byte.
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
   `docs/agents/`, `docs/well-architected.md`, `docs/runbook.md`,
-  `infra/main.ts` and `infra/standard.ts` in the catalog entry's
+  `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` in the
+  catalog entry's
   `protectedPaths`, plus the
   Framework's `tsconfig.json`, `vitest.config.mts` and `cdk.json`, which
   decide what the type check and tests cover and which CDK behaviour the app

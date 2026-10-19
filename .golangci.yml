@@ -72,6 +72,47 @@ linters:
               desc: adapters take plain values (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: adapters must not depend on controllers (docs/architecture.md)
+        ports-are-plain-go:
+          files:
+            - "**/internal/ports/**"
+          deny:
+            - pkg: k8s.io
+              desc: ports are plain Go; the controllers convert resources (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: ports are plain Go (docs/architecture.md)
+            - pkg: net/http
+              desc: ports do no I/O; that belongs in an adapter (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: ports take plain values (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+              desc: ports must not depend on adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+              desc: ports must not depend on adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: ports must not depend on controllers (docs/architecture.md)
+        adapters-take-plain-values:
+          files:
+            - "**/internal/adapters/**"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: adapters take plain values (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal/controller
+              desc: adapters must not depend on controllers (docs/architecture.md)
+        host-adapters-stay-out-of-kubernetes:
+          files:
+            - "**/internal/adapters/github/**"
+          deny:
+            - pkg: k8s.io
+              desc: a host adapter must not import Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: a host adapter must not import controller-runtime (docs/architecture.md)
+        controllers-take-ports:
+          files:
+            - "**/internal/controller/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+              desc: controllers take ports; only cmd/main.go builds adapters, and tests wire them onto fakes (docs/architecture.md)
         runner-has-no-cluster-access:
           files:
             - "**/internal/agentrunner/**"

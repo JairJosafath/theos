@@ -490,7 +490,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 11)
+      assert.equal(answer.writes.length, 12)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -531,6 +531,24 @@ describe('server.mjs', () => {
         { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
       ],
       ["a Container's checks", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', 'BeforeRelease')]],
+      [
+        "a Container's approval of a version at one deploy target (#1163)",
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 'v1.3.0')],
+      ],
+      [
+        "a Container's approval after a test of the approval it replaces (#1163)",
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [
+          { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+          { op: 'test', path: '/spec/deploy/1/approved', value: 'v1.2.0' },
+          add('/spec/deploy/1/approved', 'v1.3.0'),
+        ],
+      ],
       [
         "a Container's take of its Standard's files left out",
         'PATCH',
@@ -790,6 +808,104 @@ describe('server.mjs', () => {
         403,
       ],
       ["a Container's Standard", 'PATCH', '/containers/orders-api', JP, [add('/spec/standardRef', { name: 'x' })], 403],
+      // The approval of a deploy: one entry's approved, after a test of that entry's target, and nothing else (#1163).
+      ...[
+        ['an approval without the test of its target', [add('/spec/deploy/1/approved', 'v1')]],
+        [
+          'an approval at another entry than the one tested',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/0/approved', 'v1')],
+        ],
+        [
+          'an approval after a test of another field',
+          [{ op: 'test', path: '/spec/deploy/1/version', value: 'v1' }, add('/spec/deploy/1/approved', 'v1')],
+        ],
+        [
+          'an approval before its test',
+          [add('/spec/deploy/1/approved', 'v1'), { op: 'test', path: '/spec/deploy/1/target', value: 'prod' }],
+        ],
+        [
+          'an approval as a number',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 1)],
+        ],
+        [
+          'an approval removed',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'remove', path: '/spec/deploy/1/approved' },
+          ],
+        ],
+        [
+          'a pinned version in place of an approval',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/version', 'v1')],
+        ],
+        [
+          'a whole deploy entry',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            add('/spec/deploy/1', { target: 'prod', approved: 'v1' }),
+          ],
+        ],
+        ['the whole deploy list', [add('/spec/deploy', [{ target: 'prod', approved: 'v1' }])]],
+        [
+          'an approval with a second write',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            add('/spec/deploy/1/approved', 'v1'),
+            add('/spec/checks', 'BeforeRelease'),
+          ],
+        ],
+        [
+          'an approval at an index with a leading zero',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/01/approved', 'v1')],
+        ],
+        [
+          'an approval at the end of the list',
+          [{ op: 'test', path: '/spec/deploy/-/target', value: 'prod' }, add('/spec/deploy/-/approved', 'v1')],
+        ],
+        [
+          'an approval tested with a number',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 1 }, add('/spec/deploy/1/approved', 'v1')],
+        ],
+        [
+          'an approval after a test of another entry’s approval',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/0/approved', value: 'v1' },
+            add('/spec/deploy/1/approved', 'v2'),
+          ],
+        ],
+        [
+          'an approval with two writes of it',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            add('/spec/deploy/1/approved', 'v1'),
+            add('/spec/deploy/1/approved', 'v2'),
+          ],
+        ],
+        [
+          'an approval with an extra key',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { ...add('/spec/deploy/1/approved', 'v1'), from: '/x' },
+          ],
+        ],
+      ].map(([what, body]) => [what, 'PATCH', '/containers/orders-api', JP, body, 403]),
+      [
+        'an approval as a merge patch',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        { spec: { deploy: [{ target: 'prod', approved: 'v1' }] } },
+        403,
+      ],
+      [
+        'an approval on a Crew',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 'v1')],
+        403,
+      ],
       [
         "a Container's checks with another field",
         'PATCH',

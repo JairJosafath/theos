@@ -150,7 +150,7 @@ A Container is scaffolded exactly once, from the catalog entries it picks and th
 1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist, and the SoftwareSystem must be `Internal`. Until they do, the Container stays `Pending` with the missing name, or reason `ExternalSystem`, in its condition.
 2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site". A Framework with `deploysItself: true` (the AWS Frameworks, whose CDK app builds and runs the Container) is its Container's deployment, so a Container on it that names a Compute or a Deployment fails the same way, reason `DeploysItself`, naming the refs to remove. A flag on the Framework, not a list of the Deployments it allows: a Deployment can't know the Frameworks it fits, and the shared-path conflict that would catch some pairs doesn't catch a Deployment whose files render to nothing for a Framework it doesn't know.
 3. **Create the repository** in the GitProvider's organization, named after the Container.
-4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors.
+4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors. A layer after the Framework also receives the paths the Framework rendered (`.FrameworkFiles`), so it tells what that version of the Framework has by its files, `{{ if has .FrameworkFiles "infra/operations.ts" }}`, rather than by the Framework's name or a ref to compare: a ref may be a commit, and a file says what the Standard depends on. A Standard update renders with the Framework's paths at the ref `scaffoldedFrom` recorded, so it brings a repository files for the Framework version it was scaffolded from, not the newest; a scaffold that recorded none passes none (#1249).
 5. **Assemble the devcontainer.** The operator writes `.devcontainer/devcontainer.json` itself: the Framework's base settings plus one compose file per Connector, such as a Postgres service for local development and tests.
 6. **Write the identity file** `.c4factory.yaml` with the project and container names.
 7. **Push one initial commit,** then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
@@ -329,7 +329,12 @@ enforces.
   only DNS, Gitea's pod on port 3000 and HTTPS to public addresses, and
   Gitea's instance-wide registration token goes only to the init container
   that registers, never to the container the jobs run in. `make
-  validate-yaml` checks both, in the chart and in `config/runner/`. Still
+  validate-yaml` checks both, in the chart and in `config/runner/`. The
+  `image` runner that builds release images (#1069,
+  [plan](plans/images.md#decisions)) runs rootless BuildKit, which makes user
+  namespaces, so its job container alone runs with seccomp and AppArmor
+  `Unconfined`, never privileged and with no added capability, and holds no
+  credential beyond the job token; the same check holds it to that. Still
   open: each label has one long-lived runner in host mode that every
   project's jobs and the releases share, one job after another, so a job can
   leave a process or a file for the next, act with the runner's own token,
@@ -882,7 +887,9 @@ model and context it needs.
   `install.yaml` (the CRDs, RBAC and the manager, from kubebuilder's
   `make build-installer`) and `SHA256SUMS`. No image is built or pushed:
   `install.yaml` names the image `controller:<tag>`, and the operator's README
-  says to build and push the image and set it there before applying it. Until a catalog entry supports
+  says to build and push the image and set it there before applying it; with
+  [plans/images.md](plans/images.md) (#1069) its release builds the image and
+  `install.yaml` names it by digest. Until a catalog entry supports
   a type, the planner answers that it needs input rather than planning it.
   GitHub issue #723 has the plan, [plans/done/kubebuilder-operators.md](plans/done/kubebuilder-operators.md).
 - **A Container type `function`:** serverless code on AWS (Lambda behind an
@@ -908,9 +915,12 @@ model and context it needs.
   where CloudFront takes its firewall, certificate and metrics), the
   `worker` Framework `aws-queue-ts` (an SQS queue with a dead-letter queue,
   consumed in batches by a TypeScript Lambda that reports only the messages
-  that failed), and the `job` Framework `aws-schedule-ts` (an EventBridge
+  that failed), the `job` Framework `aws-schedule-ts` (an EventBridge
   Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a
-  dead-letter queue, the schedule's role scoped to the one function).
+  dead-letter queue, the schedule's role scoped to the one function), and
+  the `worker` Framework `aws-event-ts` (an EventBridge rule on the default
+  event bus invoking a TypeScript Lambda, with a retry policy and a
+  dead-letter queue on the rule's target).
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
   its stacks for two tiers, and the place it is deployed to picks one: a
   deploy target says `production` or `development`, and a hand deploy that
@@ -987,7 +997,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   names only installed catalog entries that support the Container's type,
   no Compute or Deployment on a Framework that deploys itself,
   changes only the story text of what exists (and a Container's `checks`,
-  below) and deletes nothing; anything
+  below), puts no new Container or DataStore in an External system, and
+  deletes nothing; anything
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
@@ -998,6 +1009,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
   condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
   stopped and why: a Brief never looks busy without a reason.
+- **The round that creates a SoftwareSystem sets its `location`.** A planner
+  marks a system the story only names, such as a payment provider, External;
+  one it leaves out is Internal. Later rounds keep the location a system has,
+  whatever their plan says: a plan that turned a built system External would
+  strand its Containers, and a second answer shouldn't undo the first. Changing
+  it afterwards is a person's edit to the SoftwareSystem.
 - **A round's issues keep the plan's order** (#428). An issue that needs
   another issue's work merged first names it in its front matter, `after:`
   with the round numbers of its blockers, in any of the round's Containers.
@@ -1291,7 +1308,8 @@ only when `status` carries the effective one. The plan behind it is
   cluster.
 - **An object page** for each kind the UI shows: Brief, Container, Crew,
   Task, Project, SoftwareSystem, Relationship, Session, Standard, Compute,
-  Deployment and GitProvider (its Secret's name, never its data). Every page
+  Deployment, GitProvider and DeployTarget (each its Secret's name, never its
+  data). Every page
   opens with the same header (`ui/src/components/ObjectHeader.tsx`): the kind
   and name with a breadcrumb to what it belongs to; the kind's lifecycle as a
   stepper, the current phase marked and side exits such as `Failed` or
@@ -1305,7 +1323,10 @@ only when `status` carries the effective one. The plan behind it is
   the resources flag for a person (`ui/src/model/needs.ts`): a Brief whose
   `NeedsInput` or `NeedsYou` is True; a Container `Failed`, or whose
   `StandardUpdated` says its update pull request waits on a person or its
-  Standard files are behind (`FilesBehind`); a Task
+  Standard files are behind (`FilesBehind`), or one of whose
+  `status.deploys` waits for approval (`WaitingForApproval`, with the
+  `kubectl patch` line that approves the version waiting), is `Failed` or
+  runs `Degraded`, an item per entry; a Task
   `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
   Crew whose `Released` leaves a release to a person, whose
   `status.lastRelease.run` is `Failed`, or whose `ModulePublished` is False
@@ -1381,7 +1402,7 @@ server's message when it refuses one. The UI still enforces nothing.
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
   | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
   | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
-  | Container | `PATCH`, JSON patch | `spec.checks` |
+  | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of that entry's `target` and, when it had one, of its `approved` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
@@ -1430,7 +1451,7 @@ Grouped by caller they fall into these ports:
 | Issues | issues, comments, labels, assignment, milestones, dependencies | Gitea, inside `Provider`; request intake on GitHub (`IssueTracker`) |
 | CI | workflow runs of a commit or tag, rerunning failed jobs, a job's log, runners online | Gitea Actions, inside `Provider` |
 | AgentAccess | a credential that writes to one Container's (or Brief's) repository only, and revoking it | Gitea bot users, inside `Provider` |
-| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); container images (#1069) | Gitea packages, inside `Provider` |
+| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); pushing a release's image archive by digest, the image registry address (#1069) | Gitea packages, inside `Provider` |
 | AgentRuntime | start a run, read its state and result, stop it, list the runs held | Agent Sandbox, hard-coded (`SandboxGVK`) |
 | Deployer | ship a release to a target, read back its state | the GitHub release copy (`ReleaseTarget`); #1068 |
 
@@ -1603,7 +1624,7 @@ the agents wrote. Each port names its Secret and who reads it:
 The owner wants each app the factory builds shipped where it runs: open-source
 code to GitHub (#1070), an AWS app to an account (#1071), a Kubernetes app to
 a cluster (#1072), with images built on release (#1069). This section is the
-model they share; [plans/deploy.md](plans/deploy.md) has the reasons and the
+model they share; [plans/done/deploy.md](plans/done/deploy.md) has the reasons and the
 steps.
 
 - **A place is a `DeployTarget`,** namespaced and shared by any number of
@@ -1626,12 +1647,26 @@ steps.
   target (the GitHub API, CloudFormation, Argo CD or Flux); it never builds,
   runs repository code or writes rollouts. A user's credential never reaches
   code the agents wrote.
+- **A release's image** (#1069). A Container whose catalog choice builds one
+  (`k8s-manifests`, and `gitea-release` for an operator; a table in
+  `internal/model`) has its image built by a release run on the `image`
+  runner: rootless BuildKit, daemonless, for `linux/amd64` and `linux/arm64`
+  without emulation (a Dockerfile `RUN`s only on `$BUILDPLATFORM`), with an
+  SBOM and provenance in the index. The run attaches the OCI layout archive
+  (`<repository>-<tag>.oci.tar`) to the release; once the release's runs
+  succeed, the operator streams it by digest into the owner's container
+  registry on the Git host with the GitProvider's credential, tagged with
+  the release tag, once and never replaced. `status.image` names the
+  repository, digest and platforms, the condition `ImagePublished` says why
+  it isn't pushed (`NoImage`, `Invalid`, `TagTaken`, `Failed`), and each
+  deploy ships that digest. [plans/images.md](plans/images.md).
 - **On each release, in order.** The release is the one the Container's
   Crew tagged, once its release runs succeed. Each entry ships its pinned
   version or the newest, after its `after` entry runs it and, where needed,
   once `approved` names it. Shipping starts the deploy and the operator reads
-  the state back each poll; a rollout the tool reports failed is not retried
-  by itself.
+  the state back each poll; where the adapter is the tool itself (GitHub
+  releases) each poll's ship takes the next write. A rollout the tool
+  reports failed is not retried by itself.
 - **Targets need files, they never write them.** What a target's tool reads
   comes from the Container's Deployment or self-deploying Framework at
   scaffold. A table in `internal/model` says what each member needs; a
@@ -1730,7 +1765,7 @@ default means are left to review.
 
 ## Out of scope for v1
 
-- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets.
+- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets, with the image CI built for it (#1069).
 - **Runtime health of the apps.** The factory shows only what a deploy target's tool reports (Argo CD's health, a stack's status); monitoring the app itself is left to existing tools. (The factory watches its own health since v3.)
 - **Existing repositories and monorepos.** New work only, one repository per Container.
 - **Component and Code levels.** Dropped until Containers work end to end.

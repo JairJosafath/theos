@@ -34,7 +34,6 @@ function synth(
     new ApiStack(new App(), 'test', {
       tier,
       operations,
-      backupTag: ['c4factory:container', 'test'],
       dataStores,
     }),
   );
@@ -182,15 +181,19 @@ describe('ApiStack', () => {
         BackupPlanRule: [Match.objectLike({ Lifecycle: { DeleteAfterDays: 35 }, CopyActions: [] })],
       },
     });
+    // The data table by ARN, never the Container's tag, which a development
+    // stack in the same account carries too (#1267); not the idempotency
+    // records, which expire.
+    const [data, ...others] = Object.keys(production.findResources('AWS::DynamoDB::Table')).filter(
+      (id) => id.startsWith('Items'),
+    );
+    expect([data, others]).toEqual([expect.any(String), []]);
+    production.resourceCountIs('AWS::Backup::BackupSelection', 1);
     production.hasResourceProperties('AWS::Backup::BackupSelection', {
       BackupSelection: Match.objectLike({
-        ListOfTags: [
-          {
-            ConditionKey: 'c4factory:container',
-            ConditionType: 'STRINGEQUALS',
-            ConditionValue: 'test',
-          },
-        ],
+        Resources: [{ 'Fn::GetAtt': [data, 'Arn'] }],
+        ListOfTags: Match.absent(),
+        Conditions: Match.absent(),
       }),
     });
     development.resourceCountIs('AWS::Backup::BackupPlan', 0);
@@ -242,6 +245,14 @@ describe('ApiStack data stores', () => {
     expect(connected).toEqual(['Handler']);
     template.resourceCountIs('AWS::DynamoDB::Table', 3);
     template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 3 * 3);
+    // Its table is data: backed up with the stack's own (#1267).
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    const backedUp = ['Items', 'Store'].map((name) => tables.find((id) => id.startsWith(name)));
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
+      }),
+    });
   });
 
   it('connects the data stores of the rendered infra/connectors.ts by default', () => {
@@ -249,7 +260,6 @@ describe('ApiStack data stores', () => {
       new ApiStack(new App(), 'test', {
         tier: 'production',
         operations: OPERATIONS,
-        backupTag: ['c4factory:container', 'test'],
       }),
     );
     template.resourceCountIs('AWS::DynamoDB::Table', 2 + DATA_STORES.length);

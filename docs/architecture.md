@@ -36,11 +36,11 @@ every scaffolded repository.
 | API types | `api/v1alpha1` | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
-| Ports (from #1094) | `internal/ports` and its `fake`, `contract` | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
-| Adapters (from #1094) | `internal/adapters/*` | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
+| Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
+| Adapters | `internal/adapters/*` (`github`, the Deployer, from #1161; the rest from #1094) | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
 | Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/gitprovider`; `internal/modelproxy` any other `internal/` package |
-| Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters (from #1094) | `cmd/`, `internal/adapters/*` |
+| Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
 | Entry points | `cmd/*` | everything | nothing imports them |
@@ -103,8 +103,9 @@ it against this table. Where the code lives:
   `internal/controller`.
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds
   the adapters a GitProvider names and gives each reconciler the ports it
-  calls. A depguard rule denies `internal/adapters` and `internal/gitprovider`
-  in `internal/controller`.
+  calls. A depguard rule denies `internal/adapters` in `internal/controller`
+  outside its tests, which wire adapters onto the fakes; #1094 adds
+  `internal/gitprovider` to it.
 - **A host's events reach the controllers through the operator's receiver**
   (`internal/controller/git_events.go`, from #1084): the adapter checks a
   delivery's signature and says what it concerns, the receiver finds the
@@ -117,10 +118,10 @@ it against this table. Where the code lives:
   (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
   today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
 
-Until #1094 lands, `internal/gitprovider` holds all of the Git host's ports
-as one interface, `Provider`, and the controllers' fake is
-`internal/controller/fakegit_test.go`; the column *Today* says where each
-port is now.
+`internal/ports` holds the Deployer (#1161). Until #1094 lands,
+`internal/gitprovider` holds all of the Git host's ports as one interface,
+`Provider`, and the controllers' fake is `internal/controller/fakegit_test.go`;
+the column *Today* says where each port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -128,9 +129,9 @@ port is now.
 | Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `Provider` and `IssueTracker` |
 | CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094); OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers' | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `Provider`; `OwnerRunners` (`internal/gitprovider/runners.go`); the per-CI table `model.CI` (`internal/model/ci.go`) |
 | AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `Provider` |
-| Registry | Go modules (optional), Go proxy address, container images (#1069) | the host's own, else `GitProvider.spec.registry.<member>` | Gitea packages | to write (#1094) | GitProvider Secret for the operator; CI pushes with its job token | `Provider`, `Repository.GoProxy` |
+| Registry | Go modules (optional), Go proxy address, a release's image archive pushed by digest (#1069, [plan](plans/images.md)) | the host's own, else `GitProvider.spec.registry.<member>` | Gitea packages | to write (#1094) | GitProvider Secret for the operator; CI only attaches release files with its job token | `Provider`, `Repository.GoProxy` |
 | AgentRuntime | start a run, its state and result, stop it, list held runs; the fence is the adapter's | Helm installs one; no field until a second | Agent Sandbox | to write; the sandbox's pod spec and fence tests in `make test` | operator ServiceAccount; the sandbox gets no Kubernetes token | `SandboxGVK`, `buildSandbox`, `runState` in `internal/controller` |
-| Deployer | check a target's credential, ship a built release to it, read its state back; a Deployment template writes the tool's files | the `DeployTarget`'s member (`github`; `cloudFormation` #1071, `argoCD`/`flux` #1072) | GitHub releases | to write ([plans/deploy.md](plans/deploy.md)): fake and GitHub adapter in `make test` | the DeployTarget's `credentialsSecretRef` (and `publishReleases.github.tokenSecretRef` until #1070), operator only; CI never holds it | `ReleaseTarget` in `internal/gitprovider/github.go` |
+| Deployer | check a target's credential, ship a built release to it (one write per call where the adapter is the tool, as for GitHub releases), read its state back; a Deployment template writes the tool's files | the `DeployTarget`'s member, by a map from member name to adapter in `cmd/main.go` (`github`; `cloudFormation` #1071, `argoCD`/`flux` #1072); the member requirement table is `model.DeployMember` (`internal/model/deploy.go`) | GitHub releases (`internal/adapters/github`), which the Crew's `publishReleases` copy calls too | `contract.Deployer(t, env)` ([plans/done/deploy.md](plans/done/deploy.md)): the fake (`internal/ports/fake`) and the GitHub adapter on the publish tests' fake GitHub, in `make test` | the DeployTarget's `credentialsSecretRef` (and `publishReleases.github.tokenSecretRef` until #1070), operator only; CI never holds it | `ports.Deployer` (`internal/ports/deployer.go`); the GitHub adapter calls `ReleaseTarget` in `internal/gitprovider/github.go` until #1070 |
 
 No port is swappable yet: none has two real adapters passing a full contract (Issues on GitHub covers intake only). A port is called
 swappable here once its fake and two real adapters pass its contract.

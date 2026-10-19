@@ -35,10 +35,12 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -287,6 +289,8 @@ func main() {
 		setupLog.Error(err, "Failed to load the Session feature")
 		os.Exit(1)
 	}
+	// Each DeployTarget member's adapter, by the member's name.
+	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -294,6 +298,7 @@ func main() {
 		Git:             gitprovider.Client{},
 		ScaffoldOptions: scaffoldOptions,
 		Recorder:        mgr.GetEventRecorder("container"),
+		Deployers:       deployers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
 		os.Exit(1)
@@ -338,6 +343,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		APIReader: mgr.GetAPIReader(),
+		Deployers: deployers,
 		Git:       gitprovider.Client{},
 		Recorder:  mgr.GetEventRecorder("crew"),
 		GoProxy:   goProxyURL(goProxy),
@@ -355,6 +361,15 @@ func main() {
 		SourceNamespace: podNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
+		os.Exit(1)
+	}
+	if err := (&controller.DeployTargetReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		Deployers: deployers,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "deploytarget")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

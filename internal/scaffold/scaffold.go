@@ -80,6 +80,13 @@ type Input struct {
 	// CI is the CI system the Container's repository runs. A layer's
 	// .c4factory/ci/<CI.Name>/ folder renders at the repository root.
 	CI model.CI
+	// FrameworkFiles are the paths the Framework layer renders for the
+	// Container at the ref it was scaffolded at, sorted, so a later layer can
+	// tell what that version of the Framework has:
+	// {{ if has .FrameworkFiles "infra/operations.ts" }}. Build sets it after
+	// the Framework renders, and a Standard update from the Framework at its
+	// recorded ref. The Framework's own render has none.
+	FrameworkFiles []string
 }
 
 // Layer is one catalog entry's template repository at a pinned ref.
@@ -188,6 +195,9 @@ func Build(in Input, layers []Layer, opts Options) (Result, error) {
 		files, err := RenderLayer(in, layer)
 		if err != nil {
 			return Result{}, err
+		}
+		if layer.Side == model.SideFramework {
+			in.FrameworkFiles = files.Paths()
 		}
 		for _, p := range files.Paths() {
 			if first, taken := owner[p]; taken {

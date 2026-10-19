@@ -3,9 +3,18 @@
 // them. CDK Nag checks most AWS defaults; these check the rest, and that the
 // stacks keep what infra/operations.ts promises. A failing case here means a
 // stack breaks the Standard: fix the stack, never the test.
-import { App, Stack } from 'aws-cdk-lib';
+import { App, Duration, Stack } from 'aws-cdk-lib';
+import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
-import { existsSync, readFileSync } from 'node:fs';
+import { Code, Function as LambdaFunction, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
+import type { FunctionProps } from 'aws-cdk-lib/aws-lambda';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import { EmailSubscription, LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import { Queue } from 'aws-cdk-lib/aws-sqs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -61,6 +70,9 @@ const ALARMED_METRICS: Readonly<Record<string, readonly string[]>> = {
     'InvocationDroppedCount',
     'InvocationsFailedToBeSentToDeadLetterCount',
   ],
+  // A rule's metrics are per rule: an event it gave up on, or couldn't put
+  // in the dead-letter queue. On the default bus its Ref is its name.
+  'AWS::Events::Rule': ['FailedInvocations', 'InvocationsFailedToBeSentToDlq'],
 };
 
 // What runs on an instance, whose volumes hold no data (docs/style/aws.md).
@@ -187,44 +199,58 @@ function only<T>(items: readonly T[], what: string): T {
 }
 
 /**
- * The resources a backup selection names one by one, by ARN: none when it
- * takes every resource (`*`), as a selection by a tag condition does.
+ * Whether the table `id` may be left out of the backups: Powertools'
+ * idempotency table, whose records expire (TTL) and need no restore. A data
+ * table that expires some items still holds data.
  */
-function namedResources(selection: unknown): unknown[] {
-  const resources: unknown[] = isRecord(selection) ? [selection['Resources'] ?? []].flat() : [];
-  return resources.includes('*') ? [] : resources;
+function needsNoBackup(id: string, properties: unknown): boolean {
+  const ttl = isRecord(properties) ? properties['TimeToLiveSpecification'] : undefined;
+  return id.startsWith('Idempotency') && isRecord(ttl) && ttl['Enabled'] === true;
 }
 
 /**
- * Whether a backup selection takes exactly the resources carrying the tag
- * `key` = `value`: by `ListOfTags`, or by that one condition on every
- * resource (`*`), the form that can leave some out by `NotResources`.
+ * What is wrong with a backup selection in a stack whose tables are `tables`,
+ * each one's logical id and properties. It names the stack's own tables by
+ * `Fn::GetAtt` and nothing else, every one but the idempotency table among
+ * them (`needsNoBackup`). A tag
+ * (`ListOfTags`), a condition, `*` or an ARN written out reaches past the
+ * stack: its `<name>-development` stack in the same account carries the same
+ * tag and names its tables alike (#1267).
  */
-function selectsByTag(selection: unknown, key: string, value: string | undefined): boolean {
-  if (!isRecord(selection) || value === undefined) {
-    return false;
+function selectionFaults(
+  selection: unknown,
+  tables: readonly (readonly [string, unknown])[],
+): string[] {
+  if (!isRecord(selection)) {
+    return ['no BackupSelection'];
   }
-  const tags: unknown[] = [selection['ListOfTags'] ?? []].flat();
-  const conditions = selection['Conditions'];
-  const equal: unknown[] = isRecord(conditions) ? [conditions['StringEquals'] ?? []].flat() : [];
-  const [tag] = tags;
-  const [condition] = equal;
-  const byList =
-    tags.length === 1 &&
-    isRecord(tag) &&
-    tag['ConditionKey'] === key &&
-    tag['ConditionType'] === 'STRINGEQUALS' &&
-    tag['ConditionValue'] === value;
-  const byCondition =
-    tags.length === 0 &&
-    JSON.stringify(selection['Resources']) === '["*"]' &&
-    isRecord(conditions) &&
-    Object.keys(conditions).join() === 'StringEquals' &&
-    equal.length === 1 &&
-    isRecord(condition) &&
-    condition['ConditionKey'] === `aws:ResourceTag/${key}` &&
-    condition['ConditionValue'] === value;
-  return byList || byCondition;
+  const faults: string[] = [];
+  for (const key of ['ListOfTags', 'Conditions']) {
+    if (key in selection) {
+      faults.push(`selects by ${key}, which reaches every stack of the Container`);
+    }
+  }
+  const named: unknown[] = [selection['Resources'] ?? []].flat();
+  const arnOf = (id: string): string => JSON.stringify({ 'Fn::GetAtt': [id, 'Arn'] });
+  for (const resource of named) {
+    if (!tables.some(([id]) => JSON.stringify(resource) === arnOf(id))) {
+      faults.push(`${JSON.stringify(resource)} is none of the stack's tables`);
+    }
+  }
+  for (const [id, properties] of tables) {
+    if (
+      !needsNoBackup(id, properties) &&
+      !named.some((resource) => JSON.stringify(resource) === arnOf(id))
+    ) {
+      faults.push(`${id} is in no backup selection`);
+    }
+  }
+  return faults;
+}
+
+/** Each table of `template`: its logical id and properties. */
+function tablesOf(template: Template): [string, unknown][] {
+  return resourcesOf(template, 'AWS::DynamoDB::Table').map(([id, table]) => [id, table.Properties]);
 }
 
 /**
@@ -356,6 +382,79 @@ beforeAll(() => {
   for (const tier of TIERS) {
     built.set(tier, build(tier));
   }
+});
+
+// The rule a backup selection keeps, case by case: the stack's own data
+// tables by ARN, never what could reach another stack of the Container.
+describe('a backup selection', () => {
+  const expiring = { TimeToLiveSpecification: { AttributeName: 'expiration', Enabled: true } };
+  const tables = [
+    ['ItemsA1B2', {}],
+    ['IdempotencyC3D4', expiring],
+  ] as const;
+  const arn = (id: string): unknown => ({ 'Fn::GetAtt': [id, 'Arn'] });
+  const development = 'arn:aws:dynamodb:eu-west-1:123456789012:table/orders-development-Items*';
+  it.each([
+    ["names the stack's data table", { Resources: [arn('ItemsA1B2')] }, []],
+    [
+      'names the idempotency table too',
+      { Resources: [arn('ItemsA1B2'), arn('IdempotencyC3D4')] },
+      [],
+    ],
+    [
+      "selects the Container's tag alone, which the development stack's tables carry too (#1267)",
+      {
+        ListOfTags: [
+          {
+            ConditionKey: 'c4factory:container',
+            ConditionType: 'STRINGEQUALS',
+            ConditionValue: 'orders',
+          },
+        ],
+      },
+      [
+        'selects by ListOfTags, which reaches every stack of the Container',
+        'ItemsA1B2 is in no backup selection',
+      ],
+    ],
+    [
+      'takes every resource with the tag by a condition (#1267)',
+      {
+        Resources: ['*'],
+        Conditions: {
+          StringEquals: [
+            { ConditionKey: 'aws:ResourceTag/c4factory:container', ConditionValue: 'orders' },
+          ],
+        },
+      },
+      [
+        'selects by Conditions, which reaches every stack of the Container',
+        '"*" is none of the stack\'s tables',
+        'ItemsA1B2 is in no backup selection',
+      ],
+    ],
+    [
+      "names the development stack's tables by an ARN written out (#1267)",
+      { Resources: [arn('ItemsA1B2'), development] },
+      [`${JSON.stringify(development)} is none of the stack's tables`],
+    ],
+    [
+      'leaves the data table out',
+      { Resources: [arn('IdempotencyC3D4')] },
+      ['ItemsA1B2 is in no backup selection'],
+    ],
+  ])('that %s has the faults it lists', (_, selection, faults) => {
+    expect(selectionFaults(selection, tables)).toEqual(faults);
+  });
+
+  it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
+    expect(
+      selectionFaults({ Resources: [arn('IdempotencyC3D4')] }, [
+        ['ItemsA1B2', expiring],
+        ['IdempotencyC3D4', expiring],
+      ]),
+    ).toEqual(['ItemsA1B2 is in no backup selection']);
+  });
 });
 
 describe('the tier', () => {
@@ -499,6 +598,32 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     }
   });
 
+  it('retries every rule’s Lambda target and sends what it could not deliver to a dead-letter queue', () => {
+    for (const [name, template] of app(tier).templates) {
+      const queues = deadLetterQueues(template);
+      const functions = resourcesOf(template, 'AWS::Lambda::Function').map(([id]) => id);
+      for (const [id, rule] of resourcesOf(template, 'AWS::Events::Rule')) {
+        const targets = rule.Properties?.['Targets'];
+        for (const target of Array.isArray(targets) ? (targets as unknown[]) : []) {
+          const arn = isRecord(target) ? JSON.stringify(target['Arn'] ?? '') : '';
+          if (!functions.some((fn) => refersTo(arn, fn))) {
+            continue;
+          }
+          const deadLetter = isRecord(target)
+            ? JSON.stringify(target['DeadLetterConfig'] ?? {})
+            : '';
+          expect(
+            [...queues].some((queue) => refersTo(deadLetter, queue)),
+            `${name}/${id} dead-letter queue`,
+          ).toBe(true);
+          expect(isRecord(target) && isRecord(target['RetryPolicy']), `${name}/${id} retries`).toBe(
+            true,
+          );
+        }
+      }
+    }
+  });
+
   it('says what happens to the data of every stateful resource when it is removed', () => {
     for (const [name, template] of app(tier).templates) {
       for (const [id, resource] of resourcesOf(template)) {
@@ -589,7 +714,8 @@ describe.runIf(operations !== undefined).each(TIERS)(
       it('is on for every table in production when the RPO is under a day', () => {
         const [, count = '', unit = ''] = /^(\d+)([mhd])$/.exec(promised().recovery.rpo) ?? [];
         const minutes = Number(count) * ({ m: 1, h: 60, d: 1440 }[unit] ?? Number.NaN);
-        expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toBeGreaterThan(0);
+        // An RPO of 0 asks for the least loss there is: point-in-time recovery, as under a day (#1266).
+        expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toBeGreaterThanOrEqual(0);
         if (tier !== 'production' || minutes >= 1440) {
           return;
         }
@@ -679,40 +805,10 @@ describe.runIf(operations !== undefined).each(TIERS)(
               expect(JSON.stringify(copies), name).toContain(`:backup:${copyToRegion}:`);
             }
           }
-          // The plan backs up the stack's own tables, named by ARN, or what
-          // carries the Container's tag, which the Standard puts on every
-          // resource: as a tag (`ListOfTags`), or as a condition on every
-          // resource, which can leave some out.
+          // The plan backs up the stack's own data tables, named by ARN.
           const selection = only(selections, `${name}'s backup selections`)[1];
           const backupSelection = selection.Properties?.['BackupSelection'];
-          const named = namedResources(backupSelection);
-          if (named.length > 0) {
-            const tables = resourcesOf(template, 'AWS::DynamoDB::Table').map(([id]) => id);
-            for (const resource of named) {
-              expect(
-                tables.some((id) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`),
-                `${name}: ${JSON.stringify(resource)} is none of the stack's tables`,
-              ).toBe(true);
-            }
-            // And every table of the stack is named: a table left out
-            // would go unbacked.
-            for (const id of tables) {
-              expect(
-                named.some(
-                  (resource) => JSON.stringify(resource) === `{"Fn::GetAtt":["${id}","Arn"]}`,
-                ),
-                `${name}/${id} is in no backup selection`,
-              ).toBe(true);
-            }
-            expect(backupSelection, name).not.toHaveProperty('ListOfTags');
-            expect(backupSelection, name).not.toHaveProperty('Conditions');
-          } else {
-            const container = STANDARD_TAGS['c4factory:container'];
-            expect(
-              selectsByTag(backupSelection, 'c4factory:container', container),
-              `${name}: ${JSON.stringify(backupSelection)}`,
-            ).toBe(true);
-          }
+          expect(selectionFaults(backupSelection, tablesOf(template)), name).toEqual([]);
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -738,21 +834,13 @@ describe.runIf(operations !== undefined).each(TIERS)(
             if (!isRecord(bucket) || typeof bucket['Ref'] !== 'string') {
               continue;
             }
-            // Every resource carries the tag a selection backs up by, so a
-            // selection by tag leaves the bucket out by name; one that names
-            // its resources by ARN leaves it out by not naming it.
+            // A selection names the stack's tables only, never the bucket.
             for (const [id, selection] of selections) {
               const backupSelection = selection.Properties?.['BackupSelection'];
-              const named = namedResources(backupSelection);
-              const notResources = isRecord(backupSelection)
-                ? backupSelection['NotResources']
-                : undefined;
               expect(
-                named.length > 0
-                  ? !refersTo(JSON.stringify(named), bucket['Ref'])
-                  : refersTo(JSON.stringify(notResources ?? []), bucket['Ref']),
+                refersTo(JSON.stringify(backupSelection), bucket['Ref']),
                 `${name}/${id} selects ${balancerId}'s log bucket ${bucket['Ref']}`,
-              ).toBe(true);
+              ).toBe(false);
             }
           }
         }
@@ -760,7 +848,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the instances', () => {
-      it('hold no data: their volumes go with them, and no backup selects them by tag', () => {
+      it('hold no data: their volumes go with them', () => {
         for (const [name, template] of app(tier).templates) {
           if (!INSTANCE_TYPES.some((type) => resourcesOf(template, type).length > 0)) {
             continue;
@@ -789,15 +877,6 @@ describe.runIf(operations !== undefined).each(TIERS)(
               }
             }
           }
-          // A tag selection, by `ListOfTags` or by a condition on every
-          // resource, would back up every instance and volume that carries
-          // the Container's tag: the plan names its tables instead.
-          for (const [id, selection] of resourcesOf(template, 'AWS::Backup::BackupSelection')) {
-            const chosen = selection.Properties?.['BackupSelection'];
-            expect(namedResources(chosen).length, `${name}/${id}`).toBeGreaterThan(0);
-            expect(chosen, `${name}/${id}`).not.toHaveProperty('ListOfTags');
-            expect(chosen, `${name}/${id}`).not.toHaveProperty('Conditions');
-          }
         }
       });
     });
@@ -814,7 +893,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the alarms and topic', () => {
-      it('alarm on every function, table, API, load balancer, target group, service, Auto Scaling group, distribution and schedule group, to the one encrypted topic, with a dashboard', () => {
+      it('alarm on every function, table, API, load balancer, target group, service, Auto Scaling group, distribution, schedule group and rule, to the one encrypted topic, with a dashboard', () => {
         for (const [name, template] of serving()) {
           const [topicId] = only(resourcesOf(template, 'AWS::SNS::Topic'), `${name}'s topics`);
           expect(resourcesOf(template, 'AWS::CloudWatch::Dashboard').length, name).toBe(1);
@@ -958,3 +1037,135 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
   },
 );
+
+/**
+ * The Serverless findings on a stack `define` builds, after the Standard, as
+ * `<rule> <construct path>`: synth writes them into the outdir's validation
+ * report, not into the error it throws.
+ */
+function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[] {
+  const outdir = mkdtempSync(path.join(tmpdir(), 'standard-'));
+  try {
+    const probe = new App({ outdir, context: { ...cdkContext(), tier } });
+    const stack = new Stack(probe, 'probe');
+    define(stack);
+    // Called by nobody, so never acknowledged: its finding shows the pack ran.
+    probeFunction(stack, 'Canary');
+    applyStandard(probe, tier);
+    try {
+      probe.synth();
+    } catch {
+      // Every finding fails synth; the report says which.
+    }
+    // The canary is a finding, so synth writes a report.
+    const parsed: unknown = JSON.parse(
+      readFileSync(path.join(outdir, 'validation-report.json'), 'utf8'),
+    );
+    const plugins =
+      isRecord(parsed) && Array.isArray(parsed['pluginReports']) ? parsed['pluginReports'] : [];
+    const findings = (plugins as unknown[])
+      .filter((plugin) => isRecord(plugin) && plugin['pluginName'] === 'Serverless')
+      .flatMap((plugin) =>
+        isRecord(plugin) && Array.isArray(plugin['violations'])
+          ? (plugin['violations'] as unknown[])
+          : [],
+      )
+      .flatMap((violation: unknown) =>
+        isRecord(violation) && Array.isArray(violation['violatingConstructs'])
+          ? (violation['violatingConstructs'] as unknown[]).map(
+              (construct) =>
+                `${String(violation['ruleName'])} ${isRecord(construct) ? String(construct['constructPath']) : ''}`,
+            )
+          : [],
+      )
+      .sort();
+    const canary = 'Serverless-LambdaDLQ probe/Canary/Resource';
+    if (!findings.includes(canary)) {
+      throw new Error(`The Serverless pack did not find ${canary}: did it run?`);
+    }
+    return findings.filter((finding) => !finding.includes('/Canary/'));
+  } finally {
+    rmSync(outdir, { recursive: true, force: true });
+  }
+}
+
+/** A function of `stack` with a timeout and memory, so only the rules under test find it. */
+function probeFunction(
+  stack: Stack,
+  id: string,
+  props: Partial<FunctionProps> = {},
+): LambdaFunction {
+  return new LambdaFunction(stack, id, {
+    runtime: Runtime.NODEJS_22_X,
+    handler: 'index.handler',
+    code: Code.fromInline('exports.handler = async () => ({});'),
+    timeout: Duration.seconds(10),
+    memorySize: 256,
+    ...props,
+  });
+}
+
+// The Serverless pack runs beside AwsSolutions where the Frameworks carry
+// operations, and the Standard acknowledges the rules that are wrong for a
+// resource or duplicate an AwsSolutions one (#1112).
+describe.runIf(operations !== undefined)('the Serverless rules', () => {
+  it('find an asynchronous function without a dead-letter queue, and not one only synchronous callers call', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      new HttpApi(stack, 'Api', {
+        defaultIntegration: new HttpLambdaIntegration('Called', probeFunction(stack, 'Called')),
+      });
+      const queue = new Queue(stack, 'Messages', { enforceSSL: true });
+      probeFunction(stack, 'Consumer').addEventSource(new SqsEventSource(queue));
+      new Topic(stack, 'Topic').addSubscription(
+        new LambdaSubscription(probeFunction(stack, 'Notified')),
+      );
+    });
+    expect(findings).toContain('Serverless-LambdaDLQ probe/Notified/Resource');
+    expect(findings.filter((finding) => finding.includes('/Called/'))).toEqual([]);
+    expect(findings.filter((finding) => finding.includes('/Consumer/'))).toEqual([]);
+    expect(findings.filter((finding) => finding.includes('EventSourceMapping'))).toEqual([]);
+  });
+
+  it('take a dead-letter queue for an asynchronous failure destination', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      probeFunction(stack, 'Retried', {
+        deadLetterQueue: new Queue(stack, 'DeadLetters', { enforceSSL: true }),
+        retryAttempts: 2,
+      });
+    });
+    expect(findings.filter((finding) => finding.includes('AsyncFailureDestination'))).toEqual([]);
+  });
+
+  it('leave an email subscription without a redrive policy, and not a function’s', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      const topic = new Topic(stack, 'Alarms');
+      topic.addSubscription(new EmailSubscription('alerts@example.com'));
+      topic.addSubscription(new LambdaSubscription(probeFunction(stack, 'Notified')));
+    });
+    expect(findings.filter((finding) => finding.startsWith('Serverless-SNSRedrivePolicy'))).toEqual(
+      ['Serverless-SNSRedrivePolicy probe/Notified/Alarms/Resource'],
+    );
+  });
+
+  it('leave to AwsSolutions the rules it checks too', () => {
+    const findings = serverlessFindings('development', (stack) => {
+      probeFunction(stack, 'Old', { runtime: Runtime.NODEJS_20_X });
+      new Queue(stack, 'Lonely', { enforceSSL: true });
+    });
+    for (const rule of ['LambdaLatestVersion', 'SQSRedrivePolicy', 'LambdaStarPermissions']) {
+      expect(findings.filter((finding) => finding.includes(rule))).toEqual([]);
+    }
+  });
+
+  it('find an untraced function in production, and not in development', () => {
+    const untraced = (stack: Stack): void => {
+      probeFunction(stack, 'Untraced', { tracing: Tracing.DISABLED });
+    };
+    expect(serverlessFindings('production', untraced)).toContain(
+      'Serverless-LambdaTracing probe/Untraced/Resource',
+    );
+    expect(serverlessFindings('development', untraced)).not.toContain(
+      'Serverless-LambdaTracing probe/Untraced/Resource',
+    );
+  });
+});

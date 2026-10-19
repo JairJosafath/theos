@@ -89,6 +89,8 @@ type ReleaseTarget interface {
 	// marker; failing that, the published release tagged tag; nil when there is
 	// neither.
 	FindRelease(ctx context.Context, tag, marker string) (*TargetRelease, error)
+	// ListReleases returns every release, drafts included.
+	ListReleases(ctx context.Context) ([]TargetRelease, error)
 	// CreateDraft creates a draft release of tag, named name, with body. The tag
 	// is created when the draft is published, at commit, or at the default
 	// branch's head when commit is "".
@@ -257,6 +259,24 @@ func (g *githubReleases) FindRelease(ctx context.Context, tag, marker string) (*
 				return draft, nil
 			}
 			return tagged, nil
+		}
+	}
+	return nil, &ReleaseError{Reason: ReasonGitHubError,
+		Message: fmt.Sprintf("github: more than %d releases to look through", githubMaxPages*githubPageSize)}
+}
+
+func (g *githubReleases) ListReleases(ctx context.Context) ([]TargetRelease, error) {
+	var out []TargetRelease
+	for page := 1; page <= githubMaxPages; page++ {
+		var batch []githubRelease
+		if err := g.list(ctx, g.releases, page, "listing releases", &batch); err != nil {
+			return nil, err
+		}
+		for _, r := range batch {
+			out = append(out, r.release())
+		}
+		if len(batch) < githubPageSize {
+			return out, nil
 		}
 	}
 	return nil, &ReleaseError{Reason: ReasonGitHubError,

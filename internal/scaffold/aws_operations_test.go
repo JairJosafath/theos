@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -59,6 +60,11 @@ var awsOperationsFrameworks = []struct {
 	{side{model.TypeJob, "aws-schedule-ts"}, []string{
 		"Schedule-InvocationDroppedCount-Critical", "DeadLetters-Queue-Message-Count-Max-Critical",
 		"aws lambda invoke", "`DeadLetters` queue",
+	}, false, true},
+	{side{model.TypeWorker, "aws-event-ts"}, []string{
+		"Rule-FailedInvocations-Critical", "Rule-InvocationsFailedToBeSentToDlq-Critical",
+		"DeadLetters-Queue-Message-Count-Max-Critical", "aws lambda invoke", "aws events disable-rule",
+		"`DeadLetters` queue",
 	}, false, true},
 }
 
@@ -137,6 +143,7 @@ var runbookSays = map[string][]string{
 	"aws-fargate-ts":  tableRunbookSays,
 	"aws-queue-ts":    tableRunbookSays,
 	"aws-schedule-ts": tableRunbookSays,
+	"aws-event-ts":    tableRunbookSays,
 	"aws-static-site-ts": {
 		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
 		"continue-update-rollback", "GuardDuty",
@@ -238,6 +245,76 @@ func TestAWSStandardRunbookSaysWhenThereAreNoBackups(t *testing.T) {
 	}
 }
 
+// The runbook says what the daily backups cover against point-in-time
+// recovery's 35 days: damage older than that only when they outlive it, and
+// no copy to copyToRegion when there are none to copy (#1266).
+func TestAWSStandardRunbookSaysWhatTheBackupsReach(t *testing.T) {
+	const (
+		older    = "The daily backups cover what it can't: damage older than 35 days"
+		vaultOld = "When: the damage is older than 35 days"
+		within   = "reach back no further than it does"
+		undone   = "damage older than 35 days can't be undone"
+		noCopy   = "no copy is made there"
+		region   = "the loss of the whole region"
+	)
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // TestAWSStandardRunbookKeepsTheSitesVersions
+		}
+		for _, tt := range []struct {
+			days int32
+			copy string
+			says []string
+			not  []string
+		}{
+			{0, "", []string{undone}, []string{older, within, noCopy, region}},
+			{0, "eu-west-1", []string{undone, noCopy, "`retentionDays` 0 keeps none"}, []string{older, within}},
+			{7, "", []string{within, undone, "reach back 7 days"}, []string{older, vaultOld, noCopy, region}},
+			{7, "eu-west-1", []string{within, undone, region}, []string{older, vaultOld, noCopy}},
+			{35, "", []string{within, undone, "reach back 35 days"}, []string{older, vaultOld, noCopy, region}},
+			{35, "eu-west-1", []string{within, undone, region}, []string{older, vaultOld, noCopy}},
+			{90, "", []string{older, vaultOld}, []string{within, undone, noCopy, region}},
+			{90, "eu-west-1", []string{older, vaultOld, region}, []string{within, undone, noCopy}},
+		} {
+			t.Run(fmt.Sprintf("%s/retentionDays %d copyToRegion %q", f.Name, tt.days, tt.copy), func(t *testing.T) {
+				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RetentionDays: &tt.days, CopyToRegion: tt.copy})
+				// The sentences wrap where the template does; compare them on one line.
+				runbook := strings.Join(strings.Fields(string(r.Files["docs/runbook.md"].Data)), " ")
+				for _, w := range tt.says {
+					if !strings.Contains(strings.ToLower(runbook), strings.ToLower(w)) {
+						t.Errorf("docs/runbook.md lacks %q", w)
+					}
+				}
+				for _, w := range tt.not {
+					if strings.Contains(strings.ToLower(runbook), strings.ToLower(w)) {
+						t.Errorf("docs/runbook.md says %q", w)
+					}
+				}
+			})
+		}
+	}
+}
+
+// An RPO of 0 is valid, and the runbook says the Standard reads it as the
+// least loss it can give, point-in-time recovery (#1266).
+func TestAWSStandardRunbookReadsAZeroRPO(t *testing.T) {
+	const zero = "asks to lose nothing"
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // a site's RPO is its files' versions, which keep every change
+		}
+		for rpo, want := range map[string]bool{"0m": true, "0d": true, "4h": false} {
+			t.Run(f.Name+"/"+rpo, func(t *testing.T) {
+				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RPO: rpo})
+				runbook := strings.Join(strings.Fields(string(r.Files["docs/runbook.md"].Data)), " ")
+				if got := strings.Contains(runbook, "An RPO of "+rpo+" "+zero); got != want {
+					t.Errorf("docs/runbook.md says an RPO of %s %s: %t, want %t", rpo, zero, got, want)
+				}
+			})
+		}
+	}
+}
+
 // TestAWSStandardGuidesEveryFrameworkWithOperationsThroughTheTiers checks that
 // every file of aws-standard that says how to work with the tiers says it for
 // each Framework with operations (the three Lambda Frameworks, aws-fargate-ts
@@ -272,6 +349,56 @@ func TestAWSStandardGuidesEveryFrameworkWithOperationsThroughTheTiers(t *testing
 				}
 				if strings.Contains(string(file.Data), w) != tiered {
 					t.Errorf("%s for %s says %q: %t, want %t", path, f.Name, w, !tiered, tiered)
+				}
+			}
+		})
+	}
+}
+
+// The Frameworks whose v1.0.0 came before their step of
+// plans/aws-production.md: it renders no infra/operations.ts, and its stack
+// has no tiers, alarms or backups.
+var awsFrameworksBeforeOperations = []side{
+	{model.TypeFunction, "aws-lambda-ts"},
+	{model.TypeFunction, "aws-lambda-py"},
+	{model.TypeFunction, "aws-lambda-go"},
+	{model.TypeService, "aws-ec2-ts"},
+	{model.TypeService, "aws-fargate-ts"},
+}
+
+// An aws-standard update must not bring a Framework's version without
+// infra/operations.ts a runbook or operations rules (#1249). Each Framework
+// stands in for its v1.0.0 with infra/operations.ts left out.
+func TestAWSStandardWritesNoOperationsDocsForAFrameworkWithoutOperations(t *testing.T) {
+	docs := func(p string) bool { return p == "AGENTS.md" || strings.HasPrefix(p, "docs/") }
+	for _, fw := range awsFrameworksBeforeOperations {
+		t.Run(fw.Name, func(t *testing.T) {
+			in, layers := loadCombo(t, fw.Side, []side{
+				{model.SideFramework, fw.Name},
+				{model.SideStandard, "aws-standard"},
+			}, "")
+			for p := range layers[0].Files {
+				if strings.HasPrefix(p, "infra/operations.ts") {
+					delete(layers[0].Files, p)
+				}
+			}
+			layers[0].Ref = "v1.0.0"
+			r, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := r.Files["docs/runbook.md"]; ok {
+				t.Errorf("aws-standard writes docs/runbook.md for %s without infra/operations.ts", fw.Name)
+			}
+			for _, p := range r.Files.Paths() {
+				if !docs(p) {
+					continue
+				}
+				doc := string(r.Files[p].Data)
+				for _, w := range []string{"infra/operations.ts", "runbook", "TIER_RULES", "`Alarms`", "backup plan"} {
+					if strings.Contains(doc, w) {
+						t.Errorf("%s for %s without infra/operations.ts says %q", p, fw.Name, w)
+					}
 				}
 			}
 		})

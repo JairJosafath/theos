@@ -1,0 +1,225 @@
+# aws-standard v1.16.0 and an RPO of 0 (issue #1266), on 2026-10-19, Node v24.22.0.
+# go run ./hack/render -out /tmp/aws-1266/rpo-0m -type function -rpo 0m Framework=aws-lambda-ts Standard=aws-standard
+# go run ./hack/render -out /tmp/aws-1266/rpo-4h -type function -rpo 4h Framework=aws-lambda-ts Standard=aws-standard
+# (the rest of spec.operations left out: retentionDays 35, no copy, rto 4h, no email)
+# each run with no AWS variables and an empty HOME:
+# env -i PATH=$PATH HOME=/tmp/aws-1266/home NO_COLOR=1 npm_config_cache=... UV_CACHE_DIR=... make check
+
+## 1. rpo 0m: make check passes
+
+npm ci --no-audit --no-fund
+
+added 178 packages in 23s
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/aws-1266/rpo-0m
+
+ ✓ src/api.test.ts (8 tests) 12ms
+ ✓ src/items.test.ts (25 tests) 12ms
+ ✓ src/once.test.ts (7 tests) 12ms
+ ✓ src/item_store.test.ts (4 tests) 9ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset sample-app/Handler/Code/Stage...
+
+  ...ee88fbaea91d679a414a3e0d19c36a8da024114324ff9b-building/index.js  596.4kb
+  ...fbaea91d679a414a3e0d19c36a8da024114324ff9b-building/index.js.map    2.4mb
+
+⚡ Done in 119ms
+
+  ...f55554a9b0292ebd0f8a51aa5119b3cc8ee3fa29c00859-building/index.js  596.4kb
+  ...54a9b0292ebd0f8a51aa5119b3cc8ee3fa29c00859-building/index.js.map    2.4mb
+
+⚡ Done in 114ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset sample-app-development/Handler/Code/Stage...
+
+  ...9a6e0e9ae1e46cf036c6c9d15ff8eb543b2187d5ccbaad-building/index.js  596.4kb
+  ...0e9ae1e46cf036c6c9d15ff8eb543b2187d5ccbaad-building/index.js.map    2.4mb
+
+⚡ Done in 428ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...650a86ca156e4d266ee521d2143e39b2f414b49607c6ea-building/index.js  596.4kb
+  ...86ca156e4d266ee521d2143e39b2f414b49607c6ea-building/index.js.map    2.4mb
+
+⚡ Done in 160ms
+
+  ...4f1a209a9c524aa940c2dd6bb6c7da354a1c6245a4f670-building/index.js  596.4kb
+  ...209a9c524aa940c2dd6bb6c7da354a1c6245a4f670-building/index.js.map    2.4mb
+
+⚡ Done in 157ms
+Bundling asset test/Handler/Code/Stage...
+ ✓ infra/standard.test.ts (68 tests) 4223ms
+
+  ...c9a6cef6c198efd92c4e50c72ccdbf4e4ed783f025031a-building/index.js  596.4kb
+  ...cef6c198efd92c4e50c72ccdbf4e4ed783f025031a-building/index.js.map    2.4mb
+
+⚡ Done in 107ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...2c3cc37f449626873e54a25de2c1cdd5599cffe2f5fd92-building/index.js  596.4kb
+  ...c37f449626873e54a25de2c1cdd5599cffe2f5fd92-building/index.js.map    2.4mb
+
+⚡ Done in 101ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...b6cc8ded8f345d6ce23541a5debd5b21ca1e0f10739e20-building/index.js  596.4kb
+  ...8ded8f345d6ce23541a5debd5b21ca1e0f10739e20-building/index.js.map    2.4mb
+
+⚡ Done in 89ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...2e9c9fef9ca6ab7bf12e17a041345630f69011d60972c3-building/index.js  596.4kb
+  ...9fef9ca6ab7bf12e17a041345630f69011d60972c3-building/index.js.map    2.4mb
+
+⚡ Done in 94ms
+ ✓ infra/api_stack.test.ts (16 tests) 5927ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 732ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 561ms
+     ✓ copies the backups to the vault in copyToRegion 533ms
+   ✓ ApiStack data stores (2)
+     ✓ connects the function to each Connector's data store and alarms on its table 470ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 483ms
+
+ Test Files  6 passed (6)
+      Tests  128 passed (128)
+   Start at  23:09:21
+   Duration  7.16s (tests 78%, import 14%, transform 8%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+Bundling asset sample-app/Handler/Code/Stage...
+
+  ...a8f6139757df9e53c633bbafa0e761cf75da17fd966994-building/index.js  596.4kb
+  ...139757df9e53c633bbafa0e761cf75da17fd966994-building/index.js.map    2.4mb
+
+⚡ Done in 76ms
+Bundling asset sample-app-development/Handler/Code/Stage...
+
+  ...be2974432053f1b85678ee3ee100ab37e77f8978e968b4-building/index.js  596.4kb
+  ...74432053f1b85678ee3ee100ab37e77f8978e968b4-building/index.js.map    2.4mb
+
+⚡ Done in 75ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Downloading networkx (2.0MiB)
+Downloading sympy (6.0MiB)
+Downloading cfn-lint (5.4MiB)
+ Downloaded networkx
+ Downloaded cfn-lint
+ Downloaded sympy
+Installed 9 packages in 68ms
+exit 0
+
+## 2. rpo 0m with v1.15.0's assertion (toBeGreaterThan(0)) put back: the test fails
+
+# node_modules/.bin/vitest run infra/standard.test.ts -t "RPO is under a day"
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > point-in-time recovery > is on for every table in production when the RPO is under a day
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in development > point-in-time recovery > is on for every table in production when the RPO is under a day
+AssertionError: recovery.rpo 0m: expected 0 to be greater than 0
+ ❯ infra/standard.test.ts:631:68
+    629|         const minutes = Number(count) * ({ m: 1, h: 60, d: 1440 }[unit…
+    630|         // An RPO of 0 asks for the least loss there is: point-in-time…
+    631|         expect(minutes, `recovery.rpo ${promised().recovery.rpo}`).toB…
+       |                                                                    ^
+    632|         if (tier !== 'production' || minutes >= 1440) {
+    633|           return;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 66 skipped (68)
+   Start at  23:09:54
+   Duration  3.15s (tests 73%, import 22%, transform 5%)
+
+exit 1
+
+## 3. rpo 4h: make check passes
+
+ Test Files  6 passed (6)
+      Tests  128 passed (128)
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
+
+## 4. Production's TIER_RULES.pointInTimeRecovery set to false in infra/standard.ts
+##    (which acknowledges AwsSolutions-DDB3, so only the RPO rule can catch it):
+##    the RPO rule fails at rpo 4h, and at rpo 0m too
+
+# rpo 4h: node_modules/.bin/vitest run infra/standard.test.ts -t "point-in-time recovery"
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > point-in-time recovery > is on for every table in production when the RPO is under a day
+AssertionError: sample-app/Items5C12978B: expected { PointInTimeRecoveryEnabled: false } to deeply equal ObjectContaining{…}
+
+- Expected
++ Received
+
+- ObjectContaining {
+-   "PointInTimeRecoveryEnabled": true,
++ {
++   "PointInTimeRecoveryEnabled": false,
+  }
+
+ ❯ infra/standard.test.ts:637:93
+    635|         for (const [name, template] of app(tier).templates) {
+    636|           for (const [id, table] of resourcesOf(template, 'AWS::Dynamo…
+    637|             expect(table.Properties?.['PointInTimeRecoverySpecificatio…
+       |                                                                                             ^
+    638|               expect.objectContaining({ PointInTimeRecoveryEnabled: tr…
+    639|             );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed | 64 skipped (68)
+   Start at  23:11:03
+   Duration  3.43s (tests 76%, import 19%, transform 5%)
+
+exit 1
+
+# rpo 0m: node_modules/.bin/vitest run infra/standard.test.ts -t "point-in-time recovery"
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  infra/standard.test.ts > what infra/operations.ts promises, in production > point-in-time recovery > is on for every table in production when the RPO is under a day
+AssertionError: sample-app/Items5C12978B: expected { PointInTimeRecoveryEnabled: false } to deeply equal ObjectContaining{…}
+
+- Expected
++ Received
+
+- ObjectContaining {
+-   "PointInTimeRecoveryEnabled": true,
++ {
++   "PointInTimeRecoveryEnabled": false,
+  }
+
+ ❯ infra/standard.test.ts:637:93
+    635|         for (const [name, template] of app(tier).templates) {
+    636|           for (const [id, table] of resourcesOf(template, 'AWS::Dynamo…
+    637|             expect(table.Properties?.['PointInTimeRecoverySpecificatio…
+       |                                                                                             ^
+    638|               expect.objectContaining({ PointInTimeRecoveryEnabled: tr…
+    639|             );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed | 64 skipped (68)
+   Start at  23:11:06
+   Duration  3.48s (tests 72%, import 22%, transform 5%)
+
+exit 1

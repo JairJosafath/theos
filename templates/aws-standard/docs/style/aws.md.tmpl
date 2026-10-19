@@ -2,8 +2,14 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
 {{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
+{{- /* Whether the Framework, at the version the Container was scaffolded
+     from, has infra/operations.ts: a version from before its step of
+     plans/aws-production.md has no tiers, alarms, backups or Powertools
+     (#1249). */ -}}
+{{- $operations := has .FrameworkFiles "infra/operations.ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- $event := eq .Framework "aws-event-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -68,8 +74,13 @@ says why each rule matters.
 - Each entry has a `level`, a `message` and the request id; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 - The container logs through the `awslogs` driver to a log group the stack
+{{- if $operations }}
   creates, kept for the tier's time: a year in production, a month in
   development. [nag: AwsSolutions-ECS7; test: log retention]
+{{- else }}
+  creates, with a retention. [nag: AwsSolutions-ECS7; test: log groups keep
+  logs for a set time]
+{{- end }}
 - Write entries to stderr, one JSON object a line; ECS sends each line to
   CloudWatch Logs as one event. [review]
 
@@ -85,15 +96,28 @@ says why each rule matters.
   `ADD` on a retried request. [review]
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
+{{- if $operations }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
-  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  the stack's plan, which names it by ARN in `Backups`' `tables`, never by
+  a tag the development stack's tables carry too (Powertools' `Idempotency`
+  table, whose records expire, is left out); in development none of
+  it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's table is. [test: the removal
-  policies, deletion protection, point-in-time recovery]
+  policies, deletion protection, point-in-time recovery, the backup plan and
+  vault]
+{{- else }}
+- Point-in-time recovery on. [nag: AwsSolutions-DDB3]
+{{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
+{{- if $operations }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
+{{- else }}
+- The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
+  protection. [test: says what happens to stateful resources; review]
+{{- end }}
 
 ## The AWS SDK v3
 
@@ -120,23 +144,30 @@ says why each rule matters.
   acknowledged `AwsSolutions-EC23`, on the load balancer. [nag:
   AwsSolutions-EC23]
 - Access logs go to an S3 bucket with S3-managed keys (the only encryption
+{{- if $operations }}
   Elastic Load Balancing writes with), TLS only, through the log delivery
   service principal so the stack keeps no region. They are logs, not data:
   they expire after the tier's log retention, and the bucket is kept in
   either tier, since CloudFormation can't delete one that holds objects.
+{{- else }}
+  Elastic Load Balancing writes with), TLS only, objects expiring, through
+  the log delivery service principal so the stack keeps no region.
+{{- end }}
   [nag: AwsSolutions-ELB2, AwsSolutions-S10]
 - Invalid header fields are dropped (`dropInvalidHeaderFields`). [review]
 - The target group checks `/health`, and its deregistration delay fits the
   longest request: ECS stops a task only after the load balancer has
   drained it. [review]
+{{- if $operations }}
 - Alarms on its own 5xx (`HTTPCode_ELB_5XX_Count`), the tasks' 5xx
   (`HTTPCode_Target_5XX_Count`), each also as a share of `RequestCount`,
   their p99 latency (`TargetResponseTime`) and unhealthy targets
   (`UnHealthyHostCount`), from the stack's `Alarms`. [test: the alarms and
   topic]
-- Its access-log bucket carries the Container's tag like every resource,
-  and the backup plan leaves it out (`Backups`' `exclude`): logs, not
-  data. [test: the backup plan and vault]
+- Its access-log bucket is logs, not data: the backup plan, which names
+  the stack's table by ARN, leaves it out. [test: the backup plan and
+  vault]
+{{- end }}
 
 ## The task and the service in the stack
 
@@ -147,11 +178,16 @@ says why each rule matters.
 - The `Dockerfile` pins the Node major (`node:24-alpine`), builds with
   `npm ci` and esbuild, and runs the bundle alone as the `node` user. [review]
 - `arm64` (Graviton): cheaper per vCPU-hour and lower energy. [review]
+{{- if $operations }}
 - CPU and memory set for the work, the app's the same in every tier: a
   container beside it where the tier runs one, such as the collector, adds
   its own share to the task, with a hard memory limit so it never takes the
   app's. A read-only root file system; a stop timeout that lets requests in
   flight finish. [review]
+{{- else }}
+- CPU and memory set for the work; a read-only root file system; a stop
+  timeout that lets requests in flight finish. [review]
+{{- end }}
 - The task role is granted only what the code calls; the execution role
   only what CDK grants it to pull the image and write logs. No AWS managed
   policies. [nag: AwsSolutions-IAM4]
@@ -168,6 +204,7 @@ says why each rule matters.
 - The service keeps at least two tasks in two zones, deploys with the
   circuit breaker and rollback, and scales between bounds the issue's load
   sets. [review]
+{{- if $operations }}
 - A deployment also rolls back on its alarms (`enableDeploymentAlarms` with
   `AlarmBehavior.ROLLBACK_ON_ALARM`): the share of 5xx over a few percent
   for minutes, never a single 5xx, and unhealthy targets by the minute,
@@ -184,23 +221,31 @@ says why each rule matters.
   `OTEL_EXPORTER_OTLP_ENDPOINT`, and the task role may write to X-Ray;
   `infra/standard.ts` acknowledges X-Ray's `*`. In development none of it.
   [test: tracing]
+{{- end }}
 - The VPC logs rejected traffic to a log group with a retention, and reaches
+{{- if $operations }}
   DynamoDB through a gateway endpoint. It has a NAT gateway in each zone in
   production, so a zone's failure leaves the other's tasks their way to
   ECR, CloudWatch and X-Ray, and one in development. [nag: AwsSolutions-VPC7;
   review]
+{{- else }}
+  DynamoDB through a gateway endpoint. [nag: AwsSolutions-VPC7; review]
+{{- end }}
 
 ## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
   `fromLookup`, so synth needs no account. [review]
+{{- if $operations }}
 - `defineStacks(app, tier)` builds the stacks for the tier the deploy names,
   with the tier's `TIER_RULES` and what `infra/operations.ts` promises; no
   other context value or environment variable is read at synth. [test: the
   Standard's per-tier checks]
+{{- end }}
 - Every stack carries the Standard's tags (`c4factory:project`,
   `c4factory:system`, `c4factory:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]
@@ -322,6 +367,7 @@ says why each rule matters.
   one by one with the reason; never add another. [nag: AwsSolutions-IAM5;
   test: no wildcard action]
 - X-Ray traces it in production. [review]
+{{- if $operations }}
 
 ## Alarms
 
@@ -332,10 +378,12 @@ says why each rule matters.
   [test: the alarms and topic]
 - What each alarm means and what to do first is in `docs/runbook.md`;
   a new alarm adds its row there, as a Standard change. [review]
+{{- end }}
 
 ## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stack is in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - No account in `env`, no `fromLookup`, so synth needs no account. The
@@ -366,7 +414,7 @@ says why each rule matters.
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
 Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
-handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else if $schedule }}its asynchronous invocation page, the EventBridge Scheduler user guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
+handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else if $schedule }}its asynchronous invocation page, the EventBridge Scheduler user guide{{ else if $event }}its asynchronous invocation page, the EventBridge user guide's rules and event patterns{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
 {{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -456,6 +504,11 @@ says why each rule matters.
   `{"scheduledTime": ..., "attemptNumber": ...}`, and returns nothing: a
   run that throws is retried by Lambda and then sent to the dead-letter
   queue. [review]
+{{- else if $event -}}
+- `src/handler.ts` exports `handler`, which takes the EventBridge event the
+  rule matched (its `id`, `source`, `detail-type` `ItemSubmitted` and the
+  item in its `detail`) and returns nothing: an event that throws is
+  retried by Lambda and then sent to the dead-letter queue. [review]
 {{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
@@ -473,7 +526,7 @@ says why each rule matters.
   [lint: @typescript-eslint/no-floating-promises]
 - Never `process.exit()`: it kills the execution environment mid-invocation.
   [lint: no-restricted-properties]
-- Don't keep {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} data in module-scope variables: the next invocation in
+- Don't keep {{ if $queue }}message{{ else if $schedule }}run{{ else if $event }}event{{ else }}request{{ end }} data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- end }}
 
@@ -496,6 +549,30 @@ says why each rule matters.
   `scheduledTime`). [review]
 - When the job runs is `SCHEDULE` in `infra/job_stack.ts`, a cron or rate
   expression with its time zone. [review]
+{{ else if $event }}## Events
+
+- Validate every event at the boundary: its `id`, `source` and
+  `detail-type`, and the item its `detail` carries, narrowed from `unknown`
+  with runtime checks. The rule matches the source and detail type, but a
+  producer can put any `detail`, and anyone allowed to invoke the function
+  can send anything. [review]
+- The consumer's work goes in `consume` in `src/consume.ts`. The handler
+  runs it through `checkingFirst`, which refuses an event that carries no
+  item before anything is recorded, and Powertools' Idempotency; never
+  bypass them. [review]
+- An event that fails throws: Lambda retries it twice within the hour, then
+  sends it to the dead-letter queue. [review]
+- Never catch a failure and carry on: an event the handler returns as done
+  is not retried, and its work is lost. [review]
+- An event is delivered at least once and in no set order, by the rule's
+  retries or Lambda's: the work per event is idempotent (Powertools'
+  Idempotency, keyed by its `id`) and never depends on another event coming
+  first. [review]
+- Which events the rule sends is `eventPatternFor` in
+  `infra/event_stack.ts`: the Container's name as `source`, `ItemSubmitted`
+  as `detail-type`, on the default event bus. [review]
+- Never log an event's `detail`: it may hold user data. Log its `id` and
+  what failed. [review]
 {{ else if $queue }}## Messages
 
 - Validate every message at the boundary: its body and the attributes the
@@ -533,26 +610,36 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `*slog.Logger` the
   code is given (`slog.NewJSONHandler` on stderr, made in `main`); never
   `fmt.Print` or the `log` package. [review]
+{{- if $operations }}
 - There is no Powertools for Go: the logs are `slog`'s, and the function
   sends no metrics of its own; the alarms read what Lambda, API Gateway and
   DynamoDB report. [review]
-{{- else if or $lambda $queue $schedule -}}
+{{- end }}
+{{- else if and $operations (or $lambda $queue $schedule $event) -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
   which `{{ if $py }}app/handler.py{{ else }}src/handler.ts{{ end }}` makes and hands to the code as its `Log`; never
   `{{ if $py }}print{{ else }}console{{ end }}`. [lint: {{ if $py }}T201{{ else }}no-console{{ end }}]
 - Count what matters with Powertools' Metrics, written into the logs in
   the embedded metric format: no API call, no permission. [review]
+{{- else if $py -}}
+- Log structured JSON, one entry per line, through the `Log` the code is
+  given; never `print`. [lint: T201]
 {{- else -}}
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
 {{- end }}
-- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else }}request id{{ end }}; errors say what
+- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else if $event }}event id{{ else }}request id{{ end }}; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
+{{- if $operations }}
   the log group the stack creates, one stream per instance, kept for the
   tier's time: a year in production, a month in development. [test: log
   retention]
+{{- else }}
+  the log group the stack creates, with a retention, one stream per
+  instance. [test: log groups keep logs for a set time]
+{{- end }}
 - The load balancer writes access logs to an S3 bucket, and the VPC's
   rejected traffic goes to a flow log. [nag: AwsSolutions-ELB2,
   AwsSolutions-VPC7]
@@ -563,7 +650,7 @@ says why each rule matters.
 {{ end }}
 ## DynamoDB
 
-- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path is
+- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else if $event }}event's{{ else }}request{{ end }} path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
 {{ if $go -}}
 - Read and write items as `map[string]types.AttributeValue`, by hand or
@@ -582,11 +669,11 @@ says why each rule matters.
 - Writes are idempotent: a `PutItem` of the whole item, or a conditional
   write (`ConditionExpression`) that refuses a second apply. Never a blind
   `ADD` on a retried request. [review]
-{{- if $go }}
+{{- if and $operations $go }}
 - Idempotency is by hand, as above: there is no Powertools for Go, and no
   idempotency table. `PUT /items/{id}` replaces the whole item, so a retry
   writes the same item again. [review]
-{{- else if $lambda }}
+{{- else if and $operations $lambda }}
 - A route that changes data runs through Powertools' Idempotency, keyed by
   the request's `Idempotency-Key` header, as `PUT /items/{id}` does in
   {{ if $py }}`app/once.py`{{ else }}`src/once.ts`{{ end }}: a retry with the same key gets the first answer back. [review]
@@ -596,21 +683,28 @@ says why each rule matters.
 {{- else if $schedule }}
 - Each run runs through Powertools' Idempotency, keyed by its
   `scheduledTime`: a run delivered again writes nothing twice. [review]
+{{- else if $event }}
+- Each event runs through Powertools' Idempotency, keyed by its `id`: an
+  event delivered again writes nothing twice. [review]
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
+{{- if and $operations (or $lambda $queue $schedule $event (eq .Framework "aws-ec2-ts")) }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
-  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  the stack's plan, which names it by ARN in `Backups`' `tables`, never by
+  a tag the development stack's tables carry too (Powertools' `Idempotency`
+  table, whose records expire, is left out); in development none of
+  it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's {{ if eq .Framework "aws-ec2-ts" }}table is{{ else }}tables are{{ end }}. [test: the removal
-  policies, deletion protection, point-in-time recovery]
+  policies, deletion protection, point-in-time recovery, the backup plan and
+  vault]
 {{- else }}
 - Point-in-time recovery on. [nag: AwsSolutions-DDB3]
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
+{{- if and $operations (or $lambda $queue $schedule $event (eq .Framework "aws-ec2-ts")) }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -664,7 +758,8 @@ says why each rule matters.
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. {{ if eq .Framework "aws-schedule-ts" }}Catch only what the run can finish without (an item
-  already there); throw the rest, and Lambda runs the run again.{{ else }}Catch what you can answer (a failed condition is a 409),
+  already there); throw the rest, and Lambda runs the run again.{{ else if eq .Framework "aws-event-ts" }}Catch only what the event can finish without (an item
+  already there); throw the rest, and Lambda runs the event again.{{ else }}Catch what you can answer (a failed condition is a 409),
   let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500.{{ end }} [review]
 {{- end }}
 
@@ -677,8 +772,13 @@ says why each rule matters.
   needs its endpoint. [test; review]
 - The VPC's CIDR is written out (`VPC_CIDR`), so security group rules name
   it and CDK Nag can read them. [nag: AwsSolutions-EC23]
+{{- if $operations }}
 - Flow logs record rejected traffic to a log group kept for the tier's
   time. [nag: AwsSolutions-VPC7; test: log retention]
+{{- else }}
+- Flow logs record rejected traffic to a log group with a retention.
+  [nag: AwsSolutions-VPC7]
+{{- end }}
 - The load balancer is internal and serves HTTPS only, even inside the VPC:
   one listener on 443 with the certificate the `CertificateArn` parameter
   names (the deployer's ACM certificate, so synth needs no account) and the
@@ -688,17 +788,25 @@ says why each rule matters.
   it then needs an authorizer in front of the routes. [nag:
   AwsSolutions-EC23; test]
 - It drops invalid header fields and writes access logs to an S3 bucket
+{{- if $operations }}
   (SSE-S3, TLS only, public access blocked) that the log delivery service
   may write to. They are logs, not data: they expire after the tier's log
   retention, and the bucket is kept in either tier, since CloudFormation
   can't delete one that holds objects. [nag: AwsSolutions-ELB2,
   AwsSolutions-S10; test]
+{{- else }}
+  (SSE-S3, TLS only, public access blocked, kept 90 days) that the log
+  delivery service may write to. [nag: AwsSolutions-ELB2, AwsSolutions-S10;
+  test]
+{{- end }}
 - The target group checks `GET /health` and gives a stopping instance 30
   seconds to finish its requests. [test]
+{{- if $operations }}
 - Alarms on its own 5xx (`HTTPCode_ELB_5XX_Count`), the instances' 5xx
   (`HTTPCode_Target_5XX_Count`), their p99 latency (`TargetResponseTime`)
   and unhealthy targets (`UnHealthyHostCount`), from the stack's `Alarms`.
   [test: the alarms and topic]
+{{- end }}
 
 ## EC2 instances and the Auto Scaling group
 
@@ -707,11 +815,17 @@ says why each rule matters.
   the public SSM parameter, so synth needs no lookup. [review]
 - Instances hold no data: what the service keeps is in the table, and an
   instance's disk holds only the system, the server's code and logs not yet
+{{- if $operations }}
   shipped. The root volume is deleted with its instance and never backed
   up, and the backup plan names the stack's tables by ARN, never by a tag
   the instances and their volumes carry too. A feature that needs to keep a
   file keeps it in S3 or DynamoDB, never on the instance. [test: the
   instances; review]
+{{- else }}
+  shipped. The root volume is deleted with its instance. A feature that
+  needs to keep a file keeps it in S3 or DynamoDB, never on the instance.
+  [test: the instances; review]
+{{- end }}
 - IMDSv2 required, the root volume gp3 and encrypted, detailed monitoring
   on. [nag: AwsSolutions-EC26, AwsSolutions-EC28; test]
 - The instances' own role, granted only what the server calls and the
@@ -737,12 +851,14 @@ says why each rule matters.
   CloudFormation rolls back to the instances it had. The group's creation
   waits for its first two signals the same way. Keep the health wait the
   boot's last command. [test]
+{{- if $operations }}
 - The group sends its scaling events (launches, terminations and their
   failures) to the stack's alarm topic; its key lets Auto Scaling's
   service-linked role publish. [nag: AwsSolutions-AS3; test]
 - The group has alarms on its CPU and on fewer instances in service than
   its minimum (`GroupInServiceInstances`, from the group metrics it
   publishes). [test: the alarms and topic]
+{{- end }}
 - systemd restarts the server whenever it stops, and logrotate keeps its
   log file small on the disk; a change to the boot keeps both. [test]
 - No secrets in the user data or the unit's environment: they are visible
@@ -772,6 +888,30 @@ says why each rule matters.
   message 14 days, the longest SQS keeps one. [nag: AwsSolutions-SQS2,
   AwsSolutions-SQS4; test: encrypts every queue]
 - The dead-letter queue holds the runs that failed, which are data: kept
+  with the stack in production, like the tables. [review]
+
+{{ else if $event }}## The rule and its dead-letter queue
+
+- The rule is on the default event bus, where its `Ref` is its name, the
+  `RuleName` its metrics carry; on a custom bus it would be `bus|rule`, and
+  its alarms would watch nothing. [review]
+- Every rule's Lambda target has a retry policy (`retryAttempts`,
+  `maxEventAge`) and a dead-letter queue; the function, invoked
+  asynchronously, has its own retries and `DeadLetterConfig` naming the
+  same queue. [test: every rule's Lambda target is retried and
+  dead-lettered]
+- Every rule alarms on `FailedInvocations` and
+  `InvocationsFailedToBeSentToDlq`, and every dead-letter queue on its
+  first message, from the stack's `Alarms`. [test: the alarms and topic,
+  the dead-letter queues]
+- The target invokes the function through its resource policy, which CDK
+  scopes to the rule (`SourceArn`); the queue's policy lets only that rule
+  send to the dead-letter queue. Never a wider principal. [review]
+- The dead-letter queue is encrypted (`QueueEncryption.SQS_MANAGED` or a
+  KMS key), refuses requests without TLS (`enforceSSL: true`) and keeps a
+  message 14 days, the longest SQS keeps one. [nag: AwsSolutions-SQS2,
+  AwsSolutions-SQS4; test: encrypts every queue]
+- The dead-letter queue holds the events that failed, which are data: kept
   with the stack in production, like the tables. [review]
 
 {{ else if $queue }}## The queue and its event source
@@ -833,6 +973,7 @@ says why each rule matters.
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
 - Memory and timeout set for the work, the timeout {{ if $queue }}at most a sixth of the queue's
   visibility timeout{{ else if $schedule }}longer than a run takes, which
+  its p99 duration alarm watches{{ else if $event }}longer than an event takes, which
   its p99 duration alarm watches{{ else }}under API Gateway's 30
   seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.
@@ -844,12 +985,13 @@ says why each rule matters.
 
 {{ end }}## The CDK app
 
-- `infra/main.ts` and `infra/standard.ts` belong to the Standard; the
+- `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` belong
+  to the Standard; the
   Framework's stacks are in `infra/stacks.ts`, which `defineStacks` returns.
   [review]
 - Stacks are environment-agnostic: no `env` from `CDK_DEFAULT_ACCOUNT`, no
   `fromLookup`, so synth needs no account. [review]
-{{- if eq .Framework "aws-ec2-ts" }}
+{{- if and $operations (eq .Framework "aws-ec2-ts") }}
 - `defineStacks(app, tier)` builds the stacks for the tier the deploy names,
   with the tier's `TIER_RULES` and what `infra/operations.ts` promises; no
   other context value or environment variable is read at synth. [test: the
@@ -870,7 +1012,7 @@ says why each rule matters.
 - No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
-  issue needs ({{ if $queue }}a queue setting{{ else if $schedule }}a schedule setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
+  issue needs ({{ if $queue }}a queue setting{{ else if $schedule }}a schedule setting{{ else if $event }}a rule setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
 {{ if $go -}}
 - Code that calls AWS is tested through its interface with a fake that
   records the calls and answers from memory. [review]
@@ -891,7 +1033,9 @@ says why each rule matters.
   system picks. [review]{{ else if $queue }}- The work per message is tested with a fake store; the batch by building
   an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else if $schedule }}- `runJob` is tested with an event and a fake store, checking what it
   stored or that it threw; `checkingFirst` and `reporting` with fake work.
-  [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  [review]{{ else if $event }}- `consume` is tested with an EventBridge event and a fake store,
+  checking what it stored or that it threw; `checkingFirst` and `reporting`
+  with fake work. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}

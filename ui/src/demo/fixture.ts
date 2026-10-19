@@ -2,8 +2,9 @@
 // phases, a failed type check, agent and human Sessions (one Stale), a
 // Relationship added after scaffolding, and Crews working, paused and waiting
 // for their Container: the working one with a Sonnet implementer, an Opus
-// reviewer and Tasks made from issues; and Briefs planned, needing input,
-// paused and planning. Used by demo mode (?demo=1), so the whole
+// reviewer and Tasks made from issues; Briefs planned, needing input,
+// paused and planning; and a Container shipped to staging, waiting for a
+// person's approval of the same release for prod. Used by demo mode (?demo=1), so the whole
 // UI can be seen and screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
@@ -15,6 +16,7 @@ import type {
   Container,
   Crew,
   DataStore,
+  DeployTarget,
   GitProvider,
   Person,
   Project,
@@ -159,6 +161,7 @@ export function demoStory(now: number): StoryData {
           recovery: { rpo: '15m' },
           alerts: { email: 'orders-oncall@example.com' },
         },
+        deploy: [{ target: 'staging' }, { target: 'prod', after: 'staging', approved: 'v0.1.0' }],
       },
       {
         phase: 'Ready',
@@ -179,11 +182,45 @@ export function demoStory(now: number): StoryData {
         appliedRelationships: ['orders-api-to-orders-db'],
         appliedConnectors: [{ relationship: 'orders-api-to-orders-db', dataStore: 'orders-db', connector: 'postgres' }],
         activeSessions: 1,
+        // Staging runs the newest release; prod still runs the one a person let in before, and waits for the next.
+        newestRelease: 'v0.2.0',
+        deploys: [
+          {
+            target: 'staging',
+            version: 'v0.2.0',
+            wantedVersion: 'v0.2.0',
+            phase: 'Deployed',
+            health: 'Healthy',
+            url: 'https://github.com/webshop-co/orders-staging/releases/tag/v0.2.0',
+            reason: 'Deployed',
+            message: 'staging runs v0.2.0',
+            since: ago(2 * 3600),
+          },
+          {
+            target: 'prod',
+            version: 'v0.1.0',
+            wantedVersion: 'v0.2.0',
+            phase: 'Waiting',
+            health: 'Healthy',
+            url: 'https://github.com/webshop-co/orders-api/releases/tag/v0.1.0',
+            reason: 'WaitingForApproval',
+            message:
+              "v0.2.0 waits for a person's approval to ship to prod: set approved to v0.2.0 in its spec.deploy entry",
+            since: ago(2 * 3600),
+          },
+        ],
         conditions: [
           cond('ReferencesResolved', 'True', 'Resolved', 'All references exist', ago(10700)),
           cond('ChoicesValid', 'True', 'Valid', 'Every catalog entry supports service', ago(10700)),
           cond('RepositoryCreated', 'True', 'Created', `Created ${GITEA}/webshop/orders-api`, ago(10690)),
           cond('Scaffolded', 'True', 'Scaffolded', 'Pushed the initial commit', ago(10680)),
+          cond(
+            'Deployed',
+            'False',
+            'WaitingForApproval',
+            "v0.2.0 waits for a person's approval to ship to prod: set approved to v0.2.0 in its spec.deploy entry",
+            ago(2 * 3600),
+          ),
         ],
       },
     ),
@@ -891,6 +928,41 @@ export function demoStory(now: number): StoryData {
       spec: { provider: 'gitea', url: GITEA, owner: 'webshop', credentialsSecretRef: { name: 'gitea-credentials' } },
     },
   ]
+  const deployTargets: DeployTarget[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'DeployTarget',
+      metadata: meta('staging', created),
+      spec: {
+        github: { repository: 'webshop-co/orders-staging' },
+        credentialsSecretRef: { name: 'github-staging' },
+        tier: 'development',
+      },
+      status: {
+        checkedTime: ago(4 * 60),
+        conditions: [
+          cond('Ready', 'True', 'Ready', 'GitHub accepts the token for webshop-co/orders-staging', ago(3 * 3600)),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'DeployTarget',
+      metadata: meta('prod', created),
+      spec: {
+        github: { repository: 'webshop-co/orders-api' },
+        credentialsSecretRef: { name: 'github-prod' },
+        tier: 'production',
+        parameters: { domain: 'orders.webshop.example' },
+      },
+      status: {
+        checkedTime: ago(4 * 60),
+        conditions: [
+          cond('Ready', 'True', 'Ready', 'GitHub accepts the token for webshop-co/orders-api', ago(3 * 3600)),
+        ],
+      },
+    },
+  ]
 
   const briefs: Brief[] = [
     // Two rounds applied; a third prompt came in since and waits for the next.
@@ -1175,6 +1247,7 @@ export function demoStory(now: number): StoryData {
     computes,
     deployments,
     gitProviders,
+    deployTargets,
     crews,
     agents,
     tasks,

@@ -30,10 +30,10 @@ remote cluster.
   the release copy to github.com, run by the operator so the token never
   reaches agent code (`docs/plans/done/release-publishing.md`).
 - **The AWS Frameworks deploy themselves** (`deploysItself`) and nothing
-  deploys them; [aws-production.md](aws-production.md) gives each stack a
+  deploys them; [aws-production.md](../aws-production.md) gives each stack a
   tier read from the `tier` context, outputs and CloudFormation parameters,
   and leaves environments, approval and the place to #1068.
-- **The ports are decided** ([design.md](../design.md#factory-components-ports-and-adapters),
+- **The ports are decided** ([design.md](../../design.md#factory-components-ports-and-adapters),
   #1093): the Deployer is a port, its credential is the target's Secret, read
   by the operator only, and "deploys get a new kind whose targets are a union
   keyed by field name; #1068 names it and its members". `internal/ports` does
@@ -55,7 +55,7 @@ remote cluster.
      member's (`token` for `github`). It is read by the operator only and
      never mounted in a sandbox or passed to a CI job.
    - `tier`: `development` (the default) or `production`. This is the tier of
-     [aws-production.md](aws-production.md) decision 1: the AWS adapter
+     [aws-production.md](../aws-production.md) decision 1: the AWS adapter
      synthesizes nothing, it ships the template CI synthesized for that tier
      (`cdk.out/<tier>/`).
    - `approval`: `Required` or `None`. Empty means `Required` for a
@@ -243,12 +243,143 @@ remote cluster.
      `ErrArtifactMissing`. It runs against the fake and the GitHub adapter
      (on the fake GitHub server the publish tests use) in `make test`, and
      against each adapter #1071 and #1072 add.
-   - **The Ports table** row in [architecture.md](../architecture.md#ports)
+   - **The Ports table** row in [architecture.md](../../architecture.md#ports)
      names the DeployTarget's member as what picks it.
 
    If #1094 hasn't made `internal/ports` yet, step 2 makes the package with
    only the Deployer and the depguard rule its row in architecture.md
    states; #1094 adds its ports beside it.
+
+## Step 2 as built
+
+What #1161 settled that the decisions above left open:
+
+- **Ship is one write per call where the adapter is the tool.** The GitHub
+  adapter is GitHub's release API itself, so `Ship` takes the next write of
+  the draft, upload and publish sequence (`model.NextReleaseStep`) and
+  returns; repeating it goes on with the one release. Step 3 ships each
+  poll while `State` says `Deploying`. An adapter whose tool runs the deploy
+  (CloudFormation, Argo CD) starts it in one call.
+- **`State` is the app's newest deploy.** For GitHub, the release with the
+  highest id whose body holds the app's marker: a draft newer than the
+  newest published release is `Deploying`, a published one `Deployed` and
+  `Healthy`, with its page as the URL.
+- **`Target.Settings` carry the member's fields** (`repository`). The
+  Crew's copy also passes `tagPrefix` and `latest`, which the DeployTarget's
+  `github` member doesn't have until #1070 decides them. The Crew still
+  reads what its rule needs (the repository's id, the release, the source)
+  itself; the release writes go through `Ship`, which reads the release
+  again and takes the same step.
+- **A missing file** is a shipment without files: a GitHub release needs
+  them. A 401, 403 or 404 (a repository the token can't see) is
+  `ErrCredentialRefused`; a 5xx, a rate limit or the network is
+  `ErrUnreachable`. A published release of the tag the factory didn't make
+  fails with reason `TagTaken`. A bare tag without a release is checked by
+  the Crew before it ships, not by the adapter; step 3 decides what a
+  `spec.deploy` entry does with one.
+- **The operator caches no Secrets,** so the DeployTarget reconciler reads
+  the Secret live every minute and asks the target again when the Secret's
+  `resourceVersion` or the spec's generation changed, else every 10
+  minutes; an `Unreachable` target is asked again on the next poll, and
+  after a restart each target is checked once.
+- **The GitHub adapter's contract test** runs in `internal/controller`
+  (`deployer_contract_test.go`), beside the fake GitHub the publish tests
+  use. The controllers' tests may import adapters to wire them onto fakes;
+  their code may not (depguard `controllers-take-ports`).
+
+## Step 3 as built
+
+What #1162 settled that the decisions above left open:
+
+- **The deploy loop is the Container reconciler's,** in its Ready branch
+  (`container_deploy.go`), since the Container's status has one writer: a
+  merge patch replaces `conditions` whole, so a second controller would drop
+  the other's. Only a Ready Container deploys. It wakes on a Crew whose last
+  release or its runs changed, on a DeployTarget made, changed or whose
+  `Ready` changed, and polls every 15 seconds while a deploy is in flight or
+  a target can't be reached, else at the checks' recheck (a minute). The
+  Framework isn't watched once the Container is Ready, so `Incompatible`
+  follows a change at the next poll.
+- **The newest release** is the newest `lastRelease`, by time, among the
+  Container's Crews whose runs `Succeeded`, kept in `status.newestRelease`
+  while a newer release's runs haven't succeeded (a Crew keeps only its last
+  release), so a release whose runs fail doesn't take the deploys back to
+  `NoRelease`. A pin ships any tag the Git host has a release of, a Crew's
+  or not: it is a person's choice, so it skips `after` (a rollback of prod
+  alone) and still needs approval where the target does. A tag without a
+  release fails `ReleaseNotFound` and is looked for again each poll.
+- **An entry's `reason`** is its condition reason, except where the entry
+  failed or a call didn't reach the target: `Unreachable` (the target's tool,
+  condition `TargetNotReady`), `GitHostUnreachable` (the release's files,
+  condition `Deploying`), `CredentialRefused`, `ArtifactMissing`,
+  `ReleaseNotFound`, the tool's own reason for a failed rollout, or
+  `DeployFailed` (condition `DeployFailed` for all of these). Shipped again
+  on the next poll: the unreachable ones, a refused credential and a missing
+  release, which the tool never had. Held until another version is wanted
+  (a newer release, or a pin): a rollout the tool reports failed, a missing
+  file, and any other failure (a GitHub release of the tag the factory didn't
+  make, `TagTaken`), even while the tool shows the version `Deploying` (a
+  GitHub draft a failed write left). A `State` call or a read of the
+  DeployTarget that fails keeps the entry's last phase, with
+  `TargetNotReady`; a tool with no deploy of the app clears `version`.
+- **The order of holds:** the target (missing, `Incompatible`, not checked
+  or not `Ready`), then a release, then a deploy in flight (it goes on, even
+  past an approval taken back, and the wanted version waits for it), then a
+  held failure, then `after` (unless pinned), then approval, so `ApprovalNeeded` comes once approving is the
+  last thing in the way. `after`'s entry must report the version
+  `Deployed` with health `Healthy` or `Unknown` (a tool that reads none).
+- **Events:** `Deployed` and `ApprovalNeeded` are Normal, `DeployFailed`
+  Warning; each is said once, the reconciler remembering the last one per
+  Container and target, as the Crew's publish Events do.
+- **RBAC:** the Container reconciler gets `crews` and `deploytargets`
+  get, list and watch, and Events; the target's Secret is read live through
+  the API reader, by the `get` it already has, only when the entry reads
+  what runs at the target.
+- **Tests** give the reconciler a member table (`DeployMembers`) whose
+  `github` row needs a Framework that leaves deploying to the target, since no
+  real member needs anything yet; `Incompatible` is seen through it.
+- **Known limits, filed as follow-ups:** the GitHub member's `State` is the
+  newest marked release, so a pin to an older published release re-ships
+  each poll and stays `Deploying`, and two Containers shipping to one
+  `github` target take the same tags (`TagTaken`) until #1070 gives the
+  member a tag prefix; and the Container reconciler runs one
+  worker, so a long GitHub upload holds the other Containers' reconciles for
+  its length, as a Crew's upload held the Crews before `crewWorkers`.
+
+## Step 4 as built
+
+What #1163 settled that the decisions above left open:
+
+- **The approve action tests the entry first.** A JSON patch addresses a
+  list entry by index, so the action is a `test` that `/spec/deploy/N/target`
+  is the target the page showed, then, when the entry had an approval, a
+  `test` that `approved` is still what the page showed, then its one write,
+  `add` at `/spec/deploy/N/approved`. A list reordered since the page read
+  it is refused by the API server rather than approving another target, and
+  a stale page or a copied line can't take back an approval made since (a
+  first approval, with nothing to test, can still race another). The
+  `kubectl patch` line *Needs you* and the Container page give is the same
+  patch. The UI's actions ClusterRole already has `patch` on Containers.
+- **Needs you reads each entry, not `Deployed`.** Decision 6 names
+  `Deployed`'s reasons, but the condition gives only the first in its
+  order, so a target that can't be reached would hide another's approval.
+  An entry whose reason is `WaitingForApproval` is an item with its version
+  and command; a `Failed` entry an item with its own reason (`TagTaken`,
+  `ArtifactMissing`, ...) and URL; a `Degraded` deploy an item. When
+  `Deployed` says `WaitingForApproval` or `DeployFailed` and no entry does
+  (a status written between the two), one item from the condition. A hold
+  the factory clears by itself (`WaitingForPrevious`, `Deploying`,
+  `NoRelease`) or a person fixes elsewhere (`TargetNotReady`,
+  `Incompatible`, seen on the DeployTarget and the Container page) is not
+  an item.
+- **Approval unset reads as the tier's default** on the DeployTarget page,
+  in words ("Not set: production's default, a person approves each
+  version"); the rule stays `internal/model`'s, and the operator's
+  `WaitingForApproval` is what the Container page acts on.
+- **The UI reads DeployTargets** (the reader ClusterRole, in `config/ui`
+  and the chart, gains `deploytargets`), as an optional kind: a cluster
+  without it, or a refused read, still shows the story, and says so on the
+  Project page and the target's page.
 
 ## Steps
 

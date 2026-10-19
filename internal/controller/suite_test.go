@@ -42,6 +42,10 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -73,6 +77,8 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
+	// deployFake is the Deployer of every DeployTarget's member.
+	deployFake *fake.Deployer
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
 	ctx         context.Context
@@ -288,6 +294,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
+	deployFake = &fake.Deployer{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
@@ -313,7 +320,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount}},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
-			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container")},
+			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
+			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}, DeployMembers: testDeployMember,
+			DeployPoll: time.Second},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
@@ -326,7 +335,10 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			Issues: githubFake, Now: briefNow},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
-			GoProxy: goProxyFake.server.URL},
+			GoProxy:   goProxyFake.server.URL,
+			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
+		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
+			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

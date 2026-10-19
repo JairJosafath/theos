@@ -72,6 +72,14 @@ Push the branch `plan/<round>` with these files:
    Container, DataStore and Relationship. Never a
    GitProvider, Secret, Agent, Crew, catalog entry, Task or Brief: those cost
    money or touch access, and a plan that names one is refused.
+   **A system someone else runs is External.** When the idea names a system
+   the story only uses, one another company or team runs, such as a payment
+   provider, a partner's API or a mail service, plan it as a SoftwareSystem
+   with `location: External`, and draw the Relationships to it. The factory
+   builds nothing for it: a Container or DataStore in an External system is
+   refused, so put them in an Internal one (the default, for a system the
+   factory builds). A system's location is set by the round that creates
+   it; a later round keeps it, whatever the plan says.
 2. **Use only the listed catalog.** A Container's `frameworkRef`,
    `standardRef`, `computeRef` and `deploymentRef`, and a DataStore's
    `connectorRef`, name entries of `model/catalog.yaml` that support the
@@ -107,7 +115,13 @@ Push the branch `plan/<round>` with these files:
    Scheduler) is a `job` on the Framework that supports it, such as
    `aws-schedule-ts`, the same way: no `computeRef`, no `deploymentRef` and
    no DataStore, since the schedule and the table are in its CDK app. An
-   idea that consumes a queue on AWS, names SQS, or works through messages
+   idea that reacts to events on AWS, names an EventBridge rule or event
+   bus (not a rule on a schedule or EventBridge Scheduler, which is the
+   `job` above), or consumes
+   events another service puts on an event bus is a `worker` on the Framework that
+   supports it, such as `aws-event-ts`, the same way: no `computeRef`, no
+   `deploymentRef` and no DataStore, since the rule and the table are in its
+   CDK app. An idea that consumes a queue on AWS, names SQS, or works through messages
    in the background on AWS is a `worker` on the Framework that supports
    it, such as `aws-queue-ts`, the same way: no `computeRef`, no
    `deploymentRef` and no DataStore, since the queue and the table are in
@@ -443,6 +457,16 @@ spec:
     - Shoppers find a product and order it.
   kpis:
     - Orders per day
+  location: Internal # the default: the factory builds it
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: payments
+spec:
+  displayName: Payment provider
+  description: Takes the shoppers' money; another company runs it.
+  location: External # the story only names it (rule 1)
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -508,6 +532,15 @@ spec:
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship
 metadata:
+  name: api-takes-payments
+spec:
+  source: {kind: Container, name: api}
+  target: {kind: SoftwareSystem, name: payments}
+  description: Charges the shopper
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
   name: api-keeps-orders
 spec:
   source: {kind: Container, name: api}
@@ -518,7 +551,8 @@ spec:
 What each kind's `spec` takes, and nothing else:
 
 - Project and Person: `displayName`, `description`.
-- SoftwareSystem: those two, `needs` and `kpis`, each a list of strings.
+- SoftwareSystem: those two, `needs` and `kpis`, each a list of strings,
+  and `location` (`Internal`, the default, or `External`, rule 1).
 - Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
   `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`,
   `function`),

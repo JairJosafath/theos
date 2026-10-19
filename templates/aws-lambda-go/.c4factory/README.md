@@ -62,8 +62,10 @@ the function with Go and synthesizes the CloudFormation offline.
   `infra/backups.ts`'s `Backups` adds an AWS Backup vault with its own key
   (both `RETAIN`), a daily plan named after the stack keeping
   `retentionDays` and copying to `copyToRegion`'s vault when it is set, and
-  a selection by the `c4factory:container` tag (its role's AWS managed
-  policy acknowledged, `AwsSolutions-IAM4`). The stack outputs `EntryPoint`
+  a selection naming the `Items` table by ARN, never by the Container's
+  tag, which a `<name>-development` stack in the same account carries too
+  (#1267) (its role's AWS managed policy acknowledged,
+  `AwsSolutions-IAM4`). The stack outputs `EntryPoint`
   (the API's URL) and `AlarmTopicArn`. `infra/api_stack.test.ts` asserts it
   with `Template.fromStack` for both tiers, and that the asset is one
   `bootstrap` ELF binary for AArch64.
@@ -97,11 +99,15 @@ the function with Go and synthesizes the CloudFormation offline.
 - **Lockfile:** `package-lock.json` is aws-lambda-ts's with the function's
   packages pruned (the SDK and Powertools), kept current with `npm install`
   in a rendered copy; only its two `name` fields are templated.
-- **Standard:** made for `aws-standard` v1.10.0 or later, whose `aws-lambda-go`
+- **Standard:** made for `aws-standard` v1.11.0 or later (since
+  this Framework's v1.2.0; the first whose test takes a selection by ARN), whose `aws-lambda-go`
   branch adds the Go checks (`go mod tidy -diff`, `golangci-lint fmt`,
   `go vet`, `golangci-lint run`, `go test -race`, all in `src/`), and which
   owns `infra/main.ts`, `infra/standard.ts` (the tier, `TIER_RULES` and the
   `Operations` type this Framework imports) and `infra/standard.test.ts`.
+- **History:** v1.2.0 (with `aws-standard` v1.17.0, which refuses a tag) backs up the stack's
+  data tables by ARN instead of everything carrying the Container's tag,
+  which reached a `<name>-development` stack's tables too (#1267).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with the Go extension (gofumpt,
   golangci-lint), ESLint and Prettier set up.

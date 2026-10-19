@@ -36,6 +36,11 @@ spec:
     name: go-cli
   standardRef:
     name: go-standard
+  # Builds the binaries on a Gitea release for each version tag, so a Crew that
+  # tags releases (crew-publish.yaml) has a release run to wait on. Named
+  # before the first apply: the Container is scaffolded once.
+  deploymentRef:
+    name: gitea-release
   # When CI runs the full check: EveryChange (the default) or BeforeRelease,
   # once the Standard can (its checksBeforeRelease).
   checks: EveryChange
@@ -49,6 +54,14 @@ spec:
     recovery:
       rpo: 1h
       rto: 4h
+  # Where each release ships once its runs succeed, in order: DeployTarget
+  # orders-cli-releases (deploytarget.yaml), a GitHub repository. Until you
+  # apply it, Deployed says the target isn't found and nothing ships. The list
+  # may change at any time and never scaffolds again; an entry may pin a
+  # version (a rollback), come after an earlier entry, and name the version
+  # a person approved for a production target.
+  deploy:
+    - target: orders-cli-releases
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship

@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // A Container's spec.operations is what the app promises whatever tier runs
@@ -49,6 +50,13 @@ type OperationsBackups struct {
 type OperationsRecovery struct {
 	RPO string
 	RTO string
+}
+
+// ZeroRPO reports whether the RPO is zero minutes, hours or days, which the
+// API accepts and asks to lose nothing; aws-standard reads it as under a day
+// (#1266).
+func (r OperationsRecovery) ZeroRPO() bool {
+	return objectivePattern.MatchString(r.RPO) && strings.Trim(r.RPO[:len(r.RPO)-1], "0") == ""
 }
 
 // OperationsAlerts: an empty Email tells nobody.

@@ -7,6 +7,7 @@ import type { Brief, Condition, Container, Crew, Project, StandardFile, Task } f
 import { findCondition } from '../k8s/types'
 import type { Area } from './areas'
 import { failureAnswered } from './attention'
+import { approveCommand, deploysOf } from './deploys'
 import { time } from './factory'
 import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
 
@@ -175,6 +176,79 @@ function containerNeeds(c: Container): Need[] {
         keep: standardKeepCommand(c),
         files: c.status?.standard?.behind ?? [],
       },
+    })
+  }
+  items.push(...deployNeeds(c, place))
+  return items
+}
+
+/** The Deployed reasons that wait on a person (docs/plans/done/deploy.md, decision 6). */
+export const DEPLOY_HELD = ['WaitingForApproval', 'DeployFailed']
+
+/**
+ * A Container's deploys that wait on a person: an item per entry waiting for
+ * approval, with the kubectl line that approves its version, per entry Failed,
+ * and per deploy whose target's tool reports it Degraded. Each is read from its
+ * own entry, not from Deployed, which names only the first reason in its order:
+ * a target that can't be reached would otherwise hide another's approval. A
+ * Deployed that waits for approval or says a deploy failed with no entry saying
+ * which is one item from the condition.
+ */
+function deployNeeds(c: Container, place: Need['place']): Need[] {
+  const deployed = findCondition(c.status?.conditions, 'Deployed')
+  const held = deployed?.status === 'False' && DEPLOY_HELD.includes(deployed.reason ?? '') ? deployed.reason : undefined
+  const rows = deploysOf(c)
+  const items: Need[] = []
+  const entry = (row: (typeof rows)[number]) => ({
+    reason: row.status?.reason || deployed?.reason || 'Deployed',
+    message: row.status?.message ?? '',
+    since: row.status?.since ?? deployed?.lastTransitionTime,
+  })
+  const link = (row: (typeof rows)[number]) =>
+    row.status?.url ? [{ label: `At ${row.target}`, url: row.status.url }] : []
+  for (const row of rows) {
+    if (row.awaiting && row.index >= 0) {
+      items.push({
+        ...base('Container', c, `Approve|${row.target}`),
+        title: `waits for your approval of ${row.awaiting} at ${row.target}`,
+        ...entry(row),
+        place,
+        links: [],
+        command: approveCommand(c, row, row.awaiting),
+      })
+    }
+    if (row.status?.phase === 'Failed') {
+      items.push({
+        ...base('Container', c, `DeployFailed|${row.target}`),
+        title: `failed to deploy${row.status.wantedVersion ? ` ${row.status.wantedVersion}` : ''} to ${row.target}`,
+        ...entry(row),
+        place,
+        links: link(row),
+      })
+    }
+  }
+  // Status that names no entry in that state still says the Container waits: one item from the condition.
+  const named =
+    held === 'WaitingForApproval' ? rows.some((r) => r.awaiting) : rows.some((r) => r.status?.phase === 'Failed')
+  if (held && !named) {
+    items.push({
+      ...base('Container', c, `Deployed|${held}`),
+      title: held === 'WaitingForApproval' ? 'has a deploy waiting for your approval' : 'has a deploy that failed',
+      ...why(deployed, held),
+      place,
+      links: [],
+    })
+  }
+  for (const row of rows) {
+    if (row.status?.health !== 'Degraded') continue
+    items.push({
+      ...base('Container', c, `Degraded|${row.target}`),
+      title: `runs ${row.status.version || 'a version'} degraded at ${row.target}`,
+      reason: 'Degraded',
+      message: row.status.message || `The tool of DeployTarget ${row.target} reports what runs there Degraded`,
+      since: row.status.since,
+      place,
+      links: link(row),
     })
   }
   return items

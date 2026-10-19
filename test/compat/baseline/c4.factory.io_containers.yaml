@@ -87,6 +87,57 @@ spec:
                 required:
                 - name
                 type: object
+              deploy:
+                description: |-
+                  deploy names the DeployTargets each release of the Container's Crew
+                  ships to, in order. The operator ships the newest release whose runs
+                  succeeded, or an entry's pinned version, through the target's tool, and
+                  reports it in status.deploys and the condition Deployed. The list may
+                  change at any time and never scaffolds again; removing an entry stops
+                  shipping there and leaves what runs there alone.
+                items:
+                  description: ContainerDeploy is one place a Container's releases
+                    ship to.
+                  properties:
+                    after:
+                      description: |-
+                        after names an earlier entry's target: a version ships here only once
+                        that entry runs it, healthy where its target reads health.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    approved:
+                      description: |-
+                        approved is the version a person let in. Where the target needs
+                        approval, a version ships only when approved names it.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                    target:
+                      description: target names the DeployTarget, in the Container's
+                        namespace.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    version:
+                      description: |-
+                        version pins a release tag; empty follows the newest release whose runs
+                        succeeded. Pinning an older tag rolls back.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                  required:
+                  - target
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: after must name an entry earlier in deploy
+                  rule: '[0, 1, 2, 3, 4].all(i, i >= self.size() || !has(self[i].after)
+                    || [0, 1, 2, 3, 4].exists(j, j < i && self[j].target == self[i].after))'
               deploymentRef:
                 description: 'deploymentRef names the Deployment catalog entry: how
                   the application ships.'
@@ -137,8 +188,10 @@ spec:
                   long its backups are kept and where they are copied, its recovery
                   objectives and who its alarms tell. The tier itself is the deploy
                   target's, never the Container's. A field left out takes the factory's
-                  default; a change after the scaffold shows on the condition
-                  OperationsApplied.
+                  default. A change after the scaffold reaches the repository's
+                  infra/operations.ts through a pull request the operator opens and
+                  merges, as a Standard bump does; the condition OperationsApplied says
+                  where it stands.
                 properties:
                   alerts:
                     description: alerts says who the alarms tell by default.
@@ -304,7 +357,7 @@ spec:
                 description: |-
                   conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
                   and, for a Container with a Standard, StandardUpdated and ChecksApplied;
-                  once scaffolded, OperationsApplied.
+                  once scaffolded, OperationsApplied; with spec.deploy, Deployed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -363,6 +416,74 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              deploys:
+                description: deploys is what runs at each of spec.deploy's targets,
+                  in its order.
+                items:
+                  description: ContainerDeployStatus is what runs at one of a Container's
+                    targets.
+                  properties:
+                    health:
+                      description: health is what the target's tool reports of what
+                        runs there.
+                      enum:
+                      - Healthy
+                      - Progressing
+                      - Degraded
+                      - Unknown
+                      type: string
+                    message:
+                      description: message says it for a person.
+                      type: string
+                    phase:
+                      description: |-
+                        phase is Waiting while the wanted version is held, Deploying while the
+                        target's tool ships it, Deployed once it runs, and Failed when the tool
+                        or the call failed.
+                      enum:
+                      - Waiting
+                      - Deploying
+                      - Deployed
+                      - Failed
+                      type: string
+                    reason:
+                      description: reason says why the entry is in its phase, in CamelCase.
+                      type: string
+                    since:
+                      description: since is when the phase, reason or wanted version
+                        last changed.
+                      format: date-time
+                      type: string
+                    target:
+                      description: target is the entry's DeployTarget.
+                      type: string
+                    url:
+                      description: url is where the app, or its release, answers,
+                        when the tool knows it.
+                      type: string
+                    version:
+                      description: version is the version running there, as its tool
+                        last reported.
+                      type: string
+                    wantedVersion:
+                      description: |-
+                        wantedVersion is the version the entry should run: its pin, else the
+                        newest release.
+                      type: string
+                  required:
+                  - phase
+                  - target
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+              newestRelease:
+                description: |-
+                  newestRelease is the newest release of the Container's Crews whose runs
+                  succeeded, kept while a newer release's runs haven't: the version an
+                  unpinned spec.deploy entry follows.
+                type: string
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.
@@ -370,9 +491,11 @@ spec:
                 type: integer
               operations:
                 description: |-
-                  operations is the operations block the scaffold rendered with, its
-                  defaults filled in. OperationsApplied compares spec.operations to it. A
-                  Container scaffolded before this was kept has none.
+                  operations is the operations block the repository's
+                  infra/operations.ts was last rendered with, its defaults filled in: at
+                  the scaffold, then by each operations update that merged.
+                  OperationsApplied compares spec.operations to it. A Container scaffolded
+                  before this was kept has none.
                 properties:
                   alerts:
                     description: alerts says who the alarms tell by default.
@@ -425,6 +548,100 @@ spec:
                         pattern: ^[0-9]+(m|h|d)$
                         type: string
                     type: object
+                type: object
+              operationsUpdate:
+                description: |-
+                  operationsUpdate is the pull request the operator opened to render
+                  infra/operations.ts again from a changed spec.operations: in flight,
+                  stopped, or merged. A merged one stays, naming the commit it made, until
+                  the next change replaces it.
+                properties:
+                  branch:
+                    description: branch is the update's branch, and commit the one
+                      commit on it.
+                    type: string
+                  commit:
+                    type: string
+                  mergeCommit:
+                    description: |-
+                      mergeCommit is the commit on main that holds the block: the one the
+                      pull request's merge made, or main's head when main already held it.
+                      It is set once the update merged.
+                    type: string
+                  operations:
+                    description: |-
+                      operations is the block the pull request renders, every field set as
+                      status.operations records it.
+                    properties:
+                      alerts:
+                        description: alerts says who the alarms tell by default.
+                        properties:
+                          email:
+                            description: |-
+                              email is the address the alarms tell by default; a deploy target
+                              overrides it per environment. Empty means nobody is told.
+                            maxLength: 254
+                            pattern: ^([^@\s]+@[^@\s]+)?$
+                            type: string
+                        type: object
+                      backups:
+                        description: backups says how long backups are kept and where
+                          they are copied.
+                        properties:
+                          copyToRegion:
+                            description: |-
+                              copyToRegion is a second AWS region the backups are copied to, such as
+                              eu-west-1; empty means none.
+                            maxLength: 32
+                            pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                            type: string
+                          retentionDays:
+                            description: |-
+                              retentionDays is how many days daily backups are kept in production; 0
+                              means point-in-time recovery only. Left out, 35.
+                            format: int32
+                            maximum: 3650
+                            minimum: 0
+                            type: integer
+                        type: object
+                      recovery:
+                        description: |-
+                          recovery states the recovery objectives the runbook, the alarms and the
+                          checks are written to.
+                        properties:
+                          rpo:
+                            description: |-
+                              rpo is the recovery point objective: how much data a recovery may lose.
+                              Left out, 1h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                          rto:
+                            description: |-
+                              rto is the recovery time objective: how long a recovery may take. Left
+                              out, 4h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                        type: object
+                    type: object
+                  pullRequest:
+                    description: |-
+                      pullRequest is the number of the update's pull request, and pullRequestURL
+                      its address. Both are empty when main already held the file as the block
+                      renders it.
+                    format: int32
+                    type: integer
+                  pullRequestURL:
+                    type: string
+                  stopped:
+                    description: |-
+                      stopped is why the update stopped without merging, such as UpdateClosed,
+                      UpdateRefused or Failed; a stopped update waits for spec.operations to
+                      change again.
+                    type: string
+                required:
+                - operations
                 type: object
               phase:
                 description: phase is Pending, Scaffolding, then Ready or Failed.

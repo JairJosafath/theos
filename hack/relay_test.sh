@@ -484,6 +484,11 @@ case $(cat "$FAKE") in
   login-result) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":0,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'; exit 1 ;;
   login-quoted) echo '{"type":"result","subtype":"success","is_error":false,"num_turns":9,"duration_api_ms":81234,"result":"stopped: the CLI said Not logged in · Please run /login"}'; exit 1 ;;
   login-err) echo 'Not logged in · Please run /login' >&2; echo '{"is_error":false,"result":"stopped","num_turns":2}'; exit 1 ;;
+  login-trust) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":0,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-api) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_api_ms":312,"result":"Not logged in · Please run /login"}'; exit 1 ;;
+  login-nodur) echo 'Ignoring 2 permissions.allow entries from .claude/settings.json: this workspace has not been trusted.' >&2; echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"Not logged in · Please run /login\n"}'; exit 1 ;;
+  login-account) echo '{"is_error":false,"num_turns":9,"duration_api_ms":81234,"result":"Not logged in to Gitea, so I stopped.\nThe CLI said: please run /login"}'; exit 1 ;;
+  noapi) echo 'Error: could not start' >&2; echo '{"is_error":false,"num_turns":0,"result":"Error: could not start"}'; exit 1 ;;
   crash) echo "crashed" >&2; exit 1 ;;
   stray) echo x >"$MAIN/stray"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"strayed","num_turns":1}' ;;
   env) env >"$FAKE.env"; (cd - >/dev/null && pwd) >"$FAKE.cd"; echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"env","num_turns":1}' ;;
@@ -645,6 +650,46 @@ echo login-err >"$FAKE"
 LIMIT_WAIT=10m work
 check "login-err: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
 check "login-err: not counted" "$(counted)" 0
+rm -f "$DIR/paused-until"
+# #1396 follow-up (#1421): on Skinny-vivobook the CLI's login error still
+# struck issues after #1396's fix: exit 1 after 0m, an account that is only
+# the CLI's line, and the trust warning on stderr. limit_message matched the
+# result, but grep -m1 then closed the pipe on the tail of stderr, and under
+# pipefail the SIGPIPE made the match a miss. And a result that is one line
+# starting with a limit's words is the CLI's, whatever is_error, num_turns and
+# duration_api_ms say.
+for shape in login-trust login-api login-nodur; do
+  echo "$shape" >"$FAKE"
+  LIMIT_WAIT=10m work
+  check "$shape #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+  check "$shape #1396 follow-up: not counted" "$(counted)" 0
+  check "$shape #1396 follow-up: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: not logged in)"
+  rm -f "$DIR/paused-until"
+done
+# An account of the agent's own that only starts with the words, on more
+# lines, after API calls, still pauses nothing (#655).
+echo login-account >"$FAKE"
+work
+check "login-account #1396 follow-up: not paused" "$(test -e "$DIR/paused-until" && echo paused)" ""
+check "login-account #1396 follow-up: counted" "$(counted)" 1
+no_strikes
+# A session that exits non-zero before any API call failed on the device, not
+# on its issue, whatever the CLI said (#1421): it pauses and strikes nothing,
+# and the release says so; so does one that wrote no result in its first minute.
+echo noapi >"$FAKE"
+LIMIT_WAIT=10m work
+check "noapi #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "noapi #1396 follow-up: not counted" "$(counted)" 0
+check "noapi #1396 follow-up: the release names it" "$(cat "$T/released")" "session ended without a handoff (a limit: no API call)"
+grep -q "paused the relay until .*: no API call: the session exited 1 before any API call: Error: could not start" "$LOG"
+check "noapi #1396 follow-up: logged" $? 0
+rm -f "$DIR/paused-until"
+echo crash >"$FAKE"
+LIMIT_WAIT=10m work
+check "crash #1396 follow-up: paused" "$(test -e "$DIR/paused-until" && echo paused)" paused
+check "crash #1396 follow-up: not counted" "$(counted)" 0
+grep -q "paused the relay until .*: no API call: the session exited 1 before any API call: crashed" "$LOG"
+check "crash #1396 follow-up: logged" $? 0
 rm -f "$DIR/paused-until"
 
 # A relay started from a Claude Code session in VS Code gives its sessions none

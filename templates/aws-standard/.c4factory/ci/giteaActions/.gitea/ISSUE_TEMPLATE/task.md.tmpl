@@ -35,6 +35,10 @@ still not scan the table.
 a run at 03:00 UTC records its scheduled time and when it finished, a
 run delivered twice for the same scheduled time is recorded once, and the
 function's role may put runs but still not delete them.
+{{- else if eq .Framework "aws-event-ts" -}}
+an `ItemSubmitted` event whose item has a quantity of 0 deletes the item, a
+later event for the same item stores it again, and the function's role may
+delete items but still not scan the table.
 {{- else if eq .Framework "aws-static-site-ts" -}}
 a name of only spaces gets the plain greeting, and the page says so in its
 `aria-live` paragraph.

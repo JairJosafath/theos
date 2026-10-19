@@ -1,13 +1,19 @@
 {{- $go := eq .Framework "aws-lambda-go" -}}
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
-     aws-schedule-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts,
+     aws-schedule-ts and aws-event-ts. */ -}}
+{{- /* Whether the Framework, at the version the Container was scaffolded
+     from, has infra/operations.ts: a version from before its step of
+     plans/aws-production.md has no tiers, alarms, backups or Powertools
+     (#1249). */ -}}
+{{- $operations := has .FrameworkFiles "infra/operations.ts" -}}
+{{- $tiered := and $operations (eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- $event := eq .Framework "aws-event-ts" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
-{{- $ops := or $tiered $site -}}
+{{- $ops := or $tiered (and $site $operations) -}}
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
@@ -18,7 +24,9 @@ behind an Application Load Balancer{{ else if $queue }}worker of {{ .SoftwareSys
 queue with a dead-letter queue, consumed in batches by an AWS Lambda
 function in TypeScript{{ else if $schedule }}job of {{ .SoftwareSystem }}: an EventBridge
 Scheduler schedule that invokes an AWS Lambda function in TypeScript, with
-a dead-letter queue for the runs that keep failing{{ else if $site }}static site of {{ .SoftwareSystem }}: a page in
+a dead-letter queue for the runs that keep failing{{ else if $event }}worker of {{ .SoftwareSystem }}: an EventBridge
+rule on the default event bus that invokes an AWS Lambda function in
+TypeScript, with a dead-letter queue for the events that keep failing{{ else if $site }}static site of {{ .SoftwareSystem }}: a page in
 TypeScript, built by Vite, served from a private S3 bucket through a
 CloudFront distribution{{ else }}function of {{ .SoftwareSystem }}: an AWS
 Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}{{ if not $site }}, keeping its data
@@ -36,7 +44,7 @@ and the system's needs: follow those.
 `eslint.config.mjs` on the CDK app (typescript-eslint strict, no warnings
 allowed), `go vet`, golangci-lint with `.golangci.yml`, `tsc` with the strict
 `tsconfig.json`, the function's Go tests (`go test -race`), the stacks'
-vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
+vitest `Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions and Serverless
 {{- else if $py -}}
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json` and `uv.lock` (and fails when `uv.lock` is stale), then
@@ -44,13 +52,13 @@ runs Prettier and `ruff format` (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict) and ruff with `ruff.toml` (every rule), no findings
 allowed, `tsc` with the strict `tsconfig.json` and mypy `--strict` with
 `mypy.ini`, the function's pytest tests and the stacks' vitest
-`Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions
+`Template.fromStack` assertions, `cdk synth` with CDK Nag's AWS Solutions and Serverless
 {{- else -}}
 `make check` must pass before every commit. It installs the exact packages in
 `package-lock.json`, then runs Prettier (check), ESLint with `eslint.config.mjs`
 (typescript-eslint strict, no warnings allowed), `tsc` with the strict
 `tsconfig.json`, the vitest tests (the code's and the stacks'
-`Template.fromStack` assertions), `cdk synth`{{ if $site }}, which builds the site with Vite,{{ end }} with CDK Nag's AWS Solutions
+`Template.fromStack` assertions), `cdk synth`{{ if $site }}, which builds the site with Vite,{{ end }} with CDK Nag's AWS Solutions and Serverless
 {{- end }}
 checks, which fail on any finding not acknowledged with a reason, and
 `cfn-lint` on the templates synth wrote. CI runs the same command, and nothing
@@ -78,8 +86,8 @@ too; `npm run dev` serves it on your machine.{{ end }}
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
-   `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
-   to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
+   `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts`, `infra/standard.ts` and
+   `infra/standard.test.ts` belong to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
    what the checks check and which CDK behaviour the app gets: don't loosen them.
 {{- if $ops }}
    `infra/operations.ts` is the factory's: it renders the file from the
@@ -215,6 +223,13 @@ too; `npm run dev` serves it on your machine.{{ end }}
    it and then sends it to the dead-letter queue; one no retry can fix
    throws too, and waits there for a person. Never swallow a failure: a run
    the handler drops is lost.
+{{- else if $event -}}
+2. **The boundary:** every event is validated before use (its id, source
+   and detail type, the item its `detail` carries), with unknown input
+   narrowed from `unknown`, whoever put it on the bus. An event that fails
+   throws, so Lambda retries it and then sends it to the dead-letter queue;
+   one no retry can fix throws too, and waits there for a person. Never
+   swallow a failure: an event the handler drops is lost.
 {{- else -}}
 2. **The boundary:** every request is validated before use (path, query,
    body, headers), with {{ if $py }}untrusted input narrowed from `object` with `isinstance`{{ else }}unknown input narrowed from `unknown`{{ end }}. Errors are
@@ -222,12 +237,15 @@ too; `npm run dev` serves it on your machine.{{ end }}
    a bug) and a JSON message a client can act on, never a stack trace or the
    SDK's error text.
 {{- end }}
-3. **Idempotency:** {{ if $schedule }}a run delivered again{{ else }}a retried request or event{{ end }} changes nothing twice. Writes
+3. **Idempotency:** {{ if $schedule }}a run delivered again{{ else if $event }}an event delivered again{{ else }}a retried request or event{{ end }} changes nothing twice. Writes
    are puts of a whole item, conditional writes, or keyed by an idempotency
    key; never a blind increment.{{ if $schedule }} The job's work goes in `runJob` in `src/job.ts`,
    which the handler runs through `checkingFirst` and Powertools' Idempotency,
    keyed by the scheduled time, so a run delivered twice runs once; never
-   bypass them.{{ end }}
+   bypass them.{{ else if $event }} The consumer's work goes in `consume` in
+   `src/consume.ts`, which the handler runs through `checkingFirst` and
+   Powertools' Idempotency, keyed by the event's `id`, so an event delivered
+   twice is stored once; never bypass them.{{ end }}
 {{ if eq .Framework "aws-ec2-ts" }}4. **Limits are set:** the server caps what it reads (body size) and keeps
    idle connections open longer than the load balancer's 60 seconds; the
    instance type, the Auto Scaling group's minimum and maximum and its scaling
@@ -241,12 +259,15 @@ too; `npm run dev` serves it on your machine.{{ end }}
    stack; SDK calls stay within the timeout.{{ else if $schedule }}4. **Limits are set:** the function's timeout and memory, the schedule's
    expression and retry policy, and Lambda's retries and maximum event age
    are set in the stack; a run finishes within the timeout, and SDK calls
-   stay within it.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
+   stay within it.{{ else if $event }}4. **Limits are set:** the function's timeout and memory, the rule's
+   pattern and its target's retry policy, and Lambda's retries and maximum
+   event age are set in the stack; an event is consumed within the timeout,
+   and SDK calls stay within it.{{ else }}4. **Limits are set:** every function has its timeout and memory set in the
    stack, the timeout below API Gateway's 30 seconds and above what the work
    needs; SDK calls stay within it. The stage is throttled.{{ end }}
 5. **Logs:** structured JSON, one entry per line, through the {{ if $go }}`*slog.Logger`{{ else }}`Log`{{ end }} the
-   code is given; an entry names the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else }}request id{{ end }} and what failed. Never
-   log a secret, a token or {{ if $queue }}a message{{ else if $schedule }}an event{{ else }}a request{{ end }} body with user data.
+   code is given; an entry names the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else if $event }}event id{{ else }}request id{{ end }} and what failed. Never
+   log a secret, a token or {{ if $queue }}a message{{ else if or $schedule $event }}an event{{ else }}a request{{ end }} body with user data.
 6. **Least privilege:** permissions come from CDK grants
    ({{ if eq .Framework "aws-fargate-ts" }}`table.grant(taskDefinition.taskRole, 'dynamodb:GetItem')`{{ else }}`table.grant(fn, 'dynamodb:GetItem')`{{ end }}, `grantReadData`), narrowed to the
    calls the code makes; never an IAM statement with `*` or `service:*`
@@ -308,7 +329,7 @@ too; `npm run dev` serves it on your machine.{{ end }}
     secret in {{ if $site }}the site or the template.{{ else }}an environment variable or the template: secrets are read from
     Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}.{{ end }} Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
-{{- if $site }}
+{{- if and $site $operations }}
     The stack is built for a tier, `production` or `development`, which a
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keeps what `infra/operations.ts` promises: in
@@ -327,7 +348,7 @@ too; `npm run dev` serves it on your machine.{{ end }}
     kept, protected and backed up in production; every {{ if eq .Framework "aws-fargate-ts" }}load balancer,
     target group, service and table{{ else if eq .Framework "aws-ec2-ts" }}load balancer,
     target group, Auto Scaling group and table{{ else }}function, table and
-    {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
+    {{ if or $queue $schedule $event }}dead-letter queue{{ else }}API{{ end }}{{ end }} with its alarms on the stack's topic; every stack with its
     `EntryPoint` and `AlarmTopicArn` outputs. `infra/standard.test.ts` checks
     both tiers. Nothing at synth reads a context value but `tier`, or an
     environment variable. A change to what the stacks keep, or how, updates
@@ -373,7 +394,7 @@ Offline digests (read the one for what you are touching):
 - `docs/well-architected.md`: the AWS Well-Architected Framework and Amazon
   ECS's best practices, pillar{{ else if $site }}- `docs/style/aws.md`: the page, the S3 bucket, the CloudFront distribution
   and its firewall, the CDK and CDK Nag, and tests
-- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, {{ if $queue }}SQS queues and batches{{ else if $schedule }}EventBridge Scheduler schedules{{ else }}API Gateway HTTP APIs{{ end }}, DynamoDB, the
+- `docs/well-architected.md`: the AWS Well-Architected Framework, pillar{{ else }}- `docs/style/aws.md`: Lambda handlers, {{ if $queue }}SQS queues and batches{{ else if $schedule }}EventBridge Scheduler schedules{{ else if $event }}EventBridge rules{{ else }}API Gateway HTTP APIs{{ end }}, DynamoDB, the
   {{ if $go }}AWS SDK for Go v2{{ else if $py }}boto3{{ else }}AWS SDK v3{{ end }}, the CDK and CDK Nag, and tests
 - `docs/well-architected.md`: the AWS Well-Architected Framework and its
   Serverless Applications Lens, pillar{{ end }} by pillar, with the CDK Nag rules that
@@ -381,7 +402,7 @@ Offline digests (read the one for what you are touching):
 {{ if $tiered -}}
 - `docs/runbook.md`: restoring the data, rolling a deployment back, and what
   each alarm means
-{{ else if $site -}}
+{{ else if and $site $operations -}}
 - `docs/runbook.md`: restoring the site's files, rolling a deployment back,
   and what each alarm means
 {{ end -}}

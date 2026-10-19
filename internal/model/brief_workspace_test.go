@@ -151,6 +151,14 @@ metadata:
   name: ann
 spec:
   displayName: Ann
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: payments
+spec:
+  description: Takes the money.
+  location: External
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +176,12 @@ spec:
 	parsed, err := parsePlanModel(got)
 	if err != nil {
 		t.Fatalf("model.yaml doesn't parse as a plan: %v\n%s", err, got)
+	}
+	// #1150: the planner sees each system's location, the default included.
+	for _, want := range []string{"location: External", "location: Internal"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("model.yaml doesn't say %q:\n%s", want, got)
+		}
 	}
 	if len(parsed) != len(objects) {
 		t.Fatalf("parsed %d objects, want %d", len(parsed), len(objects))

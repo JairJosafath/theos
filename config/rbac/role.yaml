@@ -67,6 +67,7 @@ rules:
   - containers
   - crews
   - datastores
+  - deploytargets
   - projects
   - relationships
   - sessions
@@ -87,6 +88,7 @@ rules:
   - containers/finalizers
   - crews/finalizers
   - datastores/finalizers
+  - deploytargets/finalizers
   - projects/finalizers
   - relationships/finalizers
   - sessions/finalizers
@@ -101,6 +103,7 @@ rules:
   - containers/status
   - crews/status
   - datastores/status
+  - deploytargets/status
   - projects/status
   - relationships/status
   - sessions/status

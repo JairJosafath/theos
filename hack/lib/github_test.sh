@@ -1272,6 +1272,8 @@ elif [ -n "\${CHECK_BEATS:-}" ]; then
   done
   echo "\$n" >"$T/beats"
 fi
+# With \$T/rewrite, it rewrites a tracked file in place, as make fmt does (#1449).
+[ ! -e "$T/rewrite" ] || echo formatted >"$T/land/feat"
 [ ! -e "$T/red" ]
 MAKE
   chmod +x "$T/bin/check-make"
@@ -1419,6 +1421,19 @@ MAKE
   check "land: a red check fails, merges nothing, gives the turn up" "$? $(cat "$T/landed" 2>/dev/null) | $(queue)" "1  | "
   grep -q '#40: make check failed (exit 1) with origin/main merged in' <<<"$out"; check "land: says the check failed" $? 0
   rm "$T/red"
+
+  # A check that rewrote a tracked file (go fmt) pushes nothing and merges
+  # nothing: the pushed commit would lack the rewrite, and Lint on main goes red (#1449).
+  rm -f "$T/landed"
+  touch "$T/rewrite"
+  pushed=$(git -C "$T/origin.git" rev-parse feat)
+  out=$(gh_land 40 2>&1)
+  check "land: a check that rewrote a file fails, pushes and merges nothing (#1449)" \
+    "$? $(cat "$T/landed" 2>/dev/null) | $(git -C "$T/origin.git" rev-parse feat) | $(queue)" "1  | $pushed | "
+  grep -q '#40: make check rewrote feat (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again' <<<"$out"
+  check "land: names the file the check rewrote (#1449)" $? 0
+  rm "$T/rewrite"
+  git -C "$T/land" checkout -q -- feat
 
   # Not its turn within --wait: gives its place up, exit 4.
   put 8 41

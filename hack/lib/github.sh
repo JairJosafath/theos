@@ -101,7 +101,8 @@
 #                                        was checked, else merge it in and check again under the turn (at most
 #                                        GH_LAND_RECHECKS times; that check takes the device's next free heavy-job
 #                                        slot ahead of the waiters); give the turn up, merged or not (a conflict or a
-#                                        red check is said; make check's output, the path taken and how long the turn
+#                                        red check is said, and so is a check that rewrote a tracked file, which
+#                                        pushes nothing (#1449); make check's output, the path taken and how long the turn
 #                                        was held are kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
 #                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
@@ -2369,6 +2370,15 @@ gh_land_sync() {
   if [ "$rc" != 0 ]; then
     tail -40 "$GH_LAND_LOG" >&2
     gh_land_say "$pr" ": make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $GH_LAND_LOG); fix it, push and land again"
+    return 1
+  fi
+  # make check's fmt, manifests and generate rewrite files in place, so its
+  # lint passes on a tree the commit isn't: pushing it would merge the stale
+  # files, and the Lint workflow, which only checks, goes red on main (#1449).
+  local rewrote
+  rewrote=$(git -C "$GH_LIB_ROOT" diff --name-only HEAD | tr '\n' ' ')
+  if [ -n "$rewrote" ]; then
+    gh_land_say "$pr" ": make check rewrote ${rewrote% } (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again"
     return 1
   fi
   git -C "$GH_LIB_ROOT" push -q origin HEAD || { gh_land_say "$pr" ": git push failed"; return 1; }

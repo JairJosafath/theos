@@ -19,7 +19,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.27.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.28.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -27,7 +27,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.27.0
+VERSION=0.28.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -102,7 +102,7 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret and the agents' token into it, and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
+pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-event-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `aws-standard`, `go-standard`,
 `go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
@@ -289,12 +289,15 @@ stand-in-demo` removes the Container and its Crew too.
 | File | What it is |
 | --- | --- |
 | `project.yaml` | Project `webshop`, named after its namespace |
-| `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program) and two Relationships |
+| `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program, released on Gitea) and two Relationships |
 | `crew.yaml` | Crew `orders-cli`: picks up `orders-cli`'s ready issues, implemented by Agent `implementer` and reviewed by Agent `reviewer` |
 
-The Container picks Framework `go-cli` and Standard `go-standard`, and the Crew
-names Agents `implementer` and `reviewer`: all four came with the release, so
-the sample makes none of them. A Crew can also send the issues with a label to
+The Container picks Framework `go-cli`, Standard `go-standard` and Deployment
+`gitea-release`, and the Crew names Agents `implementer` and `reviewer`: all
+five came with the release, so the sample makes none of them. The Container is
+scaffolded once, so it names `gitea-release` from the start: a Crew that tags
+releases, as in *Publish releases to GitHub*, waits on the release run its
+workflow starts, and without it a tag starts none. A Crew can also send the issues with a label to
 other Agents, such as `kind/docs` to a cheaper model, in `spec.routes`
 (`kubectl explain crew.spec.routes`).
 
@@ -307,8 +310,9 @@ kubectl -n webshop get c4
 ```
 
 Gitea now holds `webshop/orders-cli`: a Go module, the Standard's `Makefile`,
-linter settings, the guides agents read, and CI that runs `make check` on the
-`go` runner. Open it:
+linter settings, the guides agents read, CI that runs `make check` on the
+`go` runner, and a release workflow that puts the binaries on the Gitea
+release of each version tag. Open it:
 
 ```bash
 kubectl -n gitea port-forward service/gitea 3000:3000 &   # http://localhost:3000/webshop/orders-cli
@@ -387,8 +391,10 @@ issue `status/needs-human` with the reason in a comment; label it
 
 A Crew with `spec.tagReleases` tags each release (a Gitea milestone titled
 `vMAJOR.MINOR.PATCH` with a due date) once its issues are merged, and the tag's
-release run attaches the files to a Gitea release. Those live in the cluster's
-Gitea. To have every release also show up on a GitHub repository, with the
+release run attaches the files to a Gitea release. The run is the workflow of
+the Container's Deployment, `gitea-release` for `orders-cli`; a Container
+scaffolded without one gets no run on a tag, and the Crew never publishes its
+releases. Those live in the cluster's Gitea. To have every release also show up on a GitHub repository, with the
 same tag, notes and files, give the Crew that repository and a token for it.
 The factory only adds releases there, and, when you ask for the app's source
 too, one commit per release inside the folder you name: it never touches
@@ -497,6 +503,56 @@ says what to fix:
 | `SourceTooLarge` | A file of the source is over GitHub's 100 MiB; take it out of the repository, or mark it `export-ignore` in `.gitattributes`. |
 | `BranchProtected` | GitHub refused the source commit on the protected default branch: let the token's user push to it, or drop the protection. |
 | `GitHubError` | GitHub failed, rate-limited, or couldn't be reached; it is tried again. |
+
+## Ship each release to its targets
+
+A Container names the places its releases ship to in `spec.deploy`, in
+order; each is a DeployTarget, a place with its own credential and tier.
+`orders-cli` in [story.yaml](../config/samples/first-app/story.yaml) names
+`orders-cli-releases`, a GitHub repository whose releases are the deploys:
+
+1. **The token and Secret,** as in steps 1 and 2 above, in a Secret named
+   `orders-cli-deploy`.
+2. **The target.** Set your repository in
+   [deploytarget.yaml](../config/samples/first-app/deploytarget.yaml) and
+   apply it with `kubectl apply -n webshop -f deploytarget.yaml`. Its `Ready`
+   condition says whether GitHub takes the token.
+
+Once a release's runs succeed, the operator ships it to each entry: the
+entry's pinned `version`, else the newest release. An entry with `after`
+waits until that earlier entry runs the version, and an entry whose target
+is `tier: production` waits for a person, who lets the version in by setting
+the entry's `approved`:
+
+```yaml
+spec:
+  deploy:
+    - target: staging
+    - target: prod
+      after: staging
+      approved: v0.3.0   # the version a person let into prod
+    - target: oss
+      version: v0.2.0    # pinned: how you roll back
+```
+
+The list may change at any time; it never scaffolds the Container again,
+and removing an entry leaves what runs there alone. A rollout the target's
+tool reports failed isn't tried again until a newer release or a pin.
+
+```bash
+kubectl -n webshop get container orders-cli -o jsonpath='{.status.deploys}{"\n"}'
+kubectl -n webshop get container orders-cli -o jsonpath='{.status.conditions[?(@.type=="Deployed")]}{"\n"}'
+kubectl -n webshop events --for container/orders-cli
+```
+
+Each of `status.deploys` says the `version` running, the `wantedVersion`,
+the `phase` (`Waiting`, `Deploying`, `Deployed`, `Failed`), the `health` the
+tool reports, the `url`, and why in `reason` and `message`. `Deployed` is
+True once every entry runs its wanted version, else False with the first of
+`Incompatible`, `TargetNotReady`, `DeployFailed`, `WaitingForApproval`,
+`WaitingForPrevious`, `Deploying` and `NoRelease`. Events: `Deployed` when an
+entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
+`DeployFailed` once per version and reason.
 
 ## Release a Brief's app
 
@@ -746,7 +802,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.27.0
+VERSION=0.28.0
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```

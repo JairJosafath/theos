@@ -27,7 +27,6 @@ function synth(
     new QueueStack(new App(), 'test', {
       tier,
       operations,
-      backupTag: ['c4factory:container', 'test'],
     }),
   );
 }
@@ -236,15 +235,19 @@ describe('QueueStack', () => {
         BackupPlanRule: [Match.objectLike({ Lifecycle: { DeleteAfterDays: 35 }, CopyActions: [] })],
       },
     });
+    // The data table by ARN, never the Container's tag, which a development
+    // stack in the same account carries too (#1267); not the idempotency
+    // records, which expire.
+    const [data, ...others] = Object.keys(production.findResources('AWS::DynamoDB::Table')).filter(
+      (id) => id.startsWith('Items'),
+    );
+    expect([data, others]).toEqual([expect.any(String), []]);
+    production.resourceCountIs('AWS::Backup::BackupSelection', 1);
     production.hasResourceProperties('AWS::Backup::BackupSelection', {
       BackupSelection: Match.objectLike({
-        ListOfTags: [
-          {
-            ConditionKey: 'c4factory:container',
-            ConditionType: 'STRINGEQUALS',
-            ConditionValue: 'test',
-          },
-        ],
+        Resources: [{ 'Fn::GetAtt': [data, 'Arn'] }],
+        ListOfTags: Match.absent(),
+        Conditions: Match.absent(),
       }),
     });
     development.resourceCountIs('AWS::Backup::BackupPlan', 0);

@@ -40,6 +40,7 @@ export type LifecycleKind =
   | 'Compute'
   | 'Deployment'
   | 'GitProvider'
+  | 'DeployTarget'
 
 interface StepDef {
   phase: string
@@ -236,6 +237,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   GitProvider: phaseless(
     'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',
     'Nothing, unless a Container fails to create its repository: then check the Secret it names, in the cluster.',
+  ),
+  DeployTarget: phaseless(
+    'A place Containers ship to. The factory checks the credential of the Secret it names, and ships each release of the Containers that name it, through the tool that owns the place.',
+    'Nothing while it is Ready. Otherwise its Ready condition says what to fix: the Secret it names, in the cluster, or what the target refused.',
   ),
 }
 

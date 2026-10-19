@@ -140,9 +140,15 @@ alarms and runbooks) were written down and left to the reader.
 
 3. **Backup and recovery, by what holds data.** DynamoDB: point-in-time
    recovery (35 days, seconds of RPO in the region) plus an AWS Backup plan
-   (`AWS::Backup::BackupPlan`, `BackupSelection` by the stack's tags, a
-   `BackupVault` with its own key) for the retention and the cross-region
-   copy PITR can't give. A data bucket (none today; the queue and static-site
+   (`AWS::Backup::BackupPlan`, a `BackupSelection` naming the stack's own
+   data tables by construct, a `BackupVault` with its own key) for the
+   retention and the cross-region copy PITR can't give. The selection is
+   never by tag: the Container's tags are the same on its
+   `<name>-development` stack, which a hand deploy puts in the same account,
+   and on a same-named Container of another System. A table whose records
+   expire (Powertools' idempotency records) is left out. The Standard's test
+   refuses a selection by tag, by condition, by `*` or by an ARN written out
+   (amended by #1267; it said "by the stack's tags"). A data bucket (none today; the queue and static-site
    Frameworks below add some) is versioned, with a lifecycle rule; a log
    bucket is not data and keeps its expiry. Instances and tasks hold no
    data: `docs/style/aws.md` makes that a rule, and the EBS root is not backed
@@ -233,7 +239,7 @@ What each existing Framework gets, as #1067's *Done when* asks:
 | --- | --- | --- | --- | --- | --- |
 | `infra/operations.ts`, backups, alarms, topic, dashboard, outputs, termination protection, runbook | step 3 | step 4 | step 4 | step 5 | step 6 |
 | Powertools (Logger, Metrics, Idempotency) | step 3 | step 4 | no (none for Go) | no (not Lambda) | no |
-| `ServerlessChecks` pack | step 7 | step 7 | step 7 | no | no |
+| `ServerlessChecks` pack | step 7 (the Standard, every Framework with `infra/operations.ts`) | | | | |
 | `cfn-lint --include-checks I` | step 3 (the Standard, every Framework) | | | | |
 | X-Ray by tier | step 3 | step 4 | step 4 | step 5 (ADOT collector) | no |
 | Framework-specific | | | | NAT per zone in production; ECS deployment alarm kept | TLS on the internal ALB (`CertificateArn`); `cfn-signal` so a rolling update stops on a failed health check |
@@ -497,6 +503,9 @@ task size, as said here):
   form, exactly the tag either way, and checks per tier that every load
   balancer's access-log bucket is in each selection's `NotResources`.
   Step 6's load balancer is held to it.
+  Superseded by #1267: `aws-fargate-ts` v1.2.0 names its table by ARN, so
+  the bucket is in no selection, `exclude` is gone, and aws-standard
+  v1.17.0's test refuses either tag form.
 - **The app's room is the same in both tiers.** The app container has 256
   CPU units and a 512 MiB reservation in either tier, the whole task in
   development; in production the collector's 256 CPU units and a hard limit
@@ -648,7 +657,8 @@ the evidence. What it settled beyond step 3:
   EBS root is not backed up", enforced. Step 5's check that a selection
   leaves the load balancer's access-log bucket out holds for a selection by
   ARN when it doesn't name the bucket, and for one by tag, as before, when
-  its `NotResources` does.
+  its `NotResources` does. Since #1267 (aws-standard v1.17.0) every Framework
+  names its tables by ARN and the test refuses a tag in either form.
 - **`cfn-signal` through a CloudFormation endpoint.** The instances have no
   way out, so the VPC gets a CloudFormation interface endpoint beside the
   Logs one. `aws-cfn-bootstrap` is installed first (`INSTALL_COMMAND`), the
@@ -684,6 +694,103 @@ the evidence. What it settled beyond step 3:
 - **`$tiered`** names `aws-ec2-ts` after step 5's two, and
   `docs/runbook.md` gives it a branch of its own after step 9's. Its table
   is step 9's `BACKED_UP_TYPES`, so the plan's checks apply to it as before.
+
+### Step 7, as built
+
+`aws-standard` v1.13.0 (agent otter-1112;
+`docs/screenshots/1112-serverless-checks.txt` has the evidence):
+
+- **The pack runs for every Framework with `infra/operations.ts`**, not only
+  the three `function` ones the table first named: its rules touch only
+  serverless resources, and the others have some (the alarm topic's email
+  subscription everywhere, the static site's `BucketDeployment` function, the
+  queue's and the schedule's functions and dead-letter queues).
+  `standard.ts` stays free of Framework branches. A repository without the
+  file was scaffolded before the block and keeps `AwsSolutions` alone, so a
+  Standard update never fails its synth.
+- **A Serverless warning fails synth too:** under cdk-nag 3 any finding makes
+  the plugin's report a failure, so a warning needs a fix or an
+  acknowledgement like an error.
+- **The five duplicates** are acknowledged on every stack, with the
+  `AwsSolutions` rule that checks the same: `LambdaLatestVersion` (L1),
+  `LambdaStarPermissions` (IAM5), `APIGWAccessLogging` (APIG1),
+  `SQSRedrivePolicy` (SQS3, which knows a dead-letter queue needs none),
+  `StepFunctionStateMachineXray` (SF2). An acknowledgement nothing matches
+  is silent, so a stack without the resource is fine.
+- **Acknowledged on the one resource, found from its properties:**
+  `LambdaDLQ` on a function whose only callers are synchronous (a
+  permission for API Gateway or a load balancer, an SQS event source
+  mapping) or CloudFormation for a custom resource, and never when a
+  permission names another principal or an event rule, pipe, schedule, SNS
+  subscription or `EventInvokeConfig` names the function;
+  `LambdaEventSourceMappingDestination` on an SQS event source (what the
+  template can't show, code that invokes a function with
+  `InvocationType: 'Event'` through an IAM grant, is the reviewer's to see;
+  a caller the Standard doesn't know, such as a permission on an alias or a
+  function URL, leaves the finding standing, which fails closed);
+  `LambdaAsyncFailureDestination` on an `EventInvokeConfig` whose function
+  has a `DeadLetterConfig` (aws-schedule-ts); `SNSRedrivePolicy` on an
+  email subscription (an alarm email the inbox refused, kept where nobody
+  reads it, helps no one; the topic's ARN is an output for a target's own
+  channel); `LambdaTracing` on every function where the tier doesn't trace,
+  as `DDB3` is where it doesn't recover.
+- **`APIGWStructuredLogging` is acknowledged on a stage that logs CLF.** The
+  three Lambda Frameworks' v1.1.0 write the Common Log Format; the Standard
+  can't tell a repository's Framework version (#1249), so it can't fail an
+  older one. #1420 makes the three write JSON.
+- **Properties are read one at a time.** `standard.ts` resolves only the
+  properties it reads (`FunctionName`, `Principal`, `EventSourceArn`, ...)
+  through each resource's `cfnProperties`: resolving a whole resource at
+  `applyStandard` would cache its lazy values before the synth's aspects.
+- **The test reads the validation report.** `synth` throws a bare
+  `ValidationFailed`, so `standard.test.ts` gives a probe app its own
+  outdir and reads `validation-report.json`: an asynchronous function
+  without a dead-letter queue is found, a function only API Gateway or an
+  SQS event source calls is not, nor an email subscription, nor the
+  duplicates, and an untraced function is found in production only.
+- **The digest's by-hand list** loses the Serverless items a rule now
+  checks: timeouts, memory, throttling, dead-letter queues for
+  asynchronous invocations. What stays by hand is what no rule checks: a
+  restore drill and a game day, whether the alarms fire for the right
+  reasons, right-sizing from measured load, input validation.
+
+### Step 11, as built
+
+`aws-event-ts` v1.0.0, a `worker` Framework under `aws-standard` v1.14.0
+(`docs/screenshots/1116-aws-event-ts-check.txt` has the evidence). It
+copies step 10's two levels of retry and one dead-letter queue, and settled:
+
+- **The rule is on the default event bus.** A rule on a custom bus has a
+  `Ref` of `<bus>|<rule>`, which is not the `RuleName` dimension of the
+  `AWS/Events` metrics, so its alarms would watch nothing; on the default
+  bus `Ref` is the rule's name. The pattern matches `source` = the
+  stack's name (the Container's, with `-development` in development, so a
+  development stack in production's account never takes its events) and
+  `detail-type` `ItemSubmitted`, and a producer puts its events there with
+  `events:PutEvents`.
+- **Two levels of retry:** the rule's target retries handing an event to
+  Lambda (10 attempts within an hour), and Lambda retries an invocation
+  that threw (twice within an hour); the target's `DeadLetterConfig` and
+  the function's both name the one queue, so `AwsSolutions-SQS3` is
+  acknowledged as in step 10. CDK scopes the function's permission and the
+  queue's policy to the rule.
+- **The event's `id` is its key.** Powertools' Idempotency is keyed by
+  EventBridge's event id, which every retry at either level keeps; a
+  producer that puts the same item twice puts two events, and the item is
+  simply put twice, as step 8 says of messages.
+- **Two Standard rules, per resource type:** `AWS::Events::Rule` joins
+  `ALARMED_METRICS` with `FailedInvocations` and
+  `InvocationsFailedToBeSentToDlq`, an event lost; every Lambda target of a
+  rule has a retry policy and a dead-letter queue of its stack.
+- **Outputs:** `EntryPoint` is the rule's ARN; `EventPattern` is the
+  pattern a producer's events must match, and `FunctionName` the function
+  a person invokes to run a dead-lettered event again.
+- **Backups select its two tables by ARN,** as `aws-ec2-ts` does, not by
+  the Container's tag, which a `<name>-development` stack in the same
+  account carries too: #1267's selection, so this Framework needs no bump
+  when that issue changes the others. Until #1267 changes the Standard,
+  whose test wants every table of the stack named, the idempotency table is
+  among them.
 
 ## Design
 

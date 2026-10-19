@@ -64,9 +64,11 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   period. In production with `retentionDays` over 0, `infra/backups.ts`'s
   `Backups` adds an AWS Backup vault with its own key (both `RETAIN`), a
   daily plan named after the stack keeping `retentionDays` and copying to
-  `copyToRegion`'s vault when it is set, and a selection by the
-  `c4factory:container` tag (its role's AWS managed policy acknowledged,
-  `AwsSolutions-IAM4`). The stack outputs `EntryPoint` (the API's URL) and
+  `copyToRegion`'s vault when it is set, and a selection naming the
+  `Items` table by ARN, never the `Idempotency` table, whose records
+  expire, nor by the Container's tag, which a `<name>-development` stack in
+  the same account carries too (#1267) (its role's AWS managed policy
+  acknowledged, `AwsSolutions-IAM4`). The stack outputs `EntryPoint` (the API's URL) and
   `AlarmTopicArn`. `infra/api_stack.test.ts` asserts it with
   `Template.fromStack` for both tiers. `infra/stacks.ts`, `infra/alarms.ts`,
   `infra/backups.ts` and `infra/operations.ts` are aws-lambda-ts's.
@@ -104,13 +106,18 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   templated in each, so `uv sync --locked` and `npm ci` install exactly the
   pinned versions. `allowScripts` lets esbuild's install script run (tsx
   needs it).
-- **Standard:** made for `aws-standard` v1.10.0 or later, which owns
+- **Standard:** made for `aws-standard` v1.17.0 or later (since
+  this Framework's v1.2.0; the first whose test takes a table left out of the backups), which owns
   `infra/main.ts`, `infra/standard.ts` (the tier, `TIER_RULES` and the
   `Operations` type this Framework imports), `infra/standard.test.ts`,
   `ruff.toml` and `mypy.ini`. `package.json` lists its TypeScript tools
   with exact versions as aws-lambda-ts does, and `cdk-monitoring-constructs`
   10.3.2, without esbuild, `@types/aws-lambda`, the AWS SDK or Powertools
   for TypeScript.
+- **History:** v1.2.0 (with `aws-standard` v1.17.0) backs up the stack's
+  data tables by ARN instead of everything carrying the Container's tag,
+  which reached a `<name>-development` stack's tables too (#1267); the `Idempotency` table, whose records expire, is left
+  out.
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`,
   the Go, Node and uv toolchain CI and agents use, with ruff, Python, ESLint
   and Prettier set up.
