@@ -1,12 +1,7 @@
 import { Aws, Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
-import {
-  BackupPlan,
-  BackupPlanRule,
-  BackupResource,
-  BackupVault,
-  CfnBackupSelection,
-} from 'aws-cdk-lib/aws-backup';
+import { BackupPlan, BackupPlanRule, BackupResource, BackupVault } from 'aws-cdk-lib/aws-backup';
+import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Schedule } from 'aws-cdk-lib/aws-events';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
@@ -27,21 +22,22 @@ export interface BackupsProps {
   readonly retentionDays: number;
   /** The region the backups are copied to, whose `BackupCopyStack` holds the vault; empty for none. */
   readonly copyToRegion: string;
-  /** The tag, key and value, of the resources to back up: the Container's, which the Standard sets. */
-  readonly tag: readonly [string, string];
   /**
-   * The ARNs of resources carrying the tag that are not data, which the plan
-   * leaves out: a load balancer's log bucket. None by default.
+   * The stack's own tables that hold data: the only resources backed up. Not
+   * a table whose records expire and need no restore, as Powertools'
+   * idempotency records do.
    */
-  readonly exclude?: readonly string[];
+  readonly tables: readonly Table[];
 }
 
 /**
- * Daily AWS Backup backups of every resource carrying the Container's tag but
- * those `exclude` names, in a vault with its own key, kept `retentionDays`
- * and copied to `copyToRegion` when it is set. Backups are data: the vault
- * and its key outlive the stack. No vault lock, which can never be undone:
- * that is the account owner's call.
+ * Daily AWS Backup backups of the stack's own tables, named by ARN, in a vault
+ * with its own key, kept `retentionDays` and copied to `copyToRegion` when it
+ * is set. Not by the Container's tag: every stack of the Container carries it,
+ * a `<name>-development` stack in the same account too, and a same-named
+ * Container of another System (#1267). Backups are data: the vault and its
+ * key outlive the stack. No vault lock, which can never be undone: that is
+ * the account owner's call.
  */
 export class Backups extends Construct {
   readonly vault: BackupVault;
@@ -86,25 +82,9 @@ export class Backups extends Construct {
         copyActions,
       }),
     );
-    // Every resource with the tag, by a condition rather than CDK's
-    // `fromTag` (a `ListOfTags`): AWS Backup's guide recommends `Conditions`,
-    // and leaves resources out (`NotResources`) beside `Resources` and
-    // `Conditions` in each of its examples.
-    const [tagKey, tagValue] = props.tag;
-    const selection = this.plan.addSelection('Tagged', {
-      resources: [BackupResource.fromArn('*')],
+    const selection = this.plan.addSelection('Tables', {
+      resources: props.tables.map((table) => BackupResource.fromArn(table.tableArn)),
     });
-    const cfnSelection = selection.node.defaultChild;
-    if (!(cfnSelection instanceof CfnBackupSelection)) {
-      throw new Error('The backup selection has no CloudFormation resource.');
-    }
-    cfnSelection.addPropertyOverride('BackupSelection.Conditions', {
-      StringEquals: [{ ConditionKey: `aws:ResourceTag/${tagKey}`, ConditionValue: tagValue }],
-    });
-    const exclude = props.exclude ?? [];
-    if (exclude.length > 0) {
-      cfnSelection.addPropertyOverride('BackupSelection.NotResources', exclude);
-    }
     Validations.of(selection).acknowledge({
       id: 'AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]',
       reason:

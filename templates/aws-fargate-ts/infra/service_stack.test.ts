@@ -27,7 +27,6 @@ function synth(
     new ServiceStack(new App(), 'test', {
       tier,
       operations,
-      backupTag: ['c4factory:container', 'test'],
     }),
   );
 }
@@ -397,14 +396,18 @@ describe('ServiceStack', () => {
         BackupPlanRule: [Match.objectLike({ Lifecycle: { DeleteAfterDays: 35 }, CopyActions: [] })],
       },
     });
+    // The data table by ARN, never the Container's tag, which a development
+    // stack in the same account carries too (#1267).
+    const [data, ...others] = Object.keys(production.findResources('AWS::DynamoDB::Table')).filter(
+      (id) => id.startsWith('Items'),
+    );
+    expect([data, others]).toEqual([expect.any(String), []]);
+    production.resourceCountIs('AWS::Backup::BackupSelection', 1);
     production.hasResourceProperties('AWS::Backup::BackupSelection', {
       BackupSelection: Match.objectLike({
-        Resources: ['*'],
-        Conditions: {
-          StringEquals: [
-            { ConditionKey: 'aws:ResourceTag/c4factory:container', ConditionValue: 'test' },
-          ],
-        },
+        Resources: [{ 'Fn::GetAtt': [data, 'Arn'] }],
+        ListOfTags: Match.absent(),
+        Conditions: Match.absent(),
       }),
     });
     development.resourceCountIs('AWS::Backup::BackupPlan', 0);
@@ -420,9 +423,10 @@ describe('ServiceStack', () => {
       JSON.stringify(balancer),
     )?.[1];
     expect(target).toBeDefined();
-    production.hasResourceProperties('AWS::Backup::BackupSelection', {
-      BackupSelection: Match.objectLike({ NotResources: [{ 'Fn::GetAtt': [target, 'Arn'] }] }),
-    });
+    // The selection names the stack's table and nothing else (#1267).
+    expect(JSON.stringify(production.findResources('AWS::Backup::BackupSelection'))).not.toContain(
+      `"${String(target)}"`,
+    );
   });
 
   it('keeps only point-in-time recovery when retentionDays is 0', () => {

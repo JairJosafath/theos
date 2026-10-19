@@ -140,9 +140,15 @@ alarms and runbooks) were written down and left to the reader.
 
 3. **Backup and recovery, by what holds data.** DynamoDB: point-in-time
    recovery (35 days, seconds of RPO in the region) plus an AWS Backup plan
-   (`AWS::Backup::BackupPlan`, `BackupSelection` by the stack's tags, a
-   `BackupVault` with its own key) for the retention and the cross-region
-   copy PITR can't give. A data bucket (none today; the queue and static-site
+   (`AWS::Backup::BackupPlan`, a `BackupSelection` naming the stack's own
+   data tables by construct, a `BackupVault` with its own key) for the
+   retention and the cross-region copy PITR can't give. The selection is
+   never by tag: the Container's tags are the same on its
+   `<name>-development` stack, which a hand deploy puts in the same account,
+   and on a same-named Container of another System. A table whose records
+   expire (Powertools' idempotency records) is left out. The Standard's test
+   refuses a selection by tag, by condition, by `*` or by an ARN written out
+   (amended by #1267; it said "by the stack's tags"). A data bucket (none today; the queue and static-site
    Frameworks below add some) is versioned, with a lifecycle rule; a log
    bucket is not data and keeps its expiry. Instances and tasks hold no
    data: `docs/style/aws.md` makes that a rule, and the EBS root is not backed

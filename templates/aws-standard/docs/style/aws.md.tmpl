@@ -99,9 +99,13 @@ says why each rule matters.
 {{- if $operations }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
-  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  the stack's plan, which names it by ARN in `Backups`' `tables`, never by
+  a tag the development stack's tables carry too (a table whose records
+  expire, as idempotency records do, is left out); in development none of
+  it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's table is. [test: the removal
-  policies, deletion protection, point-in-time recovery]
+  policies, deletion protection, point-in-time recovery, the backup plan and
+  vault]
 {{- else }}
 - Point-in-time recovery on. [nag: AwsSolutions-DDB3]
 {{- end }}
@@ -160,9 +164,9 @@ says why each rule matters.
   their p99 latency (`TargetResponseTime`) and unhealthy targets
   (`UnHealthyHostCount`), from the stack's `Alarms`. [test: the alarms and
   topic]
-- Its access-log bucket carries the Container's tag like every resource,
-  and the backup plan leaves it out (`Backups`' `exclude`): logs, not
-  data. [test: the backup plan and vault]
+- Its access-log bucket is logs, not data: the backup plan, which names
+  the stack's table by ARN, leaves it out. [test: the backup plan and
+  vault]
 {{- end }}
 
 ## The task and the service in the stack
@@ -688,9 +692,13 @@ says why each rule matters.
 {{- if and $operations (or $lambda $queue $schedule $event (eq .Framework "aws-ec2-ts")) }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
-  the stack's plan; in development none of it, `DESTROY`. Build it with the
+  the stack's plan, which names it by ARN in `Backups`' `tables`, never by
+  a tag the development stack's tables carry too (a table whose records
+  expire, as idempotency records do, is left out); in development none of
+  it, `DESTROY`. Build it with the
   tier's `TIER_RULES`, as the stack's {{ if eq .Framework "aws-ec2-ts" }}table is{{ else }}tables are{{ end }}. [test: the removal
-  policies, deletion protection, point-in-time recovery]
+  policies, deletion protection, point-in-time recovery, the backup plan and
+  vault]
 {{- else }}
 - Point-in-time recovery on. [nag: AwsSolutions-DDB3]
 {{- end }}

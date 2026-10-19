@@ -122,7 +122,7 @@ restore fits the RTO only a drill shows: see [Drills](#drills).
 The physical names are in the stack:
 `aws cloudformation describe-stack-resources --stack-name {{ .Container }}`.
 {{- if $idempotency }}
-The `Idempotency` table needs no restore: its records expire within the
+The `Idempotency` table needs no restore{{ if ne $ops.Backups.RetentionDays 0 }}, and the backup plan leaves it out{{ end }}: its records expire within the
 {{ if or $schedule $event }}day{{ else }}hour{{ end }}, and an empty one only means {{ if $event }}an event delivered again is stored again, which
 puts the same item{{ else if $queue }}a message delivered again is stored again, which
 puts the same item{{ else if $schedule }}a run delivered again runs again, which
@@ -203,9 +203,9 @@ with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection,{{ if $idempotency }} time to
 live (`expiration`, for the `Idempotency` table){{ end }} and the three
-`c4factory:` tags{{ if $event }}. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the tables by their ARNs, which a
+`c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names {{ if $idempotency }}the tables holding data{{ else }}the table{{ end }} by {{ if $idempotency }}their ARNs{{ else }}its ARN{{ end }}, which a
 table restored under the same name in the same account and region keeps,
-so it is backed up again from the next day. {{ end }}Deploy{{ else }}, which the backup plan selects by. Deploy{{ end }} the stack again
+so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
 {{- if $queue }}
 
@@ -659,7 +659,9 @@ point-in-time recovery from the deleted table's system backup
 with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection and the
-three `c4factory:` tags, which the backup plan selects by. Deploy the stack
+three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
+table restored under the same name in the same account and region keeps,
+so it is backed up again from the next day. {{ end }}Deploy the stack
 again (`cdk deploy -c tier=production`) and check it reports no drift.
 
 ## Roll a deployment back

@@ -23,17 +23,21 @@ export interface BackupsProps {
   /** The region the backups are copied to, whose `BackupCopyStack` holds the vault; empty for none. */
   readonly copyToRegion: string;
   /**
-   * The stack's own tables: the only resources backed up. Named by ARN, not
-   * by the Container's tag, which a `<name>-development` stack in the same
-   * account carries too (#1267).
+   * The stack's own tables that hold data: the only resources backed up. Not
+   * a table whose records expire and need no restore, as Powertools'
+   * idempotency records do.
    */
   readonly tables: readonly Table[];
 }
 
 /**
- * Daily AWS Backup backups of the stack's own tables, named by ARN, in a vault with its own key, kept `retentionDays` and copied to `copyToRegion`
- * when it is set. Backups are data: the vault and its key outlive the stack.
- * No vault lock, which can never be undone: that is the account owner's call.
+ * Daily AWS Backup backups of the stack's own tables, named by ARN, in a vault
+ * with its own key, kept `retentionDays` and copied to `copyToRegion` when it
+ * is set. Not by the Container's tag: every stack of the Container carries it,
+ * a `<name>-development` stack in the same account too, and a same-named
+ * Container of another System (#1267). Backups are data: the vault and its
+ * key outlive the stack. No vault lock, which can never be undone: that is
+ * the account owner's call.
  */
 export class Backups extends Construct {
   readonly vault: BackupVault;

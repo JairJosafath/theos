@@ -724,9 +724,9 @@ fails._
   - Point-in-time recovery on the table: any second of the last 35 days,
     up to about five minutes before now, restored to a new table. It meets
     an RPO of minutes.
-  - An AWS Backup plan (REL09-BP03): a daily backup at 05:00 UTC of every
-    resource carrying the Container's tag, so a new table is in it, kept
-    `retentionDays` in a vault with its own key (REL09-BP02); with
+  - An AWS Backup plan (REL09-BP03): a daily backup at 05:00 UTC of the
+    stack's tables that hold data, named by ARN, so a new table is in it
+    only when the stack names it, kept `retentionDays` in a vault with its own key (REL09-BP02); with
     `copyToRegion`, each copied to a vault in that region (the
     `<name>-backup-copy` stack), so a lost region loses no more than a day
     (REL13-BP02, backup and restore).
@@ -735,7 +735,7 @@ fails._
   - The tasks hold no data, and the load balancer's access logs are logs,
     not data: they expire after the tier's log retention, their bucket is
     kept in either tier, as a bucket holding objects can't be deleted, and
-    the backup plan leaves it out by its ARN, though it carries the tag.
+    the backup plan, which names the table by its ARN, leaves it out.
   - Development backs up nothing: its data goes with its stack.
 - Nothing of value is deleted by accident, in production: the table is
   `RETAIN` with deletion protection, and the stack has termination
@@ -1354,9 +1354,9 @@ fails._
   - Point-in-time recovery on every table: any second of the last 35 days,
     up to about five minutes before now, restored to a new table. It meets
     an RPO of minutes.
-  - An AWS Backup plan (REL09-BP03): a daily backup at 05:00 UTC of every
-    resource carrying the Container's tag, so a new table is in it, kept
-    `retentionDays` in a vault with its own key (REL09-BP02); with
+  - An AWS Backup plan (REL09-BP03): a daily backup at 05:00 UTC of the
+    stack's tables that hold data, named by ARN, so a new table is in it
+    only when the stack names it, kept `retentionDays` in a vault with its own key (REL09-BP02); with
     `copyToRegion`, each copied to a vault in that region (the
     `<name>-backup-copy` stack), so a lost region loses no more than a day
     (REL13-BP02, backup and restore).
