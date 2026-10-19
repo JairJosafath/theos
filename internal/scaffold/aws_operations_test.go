@@ -283,3 +283,53 @@ func TestAWSStandardGuidesEveryFrameworkWithOperationsThroughTheTiers(t *testing
 		})
 	}
 }
+
+// The Frameworks whose v1.0.0 came before their step of
+// plans/aws-production.md: it renders no infra/operations.ts, and its stack
+// has no tiers, alarms or backups.
+var awsFrameworksBeforeOperations = []side{
+	{model.TypeFunction, "aws-lambda-ts"},
+	{model.TypeFunction, "aws-lambda-py"},
+	{model.TypeFunction, "aws-lambda-go"},
+	{model.TypeService, "aws-ec2-ts"},
+	{model.TypeService, "aws-fargate-ts"},
+}
+
+// An aws-standard update must not bring a Framework's version without
+// infra/operations.ts a runbook or operations rules (#1249). Each Framework
+// stands in for its v1.0.0 with infra/operations.ts left out.
+func TestAWSStandardWritesNoOperationsDocsForAFrameworkWithoutOperations(t *testing.T) {
+	docs := func(p string) bool { return p == "AGENTS.md" || strings.HasPrefix(p, "docs/") }
+	for _, fw := range awsFrameworksBeforeOperations {
+		t.Run(fw.Name, func(t *testing.T) {
+			in, layers := loadCombo(t, fw.Side, []side{
+				{model.SideFramework, fw.Name},
+				{model.SideStandard, "aws-standard"},
+			}, "")
+			for p := range layers[0].Files {
+				if strings.HasPrefix(p, "infra/operations.ts") {
+					delete(layers[0].Files, p)
+				}
+			}
+			layers[0].Ref = "v1.0.0"
+			r, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := r.Files["docs/runbook.md"]; ok {
+				t.Errorf("aws-standard writes docs/runbook.md for %s without infra/operations.ts", fw.Name)
+			}
+			for _, p := range r.Files.Paths() {
+				if !docs(p) {
+					continue
+				}
+				doc := string(r.Files[p].Data)
+				for _, w := range []string{"infra/operations.ts", "runbook", "TIER_RULES", "`Alarms`", "backup plan"} {
+					if strings.Contains(doc, w) {
+						t.Errorf("%s for %s without infra/operations.ts says %q", p, fw.Name, w)
+					}
+				}
+			}
+		})
+	}
+}

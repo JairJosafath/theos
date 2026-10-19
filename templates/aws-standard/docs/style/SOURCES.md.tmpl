@@ -1,5 +1,10 @@
 {{- /* The Lambda Frameworks, built for a tier from infra/operations.ts. */ -}}
 {{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
+{{- /* Whether the Framework, at the version the Container was scaffolded
+     from, has infra/operations.ts: a version from before its step of
+     plans/aws-production.md has no tiers, alarms, backups or Powertools
+     (#1249). */ -}}
+{{- $operations := has .FrameworkFiles "infra/operations.ts" -}}
 {{ if eq .Framework "aws-fargate-ts" -}}
 # Sources
 
@@ -53,6 +58,7 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 `Dockerfile` builds on `node:24-alpine`. The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
+{{- if $operations }}
 The operations add cdk-monitoring-constructs 10.3.2 (the alarms and the
 dashboard); OpenTelemetry JS's `api` 1.9.1, `sdk-trace-node` 2.12.0,
 `resources` 2.12.0, `exporter-trace-otlp-http` 0.223.0 and
@@ -92,6 +98,7 @@ for what costs more, not for figures: the digests give none.
 | cdk-monitoring-constructs README — https://github.com/cdklabs/cdk-monitoring-constructs/blob/v10.3.2/README.md                                                                                                                                                                     | 10.3.2                         |
 | cfn-lint rules, I3011 and I3013 — https://github.com/aws-cloudformation/cfn-lint/blob/main/docs/rules.md                                                                                                                                                                           | 1.57.2                         |
 | Pricing: DynamoDB, AWS Backup, CloudWatch, X-Ray, NAT gateways — https://aws.amazon.com/dynamodb/pricing/on-demand/, https://aws.amazon.com/backup/pricing/, https://aws.amazon.com/cloudwatch/pricing/, https://aws.amazon.com/xray/pricing/, https://aws.amazon.com/vpc/pricing/ | live                           |
+{{- end }}
 
 ## Cross-language (read 2026-09-30)
 
@@ -259,8 +266,8 @@ The versions pinned in the Framework's `package.json` and `package-lock.json`:
 TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
 ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9,
 vitest 5.0.3, @types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1,
-aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15, and for the alarms
-cdk-monitoring-constructs 10.3.2. In `src/go.mod` and `src/go.sum`: Go 1.26,
+aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15{{ if $operations }}, and for the alarms
+cdk-monitoring-constructs 10.3.2{{ end }}. In `src/go.mod` and `src/go.sum`: Go 1.26,
 github.com/aws/aws-lambda-go 1.55.1, github.com/aws/aws-sdk-go-v2 1.47.3, its
 `config` 1.33.9 and `service/dynamodb` 1.70.3. golangci-lint is the runner's
 (v2.14). The `Makefile` runs cfn-lint 1.57.2 with uv. The CDK Nag rules these
@@ -282,13 +289,13 @@ aws-cdk 2.1145.0 writes.
 ## Tools
 
 The versions pinned in the Framework's `pyproject.toml` and `uv.lock`:
-aws-lambda-powertools 3.36.0 (Powertools' Logger, Metrics and Idempotency),
-boto3 1.43.112, ruff 0.16.10, mypy 2.4.0, pytest 9.1.1, types-boto3 1.43.112.
+{{ if $operations }}aws-lambda-powertools 3.36.0 (Powertools' Logger, Metrics and Idempotency),
+{{ end }}boto3 1.43.112, ruff 0.16.10, mypy 2.4.0, pytest 9.1.1, types-boto3 1.43.112.
 In its `package.json` and `package-lock.json`: TypeScript 6.0.3, ESLint
 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0, Prettier 3.9.9, vitest
 5.0.3, @types/node 24.19.1, aws-cdk-lib 2.273.0, constructs 10.8.1, aws-cdk
-(the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15, and for the alarms
-cdk-monitoring-constructs 10.3.2. The `Makefile` runs cfn-lint 1.57.2 with
+(the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15{{ if $operations }}, and for the alarms
+cdk-monitoring-constructs 10.3.2{{ end }}. The `Makefile` runs cfn-lint 1.57.2 with
 uv, and the stack bundles the function with uv for Python 3.14 on arm64. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
@@ -304,14 +311,14 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" }} The
+{{- if and $operations (eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
 @aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
-{{- else if eq .Framework "aws-ec2-ts" }} The
+{{- else if and $operations (eq .Framework "aws-ec2-ts") }} The
 operations (the alarms) add cdk-monitoring-constructs 10.3.2.
 {{- end }}
 {{- end }}
-{{- if or $lambda (eq .Framework "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") }}
+{{- if and $operations (or $lambda (eq .Framework "aws-queue-ts" "aws-schedule-ts" "aws-event-ts")) }}
 
 ## Operations (read 2026-10-16)
 
@@ -386,7 +393,7 @@ Read for the rule, its pattern, its target's retries and dead-letter queue, the 
 | Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html                 | live           |
 | Pricing: EventBridge — https://aws.amazon.com/eventbridge/pricing/                                                                                 | live           |
 {{- end }}
-{{- else if eq .Framework "aws-ec2-ts" }}
+{{- else if and $operations (eq .Framework "aws-ec2-ts") }}
 
 ## Operations (read 2026-10-16)
 

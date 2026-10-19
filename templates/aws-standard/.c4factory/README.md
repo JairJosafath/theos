@@ -151,7 +151,15 @@ byte for byte.
   `infra/standard.test.ts`, for every Framework: every EventBridge rule
   alarms on the events it lost, and every rule's Lambda target is retried
   and dead-lettered to a queue of its stack. A Framework added later gets
-  its branches in the version that adds it.
+  its branches in the version that adds it. Since v1.15.0 the operations
+  docs and rules (`docs/runbook.md`, the tiers, alarms, backups and
+  Powertools in `AGENTS.md`, the role guides, `docs/style/aws.md`,
+  `SOURCES.md` and `docs/well-architected.md`) render only for a Framework
+  whose files (`.FrameworkFiles`, at the version the Container was
+  scaffolded from) include `infra/operations.ts`; a Framework version from
+  before it gets the earlier text, and `docs/well-architected.md` the
+  digest v1.6.0 wrote for it, so an update of the Standard brings a
+  repository nothing about operations it lacks (#1249).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

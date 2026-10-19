@@ -432,6 +432,27 @@ func TestBuildRendersStandardSecond(t *testing.T) {
 	}
 }
 
+// A Standard tells what the Framework it renders for has from the paths the
+// Framework rendered, and the Framework itself sees none (#1249).
+func TestBuildTellsLaterLayersTheFrameworksFiles(t *testing.T) {
+	layers := withStandard(webshopLayers())
+	layers[0].Files["framework.txt.tmpl"] = File{Data: []byte(`{{ len .FrameworkFiles }}`)}
+	layers[1].Files["standard.txt.tmpl"] = File{Data: []byte(
+		`{{ if has .FrameworkFiles "app/main.py" }}main{{ end }}{{ if has .FrameworkFiles "infra/operations.ts" }}ops{{ end }}`)}
+	in := ordersAPI
+	in.Standard = "python-standard"
+	result, err := Build(in, layers, Options{})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if got := string(result.Files["framework.txt"].Data); got != "0" {
+		t.Errorf("the Framework sees %s FrameworkFiles, want 0", got)
+	}
+	if got := string(result.Files["standard.txt"].Data); got != "main" {
+		t.Errorf("standard.txt = %q, want main", got)
+	}
+}
+
 func TestBuildStandardConflictsWithFramework(t *testing.T) {
 	layers := withStandard(webshopLayers())
 	layers[1].Files["pyproject.toml"] = File{Data: []byte("x")}

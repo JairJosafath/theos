@@ -1,3 +1,5 @@
+{{- /* Only a Framework version with infra/operations.ts has the tiers, alarms and backups this runbook answers (#1249). */ -}}
+{{- if has .FrameworkFiles "infra/operations.ts" -}}
 {{ if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
 {{- $ops := .Operations -}}
 {{- /* Powertools' idempotency records: none in Go, which has no Powertools. */ -}}
@@ -1165,4 +1167,5 @@ development stack: terminate an instance
 and watch the group replace it, deploy a server that fails its health check
 and watch the update roll back, and answer what fires with this runbook
 alone.
+{{- end }}
 {{- end }}
