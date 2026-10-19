@@ -460,16 +460,7 @@ func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, e
 		Settings: settings, Secret: map[string][]byte{publishTokenKey: []byte(p.token)}}
 	shipment := ports.Shipment{App: p.crew.Namespace + "/" + p.facts.Container, DisplayName: p.facts.App,
 		Version: p.tag, Commit: model.ShipCommit(*p.facts), Notes: p.gitea.Body}
-	for _, a := range p.gitea.Assets {
-		shipment.Files = append(shipment.Files, ports.File{Name: a.Name, Size: a.Size,
-			Open: func(ctx context.Context) (io.ReadCloser, int64, error) {
-				body, size, err := p.provider.OpenReleaseAsset(ctx, p.repo, a)
-				if err != nil {
-					return nil, 0, giteaError{err}
-				}
-				return body, size, nil
-			}})
-	}
+	shipment.Files = releaseFiles(p.provider, p.repo, p.gitea.Assets)
 	err = deployer.Ship(logr.NewContext(ctx, p.log), target, shipment)
 	if ge, ok := errors.AsType[giteaError](err); ok {
 		// Gitea's side: not a GitHub failure.
@@ -477,6 +468,24 @@ func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, e
 		return false, nil
 	}
 	return true, err
+}
+
+// releaseFiles are the files of a Git host's release, each streamed from it
+// when the Deployer sends it; a failure to give one is a giteaError.
+func releaseFiles(provider gitprovider.Provider, repo gitprovider.Repository,
+	assets []gitprovider.ReleaseAsset) []ports.File {
+	files := make([]ports.File, 0, len(assets))
+	for _, a := range assets {
+		files = append(files, ports.File{Name: a.Name, Size: a.Size,
+			Open: func(ctx context.Context) (io.ReadCloser, int64, error) {
+				body, size, err := provider.OpenReleaseAsset(ctx, repo, a)
+				if err != nil {
+					return nil, 0, giteaError{err}
+				}
+				return body, size, nil
+			}})
+	}
+	return files
 }
 
 // giteaError is a release file Gitea failed to give.

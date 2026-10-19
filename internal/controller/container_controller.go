@@ -13,6 +13,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -30,6 +31,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -51,9 +53,22 @@ type ContainerReconciler struct {
 	// SecretRecheck is how often a Container waiting for its credentials Secret
 	// looks again; zero means 15 seconds.
 	SecretRecheck time.Duration
-	// Recorder emits the Container's Events about its Standard's files; nil
-	// emits none.
+	// Recorder emits the Container's Events about its Standard's files and
+	// its deploys; nil emits none.
 	Recorder events.EventRecorder
+	// Deployers ship the Container's releases to its spec.deploy, by
+	// DeployTarget member.
+	Deployers ports.Deployers
+	// DeployMembers returns a DeployTarget member's row; nil means the
+	// model's table. Tests give members needs no real member has yet.
+	DeployMembers func(name string) (model.DeployMember, error)
+	// DeployPoll is how often a Container with a deploy in flight reads its
+	// targets again; zero means 15 seconds.
+	DeployPoll time.Duration
+
+	// deploySaid remembers each deploy's last Event, by Container UID and
+	// target.
+	deploySaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -62,6 +77,8 @@ type ContainerReconciler struct {
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // defaultSecretRecheck is how often a Container waiting for its credentials
@@ -130,6 +147,10 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		failed := r.updateOperations(ctx, &container, status, live)
+		if poll := r.deploy(ctx, &container, status); poll > 0 &&
+			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
+			result.RequeueAfter = poll
+		}
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
@@ -287,8 +308,34 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return []reconcile.Request{requestFor(rel.Namespace, rel.Spec.Source.Name)}
 	})
+	// A Crew's release whose runs succeeded ships, and a DeployTarget turning
+	// ready lets its Containers ship there.
+	crewContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+		crew, ok := obj.(*c4v1alpha1.Crew)
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{requestFor(crew.Namespace, crew.Spec.ContainerRef.Name)}
+	})
+	targetContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var containers c4v1alpha1.ContainerList
+		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, c := range containers.Items {
+			if slices.ContainsFunc(c.Spec.Deploy, func(d c4v1alpha1.ContainerDeploy) bool {
+				return d.Target == obj.GetName()
+			}) {
+				reqs = append(reqs, requestFor(c.Namespace, c.Name))
+			}
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}, specOrAsked()).
+		Watches(&c4v1alpha1.Crew{}, crewContainer, lastReleaseChanges()).
+		Watches(&c4v1alpha1.DeployTarget{}, targetContainers, deployTargetReadyChanges()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, specChanged()).
 		Watches(&c4v1alpha1.Relationship{}, sourceContainer, specChanged()).

@@ -504,6 +504,56 @@ says what to fix:
 | `BranchProtected` | GitHub refused the source commit on the protected default branch: let the token's user push to it, or drop the protection. |
 | `GitHubError` | GitHub failed, rate-limited, or couldn't be reached; it is tried again. |
 
+## Ship each release to its targets
+
+A Container names the places its releases ship to in `spec.deploy`, in
+order; each is a DeployTarget, a place with its own credential and tier.
+`orders-cli` in [story.yaml](../config/samples/first-app/story.yaml) names
+`orders-cli-releases`, a GitHub repository whose releases are the deploys:
+
+1. **The token and Secret,** as in steps 1 and 2 above, in a Secret named
+   `orders-cli-deploy`.
+2. **The target.** Set your repository in
+   [deploytarget.yaml](../config/samples/first-app/deploytarget.yaml) and
+   apply it with `kubectl apply -n webshop -f deploytarget.yaml`. Its `Ready`
+   condition says whether GitHub takes the token.
+
+Once a release's runs succeed, the operator ships it to each entry: the
+entry's pinned `version`, else the newest release. An entry with `after`
+waits until that earlier entry runs the version, and an entry whose target
+is `tier: production` waits for a person, who lets the version in by setting
+the entry's `approved`:
+
+```yaml
+spec:
+  deploy:
+    - target: staging
+    - target: prod
+      after: staging
+      approved: v0.3.0   # the version a person let into prod
+    - target: oss
+      version: v0.2.0    # pinned: how you roll back
+```
+
+The list may change at any time; it never scaffolds the Container again,
+and removing an entry leaves what runs there alone. A rollout the target's
+tool reports failed isn't tried again until a newer release or a pin.
+
+```bash
+kubectl -n webshop get container orders-cli -o jsonpath='{.status.deploys}{"\n"}'
+kubectl -n webshop get container orders-cli -o jsonpath='{.status.conditions[?(@.type=="Deployed")]}{"\n"}'
+kubectl -n webshop events --for container/orders-cli
+```
+
+Each of `status.deploys` says the `version` running, the `wantedVersion`,
+the `phase` (`Waiting`, `Deploying`, `Deployed`, `Failed`), the `health` the
+tool reports, the `url`, and why in `reason` and `message`. `Deployed` is
+True once every entry runs its wanted version, else False with the first of
+`Incompatible`, `TargetNotReady`, `DeployFailed`, `WaitingForApproval`,
+`WaitingForPrevious`, `Deploying` and `NoRelease`. Events: `Deployed` when an
+entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
+`DeployFailed` once per version and reason.
+
 ## Release a Brief's app
 
 A Brief's app is released when its plan says so: the planner names the

@@ -2,7 +2,8 @@
 # the deploys (docs/plans/deploy.md). It needs Secret orders-cli-deploy, with
 # the key token, a fine-grained token for that repository alone with Contents
 # read and write, which you create yourself; Ready says whether GitHub takes
-# it. A Container names it in spec.deploy once #1162 lands. Not in
+# it. Container orders-cli names it in spec.deploy (story.yaml), and each of
+# its releases ships there once the release runs succeed. Not in
 # kustomization.yaml: apply it with
 # kubectl apply -n webshop -f deploytarget.yaml.
 apiVersion: c4.factory.io/v1alpha1
