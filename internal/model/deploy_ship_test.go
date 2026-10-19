@@ -77,6 +77,27 @@ func TestNextDeploy(t *testing.T) {
 		{name: "ships once the entry it comes after runs it",
 			change: func(f *DeployFacts) { f.After, f.Previous = "dev", deployed("dev", "v1.1.0") },
 			ship:   "v1.1.0", phase: DeployPhaseDeploying, reason: DeployDeploying, cause: DeployDeploying},
+		{name: "a pin skips the entry it comes after: a rollback of prod alone",
+			change: func(f *DeployFacts) {
+				f.Version, f.After, f.Previous = "v0.9.0", "dev", deployed("dev", "v1.1.0")
+			},
+			ship: "v0.9.0", phase: DeployPhaseDeploying, reason: DeployDeploying, cause: DeployDeploying},
+		{name: "a pin still waits for approval", change: func(f *DeployFacts) {
+			f.Version, f.Approval, f.Approved = "v0.9.0", DeployApprovalRequired, "v1.1.0"
+		}, phase: DeployPhaseWaiting, reason: DeployWaitingForApproval, cause: DeployWaitingForApproval},
+		{name: "a target that can't be read keeps the last phase",
+			change: func(f *DeployFacts) {
+				f.TargetUnread, f.Run = "timeout", nil
+				f.Prev = &DeployReport{Target: "staging", Version: "v1.0.0", WantedVersion: "v1.1.0",
+					Phase: DeployPhaseDeploying}
+			},
+			phase: DeployPhaseDeploying, reason: DeployTargetNotReady, cause: DeployTargetNotReady,
+			message: "DeployTarget staging could not be read: timeout", version: "v1.0.0"},
+		{name: "a tool with no deploy runs nothing", change: func(f *DeployFacts) {
+			f.Run = &DeployRun{}
+			f.Prev = &DeployReport{Target: "staging", Version: "v1.0.0", URL: "https://x", WantedVersion: "v1.1.0",
+				Phase: DeployPhaseDeployed}
+		}, ship: "v1.1.0", phase: DeployPhaseDeploying, reason: DeployDeploying, cause: DeployDeploying},
 		{name: "waits for approval", change: func(f *DeployFacts) { f.Approval = DeployApprovalRequired },
 			phase: DeployPhaseWaiting, reason: DeployWaitingForApproval, cause: DeployWaitingForApproval,
 			message: "set approved to v1.1.0"},
@@ -125,6 +146,12 @@ func TestNextDeploy(t *testing.T) {
 				Reason: DeployArtifactMissing, Message: "lacks"}
 		}, phase: DeployPhaseFailed, reason: DeployArtifactMissing, cause: DeployFailed, message: "lacks",
 			version: "v1.0.0"},
+		// A failed write can leave a GitHub draft the tool shows Deploying.
+		{name: "a failure held while the tool shows the version Deploying", change: func(f *DeployFacts) {
+			f.Run = &DeployRun{Version: "v1.1.0", Phase: DeployPhaseDeploying}
+			f.Prev = &DeployReport{Target: "staging", WantedVersion: "v1.1.0", Phase: DeployPhaseFailed,
+				Reason: DeployFailed, Message: "422"}
+		}, phase: DeployPhaseFailed, reason: DeployFailed, cause: DeployFailed, message: "422"},
 		{name: "a newer release ships after a failure", change: func(f *DeployFacts) {
 			f.Newest = "v1.2.0"
 			f.Prev = &DeployReport{Target: "staging", WantedVersion: "v1.1.0", Phase: DeployPhaseFailed,

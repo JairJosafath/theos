@@ -481,6 +481,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - target
                 x-kubernetes-list-type: map
+              newestRelease:
+                description: |-
+                  newestRelease is the newest release of the Container's Crews whose runs
+                  succeeded, kept while a newer release's runs haven't: the version an
+                  unpinned spec.deploy entry follows.
+                type: string
               observedGeneration:
                 description: observedGeneration is the spec generation the status
                   reflects.

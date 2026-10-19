@@ -493,6 +493,12 @@ type ContainerStatus struct {
 	// +optional
 	OperationsUpdate *OperationsUpdateStatus `json:"operationsUpdate,omitempty"`
 
+	// newestRelease is the newest release of the Container's Crews whose runs
+	// succeeded, kept while a newer release's runs haven't: the version an
+	// unpinned spec.deploy entry follows.
+	// +optional
+	NewestRelease string `json:"newestRelease,omitempty"`
+
 	// deploys is what runs at each of spec.deploy's targets, in its order.
 	// +listType=map
 	// +listMapKey=target

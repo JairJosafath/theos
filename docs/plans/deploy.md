@@ -301,9 +301,13 @@ What #1162 settled that the decisions above left open:
   Framework isn't watched once the Container is Ready, so `Incompatible`
   follows a change at the next poll.
 - **The newest release** is the newest `lastRelease`, by time, among the
-  Container's Crews whose runs `Succeeded`. A pin ships any tag the Git host
-  has a release of, a Crew's or not: it is a person's choice. A tag without
-  a release fails `ReleaseNotFound` and is looked for again each poll.
+  Container's Crews whose runs `Succeeded`, kept in `status.newestRelease`
+  while a newer release's runs haven't succeeded (a Crew keeps only its last
+  release), so a release whose runs fail doesn't take the deploys back to
+  `NoRelease`. A pin ships any tag the Git host has a release of, a Crew's
+  or not: it is a person's choice, so it skips `after` (a rollback of prod
+  alone) and still needs approval where the target does. A tag without a
+  release fails `ReleaseNotFound` and is looked for again each poll.
 - **An entry's `reason`** is its condition reason, except where the entry
   failed or a call didn't reach the target: `Unreachable` (the target's tool,
   condition `TargetNotReady`), `GitHostUnreachable` (the release's files,
@@ -314,12 +318,14 @@ What #1162 settled that the decisions above left open:
   release, which the tool never had. Held until another version is wanted
   (a newer release, or a pin): a rollout the tool reports failed, a missing
   file, and any other failure (a GitHub release of the tag the factory didn't
-  make, `TagTaken`). A `State` call that fails keeps the entry's last phase,
-  with `TargetNotReady`.
+  make, `TagTaken`), even while the tool shows the version `Deploying` (a
+  GitHub draft a failed write left). A `State` call or a read of the
+  DeployTarget that fails keeps the entry's last phase, with
+  `TargetNotReady`; a tool with no deploy of the app clears `version`.
 - **The order of holds:** the target (missing, `Incompatible`, not checked
   or not `Ready`), then a release, then a deploy in flight (it goes on, even
-  past an approval taken back, and the wanted version waits for it), then
-  `after`, then approval, so `ApprovalNeeded` comes once approving is the
+  past an approval taken back, and the wanted version waits for it), then a
+  held failure, then `after` (unless pinned), then approval, so `ApprovalNeeded` comes once approving is the
   last thing in the way. `after`'s entry must report the version
   `Deployed` with health `Healthy` or `Unknown` (a tool that reads none).
 - **Events:** `Deployed` and `ApprovalNeeded` are Normal, `DeployFailed`
@@ -334,7 +340,9 @@ What #1162 settled that the decisions above left open:
   real member needs anything yet; `Incompatible` is seen through it.
 - **Known limits, filed as follow-ups:** the GitHub member's `State` is the
   newest marked release, so a pin to an older published release re-ships
-  each poll and stays `Deploying`; and the Container reconciler runs one
+  each poll and stays `Deploying`, and two Containers shipping to one
+  `github` target take the same tags (`TagTaken`) until #1070 gives the
+  member a tag prefix; and the Container reconciler runs one
   worker, so a long GitHub upload holds the other Containers' reconciles for
   its length, as a Crew's upload held the Crews before `crewWorkers`.
 

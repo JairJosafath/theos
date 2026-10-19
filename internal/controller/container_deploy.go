@@ -11,7 +11,6 @@ package controller
 import (
 	"context"
 	"errors"
-	"io"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -57,19 +56,24 @@ func (r *ContainerReconciler) deployMember(name string) (model.DeployMember, err
 // without spec.deploy.
 func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) time.Duration {
-	if len(container.Spec.Deploy) == 0 {
-		status.Deploys = nil
-		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionDeployed)
-		return 0
-	}
 	log := logf.FromContext(ctx)
-	ctx, cancel := context.WithTimeout(ctx, deployTimeout)
-	defer cancel()
+	// Kept with or without spec.deploy, so a target added later ships it.
 	newest, err := r.newestRelease(ctx, container)
 	if err != nil {
 		log.Error(err, "Failed to list the Container's Crews")
 		return r.deployPoll()
 	}
+	if newest != "" {
+		status.NewestRelease = newest
+	}
+	newest = status.NewestRelease
+	if len(container.Spec.Deploy) == 0 {
+		status.Deploys = nil
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionDeployed)
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(ctx, deployTimeout)
+	defer cancel()
 	brings, err := r.deployContainer(ctx, container)
 	if err != nil {
 		log.Error(err, "Failed to read the Container's Framework")
@@ -147,6 +151,8 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 	found, err := p.r.lookup(ctx, p.container.Namespace, facts.Target, &dt)
 	if err != nil {
 		p.log.Error(err, "Failed to read the DeployTarget", "target", facts.Target)
+		facts.TargetUnread = err.Error()
+		return ports.Target{}, nil
 	}
 	if !found {
 		return ports.Target{}, nil
@@ -212,17 +218,7 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
 		Version: version, Notes: release.Body}
-	provider, repo := p.provider, p.repo
-	for _, a := range release.Assets {
-		shipment.Files = append(shipment.Files, ports.File{Name: a.Name, Size: a.Size,
-			Open: func(ctx context.Context) (io.ReadCloser, int64, error) {
-				body, size, err := provider.OpenReleaseAsset(ctx, repo, a)
-				if err != nil {
-					return nil, 0, giteaError{err}
-				}
-				return body, size, nil
-			}})
-	}
+	shipment.Files = releaseFiles(p.provider, p.repo, release.Assets)
 	log := p.log.WithValues("target", target.Name, "version", version)
 	err = deployer.Ship(logr.NewContext(ctx, log), target, shipment)
 	switch {

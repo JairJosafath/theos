@@ -56,11 +56,17 @@ func shipRelease(ns, tag string, withFiles bool) {
 		files = []fakeFile{{"orders-api-" + tag + ".tar.gz", []byte("the build of " + tag)}}
 	}
 	gitFake.setGiteaRelease(ns, "orders-api", tag, "Notes of "+tag, files...)
+	crewRelease(ns, tag, model.RunSucceeded)
+}
+
+// crewRelease makes tag the Crew's last release, its runs run.
+func crewRelease(ns, tag, run string) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		crew := &c4v1alpha1.Crew{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), crew)).To(Succeed())
 		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "c-" + tag, Time: metav1.Now(),
-			Run: model.RunSucceeded}
+			Run: run}
 		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -204,6 +210,15 @@ var _ = Describe("Container deploys", func() {
 		Expect(d.Health).To(Equal(model.DeployHealthHealthy))
 		Expect(d.Since).NotTo(BeNil())
 		saidOnce(ns, model.DeployEventDeployed, "staging runs v0.1.0")
+
+		By("keeping the release that succeeded while a newer one's runs fail")
+		crewRelease(ns, "v0.1.1", model.RunFailed)
+		Consistently(func(g Gomega) {
+			d, cond := deployOf(g, ns, "staging")
+			g.Expect(d.WantedVersion).To(Equal("v0.1.0"))
+			g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed))
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}, 3*time.Second).Should(Succeed())
 
 		By("streaming the files from the Git host's release")
 		shipped := deployFake.Shipments()

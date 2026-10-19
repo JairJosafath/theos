@@ -96,6 +96,9 @@ type DeployFacts struct {
 	// Newest is the newest release of the Container whose runs succeeded,
 	// "" when none.
 	Newest string
+	// TargetUnread says why the DeployTarget could not be read, "" when it
+	// was or isn't there.
+	TargetUnread string
 	// TargetFound says the DeployTarget exists; TargetReady and TargetMessage
 	// are its Ready condition, TargetChecked says it has one.
 	TargetFound, TargetChecked, TargetReady bool
@@ -147,8 +150,8 @@ func DeployReadsState(f DeployFacts) bool {
 
 // NextDeploy decides one entry of a Container's spec.deploy: what it reports
 // and whether a version ships now. A version ships once the target is ready
-// and compatible, the entry After names runs it, and a person approved it
-// where the target needs approval; one deploy runs at a time per entry; a
+// and compatible, the entry After names runs it (unless the entry pins it),
+// and a person approved it where the target needs approval; one deploy runs at a time per entry; a
 // rollout the tool reports failed, a missing file or an unknown failure is
 // not shipped again until another version is wanted, while a call the tool
 // never had (unreachable, a refused credential, a release not yet on the Git
@@ -159,35 +162,21 @@ func NextDeploy(f DeployFacts) DeployStep {
 	if p := f.Prev; p != nil {
 		r.Version, r.Health, r.URL = p.Version, p.Health, p.URL
 	}
+	if step, held := deployHeldBefore(f, r, wanted); held {
+		return step
+	}
 	wait := func(cause, message string) DeployStep {
 		r.Reason, r.Message = cause, message
 		return DeployStep{Report: r, Cause: cause}
 	}
-	switch {
-	case !f.TargetFound:
-		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s not found", f.Target))
-	case len(f.Lacks) > 0:
-		return wait(DeployIncompatible, fmt.Sprintf("Container %s can't ship to DeployTarget %s: it lacks %s",
-			f.Container, f.Target, strings.Join(f.Lacks, " and ")))
-	case !f.TargetChecked:
-		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s has not been checked yet", f.Target))
-	case !f.TargetReady:
-		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s is not ready: %s", f.Target,
-			f.TargetMessage))
-	case wanted == "":
-		return wait(DeployNoRelease, fmt.Sprintf(
-			"No release of %s has succeeded its runs yet; nothing ships to %s", f.Container, f.Target))
-	case f.Run == nil:
-		if p := f.Prev; p != nil && p.WantedVersion == wanted {
-			r.Phase = p.Phase
-		}
-		return wait(DeployTargetNotReady, fmt.Sprintf("%s could not say what runs at DeployTarget %s: %s; "+
-			"asked again on the next poll", f.Tool, f.Target, f.StateFailure))
-	}
 
 	run := *f.Run
-	if run.Phase == DeployPhaseDeployed {
+	switch run.Phase {
+	case DeployPhaseDeployed:
 		r.Version, r.URL = run.Version, run.URL
+	case "":
+		// The tool has no deploy of the app: nothing runs there.
+		r.Version, r.URL = "", ""
 	}
 	if run.Health != "" {
 		r.Health = run.Health
@@ -218,13 +207,17 @@ func NextDeploy(f DeployFacts) DeployStep {
 		return deployShip(f, r, run.Version, fmt.Sprintf("Deploying %s to %s; %s ships once it ends",
 			run.Version, f.Target, wanted))
 	}
+	// Held even while the tool shows the version Deploying: a GitHub draft a
+	// failed write left behind is not gone on with by itself.
+	if p := f.Prev; p != nil && p.Phase == DeployPhaseFailed && p.WantedVersion == wanted &&
+		!deployRetried(p.Reason) {
+		r.Phase, r.Reason, r.Message = p.Phase, p.Reason, p.Message
+		return DeployStep{Report: r, Cause: DeployFailed}
+	}
 	if run.Phase != DeployPhaseDeploying {
-		if p := f.Prev; p != nil && p.Phase == DeployPhaseFailed && p.WantedVersion == wanted &&
-			!deployRetried(p.Reason) {
-			r.Phase, r.Reason, r.Message = p.Phase, p.Reason, p.Message
-			return DeployStep{Report: r, Cause: DeployFailed}
-		}
-		if prev := f.Previous; prev != nil && !deployRuns(*prev, wanted) {
+		// An entry's own pin is a person's choice, as a rollback is: it
+		// skips after, and still needs approval where the target does.
+		if prev := f.Previous; prev != nil && f.Version == "" && !deployRuns(*prev, wanted) {
 			return wait(DeployWaitingForPrevious, fmt.Sprintf("%s waits for %s to run it%s before it ships to %s",
 				wanted, f.After, healthNote(*prev, wanted), f.Target))
 		}
@@ -235,6 +228,44 @@ func NextDeploy(f DeployFacts) DeployStep {
 		}
 	}
 	return deployShip(f, r, wanted, fmt.Sprintf("Deploying %s to %s", wanted, f.Target))
+}
+
+// deployHeldBefore holds an entry before what runs at its target matters:
+// the target isn't there, ready or compatible, no version is wanted, or what
+// runs there couldn't be read. r is the entry's report so far.
+func deployHeldBefore(f DeployFacts, r DeployReport, wanted string) (DeployStep, bool) {
+	wait := func(cause, message string) (DeployStep, bool) {
+		r.Reason, r.Message = cause, message
+		return DeployStep{Report: r, Cause: cause}, true
+	}
+	switch {
+	case f.TargetUnread != "":
+		if p := f.Prev; p != nil && p.WantedVersion == wanted {
+			r.Phase = p.Phase
+		}
+		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s could not be read: %s; read again on "+
+			"the next poll", f.Target, f.TargetUnread))
+	case !f.TargetFound:
+		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s not found", f.Target))
+	case len(f.Lacks) > 0:
+		return wait(DeployIncompatible, fmt.Sprintf("Container %s can't ship to DeployTarget %s: it lacks %s",
+			f.Container, f.Target, strings.Join(f.Lacks, " and ")))
+	case !f.TargetChecked:
+		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s has not been checked yet", f.Target))
+	case !f.TargetReady:
+		return wait(DeployTargetNotReady, fmt.Sprintf("DeployTarget %s is not ready: %s", f.Target,
+			f.TargetMessage))
+	case wanted == "":
+		return wait(DeployNoRelease, fmt.Sprintf(
+			"No release of %s has succeeded its runs yet; nothing ships to %s", f.Container, f.Target))
+	case f.Run == nil:
+		if p := f.Prev; p != nil && p.WantedVersion == wanted {
+			r.Phase = p.Phase
+		}
+		return wait(DeployTargetNotReady, fmt.Sprintf("%s could not say what runs at DeployTarget %s: %s; "+
+			"asked again on the next poll", f.Tool, f.Target, f.StateFailure))
+	}
+	return DeployStep{}, false
 }
 
 // deployShip ships version, or reports how shipping it failed.
