@@ -990,7 +990,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   names only installed catalog entries that support the Container's type,
   no Compute or Deployment on a Framework that deploys itself,
   changes only the story text of what exists (and a Container's `checks`,
-  below) and deletes nothing; anything
+  below), puts no new Container or DataStore in an External system, and
+  deletes nothing; anything
   else refuses it, and the planner's next round gets the reasons. The operator
   applies it (Relationships before the Containers they start from, so their
   Connectors are part of the scaffold), makes a Crew for each new Container
@@ -1001,6 +1002,12 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
   condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
   stopped and why: a Brief never looks busy without a reason.
+- **The round that creates a SoftwareSystem sets its `location`.** A planner
+  marks a system the story only names, such as a payment provider, External;
+  one it leaves out is Internal. Later rounds keep the location a system has,
+  whatever their plan says: a plan that turned a built system External would
+  strand its Containers, and a second answer shouldn't undo the first. Changing
+  it afterwards is a person's edit to the SoftwareSystem.
 - **A round's issues keep the plan's order** (#428). An issue that needs
   another issue's work merged first names it in its front matter, `after:`
   with the round numbers of its blockers, in any of the round's Containers.

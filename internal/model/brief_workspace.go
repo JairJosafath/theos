@@ -293,9 +293,10 @@ type elementRefOut struct {
 }
 
 type systemOut struct {
-	textOut `yaml:",inline"`
-	Needs   []string `yaml:"needs,omitempty"`
-	KPIs    []string `yaml:"kpis,omitempty"`
+	textOut  `yaml:",inline"`
+	Needs    []string `yaml:"needs,omitempty"`
+	KPIs     []string `yaml:"kpis,omitempty"`
+	Location string   `yaml:"location"`
 }
 
 type containerOut struct {
@@ -349,7 +350,7 @@ func renderWorkspaceModel(objects []PlanObject) (string, error) {
 		text := textOut{o.DisplayName, o.Description}
 		switch o.Kind {
 		case KindSoftwareSystem:
-			m.Spec = systemOut{text, o.Needs, o.KPIs}
+			m.Spec = systemOut{text, o.Needs, o.KPIs, SystemLocation(o)}
 		case KindContainer:
 			m.Spec = containerOut{textOut: text, SoftwareSystemRef: refOut{o.SoftwareSystem}, Type: o.Type,
 				GitProviderRef: refOut{o.GitProvider}, FrameworkRef: refOut{o.Framework},
