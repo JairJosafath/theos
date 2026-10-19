@@ -4,6 +4,7 @@
 {{- $lambda := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- $event := eq .Framework "aws-event-ts" -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -366,7 +367,7 @@ says why each rule matters.
 
 Distilled from {{ if eq .Framework "aws-ec2-ts" }}the EC2 Auto Scaling user guide, the Application Load
 Balancer guide, the Amazon VPC guide (endpoints, flow logs){{ else }}the Lambda developer guide's best practices and {{ if $go }}Go{{ else if $py }}Python{{ else }}Node.js{{ end }}
-handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else if $schedule }}its asynchronous invocation page, the EventBridge Scheduler user guide{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
+handler pages, {{ if $queue }}Using Lambda with Amazon SQS, the SQS developer guide{{ else if $schedule }}its asynchronous invocation page, the EventBridge Scheduler user guide{{ else if $event }}its asynchronous invocation page, the EventBridge user guide's rules and event patterns{{ else }}API Gateway's HTTP API docs{{ end }}{{ end }}, DynamoDB's developer guide, the
 {{ if $py }}boto3{{ else }}AWS SDK for {{ if $go }}Go v2{{ else }}JavaScript v3{{ end }}{{ end }} guide, the CDK developer guide and its assertions
 module, and CDK Nag's rule list (see `SOURCES.md`). `[lint: x]` = enforced by
 `make check`: {{ if $go }}a golangci-lint linter, an ESLint rule{{ else if $py }}a ruff rule, mypy, an ESLint rule{{ else }}an ESLint rule{{ end }} or the compiler; `[nag: x]` = a CDK Nag rule that
@@ -456,6 +457,11 @@ says why each rule matters.
   `{"scheduledTime": ..., "attemptNumber": ...}`, and returns nothing: a
   run that throws is retried by Lambda and then sent to the dead-letter
   queue. [review]
+{{- else if $event -}}
+- `src/handler.ts` exports `handler`, which takes the EventBridge event the
+  rule matched (its `id`, `source`, `detail-type` `ItemSubmitted` and the
+  item in its `detail`) and returns nothing: an event that throws is
+  retried by Lambda and then sent to the dead-letter queue. [review]
 {{- else -}}
 - `src/handler.ts` exports `handler`, which takes an `APIGatewayProxyEventV2`
   and returns a result: a status code, headers and a string body. API
@@ -473,7 +479,7 @@ says why each rule matters.
   [lint: @typescript-eslint/no-floating-promises]
 - Never `process.exit()`: it kills the execution environment mid-invocation.
   [lint: no-restricted-properties]
-- Don't keep {{ if $queue }}message{{ else if $schedule }}run{{ else }}request{{ end }} data in module-scope variables: the next invocation in
+- Don't keep {{ if $queue }}message{{ else if $schedule }}run{{ else if $event }}event{{ else }}request{{ end }} data in module-scope variables: the next invocation in
   the same environment would see it. [review]
 {{- end }}
 
@@ -496,6 +502,30 @@ says why each rule matters.
   `scheduledTime`). [review]
 - When the job runs is `SCHEDULE` in `infra/job_stack.ts`, a cron or rate
   expression with its time zone. [review]
+{{ else if $event }}## Events
+
+- Validate every event at the boundary: its `id`, `source` and
+  `detail-type`, and the item its `detail` carries, narrowed from `unknown`
+  with runtime checks. The rule matches the source and detail type, but a
+  producer can put any `detail`, and anyone allowed to invoke the function
+  can send anything. [review]
+- The consumer's work goes in `consume` in `src/consume.ts`. The handler
+  runs it through `checkingFirst`, which refuses an event that carries no
+  item before anything is recorded, and Powertools' Idempotency; never
+  bypass them. [review]
+- An event that fails throws: Lambda retries it twice within the hour, then
+  sends it to the dead-letter queue. [review]
+- Never catch a failure and carry on: an event the handler returns as done
+  is not retried, and its work is lost. [review]
+- An event is delivered at least once and in no set order, by the rule's
+  retries or Lambda's: the work per event is idempotent (Powertools'
+  Idempotency, keyed by its `id`) and never depends on another event coming
+  first. [review]
+- Which events the rule sends is `eventPatternFor` in
+  `infra/event_stack.ts`: the Container's name as `source`, `ItemSubmitted`
+  as `detail-type`, on the default event bus. [review]
+- Never log an event's `detail`: it may hold user data. Log its `id` and
+  what failed. [review]
 {{ else if $queue }}## Messages
 
 - Validate every message at the boundary: its body and the attributes the
@@ -536,7 +566,7 @@ says why each rule matters.
 - There is no Powertools for Go: the logs are `slog`'s, and the function
   sends no metrics of its own; the alarms read what Lambda, API Gateway and
   DynamoDB report. [review]
-{{- else if or $lambda $queue $schedule -}}
+{{- else if or $lambda $queue $schedule $event -}}
 - Log structured JSON, one entry per line, through Powertools' Logger,
   which `{{ if $py }}app/handler.py{{ else }}src/handler.ts{{ end }}` makes and hands to the code as its `Log`; never
   `{{ if $py }}print{{ else }}console{{ end }}`. [lint: {{ if $py }}T201{{ else }}no-console{{ end }}]
@@ -546,7 +576,7 @@ says why each rule matters.
 - Log structured JSON, one entry per line, through the `Log` the code is
   given; never `console`. [lint: no-console]
 {{- end }}
-- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else }}request id{{ end }}; errors say what
+- Each entry has a `level`, a `message` and the {{ if $queue }}message id{{ else if $schedule }}scheduled time{{ else if $event }}event id{{ else }}request id{{ end }}; errors say what
   failed and with which input, never a secret, a token or user data. [review]
 {{ if eq .Framework "aws-ec2-ts" }}- The server writes to standard output; systemd appends it to
   `/var/log/server/server.log`, and the CloudWatch agent ships that file to
@@ -563,7 +593,7 @@ says why each rule matters.
 {{ end }}
 ## DynamoDB
 
-- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path is
+- Model the table for its access patterns: every read on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else if $event }}event's{{ else }}request{{ end }} path is
   a `GetItem` or a `Query` on a key or an index, never a `Scan`. [review]
 {{ if $go -}}
 - Read and write items as `map[string]types.AttributeValue`, by hand or
@@ -596,10 +626,13 @@ says why each rule matters.
 {{- else if $schedule }}
 - Each run runs through Powertools' Idempotency, keyed by its
   `scheduledTime`: a run delivered again writes nothing twice. [review]
+{{- else if $event }}
+- Each event runs through Powertools' Idempotency, keyed by its `id`: an
+  event delivered again writes nothing twice. [review]
 {{- end }}
 - Tables are on demand (`PAY_PER_REQUEST`) unless the issue states a steady
   load. [review]
-{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
+{{- if or $lambda $queue $schedule $event (eq .Framework "aws-ec2-ts") }}
 - In production, point-in-time recovery on, the table kept when the stack
   goes (`RemovalPolicy.RETAIN`) with deletion protection, and backed up by
   the stack's plan; in development none of it, `DESTROY`. Build it with the
@@ -610,7 +643,7 @@ says why each rule matters.
 {{- end }}
 - Encrypted at rest with a KMS key (`TableEncryption.AWS_MANAGED` or
   customer-managed). [test: encrypts every table]
-{{- if or $lambda $queue $schedule (eq .Framework "aws-ec2-ts") }}
+{{- if or $lambda $queue $schedule $event (eq .Framework "aws-ec2-ts") }}
 - Every table has its alarms: read and write throttles and system errors,
   from the stack's `Alarms`. [test: the alarms and topic]
 {{- else }}
@@ -664,7 +697,8 @@ says why each rule matters.
   depends on; tests fake that interface. [review]
 - The SDK retries throttling and transient errors itself; don't add a retry
   loop around it. {{ if eq .Framework "aws-schedule-ts" }}Catch only what the run can finish without (an item
-  already there); throw the rest, and Lambda runs the run again.{{ else }}Catch what you can answer (a failed condition is a 409),
+  already there); throw the rest, and Lambda runs the run again.{{ else if eq .Framework "aws-event-ts" }}Catch only what the event can finish without (an item
+  already there); throw the rest, and Lambda runs the event again.{{ else }}Catch what you can answer (a failed condition is a 409),
   let the rest reach {{ if eq .Framework "aws-ec2-ts" }}`answer`'s{{ else }}the handler's{{ end }} 500.{{ end }} [review]
 {{- end }}
 
@@ -774,6 +808,30 @@ says why each rule matters.
 - The dead-letter queue holds the runs that failed, which are data: kept
   with the stack in production, like the tables. [review]
 
+{{ else if $event }}## The rule and its dead-letter queue
+
+- The rule is on the default event bus, where its `Ref` is its name, the
+  `RuleName` its metrics carry; on a custom bus it would be `bus|rule`, and
+  its alarms would watch nothing. [review]
+- Every rule's Lambda target has a retry policy (`retryAttempts`,
+  `maxEventAge`) and a dead-letter queue; the function, invoked
+  asynchronously, has its own retries and `DeadLetterConfig` naming the
+  same queue. [test: every rule's Lambda target is retried and
+  dead-lettered]
+- Every rule alarms on `FailedInvocations` and
+  `InvocationsFailedToBeSentToDlq`, and every dead-letter queue on its
+  first message, from the stack's `Alarms`. [test: the alarms and topic,
+  the dead-letter queues]
+- The target invokes the function through its resource policy, which CDK
+  scopes to the rule (`SourceArn`); the queue's policy lets only that rule
+  send to the dead-letter queue. Never a wider principal. [review]
+- The dead-letter queue is encrypted (`QueueEncryption.SQS_MANAGED` or a
+  KMS key), refuses requests without TLS (`enforceSSL: true`) and keeps a
+  message 14 days, the longest SQS keeps one. [nag: AwsSolutions-SQS2,
+  AwsSolutions-SQS4; test: encrypts every queue]
+- The dead-letter queue holds the events that failed, which are data: kept
+  with the stack in production, like the tables. [review]
+
 {{ else if $queue }}## The queue and its event source
 
 - Every queue has a dead-letter queue, after a set number of deliveries
@@ -833,6 +891,7 @@ says why each rule matters.
 - `arm64` (Graviton): cheaper per millisecond and lower energy. [review]
 - Memory and timeout set for the work, the timeout {{ if $queue }}at most a sixth of the queue's
   visibility timeout{{ else if $schedule }}longer than a run takes, which
+  its p99 duration alarm watches{{ else if $event }}longer than an event takes, which
   its p99 duration alarm watches{{ else }}under API Gateway's 30
   seconds{{ end }}. [review]
 - Its own role, granted only what the code calls; no AWS managed policies.
@@ -870,7 +929,7 @@ says why each rule matters.
 - No test calls AWS, opens a socket {{ if eq .Framework "aws-ec2-ts" }}other than on loopback {{ else }}{{ end }}or needs credentials. [review]
 - Stacks are tested with `Template.fromStack` from `aws-cdk-lib/assertions`:
   `hasResourceProperties`, `resourceCountIs`, `Match`. Assert what the
-  issue needs ({{ if $queue }}a queue setting{{ else if $schedule }}a schedule setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
+  issue needs ({{ if $queue }}a queue setting{{ else if $schedule }}a schedule setting{{ else if $event }}a rule setting{{ else }}a route{{ end }}, a grant, a setting), not the whole template. [review]
 {{ if $go -}}
 - Code that calls AWS is tested through its interface with a fake that
   records the calls and answers from memory. [review]
@@ -891,7 +950,9 @@ says why each rule matters.
   system picks. [review]{{ else if $queue }}- The work per message is tested with a fake store; the batch by building
   an `SQSEvent` and checking its `batchItemFailures`. [review]{{ else if $schedule }}- `runJob` is tested with an event and a fake store, checking what it
   stored or that it threw; `checkingFirst` and `reporting` with fake work.
-  [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
+  [review]{{ else if $event }}- `consume` is tested with an EventBridge event and a fake store,
+  checking what it stored or that it threw; `checkingFirst` and `reporting`
+  with fake work. [review]{{ else }}- Handlers are tested by building an `APIGatewayProxyEventV2` and checking
   the status code and body. [review]{{ end }}
 {{- end }}
 {{- end }}

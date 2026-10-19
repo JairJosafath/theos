@@ -36,6 +36,11 @@ spec:
     name: go-cli
   standardRef:
     name: go-standard
+  # Builds the binaries on a Gitea release for each version tag, so a Crew that
+  # tags releases (crew-publish.yaml) has a release run to wait on. Named
+  # before the first apply: the Container is scaffolded once.
+  deploymentRef:
+    name: gitea-release
   # When CI runs the full check: EveryChange (the default) or BeforeRelease,
   # once the Standard can (its checksBeforeRelease).
   checks: EveryChange

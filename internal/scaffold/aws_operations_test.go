@@ -60,6 +60,11 @@ var awsOperationsFrameworks = []struct {
 		"Schedule-InvocationDroppedCount-Critical", "DeadLetters-Queue-Message-Count-Max-Critical",
 		"aws lambda invoke", "`DeadLetters` queue",
 	}, false, true},
+	{side{model.TypeWorker, "aws-event-ts"}, []string{
+		"Rule-FailedInvocations-Critical", "Rule-InvocationsFailedToBeSentToDlq-Critical",
+		"DeadLetters-Queue-Message-Count-Max-Critical", "aws lambda invoke", "aws events disable-rule",
+		"`DeadLetters` queue",
+	}, false, true},
 }
 
 // hasOperations reports whether framework renders infra/operations.ts.
@@ -137,6 +142,7 @@ var runbookSays = map[string][]string{
 	"aws-fargate-ts":  tableRunbookSays,
 	"aws-queue-ts":    tableRunbookSays,
 	"aws-schedule-ts": tableRunbookSays,
+	"aws-event-ts":    tableRunbookSays,
 	"aws-static-site-ts": {
 		"(RPO): 15m", "(RTO): 2h", "eu-west-1", "ops@example.com", "35 days",
 		"continue-update-rollback", "GuardDuty",

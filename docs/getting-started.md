@@ -102,7 +102,7 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret and the agents' token into it, and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
-pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
+pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-event-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `aws-standard`, `go-standard`,
 `go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
@@ -289,12 +289,15 @@ stand-in-demo` removes the Container and its Crew too.
 | File | What it is |
 | --- | --- |
 | `project.yaml` | Project `webshop`, named after its namespace |
-| `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program) and two Relationships |
+| `story.yaml` | Person `staff`, SoftwareSystem `webshop-core`, Container `orders-cli` (a Go command-line program, released on Gitea) and two Relationships |
 | `crew.yaml` | Crew `orders-cli`: picks up `orders-cli`'s ready issues, implemented by Agent `implementer` and reviewed by Agent `reviewer` |
 
-The Container picks Framework `go-cli` and Standard `go-standard`, and the Crew
-names Agents `implementer` and `reviewer`: all four came with the release, so
-the sample makes none of them. A Crew can also send the issues with a label to
+The Container picks Framework `go-cli`, Standard `go-standard` and Deployment
+`gitea-release`, and the Crew names Agents `implementer` and `reviewer`: all
+five came with the release, so the sample makes none of them. The Container is
+scaffolded once, so it names `gitea-release` from the start: a Crew that tags
+releases, as in *Publish releases to GitHub*, waits on the release run its
+workflow starts, and without it a tag starts none. A Crew can also send the issues with a label to
 other Agents, such as `kind/docs` to a cheaper model, in `spec.routes`
 (`kubectl explain crew.spec.routes`).
 
@@ -307,8 +310,9 @@ kubectl -n webshop get c4
 ```
 
 Gitea now holds `webshop/orders-cli`: a Go module, the Standard's `Makefile`,
-linter settings, the guides agents read, and CI that runs `make check` on the
-`go` runner. Open it:
+linter settings, the guides agents read, CI that runs `make check` on the
+`go` runner, and a release workflow that puts the binaries on the Gitea
+release of each version tag. Open it:
 
 ```bash
 kubectl -n gitea port-forward service/gitea 3000:3000 &   # http://localhost:3000/webshop/orders-cli
@@ -387,8 +391,10 @@ issue `status/needs-human` with the reason in a comment; label it
 
 A Crew with `spec.tagReleases` tags each release (a Gitea milestone titled
 `vMAJOR.MINOR.PATCH` with a due date) once its issues are merged, and the tag's
-release run attaches the files to a Gitea release. Those live in the cluster's
-Gitea. To have every release also show up on a GitHub repository, with the
+release run attaches the files to a Gitea release. The run is the workflow of
+the Container's Deployment, `gitea-release` for `orders-cli`; a Container
+scaffolded without one gets no run on a tag, and the Crew never publishes its
+releases. Those live in the cluster's Gitea. To have every release also show up on a GitHub repository, with the
 same tag, notes and files, give the Crew that repository and a token for it.
 The factory only adds releases there, and, when you ask for the app's source
 too, one commit per release inside the folder you name: it never touches

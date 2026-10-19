@@ -304,14 +304,14 @@ constructs 10.8.1, aws-cdk (the CLI) 2.1145.0, cdk-nag 3.0.2, tsx 4.23.15,
 @types/aws-lambda 8.10.164.{{ end }} The `Makefile` runs cfn-lint 1.57.2 with uv. The
 CDK Nag rules these docs name were read from cdk-nag 3.0.2's `RULES.md`, and
 `cdk.json`'s feature flags are the ones `cdk init` of aws-cdk 2.1145.0 writes.
-{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" }} The
+{{- if eq .Framework "aws-lambda-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" }} The
 operations (the alarms, Powertools) add cdk-monitoring-constructs 10.3.2 and
 @aws-lambda-powertools/{{ if eq .Framework "aws-queue-ts" }}batch, {{ end }}logger, metrics and idempotency 2.36.0.
 {{- else if eq .Framework "aws-ec2-ts" }} The
 operations (the alarms) add cdk-monitoring-constructs 10.3.2.
 {{- end }}
 {{- end }}
-{{- if or $lambda (eq .Framework "aws-queue-ts" "aws-schedule-ts") }}
+{{- if or $lambda (eq .Framework "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") }}
 
 ## Operations (read 2026-10-16)
 
@@ -369,6 +369,22 @@ Read for the schedule, its retries, its role, its dead-letter queue, the functio
 | EventBridge Scheduler, CloudWatch metrics — https://docs.aws.amazon.com/scheduler/latest/UserGuide/monitoring-cloudwatch.html                    | live           |
 | Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html               | live           |
 | Pricing: EventBridge Scheduler — https://aws.amazon.com/eventbridge/pricing/                                                                     | live           |
+{{- else if eq .Framework "aws-event-ts" }}
+
+## Events (read 2026-10-16)
+
+Read for the rule, its pattern, its target's retries and dead-letter queue, the function's asynchronous retries and `docs/runbook.md`'s re-runs.
+
+| Source                                                                                                                                             | Version / date |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| EventBridge, rules — https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-rules.html                                                        | live           |
+| EventBridge, event patterns — https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-patterns.html                                      | live           |
+| EventBridge, event structure — https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-events-structure.html                                   | live           |
+| EventBridge, retry policy and dead-letter queues for targets — https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-rule-dlq.html           | live           |
+| EventBridge, CloudWatch metrics — https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-monitoring.html                                      | live           |
+| CloudFormation, AWS::Events::Rule (its Ref) — https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-events-rule.html | live           |
+| Lambda, asynchronous invocation (retries, dead-letter queues) — https://docs.aws.amazon.com/lambda/latest/dg/invocation-async.html                 | live           |
+| Pricing: EventBridge — https://aws.amazon.com/eventbridge/pricing/                                                                                 | live           |
 {{- end }}
 {{- else if eq .Framework "aws-ec2-ts" }}
 

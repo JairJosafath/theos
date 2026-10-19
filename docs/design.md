@@ -908,9 +908,12 @@ model and context it needs.
   where CloudFront takes its firewall, certificate and metrics), the
   `worker` Framework `aws-queue-ts` (an SQS queue with a dead-letter queue,
   consumed in batches by a TypeScript Lambda that reports only the messages
-  that failed), and the `job` Framework `aws-schedule-ts` (an EventBridge
+  that failed), the `job` Framework `aws-schedule-ts` (an EventBridge
   Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a
-  dead-letter queue, the schedule's role scoped to the one function).
+  dead-letter queue, the schedule's role scoped to the one function), and
+  the `worker` Framework `aws-event-ts` (an EventBridge rule on the default
+  event bus invoking a TypeScript Lambda, with a retry policy and a
+  dead-letter queue on the rule's target).
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
   its stacks for two tiers, and the place it is deployed to picks one: a
   deploy target says `production` or `development`, and a hand deploy that
