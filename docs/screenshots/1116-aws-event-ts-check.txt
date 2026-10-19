@@ -1,9 +1,9 @@
-# make check in a scaffolded aws-event-ts v1.0.0 + aws-standard v1.13.0 Container (issue #1116)
+# make check in a scaffolded aws-event-ts v1.0.0 + aws-standard v1.14.0 Container (issue #1116)
 # go run ./hack/render -out $TMPDIR/<scratch>/app -type worker -container order-events Framework=aws-event-ts Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then, in a fresh git repository, with no AWS variables and an empty HOME, Node v24:
 # env -i PATH=$PATH HOME=$TMPDIR/<scratch>/home NO_COLOR=1 make check
-# on 2026-10-19, after the backups moved to a selection by table (#1267) and the review fixes. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
+# on 2026-10-19, after main's aws-standard v1.13.0 (CDK Nag's Serverless pack, #1112) was merged in. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
 # and cfn-lint lints both with --include-checks I.
 
 npm ci --no-audit --no-fund
@@ -18,85 +18,85 @@ node_modules/.bin/vitest run
 
  RUN  v5.0.3 $TMPDIR/<scratch>/app
 
- ✓ src/consume.test.ts (12 tests) 19ms
- ✓ src/items.test.ts (36 tests) 16ms
- ✓ src/item_store.test.ts (1 test) 6ms
+ ✓ src/consume.test.ts (12 tests) 14ms
+ ✓ src/items.test.ts (36 tests) 15ms
+ ✓ src/item_store.test.ts (1 test) 4ms
 Bundling asset test/Handler/Code/Stage...
 Bundling asset order-events/Handler/Code/Stage...
 
-  ...8409082109e298e4b3788a875290525eab791aea911583-building/index.js  595.9kb
-  ...082109e298e4b3788a875290525eab791aea911583-building/index.js.map    2.4mb
+  ...4eff8a211228971f276b0235622aea7fc20b19450f689c-building/index.js  595.9kb
+  ...8a211228971f276b0235622aea7fc20b19450f689c-building/index.js.map    2.4mb
 
-⚡ Done in 106ms
+⚡ Done in 136ms
 
-  ...67a3a6494306dcf190542ca46c80c6b56f416a782e3f3c-building/index.js  595.9kb
-  ...a6494306dcf190542ca46c80c6b56f416a782e3f3c-building/index.js.map    2.4mb
+  ...b9c512597a12673846cbc84fa6f74b4ec823c65aab68ef-building/index.js  595.9kb
+  ...12597a12673846cbc84fa6f74b4ec823c65aab68ef-building/index.js.map    2.4mb
 
-⚡ Done in 100ms
+⚡ Done in 142ms
 Bundling asset test/Handler/Code/Stage...
+
+  ...6c98458325a9cce8f9fe6beb158af542f46508751f1cab-building/index.js  595.9kb
+  ...458325a9cce8f9fe6beb158af542f46508751f1cab-building/index.js.map    2.4mb
+
+⚡ Done in 198ms
 Bundling asset order-events-development/Handler/Code/Stage...
-
-  ...cbbc0a0e810c571637b7d8ba1132cc65228cfbbe65657e-building/index.js  595.9kb
-  ...0a0e810c571637b7d8ba1132cc65228cfbbe65657e-building/index.js.map    2.4mb
-
-⚡ Done in 182ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...c452000f736d93999eaf919120d9fee9c1897bd9735cc2-building/index.js  595.9kb
-  ...000f736d93999eaf919120d9fee9c1897bd9735cc2-building/index.js.map    2.4mb
+  ...135ffda74d4277e72f1cd119df58fdcc40d4d174073001-building/index.js  595.9kb
+  ...fda74d4277e72f1cd119df58fdcc40d4d174073001-building/index.js.map    2.4mb
 
-⚡ Done in 298ms
+⚡ Done in 145ms
 
-  ...e2f034a10c2d1aaa4cfa1d44ec71723bb260c985fbe51a-building/index.js  595.9kb
-  ...34a10c2d1aaa4cfa1d44ec71723bb260c985fbe51a-building/index.js.map    2.4mb
+  ...ec7dba2195b24480461b2ff1490e89da11fbc07307d2ad-building/index.js  595.9kb
+  ...ba2195b24480461b2ff1490e89da11fbc07307d2ad-building/index.js.map    2.4mb
 
-⚡ Done in 105ms
-Bundling asset test/Handler/Code/Stage...
- ✓ infra/standard.test.ts (63 tests) 3851ms
-
-  ...b3bd272696279328b90f6d8e4387c962c294c713110aa0-building/index.js  595.9kb
-  ...272696279328b90f6d8e4387c962c294c713110aa0-building/index.js.map    2.4mb
-
-⚡ Done in 98ms
+⚡ Done in 114ms
 Bundling asset test/Handler/Code/Stage...
 
-  ...15a179bc0990aeeee005419de25775f6687cba81e60d0d-building/index.js  595.9kb
-  ...79bc0990aeeee005419de25775f6687cba81e60d0d-building/index.js.map    2.4mb
+  ...0a183b8ae525549fb28fd67e94d639e4660e0feead26fe-building/index.js  595.9kb
+  ...3b8ae525549fb28fd67e94d639e4660e0feead26fe-building/index.js.map    2.4mb
 
-⚡ Done in 89ms
- ✓ infra/event_stack.test.ts (17 tests) 4646ms
+⚡ Done in 115ms
+ ✓ infra/standard.test.ts (68 tests) 3895ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...c8f588942e75ab5a91132485a412c040e335e7e89524a7-building/index.js  595.9kb
+  ...88942e75ab5a91132485a412c040e335e7e89524a7-building/index.js.map    2.4mb
+
+⚡ Done in 85ms
+ ✓ infra/event_stack.test.ts (17 tests) 4519ms
    ✓ EventStack (15)
-     ✓ defaults the alert email to alerts.email 802ms
-     ✓ keeps only point-in-time recovery when retentionDays is 0 544ms
-     ✓ copies the backups to the vault in copyToRegion 455ms
+     ✓ defaults the alert email to alerts.email 766ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 720ms
+     ✓ copies the backups to the vault in copyToRegion 491ms
 
  Test Files  5 passed (5)
-      Tests  129 passed (129)
-   Start at  21:43:34
-   Duration  5.78s (tests 78%, import 17%, transform 5%)
+      Tests  134 passed (134)
+   Start at  21:47:25
+   Duration  5.56s (tests 79%, import 16%, transform 5%)
 
 rm -rf cdk.out
 CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
 Bundling asset order-events/Handler/Code/Stage...
 
-  ...2c118b956f9e12991b7ddfefd2939def0dcfab0b9ea10f-building/index.js  595.9kb
-  ...8b956f9e12991b7ddfefd2939def0dcfab0b9ea10f-building/index.js.map    2.4mb
+  ...60ec72cf902c75e9043d67c8c1fd554f86ae1ab7899b9e-building/index.js  595.9kb
+  ...72cf902c75e9043d67c8c1fd554f86ae1ab7899b9e-building/index.js.map    2.4mb
 
-⚡ Done in 95ms
+⚡ Done in 85ms
 Bundling asset order-events-development/Handler/Code/Stage...
 
-  ...e6c6d76c82ab93fc71339c03782d8b6a99ca7f0fe0f073-building/index.js  595.9kb
-  ...d76c82ab93fc71339c03782d8b6a99ca7f0fe0f073-building/index.js.map    2.4mb
+  ...cd5bbbc000cf24be353943c57cbb8a416c85e52b5579d0-building/index.js  595.9kb
+  ...bbc000cf24be353943c57cbb8a416c85e52b5579d0-building/index.js.map    2.4mb
 
-⚡ Done in 87ms
+⚡ Done in 75ms
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
 Downloading networkx (2.0MiB)
-Downloading cfn-lint (5.4MiB)
 Downloading sympy (6.0MiB)
+Downloading cfn-lint (5.4MiB)
  Downloaded networkx
  Downloaded cfn-lint
  Downloaded sympy
-Installed 9 packages in 86ms
+Installed 9 packages in 75ms
 exit 0
 
 # The same copy with infra/backups.ts's selection put back to BackupResource.fromTag('c4factory:container', 'order-events'):
@@ -141,11 +141,12 @@ BackupsPlanTables8D417F20 :: {
 
 exit 1
 
-# With aws-standard v1.13.0, the siblings' make check, rendered the same way on 2026-10-17 (the Standard has not changed since):
-# aws-schedule-ts (-type job -container nightly-report): Tests 110 passed (110), exit=0
-# aws-lambda-py (-type function -container items-api): pytest 63 passed, vitest Tests 77 passed (77), exit=0
-# aws-lambda-go (-type function -container items-api, golangci-lint 2.13.1 on PATH): go test ok, Tests 78 passed (78), exit=0
-# aws-ec2-ts (-type service -container items-server): Tests 133 passed (133), exit=0
-# and on 2026-10-19, after main brought aws-lambda-ts v1.2.0 (its dynamodb Connector) in:
-# aws-lambda-ts (-type function -container items-api): Tests 123 passed (123), exit=0
-# aws-queue-ts (-type worker -container order-queue): Tests 118 passed (118), exit=0
+# With aws-standard v1.14.0, every sibling's make check, rendered the same way on 2026-10-19:
+# aws-lambda-ts (-type function -container items-api): Tests 128 passed (128), exit=0
+# aws-queue-ts (-type worker -container order-queue): Tests 123 passed (123), exit=0
+# aws-schedule-ts (-type job -container nightly-report): Tests 115 passed (115), exit=0
+# aws-ec2-ts (-type service -container items-server): Tests 138 passed (138), exit=0
+# aws-fargate-ts (-type service -container items-svc): Tests 147 passed (147), exit=0
+# aws-static-site-ts (-type static-site -container www): Tests 86 passed (86), exit=0
+# aws-lambda-py (-type function -container items-api): pytest 63 passed, vitest Tests 82 passed (82), exit=0
+# aws-lambda-go (-type function -container items-api, golangci-lint 2.13.1 on PATH): go test ok, Tests 83 passed (83), exit=0
