@@ -32,6 +32,7 @@ import (
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // Labels on Tasks a Crew starts.
@@ -71,6 +72,9 @@ type CrewReconciler struct {
 	// Publish reaches the repositories releases are published to; nil means
 	// gitprovider.Client{}.
 	Publish ReleaseTargets
+	// Deployers ship releases by DeployTarget member; publishing a release
+	// copies it through the github member's. cmd/main.go builds them.
+	Deployers ports.Deployers
 	// GoProxy is the Go proxy asked whether go get finds a released module
 	// outside c4factory.local/; "" asks none.
 	GoProxy string

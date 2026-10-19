@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -299,6 +300,7 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if err != nil || found == nil || found.ID != draft.ID || !found.Draft {
 		t.Fatalf("FindRelease() = %+v, %v; want the draft %d", found, err, draft.ID)
 	}
+	listReleases(t, g, draft.ID)
 	published, err := g.PublishRelease(ctx, draft.ID, false)
 	if err != nil || published.Draft || published.URL != "https://github.com/acme/cel-lens/releases/tag/v0.2.0" {
 		t.Errorf("PublishRelease() = %+v, %v", published, err)
@@ -330,10 +332,19 @@ func TestGitHubReleasesPublish(t *testing.T) {
 		t.Errorf("requests = %v, want %v", calls, wantCalls)
 	}
 	// RetargetDraft, walked in TestGitHubReleasesTarget, shares
-	// PublishRelease's request.
+	// PublishRelease's request, and ListReleases FindRelease's.
 	release := reflect.TypeFor[ReleaseTarget]().NumMethod() - reflect.TypeFor[SourceTarget]().NumMethod()
-	if n := release - 1; n != len(wantCalls) {
+	if n := release - 2; n != len(wantCalls) {
 		t.Errorf("ReleaseTarget has %d methods; walk the new ones in this test and add their requests above", n)
+	}
+}
+
+// listReleases checks ListReleases holds draft id among the releases.
+func listReleases(t *testing.T, g ReleaseTarget, id int64) {
+	t.Helper()
+	all, err := g.ListReleases(context.Background())
+	if err != nil || !slices.ContainsFunc(all, func(r TargetRelease) bool { return r.ID == id && r.Draft }) {
+		t.Fatalf("ListReleases() = %+v, %v; want the draft %d among them", all, err, id)
 	}
 }
 
