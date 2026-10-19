@@ -423,6 +423,36 @@ var _ = Describe("Container Standard update", func() {
 		Expect(mainFile(ns, makefile)).To(Equal("check:\n\tmake lint test\n"))
 	})
 
+	It("renders the Standard for the Framework's version the Container was scaffolded from (#1249)", func() {
+		ns := newProjectNamespace()
+		refs := standardRefs()
+		const frameworkDoc = "docs/framework.md"
+		refs["v1.1.0"][frameworkDoc+".tmpl"] = scaffold.File{Data: []byte(
+			`{{ if has .FrameworkFiles "pyproject.toml" }}pyproject{{ end }}` +
+				`{{ if has .FrameworkFiles "infra/operations.ts" }} operations{{ end }}` + "\n")}
+		createUpdatableContainer(ns, refs, false, "")
+		eventuallyAt(ns, "v1.0.0")
+
+		By("moving the Framework to a version with infra/operations.ts, which the Container doesn't have")
+		url := templatesURL + "python-fastapi"
+		newer, err := gitFake.FetchTemplate(ctx, url, "v1.3.0", nil)
+		Expect(err).NotTo(HaveOccurred())
+		newer = maps.Clone(newer)
+		newer["infra/operations.ts"] = scaffold.File{Data: []byte("export const operations = {};\n")}
+		gitFake.addTemplate(url, "v1.3.1-1249", newer)
+		var framework c4v1alpha1.Framework
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "v1.3.1-1249" })).To(Succeed())
+
+		bumpStandard(ns, "v1.1.0")
+		update := openedUpdate(ns, "v1.1.0")
+		Expect(update.Paths).To(ContainElement(frameworkDoc))
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAt(ns, "v1.1.0")
+		Expect(mainFile(ns, frameworkDoc)).To(Equal("pyproject\n"),
+			"the Standard sees the Framework at v1.3.0, the scaffold's, not at its newest ref")
+	})
+
 	It("takes no step from a Container its cache has not caught up with", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)

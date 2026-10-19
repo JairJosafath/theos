@@ -115,3 +115,15 @@ func TestOperationsPatternsMatchTheCRD(t *testing.T) {
 			days.Minimum, days.Maximum, MaxRetentionDays)
 	}
 }
+
+// An RPO of 0 is valid, and the Standard reads it as under a day (#1266).
+func TestZeroRPO(t *testing.T) {
+	for rpo, want := range map[string]bool{
+		"0m": true, "0h": true, "0d": true, "00m": true,
+		"1h": false, "10m": false, "05m": false, "": false, "0": false, "m": false,
+	} {
+		if got := (OperationsRecovery{RPO: rpo}).ZeroRPO(); got != want {
+			t.Errorf("ZeroRPO(%q) = %t, want %t", rpo, got, want)
+		}
+	}
+}

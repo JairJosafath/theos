@@ -151,7 +151,22 @@ byte for byte.
   `infra/standard.test.ts`, for every Framework: every EventBridge rule
   alarms on the events it lost, and every rule's Lambda target is retried
   and dead-lettered to a queue of its stack. A Framework added later gets
-  its branches in the version that adds it.
+  its branches in the version that adds it. Since v1.15.0 the operations
+  docs and rules (`docs/runbook.md`, the tiers, alarms, backups and
+  Powertools in `AGENTS.md`, the role guides, `docs/style/aws.md`,
+  `SOURCES.md` and `docs/well-architected.md`) render only for a Framework
+  whose files (`.FrameworkFiles`, at the version the Container was
+  scaffolded from) include `infra/operations.ts`; a Framework version from
+  before it gets the earlier text, and `docs/well-architected.md` the
+  digest v1.6.0 wrote for it, so an update of the Standard brings a
+  repository nothing about operations it lacks (#1249). Since v1.16.0 an
+  `rpo` of 0 (`0m`, `0h`, `0d`), which the API accepts, passes
+  `infra/standard.test.ts` as under a day, and the runbook says it is read as
+  point-in-time recovery's five minutes; the runbook says the daily backups
+  cover damage older than 35 days only when `retentionDays` is over 35, and
+  at 35 or less that they are a second copy inside point-in-time recovery's
+  window; with `copyToRegion` and `retentionDays` 0 it says no copy is made;
+  and `infra/standard.test.ts` is in `protectedPaths` (#1266).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -213,8 +228,8 @@ byte for byte.
   reads the tier, calls the Framework's `defineStacks(app, tier)` (through a
   type with both parameters, so a `stacks.ts` written before tiers, taking
   the app alone, still fits), then `applyStandard(app, tier)`, then
-  `app.synth()`. `infra/standard.test.ts`, not protected like ts-standard's
-  tests, builds the app the same way with `cdk.json`'s context, once per
+  `app.synth()`. `infra/standard.test.ts`, protected like ts-standard's
+  tests since v1.16.0, builds the app the same way with `cdk.json`'s context, once per
   tier, and asserts on every stack of both: `tierOf` defaults and refuses;
   synth passes CDK Nag; no error or warning annotation; the three tags on
   the stack and on every resource with a `Tags` list; no IAM action `*` or
@@ -230,7 +245,7 @@ byte for byte.
   stack names (`stackNameFor`), the removal policies (tables and data
   buckets `Retain` or `Delete` by tier, every backup vault and its key
   `Retain`), deletion and termination protection, point-in-time recovery
-  (and on in production when `rpo` is under a day), the versions of data
+  (and on in production when `rpo` is under a day, 0 included), the versions of data
   buckets (where the tier keeps data, versioning `Enabled` and a lifecycle
   rule expiring noncurrent versions), the backup plan and vault (in
   production with `retentionDays` over 0, in a stack holding a resource of
@@ -433,7 +448,8 @@ byte for byte.
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
   `docs/agents/`, `docs/well-architected.md`, `docs/runbook.md`,
-  `infra/main.ts` and `infra/standard.ts` in the catalog entry's
+  `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` in the
+  catalog entry's
   `protectedPaths`, plus the
   Framework's `tsconfig.json`, `vitest.config.mts` and `cdk.json`, which
   decide what the type check and tests cover and which CDK behaviour the app
