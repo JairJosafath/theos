@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -241,6 +242,76 @@ func TestAWSStandardRunbookSaysWhenThereAreNoBackups(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The runbook says what the daily backups cover against point-in-time
+// recovery's 35 days: damage older than that only when they outlive it, and
+// no copy to copyToRegion when there are none to copy (#1266).
+func TestAWSStandardRunbookSaysWhatTheBackupsReach(t *testing.T) {
+	const (
+		older    = "The daily backups cover what it can't: damage older than 35 days"
+		vaultOld = "When: the damage is older than 35 days"
+		within   = "reach back no further than it does"
+		undone   = "damage older than 35 days can't be undone"
+		noCopy   = "no copy is made there"
+		region   = "the loss of the whole region"
+	)
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // TestAWSStandardRunbookKeepsTheSitesVersions
+		}
+		for _, tt := range []struct {
+			days int32
+			copy string
+			says []string
+			not  []string
+		}{
+			{0, "", []string{undone}, []string{older, within, noCopy, region}},
+			{0, "eu-west-1", []string{undone, noCopy, "`retentionDays` 0 keeps none"}, []string{older, within}},
+			{7, "", []string{within, undone, "reach back 7 days"}, []string{older, vaultOld, noCopy, region}},
+			{7, "eu-west-1", []string{within, undone, region}, []string{older, vaultOld, noCopy}},
+			{35, "", []string{within, undone, "reach back 35 days"}, []string{older, vaultOld, noCopy, region}},
+			{35, "eu-west-1", []string{within, undone, region}, []string{older, vaultOld, noCopy}},
+			{90, "", []string{older, vaultOld}, []string{within, undone, noCopy, region}},
+			{90, "eu-west-1", []string{older, vaultOld, region}, []string{within, undone, noCopy}},
+		} {
+			t.Run(fmt.Sprintf("%s/retentionDays %d copyToRegion %q", f.Name, tt.days, tt.copy), func(t *testing.T) {
+				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RetentionDays: &tt.days, CopyToRegion: tt.copy})
+				// The sentences wrap where the template does; compare them on one line.
+				runbook := strings.Join(strings.Fields(string(r.Files["docs/runbook.md"].Data)), " ")
+				for _, w := range tt.says {
+					if !strings.Contains(strings.ToLower(runbook), strings.ToLower(w)) {
+						t.Errorf("docs/runbook.md lacks %q", w)
+					}
+				}
+				for _, w := range tt.not {
+					if strings.Contains(strings.ToLower(runbook), strings.ToLower(w)) {
+						t.Errorf("docs/runbook.md says %q", w)
+					}
+				}
+			})
+		}
+	}
+}
+
+// An RPO of 0 is valid, and the runbook says the Standard reads it as the
+// least loss it can give, point-in-time recovery (#1266).
+func TestAWSStandardRunbookReadsAZeroRPO(t *testing.T) {
+	const zero = "asks to lose nothing"
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // a site's RPO is its files' versions, which keep every change
+		}
+		for rpo, want := range map[string]bool{"0m": true, "0d": true, "4h": false} {
+			t.Run(f.Name+"/"+rpo, func(t *testing.T) {
+				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{RPO: rpo})
+				runbook := strings.Join(strings.Fields(string(r.Files["docs/runbook.md"].Data)), " ")
+				if got := strings.Contains(runbook, "An RPO of "+rpo+" "+zero); got != want {
+					t.Errorf("docs/runbook.md says an RPO of %s %s: %t, want %t", rpo, zero, got, want)
+				}
+			})
+		}
 	}
 }
 

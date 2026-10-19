@@ -42,11 +42,25 @@ this list differ, it is right.
 - Alarms tell: {{ if $ops.Alerts.Email }}{{ $ops.Alerts.Email }}, by default{{ else }}nobody by default; a deploy sets the `AlertEmail` parameter{{ end }}.
 
 Point-in-time recovery restores any second of the last 35 days, up to about
-five minutes before now, so it meets an RPO of minutes. {{ if eq $ops.Backups.RetentionDays 0 -}}
+five minutes before now, so it meets an RPO of minutes.{{ if $ops.Recovery.ZeroRPO }} An RPO of {{ $ops.Recovery.RPO }}
+asks to lose nothing, which no restore promises: the Standard reads it as the
+least loss it can give, point-in-time recovery on in production, about five
+minutes.{{ end }} {{ if eq $ops.Backups.RetentionDays 0 -}}
 With no backups beyond it, damage older than 35 days can't be undone.
-{{- else -}}
+{{- if $ops.Backups.CopyToRegion }} `copyToRegion`
+names {{ $ops.Backups.CopyToRegion }}, but no copy is made there: what is copied is the
+daily backups, and `retentionDays` 0 keeps none, so the loss of the whole
+region loses the data. A `retentionDays` above 0 makes the copy.
+{{- end }}
+{{- else if gt $ops.Backups.RetentionDays 35 -}}
 The daily backups cover what it can't: damage older than 35 days{{ if $ops.Backups.CopyToRegion }}, and
 with the copy in {{ $ops.Backups.CopyToRegion }}, the loss of the whole region{{ end }}.
+{{- else -}}
+The daily backups, kept {{ $ops.Backups.RetentionDays }} days, reach back no further than it
+does: they are a second copy inside the same window, kept apart from the
+table{{ if $ops.Backups.CopyToRegion }}, and with the copy in {{ $ops.Backups.CopyToRegion }} they cover the loss of
+the whole region{{ end }}. Damage older than 35 days can't be undone; a
+`retentionDays` above 35 keeps backups beyond it.
 {{- end }} Whether a
 restore fits the RTO only a drill shows: see [Drills](#drills).
 
@@ -145,7 +159,13 @@ recovery. That is why the live table is repaired, not replaced.
 
 ## Restore from a backup in the vault
 
-When: the damage is older than 35 days, or point-in-time recovery was off.
+When: {{ if gt $ops.Backups.RetentionDays 35 -}}
+the damage is older than 35 days, or point-in-time recovery was off.
+{{- else -}}
+point-in-time recovery was off. The backups reach back {{ $ops.Backups.RetentionDays }} days, no
+further than point-in-time recovery, so damage older than 35 days can't be
+undone from them either.
+{{- end }}
 
 1. List the backups:
    `aws backup list-recovery-points-by-backup-vault --backup-vault-name <the vault, Backups/Vault in the stack>`.
@@ -525,11 +545,25 @@ this list differ, it is right.
 - Alarms tell: {{ if $ops.Alerts.Email }}{{ $ops.Alerts.Email }}, by default{{ else }}nobody by default; a deploy sets the `AlertEmail` parameter{{ end }}.
 
 Point-in-time recovery restores any second of the last 35 days, up to about
-five minutes before now, so it meets an RPO of minutes. {{ if eq $ops.Backups.RetentionDays 0 -}}
+five minutes before now, so it meets an RPO of minutes.{{ if $ops.Recovery.ZeroRPO }} An RPO of {{ $ops.Recovery.RPO }}
+asks to lose nothing, which no restore promises: the Standard reads it as the
+least loss it can give, point-in-time recovery on in production, about five
+minutes.{{ end }} {{ if eq $ops.Backups.RetentionDays 0 -}}
 With no backups beyond it, damage older than 35 days can't be undone.
-{{- else -}}
+{{- if $ops.Backups.CopyToRegion }} `copyToRegion`
+names {{ $ops.Backups.CopyToRegion }}, but no copy is made there: what is copied is the
+daily backups, and `retentionDays` 0 keeps none, so the loss of the whole
+region loses the data. A `retentionDays` above 0 makes the copy.
+{{- end }}
+{{- else if gt $ops.Backups.RetentionDays 35 -}}
 The daily backups cover what it can't: damage older than 35 days{{ if $ops.Backups.CopyToRegion }}, and
 with the copy in {{ $ops.Backups.CopyToRegion }}, the loss of the whole region{{ end }}.
+{{- else -}}
+The daily backups, kept {{ $ops.Backups.RetentionDays }} days, reach back no further than it
+does: they are a second copy inside the same window, kept apart from the
+table{{ if $ops.Backups.CopyToRegion }}, and with the copy in {{ $ops.Backups.CopyToRegion }} they cover the loss of
+the whole region{{ end }}. Damage older than 35 days can't be undone; a
+`retentionDays` above 35 keeps backups beyond it.
 {{- end }} Whether a
 restore fits the RTO only a drill shows: see [Drills](#drills). The tasks
 hold no data: a task that stops loses nothing but the requests it was
@@ -581,7 +615,13 @@ recovery. That is why the live table is repaired, not replaced.
 
 ## Restore from a backup in the vault
 
-When: the damage is older than 35 days, or point-in-time recovery was off.
+When: {{ if gt $ops.Backups.RetentionDays 35 -}}
+the damage is older than 35 days, or point-in-time recovery was off.
+{{- else -}}
+point-in-time recovery was off. The backups reach back {{ $ops.Backups.RetentionDays }} days, no
+further than point-in-time recovery, so damage older than 35 days can't be
+undone from them either.
+{{- end }}
 
 1. List the backups:
    `aws backup list-recovery-points-by-backup-vault --backup-vault-name <the vault, Backups/Vault in the stack>`.
@@ -957,11 +997,25 @@ this list differ, it is right.
 - Alarms tell: {{ if $ops.Alerts.Email }}{{ $ops.Alerts.Email }}, by default{{ else }}nobody by default; a deploy sets the `AlertEmail` parameter{{ end }}.
 
 Point-in-time recovery restores any second of the last 35 days, up to about
-five minutes before now, so it meets an RPO of minutes. {{ if eq $ops.Backups.RetentionDays 0 -}}
+five minutes before now, so it meets an RPO of minutes.{{ if $ops.Recovery.ZeroRPO }} An RPO of {{ $ops.Recovery.RPO }}
+asks to lose nothing, which no restore promises: the Standard reads it as the
+least loss it can give, point-in-time recovery on in production, about five
+minutes.{{ end }} {{ if eq $ops.Backups.RetentionDays 0 -}}
 With no backups beyond it, damage older than 35 days can't be undone.
-{{- else -}}
+{{- if $ops.Backups.CopyToRegion }} `copyToRegion`
+names {{ $ops.Backups.CopyToRegion }}, but no copy is made there: what is copied is the
+daily backups, and `retentionDays` 0 keeps none, so the loss of the whole
+region loses the data. A `retentionDays` above 0 makes the copy.
+{{- end }}
+{{- else if gt $ops.Backups.RetentionDays 35 -}}
 The daily backups cover what it can't: damage older than 35 days{{ if $ops.Backups.CopyToRegion }}, and
 with the copy in {{ $ops.Backups.CopyToRegion }}, the loss of the whole region{{ end }}.
+{{- else -}}
+The daily backups, kept {{ $ops.Backups.RetentionDays }} days, reach back no further than it
+does: they are a second copy inside the same window, kept apart from the
+table{{ if $ops.Backups.CopyToRegion }}, and with the copy in {{ $ops.Backups.CopyToRegion }} they cover the loss of
+the whole region{{ end }}. Damage older than 35 days can't be undone; a
+`retentionDays` above 35 keeps backups beyond it.
 {{- end }} Whether a
 restore fits the RTO only a drill shows: see [Drills](#drills). The instances
 hold no data: their root volumes are deleted with them and never backed up,
@@ -1014,7 +1068,13 @@ recovery. That is why the live table is repaired, not replaced.
 
 ## Restore from a backup in the vault
 
-When: the damage is older than 35 days, or point-in-time recovery was off.
+When: {{ if gt $ops.Backups.RetentionDays 35 -}}
+the damage is older than 35 days, or point-in-time recovery was off.
+{{- else -}}
+point-in-time recovery was off. The backups reach back {{ $ops.Backups.RetentionDays }} days, no
+further than point-in-time recovery, so damage older than 35 days can't be
+undone from them either.
+{{- end }}
 
 1. List the backups:
    `aws backup list-recovery-points-by-backup-vault --backup-vault-name <the vault, Backups/Vault in the stack>`.

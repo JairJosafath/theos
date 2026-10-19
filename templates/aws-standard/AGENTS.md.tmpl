@@ -86,8 +86,8 @@ too; `npm run dev` serves it on your machine.{{ end }}
    request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
-   `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts` and `infra/standard.ts` belong
-   to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
+   `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts`, `infra/standard.ts` and
+   `infra/standard.test.ts` belong to the Standard. `tsconfig.json`, `vitest.config.mts` and `cdk.json` decide
    what the checks check and which CDK behaviour the app gets: don't loosen them.
 {{- if $ops }}
    `infra/operations.ts` is the factory's: it renders the file from the
