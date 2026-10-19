@@ -593,6 +593,15 @@ catalog:
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
     - kind: Framework
+      name: aws-event-ts
+      ref: v1.0.0
+      spec:
+        displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
+        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        supportedTypes: [worker]
+        # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
+        deploysItself: true
+    - kind: Framework
       name: python-cli
       ref: v1.0.0
       spec:
@@ -640,12 +649,12 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.13.0
+      ref: v1.14.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
         supportedTypes: [function, service, static-site, worker, job]
-        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts, aws-queue-ts, aws-schedule-ts]
+        supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts, aws-queue-ts, aws-schedule-ts, aws-event-ts]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true

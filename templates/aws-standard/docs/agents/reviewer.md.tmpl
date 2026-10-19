@@ -1,11 +1,12 @@
 {{- $py := eq .Framework "aws-lambda-py" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
-     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts and
-     aws-schedule-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" -}}
+     Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts,
+     aws-schedule-ts and aws-event-ts. */ -}}
+{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
+{{- $event := eq .Framework "aws-event-ts" -}}
 # Reviewer guide
 
 You review one pull request against the issue it closes: its acceptance
@@ -66,6 +67,14 @@ says what to check.
    can fix; SDK calls that fail or are throttled; a failure never
    swallowed, so no run is lost; the job's work in `runJob`, never run past
    `checkingFirst` and the idempotency.
+{{- else if $event -}}
+2. **Correctness and edge cases.** A malformed event: no EventBridge
+   envelope, a `detail` that is no item, empty, huge or non-ASCII names; an
+   event delivered twice, by the rule's retries or Lambda's (idempotency, by
+   the event's `id`); an event that fails and is retried, and one no retry
+   can fix; SDK calls that fail or are throttled; a failure never
+   swallowed, so no event is lost; the consumer's work in `consume`, never
+   run past `checkingFirst` and the idempotency.
 {{- else -}}
 2. **Correctness and edge cases.** Empty, huge, malformed and non-ASCII
    bodies, paths and query strings; {{ if eq .Framework "aws-fargate-ts" }}bodies over the limit; percent-encoded paths{{ else }}base64-encoded bodies{{ end }}; a missing item; a
@@ -81,8 +90,8 @@ says what to check.
    (boto3 faked behind its `Protocol`, never `moto` or a patched boto3).
    Infrastructure changes have `Template.fromStack` assertions.
 {{- else -}}
-3. **Tests.** They test behaviour through the {{ if $queue }}work per message, the batch{{ else if $schedule }}job's run, `runJob`{{ else }}request handling{{ end }} and other
-   exports, check {{ if $queue }}what is stored and which messages fail{{ else if $schedule }}what is stored and which events fail{{ else }}the status code and the body{{ end }}, would fail without the
+3. **Tests.** They test behaviour through the {{ if $queue }}work per message, the batch{{ else if $schedule }}job's run, `runJob`{{ else if $event }}work per event, `consume`{{ else }}request handling{{ end }} and other
+   exports, check {{ if $queue }}what is stored and which messages fail{{ else if or $schedule $event }}what is stored and which events fail{{ else }}the status code and the body{{ end }}, would fail without the
    change, cover the edge cases above, and are deterministic: no real timers
    or real-time bounds (fake timers instead), no network{{ if eq .Framework "aws-fargate-ts" }} or server started{{ end }}, no call to AWS (SDK
    clients faked behind their interface). Infrastructure changes have
@@ -119,7 +128,8 @@ says what to check.
    server closes on `SIGTERM` and finishes what is in flight;{{ else if $py }}boto3 clients and resources are created once at module scope, never per invocation;{{ else }}SDK clients are created once at module scope, never per invocation;{{ end }} a
    failure is logged once as structured JSON with the {{ if $queue }}message id and thrown, so
    the batch reports it{{ else if $schedule }}scheduled time and thrown, so
-   Lambda retries the run{{ else }}request id and
+   Lambda retries the run{{ else if $event }}event id and thrown, so
+   Lambda retries the event{{ else }}request id and
    answered with a status code; no stack trace or SDK error text reaches a
    client{{ end }}.
 {{- end }}
@@ -130,11 +140,11 @@ says what to check.
    task's CPU and memory and the service's scaling bounds are set and fit
    the work, every body has a limit;{{ else }}6. **Performance and cost.** Nothing heavy at import beyond the clients; the
    function's memory and timeout are set and fit the work;{{ end }} DynamoDB is read
-   by key or query, never a scan on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else }}request{{ end }} path; budgets from the issue or
+   by key or query, never a scan on a {{ if $queue }}message's{{ else if $schedule }}run's{{ else if $event }}event's{{ else }}request{{ end }} path; budgets from the issue or
    the system's needs are measured by a bench, never by a test with a time
    bound.
-7. **Docs and DX.** The README ({{ if $queue }}the message's shape, what fails it{{ else if $schedule }}when the job runs, what fails a run{{ else }}routes, shapes, status codes{{ end }}) and the
-   CHANGELOG match the behaviour; {{ if $queue }}logs tell a person why a message failed{{ else if $schedule }}logs tell a person why a run failed{{ else }}messages tell a client what happened and
+7. **Docs and DX.** The README ({{ if $queue }}the message's shape, what fails it{{ else if $schedule }}when the job runs, what fails a run{{ else if $event }}the event's pattern and detail, what fails it{{ else }}routes, shapes, status codes{{ end }}) and the
+   CHANGELOG match the behaviour; {{ if $queue }}logs tell a person why a message failed{{ else if $schedule }}logs tell a person why a run failed{{ else if $event }}logs tell a person why an event failed{{ else }}messages tell a client what happened and
    what to do{{ end }}.
 8. **Security.** Permissions through CDK grants narrowed to the calls the
    code makes, never `*` actions or AWS managed policies; data encrypted at
@@ -143,7 +153,9 @@ says what to check.
    HTTPS; every route authenticated that the issue says must be;{{ else if $queue }}the queues refusing requests without TLS, and no one granted
    `sqs:SendMessage` by the stack that the issue doesn't name;{{ else if $schedule }}the dead-letter queue refusing requests without TLS, and the
    schedule's role allowed only `lambda:InvokeFunction` on the one function
-   and `sqs:SendMessage` on the dead-letter queue;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
+   and `sqs:SendMessage` on the dead-letter queue;{{ else if $event }}the dead-letter queue refusing requests without TLS, the
+   function invoked only by its one rule (the permission's `SourceArn`),
+   and the queue's policy letting only that rule send to it;{{ else }}every route authorized;{{ end }} input validated before it reaches DynamoDB
    or a log; no secret in an environment variable, the template, a log or a
    response; new install scripts justified.
 {{- end }}
@@ -260,7 +272,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
 {{- end }}
 {{- if $tiered }}
 - Look for, in the stacks: a resource that ignores the tier (a table always
-  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-fargate-ts" }}load balancer, service or table{{ else if eq .Framework "aws-ec2-ts" }}load balancer, group or table{{ else }}function, table or {{ if or $queue $schedule }}dead-letter queue{{ else }}API{{ end }}{{ end }} without its
+  `RETAIN`, or never protected), a new {{ if eq .Framework "aws-fargate-ts" }}load balancer, service or table{{ else if eq .Framework "aws-ec2-ts" }}load balancer, group or table{{ else }}function, table or {{ if or $queue $schedule $event }}dead-letter queue{{ else }}API{{ end }}{{ end }} without its
   alarms on the stack's topic, a context value read but `tier`, and a
   change to `infra/operations.ts` that its issue's change to the
   Container's `spec.operations` doesn't ask for. A change
