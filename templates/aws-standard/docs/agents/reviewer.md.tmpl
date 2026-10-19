@@ -3,7 +3,12 @@
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
      Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts,
      aws-schedule-ts and aws-event-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
+{{- /* Whether the Framework, at the version the Container was scaffolded
+     from, has infra/operations.ts: a version from before its step of
+     plans/aws-production.md has no tiers, alarms, backups or Powertools
+     (#1249). */ -}}
+{{- $operations := has .FrameworkFiles "infra/operations.ts" -}}
+{{- $tiered := and $operations (eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $event := eq .Framework "aws-event-ts" -}}
@@ -236,6 +241,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
   needs; a resource without encryption, log retention or an explicit
   removal policy; an account in `env` or a context lookup, which would need
   an AWS account to synthesize.
+{{- if $operations }}
 - Look for, in the stack: a resource that ignores the tier (the site's
   bucket always `RETAIN`, or unversioned in production), a new resource
   without its alarms on the stack's topic, a context value read but `tier`,
@@ -243,6 +249,7 @@ yourself; the full `make check` runs on the release's commit before its tag.
   Container's `spec.operations` doesn't ask for. A change to what the stack
   keeps, or how, without its `docs/runbook.md` steps in a Standard change is
   blocking: the runbook is how the site comes back.
+{{- end }}
 {{- else if $py -}}
 ## Python and AWS notes
 

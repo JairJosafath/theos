@@ -3,12 +3,17 @@
 {{- /* The Frameworks built for a tier from infra/operations.ts: the three
      Lambda Frameworks, aws-fargate-ts, aws-ec2-ts, aws-queue-ts,
      aws-schedule-ts and aws-event-ts. */ -}}
-{{- $tiered := eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
+{{- /* Whether the Framework, at the version the Container was scaffolded
+     from, has infra/operations.ts: a version from before its step of
+     plans/aws-production.md has no tiers, alarms, backups or Powertools
+     (#1249). */ -}}
+{{- $operations := has .FrameworkFiles "infra/operations.ts" -}}
+{{- $tiered := and $operations (eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-fargate-ts" "aws-ec2-ts" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts") -}}
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $event := eq .Framework "aws-event-ts" -}}
 {{- $site := eq .Framework "aws-static-site-ts" -}}
-{{- $ops := or $tiered $site -}}
+{{- $ops := or $tiered (and $site $operations) -}}
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "aws-ec2-ts" }}service of {{ .SoftwareSystem }}: an HTTP
@@ -324,7 +329,7 @@ too; `npm run dev` serves it on your machine.{{ end }}
     secret in {{ if $site }}the site or the template.{{ else }}an environment variable or the template: secrets are read from
     Secrets Manager or Parameter Store at run time{{ if eq .Framework "aws-fargate-ts" }}, or passed as ECS `secrets`{{ end }}.{{ end }} Nothing in the app needs
     an AWS account to synthesize: no lookups, no `env` from the environment.
-{{- if $site }}
+{{- if and $site $operations }}
     The stack is built for a tier, `production` or `development`, which a
     deploy names (`-c tier=production`) and `infra/standard.ts`'s
     `TIER_RULES` defines, and keeps what `infra/operations.ts` promises: in
@@ -397,7 +402,7 @@ Offline digests (read the one for what you are touching):
 {{ if $tiered -}}
 - `docs/runbook.md`: restoring the data, rolling a deployment back, and what
   each alarm means
-{{ else if $site -}}
+{{ else if and $site $operations -}}
 - `docs/runbook.md`: restoring the site's files, rolling a deployment back,
   and what each alarm means
 {{ end -}}
