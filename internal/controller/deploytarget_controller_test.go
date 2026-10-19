@@ -150,6 +150,10 @@ var _ = Describe("DeployTarget", func() {
 		cond := deployReady(dt, metav1.ConditionFalse, "Unreachable")
 		Expect(cond.Message).To(ContainSubstring("GitHub could not be reached to check DeployTarget staging"))
 		Expect(cond.Message).To(ContainSubstring("HTTP 502"))
+
+		// Asked again on the next poll, not 10 minutes later.
+		deployFake.Fail(ns+"/staging", nil)
+		deployReady(dt, metav1.ConditionTrue, "Ready")
 	})
 
 	It("checks again when its Secret or spec changes, and not on every poll", func() {

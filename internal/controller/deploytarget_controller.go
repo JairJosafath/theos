@@ -21,6 +21,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,7 +50,7 @@ type DeployTargetReconciler struct {
 	// is checked; 0 means 10 minutes.
 	CheckInterval time.Duration
 
-	// checked holds, by DeployTarget UID, the generation and Secret version
+	// checked holds, by DeployTarget namespace/name, the target, generation and Secret version
 	// the last check saw; after a restart each target is checked again.
 	checked sync.Map
 }
@@ -65,6 +66,9 @@ type DeployTargetReconciler struct {
 func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var dt c4v1alpha1.DeployTarget
 	if err := r.Get(ctx, req.NamespacedName, &dt); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.checked.Delete(req.NamespacedName)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	log := logf.FromContext(ctx)
@@ -94,10 +98,12 @@ func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return poll, r.writeStatus(ctx, &dt, status)
 	}
 
-	seen := deployChecked{generation: dt.Generation, secret: secret.ResourceVersion}
-	last, ok := r.checked.Load(dt.UID)
+	seen := deployChecked{uid: dt.UID, generation: dt.Generation, secret: secret.ResourceVersion}
+	last, ok := r.checked.Load(req.NamespacedName)
 	cond := apimeta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionDeployTargetReady)
-	if ok && last == seen && cond != nil && cond.ObservedGeneration == dt.Generation && status.CheckedTime != nil {
+	// A target that couldn't be reached is asked again on the next poll.
+	if ok && last == seen && cond != nil && cond.ObservedGeneration == dt.Generation && status.CheckedTime != nil &&
+		cond.Reason != model.DeployTargetUnreachable {
 		if wait := r.checkInterval() - time.Since(status.CheckedTime.Time); wait > 0 {
 			return ctrl.Result{RequeueAfter: min(wait, r.pollInterval())}, nil
 		}
@@ -127,13 +133,14 @@ func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.writeStatus(ctx, &dt, status); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.checked.Store(dt.UID, seen)
+	r.checked.Store(req.NamespacedName, seen)
 	return poll, nil
 }
 
-// deployChecked is what a target's last check saw: its generation and its
-// Secret's resourceVersion.
+// deployChecked is what a target's last check saw: the target, its
+// generation and its Secret's resourceVersion.
 type deployChecked struct {
+	uid        types.UID
 	generation int64
 	secret     string
 }

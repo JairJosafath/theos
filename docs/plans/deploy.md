@@ -280,7 +280,8 @@ What #1161 settled that the decisions above left open:
 - **The operator caches no Secrets,** so the DeployTarget reconciler reads
   the Secret live every minute and asks the target again when the Secret's
   `resourceVersion` or the spec's generation changed, else every 10
-  minutes; after a restart each target is checked once.
+  minutes; an `Unreachable` target is asked again on the next poll, and
+  after a restart each target is checked once.
 - **The GitHub adapter's contract test** runs in `internal/controller`
   (`deployer_contract_test.go`), beside the fake GitHub the publish tests
   use. The controllers' tests may import adapters to wire them onto fakes;
