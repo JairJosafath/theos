@@ -15,8 +15,9 @@ COPY scripts/check-native.mjs scripts/
 # npm ci skips a native binding it fails to fetch without failing (#912), and a
 # layer without one would be cached for every later build: check in the same
 # step, and install once more before giving up.
-RUN { npm ci --no-audit --no-fund && node scripts/check-native.mjs; } || \
-    { npm ci --no-audit --no-fund && node scripts/check-native.mjs; }
+# --fetch-retries: npm retries a failed download 5 times (#1494).
+RUN { npm ci --no-audit --no-fund --fetch-retries=5 && node scripts/check-native.mjs; } || \
+    { npm ci --no-audit --no-fund --fetch-retries=5 && node scripts/check-native.mjs; }
 COPY . .
 # The release this image is; vite.config.ts defines it as __C4_UI_VERSION__.
 # release.yml passes it, a local build stays dev.

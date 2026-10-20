@@ -14,8 +14,12 @@ WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+# and so that source changes don't invalidate our downloaded layer.
+# go mod download retries (retry: 5 tries, 10 to 40 seconds apart), so one
+# slow handshake with the module proxy doesn't fail a release (#1494).
+RUN --mount=type=cache,target=/go/pkg/mod \
+    retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+    && retry go mod download
 
 # Copy the Go source (relies on .dockerignore to filter)
 COPY . .
