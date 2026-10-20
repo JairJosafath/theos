@@ -1,0 +1,32 @@
+{{- if eq .Type "worker" -}}
+"""How long the worker waits before its next round."""
+
+INTERVAL_SECONDS = 10.0
+"""The wait after a round that succeeded."""
+
+MAX_SECONDS = 300.0
+"""The longest wait, however many rounds failed in a row."""
+
+
+def next_delay(failures: int) -> float:
+    """The seconds to wait before the next round.
+
+    Each failure in a row doubles the wait, up to `MAX_SECONDS`, so a
+    dependency that is down is asked less and less often.
+
+    Args:
+        failures: The rounds that failed in a row; 0 after a success.
+
+    Returns:
+        `INTERVAL_SECONDS` times 2 to the power `failures`, at most `MAX_SECONDS`.
+
+    Raises:
+        ValueError: When `failures` is negative.
+    """
+    if failures < 0:
+        msg = f"failures must be 0 or more, got {failures}"
+        raise ValueError(msg)
+    # 2.0 ** failures overflows past about 1000 failures; 2 ** 16 intervals is
+    # past any cap the worker needs, so the doubling stops there.
+    return min(INTERVAL_SECONDS * 2.0 ** min(failures, 16), MAX_SECONDS)
+{{ end -}}

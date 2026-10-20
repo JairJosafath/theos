@@ -1,8 +1,10 @@
 {{- /* The port and health check of the image the Dockerfile builds: uvicorn
 on 8000 with GET /healthz, or for react-vite nginx on 8080, where serving the
-page is the check. */ -}}
-{{- $port := 8000 }}{{ $probe := "/healthz" -}}
+page is the check. A python-cli worker serves nothing: no port and no probes,
+and Kubernetes restarts it when it exits. */ -}}
+{{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
 {{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
+{{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,9 +31,11 @@ spec:
         - name: app
           # Built from the Dockerfile; override it in kustomization.yaml.
           image: {{ .Container }}:dev
+{{- if $http }}
           ports:
             - name: http
               containerPort: {{ $port }}
+{{- end }}
 {{- if .Connectors }}
           # Connection settings, one ConfigMap per Connector.
           envFrom:
@@ -40,6 +44,7 @@ spec:
                 name: {{ $.Container }}-{{ . }}
 {{- end }}
 {{- end }}
+{{- if $http }}
           readinessProbe:
             httpGet:
               path: {{ $probe }}
@@ -49,6 +54,7 @@ spec:
               path: {{ $probe }}
               port: http
             initialDelaySeconds: 10
+{{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

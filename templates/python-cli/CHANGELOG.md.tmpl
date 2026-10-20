@@ -8,4 +8,9 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
+{{ if eq .Type "worker" -}}
+- The worker, scaffolded by C4 Factory, which does a round of work every
+  10 seconds, backs off while rounds fail, and stops cleanly on SIGTERM.
+{{- else -}}
 - The command, scaffolded by C4 Factory, which greets you by name.
+{{- end }}

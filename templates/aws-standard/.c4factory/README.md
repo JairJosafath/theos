@@ -18,7 +18,7 @@ Frameworks appears in this Standard's, in the same order. For
 `aws-lambda-go`, `.golangci.yml` and `docs/style/go.md` are go-standard
 v1.3.0's, and the same test keeps them byte for byte equal to go-standard's.
 For `aws-lambda-py`, `ruff.toml` and `mypy.ini` render the same as
-python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
+python-standard v1.4.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
@@ -183,7 +183,8 @@ byte for byte.
   `aws-ec2-ts`'s HTTPS listener, its `cfn-signal` boot and the rolling
   update that waits for it only when the Framework has
   `infra/operations.ts`, as v1.1.0 does; a v1.0.0 gets the HTTP listener
-  and the unsignalled rolling update it has (#1442).
+  and the unsignalled rolling update it has (#1442). v1.17.3 names python-standard
+  v1.4.0 as the source of `aws-lambda-py`'s Python rules (#1468).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
