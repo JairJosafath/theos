@@ -118,6 +118,8 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   data tables by ARN instead of everything carrying the Container's tag,
   which reached a `<name>-development` stack's tables too (#1267); the `Idempotency` table, whose records expire, is left
   out.
+  v1.2.1's README deploys production with `--all`, as a `copyToRegion`
+  makes a second stack, `<name>-backup-copy` (#1465).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`,
   the Go, Node and uv toolchain CI and agents use, with ruff, Python, ESLint
   and Prettier set up.

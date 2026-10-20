@@ -321,7 +321,7 @@ func TestAWSStandardRunbookReadsAZeroRPO(t *testing.T) {
 var productionDeploys = regexp.MustCompile("`(cdk deploy -c tier=production[^`]*)`")
 
 // With copyToRegion set, a Framework's app has a second stack in that region,
-// so every production deploy its runbook (and aws-fargate-ts's README) names
+// so every production deploy its runbook and its README name
 // works with two stacks as with one: it deploys `--all`, or the service stack
 // `--exclusively`, and a certificate goes to the service stack alone, which
 // `--all` must name as `<name>:CertificateArn` (#1305).
@@ -330,10 +330,7 @@ func TestAWSDeployCommandsWorkWithTheBackupCopyStack(t *testing.T) {
 		if f.versions {
 			continue // a site has one stack: nothing is copied to copyToRegion
 		}
-		files := []string{"docs/runbook.md"}
-		if f.Name == "aws-fargate-ts" {
-			files = append(files, "README.md")
-		}
+		files := []string{"docs/runbook.md", "README.md"} // README.md: #1465
 		for _, region := range []string{"", "eu-west-1"} {
 			t.Run(fmt.Sprintf("%s/copyToRegion %q", f.Name, region), func(t *testing.T) {
 				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{CopyToRegion: region})
