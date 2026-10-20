@@ -314,7 +314,14 @@ take a newer base, bump the tag and its digest together (`docker buildx
 imagetools inspect IMAGE:TAG` prints the digest). The UI's `npm ci` step fails unless every native binding the
 lockfile lists for the platform is installed (`ui/scripts/check-native.mjs`):
 npm skips an optional package it fails to fetch without failing, which broke
-v0.19.0 (#912).
+v0.19.0 (#912). Every download in those Dockerfiles retries, since the
+runners share a busy device and one TLS handshake timeout failed v0.28.1
+(#1494): curl takes `--retry 5 --retry-all-errors` and writes to a file, as
+a retried transfer piped to `tar` would arrive twice; `go install`, `go get`,
+`go mod download`, `setup-envtest use` and `apk add` run under a `retry`
+shell function that the same `RUN` defines; apt-get sets `Acquire::Retries`
+and npm `--fetch-retries` (`hack/check-download-retries.sh`, in `make
+check`).
 
 Lint, Tests, UI and Vulnerabilities run on pull requests to main and after a
 merge to main, each only when its paths change, or on demand; the jobs a pull
