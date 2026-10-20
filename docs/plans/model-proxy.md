@@ -2,8 +2,7 @@
 
 Parent issue: #1075. Written 2026-10-15 by otter-1075. ROADMAP.md's 1.0
 needs "the agent fence closes its known gap": today the Claude token is
-readable inside the agent sandbox ([docs/design.md](../design.md), v2, "The
-fence").
+readable inside the agent sandbox ([docs/design.md](../design.md#the-fence)).
 
 ## Where we stand
 

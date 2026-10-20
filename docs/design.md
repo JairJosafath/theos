@@ -1,49 +1,45 @@
 # C4 Factory: Design
 
-Sep 30, 2026 · @Jeremy Jo.
+The spec: what the factory is and does. How it got here, with each step's date
+and reasons, is [design-history.md](design-history.md); the plans in
+[plans/done/](plans/done/) hold every decision's why. Where this says
+*decided, not built*, the issue named builds it.
 
 [![How C4 Factory works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
 
 ## Purpose
 
-C4 Factory turns an idea into a working, scaffolded repository by first telling its story as a C4-inspired model. The model lives in Kubernetes custom resources, a kubebuilder operator acts on it, and a UI draws the story on top.
+C4 Factory turns an idea into working repositories by first telling its story
+as a C4-inspired model. The model lives in Kubernetes custom resources, a
+kubebuilder operator acts on it, agents build the apps from issues, and a UI
+draws the story on top.
 
-- **Storytelling first.** The model shows who uses what, what exists and why, and who is working on it right now.
-- **The CRDs are the truth.** Anything can write them: kubectl, GitOps, agents or the UI. The UI enforces nothing; the rules live in the CRD schemas and the operator.
-- **A thin factory.** Open-source tools do the real work: uv for Python, each framework's own tooling, and for shipping the tool that owns each target (the GitHub API, CloudFormation, Argo CD or Flux). The factory scaffolds, hands each release to that tool and reports.
-- **Humans and agents are equal.** Both work in devcontainers, and both show up in the model as Sessions.
+- **The CRDs are the truth.** Anything can write them: kubectl, GitOps, a
+  Brief's planner or the UI. The UI and the Session client enforce nothing;
+  the rules live in the CRD schemas (CEL), the admission policy and the
+  operator.
+- **A thin factory.** Open-source tools do the real work: each framework's
+  tooling, the Git host's CI, the tool that owns each deploy target.
+- **Quality comes from what the platform enforces,** not from trusting the
+  agent: the fence, protected files, required checks and a reviewer.
+- **Humans and agents are equal,** both in devcontainers, both Sessions.
 
-## Decisions so far
-
-These were settled in the design discussion on 30 September 2026 and shape everything below.
-
-| Topic | Decision |
+| Topic | Rule |
 | --- | --- |
-| Source of truth | The custom resources in the cluster. The UI is one client among several. |
-| Project scope | One Project per namespace. No references across namespaces; reuse is by copying. |
-| Levels | Person, SoftwareSystem, Container and DataStore. Component and Code are dropped for now. |
-| Container | An application with its own repository. One repository per Container, no monorepos. |
-| Container type | A fixed list: `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. |
-| Catalog | One entry per side of a Container (Framework, Compute, Deployment, Connector), kept per namespace. Bundles can come later, as a team choice. |
-| Compatibility | Each catalog entry lists the Container types it supports, and a Framework whose template is its own deployment says `deploysItself`, so its Container takes no Compute and no Deployment. The operator checks both before scaffolding; no webhook in v1. |
-| Templates | Catalog entries point to platform-managed template repositories at a pinned tag or commit. |
-| Repositories | New work only. The operator creates each repository; adopting existing ones is out of scope. |
-| Git provider | Its own kind, `GitProvider`, per namespace. Every Container references one. |
-| Scaffolding | Once, at creation. Staying compliant afterwards is the Container owner's job. Status records the template versions used. |
-| Data stores | Their own kind, `DataStore`, backed by a Connector. A Relationship from a Container to a DataStore adds that Connector to the Container's scaffold. |
-| Shipping (2026-10-15) | CI builds, the operator ships. Deployment templates write the files a tool reads; CI builds what ships with no deploy credential; the operator hands each release to the tool that owns a `DeployTarget` the Container names, with the target's credential, and reports. [Deploys](#deploys-each-release-to-its-targets). |
-| Sessions | Devcontainers run anywhere. A small client inside registers a Session on its Container and reports minimal status. |
-| Status | v1 shows only the factory's own steps plus active Sessions. A deployed Container also shows the health its target's tool reports; monitoring the app itself is left to existing tools. |
-| Components (2026-10-15) | The factory is built from ports (GitHost, Issues, CI, AgentAccess, Registry, AgentRuntime, Deployer), each a narrow interface with a fake and a contract suite. Helm decides what is installed, custom resources what is used. A port is swappable only once two real adapters pass its contract. [Factory components](#factory-components-ports-and-adapters). |
-| Operations (2026-10-15) | The tier is where the app runs: a deploy target says `production` or `development`, every AWS repository synthesizes both, and a deploy that says nothing is `development`. A Container says in `spec.operations` what it promises in any tier: its backup retention and copy region, its recovery objectives and who its alarms tell; the AWS templates render the block and their checks enforce it. [plans/aws-production.md](plans/aws-production.md). |
+| Scope | One Project per namespace; no references across namespaces, reuse is by copying. |
+| Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
+| Container | An application with its own new repository; no monorepos, no adopted repositories. |
+| Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
+| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. |
+| Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
+| Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
 ## The model
 
-Seventeen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, four track work (Session, Task since v2, Crew since v4, and Brief), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
-
-&#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
-
-Solid arrows mean "owns": deleting a parent deletes its children. The dashed Relationship is the only link that changes a scaffold. Containers also reference a GitProvider and catalog entries, which isn't drawn here.
+Eighteen namespaced kinds in `c4.factory.io/v1alpha1`. Every child names its
+parent in `spec`; the operator turns that into the ownerReference, so deletion
+follows the tree. `metadata.name` is the stable id; `displayName` and
+`description` are on every story kind.
 
 | Kind | Owned by | Parent field | What it is |
 | --- | --- | --- | --- |
@@ -54,1782 +50,544 @@ Solid arrows mean "owns": deleting a parent deletes its children. The dashed Rel
 | DataStore | SoftwareSystem | `spec.softwareSystemRef` | A database or storage, backed by a Connector |
 | Relationship | its source element | `spec.source` | A directed link between two elements |
 | Session | Container | `spec.containerRef` | An agent or human at work in a devcontainer |
+| Task | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
+| Crew | Container | `spec.containerRef` | The Agents that work a Container's ready issues, and its releases |
+| Brief | nothing | none | An app idea in plain words and its prompts, which a planner Agent turns into the model |
 | GitProvider | Project | none | Where repositories are created, with credentials |
-| Framework, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template plus the Container types it supports |
-| Standard (v2) | Project | none | Catalog entry: coding rules, checks and CI, rendered right after the Framework it fits |
-| Agent (v2) | Project | none | Who does Tasks: an image with the agent CLI and toolchain, credentials and limits |
-| Task (v2) | Container | `spec.containerRef` | A goal for a Container, implemented, checked, reviewed and merged by agents |
-| Crew (v4) | Container | `spec.containerRef` | The Agents that implement and review a Container's issues, and pick up the ready ones |
-| Brief | nothing | none | An app idea in plain words and its follow-up prompts, which a planner Agent turns into the model ([Briefs](#briefs-an-idea-in-plain-words)) |
-
-The story kinds, abbreviated:
+| Framework, Standard, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template and the Container types it supports |
+| Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
+| DeployTarget | Project | none | A place releases ship to, with its credential |
 
 ```yaml
-kind: SoftwareSystem
-metadata: {name: webshop-core, namespace: webshop}
-spec:
-  location: Internal                 # the default; External for a system the story only names
-  displayName: Webshop Core
-  description: Catalog, cart and ordering
-  needs: [Customers can reorder in two clicks]
-  kpis: [Checkout conversion]
----
-kind: Container
+kind: Container                    # the other kinds are in config/samples/
 metadata: {name: orders-api, namespace: webshop}
 spec:
   softwareSystemRef: {name: webshop-core}
-  displayName: Orders API
   type: service
   gitProviderRef: {name: gitea}
   frameworkRef: {name: python-fastapi}
+  standardRef: {name: python-standard}
   computeRef: {name: small}
   deploymentRef: {name: k8s-manifests}
 status:
   phase: Ready
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
-  scaffoldedFrom: [python-fastapi@v1.3.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
-  activeSessions: 1
----
-kind: DataStore
-metadata: {name: orders-db, namespace: webshop}
-spec:
-  softwareSystemRef: {name: webshop-core}
-  displayName: Orders DB
-  connectorRef: {name: postgres}
----
-kind: Relationship
-metadata: {name: orders-api-to-orders-db, namespace: webshop}
-spec:
-  source: {kind: Container, name: orders-api}
-  target: {kind: DataStore, name: orders-db}
-  description: Reads and writes orders
+  scaffoldedFrom: [python-fastapi@v1.3.0, python-standard@v1.0.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
 ```
 
-The factory kinds, abbreviated:
+A SoftwareSystem's `location` is `Internal` (the default: the factory builds
+it) or `External` (the story only names it, such as a payment provider). An
+External system holds no Containers or DataStores: one naming it stays
+`Pending`, `ReferencesResolved=False`, reason `ExternalSystem`, and links to
+and from it are story only.
 
-```yaml
-kind: GitProvider
-metadata: {name: gitea, namespace: webshop}
-spec:
-  provider: gitea                  # the only value in v1
-  url: http://gitea.gitea.svc.cluster.local:3000
-  owner: webshop                   # organization for Container repositories
-  credentialsSecretRef: {name: gitea-credentials}
----
-kind: Framework                    # Compute, Deployment and Connector look the same
-metadata: {name: python-fastapi, namespace: webshop}
-spec:
-  displayName: Python, FastAPI (uv)
-  supportedTypes: [service]
-  template:
-    url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
-    ref: v1.2.0                    # tag or commit, never a branch
----
-kind: Session
-metadata: {name: orders-api-k7f3q, namespace: webshop}
-spec:
-  containerRef: {name: orders-api}
-  actor: agent                     # or human
-  summary: Adding order validation
-status:                            # written by the client; the operator only marks it Stale
-  phase: Active
-  lastHeartbeat: "2026-09-30T09:12:00Z"
-  openInEditor: ""                 # set only when the devcontainer is reachable
-```
+## Scaffolding a Container
 
-Fields stay minimal on purpose. Metadata such as `displayName` and `description` is on every story kind; `metadata.name` is the stable id and can't change.
+1. **Resolve references.** The SoftwareSystem (`Internal`), GitProvider and
+   catalog entries must exist; until they do the Container is `Pending`,
+   naming what is missing.
+2. **Check choices.** Every entry used, the Connectors reached through
+   Relationships included, must list the Container's type, else `Failed`,
+   `ChoicesValid=False` ("python-fastapi does not support static-site"). A
+   Framework with `deploysItself: true` (the AWS ones) takes no Compute or
+   Deployment, else reason `DeploysItself`.
+3. **Create the repository** in the GitProvider's organization.
+4. **Render the layers** in order: Framework, Standard, Compute, Deployment,
+   then each Connector. Templates are Go `text/template` files given the
+   names of the project, system, container, type and chosen entries, the
+   Connectors, the CI system and, after the Framework, the paths it rendered
+   (`{{ if has .FrameworkFiles "infra/operations.ts" }}`), so a layer tests a
+   file, not a name or ref. Each CI system's files sit under
+   `.c4factory/ci/<system>/` and render at the root only for the Container's;
+   a template with CI files but none for it fails, `UnsupportedCI`.
+5. **Assemble the devcontainer:** the Framework's settings plus a compose
+   service per Connector.
+6. **Write `.c4factory.yaml`** with the project, the container and the
+   scaffold's refs.
+7. **Push one commit,** protect `main` with the Standard's required checks,
+   then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
 
-A SoftwareSystem's `location` is the "type" side of a system in the drawing: `Internal`, the default, for a system the factory builds, or `External` for one the story only names, such as a payment provider or a partner's API. The word is Structurizr's, and the field is an enum rather than a flag so a third kind can follow. It says who builds the system, not where it sits in a view: the container view still draws every other system outside its boundary, and only an External one says so on its card. An External system holds no Containers or DataStores: one that names it stays unresolved, `ReferencesResolved=False` with reason `ExternalSystem`, and a Container stays `Pending` until the system turns `Internal`. A Container scaffolded before its system turned External keeps its repository and stays `Ready`, since scaffolding happens once. Relationships to and from an External system are story only, like every link but Container to DataStore. Why a field and not the drawing: the UI used to guess from where a system sat in the view, which can't tell a neighbour the factory builds from a vendor it never will, and a planner Agent or a reader of the YAML needs the answer too.
+Every file belongs to exactly one layer: two layers writing a path fail the
+Container, naming it. An empty existing repository gets the commit again; one
+with commits the operator didn't make stops it `Failed`. A `Failed` Container
+tries again when something it depends on changes, or when its
+`c4.factory.io/retry` annotation is set or changed.
 
-## How it works
+**Relationships.** Container to DataStore applies the DataStore's Connector at
+scaffold. Container to Container with `spec.bundles: true` says the source
+ships a release of the target ([Crews](#crews-and-releases)). Every other link
+is story only. One added after the scaffold shows `Applied=False`,
+`AddedAfterScaffold`. A Relationship's ends and a DataStore's Connector can't
+change, so `Applied` keeps meaning what the scaffold holds.
 
-A Container is scaffolded exactly once, from the catalog entries it picks and the DataStores it points to. After that, the factory reports, and carries only its Standard's updates to it (since v4, [A Standard's fixes reach its Containers](#v4-issues-crews-and-roles)).
+**Status.** A Container is `Pending`, `Scaffolding`, then `Ready` or `Failed`,
+with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated`,
+`Scaffolded` and those below. SoftwareSystem and Project roll counts up;
+Project status carries `factory: {operatorVersion, chartVersion}`.
 
-### Scaffolding a Container
+**Sessions.** A devcontainer feature installs a Go client that reads
+`.c4factory.yaml`, creates a Session on its Container (actor and a one-line
+summary), heartbeats every 30 seconds and deletes it on stop. The operator
+marks one `Stale` after 2 minutes without a heartbeat and counts the Active
+ones. The client's per-namespace ServiceAccount may only write Sessions.
 
-1. **Resolve references.** The SoftwareSystem, GitProvider and catalog entries must exist, and the SoftwareSystem must be `Internal`. Until they do, the Container stays `Pending` with the missing name, or reason `ExternalSystem`, in its condition.
-2. **Check types.** Every catalog entry used, including the Connectors reached through Relationships, must list the Container's type. If not, the Container is `Failed` with `ChoicesValid=False`, for example "python-fastapi does not support static-site". A Framework with `deploysItself: true` (the AWS Frameworks, whose CDK app builds and runs the Container) is its Container's deployment, so a Container on it that names a Compute or a Deployment fails the same way, reason `DeploysItself`, naming the refs to remove. A flag on the Framework, not a list of the Deployments it allows: a Deployment can't know the Frameworks it fits, and the shared-path conflict that would catch some pairs doesn't catch a Deployment whose files render to nothing for a Framework it doesn't know.
-3. **Create the repository** in the GitProvider's organization, named after the Container.
-4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors. A layer after the Framework also receives the paths the Framework rendered (`.FrameworkFiles`), so it tells what that version of the Framework has by its files, `{{ if has .FrameworkFiles "infra/operations.ts" }}`, rather than by the Framework's name or a ref to compare: a ref may be a commit, and a file says what the Standard depends on. A Standard update renders with the Framework's paths at the ref `scaffoldedFrom` recorded, so it brings a repository files for the Framework version it was scaffolded from, not the newest; a scaffold that recorded none passes none (#1249).
-5. **Assemble the devcontainer.** The operator writes `.devcontainer/devcontainer.json` itself: the Framework's base settings plus one compose file per Connector, such as a Postgres service for local development and tests.
-6. **Write the identity file** `.c4factory.yaml` with the project and container names.
-7. **Push one initial commit,** then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
+## Agents and Tasks
 
-Two rules keep this safe to retry. Every file belongs to exactly one layer, so two layers writing the same path fail the Container with that path in the message. And if the repository exists but is empty, the operator retries the commit; if it has commits the operator didn't make, it stops with `Failed`. A `Failed` Container tries again when something it depends on changes (its spec, a catalog entry, the GitProvider, a DataStore or a Relationship), or when someone sets or changes its `c4.factory.io/retry` annotation, for example after emptying the repository.
+A Task is a goal for a Container, usually an issue of its repository
+(`spec.issue`). The operator runs the implementer Agent in an
+[Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) on branch
+`task/<name>`, opens a pull request, waits for CI, runs the reviewer, and
+squash-merges on approval. Failed checks, requested changes or a failed run
+start the next round with that feedback, up to the Agent's `maxRounds`.
+Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
+on a Standard change), then `Merged` or `Failed`.
 
-### Relationships
+- **Issues are the work.** The operator labels the issue
+  `status/in-progress` (`status/*` labels are exclusive), reads it before
+  every run and closes it on merge; a failed Task hands it back
+  `status/needs-human` with the reason. An issue without an *Acceptance
+  criteria* checklist goes back before any tokens are spent.
+- **Merges only on checks of the `main` it merges into.** When `main` moved,
+  the operator merges it into the branch (no agent run, no round) and waits
+  for the checks again; a conflict goes back to the implementer.
+- **The implementer runs the check in its sandbox,** sent back twice while it
+  fails. One that fails on the base commit too (`CheckFailsOnBase`) is left
+  to CI, with the output on the pull request.
+- **Blocked is said, not guessed.** An implementer that can't do the issue
+  yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
+  the Task fails at once, reason `Blocked`, with those words on the issue. A round
+  with no change and no such line fails with the end of the agent's summary.
+- **The infrastructure's failures cost the issue no try:**
 
-- **Container to DataStore:** applies that DataStore's Connector at scaffold time.
-- **Everything else** (Person to SoftwareSystem, Container to Container): story only in v1.
-- **Added after scaffolding:** not applied, by design. The Relationship shows `Applied=False` with reason `AddedAfterScaffold`, so the gap is visible. That includes a Relationship deleted and recreated under the same name with another target: the Container records which DataStore and Connector each applied Relationship added.
-- **Fixed ends:** a Relationship's source and target, and a DataStore's Connector, can't change, so `Applied` keeps meaning what the scaffold holds. To point a link elsewhere, create a new Relationship.
+  | Reason | What happened | The Task |
+  | --- | --- | --- |
+  | `AgentUnavailable` | usage limit, overloaded or 5xx model API, rejected credentials | waits, then runs the step again; no round |
+  | `Interrupted` | node shutdown, eviction, pod deleted, Git host unreachable past the runner's retries | runs again in the round, at most twice |
+  | `NoCIResult` | no CI run started in 30 minutes, or none ended in its bound (6 h queued, 3 h 15 running) | fails |
+  | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
+  | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
+  | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
 
-### Sessions
+  An agent killed for memory or past its deadline fails its own round. A job
+  a person cancelled costs the round.
+- **Roles get their own model and guide.** An Agent has a `harness` and a
+  `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
+  read from the base branch so a change can't rewrite its own review. The
+  reviewer reports each criterion and may name up to three follow-ups, filed
+  `status/proposed` in the *Later* milestone.
+- **Context comes from the model:** the system's needs and KPIs, its users,
+  the Container's Relationships, read-only clones of related repositories,
+  and `docs/project-notes.md`, the project's own word to its agents.
+- **Evidence is never made up.** A criterion no sandbox can meet (a desktop,
+  a device, an account) is left open with why, never faked; the operator
+  files those as a `kind/by-hand` issue for a person.
+- **A protected file without a person.** An issue needing a file a Standard
+  protects (the Makefile, a CI workflow) gets a gated Task: the operator files
+  a `kind/standard-change` issue, the waiting Task is `Blocked`, and the
+  operator merges the reviewed change after its checks. It never weakens a
+  check (no target, test, lint rule or CI job removed or skipped): the
+  implementer stops with a `Blocked:` line instead. The agents' rules and
+  `.c4factory.yaml` stay out of reach.
+- **A Task keeps its record:** `status.history`, `status.runs` per agent run,
+  the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
+  `largestSession`) its agents reported. `WaitingForSlot` says it waits for
+  an agent slot.
+- **A long session hands off.** Past its Agent's `sessionTokenLimit` (default
+  130000) a session writes where it stands and stops; the runner, `c4agent`,
+  starts a fresh one with that note (`status.tokens.sessionHandoffs`).
 
-1. A devcontainer feature installs the client, a small Go CLI.
-2. On start, the client reads `.c4factory.yaml` and creates a Session on its Container, with the actor (agent or human) and a one-line summary of the work.
-3. It sends a heartbeat every 30 seconds and deletes the Session when the devcontainer stops.
-4. The operator marks a Session `Stale` after 2 minutes without a heartbeat and counts the Active ones on the Container.
+### The fence
 
-In v1, the client authenticates with a per-namespace ServiceAccount that may only create, update and delete Sessions.
+The sandbox pod has no ServiceAccount token and reports through its
+termination message. A per-Container bot user on the Git host writes to that
+repository only. `main` takes no pushes: only the operator merges, the
+reviewed commit only; the Git host refuses changes to the platform's and the
+Standard's protected files (the gated merge aside) and keeps `v*` tags to the
+operator. A per-project NetworkPolicy allows only DNS, the Git host and public
+HTTPS. Each run has a deadline. The Claude token is readable inside the
+sandbox; a model proxy that adds it to the agent's requests is the fix
+([plans/model-proxy.md](plans/model-proxy.md)). Its one source is a Secret in
+the release namespace, copied only into namespaces with a label their users
+can't set.
 
-### Status
+### The CI fence
 
-- **Container phase:** `Pending`, `Scaffolding`, then `Ready` or `Failed`, with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated` and `Scaffolded`.
-- **Roll-up:** SoftwareSystem and Project show counts, such as "3 of 4 containers Ready, 2 active sessions".
-- **Versions:** Project status carries `factory: {operatorVersion, chartVersion}`, the operator's release (`dev` for an unreleased build, stamped at build time in `internal/buildinfo`) and the Helm chart's it was installed with (`C4_CHART_VERSION`, empty outside the chart). The UI shows them beside its own version and the CRD API version it reads, and warns when its version and the operator's differ (two `dev` builds don't; no Project reporting one yet shows "unknown").
-- **kubectl:** printer columns (Type, Phase, Sessions, Age) make `kubectl get containers` a quick text view.
+CI runs the agents' code too. A job running a Container repository's code runs
+in an environment made for it and thrown away; holds only its job token and its
+repository's secrets; shares nothing writable with another project's jobs or a
+release; and reaches only DNS, the Git host (and its registries) and public
+HTTPS. Every CI adapter meets this or says which part it can't
+([plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)).
 
-## v2: agents build the apps
+The Gitea runners meet the network and the token: a NetworkPolicy on their pods
+(`app.kubernetes.io/component: ci-runner`) lets nothing in and only DNS,
+Gitea's port 3000 and public HTTPS out, and the registration token goes only to
+the init container; `make validate-yaml` checks both. Still to come with release
+images (#1069): an `image` runner whose job container alone runs seccomp and
+AppArmor `Unconfined` for rootless BuildKit, never privileged. Still open: one long-lived runner per label serves
+every project, so a job can leave something for the next; a pool of single-job
+runners per project closes it (#1076). Until then one install is one trust
+domain ([getting-started](getting-started.md#what-the-factory-trusts)).
 
-Settled step by step on 30 September 2026; the full design is
-[plans/done/2026-09-30-agent-factory-design.md](plans/done/2026-09-30-agent-factory-design.md)
-and the plan [plans/done/agent-factory.md](plans/done/agent-factory.md).
+## Crews and releases
 
-Agents build complete apps when asked, and stay inside their workspace while they
-do. Quality does not come from trusting the agent but from what the platform
-enforces.
+A Crew per Container names the implementer and reviewer Agents, polls the
+repository's `status/ready` issues and starts up to `parallel` Tasks (one by
+default; `Blocked` ones don't count), with three tries per issue.
+`spec.paused` stops new starts; running Tasks are never stopped.
 
-- **A new Container type, `mobile-app`.** The operator never branches on a type;
-  a test keeps it that way. A later `function` type (AWS serverless) is one enum
-  value plus templates.
-- **Standard: the rules as a layer.** Lint and format config, `AGENTS.md`, offline
-  style digests, the `make check` contract and its CI workflow, rendered right after
-  the Framework it lists. A Container with a Standard gets `main` protected by
-  required checks at scaffold time, and `status.checks` reports CI on `main`. A change
-  that touches only the changelog, `docs/` or images passes CI without running
-  `make check`; the required context still reports.
-- **CI in Gitea.** Gitea Actions with a runner in the cluster on the same toolchain
-  image the agents and devcontainers use. Both toolchain images, `base` and `go`,
-  carry one pinned uv, so a Python project checks on either runner and releases
-  on `go`, with the Python its `.python-version` pins. The `go` image also
-  carries the kubebuilder operator tools (kubebuilder, controller-gen, kustomize,
-  setup-envtest) and the envtest binaries, so an operator's tests run without a
-  cluster.
-- **Task: a goal for a Container.** The operator runs the Agent in an
-  [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox), which works on
-  branch `task/<name>`; opens a pull request; waits for CI; runs the Agent again as
-  reviewer; and squash-merges on approval. A pull request merges only on checks
-  that ran against the `main` it merges into: when `main` moved since the
-  approved head's checks ran, the operator merges `main` into the branch through
-  the Git host, with no agent run and no round spent, waits for the checks
-  again, and merges when they pass, without another review. A Standard
-  change's gated merge needs the approving review run to last: when it ends
-  while CI runs again, the change is checked and reviewed again in the same
-  round, not failed, and spends no try and none of the reviewer's three runs
-  without a verdict. When an approval runs out a fourth time in a round, CI
-  keeps taking longer than a review run lasts: the Task fails, reason
-  `ApprovalRanOut`, costing no try. A branch that
-  conflicts with `main` goes back to its implementer in the same round instead.
-  Only that merge through the Git host decides a conflict: the host's
-  "mergeable" flag is stale while it tests the pull request against a `main`
-  that just moved, so a branch that has `main`'s head waits for it rather than
-  going back. An implementer sent to resolve conflicts that finds none commits
-  nothing; its branch, with its pull request, is checked and reviewed again as
-  it is, and merges when approved.
-  Failed checks, requested changes or a failed run start the next round with
-  that feedback, up to the Agent's `maxRounds`. An implementer that finds its issue can't be done yet (it waits
-  on work not merged or released) or can't be done in the sandbox changes
-  nothing and ends its summary with a line `Blocked: <what it waits on and
-  why>`; the Task then fails at once, reason `Blocked`, with those words in its
-  message and on the issue, and the Brief lists the issue as kind `blocked`. A
-  round with no change and no such line fails with the end of the agent's
-  summary (its last 400 bytes, from a whole word), where it usually said why. A
-  line that says nothing blocks the issue (`Blocked: none`, `n/a`,
-  `No blockers.`, `nothing blocks this issue`) is not a blocked note; one that
-  goes on to name something (`none of the engine's releases has the fix`) is.
-  The implementer runs the Container's check in its sandbox and is sent back
-  twice to fix it while it fails; a round whose check still fails then fails
-  with its output. The check that fails on the branch runs once on the base
-  commit too, in a separate worktree. When it fails there as well, the
-  sandbox can't judge the change (a download or service it can't reach):
-  the fix attempts are told so and to leave the rest to CI, the round pushes
-  with no error and reports the base's output (`CheckFailsOnBase`), and the
-  operator goes on to the pull request and CI, which runs the same check and
-  decides. The operator shows the difference: the round's status message
-  says the check fails on main in the agent's workspace too and CI decides,
-  a Normal Event `CheckFailsOnBase` names the output's last line, and a
-  comment on the pull request names the check and carries the output, so a
-  person can give the workspace what CI has. It costs no round and no try,
-  and is no condition: the Task's outcome is CI's and the review's. A
-  Standard change is then proposed as on a passing check; its own
-  gated Task runs CI before it merges. A blocked note is checked the same
-  way: when the check fails on the base, the implementer is sent back once
-  to do the issue, since that is not a reason to block, and a second blocked
-  note stands. A base that can't be checked out counts as passing
-  ([plan](plans/done/workspace-check-differs.md)).
-  The
-  Container's Crew decides how many Tasks run at once.
-- **A Task waits for checks a runner will run.** The commit status gives the
-  checks' result; the Git host's Actions runs at the head commit say whether
-  the job is queued or running, and its runners whether one is online. A run
-  queued while a runner is online, behind other jobs, is waited for (up to 6
-  hours), and a running one up to 3 hours 15 minutes: its runner's 3 hour job
-  timeout, plus 15 minutes for the runner to report the result. The Task
-  fails, reason `NoCIResult`, when no run starts within 30 minutes, when its
-  run is queued with no runner online 30 minutes in, or past those bounds.
-  That failure is the infrastructure's, so it costs the issue no try; a later
-  try that continues its pull request, with green checks on the commit the
-  failed try pushed, goes straight to review
-  ([plan](plans/done/checks-wait-for-runner.md)). Checks that fail because the
-  runner ran out of room (the log says `no space left on device`) are the
-  infrastructure's too: the Task fails, reason `RunnerOutOfSpace`, costing no
-  round and no try. The runners keep `/tmp` from job to job, so they clear
-  what jobs left there over two hours ago and run jobs without Node's compile
-  cache, which no later job reads. Checks that fail because the machine killed
-  a job for lack of memory (the log says `signal: killed`, `Killed`, exit code
-  137 or `JavaScript heap out of memory`) are the infrastructure's as well, but
-  pass once the machine has room: the Task runs the failed jobs again in the
-  same round and tells the agent nothing, up to twice a round; a third killed
-  job fails the Task, reason `RunnerOutOfMemory`, costing no try. Checks
-  their runner abandoned are rerun the same way, sharing those two reruns: a
-  run its runner cancelled (a runner told to stop, its pod replaced, cancels
-  its job), a job that started and has no log, or a log that
-  stops before the runner says how the job ended (`Job failed`), or ends in
-  its `Early termination` (a runner killed mid-job, whose job Gitea fails
-  once it stops reporting). The next abandoned run fails the Task, reason
-  `RunnerLost`, costing no try. Gitea records no one who cancelled a run,
-  and the runner's log ends the same way whoever did (`Job cancelled`), so
-  the operator reads the cancelled jobs' runners: a runner that cancelled its
-  job stopped, and the factory's runner registers as a new one each time its
-  pod starts, while a person's cancel in Gitea leaves the runner online. A
-  cancelled job whose runner is offline or gone is the runner's; one whose
-  runner is still online two minutes after it ended (a runner that stopped
-  shows offline by then), or that no runner started, is a person's, and
-  costs the round like any failed check, its feedback saying someone
-  cancelled them. Until then the Task waits; jobs or a runner Gitea doesn't
-  say of count the cancel as the runner's. When an
-  implementer pushes again the commit whose checks failed, having found
-  nothing to fix, its failed jobs run again before the Task reads the checks;
-  a failure from before a rerun is never read as its result
-  ([plan](plans/done/checks-run-again.md)).
-- **The fence.** The sandbox pod has no ServiceAccount token and reports through
-  its termination message; a per-Container Gitea bot user can write to that one
-  repository only; `main` takes no pushes, only the operator merges (the reviewed
-  commit only), and the Git host refuses changes to the platform's and the
-  Standard's protected files (only the operator's gated merge of a Standard change
-  passes, after its own checks) and keeps `v*` tags to the operator; a per-project
-  NetworkPolicy allows only DNS, the Git host and public HTTPS; each run has a
-  deadline. The Claude token is readable inside the sandbox; a model proxy in
-  the release namespace that adds it to the agent's requests is the fix
-  ([plan](plans/model-proxy.md)). The token's one source is a
-  Secret in the release namespace that the operator copies into project
-  namespaces, so the fix reads one Secret; a namespace receives copies only
-  with a label a namespace's own users can't set.
-- **The CI fence.** CI runs the agents' code too. A job that runs code from a
-  Container repository runs in an environment made for that job and thrown
-  away after it; holds no credential beyond its own job token and the secrets
-  its repository gave it; shares nothing writable with another project's
-  jobs, nor with a release; and reaches only DNS, the Git host (and the
-  registries it serves) and public HTTPS. The rule is the CI port's: every CI
-  adapter meets it or says which part it can't
-  ([plan](plans/ci-runner-isolation.md)). The Gitea Actions runners meet the
-  network and the registration token: a NetworkPolicy on their pods (label
-  `app.kubernetes.io/component: ci-runner`) lets no traffic in and lets out
-  only DNS, Gitea's pod on port 3000 and HTTPS to public addresses, and
-  Gitea's instance-wide registration token goes only to the init container
-  that registers, never to the container the jobs run in. `make
-  validate-yaml` checks both, in the chart and in `config/runner/`. The
-  `image` runner that builds release images (#1069,
-  [plan](plans/images.md#decisions)) runs rootless BuildKit, which makes user
-  namespaces, so its job container alone runs with seccomp and AppArmor
-  `Unconfined`, never privileged and with no added capability, and holds no
-  credential beyond the job token; the same check holds it to that. Still
-  open: each label has one long-lived runner in host mode that every
-  project's jobs and the releases share, one job after another, so a job can
-  leave a process or a file for the next, act with the runner's own token,
-  and write the `go` runner's build cache; a pool of single-job runner pods
-  per project closes it
-  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)). Until it
-  and the Claude token's gap close, one install is one trust domain; the
-  user docs say so
-  ([getting-started](getting-started.md#what-the-factory-trusts)).
-- **App values are needs, not platform rules.** "Works offline, no login, no ads"
-  is a need on a SoftwareSystem, not a rule of the platform; the agents get the
-  needs with every Task.
+- **Order.** An issue waits for its Git host dependencies. `priority/urgent`
+  goes first, even past `parallel`; then a Standard change a `Blocked` Task
+  waits on; then releases, due first first, the next taking places the
+  current can't use; then undated milestones, then none.
+- **A try continues an open pull request.** A failed Task's pull request stays
+  open while a later try may continue it on that branch, with its feedback
+  (`status.continues`); the operator closes it, saying why, once none will.
+- **Routes by label.** `spec.routes` sends issues with a label to another
+  implementer or reviewer (`kind/docs` to a cheaper model); per role, the
+  first matching route wins, else the Crew's Agent. The Task records the
+  Agents it got. A missing Agent leaves the Crew `Ready=False`,
+  `AgentNotFound`.
 
-## v3: watching the factory
+A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 
-Settled on 1 October 2026; the plan is
-[plans/done/factory-monitoring.md](plans/done/factory-monitoring.md) and what it found is in
-[results-v3.md](results-v3.md).
+- **Tagging** (`spec.tagReleases`). A release with no open issue and no Task
+  at work is done: the Crew tags it at its newest merged issue's merge commit
+  and closes the milestone. Tags go out in due-date order, never move, and
+  never go behind the previous release (`BehindPreviousRelease`).
+  `status.lastRelease` records it; `Released` says why one waits on a person.
+- **Preparing** (`spec.prepareReleases`). A done release with work a Task
+  merged gets `Prepare vX.Y.Z`, `kind/release`, listing what the tag carries;
+  its agents set the version files (`make release-version`) and the
+  changelog. It starts once no other Task works and runs alone
+  (`PrepareWaitsForTasks`). Work merged after it leaves the release to a
+  person (`MergedAfterPrepare`).
+- **The full check.** `Container.spec.checks` is `EveryChange` (the default:
+  CI runs `make check` on every change) or `BeforeRelease`: changes run the
+  Standard's `make check-light` and the full check runs on
+  `release-check/vX.Y.Z` before the tag (`FullCheckRunning`,
+  `status.fullCheck`); a failure files `Full check fails for vX.Y.Z` and tags
+  nothing. It applies only where the Standard sets `checksBeforeRelease` and
+  the Makefile has `check-light`; `ChecksApplied` says why not.
+- **The release run.** `status.lastRelease.run` sums the runs the tag started
+  (`Waiting`, `Running`, `Failed`, `Succeeded`), with Events
+  `ReleaseRunFailed` and, past an hour, `ReleaseRunOverdue`. Setting or
+  changing `c4.factory.io/rerun-release` on a `Failed` run re-runs its failed
+  jobs, once per value.
+- **Bundles.** Once B's release is built (and published, if B publishes),
+  each Container A with a `bundles: true` Relationship to B gets a ready
+  `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
 
-The factory runs whole Task loops on its own, so it needs to be seen and run
-without kubectl, and cheaply: it lives on a laptop.
+### Publishing a release
 
-- **A Task keeps its timeline.** `status.history` gets an entry whenever the
-  phase, round or Progressing reason changes (the newest 64), so where a Task's
-  time went stays readable after it ends. A Task waiting for an agent slot says
-  `WaitingForSlot`. An agent sandbox holds a slot until its pod ends; one kept
-  after its run, a reviewer's while its Task waits for CI, holds none.
-- **A Task says what its runs cost.** Each agent run reports its cost as the
-  agent says it (for Claude Code, `total_cost_usd` in its stream-json result
-  line); the Task adds them up in `status.costMilliUSD`. A run whose agent
-  didn't say, or that ended without a result, counts in
-  `status.runsWithoutCost`, and the UI says the cost wasn't reported instead
-  of leaving it blank. A Brief's rounds take their Plan Task's.
-- **A Task says what tokens its runs used, and how big a session got.** Beside
-  the cost, `status.tokens` adds up the input, output, cache-read and
-  cache-write tokens its agents reported (for Claude Code, from its
-  stream-json result line: `modelUsage`, subagents included, else `usage`)
-  and keeps `largestSession`: the most context any one agent session was
-  given on a turn, which is what makes an agent's work sloppier; a subagent is
-  a session of its own. A run with a call that reported none adds no tokens
-  and counts in `tokens.runsWithout`. A Brief's rounds take their Plan Task's,
-  and the Brief adds its rounds up. The UI shows them on one line beside the
-  cost, on a Task and on each Brief round (`$6.12 · 1.4M tokens, 1.1M of them
-  cache reads · largest run 142k`), marking a largest agent run past its
-  Agent's `sessionTokenLimit`, and says when the agent reported no tokens; when
-  an agent run handed off to a fresh one, the line ends with how often (`handed
-  off 2×`). The UI calls these *agent runs*: "session" there means only a
-  Session. Plan:
-  [plans/done/session-tokens.md](plans/done/session-tokens.md).
-- **A long session hands off to a fresh one.** A session whose context passes
-  its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
-  call, to write where it stands and stop; c4agent starts a fresh session on
-  the same job with that note and the working tree, and ends a session that
-  doesn't stop (past the limit by half again), writing that note itself from
-  the session's last words and `git status`; such a session ends without a
-  result line, so its tokens come from its turns and the run's cost goes
-  unreported. After three handoffs in one call the last session runs to its
-  end. A custom `C4AGENT_COMMAND` runs one session, unguarded. The Task counts
-  handoffs in `status.tokens.sessionHandoffs`, with a `SessionHandedOff` Event
-  for each run that handed off, saying the sizes it happened at. It also
-  keeps a record of each agent run as it ends in `status.runs` (the newest
-  64): its round and role, what it cost and used, and the sizes its sessions
-  handed off at, so the Task page names the run that handed off ("Run 3
-  (round 2, implement) handed off 2 times, at 131k and 138k tokens") without
-  reading Events. The Work area charts those records, one Agent at a time:
-  each run's largest session in its Task's round against the Agent's
-  `sessionTokenLimit`, marked by how its Task ended and whether it handed
-  off, with a table of the same by outcome (rounds used, runs past the limit),
-  so a reporter can judge the limit
-  ([plan](plans/done/token-chart.md)).
-- **The UI shows the factory at work,** across all projects (*The UI* below):
-  component health with CPU and memory, the last hour, the Tasks on a board by
-  stage with their timelines, where the time goes, what agent runs use against
-  their Agent's session token limit, agent slots, and what needs a look.
-- **The UI server reads the factory's health itself** (`GET /factory/health`):
-  pods, nodes and metrics-server, summarized; pod specs never reach the browser,
-  which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
-  an hour in memory, including its own API round trip. Nodes and their metrics
-  it reads cluster-wide; pods and theirs only where the factory runs: the
-  components' namespaces, where the chart binds a Role, and each Project's,
-  where the operator does (`--ui-service-account`).
-- **No Prometheus or Grafana.** Process data lives in the resources, live usage
-  comes from metrics-server (about 30 MiB), and the last hour from the UI server.
-- **Lifecycle targets:** `make down` stops the Kind node, `make up` brings it back
-  and gets pods out of back-off, `make doctor` checks every part.
-- **Checks work in memory.** CI jobs and, with `--sandbox-workspace-memory`,
-  agent sandboxes write their builds to memory-backed volumes: on the disk, they
-  stalled etcd and with it the whole control plane.
+The operator moves bytes with credentials it holds; it builds nothing.
 
-## v4: issues, crews and roles
+- **A Go module.** A tagged repository with a root `go.mod` is published to
+  the Git host's Go registry (`status.lastRelease.goModule`).
+  `ModulePublished` turns True once `go get <path>@<version>` finds it: a
+  `c4factory.local/` path through the registry, any other through the public
+  proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
+  and the Go Standard's CI fetch `c4factory.local/...` from the registry.
+- **npm and PyPI packages** (#1087, decided, not built): the release's npm
+  tarballs, wheels and sdists, published once to the Git host's registries
+  ([plans/app-packages.md](plans/app-packages.md)).
+- **A copy on GitHub.** `spec.publishReleases.github` (a repository and a
+  token Secret for it alone) copies the tag, notes and files once the runs
+  succeed; the operator does it, not CI, so the token never meets the agents'
+  code. It refuses a renamed or replaced target (`Published=False`) until
+  `c4.factory.io/accept-repository: <id>` accepts it.
+- **The source on GitHub.** `publishReleases.source.path` also commits the
+  app's source at its tag into that folder, without the factory's own files
+  (`model.FactoryOwnPaths`), tagged `<path>/vX.Y.Z` so `go install` finds it.
+  Crews publishing to one repository may not overlap (`FolderOverlaps`).
 
-Decided on 2 October 2026; the full design is
-[plans/done/2026-10-02-issue-driven-factory-design.md](plans/done/2026-10-02-issue-driven-factory-design.md)
-and the plan [plans/done/issue-driven-factory.md](plans/done/issue-driven-factory.md).
+## Standards and the catalog
 
-v2's apps were built one Task per app, and their quality was only "ok for
-testing". v4 makes the work smaller and clearer, and gives each role the agent,
-model and context it needs.
+**A Standard** is the rules as a layer: lint and format config, `AGENTS.md`
+and the role guides, the `make check` contract and its CI workflow. A change
+touching only the changelog, `docs/` or images passes CI without `make check`.
+`status.checks` reports CI on `main`.
 
-- **Issues are the work.** A Task can take its goal from an issue of its
-  Container's repository (`spec.issue`). The operator reads it before every run,
-  labels it `status/in-progress`, comments who works on it, opens a pull request
-  that closes it, and closes it on merge; a failed Task hands it back with
-  `status/needs-human` and the reason. The `status/*` labels are exclusive, so an
-  issue is in one state at a time.
-- **Open pull requests are the work in flight.** A failed Task's pull request
-  stays open while a later try at its issue may continue it, and the operator
-  closes it, with a comment naming the Task and why, once none will: its issue
-  is closed, a newer try at the issue opened its own pull request (the comment
-  links it), the issue's tries are used up, or the Task had no issue. A newer
-  try that continues it, or still runs and may, keeps it open. The branch stays, so a person can
-  reopen it; `status.pullRequestEnded` says how it ended. A Failed Task looks
-  again every 10 minutes, since the Git host doesn't say when an issue closes,
-  so tries from before an upgrade are cleaned up too while their Task exists.
-- **Ready means clear.** An issue needs an "Acceptance criteria" checklist before
-  an agent gets it; without one it goes back to a person before any tokens are
-  spent, with an example checklist in the comment. The Standards' issue templates
-  ask for context, goal, criteria, scope and notes.
-- **A Crew per Container picks up the work.** It names the implementer and the
-  reviewer Agents, polls the repository's `status/ready` issues, waits for their
-  Gitea dependencies (also across repositories) to close, and starts up to `parallel`
-  Tasks at a time (one by default; a `Blocked` Task doesn't count), lowest number
-  first after the Standard changes that `Blocked` Tasks wait on, up to three
-  tries per issue (a `NoCIResult`, `RunnerOutOfSpace`, `RunnerOutOfMemory`, `RunnerLost` or `ApprovalRanOut` failure is not one). A try continues an earlier try's pull request that is
-  still open: it works on that branch, with that try's feedback, and reports
-  to that pull request (`status.continues` names the earlier Task). When the
-  earlier try ended waiting for the checks of its commit (red checks
-  included) before a reviewer ran in any of its rounds, that commit is still
-  the head, and its checks now pass, the try skips the implementer: it enters
-  `Checking` at that commit and starts the review. A round
-  that changes only the pull request, such as its description, and commits
-  nothing goes to the reviewer as it is, and merges when approved; without a
-  pull request, a round with no commit has nothing to review
-  ([plan](plans/done/try-continues-open-pr.md)). Milestones group the
-  backlog; Gitea 1.27 has no API for project boards.
-- **A Crew routes issues by label** (#1085). `spec.routes` sends the issues
-  with a label to another implementer, reviewer or both, such as `kind/docs`
-  to a cheaper model or a security label to a stronger reviewer. Each role is
-  decided on its own: the first route in the list whose label the issue has
-  and that names an Agent for the role wins, else the Crew's own Agent; an
-  issue labelled `kind/docs` and `security` so gets the docs route's
-  implementer and the security route's reviewer. Labels match exactly; the
-  CRD allows one route per label and refuses a route that names no Agent.
-  The labels are read as the Task starts, and its immutable `agentRef` and
-  `reviewerRef` record the Agents it got: a label changed later moves no
-  Task, and the next try reads them again. Every Agent a route names must
-  exist, as the Crew's own must; until it does the Crew waits (`Ready=False`,
-  reason `AgentNotFound`) and its creation wakes the Crew.
-- **Releases go in order.** A milestone with a due date is a release. The Crew
-  starts ready issues release by release, the one due first first: the release
-  in progress (the first that still has work: a ready issue, one waiting on
-  dependencies, or a Task working on one of its issues) has first claim on any
-  free place, and the places it can't use, because its remaining issues wait
-  on each other or already run, go to the ready issues of the next releases,
-  due first first, up to `parallel`. Idle places buy nothing (#873). Issues in
-  an undated milestone, or in none, come after every release. Ahead of every
-  release go an urgent issue and a Standard change a Task waits on; an issue
-  the current release's issues depend on, directly or through each other,
-  goes with the current release, or it would wait for ever. An issue handed
-  back to a person (`status/needs-human`) no longer holds its release, so the
-  factory keeps working. Running Tasks are never stopped. Tags still go out in
-  order (below): a later release that is done waits for the earlier one, and
-  when the earlier one's tag carries the later one's merged work, that work
-  moves into the earlier milestone, so each tag holds what its milestone says.
-- **The Crew tags a done release** when its `spec.tagReleases` is true (off by
-  default). A release whose title is `vMAJOR.MINOR.PATCH` is done when its
-  milestone has no open issue, `status/needs-human` included, and no active Task
-  works on one of its issues. The Crew tags it, as the operator's Git user, at
-  the merge commit of its most recently merged issue (the Task records it in
-  `status.mergeCommit`; issues closed by hand don't count), then closes its
-  milestone. An issue its Standard change did whole (the Task ends Merged as
-  `DoneByStandardChange`, with no pull request of its own) counts as merged at
-  that change's merge commit and time; when that merge is lost, it doesn't
-  hold the release; while it waits for its commit, it holds the release, and
-  the message says that a person can move the issue out of the milestone. Tags go out in due-date order, and a tag is never moved: a tag
-  already at that commit only closes the milestone, one at another commit is
-  left to a person. A release is also left to a person when it has no merged
-  issue. When the tag would carry a later release's merged work (its issue was
-  handed back, and the Crew went on), the Crew tags it anyway: first it moves
-  each closed issue of a later release that merged before the tag's commit into
-  this release's milestone, with a comment, so each milestone holds what its tag
-  carries; an open issue stays in its release. A later release left with no
-  issue closes untagged, its version skipped. See
-  [plans/done/release-carries-later-work.md](plans/done/release-carries-later-work.md).
-  Each release is an Event, the log line `Released milestone` and `status.lastRelease`; a
-  release left to a person is a Warning Event, once per reason, and the Crew's
-  `Released` condition says why. A paused Crew still tags: its release's work
-  is already merged.
-- **A release reaches the Containers that bundle it.** A Relationship from
-  Container A to Container B with `spec.bundles: true` says A ships a pinned
-  release of B, as an extension ships its server; only a Container to Container
-  link can say it, and most don't (a client calling a service follows its
-  deploys, not its tags). When B's Crew tags a release and its runs have built
-  the release's files (`status.lastRelease.run` is `Succeeded`, or no run
-  started within the hour a release's runs get), and, when B's Crew has
-  `spec.publishReleases`, the release is published there with its files
-  (`status.lastRelease.publish` is `Published`; the hour doesn't apply, since
-  publishing needs the runs to succeed), it files `Bump B to vX`
-  in A's repository, labelled `kind/bump` and `status/ready` with acceptance
-  criteria, in A's first open release that has no prepare issue (open or
-  closed), so A's Crew picks it up and A's next release carries it; a release
-  already being prepared would otherwise wait for a person once the bump
-  merged after its prepare issue (#834). When every open release is being
-  prepared, it goes in no milestone, where the next round of a Brief that
-  releases A picks it up. Each Container gets one issue per release, recorded in
-  `status.lastRelease.bumps` and found again by a marker in its body; only the
-  newest release is bumped, a link created after the release files nothing, and
-  a bundler not yet Ready gets its issue once it is. A release whose runs fail
-  or never end, or whose publishing fails, files nothing until a run of it
-  again succeeds or it is published: a bundler pins the published files, which
-  don't exist before (#864). Each is an Event
-  `BumpFiled`. See [plans/done/release-bumps.md](plans/done/release-bumps.md).
-- **The Crew prepares a release** when its `spec.prepareReleases` is true (off
-  by default, independent of `tagReleases`). Once the first open release is
-  done and an issue of it was merged by a Task, and the milestone has no issue
-  labelled `kind/release` (open or closed, whoever filed it), the Crew files
-  `Prepare vX.Y.Z` there, `kind/release` and `status/ready`, listing the merged
-  issues, later releases' merged issues that its tag will carry included: its agents set the version files (`make release-version` checks them
-  against the tag) and write the changelog. Its merge is then the release's
-  newest, so the tag carries both. A release has one prepare issue; work merged
-  after it leaves the release to a person (`MergedAfterPrepare`), who files
-  another `kind/release` issue or tags it. A release with no merged work gets
-  none, so a milestone made ahead of its issues isn't released on its own.
-  The prepare step is built on the main it merges into and lists what the
-  tag carries (#956): while any Task is at work (a Blocked one aside,
-  whatever its issue's release), the done release's prepare issue waits
-  (`Released=False`, reason `PrepareWaitsForTasks`, no Event) and the Crew
-  starts no other issue but an urgent one or a Standard change a Blocked
-  Task waits on, so the Tasks drain; a prepare issue, filed by the Crew or
-  a person, starts only once no other Task is at work, and runs alone: no
-  other issue but those starts until its Task ends.
-- **A release's tag comes after the one before it.** The newest closed release
-  milestone's tag is the previous release; a release whose newest merge is
-  that tag's commit, or a Task's merge that ended before the merge the tag
-  names, would ship older code under a newer version, so the Crew leaves it
-  to a person (`BehindPreviousRelease`) instead of tagging it. A previous tag
-  at a commit no Task merged can't be placed and doesn't hold the release.
-- **The Crew watches the release run.** It reads the CI workflow runs the last
-  release's tag started and sums them up in `status.lastRelease.run`: `Waiting`,
-  `Running`, `Failed` as soon as one ended other than success or skipped, and
-  `Succeeded` once all ended well, with `runURL` linking to the failed or newest
-  run. A run that fails is a Warning Event `ReleaseRunFailed` and the log line
-  `Release run failed`; runs that end well are a Normal Event. The Crew watches
-  until the runs succeed, counting each workflow's newest run, so a failed run a
-  person re-runs, or a tag a person deletes and pushes again at the same commit,
-  turns `Succeeded`. Only the last release is watched, at the commit the Crew
-  tagged. Runs that haven't ended an hour after tagging (one no runner picks
-  up never starts) are a Warning Event `ReleaseRunOverdue`, once per release,
-  the log line `Release run overdue`, and a note on the `Released` condition's
-  message until they end; the watch carries on and reports their end as usual.
-- **A failed release run re-runs on request.** Setting or changing the
-  annotation `c4.factory.io/rerun-release` on a Crew with `tagReleases` whose
-  `status.lastRelease.run` is `Failed` makes the operator re-run the failed
-  jobs of that release's failed runs (each workflow's newest run) through the
-  GitProvider (Gitea's `rerun-failed-jobs`), once per value: the Crew records
-  the value it answered in `status.rerunRelease`, and a second reconcile with
-  the same value does nothing. The re-run is a Normal Event
-  `ReleaseRunRerun` and the log line `Re-ran the release runs`, and the watch
-  follows the runs' new attempts as it does when a person re-runs them in
-  Gitea; the hour they have to end counts from the re-run
-  (`status.lastRelease.rerunTime`), and a re-run's overdue runs get their own
-  `ReleaseRunOverdue`. A value set while the run hasn't failed re-runs
-  nothing, now or later: it is a Normal Event `NoFailedReleaseRun`. A re-run the Git host
-  refuses is a Warning Event `ReleaseRunRerunFailed`; a new value tries again.
-  The operator asks for each failed run's re-run even after one is refused;
-  when the host refused only some, the Warning names the runs it re-ran and the
-  ones it refused, the release stays `Failed`, and a new value re-runs only the
-  refused ones, since the others are no longer failed.
-- **A released Go app is a module others can fetch.** Right after the Crew
-  tags a release, it publishes the repository's Go module at that tag to the
-  Git host's Go package registry (Gitea's, per owner), under the module path
-  `go.mod` declares and with the tag as its version, so another app can
-  `go get` that release. A version is published once and never replaced;
-  `status.lastRelease.goModule` records the path, version and state
-  (`Published`, `NotGo` for a repository with no `go.mod` at its root,
-  `Invalid` for a version Go refuses, such as a `v2.0.0` whose path lacks
-  `/v2`, and `Failed` while the host can't be reached, retried each poll), and
-  the condition `ModulePublished` says why it isn't published. An upload is a
-  Normal Event `ModulePublished` and the log line `Published Go module`; an
-  invalid module is a Warning Event `InvalidModule`, once per release. See
-  [plans/done/app-modules.md](plans/done/app-modules.md).
-  `ModulePublished` is True only once `go get <path>@<version>` finds the
-  version where that path is read (#1001). A `c4factory.local/` path is read
-  from the registry, so the upload is the publish. Any other path is read
-  through the public Go proxy, and the upload, still made, counts for
-  nothing there: the operator asks the proxy (`--go-proxy`, by default
-  proxy.golang.org; `off` asks none) for the version, at most every 5
-  minutes, and turns True on its answer. For a path that is the Crew's own
-  GitHub source folder it first waits for the source tag
-  (`WaitsForRelease`, naming the `Published` condition's failure), since the
-  proxy remembers a miss for a while; with no proxy, or a private target,
-  that tag is the answer (whether the target is private is read from GitHub
-  as the tag goes out, `publish.source.private`). A version the proxy can't
-  find is `NotFetchable`, saying what Go needs, with a Warning Event
-  `ModuleNotFetchable` once per release; an unreachable proxy is
-  `ProxyUnavailable`, asked again. `goModule.state` is then `Waiting` or
-  `NotFetchable`, and `goModule.checkedTime` says when the proxy was last
-  asked; an old `Published` with none is checked again. For such a path the
-  Normal Event `ModulePublished` comes when it turns True, at the proxy's
-  first 200, not at the upload. A false
-  `ModulePublished` that waits on a person shows in *Needs you* and on the
-  Brief. See [plans/done/module-fetchable.md](plans/done/module-fetchable.md).
-- **A released TypeScript or Python app is a package others can install**
-  (#1087). Once the release runs succeed, the Crew reads the release's files
-  and publishes each npm tarball, Python wheel and sdist among them to the
-  Git host's npm and PyPI registries (Gitea's, per owner). These are the files
-  the release run's `make dist` built and attached at the tag. The operator
-  builds nothing; it moves bytes with the credentials it holds. A file is
-  known by its content, and is published only at the tag's version (PEP 440
-  normalised for Python), once, never replaced. An npm package is named
-  `@c4factory/<container>`, the one scope pods and CI send to the owner's
-  registry; a tarball by another name is the app's own release file, and stays
-  unpublished. A PyPI package keeps its `pyproject.toml` name; the consumer
-  pins it to the owner's index, declared `explicit`, so it never comes from
-  pypi.org. `status.lastRelease.packages` records the state (`Waiting` until
-  the release runs succeed, `Published`, `NoPackage` when the release has no
-  package file, `Invalid` for a version that isn't the tag's, `Failed` while
-  the host can't be reached, retried each poll), a message, and the packages
-  published, each with its ecosystem, name and version. The condition
-  `PackagesPublished` says why they aren't published. An upload is a Normal
-  Event `PackagePublished` and the log line `Published package`; an invalid
-  file is a Warning Event `InvalidPackage`, once per release. Agent pods get
-  `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`, and c4agent writes `~/.npmrc` with
-  the scope and the bot's token (uv reads the `~/.netrc` it writes). The
-  TypeScript and Python Standards' checks and gitea-release's release run
-  write the same from the job's token. See
-  [plans/app-packages.md](plans/app-packages.md).
-- **A release can be published to GitHub.** A Crew with
-  `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
-  user creates holding a token for that one repository) copies its last release
-  there once the release runs succeed: the same tag (with an optional
-  `tagPrefix`), the same notes (the Gitea release's body, or the titles of the
-  release's merged issues, which the operator writes on both) and the same
-  files, streamed from the Gitea release. The release is named after the app
-  and its version (the Container's `displayName`, else its name, then the tag:
-  `CEL Lens for VS Code v0.6.1`), so a repository several apps publish to says
-  whose each release is. It becomes the repository's Latest unless
-  `publishReleases.latest` is `false`: on a shared repository, every app but
-  the one people install sets it, so a library's release doesn't take Latest
-  from it. The operator does it, not CI, so the
-  token never reaches the code the agents write. It only adds releases: a draft
-  marked with the Container and tag, its files, then published, so a retry
-  carries on and nobody sees half a release; a release of that tag it didn't
-  make is left alone. `status.lastRelease.publish` and the condition
-  `Published` say how it went, with the reason; a failure is a Warning Event
-  `ReleasePublishFailed`, once per reason, and is retried each poll. See
-  [plans/done/release-publishing.md](plans/done/release-publishing.md).
-  A refused token's message names the target repository, and who sets it, as
-  a cause beside the token. The Crew records the GitHub id of the repository
-  it first published to (`status.publishTarget`); a target GitHub now
-  redirects to another name fails `RepositoryRenamed`, and one with the same
-  name but another id fails `RepositoryReplaced`, before anything is written
-  to it, until the target is changed or the annotation
-  `c4.factory.io/accept-repository: <id>` accepts the new one. See
-  [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
-  With `publishReleases.source.path`, the release also brings the app's
-  source as of its tag into that folder of the repository (`.` is the whole
-  repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
-  `docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`) left out,
-  tagged `source.tagPrefix` + the tag (by default `<path>/vX.Y.Z`, the tag Go
-  reads in a subfolder). It is one commit on the default branch that replaces
-  only that folder, made through GitHub's Git Data API with the same token,
-  fast-forward only: a branch that moved on is built on at the next poll.
-  Folders of Crews publishing to one repository may not overlap (both fail
-  `FolderOverlaps`; a Brief's `spec.releases` refuses it at admission), and a
-  source tag on another folder tree is left alone (`SourceTagTaken`). The
-  source goes first and the release's tag names the same commit, so
-  `Published` means both are out; `status.lastRelease.publish.source` holds
-  the commit, tag and folder link, with a Normal Event `SourcePublished`. A
-  `go.mod` whose module path or tag `go install` can't find from GitHub
-  raises a Warning Event `SourceNotGoInstallable`, and is published anyway.
-  See [plans/done/release-source.md](plans/done/release-source.md).
-- **Urgent goes first.** A person labels a ready issue `priority/urgent` to have
-  it picked up at once: the Crew starts it on its next poll, before every other
-  issue, whatever its release, even when every place is taken (once running, it
-  counts towards `parallel`). It still waits for its open dependencies, and a
-  paused Crew starts nothing. A Standard change filed for an urgent issue is
-  urgent too. The operator keeps the label in every repository it polls.
-- **Roles get their own model and guide.** Agents have a `harness` and a `model`;
-  a Sonnet implementer can pair with an Opus reviewer. A Standard ships
-  `docs/agents/implementer.md` and `reviewer.md`, read from the base branch so a
-  change can't rewrite its own review. The reviewer reports each acceptance
-  criterion, posts its verdict as a pull request review, and may name up to three
-  follow-ups, each with its own acceptance criteria, which become
-  `status/proposed` issues in the Later milestone, outside any release; a person
-  who moves one into a release can ready it as it stands. Criteria arrive whole:
-  the reviewer keeps each to one sentence of at most 200 characters, and text
-  that must be shortened to fit ends at a whole word with "…", never mid-word.
-  For a Brief's apps, the person answers them in a prompt instead
-  ([Briefs](#briefs-an-idea-in-plain-words)).
-- **Evidence is never made up** (#467). The implementer never presents a
-  drawn or generated picture, a recording or a message as the product's: a
-  screenshot comes from running the product, a quoted message from the code.
-  A criterion that needs what no agent's sandbox has (a desktop editor, a
-  device, an account) is left open with why, never faked. The reviewer opens
-  every image the change adds (the runner lists them with their sizes), checks
-  quoted output against the code, and requires a change for made-up evidence;
-  it approves an honestly open criterion of that kind and reports it in the
-  verdict's `open`. On merge the operator files those criteria as one
-  `kind/by-hand` issue, `status/needs-human` in the Later milestone, so a
-  person does them; a Brief lists it with its failed issues and may close it,
-  never retry it. The planner doesn't give agents a person's work: it files
-  it as its own plan issue labelled `kind/by-hand`, which the operator files
-  `status/needs-human` in Later, and no issue waits on it. See
-  [plans/done/honest-evidence.md](plans/done/honest-evidence.md).
-- **Context comes from the C4 model.** Agents get the system's needs and KPIs, its
-  users, the Container's Relationships, and read-only clones of the related
-  Containers' repositories: the agent of a client reads the service it calls.
-- **A project's notes to its agents** (#909). `docs/project-notes.md`, when a
-  repository has it, is the project's own word to its agents about its
-  workspace and ways, such as how CI runs `make check`. No Standard protects
-  it, so any issue changes it by a normal pull request; the implement and
-  review prompts tell the agent to read it after `AGENTS.md`, which wins with
-  the role guide where they disagree. The factory writes no such file. See
-  [plans/done/out-of-reach-asks.md](plans/done/out-of-reach-asks.md).
-- **Waiting is not failing.** A usage limit, an overloaded API, a temporary
-  server error from the model's API (a 5xx) or rejected credentials don't cost
-  a round: the Task waits (`AgentUnavailable`) and tries
-  the same step again. Neither does a run the infrastructure ended (a node
-  shutdown or restart, an eviction, a preemption, an outage that lasted past
-  its pod's deadline or its sandbox's shutdown time, a pod deleted before it
-  finished, which Agent Sandbox would replace and start over, a Git host that
-  stayed unreachable through the runner's retries of a clone or push, about
-  five minutes, enough for Gitea to restart on an upgrade): it runs again in the same round
-  (`Interrupted`, then `status.reruns`), at most twice per round, so a run that
-  is cut short every time still spends rounds. An out-of-memory kill, or a run
-  that ran out its time while the cluster ran, is the agent's run failing, not
-  an interruption.
-- **A protected file without a person.** An issue that needs a protected file, such
-  as the Makefile or a CI workflow, gets its own gated Task: the operator files a
-  `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
-  merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
-  out of reach. The gated Task may also change files no Standard protects where
-  the repository's checks fail without them, such as a test that pins what the
-  protected file produces; its history and pull request name them, and its
-  reviewer checks they change only that. Any other protected file is refused.
-  A round turned back for touching files the Task may not change, twice in a
-  row, ends the Task `Blocked` instead of spending its last round, and the Task
-  that waits on that Standard change ends `Blocked` too, so the Brief lists
-  both issues with the files that hold them. A Standard change weakens no
-  check: it removes or skips no target, test, lint rule or CI job, not even
-  for some changes. When the issue can't be met without that, the reviewer
-  names the rule and what the author can do instead (for CI that runs the full
-  check less often, the Container's `checks`), and the implementer stops on
-  purpose with a `Blocked:` line saying both rather than undoing the change.
-  A round that leaves every path the change is for as on `main` ends the Task
-  at once, `Blocked`, before any review: there is nothing to merge, and its
-  message carries what the round before was sent back with, which names the
-  rule; the waiting Task ends `Blocked` with it (#929). The change's proposal branch
-  (`standard/<task>`) lives as long as its `kind/standard-change` issue is
-  open, also after the waiting issue was handed back, so a retry of the
-  change finds it; the operator deletes it when the change merges or a
-  failed issue's answer closes it. A Standard change whose branch is gone
-  anyway says so where failed issues are answered, and a retry of it is
-  refused: its Task would have nothing to merge. See
-  [plans/done/2026-10-02-standard-change-design.md](plans/done/2026-10-02-standard-change-design.md)
-  and [plans/done/standard-change-scope.md](plans/done/standard-change-scope.md).
-- **A Standard's fixes reach its Containers.** Bumping a Standard's pinned `ref`
-  updates every Ready Container that uses it. The operator renders the Standard
-  at the Container's ref and at the new one, and opens a pull request of its own
-  with the difference: the new render of each file the repository still holds
-  as the old ref rendered it, and the removal of files the new ref no longer
-  renders. A file the repository changed since (a Standard change, or a person)
-  is merged line by line, three-way, and written when the two changes don't
-  overlap, named in the pull request as merged with the repository's changes
-  (#880). One whose changes overlap is left out and stays in
-  `status.standard.behind`, with the ref its copy was last brought to, through
-  later updates until it is settled: `StandardUpdated` is False, reason
-  `FilesBehind`, the Container is in *Needs a look*, and the Brief that made it
-  lists it in `needsYou`. Where the choice is asked, the Standard's change to
-  each such file shows: the diff of the Standard's renders of it at its ref
-  and at the new one, and the repository's lines a take would drop, per file
-  in the update's pull request and, bounded, in `status.standard.behind` and
-  on the Container's page (#975). The person settles it with one annotation naming the
-  ref: `c4.factory.io/standard-take` has the operator open and merge a pull
-  request of the Standard's version (the repository's other changes kept, the
-  lines it drops listed), `c4.factory.io/standard-keep` keeps the repository's
-  (`status.standard.kept`) until the Standard changes the file again. The
-  operator removes the annotation once it acted on it; one naming another ref,
-  given while an update is in flight, or both at once is ignored and removed.
-  A take runs like an update (branch `standard-take/<standard>-<ref>`, one
-  update or take in flight at a time); closing it leaves the files behind. No
-  autopilot takes it for the person. No agent takes part: the update is the
-  template's own content, reviewed
-  here where the template changed, and it reaches the agents' rules, which
-  agents never change. The operator merges it as admin once CI passes on it,
-  with every check `main` requires, and it changes only the planned files.
-  Closing the pull request drops the update until the Standard's ref, or the
-  Container's checks, change again. `status.standard` records the ref the Standard's files are at and the
-  update in flight, the condition `StandardUpdated` how it went;
-  `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
-  [plans/done/standard-update.md](plans/done/standard-update.md),
-  [plans/done/standard-left-out.md](plans/done/standard-left-out.md) and
-  [plans/done/standard-left-out-diff.md](plans/done/standard-left-out-diff.md).
-- **The owner chooses when the full check runs.** A Container's
-  `spec.checks` is `EveryChange` (the default: CI runs `make check` on every
-  pull request and push to main) or `BeforeRelease`: each change runs the
-  Standard's `make check-light` (build, vet or type check, lint; no test
-  suites, no build for every platform), trusting the agent's own `make check`
-  in its workspace, and the full `make check` runs on the commit a release
-  will be tagged at, before the tag. It takes effect only when the Standard
-  says it can (`spec.checksBeforeRelease`); otherwise the full check stays on
-  every change and the Container's `ChecksApplied` is False
-  (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
-  changing it reaches the repository through the Standard update's pull
-  request, and `status.standard.checks` records what the repository runs:
-  the scaffold's (also in `.c4factory.yaml`), then each merged update's.
-  Until it matches what the Container asks, `ChecksApplied` is False: reason
-  `Pending` naming the update's pull request, the update's stop as its reason
-  (such as `ChecksLeftOut` or `UpdateClosed`), or `AddedAfterScaffold` for a
-  Standard the scaffold didn't have, whose CI runs the full check on every
-  change. An
-  update whose change of checks would leave out a file the repository changed
-  since, such as a hand-edited `check.yaml`, isn't opened: `StandardUpdated`
-  is False (`ChecksLeftOut`) naming the file, and the checks stay as they are
-  until the Container's checks or the Standard's ref change again.
-  A change to `BeforeRelease` also waits, unopened, while the `Makefile` the
-  update would leave on main has no `check-light` target, such as an app's
-  own Makefile a Standard update left out: switching would fail every
-  change's check. `StandardUpdated` and `ChecksApplied` are False
-  (`NoLightCheck`), naming the Makefile and, when updates left it out, the
-  ref it is at; every pass plans it again, so adding the target lets the
-  change through, with no need to touch the Container.
-  With `BeforeRelease` and `tagReleases`, a done release is not tagged at
-  once: the Crew pushes `release-check/vX.Y.Z` at the commit, the workflow's
-  `full` job runs `make check` there, and its success tags the release and
-  deletes the branch. Meanwhile `Released` says `FullCheckRunning` and
-  `status.fullCheck` records the branch's commit, when it was pushed and how
-  its runs go; only the runs of that branch's push count. A failure tags nothing (`FullCheckFailed`) and files
-  `Full check fails for vX.Y.Z`, `kind/bug`, in the release's milestone,
-  whose merge doesn't count as merged after the prepare issue; no run within
-  the hour leaves the release to a person (`NoFullCheck`). A person who tags
-  by hand pushes the branch and waits for `full` the same way. See
-  [plans/done/checks-before-release.md](plans/done/checks-before-release.md).
-- **New shapes, same operator.** Container types `cli` and `extension`, with
-  their templates in the template catalog in `templates/`; a Go and Node toolchain whose image ships a warm build cache, a CI runner
-  labelled `go`, and two agent sandboxes at once.
-- **A Container type `operator`:** a Kubernetes operator, built with
-  kubebuilder. It is not a `service` or a `worker`: it ships CRDs and RBAC and
-  needs cluster-wide permissions, so the planner tells it apart. The factory
-  never installs it; a release publishes what a person, Argo CD or Flux needs
-  to. The catalog builds it with Framework `go-kubebuilder` (what a pinned
-  `kubebuilder init` writes, regenerated by `make template-go-kubebuilder`),
-  Standard `go-operator-standard` (kubebuilder's Makefile with `make check` and
-  `make dist`, its lint config and the agents' rules) and Compute `small`, which
-  patches the manager's resources; `make test-templates-operator` renders that
-  combo and runs its `make check` before and after `kubebuilder create api`,
-  then its `make dist`. Deployment `gitea-release` ships an operator's release
-  on a version tag: the manager binaries for Linux, macOS and Windows,
-  `install.yaml` (the CRDs, RBAC and the manager, from kubebuilder's
-  `make build-installer`) and `SHA256SUMS`. No image is built or pushed:
-  `install.yaml` names the image `controller:<tag>`, and the operator's README
-  says to build and push the image and set it there before applying it; with
-  [plans/images.md](plans/images.md) (#1069) its release builds the image and
-  `install.yaml` names it by digest. Until a catalog entry supports
-  a type, the planner answers that it needs input rather than planning it.
-  GitHub issue #723 has the plan, [plans/done/kubebuilder-operators.md](plans/done/kubebuilder-operators.md).
-- **A Container type `function`:** serverless code on AWS (Lambda behind an
-  API Gateway HTTP API), whose CDK app is its deployment. It is not a
-  `service`: nothing runs between requests, and the cloud, not a cluster, runs
-  it. The `aws-lambda-ts` Framework builds it in TypeScript, `aws-lambda-go`
-  in Go and `aws-lambda-py` in Python with boto3 (their CDK apps still
-  TypeScript), with the `aws-standard` Standard (a whole TypeScript Standard
-  copied from `ts-standard`, with `go-standard`'s Go rules for a Go function
-  and `python-standard`'s Python rules for a Python one, which tests keep
-  from drifting), and no Compute or Deployment: `make check` synthesizes
-  the stack offline under CDK Nag's AwsSolutions rules and
-  cfn-lint, and nothing deploys. GitHub issue #1028 has the plan,
-  [plans/done/aws.md](plans/done/aws.md). The same Standard serves the `service`
-  Framework `aws-ec2-ts` (EC2 instances in an Auto Scaling group behind an
-  internal Application Load Balancer), also with no Compute or Deployment,
-  and the `service` Framework `aws-fargate-ts` (a Node server in a container
-  on ECS on Fargate behind an internet-facing Application Load Balancer
-  serving HTTPS, whose image synth only stages), and the `static-site`
-  Framework `aws-static-site-ts` (a Vite page, built at synth, in a private
-  S3 bucket behind a CloudFront distribution with origin access control,
-  and in production a web application firewall; the stack is in us-east-1,
-  where CloudFront takes its firewall, certificate and metrics), the
-  `worker` Framework `aws-queue-ts` (an SQS queue with a dead-letter queue,
-  consumed in batches by a TypeScript Lambda that reports only the messages
-  that failed), the `job` Framework `aws-schedule-ts` (an EventBridge
-  Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a
-  dead-letter queue, the schedule's role scoped to the one function), and
-  the `worker` Framework `aws-event-ts` (an EventBridge rule on the default
-  event bus invoking a TypeScript Lambda, with a retry policy and a
-  dead-letter queue on the rule's target).
+**A Standard's fixes reach its Containers.** Bumping its pinned `ref` updates
+every Ready Container on it: the operator renders the Standard at the old and
+new ref and opens a pull request with the difference, which it merges as
+admin once CI passes. A file the repository changed since is merged three-way
+when the changes don't overlap; one that overlaps is left out, listed in
+`status.standard.behind` with its diff (`StandardUpdated=False`,
+`FilesBehind`), until a person sets `c4.factory.io/standard-take` (the
+operator merges the Standard's version) or `c4.factory.io/standard-keep`
+naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
+refs, `status.standard` the current.
+
+**The templates** live in `templates/`; [templates.md](templates.md) scores
+each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
+tools and envtest) run every check without a cluster.
+
+- **`operator`:** Framework `go-kubebuilder`, Standard
+  `go-operator-standard`, Compute `small`. The factory never installs it;
+  Deployment `gitea-release` ships its binaries, `install.yaml` and
+  `SHA256SUMS` on a version tag, the image left to the user until release
+  images (#1069).
+- **AWS** (`function`, `service`, `static-site`, `worker`, `job`): the
+  `aws-*` Frameworks, each a CDK app in TypeScript that deploys itself, with
+  the `aws-standard` Standard; `make check` synthesizes the stacks offline
+  under CDK Nag and cfn-lint, and CI deploys nothing. The `dynamodb`
+  Connector adds a table to the stack.
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
-  its stacks for two tiers, and the place it is deployed to picks one: a
-  deploy target says `production` or `development`, and a hand deploy that
-  says nothing is `development`. `production` means data retained and
-  protected from deletion, point-in-time recovery and a daily AWS Backup
-  plan with a stated retention and an optional second region, alarms on
-  every stack to an SNS topic, X-Ray tracing and a year of logs;
-  `development` turns the costly ones off. What the app promises in any
-  tier is the Container's, in `spec.operations`: its backup retention and
-  copy region, its recovery objectives (RPO, RTO) and who its alarms tell.
-  The block renders into `infra/operations.ts`, which the stacks read and
-  the Standard's test enforces; a change to the block reaches the
-  repository by a pull request the operator opens and merges, as a Standard
-  bump does: the operator renders the Framework at its scaffolded ref with
-  the new block, writes only `infra/operations.ts`, and records the pull
-  request in `status.operationsUpdate`. The Container's `OperationsApplied`
-  says whether it has: False, `Updating`, while CI runs, and True,
-  `UpdateMerged`, naming the merged commit; a Framework that renders no such
-  file leaves it False, reason `ChangedAfterScaffold`. What the block
-  leaves out, `internal/model` fills in (35 days, `1h`, `4h`), never CRD
-  defaulting, so the Container reads back as it was written. Deploy-time values (an alert email, a certificate) are
-  CloudFormation parameters a deploy target overrides. Every AWS
-  repository carries `docs/runbook.md`: how to restore, roll back and
-  answer each alarm. A Brief's planner sets the block from the idea and
-  never a tier. GitHub issue #1067 has the plan,
-  [plans/aws-production.md](plans/aws-production.md).
+  both; a deploy target picks one, a hand deploy is `development`.
+  `production` keeps and protects data, with point-in-time recovery, a daily
+  backup plan, alarms, X-Ray and a year of logs; `development` drops the
+  costly parts. What the app promises in any tier is
+  `Container.spec.operations` (retention, copy region, RPO, RTO, who alarms
+  tell), rendered into `infra/operations.ts`, its defaults from
+  `internal/model`; a change reaches the repository by a pull request the
+  operator merges (`OperationsApplied`). Each has `docs/runbook.md`
+  ([plans/aws-production.md](plans/aws-production.md)).
 
 ## Briefs: an idea in plain words
 
-Decided on 6 October 2026 for GitHub issue #240; the plan, with every
-decision and why, is [plans/done/brief.md](plans/done/brief.md).
+A Brief lets a person give an app idea in plain words and steer with
+follow-up prompts; a planner Agent turns it into the model, Crews and first
+issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
 
-Writing the model, the catalog, the Agents and the Crew as YAML, and filing the
-first issue through Gitea's API, is operating the factory, not describing a
-product. A Brief lets a person give the idea in plain words and steer with
-follow-up prompts; a planner Agent does the rest and says what it chose.
-
-- **A Brief is one more writer of the model.** `spec.idea` is the idea,
-  immutable; `spec.prompts` takes follow-ups, at most 50 listed at once, and
-  an earlier prompt never changes. The write that appends to a full list
-  retires the oldest planned prompts in the same write: it takes them out of
-  the list and counts them in `spec.promptsRetired`, which only grows, so a
-  Brief takes prompts for as long as its project runs (#835). The status
-  says how many were planned (`status.promptsPlanned`); a prompt no round
-  planned is never retired. The status counts every prompt written, retired
-  ones included, and the planner's `brief.md` keeps their numbers and says
-  how many retired, the model holding what they asked for. The operator
-  never writes the spec, so GitOps keeps working (#855): the UI server's
-  append retires the planned prompts past the newest ten for the person, its
-  patch guarded by the prompts it read, so a prompt appended meanwhile is
-  never lost. With kubectl or in Git, the person drops the oldest planned
-  prompts and raises `promptsRetired` by as many in the commit that adds the
-  51st; a 51st alone is refused with a message that says so, and so is a
-  retirement that drops anything but the oldest or miscounts, or that
-  raises `promptsRetired` past `status.promptsPlanned`: a CEL rule refuses
-  the write rather than a condition reporting the prompt lost (#859). It
-  reads the stored status, so it holds only on updates (a Brief made with
-  prompts retired is taken) and status writes pass; `promptsPlanned` only
-  grows, so a stale read can only refuse a sound write, which a retry
-  passes, never let an unplanned prompt go.
-  Anything can write it: the UI's box, kubectl or GitOps. With actions off, the UI server
-  writes nothing but this: creating a Brief, appending a prompt (retiring
-  planned ones when the list is full), and setting
-  `spec.paused` from the card's Pause and Resume buttons. With them on, it
-  takes the actions under *UI actions* below.
+- **One more writer of the model.** `spec.idea` is immutable; `spec.prompts`
+  lists at most 50 follow-ups, and appending to a full list retires the
+  oldest planned ones (`spec.promptsRetired`); a CEL rule refuses a write that
+  loses an unplanned prompt. The operator never writes the spec.
 - **A planner Agent plans each round** (the idea, then each batch of new
-  prompts) as a Task with `spec.kind: Plan` owned by the Brief, in an agent
-  sandbox like any Task. It works in the Brief's own repository, where the
-  operator writes the brief, the namespace's current model and the installed
-  catalog, and pushes its plan to a branch: the story kinds, the first issues
-  and its choices in plain words.
+  prompts or requests) as a Task, `spec.kind: Plan`, in the Brief's own
+  repository, where the operator writes `brief.md`, the current model and
+  the catalog. It pushes the story kinds, the issues and its choices
+  (`plan/summary.md`).
 - **The operator checks and applies the plan.** A plan writes only story
-  kinds (Project, Person, SoftwareSystem, Container, DataStore, Relationship),
-  names only installed catalog entries that support the Container's type,
-  no Compute or Deployment on a Framework that deploys itself,
-  changes only the story text of what exists (and a Container's `checks`,
-  below), puts no new Container or DataStore in an External system, and
-  deletes nothing; anything
-  else refuses it, and the planner's next round gets the reasons. The operator
-  applies it (Relationships before the Containers they start from, so their
-  Connectors are part of the scaffold), makes a Crew for each new Container
-  with the Brief's Agents and as many places as the Brief says (below), and
-  files the issues in each Container's repository once it is Ready, ready for
-  its Crew. What it made carries the label `c4.factory.io/brief`; deleting the
-  Brief keeps it. When
-  a step fails, the Brief stays `Applying` and tries again, and its `Planned`
-  condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
-  stopped and why: a Brief never looks busy without a reason.
-- **The round that creates a SoftwareSystem sets its `location`.** A planner
-  marks a system the story only names, such as a payment provider, External;
-  one it leaves out is Internal. Later rounds keep the location a system has,
-  whatever their plan says: a plan that turned a built system External would
-  strand its Containers, and a second answer shouldn't undo the first. Changing
-  it afterwards is a person's edit to the SoftwareSystem.
-- **A round's issues keep the plan's order** (#428). An issue that needs
-  another issue's work merged first names it in its front matter, `after:`
-  with the round numbers of its blockers, in any of the round's Containers.
-  The plan is refused when `after:` names no issue of the round, the issue
-  itself or a design idea, or makes a cycle. Applying the round, the operator
-  files blockers first, files an ordered issue without `status/ready`, makes it
-  depend in Gitea on each blocker (across repositories too), names them in its
-  body, and only then labels it ready; the Crew waits for open dependencies, so
-  the issue starts once its blockers' pull requests merge. See
-  [plans/done/brief-issue-order.md](plans/done/brief-issue-order.md).
-- **One app uses another's release, never its branch** (#430). Apps stay one
-  repository each and share code the way separate repositories do: an issue
-  that builds on another Container's code names it in its front matter,
-  `uses:`. The plan is refused when the used Container is the issue's own, is
-  not in the model, has no Relationship from the issue's Container, or has
-  neither a release made nor one the round makes (named in `releases.yaml`,
-  with an issue of the round for it). When the Crew tags a release of a repository with a `go.mod` at its
-  root, the operator publishes the module to the owner's Go registry in Gitea;
-  agent pods and the Go Standard's CI fetch `c4factory.local/...` modules
-  through it. A TypeScript or Python app's release publishes its npm or PyPI
-  package the same way (#1087), and the same pods and Standards install
-  `@c4factory/...` packages and the owner's index from it. A `uses:` issue is
-  filed without `status/ready` and labelled ready only once each app it uses
-  has a published version: the round's release for an app the round
-  releases, else its newest. A version counts as published once its Go module
-  and its packages have both settled and at least one was published. Its body
-  then gets a line per thing published, such as
-  `Uses <module> <version>: go get it at that version.`, or the npm or PyPI
-  line naming the package, its version and the install. While it waits, the
-  Brief stays `Applying` and its message names the issue, the app and why,
-  such as a release that published neither a Go module nor a package. See
-  [plans/done/app-modules.md](plans/done/app-modules.md) and
-  [plans/app-packages.md](plans/app-packages.md).
-- **It asks only for what costs money or touches access.** Agents, their
-  models, a Crew's size, GitProviders and credentials are never the planner's
-  to make or change. When it needs one, or can't go on without a decision, the
-  Brief's condition `NeedsInput` says what in one sentence, and the round waits.
-- **A Brief says how much its Crews build at once** (#533). The
-  Brief owns the `parallel` of the Crews it made and sets it every reconcile,
-  earlier rounds' Crews included; a Crew it didn't make is left alone.
-  `spec.parallel` (1 to 5) wins; else the number a prompt gave, which the
-  planner relays in `plan/parallel.yaml` (`parallel: N`, `why:` quoting the
-  prompt) only when a new prompt asks, never of its own accord, and the round
-  that applies it records in `status.parallel`; else the operator's default,
-  3. A plan writing it with no new prompt, out of 1 to 5, or while
-  `spec.parallel` is set is refused, and `brief.md` tells the planner the
-  number now and where it comes from. A hand
-  edit of such a Crew's `parallel` is set back, and `status.apps` shows each
-  Crew's, which the Brief's card shows per app ("3 at a time"); the create
-  form can set `spec.parallel`. The agent-slot queue
-  still caps how many agents run. See
-  [plans/done/brief-parallel.md](plans/done/brief-parallel.md).
-- **A Brief sets when its apps' CI runs the full check** (#977). A
-  Container's `checks` (`EveryChange` or `BeforeRelease`) is the Brief's to
-  set, as its Crews' `parallel` is: a plan's Container may say `checks` in
-  `plan/model.yaml`, only when a new prompt asks, never of the planner's
-  own accord, and the round sets it on the Container, a new one or one the
-  Brief made. A Container the plan writes without `checks` keeps its
-  setting, so one a person made isn't undone; `model/model.yaml` leaves it
-  out so a copy does too, and `model/containers.yaml` shows each
-  Container's setting, `model/catalog.yaml` each Standard's
-  `checksBeforeRelease`. A plan setting it with no new prompt, to another
-  value, or on a Container the Brief didn't make is refused. The Standard
-  still decides whether it takes effect (`ChecksApplied`, reason
-  `StandardRunsFullChecks`), and the applied round's summary says so in a
-  sentence the operator adds.
-- **A Brief pauses and resumes its Crews in one step** (#677). While
-  `spec.paused` is true, the Brief sets `spec.paused` on every Crew it made,
-  marking each with `c4.factory.io/paused-by: brief`, starts no new round and
-  tends no failed issue; a Task already started, its planner's included, runs
-  to its end. Its condition `Paused` names the Tasks still running, then says
-  nothing is. Set back to false, it unpauses only the Crews it marked, so a
-  Crew a person paused by hand stays paused. The Brief's card pauses and
-  resumes it. See [plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
-- **A Brief files no issue that no change may make** (#909). `AGENTS.md`,
-  `docs/agents/` and `.c4factory.yaml` (`model.AgentNeverPaths`) change
-  through no pull request, so `brief.md` names them and a prompt that asks
-  for a change to them gets no issue: the round's summary and choices say
-  what wasn't planned, why, and that notes for the agents go in
-  `docs/project-notes.md`, which a prompt may have an issue write instead. A
-  request asking for one is answered `skip` with that why, or taken as such
-  an issue. The plan check refuses an issue whose title or acceptance
-  criteria name one of those paths, so the planner's next round, not a
-  Crew's tries and a release, pays for the mistake. See
-  [plans/done/out-of-reach-asks.md](plans/done/out-of-reach-asks.md).
-- **Follow-ups keep scaffold once.** A change to a scaffolded Container
-  becomes an issue in its repository; a new Container is added and scaffolded;
-  a Relationship added from a scaffolded Container shows `AddedAfterScaffold`
-  and its wiring becomes an issue.
-- **A Brief's apps are released when the plan says so.** A plan names the
-  Containers that ship releases (`plan/releases.yaml`); the Crew the Brief
-  made for each then tags and prepares releases, and each round files that
-  Container's issues in release milestones, so a release follows once they
-  are done. Each issue goes where it belongs: a fix (`kind/bug` or
-  `kind/test`, or a taken suggestion the plan marks `fix: true`) into the
-  patch release right after the release in progress, joining an open one that
-  takes work or else made and due before the planned releases; any other work
-  into the round's next minor version, due after every open release. A
-  milestone is made only when an issue goes into it. Applying a round also puts
-  such a Container's open ready or in-progress issues that sit in no
-  milestone (filed before releases were on) into its first open release with
-  no prepare issue, so work it already has never waits behind its own later releases (#599); a
-  proposed suggestion, a `kind/by-hand` issue and one handed back to a person
-  stay where they are. A person turns releases on
-  with a prompt, or by naming the Container in `spec.releases` with a GitHub
-  repository and a Secret holding a token for that repository only, which
-  also has the Crew publish its releases there. Releases only turn on; a Crew
-  the Brief didn't make is left alone. The Brief owns the target it sets: it keeps
-  the target it last wrote in the Crew's annotation
-  `c4.factory.io/brief-publish-releases`, the Crew's condition `ReleaseTarget`
-  (`SetByBrief`) says the Brief sets it, and the Crew page's release form
-  edits the Brief's entry. A target changed on the Crew itself is neither
-  undone nor used: the Brief leaves it, the Crew publishes nothing while the
-  two disagree (`ReleaseTarget` False `DiffersFromBrief`, `Published` False
-  `TargetDiffersFromBrief`, a Warning Event `ReleaseTargetDiffers`), and the
-  Brief lists the Crew in `status.needsYou` until the Brief's entry or the
-  Crew is changed to match; a changed entry is written to the Crew, as the
-  newest act on the owner. A Crew from before the annotation is adopted when
-  it publishes nowhere or where the entry says, and held otherwise; a removed
-  entry leaves the Crew its target and drops the annotation, so the Crew's
-  own spec is the target again. `status.apps` and the Brief's card show
-  each app's latest release and where it went, and say plainly when releases
-  are off and how to turn them on. See
-  [plans/done/brief-releases.md](plans/done/brief-releases.md) and
-  [plans/done/brief-patch-releases.md](plans/done/brief-patch-releases.md)
-  and [plans/done/fixes-patch-next.md](plans/done/fixes-patch-next.md)
-  and [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
-- **The loop is tested without a model.** A planner Agent with
-  `harness: stand-in` plans from the catalog alone: a Container named after
-  the Brief on the first Framework a Deployment ships and a Standard fits,
-  with both and released (else on the first Framework, unreleased), with an issue for
-  it, and an issue for each follow-up prompt and each request it takes.
-  `make e2e` takes a Brief through two rounds that way, with no token, and
-  *Verify Release*, when a human dispatches it, follows
-  [getting-started.md](getting-started.md)'s *Without a token* on the
-  published chart, whose Agent `stand-in` any project can name, until the
-  Brief's app has a release on Gitea with its files (#1083).
-  How well a real planner plans an idea is the person's run.
-- **The person answers the reviewers' suggestions in a prompt** (#375). A
-  reviewer's follow-up waiting, `status/proposed`, in the repository of a
-  Container the Brief made is counted in the Brief's `suggestionsWaiting`,
-  the first 50 listed in `status.suggestions` and its card, and every one (up
-  to 500, `brief.md` saying how many more) in the workspace's
-  `model/suggestions.yaml`, with its Container, repository, number and
-  address: a suggestion is its repository and number, and the same number in
-  two repositories is two suggestions (#1019). The Brief reads them every
-  reconcile, when one of those Containers' Tasks ends, and every ten
-  minutes. A plan answers only the ones a new prompt speaks to, at most 100,
-  in `plan/suggestions.yaml`: `take`, which needs acceptance criteria, or
-  `skip`, each with why; or `missing`, for one a prompt names that doesn't
-  wait for an answer. The operator checks an answer against the Git host when
-  the status doesn't list it, so no suggestion is out of a prompt's reach,
-  and refuses `missing` for one that waits. A round records each `missing`
-  answer in `status.rounds[].unanswered`, in the operator's words with what
-  it found (ready, closed, gone, not a suggestion), on the round's card: a
-  plan never says in its choices that a named suggestion is handled.
-  The operator checks the answers with the plan; applying the
-  round, it takes a suggestion out of the Later milestone, into the round's
-  release milestone when its Container ships releases, and labels it
-  `status/ready`, or closes it, with a comment quoting the planner's why and the
-  round's prompts. A suggestion no prompt answers keeps waiting: nothing is
-  built without the person's say, and labels and milestones stay the
-  operator's.
-- **A request from GitHub is planned like a prompt** (#796). A Brief whose
-  `spec.releases` entry takes requests keeps the allowed authors' open issues
-  in `status.requests`; one let through (at once, or once its number is in
-  `accepted`) starts a round as a new prompt does, unless the Brief is paused,
-  and is never written into `spec.prompts`. The round takes every request let
-  through (`status.roundRequests`); the workspace lists them in
-  `model/requests.yaml` and `brief.md` says each is a request from that GitHub
-  user. The plan answers each in `plan/requests.yaml`: `take` with the round's
-  issues it became, or `skip` with why. A plan that leaves one out, answers
-  one the round didn't take, or takes one with no issue of the round is
-  refused like any bad plan. Applying the round records each request's issues
-  and release, then comments on the GitHub issue once, with a marker: what it
-  became and the release it is in, or the skip's why, closing a skipped one as
-  not planned. A round that fails or asks for input hands its requests back
-  to the next round, which they don't start by themselves. Once every issue a
-  request became is closed and a published release holds each (its
-  milestone's, or a later one), the Brief comments once "Shipped in vX.Y.Z"
-  with the published page, or "Done in" the issue for one in a Container
-  that publishes nowhere, closes the GitHub issue as completed, and drops it
-  from `status.requests`. A request a person closed on GitHub meanwhile hears
-  nothing more. `accepted` and `declined` hold at most 200 numbers each, and
-  the operator never writes them: it lists in `status.requestsSettled` the
-  numbers whose issues are closed and no request has, the UI's *Accept* and
-  *Decline* drop those, and a kubectl user may (#824). See
-  [plans/done/brief-requests.md](plans/done/brief-requests.md).
-- **A failed issue shows on the Brief and is tried again from it** (#429).
-  An open issue handed back with `status/needs-human` in the repository of a
-  Container the Brief made is listed in the Brief's `status.failed` and card,
-  with why in one sentence, taken from the cluster: the newest failed Task's
-  message, or the Crew's reason for refusing it (no acceptance criteria,
-  already merged, three tries used). `status.failedWaiting` is a column of
-  `kubectl get brief`, the condition `IssuesFailed` says the first one and
-  its reason, and each is a Warning Event `IssueFailed`; the phase stays
-  `Planned`. The person answers in a prompt, as with suggestions: the planner
-  reads `model/failed.yaml` and writes `plan/failed.yaml`, `retry` (with an
-  optional clarification the operator appends to the issue's body, since an
-  agent's goal is the issue's title and body) or `close`, each with why, only
-  for the ones a new prompt speaks to. A retry is refused when the Crew would
-  refuse the issue again; an issue whose three tries are used is closed and
-  filed again, reworded or split, so the Crew's guard stays. Applying the
-  round, the operator labels a retried issue `status/ready` in place of
-  `status/needs-human`, or closes it, with a comment quoting the why and the
-  round's prompts. It closes an issue that waits on another the round closes
-  (a Standard change) after that one, whatever the plan's order; one that
-  waits on an open issue the round doesn't close the Git host won't close, so
-  it stays handed back, with a comment saying so, and `Planned` names it
-  while the rest of the round applies (#976). See [plans/brief-failed-issues.md](plans/done/brief-failed-issues.md).
-- **A Brief looks after its own handed-back work** (#486).
-  `spec.autopilot` is `Off`, `Ask` or `On`; unset is `Ask`. `status.autopilot`
-  reports the mode in effect, set every reconcile, so the UI copies no default
-  (#750). The Brief watches
-  only what it made: failed issues, its Containers' Tasks and Crews. What
-  heals by itself (a usage limit, an agent-slot queue, a Standard change in
-  review, a Git host coming back) is left alone for a window from one table
-  in `internal/model`. When a failed issue is due, a tending round, a planner
-  round with no new prompt, answers it `retry`, `close` (with new issues to
-  split), `wait` (until a Task merges, an app releases or 24h pass) or `ask`;
-  in `Ask` every answer waits for the person, and the round's summary says
-  what it proposes, not the planner's `summary.md` (#872). Everything else that is due,
-  and every `ask`, is one entry in `status.needsYou` with the choice the
-  Brief would make and why. The Crew's three tries still hold, an issue is
-  answered once per failure, and tending rounds come at most hourly. A
-  failed release step (a `kind/release` issue) is judged by its milestone as
-  it is now: the planner sees the issues Tasks merged into it, and when, next
-  to when its last try stopped, and a plan that closes it, or asks
-  recommending to, while work merged after that try is refused, so it is
-  tried again (#624). Each
-  is a history entry, outcome `Tended`, so a prompt can overrule it. A
-  tending round's plan holds only `plan/failed.yaml`, `plan/summary.md` and
-  new issues; it leaves the story, the `Planned` condition and the prompts
-  planned as the last prompt round left them, and none starts while that
-  round failed or asked for input: a prompt goes first. The Brief's card
-  shows one *Needs you* box (`needsYou` with `NeedsInput`), its tending
-  rounds and its mode, and the create form lets the person choose the mode;
-  the Work area's *Needs a look* names the Brief that watches an item and
-  when it acts. A failed Task leaves *Needs a look* once it is answered: a
-  newer Task works the same issue of the same Container, or a round tended
-  the issue with a retry or a close after the Task failed; so an issue that
-  failed several times shows one line, its newest attempt. See [plans/done/brief-autopilot.md](plans/done/brief-autopilot.md).
-- **Deleting a Brief deletes its bot on the Git host** and keeps its
-  repository and the model it made. A host that fails the delete (down,
-  unreachable, or answering with an error) is tried again, each failure a
-  `BotNotDeleted` Event naming the user and the error, until the namespace is
-  terminating or ten minutes have passed; then the Brief goes and leaves the
-  bot, with a `BotLeft` Event and log line saying so. A Brief whose
-  GitProvider or credentials are gone leaves its bot at once.
-- **The Brief's status tells the story of the plan:** its phase, the last
-  round's choices, what it created, the issues it filed, each round's summary
-  and cost. A round's summary is written for the person, about what the round
-  did for their app: the planner's `plan/summary.md`, or what the plan holds
-  when it wrote none, never the planner's reply. A summary too long for the
-  history ends on its last whole sentence, never mid-word. The chart makes each project's namespace, Project, catalog and four default
-  Agents, and an upgrade updates the catalog and Agents in place. A person gives the Agents' token once, as a Secret in the release
-  namespace, and the operator shares it with every project; a project with a
-  Secret of that name of its own keeps it
-  ([plan](plans/done/shared-project-credentials.md)). A Brief whose Agent's token
-  is missing says where to give it: in the release namespace for every
-  project, or in its own for this one, and names the namespace label when
-  its namespace hasn't opted in.
+  kinds and installed entries that fit, changes only story text of what
+  exists, adds nothing to an External system and deletes nothing; else the
+  next round gets the reasons. The operator makes a Crew per new Container
+  and files the issues once it is Ready, ordered by their `after:` front
+  matter as Git host dependencies. What it made carries the label
+  `c4.factory.io/brief`. A failed step says where and why
+  (`Planned=False`, `ApplyFailed`).
+- **One app uses another's release, never its branch.** An issue's `uses:`
+  names a related Container; it turns ready once that app has a published
+  version, and says how to fetch it.
+- **It asks only for what costs money or touches access.** Agents, models,
+  GitProviders and credentials are never the planner's; it says what it needs
+  in `NeedsInput`. The Crews' `parallel` (`spec.parallel`, else a prompt's
+  number, else 3) and a Container's `checks` change only when the person asks.
+- **Releases when the plan says so** (`plan/releases.yaml`, or `spec.releases`
+  naming a Container with a GitHub repository and token Secret). Fixes go
+  into the next patch release, other work into the next minor. A Crew whose
+  target was edited away from the Brief's publishes nothing until they agree
+  (`ReleaseTarget=False`, `DiffersFromBrief`).
+- **Requests from GitHub.** An entry that takes requests plans the allowed
+  authors' GitHub issues like prompts, answers each, and closes it once
+  shipped.
+- **The person answers in prompts.** Reviewers' suggestions
+  (`status/proposed`) and failed issues (`status/needs-human`) in the Brief's
+  apps are listed in its status; a plan answers only those a new prompt
+  speaks to (`take`, `skip`; `retry`, `close`). Nothing unanswered is built.
+- **Autopilot** (`spec.autopilot`: `Off`, `Ask` by default, `On`). A tending
+  round, at most hourly and with no new prompt, answers a due failed issue
+  `retry`, `close`, `wait` or `ask`; in `Ask` each waits in
+  `status.needsYou` with the choice the Brief would make.
+- **Pause.** `spec.paused` pauses the Crews the Brief made and starts no
+  round; `Paused` names the Tasks still running. No issue may ask to change
+  `model.AgentNeverPaths` (`AGENTS.md`, `docs/agents/`, `.c4factory.yaml`).
+- **Follow-ups keep scaffold once:** a change to a scaffolded Container is an
+  issue in its repository, a new Relationship's wiring too.
+- **Its status tells the story:** each round's summary for the person, its
+  choices, cost and tokens, what it made, and each app's latest release.
+  Deleting a Brief deletes its Git host bot, keeping repository and model. A
+  planner with `harness: stand-in` plans from the catalog alone, for tests.
 
 ## The UI: areas and object pages
 
 The UI draws the story and the factory from the resources, live through
-watches. It is one client among several: the CRDs are the truth, and the UI
-enforces nothing; a write it makes is checked by the API server like any
-other, and a refusal shows the API server's message. Where it needs a default
-to describe an object, it says "the factory's default" and shows a number
-only when `status` carries the effective one. The plan behind it is
-[plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md).
+watches, and enforces nothing: its writes are checked by the API server, whose
+refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 
-- **Six areas,** in the navigation in this order:
-  - *Needs you*: what waits on a person, across projects (below).
-  - *Briefs*: one project's Briefs, a card each, and the box to describe a
-    new app.
-  - *Story*: one project's model, the system context (C4 level 1) and one
-    system's containers (level 2), with the project's story in one line from
-    its Briefs to its releases.
-  - *Work*: across projects, the Tasks on a board by stage, the Crews and
-    their releases, where the time goes, what agent runs use, and what needs
-    a look; beside them, the factory's health and agent slots.
-  - *Factory*: the factory's health (`GET /factory/health`) and the agent
-    slots.
-  - *About*: the versions running, and links to the running release's docs
-    and notes and to the repository.
-
-  The UI opens on *Needs you* when it has items, else on *Story*, and stays
-  where it opened as items come and go. Only the area on screen watches the
-  cluster.
-- **An object page** for each kind the UI shows: Brief, Container, Crew,
-  Task, Project, SoftwareSystem, Relationship, Session, Standard, Compute,
-  Deployment, GitProvider and DeployTarget (each its Secret's name, never its
-  data). Every page
-  opens with the same header (`ui/src/components/ObjectHeader.tsx`): the kind
-  and name with a breadcrumb to what it belongs to; the kind's lifecycle as a
-  stepper, the current phase marked and side exits such as `Failed` or
-  `Blocked` off the path; what a person does now; then its conditions, its
-  timeline where the kind keeps one, its children and its links out. Each
-  kind's path and what a person does at each step live in one table,
-  `ui/src/model/lifecycle.ts`, read only from `status`, so no page invents
-  its own. A step the UI can't take shows the exact next one: a link to the
-  pull request or issue, or a `kubectl` line to copy.
-- ***Needs you*** lists, across projects and grouped by project, every item
-  the resources flag for a person (`ui/src/model/needs.ts`): a Brief whose
-  `NeedsInput` or `NeedsYou` is True; a Container `Failed`, or whose
-  `StandardUpdated` says its update pull request waits on a person or its
-  Standard files are behind (`FilesBehind`), or one of whose
-  `status.deploys` waits for approval (`WaitingForApproval`, with the
-  `kubectl patch` line that approves the version waiting), is `Failed` or
-  runs `Degraded`, an item per entry; a Task
-  `Blocked`, or `Failed` and not yet answered by a newer Task or a round; a
-  Crew whose `Released` leaves a release to a person, whose
-  `status.lastRelease.run` is `Failed`, or whose `ModulePublished` is False
-  `InvalidModule` or `NotFetchable`, or `WaitsForRelease` while `Published`
-  is False. Each says why in the condition's own
-  reason and message, since when, and where it is done: the object's page, a
-  link out, or a `kubectl` line. Every item comes from `status`, none from
+- **Six areas:** *Needs you* (what waits on a person, across projects),
+  *Briefs*, *Story* (system context and one system's containers), *Work*
+  (Tasks by stage, Crews and releases, time and tokens, what needs a look),
+  *Factory* (health and agent slots) and *About*. It opens on *Needs you*
+  when it has items, else *Story*.
+- **Object pages** share one header (`ui/src/components/ObjectHeader.tsx`):
+  kind, name and breadcrumb, the lifecycle as a stepper from
+  `ui/src/model/lifecycle.ts`, what a person does now, then conditions,
+  timeline, children and links. A step the UI can't take shows a link or a
+  `kubectl` line to copy.
+- ***Needs you*** lists what the resources flag (`ui/src/model/needs.ts`),
+  each in its condition's own words, every item from `status`, none from
   timing.
-- **Versions,** in the footer of every page and in *About*: the UI's own
-  (stamped by its build, `dev` otherwise), the operator's and the chart's
-  from Project status (*Status* above), and the CRD API version it reads. A
-  UI and an operator of different versions get a warning to upgrade them
-  together; two `dev` builds don't, and no Project reporting one yet shows
-  "unknown".
-- **The writes.** With actions off, three: create a Brief, append a prompt
-  to one, and pause or resume one, each from the Brief's card or page. With
-  `ui.actions.enabled`, those under *UI actions* below, each offered on the
-  page of the object it changes. Nothing else: no deletes, no Secrets,
-  nothing in the Git host.
-- **Every page is a link.** The address is query parameters:
-  `area=needs|briefs|story|work|factory|about`; an object page is
-  `ns=<namespace>&kind=<Kind>&name=<name>`; `project=`, `view=containers`
-  and `system=` pick Story's project and diagram; `demo=1` is demo mode. Back
-  works. Links from before the areas still open what they showed:
-  `view=factory` opens *Work* (with `task=<namespace>/<name>`, that Task's
-  page), and `view=`, `system=` or `project=` alone open *Story*; the
-  address is rewritten to the area's.
+- **Versions** of the UI, operator, chart and CRD API in every footer; a UI
+  and an operator of different versions get a warning.
+- **The factory's health** comes from the UI server (`GET /factory/health`,
+  sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
 
-## UI actions: as the person signed in
+### UI actions
 
-Decided on 9 October 2026 for GitHub issue #706; the plan, with every decision
-and why, is [plans/done/ui-actions.md](plans/done/ui-actions.md).
+With actions off (the default) the UI server writes three things: create a
+Brief, append a prompt, pause or resume one. With `ui.actions.enabled`, each
+row below is one allowlisted request in `ui/server.mjs`, refused there for any
+other path, method, content type or field, and by RBAC for anything else:
 
-Most of what a person does to steer the factory is a field on a resource, so
-the UI can take it, made by the API server like any other write: the CRD
-schemas, CEL rules and the admission policy decide, and the UI shows the API
-server's message when it refuses one. The UI still enforces nothing.
+| Kind | Request | Fields |
+| --- | --- | --- |
+| Brief | `POST` | a new Brief |
+| Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
+| Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
+| Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
+| Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take`, `c4.factory.io/standard-keep` |
+| Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` (and of its old `approved`, when it had one) |
+| Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
+| Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
-- **Actions are off by default** (`ui.actions.enabled: false`). Off, the UI
-  server writes only the three Brief writes above.
-- **Who acts depends on how the page is reached.** Over `kubectl
-  port-forward` (`ui.allowedHosts` empty), writes are made as the UI's
-  ServiceAccount, with no sign-in: whoever reaches the page can already reach
-  the cluster. Behind an Ingress, a person signs in with OIDC (authorization
-  code with PKCE) and every write is made as them, with `Impersonate-User`
-  and `Impersonate-Group`, so the cluster's RBAC decides. The chart refuses
-  `ui.actions.enabled` with `ui.allowedHosts` unless `ui.auth.oidc` is set; a
-  trusted proxy header is never enough, since anything else that reaches the
-  pod can send it. Reads stay the UI's ServiceAccount's, as today.
-- **Impersonation, not the person's token,** so it works on any cluster,
-  Kind included, without configuring the API server for OIDC. The UI server
-  checks the ID token (issuer, audience, expiry, signature against the
-  issuer's keys) and impersonates the user `ui.auth.oidc.usernamePrefix` +
-  the configured claim (`oidc:` + `email` by default) and the token's groups
-  with `ui.auth.oidc.groupsPrefix`, never a name the browser sends, so no
-  signed-in person can become a cluster user or `system:` group. The
-  ServiceAccount gets `impersonate` on users and groups only when
-  `ui.auth.oidc` is set; RBAC can't narrow that to the prefixed names, so
-  the UI pod is as strong as the strongest user it may impersonate. A
-  username from the `email` claim needs `email_verified`. The OIDC client secret is a Secret the person makes
-  and the chart names (`ui.auth.oidc.existingSecret`); the browser never sees
-  it, nor the tokens: the session is an opaque, `HttpOnly`, `Secure`,
-  `SameSite=Lax` cookie keyed to server memory, so a restart of the UI signs
-  everyone out.
-- **The writes, each one allowlisted request** in `ui/server.mjs`, refused
-  there for any other path, method, content type or field, and by RBAC for
-  any other resource or verb:
-
-  | Kind | Request | Fields |
-  | --- | --- | --- |
-  | Brief | `POST` | a new Brief (as today) |
-  | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (only after a `test` of the `resourceVersion` it was worked out from; a stale one is refused) |
-  | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
-  | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
-  | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
-  | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of that entry's `target` and, when it had one, of its `approved` |
-  | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
-  | Standard | `PATCH`, JSON patch | `spec.template.ref` |
-
-  A *Needs you* item's one-click answer (take or skip a suggestion; retry,
-  close or wait on a failed issue) is a prompt appended to the Brief, worded
-  from the item, since a person answers those in a prompt. The UI's
-  ClusterRole `<ui>-actions` grants exactly `create` and `patch` on these
-  kinds; over port-forward it is bound to the ServiceAccount, and behind an
-  Ingress the chart binds it to `ui.auth.oidc.actionGroups`, when set, for a
-  cluster admin to grant the signed-in people.
-- **A Crew re-runs its failed release run on request.** Setting or changing
-  `c4.factory.io/rerun-release` on a Crew whose `status.lastRelease.run` is
-  `Failed` re-runs that release's failed workflow runs on the Git host, once
-  per value, and the Crew watches them as before. A value set while the run
-  hasn't failed does nothing, with a Normal Event saying so.
-- **Retrying a Container's scaffold warns first.** The UI says the
-  repository must be empty and links to it before it sets
-  `c4.factory.io/retry`.
-- **Bumping a Standard's `ref` asks first.** The dialog names how many
-  Containers on that Standard will get an update pull request.
-- **Out:** deletes (they cascade and can't be undone), Secrets and
-  credentials (the browser never sees them), anything in the Git host
-  (merges, reviews, labels: the UI links there), and editing the model
-  itself (Systems, Containers, DataStores, Relationships), which would be a
-  model editor of its own; a Container's `spec.checks` is a setting, not the
-  model.
+Over `kubectl port-forward` the writes are the UI ServiceAccount's. Behind an
+Ingress a person signs in with OIDC (code flow with PKCE) and every write
+impersonates them, with prefixed names and groups, so the cluster's RBAC
+decides; the chart refuses actions behind an Ingress without OIDC. The browser
+never sees a token. Out of reach: deletes, Secrets, the Git host and editing
+the model ([plans/done/ui-actions.md](plans/done/ui-actions.md)).
 
 ## Factory components: ports and adapters
 
-The owner wants a device to build the factory from parts it can swap: a GitHub
-or GitLab organization instead of the in-cluster Gitea, the device's own Argo
-CD for deploys, later another CI system or agent runtime. This section decides
-the parts (ports), how a device picks an implementation of each (an adapter),
-and how each port is tested. It changes no behaviour; #1094 splits the Git
-host interface, #1095 makes the templates' CI files an input, #1068 adds the
-Deployer, #1088 builds the second host. [architecture.md](architecture.md#ports)
-keeps the Ports table, one row per port.
-
-**A port is cut by what the controllers call, not by one product's API.**
-`gitprovider.Provider` has 57 methods, called from 27 files in `internal/controller`.
-Grouped by caller they fall into these ports:
+The factory is built from parts a device can swap: another Git host, its own
+Argo CD, later another CI or agent runtime. A port is cut by what the
+controllers call, not by one product's API;
+[architecture.md](architecture.md#ports) keeps one row per port.
 
 | Port | What the operator asks of it | Today |
 | --- | --- | --- |
-| GitHost | repositories, history, files, pushes, branches, tags, branch rules, pull requests and merges, commit statuses, the source at a tag | Gitea, inside `Provider` |
-| Issues | issues, comments, labels, assignment, milestones, dependencies | Gitea, inside `Provider`; request intake on GitHub (`IssueTracker`) |
-| CI | workflow runs of a commit or tag, rerunning failed jobs, a job's log, runners online | Gitea Actions, inside `Provider` |
-| AgentAccess | a credential that writes to one Container's (or Brief's) repository only, and revoking it | Gitea bot users, inside `Provider` |
-| Registry | publishing a Go module, the Go proxy address; publishing a release's npm and PyPI files, the npm registry and PyPI index addresses (#1087); pushing a release's image archive by digest, the image registry address (#1069) | Gitea packages, inside `Provider` |
-| AgentRuntime | start a run, read its state and result, stop it, list the runs held | Agent Sandbox, hard-coded (`SandboxGVK`) |
-| Deployer | ship a release to a target, read back its state | the GitHub release copy (`ReleaseTarget`); #1068 |
+| GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
+| Issues | issues, comments, labels, milestones, dependencies | Gitea; request intake on GitHub |
+| CI | runs of a commit or tag, reruns, job logs, runners | Gitea Actions |
+| AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
+| Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
+| AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
+| Deployer | ship a release to a target, read its state back | the GitHub release copy |
 
-Three parts stay outside the ports. The catalog swaps already, as template
-repositories at pinned refs. The agent harness is the runner's choice
-(`Agent.spec.harness`), inside the sandbox, not the operator's. Fetching a
-template is plain Git over HTTPS, the same on every host, so it is one
-implementation and no port.
-
-- **Request intake folds into Issues.** Reading requests from a GitHub
-  repository's issues is the Issues port on a second host. Intake uses a
-  narrow part of it (list open issues, comment, find a comment, close, ask
-  whether an author is a member), so a host that offers only that part can
-  serve intake and not the factory's own work board.
-- **The release copy folds into Deployer.** Copying a release to a GitHub
-  repository is a deploy of open-source code to a VCS host (#1070). Until #1070
-  moves it, `Crew.spec.publishReleases.github` and `ReleaseTarget` stay as
-  they are, listed as the Deployer's first adapter.
-- **Statuses are the host's, runs are the CI's.** Every CI system reports to
-  the host's commit statuses or checks, so `CombinedStatus` stays in GitHost
-  and the merge rules read only it. GitHub Actions reports check runs, which
-  GitHub's combined status leaves out, so the GitHub adapter folds check runs
-  and statuses into one `CheckStatus`, and the check contexts match check-run
-  names. The CI port answers what the statuses link
-  to: runs, reruns, logs and runners. Runner isolation (#1076) belongs to the
-  CI port.
-- **What a CI system writes is a business rule, not an adapter.** Where the
-  workflow files go (`.gitea/workflows/`, `.github/workflows/`,
-  `.gitlab-ci.yml`), the check contexts the merge rules require and the paths
-  the platform protects are one row per CI system in a table in
-  `internal/model` (`model.CI`, in `ci.go`); the rules take the row, and a
-  Container's is its Git host's own CI system (`model.HostCI`) until
-  `GitProvider.spec.ci` comes with a second one. `scaffold.Input` names the CI
-  system, and a template keeps each system's files under
-  `.c4factory/ci/<name>/` (`.c4factory/ci/giteaActions/.gitea/...`), which
-  renders at the repository root only for the Container's system. A template
-  with CI files but none for the Container's system fails the Container with
-  reason `UnsupportedCI`, naming the systems it has; one without
-  `.c4factory/ci/` works on any (#1095).
-
-**A port is a narrow Go interface, with its shared types in its own file, one
-fake and one contract suite.** A host adapter implements several ports (Gitea
-implements GitHost, Issues, CI, AgentAccess and Registry); a controller takes
-only the ports it calls. What a host lacks, its adapter emulates, or the port
-makes it an optional capability: a second small interface the adapter may
-implement, found by a type assertion, and reported with a condition reason
-when missing rather than failing the Container. Where a Gitea-only behaviour
-meets other hosts:
-
-| Behaviour | Gitea | GitHub | GitLab | The port says |
-| --- | --- | --- | --- | --- |
-| A credential for one repository | a bot user per Container, its token | an App installation token limited to that repository, an hour long | a project access token | AgentAccess returns the credential and when it expires; the operator mints a new one before a run that would outlive it (today Gitea's token is minted once per Container and kept in its Secret) |
-| Merging past branch rules | admin force merge | the App as a ruleset bypass actor | merge as maintainer | `Merge` takes whether to bypass; an adapter that cannot fails its contract |
-| Protected file paths | branch rule `ProtectedPaths` | push rulesets that restrict file paths (some plans), or CODEOWNERS review | Code Owners, paid tiers | the operator refuses to merge a pull request that touches a platform path (`model.PlatformProtectedPaths`), whatever the host; a host rule is extra |
-| Exclusive scoped labels | native | none | scoped labels (`a::b`) | adding a label removes the others of its scope; the adapter does it when the host doesn't |
-| Issue dependencies | native | "blocked by" | issue links that block | `OpenBlockers` and `AddIssueDependency` are part of Issues |
-| Runners online | admin API | runners API | runners API | may answer "unknown", as it can now |
-| A project's own runners | the organization's registration token and runners API; `--ephemeral` runners | the organization's, likewise | the group's runners | optional capability of CI, `OwnerRunners`: the owner's registration token, its runners and their state, delete one; a host without it gets no runner pool |
-| Go modules | the owner's Go registry | none: the module is fetched from its tag | Go proxy | optional capability of Registry |
-| npm and PyPI packages | the owner's npm and PyPI registries | npm in GitHub Packages, no PyPI | the project's npm and PyPI registries | optional capability of Registry, one per ecosystem |
-| Events | an organization webhook, signed (#1084) | webhooks | webhooks | polling is the contract; webhooks are Events, an optional capability of GitHost: register a hook, parse a signed delivery |
-
-**Events: the host calls back, and polling stays the contract.** A host that
-offers webhooks only shortens the wait; every rule still holds on a host
-without them, or when a delivery is lost
-([plans/git-events.md](plans/git-events.md)).
-
-- **One hook per GitProvider, on its organization,** so every Container and
-  Brief repository, those made later too, delivers to it, and scaffolding
-  gains no call. Its URL ends in `/git-events/<namespace>/<gitprovider>`,
-  which is how the operator finds it again and which Secret checks a
-  delivery. A GitProvider reconciler ensures it every 10 minutes; a token
-  that may not manage the organization's hooks leaves the factory polling.
-- **Every delivery is signed** with a secret the operator makes at runtime
-  (Secret `<gitprovider>-git-events`, owned by the GitProvider, never in the
-  repository or in what Helm renders) and sets on the hook. The receiver, a
-  plain HTTP listener of the operator behind its own Service, refuses a
-  delivery whose signature fails.
-- **A delivery is a hint, never a fact.** It names what to reconcile: the
-  Container or Brief whose repository it concerns, that Container's Crews,
-  and the Tasks with that issue, pull request or branch. The reconcile
-  then reads the host as a poll would, so a lost, repeated or replayed
-  delivery costs at most a wait or one reconcile.
-- **The GitProvider's `Events` condition** says whether deliveries arrive:
-  True (`Receiving`) once a signed one came after the hook was registered;
-  False with `Disabled`, `Unsupported`, `RegisterFailed`, `Registered` (none
-  yet) or `DeliveryRefused`.
-- **While `Events` is True, the polls that wait for the host stretch to 10
-  minutes:** the Crew's ready issues, a Task's checks and Standard change, a
-  Container's checks, a Brief waiting for answers. Otherwise they poll as
-  before.
-
-**How a device picks: Helm decides what is installed, custom resources decide
-what is used.** The chart installs Gitea, its runners and Agent Sandbox when
-asked (`gitea.enabled`, `runners.*`); a device with its own GitHub
-organization or Argo CD installs none of them. The resources then name what
-each project uses:
-
-- **The Git host is `GitProvider.spec.provider`:** `gitea`, `github` or
-  `gitlab`, each value added with its adapter. A block named after the host
-  (`spec.github`, `spec.gitlab`) holds what only it needs, such as a GitHub
-  App's ID; CEL allows only the block that matches `provider`.
-- **CI and registry default to the host's own** (Gitea Actions and Gitea
-  packages on Gitea, GitHub Actions and GHCR on GitHub). A GitProvider that
-  uses another sets `spec.ci` or `spec.registry`, each a union keyed by field
-  name as `Crew.spec.publishReleases.github` is (`spec.ci.giteaActions`,
-  `spec.ci.githubActions`, `spec.ci.gitlabCI`), so CEL validates each member;
-  a CEL rule allowing exactly one comes with the second member.
-- **Deploys get a new kind,** `DeployTarget`, whose members are a union
-  keyed by field name: `github` first, then `cloudFormation` (#1071),
-  `argoCD` and `flux` (#1072), each added with its adapter.
-  [Deploys](#deploys-each-release-to-its-targets).
-- **The agent runtime has one implementation** and no field. A field to
-  choose appears with the second implementation, never before, so no
-  resource offers a choice the operator cannot make.
-
-**Where the code lives.** The ports, their shared types and the per-CI table
-are plain Go with no Kubernetes; each adapter is its own package, and only
-`cmd/main.go` imports adapters. It builds the adapters a GitProvider names
-and passes the controllers ports, as it passes `gitprovider.Client{}` now. A
-depguard rule makes a controller importing an adapter fail `make lint`.
-[architecture.md](architecture.md#ports) has the packages.
-
-**What a deployer is.** An adapter in the operator, plus a template. The
-template (a Deployment catalog entry, as `k8s-manifests` is) writes the files
-the target's tool reads. CI builds what ships (an image, release files) with
-no deploy credential and publishes it to the Registry. The Deployer holds the
-target's credential, ships what CI built (by digest or release asset, never
-by rebuilding), and reads the target's state back into status.
-[Deploys](#deploys-each-release-to-its-targets) has the kind, the targets and
-the status.
-
-**The credential path of each port.** A user's credential never reaches code
-the agents wrote. Each port names its Secret and who reads it:
-
-| Port | Secret | Read by | An agent or CI job gets instead |
-| --- | --- | --- | --- |
-| GitHost, Issues, CI, Registry | the GitProvider's `credentialsSecretRef` (a Gitea token; a GitHub App's ID and private key; a GitLab group token), made by the user; the operator reads runs, logs and runners with it too | the operator only | nothing of it |
-| GitHost Events | the GitProvider's delivery Secret (`<gitprovider>-git-events`), made by the operator at runtime, owned by the GitProvider | the operator, which sets it on the host's hook and checks each delivery with it | nothing of it |
-| Issues, for request intake | the Brief's GitHub token Secret (`releases[].requests`), made by the user | the operator only | nothing of it |
-| AgentAccess | the Container's agent Git Secret, minted by the operator from the GitProvider's credential, owned by the Container | the operator, which passes it to that Container's sandboxes | a token that writes to that repository only and cannot merge to `main` |
-| CI jobs | none of the user's | the CI system | the host's own job token (Gitea's or GitHub's `GITHUB_TOKEN`, GitLab's `CI_JOB_TOKEN`), scoped to the repository; it may push to the host's registry |
-| AgentRuntime | the operator's ServiceAccount | the operator | no Kubernetes token; the AgentAccess token and the Agent's own credential Secret |
-| Deployer | the DeployTarget's `credentialsSecretRef` (and `Crew.spec.publishReleases.github.tokenSecretRef` until #1070), made by the user | the operator only | nothing: CI builds without it, the operator ships |
-
-**How the ports stay well designed.**
-
-- **A contract suite per port.** One Go test suite per port states its
-  behaviour (what `ErrConflict` means, that `OpenPullRequest` returns the open
-  one, that exclusive labels replace each other). It runs against the port's
-  fake in `make test`, against Gitea in `make test-gitea`, and against every
-  other adapter in a target of its own. The controllers' tests use the fake,
-  so a passing fake means the controller tests describe a real host.
-- **The second-implementation rule.** A port is called swappable only once its
-  fake and two real adapters pass its contract. Until then the docs say it has
-  one implementation.
-- **A host-neutral guard.** A Go test fails on `gitea` or `.gitea/` in Go code
-  and templates outside the Gitea adapter, its integration tests and the
-  per-CI table. It starts from an allowlist of today's hits, each a file and
-  a count, which may only shrink: a new file or a higher count fails, and so
-  does a count higher than the file has, so a fix shrinks the list in the same
-  change. The chart and `config/` install Gitea and are outside it.
-- **A Ports table** in [architecture.md](architecture.md#ports), one row per
-  port: its interface, how it is picked, its implementations, its contract
-  test and its credential path. A new port or adapter adds or changes its row
-  in the same pull request, and the maintainer reviews it against the table.
+- **A port is a narrow Go interface** with one fake and one contract suite,
+  plain Go with no Kubernetes in `internal/ports`; each adapter is its own
+  package under `internal/adapters`, and only `cmd/main.go` imports adapters
+  (`make lint` enforces it). The Deployer is there today; the Git host is
+  still one interface, `gitprovider.Provider`, until #1094 splits it.
+- **What a host lacks** its adapter emulates, or the port makes an optional
+  capability (a second small interface, a condition reason when missing):
+  Go modules, npm and PyPI, a project's own runners, webhooks.
+- **What a CI system writes is a business rule:** one row per CI system in
+  `model.CI` (workflow paths, required checks, protected paths); a
+  Container's is its host's own (`model.HostCI`).
+- **Polling is the contract.** Webhooks (#1084, decided, not built) would
+  only shorten waits ([plans/git-events.md](plans/git-events.md)).
+- **Helm decides what is installed, custom resources what is used:**
+  `GitProvider.spec.provider` names the host (`gitea`), CI and registry
+  default to the host's own, a DeployTarget names each deploy's tool.
+- **A user's credential never reaches code the agents wrote:** only the
+  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets.
+- **A port is swappable only once its fake and two real adapters pass its
+  contract;** none is yet.
 
 ## Deploys: each release to its targets
 
-The owner wants each app the factory builds shipped where it runs: open-source
-code to GitHub (#1070), an AWS app to an account (#1071), a Kubernetes app to
-a cluster (#1072), with images built on release (#1069). This section is the
-model they share; [plans/done/deploy.md](plans/done/deploy.md) has the reasons and the
-steps.
+CI builds what ships; the operator holds the target's Secret and hands each
+release to the tool that owns the target. It never builds, runs repository
+code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
-- **A place is a `DeployTarget`,** namespaced and shared by any number of
-  Containers. One member says what it is (`github: {repository: o/r}` first;
-  `cloudFormation`, `argoCD` and `flux` come with their adapters), beside a
-  `credentialsSecretRef` the user makes, a `tier` (`development`, the
-  default, or `production`), an `approval` (`Required` or `None`; empty is
-  `Required` for production) and non-secret deploy-time `parameters`. Its
-  condition `Ready` says whether the target accepts the credential
-  (`SecretMissing`, `SecretIncomplete`, `CredentialRefused`, `Unreachable`).
-- **A Container names its targets in `spec.deploy`:** entries keyed by
-  `target`, each with an optional `after` (an earlier entry that must run a
-  version first), `version` (a pinned tag; how a person rolls back) and
-  `approved` (the version a person let into a target that needs approval).
-  The list is mutable and never scaffolds again. A Crew or Brief names no
-  target.
-- **CI builds, the operator ships.** CI makes release files, an image by
-  digest and synthesized templates with no deploy credential. The operator
-  holds the target's Secret and hands the release to the tool that owns the
-  target (the GitHub API, CloudFormation, Argo CD or Flux); it never builds,
-  runs repository code or writes rollouts. A user's credential never reaches
-  code the agents wrote.
-- **A release's image** (#1069). A Container whose catalog choice builds one
-  (`k8s-manifests`, and `gitea-release` for an operator; a table in
-  `internal/model`) has its image built by a release run on the `image`
-  runner: rootless BuildKit, daemonless, for `linux/amd64` and `linux/arm64`
-  without emulation (a Dockerfile `RUN`s only on `$BUILDPLATFORM`), with an
-  SBOM and provenance in the index. The run attaches the OCI layout archive
-  (`<repository>-<tag>.oci.tar`) to the release; once the release's runs
-  succeed, the operator streams it by digest into the owner's container
-  registry on the Git host with the GitProvider's credential, tagged with
-  the release tag, once and never replaced. `status.image` names the
-  repository, digest and platforms, the condition `ImagePublished` says why
-  it isn't pushed (`NoImage`, `Invalid`, `TagTaken`, `Failed`), and each
-  deploy ships that digest. [plans/images.md](plans/images.md).
-- **On each release, in order.** The release is the one the Container's
-  Crew tagged, once its release runs succeed. Each entry ships its pinned
-  version or the newest, after its `after` entry runs it and, where needed,
-  once `approved` names it. Shipping starts the deploy and the operator reads
-  the state back each poll; where the adapter is the tool itself (GitHub
-  releases) each poll's ship takes the next write. A rollout the tool
-  reports failed is not retried by itself.
-- **Targets need files, they never write them.** What a target's tool reads
-  comes from the Container's Deployment or self-deploying Framework at
-  scaffold. A table in `internal/model` says what each member needs; a
-  Container that lacks it is `Incompatible` for that target, and a release
-  missing a file fails `ArtifactMissing`, fixed by a template bump.
-- **What it reports.** `status.deploys[]` per target: the version running
-  and wanted, the phase (`Waiting`, `Deploying`, `Deployed`, `Failed`), the
-  health the tool reports (`Healthy`, `Progressing`, `Degraded`, `Unknown`)
-  and the URL. The condition `Deployed` sums them (`Incompatible`,
-  `TargetNotReady`, `DeployFailed`, `WaitingForApproval`,
-  `WaitingForPrevious`, `Deploying`, `NoRelease`). *Needs you* shows a
-  deploy waiting for approval, failed or degraded.
-- **The release copy folds in.** `Crew.spec.publishReleases.github` keeps
-  working and shares the GitHub adapter's code; #1070 moves it onto a
-  DeployTarget with a migration.
+- **A place is a `DeployTarget`,** shared by any number of Containers: one
+  member saying what it is (`github` today; `cloudFormation`, `argoCD` and
+  `flux` come with their adapters, #1071, #1072), a `credentialsSecretRef`, a
+  `tier` (`development` by default, or `production`), an `approval`
+  (`Required` or `None`; empty is `Required` in production) and non-secret
+  `parameters`. `Ready` says whether the target takes the credential.
+- **A Container names its targets in `spec.deploy`:** entries by `target`,
+  with an optional `after` (an entry that runs a version first), `version` (a
+  pinned tag, how a person rolls back) and `approved` (the version a person
+  let in). The list never scaffolds.
+- **On each release, in order:** the release its Crew tagged, once its runs
+  succeed, to each entry after its `after` and its approval. A rollout the
+  tool reports failed isn't retried by itself. Targets read files the
+  Deployment or Framework rendered at scaffold; a Container without them is
+  `Incompatible` there.
+- **Reports:** `status.deploys[]` per target (version running and wanted,
+  phase, the tool's health, URL), summed by `Deployed`.
+- **Release images** (#1069, decided, not built): built by the `image` runner,
+  pushed by digest, shipped by digest ([plans/images.md](plans/images.md)).
+  `Crew.spec.publishReleases.github` moves onto a DeployTarget with #1070.
 
 ## Distribution and issues
 
-This repository develops the factory and holds no product. The factory ships
-as a Helm release, and other devices build their products with it. Every issue
-on `JairJosafath/c4factory` carries one source label: `source/dev` when it was
-made while developing the factory, or `source/user` with one `user/<name>`
-label when a device running the release reported it. A device reports through
-the issue form *Report from a device*, or with `gh issue create` and a body
-whose `### Reported by` heading names the device; the intake workflow
-(`hack/lib/github.sh intake`) labels the issue, for trusted authors only, and
-files it as `status/proposed` for the owner to ready like any other issue.
-
-A `vX.Y.Z` tag publishes the release: the chart at
-`oci://ghcr.io/jairjosafath/c4factory/charts` and its images on GHCR. The
-release installs the whole factory:
+This repository develops the factory and holds no product. A `vX.Y.Z` tag
+publishes the Helm chart at `oci://ghcr.io/jairjosafath/c4factory/charts` and
+its images on GHCR. The release installs:
 
 | Part | Where | Notes |
 | --- | --- | --- |
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
-| UI | release namespace | `ui.enabled`, on by default; its actions off until `ui.actions.enabled`, and behind an Ingress only with `ui.auth.oidc` (*UI actions*) |
-| Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets; applies the catalog, the Agents and the GitProviders the chart renders into ConfigMap `c4factory-catalog` with server-side apply, so an upgrade updates them in place, keeping their UIDs and the fields the chart doesn't set |
-| Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
-| Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace, before it has a Project too (a Brief there needs the token for the round that makes it), keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
-| CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
-| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values; a hook Job on the seed image applies them in place from ConfigMap `c4factory-gitproviders` |
+| UI | release namespace | `ui.enabled`, on by default; actions off |
+| Gitea and its CI runners `base` and `go` | `gitea.namespace` | `gitea.enabled`, on by default; secrets generated in the cluster, never rendered by Helm |
+| Seed job | Gitea's namespace | after every install and upgrade: templates, a GitProvider and Project per `gitea.projects` entry, the catalog and Agents applied in place |
+| Project namespaces | each of `gitea.projects` | made when missing, labeled `c4.factory.io/shared-secrets: "true"`, kept on uninstall |
+| Shared Secrets | copied from the release namespace | the Agents' token and pull Secrets; a project's own Secret of that name wins |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
-A device installs itself only what is another project's or its own: Agent
-Sandbox (its controller and CRDs) before the chart, the Agents' token in the
-release namespace, and, while the GHCR packages are private, a pull secret in
-the release namespace and Gitea's or the images loaded into its cluster. Adding
-a project is adding its name to `gitea.projects`. The Kind test environment of this repository keeps its
-make targets (`make gitea seed deploy`) and locally built images.
-
-**An upgrade leaves running work alone** (#677). A device upgrades in place
-with `helm upgrade`, while Tasks run. A Task's state lives in its status, so
-the restarted operator picks up its sandbox, round and pull request where
-they were; a sandbox is never changed under its agent and keeps the token it
-started with; the Agents, catalog and GitProviders are updated in place, never
-deleted; and a sandbox waits out a Gitea restart, a run that still can't
-reach it being rerun without spending the round. New Agent values apply from
-the next run, and a new Standard ref through its update pull request. A
-person who wants a quiet moment pauses a Brief and waits for its `Paused`
-condition to say nothing is running. See
-[plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
+A device installs Agent Sandbox first and gives the Agents' token once. An
+upgrade leaves running work alone
+([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). A device
+reports issues through the form *Report from a device*.
 
 ## Compatibility
 
-**An object a client stored keeps validating across upgrades** (#1097). All
-of `c4.factory.io` serves `v1alpha1` only, and until a later version is
-served, a release keeps every `v1alpha1` object of the one before valid and
-meaning what it meant. Within `v1alpha1` a release never:
+**An object a client stored keeps validating across upgrades.** All of
+`c4.factory.io` serves `v1alpha1` only, and a release keeps every `v1alpha1`
+object of the one before valid and meaning what it meant. Within `v1alpha1` a
+release never:
 
 - removes or renames a field, or changes its type;
 - adds a required field, or makes an optional one required;
 - removes an enum value;
-- tightens a CEL rule or a bound so an object that validated before fails
-  after;
+- tightens a CEL rule or a bound so an object that validated before fails;
 - changes what a default, or an unset field, means.
 
-Adding an optional field, an enum value, a condition type, a condition
-reason or a kind is fine. A change that must break one of these waits for
-`v1beta1` (#1082), which is served beside `v1alpha1` and converts every
-`v1alpha1` object; `v1beta1` comes after the shapes it would freeze settle
-(the Git host's ports, #1093, and the deploy model, #1068).
+Adding an optional field, an enum value, a condition type or reason, or a kind
+is fine. A breaking change waits for `v1beta1` (#1082), served beside
+`v1alpha1` with conversion. The status is held to it as the spec is; what the
+operator does with an object may change, as the release notes say.
 
-The status is held to it as the spec is: the UI and a client's scripts read
-it. The promise is about the API, not about what the operator does with an
-object, which a release may change as the release notes say.
-
-`make check` guards what a schema can show. `test/compat/baseline/` holds
-`config/crd/bases` as of the last release, which `hack/release.sh` copies
-there in the pull request that names the release; the test in `test/compat`
-fails when the current CRDs drop a kind, a served version or a field, change
-a field's type, add an enum to a field or drop an enum value, tighten a
-bound (a length, item count or number range, a pattern, a format, a list or
-map type), or require a field under an object the baseline already had (a
-required field inside a new optional object is fine). CEL rules and what a
-default means are left to review.
-
-## Out of scope for v1
-
-- **Shipping.** No builds, registries or rollouts in v1; existing tools pick up the scaffolded files. Since v4 a Crew copies its releases to a GitHub repository, and [Deploys](#deploys-each-release-to-its-targets) now ships each release to its targets, with the image CI built for it (#1069).
-- **Runtime health of the apps.** The factory shows only what a deploy target's tool reports (Argo CD's health, a stack's status); monitoring the app itself is left to existing tools. (The factory watches its own health since v3.)
-- **Existing repositories and monorepos.** New work only, one repository per Container.
-- **Component and Code levels.** Dropped until Containers work end to end.
-- **Template updates.** Scaffolding happens once; no pull requests to existing repositories.
-- **Provisioning data stores.** A Connector only scaffolds; creating real databases is left to tools such as Crossplane.
-- **Git providers other than Gitea.** Gitea is the only host; the ports a second one plugs into are in [Factory components](#factory-components-ports-and-adapters), and none is proven swappable yet (#1088).
+`make check` guards what a schema shows: `test/compat` compares the CRDs with
+the last release's, in `test/compat/baseline/` (`hack/release.sh` copies
+them). CEL rules and defaults are left to review.
 
 ## Test tiers
 
-Go tests are the gate: each rule is verified at the lowest tier that can see it, and `make check` runs the first three tiers before every merge. A Kind cluster exists only when a human asks to run tests in it; agents never create, lease or deploy to one. What only a real node would catch is not tested before release.
+Each rule is verified at the lowest tier that can see it; `make check` runs
+the table, offline YAML and envtest tiers before every merge. A Kind cluster exists only when a
+human asks; agents never create, lease or deploy to one. What only a real
+node would catch is not tested before release.
 
 | Tier | Verifies |
 | --- | --- |
-| Table tests (`make test`) | The decisions in `internal/model`, the rendering of every template in `internal/scaffold`, and the Agent Sandbox and pod specs the controllers build, the agent fence included. |
-| Offline YAML (`make validate-yaml`, in `make check`) | Samples, e2e fixtures, kustomize builds, the Helm chart and rendered manifests, against the built-in schemas and the CRDs, with their create-time CEL rules; the CI runners' fence in the chart and `config/runner/`. |
-| envtest (`make test`) | Reconcilers wired to a real API server: status, ownerReferences, the admission policy, every CEL rule's failing case at create and on update, the reaction to faked Sandbox and pod status, and the generated RBAC role against the calls the controllers make. |
-| Components (`make test-gitea`, `make seed-local`) | The Gitea API's behaviour, the seed and what Gitea shows of Actions, against the same Gitea binary the cluster runs, started per checkout. |
-| Kind (`make e2e`, only when a human asks) | The whole loop on stand-in agents with no model keys: a hello-world page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. |
+| Table tests (`make test`) | `internal/model`, every template's rendering in `internal/scaffold`, and the sandbox and pod specs the controllers build, the fence included. |
+| Offline YAML (`make validate-yaml`) | Samples, fixtures, kustomize builds and the chart against the CRDs and their create-time CEL rules; the CI fence. |
+| envtest (`make test`) | Reconcilers on a real API server under the generated RBAC role: status, ownerReferences, the admission policy, every CEL rule's failing case, the reaction to faked Sandbox and pod status. |
+| Components (`make test-gitea`, `make seed-local`) | The Gitea API, the seed and Actions, against the Gitea binary the cluster runs. |
+| Kind (`make e2e`, a human only) | The whole loop on stand-in agents: a page scaffolded, planned from a Brief, a Task through two rounds to a merge, a Standard bump carried to main. |
 
-The plans that build these tiers are [verify-without-cluster.md](plans/done/verify-without-cluster.md) and [test-without-cluster.md](plans/done/test-without-cluster.md).
+The Kind environment, the `config/samples/webshop/` story and the e2e fixture
+`test/e2e/testdata/apps` are in [dev/testenv.md](dev/testenv.md).
 
-## Test environment: the Kind cluster
+## Out of scope and open points
 
-One kind cluster on a laptop holds Gitea, the operator, a sample project and a test Session, so the whole loop runs with nothing but Docker. It is the Kind tier of [Test tiers](#test-tiers): a human creates it and runs `make e2e` in it when they ask to; agents never create, lease or deploy to it, and no change waits for it. Every part is picked to stay light on resources.
-
-&#91;embedded content: test environment · 1 cluster, 3 namespaces\]
-
-The highlighted operator is the main thing being built. Gitea and kind are off the shelf; the seed job, templates and Session client are small.
-
-| Part | Namespace | Role |
-| --- | --- | --- |
-| Gitea | `gitea` | Single container with SQLite and a small volume. Holds the template repositories and the Container repositories. Its admin password is generated per cluster into Secret `gitea-admin`, never committed. |
-| Seed job | `gitea` | Creates the `templates` and `webshop` organizations, pushes and tags the template repositories, and stores an access token as Secret `gitea-credentials` in `webshop`. |
-| Operator | `c4-factory-system` | The kubebuilder manager with all controllers. |
-| Sample project | `webshop` | Project, GitProvider, catalog entries and the story resources. |
-| Test Session | `webshop` | A pod that clones `orders-api` from Gitea and runs the client under the Session ServiceAccount. |
-
-The webshop sample uses the smallest set of seeded templates that exercises every layer:
-
-- `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
-- `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
-- `k8s-manifests` (Deployment): a Dockerfile and plain Kubernetes manifests. The Dockerfile follows the Framework: uvicorn for `python-fastapi`, a Vite build served by an unprivileged nginx for `react-vite` (type `static-site`). It patches in `compute.yaml` when a Compute is chosen, and lists `connector-<name>.yaml` for each Connector, so a Connector used with it ships that file.
-- `postgres` (Connector): a compose service for the devcontainer and connection settings in `deploy/k8s/connector-postgres.yaml`.
-
-An AWS data store is a DataStore too. The `dynamodb` Connector writes `infra/connector_dynamodb.ts`, which adds a DynamoDB table to the CDK stack of a Container on an AWS Framework, grants the function the item calls and hands it the table's name. The table follows the tier like the Framework's own tables: in production it is kept, deletion-protected, has point-in-time recovery and is picked up by the stack's backup plan. A Framework wires the Connectors it knows in its `infra/connectors.ts`, rendered from the Connector list; `aws-lambda-ts` does.
-
-The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
-
-The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world page scaffolded from the templates `hello-html` (Framework) and `hello-html-standard` (Standard, the agents' role guides), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
-
-Make targets:
-
-- `make cluster`: create the kind cluster.
-- `make gitea`: install Gitea.
-- `make seed`: run the seed job.
-- `make deploy`: build and install the operator. During development, `make run` runs it from the laptop instead.
-- `make sample`: apply the webshop sample.
-- `make e2e`: all of the above, plus the minimal toolchain, its CI runner, Agent Sandbox and the `apps` fixture, then run the four specs: the page scaffolded, planned from a Brief, a Task taken through two rounds to a merge, a Standard bump carried to main. Every Agent in the fixture runs on the stand-in; the suite stops before it starts if one doesn't, or if one names a model credential Secret.
-
-Gitea keeps the cluster light: one container and SQLite, no separate database. To open a scaffolded repository in a local VS Code devcontainer, reach Gitea through `kubectl port-forward`.
-
-## Risks and open points
-
-- **Gitea instead of GitHub or GitLab.** Chosen to keep the test cluster light. Another host needs the Git host split into ports (#1094) and an adapter that passes their contracts (#1088); see [Factory components](#factory-components-ports-and-adapters).
-- **Shared files between layers.** A Connector often needs a dependency in `pyproject.toml`, which the Framework owns. In v1 the Framework template receives the Connector list and wires the ones it knows. Revisit if that couples Frameworks to Connectors too much.
-- **Session credentials.** The per-namespace ServiceAccount lets any client touch any Session in its project. Limiting a client to its own Session needs short-lived tokens, later.
-- **Compatibility is checked late.** The operator checks types after creation, so an invalid Container exists briefly. A webhook can reject it up front later.
+- **Out of scope:** existing repositories and monorepos; Component and Code
+  levels; provisioning data stores (a Connector only scaffolds); monitoring
+  the apps beyond what a deploy target's tool reports.
+- **One Git host.** Gitea is the only one built; another plugs into the
+  [ports](#factory-components-ports-and-adapters) (#1094).
+- **Shared files between layers.** A Connector often needs a line in a file
+  the Framework owns, so the Framework gets the Connector list and wires the
+  ones it knows. Revisit if that couples them too much.
+- **Session credentials.** A client may touch any Session in its project;
+  short-lived tokens would fix it.
+- **Choices are checked after creation,** so an invalid Container exists
+  briefly; a webhook could reject it up front.
+- **Trust.** Until the gaps in [The fence](#the-fence) and
+  [The CI fence](#the-ci-fence) close, one install is one trust domain.

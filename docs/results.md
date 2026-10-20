@@ -1,6 +1,6 @@
 # MVP v1 results
 
-Each milestone of the [plan](design.md#mvp-v1-plan) ends in a check you can run in
+Each milestone of the [plan](plans/done/mvp-v1.md) ends in a check you can run in
 the Kind cluster. This page shows each check passing, with screenshots of real
 output. [`hack/evidence.sh`](../hack/evidence.sh) takes them again.
 
