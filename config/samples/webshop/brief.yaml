@@ -1,0 +1,28 @@
+# The webshop's Brief: the shop a customer uses, in their words, next to the
+# model in story.yaml, which says what it is built from. The planner Agent
+# plans against that model: it keeps the four Containers and the DataStore,
+# makes a Crew per Container and files their first issues. It deploys to the
+# Kubernetes cluster the factory runs on, once a DeployTarget can ship there
+# (#1072); until then each Container's k8s-manifests repository holds the
+# manifests. Needs the chart installed with gitea.projects={webshop}, which
+# makes the catalog, the Agents and the GitProvider, and Secret
+# claude-credentials, which you create yourself (docs/getting-started.md).
+# Not in kustomization.yaml: apply it after the model with
+# kubectl apply -n webshop -f config/samples/webshop/brief.yaml
+apiVersion: c4.factory.io/v1alpha1
+kind: Brief
+metadata:
+  name: webshop
+spec:
+  idea: >-
+    Webshop is an online shop for a small business that sells home goods.
+    A customer browses the products by category or by searching, and sees
+    each one's price and whether it is in stock. They put products in a cart,
+    change the amounts, and check out as a guest or signed in. They pay by
+    card through an external payment provider, on the provider's own page,
+    so the shop never sees a card number; an order counts as placed once the
+    provider says the payment went through, and the customer sees that on the
+    order's page within a minute. A signed-in customer sees their past orders
+    and reorders any of them in two clicks, at today's prices, with anything
+    out of stock left out and said so. The shop runs on the Kubernetes
+    cluster it is built on.

@@ -24,10 +24,10 @@ var (
 // round that plans the idea adds one Container named after the Brief, on the
 // catalog's first Framework and type a Deployment ships and a Standard fits,
 // with both, else on its first Framework and that Framework's first type, with
-// the first Standard that fits both, and files one issue for it; a Container with a
-// Deployment is released (plan/releases.yaml), so its Crew prepares, tags and
-// ships a release once the issue is merged; each new prompt is one
-// issue for the Brief's Container, else the model's first, and so is each
+// the first Standard that fits both, in the first Internal SoftwareSystem, and
+// files one issue for it; a Container with a Deployment is released
+// (plan/releases.yaml), so its Crew prepares, tags and ships a release once
+// the issue is merged; each new prompt is one issue for the Brief's Container, else the model's first, and so is each
 // request of model/requests.yaml, taken in plan/requests.yaml (a request it
 // has no room or no Container for is skipped). It changes nothing
 // that exists, so CheckPlan takes it; with no Framework to plan the idea on,
@@ -81,8 +81,10 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 				"so the stand-in planner can't add a Container: install one.\n"}, nil
 		}
 		system := ""
+		// The first Internal system: the factory builds nothing in an
+		// External one (#1428).
 		for _, o := range objects {
-			if o.Kind == KindSoftwareSystem {
+			if o.Kind == KindSoftwareSystem && SystemLocation(o) == LocationInternal {
 				system = o.Name
 				break
 			}
@@ -91,7 +93,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 			system = name
 			objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindSoftwareSystem, Name: system,
 				Description: "What Brief " + name + " describes."})
-			choices = append(choices, fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has none.",
+			choices = append(choices, fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has no Internal one.",
 				system))
 		}
 		container = standInName(objects, base)
