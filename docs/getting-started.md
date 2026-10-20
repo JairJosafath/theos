@@ -4,8 +4,10 @@ This guide takes a Kubernetes cluster from nothing to an app the factory builds:
 it installs the factory from the published release, describes a small Go
 command-line program as a C4 model, and has a Crew of Claude Code Agents turn
 a Gitea issue into a merged pull request. [The short path](#the-short-path-describe-the-app)
-does the same from an idea in plain words: a planner Agent writes the model
-and the first issues. Nothing is built from this repository;
+does the same from a Brief, plain words about the app: its example is the
+webshop, the application the factory is judged by, whose planner Agent makes
+a Crew for each of its four Containers and files their first issues. Nothing
+is built from this repository;
 every image and the chart come from GHCR.
 
 You need:
@@ -175,10 +177,37 @@ each Project's condition `SecretsShared` says which one it uses.
 From the release after `0.3.0`, steps 1 and 2 are all you do by hand: install
 the factory, make the token Secret, and describe the app in plain words. A
 planner Agent writes the model, a Crew per Container and the first issues, and
-says what it chose; steps 3 to 5 show the same loop written by hand. For a
-project of its own, say `cel-lens`, set `gitea.projects={cel-lens}` where
-step 1 says `webshop`. The seed makes Project `cel-lens`, so the UI
-offers the project.
+says what it chose; steps 3 to 5 show the same loop written by hand.
+
+The example is the webshop, the application the factory is judged by, from
+the release after `0.28.1`.
+[config/samples/webshop/brief.yaml](../config/samples/webshop/brief.yaml)
+says in a customer's words what the shop does: browse, order, pay through an
+external payment provider and reorder.
+[story.yaml](../config/samples/webshop/story.yaml) next to it is the model it
+is built from: a `storefront` web app (`react-vite`), the `catalog-api` and
+`orders-api` services (`python-fastapi`), a `payments-worker`, the `shop-db`
+Postgres DataStore, and the payment provider as an External system. Each
+Container has `k8s-manifests`, so its repository holds a Dockerfile and its
+Kubernetes manifests. Apply the model, then the Brief; the planner keeps the
+model, makes a Crew per Container and files their first issues:
+
+```bash
+kubectl apply -n webshop -f config/samples/webshop/story.yaml
+kubectl apply -n webshop -f config/samples/webshop/brief.yaml
+```
+
+Two parts of the webshop wait on the factory: `payments-worker` fails with
+reason `UnsupportedType` until a Framework runs a worker on Kubernetes
+([#1468](https://github.com/JairJosafath/c4factory/issues/1468)), and no
+DeployTarget ships to a cluster yet, so the manifests stay in the
+repositories ([#1072](https://github.com/JairJosafath/c4factory/issues/1072)).
+
+For an app of your own, write only the idea, and the planner writes the model
+too; on `0.28.1`, whose tag has no `brief.yaml`, take this way. For a project
+of its own, say `cel-lens`, set
+`gitea.projects={webshop,cel-lens}` where step 1 says `webshop`. The seed
+makes Project `cel-lens`, so the UI offers the project.
 
 Open the UI:
 
@@ -196,19 +225,20 @@ kubectl apply -f config/samples/brief/cel-lens.yaml
 ```
 
 The Brief's phase goes `Planning` (the planner works in the Brief's own Gitea
-repository, `cel-lens/brief-cel-lens`), `Applying`, then `Planned`, in 10 to
-30 minutes. Its card in the UI, and its status, list what it chose, the
-objects it created and the issues it filed; each Container's Crew then picks
-up its issues as in step 5:
+repository, `webshop/brief-webshop` for the webshop), `Applying`, then
+`Planned`, in 10 to 30 minutes. Its card in the UI, and its status, list what
+it chose, the objects it created and the issues it filed; each Container's
+Crew then picks up its issues as in step 5. The commands here and below name
+the webshop's Brief; for cel-lens's, write `-n cel-lens` and `cel-lens`:
 
 ```bash
-kubectl -n cel-lens wait brief/cel-lens --for=jsonpath='{.status.phase}'=Planned --timeout=45m
-kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.choices[*]}- {@}{"\n"}{end}'
-kubectl -n cel-lens get c4
+kubectl -n webshop wait brief/webshop --for=jsonpath='{.status.phase}'=Planned --timeout=45m
+kubectl -n webshop get brief webshop -o jsonpath='{range .status.choices[*]}- {@}{"\n"}{end}'
+kubectl -n webshop get c4
 ```
 
-Steer it with a follow-up in the card's prompt field, such as "Support
-ValidatingAdmissionPolicy files first.". A follow-up never scaffolds a
+Steer it with a follow-up in the card's prompt field, such as "Show the
+delivery cost before checkout.". A follow-up never scaffolds a
 Container again: it adds new Containers, and turns a change to an existing
 one into an issue in its repository. When the planner can't go on without
 you, such as an Agent it needs is missing, the phase is `NeedsInput` and the
@@ -243,7 +273,7 @@ whose Agent is missing. Set `On` to have the Brief apply its answers itself,
 or `Off` for nothing without a prompt, in the create form or with:
 
 ```bash
-kubectl -n cel-lens patch brief cel-lens --type merge -p '{"spec":{"autopilot":"On"}}'
+kubectl -n webshop patch brief webshop --type merge -p '{"spec":{"autopilot":"On"}}'
 ```
 
 Either way the Crew's three tries hold, and each tending round is in the
@@ -384,7 +414,7 @@ issue `status/needs-human` with the reason in a comment; label it
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
-| A Brief stays `NeedsInput` | `kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type=="NeedsInput")].message}'` (or its card in the UI) says what it waits for in one sentence, such as Secret `claude-credentials` missing (step 2); it goes on within a minute of the fix. |
+| A Brief stays `NeedsInput` | `kubectl -n webshop get brief webshop -o jsonpath='{.status.conditions[?(@.type=="NeedsInput")].message}'` (or its card in the UI) says what it waits for in one sentence, such as Secret `claude-credentials` missing (step 2); it goes on within a minute of the fix. |
 | The agent says it isn't logged in | Secret `c4-factory-system/claude-credentials` (or the project's own `webshop/claude-credentials`) is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
 ## Publish releases to GitHub

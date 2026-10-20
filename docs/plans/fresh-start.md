@@ -207,6 +207,16 @@ with an external payment provider; and a deploy to the Kind cluster through
 check` pass with it, `docs/getting-started.md` names it as the example, and
 the stand-in planner's plan lists the four Containers and the DataStore.
 
+What #1428 chose: the fourth Container is `catalog-api`, the catalog behind
+"browse", so `orders-api` keeps orders and accounts; both keep their data in
+one Postgres DataStore, `shop-db`, a schema each; the worker is
+`payments-worker`, which confirms payments with the provider and marks orders
+paid through `orders-api`. The Brief sits next to the model, so the planner
+keeps the architecture and the build is the same each time. No Framework runs
+a worker on Kubernetes, so `payments-worker` waits on #1468; no DeployTarget
+ships to a cluster (only GitHub), so the deploy line waits on #1072, not
+#1162. `TestWebshopSampleIsTheReferenceApp` holds the sample to all of it.
+
 ### Step 4: the verifier session (#1429, the owner starts it)
 
 The owner's one command, from their own shell on 3st8JJ, once #1428 is

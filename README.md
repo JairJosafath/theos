@@ -72,8 +72,8 @@ make e2e                  # all of the above, then check the whole loop
 ```
 
 A minute after `make sample`, Gitea (`make gitea-forward`, http://localhost:3000)
-holds `webshop/orders-api`: a uv project with FastAPI, Kubernetes manifests and a
-devcontainer with Postgres, pushed as one commit. The repositories are public; to sign
+holds the webshop's repositories, such as `webshop/orders-api`: a uv project with
+FastAPI, Kubernetes manifests and a devcontainer with Postgres, pushed as one commit. The repositories are public; to sign
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
