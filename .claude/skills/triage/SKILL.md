@@ -45,12 +45,26 @@ it. It never passes through triage: leave it alone, as every ready issue.
   and a `source/*` one. Give the one that fits (`gh issue edit N --add-label
   kind/bug`, `--remove-label` for a second kind; `hack/lib/github.sh intake N`
   for its source). `status N ready` refuses an issue with no kind.
-- `priority/3` when it makes development itself faster: the relay,
-  `land`, `make check`, a flake, the device or the scripts and skills agents
-  work with (`gh issue edit N --add-label priority/3`). The relay picks by
-  number, 1 first, and an issue with no `priority/N` counts as 5, so leave the
-  rest unlabeled; `priority/1` is for something broken now, the owner orders
-  the rest.
+- Its priority, by the rule in [ROADMAP.md](../../../ROADMAP.md) ("What the
+  project is for"): the relay picks by number, 1 first, and an issue with no
+  `priority/N` counts as 5 (`gh issue edit N --add-label priority/4`).
+  - `priority/1` is for something broken now (a red main, a dead relay, a
+    failed release check).
+  - `priority/2` for the webshop's path, the issues in the milestone
+    *Reference app: the webshop ships*, and a `kind/bug` whose fix is under
+    `templates/`.
+  - `priority/3` when it makes development itself faster: the relay,
+    `land`, `make check`, a flake, the device or the scripts and skills
+    agents work with.
+  - `priority/4` for the rest of the goal's work: the templates (Frameworks,
+    Standards, Connectors, Deployments, Compute) and their features, the apps
+    they produce and their quality, packages, the Brief's planner, and
+    deploys of the apps (the AWS and GitHub targets too).
+  - `priority/8` for a refactor of the factory's own components that changes
+    nothing a user of the templates would notice, and for a new relay,
+    landing or CI feature, which stays `status/proposed` until the
+    reference-app milestone closes.
+  - Leave the rest unlabeled.
 - Its milestone, when a user of the release would notice the change (CRDs,
   operator, UI, chart, templates, docs a user reads): the open milestone
   whose outcome it serves, `hack/lib/github.sh milestone N "TITLE"`, the
