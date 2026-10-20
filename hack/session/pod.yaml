@@ -1,4 +1,4 @@
-# The test Session from docs/design-history.md (Test environment): a pod that clones orders-api from Gitea
+# The test Session (docs/dev/testenv.md, `make session`): a pod that clones orders-api from Gitea
 # and runs the Session client under the project's c4-session ServiceAccount,
 # the way a devcontainer would. `make session` runs it; `make session-kill`
 # kills the client abruptly, as a crashed devcontainer would.

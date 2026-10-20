@@ -139,8 +139,8 @@ A Task is a goal for a Container, usually an issue of its repository
 `task/<name>`, opens a pull request, waits for CI, runs the reviewer, and
 squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
-Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, then `Merged`,
-`Blocked` or `Failed`.
+Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
+on a Standard change), then `Merged` or `Failed`.
 
 - **Issues are the work.** The operator labels the issue
   `status/in-progress` (`status/*` labels are exclusive), reads it before
@@ -155,7 +155,7 @@ Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, then `Merged`,
   to CI, with the output on the pull request.
 - **Blocked is said, not guessed.** An implementer that can't do the issue
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
-  the Task fails at once, `Blocked`, with those words on the issue. A round
+  the Task fails at once, reason `Blocked`, with those words on the issue. A round
   with no change and no such line fails with the end of the agent's summary.
 - **The infrastructure's failures cost the issue no try:**
 
@@ -222,9 +222,9 @@ HTTPS. Every CI adapter meets this or says which part it can't
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
 (`app.kubernetes.io/component: ci-runner`) lets nothing in and only DNS,
 Gitea's port 3000 and public HTTPS out, and the registration token goes only to
-the init container. The `image` runner's job container alone runs seccomp and
-AppArmor `Unconfined` for rootless BuildKit, never privileged. `make
-validate-yaml` checks both. Still open: one long-lived runner per label serves
+the init container; `make validate-yaml` checks both. Still to come with release
+images (#1069): an `image` runner whose job container alone runs seccomp and
+AppArmor `Unconfined` for rootless BuildKit, never privileged. Still open: one long-lived runner per label serves
 every project, so a job can leave something for the next; a pool of single-job
 runners per project closes it (#1076). Until then one install is one trust
 domain ([getting-started](getting-started.md#what-the-factory-trusts)).
@@ -438,7 +438,7 @@ other path, method, content type or field, and by RBAC for anything else:
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
 | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take`, `c4.factory.io/standard-keep` |
-| Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and old `approved` |
+| Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` (and of its old `approved`, when it had one) |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
 | Standard | `PATCH`, JSON patch | `spec.template.ref` |
 
@@ -560,7 +560,7 @@ them). CEL rules and defaults are left to review.
 ## Test tiers
 
 Each rule is verified at the lowest tier that can see it; `make check` runs
-the first three tiers before every merge. A Kind cluster exists only when a
+the table, offline YAML and envtest tiers before every merge. A Kind cluster exists only when a
 human asks; agents never create, lease or deploy to one. What only a real
 node would catch is not tested before release.
 
@@ -579,7 +579,9 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 
 - **Out of scope:** existing repositories and monorepos; Component and Code
   levels; provisioning data stores (a Connector only scaffolds); monitoring
-  the apps beyond what a deploy target's tool reports; a second Git host.
+  the apps beyond what a deploy target's tool reports.
+- **One Git host.** Gitea is the only one built; another plugs into the
+  [ports](#factory-components-ports-and-adapters) (#1094).
 - **Shared files between layers.** A Connector often needs a line in a file
   the Framework owns, so the Framework gets the Connector list and wires the
   ones it knows. Revisit if that couples them too much.

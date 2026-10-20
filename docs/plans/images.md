@@ -25,7 +25,7 @@ image is the one tier only Kind shows.
 - **No image is ever built.** `k8s-manifests` writes a Dockerfile and
   `deploy/k8s/` naming the placeholder `<container>:dev`, and has no release
   workflow at all. The operator Framework's `install.yaml` names
-  `controller:<tag>` (`design.md`, "Standards and the catalog").
+  `controller:<tag>` (`templates/go-kubebuilder/README.md.tmpl`).
 - **The runners can't build.** The `base` and `go` runners run jobs in host
   mode in an unprivileged pod with no Docker
   ([ci-runner-isolation.md](ci-runner-isolation.md)).
