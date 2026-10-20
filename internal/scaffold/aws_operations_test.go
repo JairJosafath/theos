@@ -446,3 +446,51 @@ func TestAWSStandardWritesNoOperationsDocsForAFrameworkWithoutOperations(t *test
 		})
 	}
 }
+
+// aws-ec2-ts v1.1.0 serves HTTPS and rolls its group on cfn-signal; its
+// v1.0.0, without infra/operations.ts, does neither, so an aws-standard
+// update must not bring that repository rules about them (#1442).
+func TestAWSStandardWritesNoEC2SignalRulesForAFrameworkWithoutOperations(t *testing.T) {
+	v110 := []string{
+		"serves HTTPS only",
+		"`CertificateArn`",
+		"CloudFormation (`cfn-signal`)",
+		"waits for its resource signal",
+		"`SIGNAL_TIMEOUT`",
+		"`INSTALL_COMMAND`",
+	}
+	for _, operations := range []bool{true, false} {
+		t.Run(fmt.Sprintf("operations=%t", operations), func(t *testing.T) {
+			in, layers := loadCombo(t, model.TypeService, []side{
+				{model.SideFramework, "aws-ec2-ts"},
+				{model.SideStandard, "aws-standard"},
+			}, "")
+			if !operations {
+				for p := range layers[0].Files {
+					if strings.HasPrefix(p, "infra/operations.ts") {
+						delete(layers[0].Files, p)
+					}
+				}
+				layers[0].Ref = "v1.0.0"
+			}
+			r, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var docs strings.Builder
+			for _, p := range r.Files.Paths() {
+				if p == "AGENTS.md" || strings.HasPrefix(p, "docs/") {
+					docs.Write(r.Files[p].Data)
+				}
+			}
+			for _, w := range v110 {
+				if strings.Contains(docs.String(), w) != operations {
+					t.Errorf("aws-standard's docs for aws-ec2-ts say %q: %t, want %t", w, !operations, operations)
+				}
+			}
+			if got := strings.Contains(string(r.Files["docs/style/aws.md"].Data), "sends no resource signals"); got == operations {
+				t.Errorf("docs/style/aws.md says the rolling update sends no resource signals: %t, want %t", got, !operations)
+			}
+		})
+	}
+}

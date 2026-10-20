@@ -179,7 +179,12 @@ byte for byte.
   deploys `aws-fargate-ts` and `aws-event-ts` with `--all`, the Fargate
   service's certificate as `<name>:CertificateArn`, and the service stack
   alone to the copy region with `--exclusively <name>`, as `copyToRegion`
-  makes a second stack (#1305).
+  makes a second stack (#1305). Since v1.17.2 `docs/style/aws.md` says
+  `aws-ec2-ts`'s HTTPS listener, its `cfn-signal` boot and the rolling
+  update that waits for it only when the Framework has
+  `infra/operations.ts`, as v1.1.0 does; a v1.0.0 gets the HTTP listener
+  and the unsignalled rolling update it has (#1442). v1.17.3 names python-standard
+  v1.4.0 as the source of `aws-lambda-py`'s Python rules (#1468).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
