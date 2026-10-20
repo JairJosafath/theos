@@ -22,9 +22,10 @@ import (
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
-// webshopGaps are the webshop's Containers whose catalog choices the sample's
-// catalog can't take yet, each with the issue that closes the gap. Once it
-// lands, the Container's choices fit and the test says to remove its line.
+// webshopGaps are the webshop's Containers whose type an entry of the
+// sample's catalog doesn't support yet (the operator's UnsupportedType), each
+// with the issue that closes the gap. Once it lands, the Container's choices
+// fit and the test says to remove its line.
 var webshopGaps = map[string]string{
 	"payments-worker": "#1468: no Framework runs a worker on Kubernetes",
 }
@@ -32,7 +33,9 @@ var webshopGaps = map[string]string{
 // TestWebshopSampleIsTheReferenceApp holds config/samples/webshop to the
 // reference application of docs/plans/fresh-start.md (#1428): four Containers
 // and a DataStore, each Container's choices in the sample's catalog, and a
-// Brief whose stand-in plan lists them all and changes none of them.
+// Brief whose stand-in plan lists them all and changes none of them. The
+// stand-in plans from the catalog alone, so it adds its own Container, named
+// after the Brief, too.
 func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 	dir := filepath.Join("..", "..", "config", "samples", "webshop")
 	read := func(name string) []byte {
@@ -81,6 +84,8 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 		switch {
 		case isGap && err == nil:
 			t.Errorf("Container %s's choices fit now: remove its line from webshopGaps (%s)", o.Name, gap)
+		case isGap && !isChoiceError(err):
+			t.Errorf("Container %s: %v, want only the unsupported type of webshopGaps (%s)", o.Name, err, gap)
 		case !isGap && err != nil:
 			t.Errorf("Container %s: %v", o.Name, err)
 		}
@@ -107,11 +112,10 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 	if _, changed := model.PlanDiff(plan, current); len(changed) > 0 {
 		t.Errorf("the plan changes %v, want the model kept", changed)
 	}
-	containers := webshopNames(plan.Objects, model.KindContainer)
-	for _, c := range wantContainers {
-		if !slices.Contains(containers, c) {
-			t.Errorf("the stand-in's plan lists Containers %v, want %s among them", containers, c)
-		}
+	want := append(slices.Clone(wantContainers), brief.Metadata.Name)
+	slices.Sort(want)
+	if c := webshopNames(plan.Objects, model.KindContainer); !slices.Equal(c, want) {
+		t.Errorf("the stand-in's plan lists Containers %v, want %v", c, want)
 	}
 	if d := webshopNames(plan.Objects, model.KindDataStore); !slices.Equal(d, wantDataStores) {
 		t.Errorf("the stand-in's plan lists DataStores %v, want %v", d, wantDataStores)
@@ -151,7 +155,8 @@ func webshopCatalog(t *testing.T, data []byte) []model.CatalogEntry {
 
 // webshopChoices checks Container c's choices as the operator does: each in
 // the catalog and supporting c's type, the Connectors of the DataStores it
-// links to included, and its Standard fitting its Framework.
+// links to included, its Standard fitting its Framework, and no Compute or
+// Deployment on a Framework that deploys itself.
 func webshopChoices(c model.PlanObject, objects []model.PlanObject, catalog []model.CatalogEntry) error {
 	find := func(side, name string) (model.CatalogEntry, error) {
 		i := slices.IndexFunc(catalog, func(e model.CatalogEntry) bool { return e.Side == side && e.Name == name })
@@ -190,7 +195,17 @@ func webshopChoices(c model.PlanObject, objects []model.PlanObject, catalog []mo
 	if err := model.CheckChoices(c.Type, entries); err != nil {
 		return err
 	}
-	return model.CheckStandard(c.Framework, standard)
+	if err := model.CheckStandard(c.Framework, standard); err != nil {
+		return err
+	}
+	return model.CheckDeploysItself(entries[0], c.Compute, c.Deployment)
+}
+
+// isChoiceError says err is the operator's UnsupportedType: an entry that
+// doesn't support the Container's type.
+func isChoiceError(err error) bool {
+	_, ok := errors.AsType[*model.ChoiceError](err)
+	return ok
 }
 
 // webshopNames is the sorted names of objects of kind.

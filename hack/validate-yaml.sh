@@ -23,7 +23,7 @@ done
 # The webshop sample's orders-api repository, as the operator scaffolds it.
 rm -rf "$OUT/orders-api"
 go run ./hack/render -out "$OUT/orders-api" -type service -container orders-api -display-name "Orders API" \
-	Framework=python-fastapi Compute=small Deployment=k8s-manifests Connector=postgres >/dev/null
+	Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres >/dev/null
 "$KUSTOMIZE" build "$OUT/orders-api/deploy/k8s" >"$OUT/orders-api.yaml"
 # A react-vite web app on the same Compute and Deployment, served by nginx.
 rm -rf "$OUT/storefront"

@@ -1,7 +1,9 @@
 # The webshop's Brief: the shop a customer uses, in their words, next to the
 # model in story.yaml, which says what it is built from. The planner Agent
 # plans against that model: it keeps the four Containers and the DataStore,
-# makes a Crew per Container and files their first issues. It deploys to the
+# makes a Crew per Container and files their first issues. Agent stand-in,
+# which plans from the catalog alone, keeps them too but adds a Container of
+# its own, webshop, as it does for any Brief. It deploys to the
 # Kubernetes cluster the factory runs on, once a DeployTarget can ship there
 # (#1072); until then each Container's k8s-manifests repository holds the
 # manifests. Needs the chart installed with gitea.projects={webshop}, which

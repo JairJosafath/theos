@@ -204,7 +204,8 @@ DeployTarget ships to a cluster yet, so the manifests stay in the
 repositories ([#1072](https://github.com/JairJosafath/c4factory/issues/1072)).
 
 For an app of your own, write only the idea, and the planner writes the model
-too. For a project of its own, say `cel-lens`, set
+too; on `0.28.0`, whose tag has no `brief.yaml`, take this way. For a project
+of its own, say `cel-lens`, set
 `gitea.projects={webshop,cel-lens}` where step 1 says `webshop`. The seed
 makes Project `cel-lens`, so the UI offers the project.
 
@@ -225,9 +226,10 @@ kubectl apply -f config/samples/brief/cel-lens.yaml
 
 The Brief's phase goes `Planning` (the planner works in the Brief's own Gitea
 repository, `webshop/brief-webshop` for the webshop), `Applying`, then
-`Planned`, in 10 to 30 minutes. Its card in the UI, and its status, list what it chose, the
-objects it created and the issues it filed; each Container's Crew then picks
-up its issues as in step 5:
+`Planned`, in 10 to 30 minutes. Its card in the UI, and its status, list what
+it chose, the objects it created and the issues it filed; each Container's
+Crew then picks up its issues as in step 5. The commands here and below name
+the webshop's Brief; for cel-lens's, write `-n cel-lens` and `cel-lens`:
 
 ```bash
 kubectl -n webshop wait brief/webshop --for=jsonpath='{.status.phase}'=Planned --timeout=45m

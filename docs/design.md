@@ -1803,7 +1803,7 @@ The highlighted operator is the main thing being built. Gitea and kind are off t
 | Sample project | `webshop` | Project, GitProvider, catalog entries and the story resources. |
 | Test Session | `webshop` | A pod that clones `orders-api` from Gitea and runs the client under the Session ServiceAccount. |
 
-The webshop sample uses the smallest set of seeded templates that exercises every layer:
+The webshop sample's `orders-api` uses the smallest set of seeded templates that exercises every layer (its other Containers add `react-vite`, `python-cli`, `ts-standard` and `python-standard`):
 
 - `python-fastapi` (Framework): a uv project with FastAPI, ruff and pytest, plus the base devcontainer settings.
 - `small` (Compute): resource requests and limits for the manifests, as a `deploy/k8s/compute.yaml` patch.
