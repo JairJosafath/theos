@@ -150,7 +150,10 @@ container asset that synth only stages.
   4.23.15.
 - **History:** v1.2.0 (with `aws-standard` v1.17.0, which refuses a tag) backs up the stack's
   data tables by ARN instead of everything carrying the Container's tag,
-  which reached a `<name>-development` stack's tables too (#1267).
+  which reached a `<name>-development` stack's tables too (#1267). v1.2.1's
+  README deploys with `--all` and names the service stack in
+  `--parameters <name>:CertificateArn=<arn>`, as a `copyToRegion` makes a
+  second stack, which takes no certificate (#1305).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 
