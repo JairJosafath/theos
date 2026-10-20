@@ -70,8 +70,8 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 
 	wantContainers := []string{"catalog-api", "orders-api", "payments-worker", "storefront"}
 	wantDataStores := []string{"shop-db"}
-	if c, d := webshopNames(objects, model.KindContainer), webshopNames(objects, model.KindDataStore); !slices.Equal(c, wantContainers) ||
-		!slices.Equal(d, wantDataStores) {
+	c, d := webshopNames(objects, model.KindContainer), webshopNames(objects, model.KindDataStore)
+	if !slices.Equal(c, wantContainers) || !slices.Equal(d, wantDataStores) {
 		t.Fatalf("story.yaml has Containers %v and DataStores %v, want %v and %v", c, d, wantContainers, wantDataStores)
 	}
 
