@@ -95,11 +95,12 @@ and a review. Never commit red.
 {{- else if eq .Type "worker" }}
 11. **The worker:** `run` does a round of work, then waits, until SIGTERM or
     SIGINT asks it to stop; the signal handler only notes the signal, and the
-    round in progress finishes. A round must finish well within the pod's
-    grace period (30 seconds by default) and be safe to redo, since a crash or
-    a restart repeats it: mark what it handled in the same step that handles
-    it, never after. A round that fails is logged and retried with the
-    backoff, never ends the process.
+    round in progress finishes. A round must finish well within the time a
+    stop allows
+{{- if eq .Deployment "k8s-manifests" }} (the pod's grace period, 30 seconds by default){{ end }}
+    and be safe to redo, since a crash or a restart repeats it: mark what it
+    handled in the same step that handles it, never after. A round that
+    fails is logged and retried with the backoff, never ends the process.
 12. **Entry point:** the `[project.scripts]` function only sets up logging and
     the signal handlers and calls `run`; logs go to stderr, one line per event,
     and the exit code is 0 after a clean stop.
@@ -123,6 +124,9 @@ Offline digests (read the one for what you are touching):
 - `docs/style/python.md`: PEP 8, PEP 257, Google's Python style, typing and
   pytest practice, each rule marked [lint] or [review]; its FastAPI and
   command-line sections apply to services and CLIs
+{{- if and (eq .Type "worker") (ne .Framework "python-fastapi") }}, not to this worker, which
+  follows rules 11 and 12 above
+{{- end }}
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read
 

@@ -7,7 +7,7 @@ and scaffolded by C4 Factory.
 ## Run it
 
 ```sh
-{{ .Container }}   # or python -m app; Ctrl-C stops it
+uv run python -m app   # the image runs python -m app; Ctrl-C stops it
 ```
 
 It does a round of work every 10 seconds and logs to stderr, one line per event.
@@ -51,9 +51,11 @@ uv run {{ .Container }} -n Ada   # run it
 uv run pytest                    # unit tests
 {{- if .Standard }}
 make check                       # what CI runs: lint, formatting, types, tests and the build
+{{- if ne .Type "worker" }}
 make dist                        # the release wheel and sdist in dist/
+{{- end }}
 make help                        # every target
-{{- else }}
+{{- else if ne .Type "worker" }}
 uv build                         # the release wheel and sdist in dist/
 {{- end }}
 ```

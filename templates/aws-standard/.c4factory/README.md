@@ -18,7 +18,7 @@ Frameworks appears in this Standard's, in the same order. For
 `aws-lambda-go`, `.golangci.yml` and `docs/style/go.md` are go-standard
 v1.3.0's, and the same test keeps them byte for byte equal to go-standard's.
 For `aws-lambda-py`, `ruff.toml` and `mypy.ini` render the same as
-python-standard v1.3.0's, and `docs/style/python.md` holds its `python.md`'s
+python-standard v1.4.0's, and `docs/style/python.md` holds its `python.md`'s
 general sections, from "Layout and formatting" up to its FastAPI section,
 byte for byte.
 
