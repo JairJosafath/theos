@@ -49,7 +49,7 @@ function with the installed esbuild, and needs neither Docker nor credentials.
 The stacks are built for a tier, `production` or `development`, which is the
 place they run, not the code: `make synth` writes both, into
 `cdk.out/production/` and `cdk.out/development/`, and a deploy picks one
-(`cdk deploy -c tier=production`; without `-c tier` it is `development`).
+(`cdk deploy -c tier=production --all`; without `-c tier` it is `development`).
 The production stack is `{{ .Container }}`, the development one
 `{{ .Container }}-development`, so a deploy that names no tier never changes
 production. Both run on the schedule.
