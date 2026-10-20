@@ -1,0 +1,78 @@
+{{- if eq .Type "worker" -}}
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import override
+
+import pytest
+
+from app.backoff import next_delay
+from app.worker import Stop, run
+
+
+class StopAfter(Stop):
+    """A Stop that records each wait and asks to stop after `rounds` of them."""
+
+    def __init__(self, rounds: int) -> None:
+        super().__init__()
+        self.rounds = rounds
+        self.waits: list[float] = []
+
+    @override
+    def sleep(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        if len(self.waits) == self.rounds:
+            self.signal = "SIGTERM"
+
+
+def test_runs_rounds_until_stopped() -> None:
+    rounds: list[int] = []
+    stop = StopAfter(3)
+    run(lambda: rounds.append(1), stop)
+    assert len(rounds) == 3
+    assert stop.waits == [next_delay(0)] * 3
+
+
+def test_a_failing_round_backs_off_and_the_worker_goes_on(caplog: pytest.LogCaptureFixture) -> None:
+    outcomes = iter([RuntimeError("provider down"), RuntimeError("provider down"), None])
+
+    def work() -> None:
+        outcome = next(outcomes)
+        if outcome is not None:
+            raise outcome
+
+    stop = StopAfter(3)
+    run(work, stop)
+    assert stop.waits == [next_delay(1), next_delay(2), next_delay(0)]
+    assert "round failed, 2 in a row" in caplog.text
+    assert "provider down" in caplog.text
+
+
+def test_sleep_returns_at_once_when_a_stop_was_asked() -> None:
+    stop = Stop()
+    stop.ask(signal.SIGTERM, None)
+    started = time.monotonic()
+    stop.sleep(60)
+    assert time.monotonic() - started < 1
+    assert stop.signal == "SIGTERM"
+
+
+def test_sigterm_stops_the_worker_cleanly() -> None:
+    root = Path(__file__).resolve().parents[1]
+    with subprocess.Popen(
+        [sys.executable, "-m", "app"], cwd=root, stderr=subprocess.PIPE, text=True
+    ) as worker:
+        try:
+            assert worker.stderr is not None
+            # The handlers are in place once the worker logs that it started.
+            for line in worker.stderr:
+                if "started" in line:
+                    break
+            worker.send_signal(signal.SIGTERM)
+            assert worker.wait(timeout=10) == 0
+            assert "stopped on SIGTERM" in worker.stderr.read()
+        finally:
+            worker.kill()
+{{ end -}}

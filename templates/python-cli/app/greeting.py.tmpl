@@ -1,3 +1,4 @@
+{{- if ne .Type "worker" -}}
 """The greeting the program prints."""
 
 
@@ -12,3 +13,4 @@ def greeting(name: str) -> str:
     """
     who = name.strip() or "world"
     return f"Hello, {who}!"
+{{ end -}}
