@@ -718,7 +718,7 @@ main files (or comments on) `Release vX.Y.Z fails its check`, ready and
 `priority/1`, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
-waits for the seed's repositories, both runners, the manager and the UI, and
+waits for the seed's repositories, the runners, the manager and the UI, and
 scaffolds the release's `orders-api` sample. Then it follows
 [getting-started](../getting-started.md) for the first app: the `ghcr` pull
 Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through

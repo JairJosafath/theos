@@ -250,6 +250,21 @@ func TestCheck(t *testing.T) {
 			runner(o).Spec.Template.Spec.InitContainers[1].SecurityContext = &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}}}
 		}, "gitea-runner-go: container go-cache adds capabilities [NET_ADMIN]"},
+		{"label image named by an init container that doesn't register", func(o *objects) {
+			spec := &runner(o).Spec.Template.Spec
+			spec.InitContainers[1].Env = []corev1.EnvVar{{Name: "RUNNER_LABELS", Value: "image:host"}}
+			spec.Containers[0].SecurityContext = &corev1.SecurityContext{SeccompProfile: unconfinedSeccomp()}
+		}, "gitea-runner-go: container runner runs with seccomp or AppArmor Unconfined"},
+		{"the image runner's /proc unmasked", func(o *objects) {
+			unmasked := corev1.UnmaskedProcMount
+			buildkit(o).ProcMount = &unmasked
+		}, "gitea-runner-image: container runner runs Unconfined with an unmasked /proc"},
+		{"the image runner in the node's process namespace", func(o *objects) {
+			imageRunner(o).Spec.HostPID = true
+		}, "gitea-runner-image: its pods share the node's process or IPC namespace beside an Unconfined container"},
+		{"the image runner in the node's IPC namespace", func(o *objects) {
+			imageRunner(o).Spec.HostIPC = true
+		}, "its pods share the node's process or IPC namespace"},
 		{"a node directory in the image runner", func(o *objects) {
 			spec := &imageRunner(o).Spec
 			spec.Volumes = append(spec.Volumes, corev1.Volume{Name: "cache", VolumeSource: corev1.VolumeSource{

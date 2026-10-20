@@ -23,13 +23,17 @@ EOF
 chmod +x "$T/buildkitd"
 export C4_BUILDKITD="$T/buildkitd" CALLS="$T/calls"
 
-mkdir -p "$T/job/tmp"
+mkdir -p "$T/job/tmp" "$T/old/tmp/buildkit/snapshots/9" "$T/old/tmp/other"
+echo layer >"$T/old/tmp/buildkit/snapshots/9/file"
+chmod 0500 "$T/old/tmp/buildkit/snapshots/9"
 RUNNER_TEMP="$T/job/tmp" sh "$SCRIPT" --oci-worker-no-process-sandbox --addr=unix:///run/buildkitd.sock &
 pid=$!
 for _ in $(seq 50); do [ -e "$T/calls.ready" ] && break; sleep 0.1; done
 check "starts buildkitd with its state under RUNNER_TEMP and the flags it is given" "$(head -1 "$T/calls")" \
   "--root $T/job/tmp/buildkit --oci-worker-no-process-sandbox --addr=unix:///run/buildkitd.sock"
 check "  which writes its state there" "$(has "$T/job/tmp/buildkit/snapshots/1/file")" yes
+check "  having removed a cancelled job's state" "$(has "$T/old/tmp/buildkit")" no
+check "  and nothing else of that job" "$(has "$T/old/tmp/other")" yes
 kill -TERM "$pid"
 wait "$pid"
 check "stopped as buildctl-daemonless.sh stops it, it ends cleanly" $? 0
@@ -37,7 +41,12 @@ check "  stops buildkitd" "$(tail -1 "$T/calls")" stopped
 check "  and removes the state, a read-only directory too" "$(has "$T/job/tmp/buildkit")" no
 check "  keeping the rest of RUNNER_TEMP" "$(has "$T/job/tmp")" yes
 
+printf '#!/bin/sh\necho "$*" >"$CALLS"; mkdir -p "$2"; exit 3\n' >"$T/buildkitd"
+RUNNER_TEMP="$T/job/tmp" sh "$SCRIPT"
+check "a buildkitd that can't start fails with its status" $? 3
+check "  its state removed too" "$(has "$T/job/tmp/buildkit")" no
+
 env -u RUNNER_TEMP sh "$SCRIPT" >"$T/out" 2>&1
-check "outside a job (no RUNNER_TEMP) it fails" $? 2
+check "outside a job (no RUNNER_TEMP) it fails" "$([ $? -ne 0 ] && echo yes)" yes
 check "  saying why" "$(grep -c 'RUNNER_TEMP is unset' "$T/out")" 1
 exit $fail

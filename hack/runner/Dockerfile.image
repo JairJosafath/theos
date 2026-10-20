@@ -14,7 +14,8 @@ FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
 ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73
 USER root
-RUN apk add --no-cache bash curl findutils jq \
+RUN retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+ && retry apk add --no-cache bash curl findutils jq \
  && curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/gitea-runner \
       "https://gitea.com/gitea/runner/releases/download/v${RUNNER_VERSION}/gitea-runner-${RUNNER_VERSION}-linux-amd64" \
  && echo "${RUNNER_SHA256}  /usr/local/bin/gitea-runner" | sha256sum -c - \

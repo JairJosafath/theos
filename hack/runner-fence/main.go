@@ -11,7 +11,8 @@
 // host network. No container runs privileged or adds a capability, and only
 // the image runner's job container (the runner container of the Deployment
 // registering label image) runs with seccomp or AppArmor Unconfined, as a
-// user other than root, in a pod with no hostPath volume. Every NetworkPolicy that selects them lets no traffic in and
+// user other than root, with /proc masked, in a pod with no hostPath volume
+// and none of the node's process or IPC namespaces. Every NetworkPolicy that selects them lets no traffic in and
 // lets out only DNS, Gitea's pods on port 3000 and HTTPS to public addresses
 // (model.PrivateRanges kept out); together they let out all three, and one of
 // them isolates the pods both ways.
@@ -228,8 +229,8 @@ func checkPod(name string, spec corev1.PodSpec) []string {
 
 // checkConfinement checks that no container of a runner pod is privileged or
 // adds a capability, and that only the image runner's job container runs with
-// seccomp or AppArmor Unconfined, not as root, in a pod mounting no node
-// directory.
+// seccomp or AppArmor Unconfined, not as root, with /proc masked, in a pod
+// sharing nothing of the node's.
 func checkConfinement(name string, pod corev1.PodTemplateSpec) []string {
 	var problems []string
 	spec := pod.Spec
@@ -261,12 +262,18 @@ func checkConfinement(name string, pod corev1.PodTemplateSpec) []string {
 			continue
 		}
 		loosened = true
+		if sc.ProcMount != nil && *sc.ProcMount == corev1.UnmaskedProcMount {
+			problems = append(problems, fmt.Sprintf("%s: container %s runs Unconfined with an unmasked /proc", name, c.Name))
+		}
 		if !nonRoot(spec.SecurityContext, sc) {
 			problems = append(problems, fmt.Sprintf(
 				"%s: container %s runs Unconfined but may run as root; set runAsNonRoot: true and runAsUser: 1000", name, c.Name))
 		}
 	}
 	if loosened {
+		if spec.HostPID || spec.HostIPC {
+			problems = append(problems, name+": its pods share the node's process or IPC namespace beside an Unconfined container")
+		}
 		for _, v := range spec.Volumes {
 			if v.HostPath != nil {
 				problems = append(problems, fmt.Sprintf(
@@ -277,10 +284,14 @@ func checkConfinement(name string, pod corev1.PodTemplateSpec) []string {
 	return problems
 }
 
-// registersLabel says whether the pod's registering init container names the
-// runner label (RUNNER_LABELS, label:schema,...).
+// registersLabel says whether the init container that registers, the one
+// given the registration token, names the runner label (RUNNER_LABELS,
+// label:schema,...): the label Gitea gives the runner.
 func registersLabel(spec corev1.PodSpec, label string) bool {
 	for _, c := range spec.InitContainers {
+		if !readsToken(spec, c) {
+			continue
+		}
 		for _, e := range c.Env {
 			if e.Name != labelsEnv {
 				continue

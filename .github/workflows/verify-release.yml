@@ -15,7 +15,7 @@ name: Verify Release
 # GITHUB_TOKEN (packages: read reads the private packages Release pushed), the
 # agent images pulled and loaded into Kind, then `helm install` of
 # oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. They
-# wait for the seed's repositories, both runners, the manager and the UI, then
+# wait for the seed's repositories, the runners, the manager and the UI, then
 # apply the installed release's own webshop sample and wait for orders-api's
 # repository. Then they follow docs/getting-started.md for the first app: the
 # operator's copy of the `ghcr` pull Secret in webshop (proved by pulling
@@ -140,7 +140,8 @@ jobs:
       # CPUs, 7 GB); the failure issue repeats it.
       TURNED_OFF: >-
         the go runner runs without its Go build cache (runners.go.goCache) and
-        requests 100m CPU and 128Mi instead of its defaults; on a hosted runner,
+        requests 100m CPU and 128Mi instead of its defaults, and the image
+        runner requests 100m CPU and 128Mi too; on a hosted runner,
         the preinstalled .NET, Android, GHC and CodeQL are removed for disk.
     steps:
       - name: Name the versions and the registry
@@ -283,6 +284,9 @@ jobs:
               goCache: ""
               resources:
                 requests: {cpu: 100m, memory: 128Mi}
+            image:
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
           EOF
           helm install c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$FROM_VERSION" \
             --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
@@ -304,13 +308,16 @@ jobs:
           done
           echo "templates: $(api orgs/templates/repos | jq -r '[.[].name] | sort | join(" ")')"
           api orgs/webshop >/dev/null
+          # A release before the image runner's has two.
+          want="base go"
+          if $KUBECTL -n gitea get deployment gitea-runner-image >/dev/null 2>&1; then want="base go image"; fi
           for i in $(seq 1 60); do
             runners=$(api admin/actions/runners | jq -r '[.runners[] | select(.status != "offline") | .labels[].name] | sort | join(" ")')
-            [ "$runners" = "base go" ] && break
+            [ "$runners" = "$want" ] && break
             sleep 5
           done
-          echo "runners: $runners"
-          [ "$runners" = "base go" ]
+          echo "runners: $runners (want $want)"
+          [ "$runners" = "$want" ]
 
       - name: Scaffold orders-api
         run: |
