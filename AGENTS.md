@@ -103,6 +103,8 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
 
 ## How to Work
 
+- **No new relay, landing or CI feature until the reference-app milestone
+  closes;** file the idea `status/proposed` at priority/8.
 - **Plan before building.** For work that spans more than one package or issue,
   write a short plan in `docs/plans/` first: goal, steps, and how you'll know it's done.
 - **Designing is our job.** Whoever files an issue says what they want; how the
@@ -177,9 +179,15 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
   tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
   works every ready issue. `priority/1` to `priority/10` order the relay's
   picks, 1 first; an issue with none counts as 5. 1 is something broken now
-  (a red main, a dead relay, a failed release check); 3 marks what makes
+  (a red main, a dead relay, a failed release check); `priority/2` is the
+  webshop's path, the issues in the milestone *Reference app: the webshop
+  ships*, and a `kind/bug` whose fix is under `templates/`; 3 marks what makes
   development itself faster (the relay, `land`, `make check`, flakes, the
-  scripts). What each status means:
+  scripts); 4 is the rest of the goal's work (the templates, the apps they
+  produce, packages, the Brief's planner, deploys); 8 or lower is a refactor
+  of the factory's own components that changes nothing a user of the
+  templates would notice. [ROADMAP.md](ROADMAP.md) has the goal behind the
+  rule. What each status means:
   - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
     the owner (a session the user runs files what the user decided as
     `ready`), the maintainer, or the relay's triage (the `triage` skill). An

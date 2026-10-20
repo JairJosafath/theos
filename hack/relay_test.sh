@@ -290,6 +290,7 @@ check "triage skill: the plan is not the issue's Done when (#491)" "$(grep -c 't
 check "triage skill: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$skill")" 1
 check "triage skill: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$skill")" 1
 check "triage skill: never to the owner" "$(grep -c 'never to the owner' <<<"$skill")" 1
+check "triage skill: priorities follow ROADMAP.md's rule (#1424)" "$(grep -c '^  - `priority/[1234]`' <<<"$skill") $(grep -c '^  - `priority/8` for a refactor' <<<"$skill") $(grep -c 'by the rule in \[ROADMAP.md\]' <<<"$skill")" "4 1 1"
 gh_proposed() { :; }
 rm -f "$DIR/admitted"
 check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues; no triage"

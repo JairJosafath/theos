@@ -134,6 +134,17 @@ unanswered for 14 days.
    ([Kubernetes triage](https://www.kubernetes.dev/docs/guide/issue-triage/)):
    - Labels: every open issue has one `status/*`, one `kind/*` and a
      `source/*`; the report issue is the exception.
+   - Priorities: each open issue's `priority/N` follows the rule in
+     [ROADMAP.md](../../../ROADMAP.md) ("What the project is for"):
+     `priority/2` for the webshop's path, the issues in the milestone
+     *Reference app: the webshop ships*, and a `kind/bug` whose fix is under
+     `templates/`; `priority/4` for the rest of the goal's work (the
+     templates, the apps they produce, packages, the Brief's planner,
+     deploys); `priority/8` or lower for a refactor of the factory's own
+     components that changes nothing a user of the templates would notice,
+     and for a new relay, landing or CI feature, which stays
+     `status/proposed` until the reference-app milestone closes. 1 and 3 keep
+     their meaning. Move a label that doesn't fit and say why in a comment.
    - No issue sends an agent to a cluster: agents never lease, create or
      deploy to one. A *Done when* that asks for Kind evidence gets rewritten
      to what `make check` (and `make test-gitea`) can show; a human run of
