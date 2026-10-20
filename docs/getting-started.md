@@ -135,7 +135,7 @@ kubectl -n gitea get pods
 kubectl -n webshop get gitprovider,secret,c4catalog,agents
 ```
 
-The release requests about 1.1 CPU and 1.4 GiB of memory; on a two-CPU node
+The release requests about 2.1 CPU and 3.4 GiB of memory; on a two-CPU node
 see [the chart's README](../dist/chart/README.md#install) for what to turn
 down.
 

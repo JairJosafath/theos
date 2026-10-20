@@ -59,6 +59,34 @@ spec:
       volumes:
         - {name: data, emptyDir: {}}
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gitea-runner-image, namespace: gitea}
+spec:
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: gitea-runner-image, app.kubernetes.io/component: ci-runner}
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        - name: register
+          command: [c4-runner-register]
+          env:
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - {name: RUNNER_LABELS, value: "image:host"}
+          volumeMounts: [{name: data, mountPath: /data}]
+      containers:
+        - name: runner
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            seccompProfile: {type: Unconfined}
+            appArmorProfile: {type: Unconfined}
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes:
+        - {name: data, emptyDir: {}}
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: ci-runner, namespace: gitea}
@@ -93,6 +121,19 @@ func runner(o *objects) *appsv1.Deployment {
 	return &o.deployments[i]
 }
 
+func imageRunner(o *objects) *corev1.PodTemplateSpec {
+	i := slices.IndexFunc(o.deployments, func(d appsv1.Deployment) bool { return d.Name == "gitea-runner-image" })
+	return &o.deployments[i].Spec.Template
+}
+
+func buildkit(o *objects) *corev1.SecurityContext {
+	return imageRunner(o).Spec.Containers[0].SecurityContext
+}
+
+func unconfinedSeccomp() *corev1.SeccompProfile {
+	return &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeUnconfined}
+}
+
 func runnerContainer(o *objects) *corev1.Container {
 	return &runner(o).Spec.Template.Spec.Containers[0]
 }
@@ -108,7 +149,8 @@ func TestCheck(t *testing.T) {
 	tokenEnv := corev1.EnvVar{Name: "RUNNER_TOKEN", ValueFrom: &corev1.EnvVarSource{
 		SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: "gitea-runner"}, Key: "token"}}}
-	yes, always := true, corev1.ContainerRestartPolicyAlways
+	yes, no, always := true, false, corev1.ContainerRestartPolicyAlways
+	root, user := int64(0), int64(1000)
 	tests := []struct {
 		name   string
 		change func(o *objects)
@@ -157,6 +199,62 @@ func TestCheck(t *testing.T) {
 		{"no runner at all", func(o *objects) {
 			o.deployments = o.deployments[:1]
 		}, "No runner Deployment"},
+		{"the image runner registering another label too", func(o *objects) {
+			imageRunner(o).Spec.InitContainers[0].Env[1].Value = "base:host, image:host"
+		}, ""},
+		{"the go runner's Go cache on the node", func(o *objects) {
+			spec := &runner(o).Spec.Template.Spec
+			spec.Volumes = append(spec.Volumes, corev1.Volume{Name: "go-cache", VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: "/var/cache/c4factory/go/ci"}}})
+		}, ""},
+		{"Unconfined on another runner's job container", func(o *objects) {
+			runnerContainer(o).SecurityContext = &corev1.SecurityContext{SeccompProfile: unconfinedSeccomp()}
+		}, "gitea-runner-go: container runner runs with seccomp or AppArmor Unconfined; " +
+			"only the job container of the runner labelled image may"},
+		{"AppArmor unconfined by the annotation on another runner", func(o *objects) {
+			runner(o).Spec.Template.Annotations = map[string]string{
+				"container.apparmor.security.beta.kubernetes.io/runner": "unconfined"}
+		}, "gitea-runner-go: container runner runs with seccomp or AppArmor Unconfined"},
+		{"the image runner no longer registering label image", func(o *objects) {
+			imageRunner(o).Spec.InitContainers[0].Env[1].Value = "go:host"
+		}, "gitea-runner-image: container runner runs with seccomp or AppArmor Unconfined"},
+		{"Unconfined on the image runner's init container", func(o *objects) {
+			imageRunner(o).Spec.InitContainers[0].SecurityContext = &corev1.SecurityContext{
+				AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined}}
+		}, "gitea-runner-image: container register runs with seccomp or AppArmor Unconfined"},
+		{"Unconfined on a container beside the image runner's job container", func(o *objects) {
+			spec := &imageRunner(o).Spec
+			spec.Containers = append(spec.Containers, corev1.Container{Name: "sidecar",
+				SecurityContext: &corev1.SecurityContext{SeccompProfile: unconfinedSeccomp()}})
+		}, "gitea-runner-image: container sidecar runs with seccomp or AppArmor Unconfined"},
+		{"Unconfined for the image runner's whole pod", func(o *objects) {
+			imageRunner(o).Spec.SecurityContext = &corev1.PodSecurityContext{SeccompProfile: unconfinedSeccomp()}
+		}, "gitea-runner-image: its pods run every container with seccomp or AppArmor Unconfined"},
+		{"the image runner's job container Unconfined as root", func(o *objects) {
+			buildkit(o).RunAsUser = &root
+		}, "gitea-runner-image: container runner runs Unconfined but may run as root"},
+		{"the image runner's job container Unconfined, not bound to a non-root user", func(o *objects) {
+			buildkit(o).RunAsNonRoot = &no
+		}, "container runner runs Unconfined but may run as root"},
+		{"the image runner's user from its pod", func(o *objects) {
+			buildkit(o).RunAsUser, buildkit(o).RunAsNonRoot = nil, nil
+			imageRunner(o).Spec.SecurityContext = &corev1.PodSecurityContext{RunAsUser: &user, RunAsNonRoot: &yes}
+		}, ""},
+		{"the image runner privileged", func(o *objects) {
+			buildkit(o).Privileged = &yes
+		}, "gitea-runner-image: container runner runs privileged"},
+		{"a capability on the image runner", func(o *objects) {
+			buildkit(o).Capabilities = &corev1.Capabilities{Add: []corev1.Capability{"SYS_ADMIN"}}
+		}, "gitea-runner-image: container runner adds capabilities [SYS_ADMIN]"},
+		{"a capability on another runner's init container", func(o *objects) {
+			runner(o).Spec.Template.Spec.InitContainers[1].SecurityContext = &corev1.SecurityContext{
+				Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}}}
+		}, "gitea-runner-go: container go-cache adds capabilities [NET_ADMIN]"},
+		{"a node directory in the image runner", func(o *objects) {
+			spec := &imageRunner(o).Spec
+			spec.Volumes = append(spec.Volumes, corev1.Volume{Name: "cache", VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: "/var/cache/buildkit"}}})
+		}, "gitea-runner-image: its pods mount node directory /var/cache/buildkit (volume cache) beside an Unconfined container"},
 		{"no Gitea to check the rule against", func(o *objects) {
 			o.deployments = o.deployments[1:]
 		}, "no Deployment gitea/gitea to check the fence's Gitea rule against"},
@@ -251,10 +349,10 @@ func TestDecode(t *testing.T) {
 	if err := decode(strings.NewReader(fenced), &o); err != nil {
 		t.Fatal(err)
 	}
-	if got := runnerNames(o); !slices.Equal(got, []string{"gitea/gitea-runner-go"}) {
+	if got := runnerNames(o); !slices.Equal(got, []string{"gitea/gitea-runner-go", "gitea/gitea-runner-image"}) {
 		t.Errorf("runners %q", got)
 	}
-	if len(o.deployments) != 2 || len(o.policies) != 1 {
-		t.Errorf("%d Deployments and %d NetworkPolicies, want 2 and 1", len(o.deployments), len(o.policies))
+	if len(o.deployments) != 3 || len(o.policies) != 1 {
+		t.Errorf("%d Deployments and %d NetworkPolicies, want 3 and 1", len(o.deployments), len(o.policies))
 	}
 }

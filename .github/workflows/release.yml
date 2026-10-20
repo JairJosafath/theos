@@ -77,6 +77,7 @@ jobs:
             docker build -t "$REGISTRY/agent-$tc:$VERSION" --build-arg BASE="$REGISTRY/$tc:$VERSION" -f hack/agent/Dockerfile .
             docker build -t "$REGISTRY/gitea-runner-$tc:$VERSION" --build-arg BASE="$REGISTRY/$tc:$VERSION" -f hack/runner/Dockerfile .
           done
+          docker build -t "$REGISTRY/gitea-runner-image:$VERSION" -f hack/runner/Dockerfile.image .
           docker images "$REGISTRY/*"
 
       - name: Set up Go
@@ -115,7 +116,7 @@ jobs:
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          for name in operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go; do
+          for name in operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image; do
             docker push "$REGISTRY/$name:$VERSION"
           done
           helm push "c4-factory-$VERSION.tgz" "oci://$REGISTRY/charts"

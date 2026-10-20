@@ -8,7 +8,10 @@
 // registration token (env RUNNER_TOKEN, Secret gitea-runner) to an init
 // container only, never to a container where jobs run or one beside them;
 // they mount no ServiceAccount token, share no process namespace and use no
-// host network. Every NetworkPolicy that selects them lets no traffic in and
+// host network. No container runs privileged or adds a capability, and only
+// the image runner's job container (the runner container of the Deployment
+// registering label image) runs with seccomp or AppArmor Unconfined, as a
+// user other than root, in a pod with no hostPath volume. Every NetworkPolicy that selects them lets no traffic in and
 // lets out only DNS, Gitea's pods on port 3000 and HTTPS to public addresses
 // (model.PrivateRanges kept out); together they let out all three, and one of
 // them isolates the pods both ways.
@@ -46,6 +49,15 @@ const (
 	// gitea is the Gitea Deployment, and the name label of its pods.
 	gitea     = "gitea"
 	giteaPort = 3000
+	// imageLabel is the runner label of rootless BuildKit, whose user
+	// namespaces the runtime's default seccomp and AppArmor profiles refuse:
+	// its job container, jobContainer, alone may run Unconfined
+	// (docs/plans/images.md, decision 2).
+	imageLabel   = "image"
+	jobContainer = "runner"
+	labelsEnv    = "RUNNER_LABELS"
+	// appArmorAnnotation is the AppArmor profile's annotation before the field.
+	appArmorAnnotation = "container.apparmor.security.beta.kubernetes.io/"
 )
 
 // The egress a job needs, each one rule.
@@ -157,6 +169,7 @@ func check(objs objects) []string {
 		}
 		runners++
 		problems = append(problems, checkPod(name, d.Spec.Template.Spec)...)
+		problems = append(problems, checkConfinement(name, d.Spec.Template)...)
 		problems = append(problems, checkFence(name, d, objs)...)
 	}
 	if runners == 0 {
@@ -211,6 +224,98 @@ func checkPod(name string, spec corev1.PodSpec) []string {
 		problems = append(problems, fmt.Sprintf("%s: no init container registers the runner with %s", name, tokenEnv))
 	}
 	return problems
+}
+
+// checkConfinement checks that no container of a runner pod is privileged or
+// adds a capability, and that only the image runner's job container runs with
+// seccomp or AppArmor Unconfined, not as root, in a pod mounting no node
+// directory.
+func checkConfinement(name string, pod corev1.PodTemplateSpec) []string {
+	var problems []string
+	spec := pod.Spec
+	image := registersLabel(spec, imageLabel)
+	if p := spec.SecurityContext; p != nil && (unconfined(p.SeccompProfile) || unconfinedAppArmor(p.AppArmorProfile)) {
+		problems = append(problems, name+
+			": its pods run every container with seccomp or AppArmor Unconfined; only the image runner's job container may")
+	}
+	loosened := false
+	for i, c := range slices.Concat(spec.InitContainers, spec.Containers) {
+		sc := c.SecurityContext
+		if sc == nil {
+			sc = &corev1.SecurityContext{}
+		}
+		if sc.Privileged != nil && *sc.Privileged {
+			problems = append(problems, fmt.Sprintf("%s: container %s runs privileged", name, c.Name))
+		}
+		if sc.Capabilities != nil && len(sc.Capabilities.Add) > 0 {
+			problems = append(problems, fmt.Sprintf("%s: container %s adds capabilities %v", name, c.Name, sc.Capabilities.Add))
+		}
+		if !unconfined(sc.SeccompProfile) && !unconfinedAppArmor(sc.AppArmorProfile) &&
+			pod.Annotations[appArmorAnnotation+c.Name] != "unconfined" {
+			continue
+		}
+		if job := i >= len(spec.InitContainers) && c.Name == jobContainer; !image || !job {
+			problems = append(problems, fmt.Sprintf(
+				"%s: container %s runs with seccomp or AppArmor Unconfined; only the job container of the runner labelled %s may",
+				name, c.Name, imageLabel))
+			continue
+		}
+		loosened = true
+		if !nonRoot(spec.SecurityContext, sc) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: container %s runs Unconfined but may run as root; set runAsNonRoot: true and runAsUser: 1000", name, c.Name))
+		}
+	}
+	if loosened {
+		for _, v := range spec.Volumes {
+			if v.HostPath != nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: its pods mount node directory %s (volume %s) beside an Unconfined container", name, v.HostPath.Path, v.Name))
+			}
+		}
+	}
+	return problems
+}
+
+// registersLabel says whether the pod's registering init container names the
+// runner label (RUNNER_LABELS, label:schema,...).
+func registersLabel(spec corev1.PodSpec, label string) bool {
+	for _, c := range spec.InitContainers {
+		for _, e := range c.Env {
+			if e.Name != labelsEnv {
+				continue
+			}
+			for l := range strings.SplitSeq(e.Value, ",") {
+				if name, _, _ := strings.Cut(strings.TrimSpace(l), ":"); name == label {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func unconfined(p *corev1.SeccompProfile) bool {
+	return p != nil && p.Type == corev1.SeccompProfileTypeUnconfined
+}
+
+func unconfinedAppArmor(p *corev1.AppArmorProfile) bool {
+	return p != nil && p.Type == corev1.AppArmorProfileTypeUnconfined
+}
+
+// nonRoot says whether the container must run as a user other than root: the
+// container's settings, else the pod's.
+func nonRoot(pod *corev1.PodSecurityContext, c *corev1.SecurityContext) bool {
+	user, must := c.RunAsUser, c.RunAsNonRoot
+	if pod != nil {
+		if user == nil {
+			user = pod.RunAsUser
+		}
+		if must == nil {
+			must = pod.RunAsNonRoot
+		}
+	}
+	return must != nil && *must && user != nil && *user != 0
 }
 
 // readsToken says whether container c gets the registration token, through

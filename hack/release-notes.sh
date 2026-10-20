@@ -113,7 +113,8 @@ fi
 cat <<EOF
 
 Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
-base and go, agent-base, agent-go, gitea-runner-base and gitea-runner-go.
+base and go, agent-base, agent-go, gitea-runner-base, gitea-runner-go and
+gitea-runner-image.
 
 Install, as the guide below does without a pull secret: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
 first, its controller without leader election (the guide says why), then the
