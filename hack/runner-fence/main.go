@@ -272,7 +272,8 @@ func checkConfinement(name string, pod corev1.PodTemplateSpec) []string {
 	}
 	if loosened {
 		if spec.HostPID || spec.HostIPC {
-			problems = append(problems, name+": its pods share the node's process or IPC namespace beside an Unconfined container")
+			problems = append(problems, name+
+				": its pods share the node's process or IPC namespace beside an Unconfined container")
 		}
 		for _, v := range spec.Volumes {
 			if v.HostPath != nil {

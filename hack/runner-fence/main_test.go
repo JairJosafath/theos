@@ -269,7 +269,8 @@ func TestCheck(t *testing.T) {
 			spec := &imageRunner(o).Spec
 			spec.Volumes = append(spec.Volumes, corev1.Volume{Name: "cache", VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{Path: "/var/cache/buildkit"}}})
-		}, "gitea-runner-image: its pods mount node directory /var/cache/buildkit (volume cache) beside an Unconfined container"},
+		}, "gitea-runner-image: its pods mount node directory /var/cache/buildkit (volume cache) " +
+			"beside an Unconfined container"},
 		{"no Gitea to check the rule against", func(o *objects) {
 			o.deployments = o.deployments[1:]
 		}, "no Deployment gitea/gitea to check the fence's Gitea rule against"},
