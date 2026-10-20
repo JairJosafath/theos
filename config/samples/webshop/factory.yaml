@@ -24,6 +24,61 @@ spec:
     ref: v1.3.0
 ---
 apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: react-vite
+spec:
+  displayName: Web app with pages (React, Vite)
+  description: A page in the browser in React and TypeScript, built with Vite into a static site, with a pure module and its unit tests.
+  supportedTypes: [static-site]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/react-vite
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Framework
+metadata:
+  name: python-cli
+spec:
+  displayName: Command-line program (Python, uv)
+  description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases.
+  supportedTypes: [cli]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/python-cli
+    ref: v1.0.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: ts-standard
+spec:
+  displayName: TypeScript quality standard
+  description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
+  supportedTypes: [extension, static-site, cli]
+  supportedFrameworks: [vscode-extension, react-vite, node-cli]
+  # The quality contract: agents fix the code, not the rules it is checked by.
+  protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+  checksBeforeRelease: true
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
+    ref: v1.5.0
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Standard
+metadata:
+  name: python-standard
+spec:
+  displayName: Python quality standard
+  description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
+  supportedTypes: [service, cli]
+  supportedFrameworks: [python-fastapi, python-cli]
+  protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
+  checksBeforeRelease: true
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
+    ref: v1.3.0
+---
+apiVersion: c4.factory.io/v1alpha1
 kind: Compute
 metadata:
   name: small

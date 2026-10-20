@@ -72,6 +72,23 @@ func TestStandInPlan(t *testing.T) {
 			issues: []string{"lend: Stand-in: start lend"},
 		},
 		{
+			name: "idea, in the first Internal SoftwareSystem, not an External one before it (#1428)",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: noStandard, Objects: []PlanObject{
+				{Kind: KindSoftwareSystem, Name: "payments", Location: LocationExternal}, system}},
+			created: []string{"Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
+			name:    "idea, in a new SoftwareSystem, only an External one there",
+			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: noStandard, Objects: []PlanObject{{Kind: KindSoftwareSystem, Name: "payments", Location: LocationExternal}}},
+			created: []string{"SoftwareSystem/lend", "Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
 			name:    "idea, in a new SoftwareSystem, without a Standard",
 			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: noStandard},
 			created: []string{"SoftwareSystem/lend", "Container/lend"},

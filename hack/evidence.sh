@@ -67,8 +67,8 @@ m2_story() { run kubectl get c4 -n webshop; }
 
 m2_ownership() {
     p "kubectl -n webshop get <kind>/<name> -o jsonpath='{.metadata.ownerReferences[0]}'"
-    for r in person/customer softwaresystem/webshop-core container/orders-api datastore/orders-db \
-        relationship/orders-api-to-orders-db relationship/customer-uses-webshop-core; do
+    for r in person/customer softwaresystem/webshop-core container/orders-api datastore/shop-db \
+        relationship/orders-api-to-shop-db relationship/customer-uses-webshop-core; do
         kubectl -n webshop get "$r" -o jsonpath='{.kind}/{.metadata.name}{"  <- owned by  "}{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'
     done
 }

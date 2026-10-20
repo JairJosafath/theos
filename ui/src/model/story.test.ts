@@ -16,7 +16,7 @@ import {
 
 const NOW = Date.parse('2026-09-30T12:00:00Z')
 
-/** config/samples/webshop as the API returns it before the operator has run. */
+/** A small webshop story, as the API returns it before the operator has run. */
 function sampleStory(): StoryData {
   const meta = (name: string) => ({ name, namespace: 'webshop' })
   return {

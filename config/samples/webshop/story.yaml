@@ -1,4 +1,9 @@
-# Who uses what, and what it is made of.
+# Who uses what, and what it is made of: the reference application
+# (docs/plans/fresh-start.md). A customer uses the storefront, a web app that
+# reads the catalog from catalog-api and orders through orders-api; both keep
+# their data in the shop-db DataStore, a schema each. orders-api starts each
+# payment at the payment provider, an External system the story only names,
+# and payments-worker confirms them there and marks the orders paid.
 apiVersion: c4.factory.io/v1alpha1
 kind: Person
 metadata:
@@ -16,8 +21,61 @@ spec:
   description: Catalog, cart and ordering
   needs:
   - Customers can reorder in two clicks
+  - The shop never sees a card number
   kpis:
   - Checkout conversion
+  - Orders paid within a minute of checkout
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: payment-provider
+spec:
+  displayName: Payment provider
+  description: Takes card payments on its own page and says whether each one went through.
+  location: External
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: storefront
+spec:
+  softwareSystemRef:
+    name: webshop-core
+  displayName: Storefront
+  description: The shop in the browser, to browse, order, pay and reorder.
+  type: static-site
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: react-vite
+  standardRef:
+    name: ts-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: catalog-api
+spec:
+  softwareSystemRef:
+    name: webshop-core
+  displayName: Catalog API
+  description: Serves products, prices and stock, by category and by search.
+  type: service
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-fastapi
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -27,12 +85,14 @@ spec:
   softwareSystemRef:
     name: webshop-core
   displayName: Orders API
-  description: Takes and tracks orders.
+  description: Keeps customers' accounts, takes and tracks carts, orders and reorders, and starts their payments.
   type: service
   gitProviderRef:
     name: gitea
   frameworkRef:
     name: python-fastapi
+  standardRef:
+    name: python-standard
   computeRef:
     name: small
   deploymentRef:
@@ -43,15 +103,39 @@ spec:
     alerts:
       email: ops@webshop.example
 ---
+# A worker: no Framework of the catalog runs one on Kubernetes yet, since
+# python-cli supports only cli, so this Container fails with ChoicesValid
+# False, reason UnsupportedType, until #1468 lands; python-standard doesn't
+# fit a worker either. No Container names spec.deploy: a DeployTarget ships
+# only to GitHub so far, and the deploy to a cluster is #1072.
 apiVersion: c4.factory.io/v1alpha1
-kind: DataStore
+kind: Container
 metadata:
-  name: orders-db
+  name: payments-worker
 spec:
   softwareSystemRef:
     name: webshop-core
-  displayName: Orders DB
-  description: Orders and their lines.
+  displayName: Payments worker
+  description: Confirms each pending payment with the provider and marks its order paid or failed.
+  type: worker
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-cli
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: DataStore
+metadata:
+  name: shop-db
+spec:
+  softwareSystemRef:
+    name: webshop-core
+  displayName: Shop DB
+  description: The catalog, accounts, carts and orders, a schema for each API.
   connectorRef:
     name: postgres
 ---
@@ -66,17 +150,121 @@ spec:
   target:
     kind: SoftwareSystem
     name: webshop-core
-  description: Browses, orders and reorders
+  description: Browses, orders, pays and reorders
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Relationship
 metadata:
-  name: orders-api-to-orders-db
+  name: customer-uses-storefront
+spec:
+  source:
+    kind: Person
+    name: customer
+  target:
+    kind: Container
+    name: storefront
+  description: Browses, orders and reorders, in the browser
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: storefront-to-catalog-api
+spec:
+  source:
+    kind: Container
+    name: storefront
+  target:
+    kind: Container
+    name: catalog-api
+  description: Reads products, prices and stock (JSON over HTTP)
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: storefront-to-orders-api
+spec:
+  source:
+    kind: Container
+    name: storefront
+  target:
+    kind: Container
+    name: orders-api
+  description: Fills the cart, checks out, lists and repeats orders (JSON over HTTP)
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: orders-api-to-catalog-api
+spec:
+  source:
+    kind: Container
+    name: orders-api
+  target:
+    kind: Container
+    name: catalog-api
+  description: Prices each line at checkout and on reorder
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: catalog-api-to-shop-db
+spec:
+  source:
+    kind: Container
+    name: catalog-api
+  target:
+    kind: DataStore
+    name: shop-db
+  description: Reads and writes the catalog
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: orders-api-to-shop-db
 spec:
   source:
     kind: Container
     name: orders-api
   target:
     kind: DataStore
-    name: orders-db
-  description: Reads and writes orders
+    name: shop-db
+  description: Reads and writes accounts, carts and orders
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: orders-api-to-payment-provider
+spec:
+  source:
+    kind: Container
+    name: orders-api
+  target:
+    kind: SoftwareSystem
+    name: payment-provider
+  description: Starts a payment for each order and sends the customer to pay
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: payments-worker-to-payment-provider
+spec:
+  source:
+    kind: Container
+    name: payments-worker
+  target:
+    kind: SoftwareSystem
+    name: payment-provider
+  description: Asks whether each pending payment went through
+---
+apiVersion: c4.factory.io/v1alpha1
+kind: Relationship
+metadata:
+  name: payments-worker-to-orders-api
+spec:
+  source:
+    kind: Container
+    name: payments-worker
+  target:
+    kind: Container
+    name: orders-api
+  description: Lists pending payments and marks each order paid or failed
