@@ -77,7 +77,7 @@ Each step is a GitHub issue naming #1445, landing on its own with
 | Step | Issue | Depends on | Done when |
 | --- | --- | --- | --- |
 | 1. `State` takes the wanted version; the `github` member reports it and moves Latest back on a rollback | #1485 | | The port, its fake and contract suite take `version`; `model.GitHubDeployState` is table-tested for each case above; `LatestRelease` on the client and the fake GitHub; an envtest in `internal/controller/deployer_contract_test.go` against the fake GitHub where a pin to an older published release reports `Deployed` at that version, with Latest moved back, and on a `latest: false` target without a Latest write; `docs/plans/done/deploy.md`'s known limit points here |
-| 2. The `github` member's `tagPrefix` and `latest` | #S2 | #1485 | The fields on `DeployTargetGitHub` with their CEL and defaults (`make manifests`), the reconciler filling the settings per Container; envtest: two Containers ship to one target and both reach `Deployed`, tagged `<name>-v…`; `tagPrefix: ""` gives bare tags; `docs/design.md`'s DeployTarget line names the fields; a comment on #1070 says they are decided |
+| 2. The `github` member's `tagPrefix` and `latest` | #1486 | #1485 | The fields on `DeployTargetGitHub` with their CEL and defaults (`make manifests`), the reconciler filling the settings per Container; envtest: two Containers ship to one target and both reach `Deployed`, tagged `<name>-v…`; `tagPrefix: ""` gives bare tags; `docs/design.md`'s DeployTarget line names the fields; a comment on #1070 says they are decided |
 
 ## Done when
 
