@@ -6,6 +6,31 @@ each outcome, with its issues, is in the
 [milestones](https://github.com/JairJosafath/c4factory/milestones); this file
 doesn't copy their issue lists.
 
+## What the project is for
+
+The owner's goal, stated on 2026-10-19: a software factory that uses rich
+templates to create high-quality software and full applications. The relay's
+picks follow it: work that changes what the templates build, or what a Brief
+can build, comes before work on the factory's own machinery. The webshop is
+the reference application and defines done
+([docs/plans/fresh-start.md](docs/plans/fresh-start.md), #1426), so its path
+comes first. The `priority/N` labels say it, 1 picked first:
+
+- `priority/1`: something broken now (a red main, a dead relay, a failed
+  release check).
+- `priority/2`: the webshop's path, the issues in the milestone *Reference
+  app: the webshop ships*, and a `kind/bug` whose fix is under `templates/`.
+- `priority/3`: what makes development itself faster (the relay, `land`,
+  `make check`, flakes, the scripts).
+- `priority/4`: the rest of the goal's work: the templates (Frameworks,
+  Standards, Connectors, Deployments, Compute) and their features, the apps
+  they produce and their quality, packages, the Brief's planner, and deploys
+  of the apps (the AWS and GitHub targets too).
+- No label (counts as 5): everything else.
+- `priority/8` or lower: a refactor of the factory's own components that
+  changes nothing a user of the templates would notice, and, until the
+  reference-app milestone closes, a new relay, landing or CI feature.
+
 ## Releases are a train
 
 - Releases are small and frequent, so users move faster (the owner, #261).
@@ -49,6 +74,7 @@ its user-visible steps join an existing milestone or none.
 | [Honest agents](https://github.com/JairJosafath/c4factory/milestone/9?closed=1) | agents never pass off invented evidence, open criteria become by-hand issues, and an agent that can't start says why (#467, #472-#475, #492); tested by `make check` | reached 2026-10-07, released in v0.7.0 |
 | [UI: one story, and what needs you](https://github.com/JairJosafath/c4factory/milestone/10?closed=1) | every level the UI shows, from a Brief's idea to Crews' Tasks and releases, tells its lifecycle in one order, and one *Needs you* list covers every item the CRDs flag for a person (#705): the *Done when* of [docs/plans/done/ui-lifecycle.md](docs/plans/done/ui-lifecycle.md); tested by `make check` | reached 2026-10-09, released in v0.18.0 |
 | [UI: act as the person signed in](https://github.com/JairJosafath/c4factory/milestone/11?closed=1) | a person steers the factory from the UI, as the ServiceAccount over port-forward and as themselves with OIDC behind an Ingress, and the cluster's RBAC decides (#706): the *Done when* of [docs/plans/done/ui-actions.md](docs/plans/done/ui-actions.md); tested by `make check` | reached 2026-10-09, released as a preview behind `ui.actions.enabled` in v0.16.0 and v0.17.0 |
+| [Reference app: the webshop ships](https://github.com/JairJosafath/c4factory/milestone/12) | the webshop Brief in `config/samples/webshop` builds four Containers, a DataStore and a Kubernetes deploy on a Kind cluster from the published release, every gap the owner found in that build is closed, and a release ships it as the getting-started example: the *Done when* of [docs/plans/fresh-start.md](docs/plans/fresh-start.md) (#1426) | open |
 | [1.0: a stable API](https://github.com/JairJosafath/c4factory/milestone/3) | the criteria below hold; it holds only those, and the work towards them comes in the milestones above | when they hold |
 
 ## What 1.0 means
