@@ -397,7 +397,7 @@ again.
   `aws events enable-rule --name <rule>` to resume. A deploy that changes
   the rule sets it back to what the stack says, enabled.
 - Through the stack: set the rule's `enabled: false` in
-  `infra/event_stack.ts` and run `cdk deploy -c tier=production`; the change
+  `infra/event_stack.ts` and run `{{ $deploy }}`; the change
   is reviewed like any other.
 {{- end }}
 
@@ -517,11 +517,14 @@ development stack the way an incident would, and answer it with this
 runbook alone.
 {{- else if eq .Framework "aws-fargate-ts" -}}
 {{- $ops := .Operations -}}
+{{- $deploy := printf "cdk deploy -c tier=production --all --parameters %s:CertificateArn=<arn>" .Container -}}
 # Runbook
 
 What to do when `{{ .Container }}` goes wrong in AWS: restore its data, roll a
-deployment back, and answer an alarm. It is written for the production tier
-(`cdk deploy -c tier=production`): a development stack keeps no data worth
+deployment back, and answer an alarm. It is written for the production tier,
+which `{{ $deploy }}` deploys (every stack, as one
+deploy needs `--all` when there are two, and the certificate goes to the
+service stack, the only one that takes it): a development stack keeps no data worth
 restoring, and only its alarms and deployments apply. This file belongs to
 the Standard; a change to what the stacks keep or how they back it up
 changes it too, through a Standard change.
@@ -636,8 +639,9 @@ undone from them either.
 When the stack's region is lost, the copies are in {{ $ops.Backups.CopyToRegion }}, in the vault
 of the `{{ .Container }}-backup-copy` stack. Restore one there as above, in that region,
 and give the restore an encryption key there (the vault's own key will do).
-Deploy the stack to {{ $ops.Backups.CopyToRegion }} (`cdk deploy -c tier=production` with that
-region, and a certificate in it), then fill its new table from the restored
+Deploy the service stack alone to {{ $ops.Backups.CopyToRegion }}
+(`cdk deploy -c tier=production --exclusively {{ .Container }} --parameters CertificateArn=<arn>`
+with that region, and a certificate in it), then fill its new table from the restored
 one as in step 4, and point the service's domain at the new `EntryPoint`.
 AWS Backup copies DynamoDB backups across regions only with its advanced
 features for DynamoDB on in the stack's region. That is a setting of the
@@ -662,7 +666,7 @@ doesn't carry: point-in-time recovery
 three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack
-again (`cdk deploy -c tier=production`) and check it reports no drift.
+again (`{{ $deploy }}`) and check it reports no drift.
 
 ## Roll a deployment back
 
@@ -695,7 +699,7 @@ says which deployment is running, its `rolloutState` and why it failed
   `aws cloudformation continue-update-rollback --stack-name {{ .Container }}`.
 - A deploy that succeeded but misbehaves later: deploy the last good commit.
   Check out its tag or commit, run `make check`, then
-  `cdk deploy -c tier=production --parameters CertificateArn=<arn>`. The
+  `{{ $deploy }}`. The
   service, the load balancer and the alarms go back; the data does not. If
   the bad version wrote bad data, restore the items as above to the moment
   it was deployed.

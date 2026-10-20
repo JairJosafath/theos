@@ -175,7 +175,11 @@ byte for byte.
   earlier `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`,
   `aws-queue-ts`, `aws-schedule-ts` or `aws-fargate-ts` fails the test on
   this update until its `infra/backups.ts` names its tables as those
-  Frameworks' new versions do: the failure is the bug.
+  Frameworks' new versions do: the failure is the bug. v1.17.1's runbook
+  deploys `aws-fargate-ts` and `aws-event-ts` with `--all`, the Fargate
+  service's certificate as `<name>:CertificateArn`, and the service stack
+  alone to the copy region with `--exclusively <name>`, as `copyToRegion`
+  makes a second stack (#1305).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

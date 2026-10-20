@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -309,6 +310,50 @@ func TestAWSStandardRunbookReadsAZeroRPO(t *testing.T) {
 				runbook := strings.Join(strings.Fields(string(r.Files["docs/runbook.md"].Data)), " ")
 				if got := strings.Contains(runbook, "An RPO of "+rpo+" "+zero); got != want {
 					t.Errorf("docs/runbook.md says an RPO of %s %s: %t, want %t", rpo, zero, got, want)
+				}
+			})
+		}
+	}
+}
+
+// productionDeploys is every `cdk deploy -c tier=production ...` a rendered
+// file tells its reader to run.
+var productionDeploys = regexp.MustCompile("`(cdk deploy -c tier=production[^`]*)`")
+
+// With copyToRegion set, a Framework's app has a second stack in that region,
+// so every production deploy its runbook (and aws-fargate-ts's README) names
+// works with two stacks as with one: it deploys `--all`, or the service stack
+// `--exclusively`, and a certificate goes to the service stack alone, which
+// `--all` must name as `<name>:CertificateArn` (#1305).
+func TestAWSDeployCommandsWorkWithTheBackupCopyStack(t *testing.T) {
+	for _, f := range awsOperationsFrameworks {
+		if f.versions {
+			continue // a site has one stack: nothing is copied to copyToRegion
+		}
+		files := []string{"docs/runbook.md"}
+		if f.Name == "aws-fargate-ts" {
+			files = append(files, "README.md")
+		}
+		for _, region := range []string{"", "eu-west-1"} {
+			t.Run(fmt.Sprintf("%s/copyToRegion %q", f.Name, region), func(t *testing.T) {
+				r := renderOperations(t, f.Side, f.Name, model.OperationsChoices{CopyToRegion: region})
+				for _, name := range files {
+					all := false
+					for _, m := range productionDeploys.FindAllStringSubmatch(string(r.Files[name].Data), -1) {
+						deploy := m[1]
+						switch {
+						case strings.Contains(deploy, " --all"):
+							all = true
+							if strings.Contains(deploy, "--parameters CertificateArn=") {
+								t.Errorf("%s passes every stack the certificate: %s", name, deploy)
+							}
+						case !strings.Contains(deploy, " --exclusively "):
+							t.Errorf("%s deploys neither --all nor --exclusively: %s", name, deploy)
+						}
+					}
+					if !all {
+						t.Errorf("%s names no deploy with --all", name)
+					}
 				}
 			})
 		}
