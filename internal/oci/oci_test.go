@@ -214,7 +214,7 @@ func TestPushTwoPlatformIndexFromAStream(t *testing.T) {
 // manifest and blob the index names, attestations included.
 func assertSameIndex(t *testing.T, r Registry, repository string, idx v1.ImageIndex) {
 	t.Helper()
-	ref := must(name.NewDigest(r.Host+"/"+repository+"@"+must(idx.Digest()).String()))
+	ref := must(name.NewDigest(r.Host + "/" + repository + "@" + must(idx.Digest()).String()))
 	opts := []remote.Option{remote.WithAuth(&authn.Basic{Username: r.Username, Password: r.Password})}
 	got := must(remote.Index(ref, opts...))
 	if !bytes.Equal(must(got.RawManifest()), must(idx.RawManifest())) {
