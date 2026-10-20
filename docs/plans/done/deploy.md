@@ -342,7 +342,8 @@ What #1162 settled that the decisions above left open:
   newest marked release, so a pin to an older published release re-ships
   each poll and stays `Deploying`, and two Containers shipping to one
   `github` target take the same tags (`TagTaken`) until #1070 gives the
-  member a tag prefix; and the Container reconciler runs one
+  member a tag prefix ([github-deploy-state.md](../github-deploy-state.md)
+  settles both, #1445); and the Container reconciler runs one
   worker, so a long GitHub upload holds the other Containers' reconciles for
   its length, as a Crew's upload held the Crews before `crewWorkers`.
 
