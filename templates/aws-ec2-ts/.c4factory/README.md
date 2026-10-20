@@ -137,6 +137,8 @@ CloudFormation offline.
   HTTP, waits for `cfn-signal` in a rolling update, and sends the group's
   scaling notifications to the alarm topic instead of acknowledging
   `AwsSolutions-AS3`.
+  v1.1.1's README deploys production with `--all`, as a `copyToRegion`
+  makes a second stack, `<name>-backup-copy` (#1465).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

@@ -115,6 +115,8 @@ CloudFormation offline.
   data tables by ARN instead of everything carrying the Container's tag,
   which reached a `<name>-development` stack's tables too (#1267); the `Idempotency` table, whose records expire, is left
   out.
+  v1.1.1's README deploys production with `--all`, as a `copyToRegion`
+  makes a second stack, `<name>-backup-copy` (#1465).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 
