@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.scripts]
-{{ .Container }} = "app.cli:main"
+{{ .Container }} = "app.{{ if eq .Type "worker" }}worker{{ else }}cli{{ end }}:main"
 
 [dependency-groups]
 # The tools a Standard checks with are pinned exactly; uv.lock pins the rest.

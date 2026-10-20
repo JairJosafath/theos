@@ -1,4 +1,4 @@
-{{- if eq .Framework "python-fastapi" -}}
+{{- if or (eq .Framework "python-fastapi") (eq .Framework "python-cli") -}}
 # Keep the build context to what the image needs.
 .git
 .devcontainer

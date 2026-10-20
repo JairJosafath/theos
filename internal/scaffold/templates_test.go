@@ -50,6 +50,13 @@ var templateCombos = []struct {
 		{model.SideStandard, "python-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"python worker on kubernetes", "worker", []side{
+		{model.SideFramework, "python-cli"},
+		{model.SideStandard, "python-standard"},
+		{model.SideCompute, "small"},
+		{model.SideDeployment, "k8s-manifests"},
+		{model.SideConnector, "postgres"},
+	}},
 	{"vscode extension", "extension", []side{
 		{model.SideFramework, "vscode-extension"},
 		{model.SideStandard, "ts-standard"},
@@ -144,8 +151,8 @@ func TestEveryTemplateRenders(t *testing.T) {
 }
 
 // TestK8sManifestsFollowsTheFramework checks that k8s-manifests writes the
-// Dockerfile, .dockerignore, port and probes of the Framework's image, and no
-// Dockerfile for a Framework it has none for.
+// Dockerfile, .dockerignore, port and probes of the Framework's image, no
+// Dockerfile for a Framework it has none for, and no Service for a worker.
 func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	cases := []struct {
 		framework, typ string
@@ -153,15 +160,23 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 		dockerfile     []string // substrings of the Dockerfile; nil: no Dockerfile
 		dockerignore   []string // lines of .dockerignore
 		deployment     []string // substrings of deploy/k8s/deployment.yaml
+		never          []string // substrings neither the Dockerfile nor deployment.yaml has
 	}{
 		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
 			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
-			[]string{"containerPort: 8000", "path: /healthz"}},
+			[]string{"containerPort: 8000", "path: /healthz"}, nil},
 		{"react-vite", "static-site", "ts-standard",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
 			[]string{"node_modules", "dist", "coverage"},
-			[]string{"containerPort: 8080", "path: /\n"}},
-		{"go-cli", "service", "", nil, nil, []string{"containerPort: 8000"}},
+			[]string{"containerPort: 8080", "path: /\n"}, nil},
+		// #1468: a python-cli worker runs python -m app, serves nothing and
+		// has no probes.
+		{"python-cli", "worker", "python-standard",
+			[]string{"ghcr.io/astral-sh/uv", "uv sync --no-dev", "USER 1000:1000", `CMD ["python", "-m", "app"]`},
+			[]string{".venv", ".pytest_cache", ".uv", "dist", "tests"},
+			[]string{"image: sample-app:dev", "runAsNonRoot: true"},
+			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe"}},
+		{"go-cli", "service", "", nil, nil, []string{"containerPort: 8000"}, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.framework, func(t *testing.T) {
@@ -185,8 +200,16 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 					}
 				}
 			}
-			assertContains(t, "deploy/k8s/deployment.yaml", string(result.Files["deploy/k8s/deployment.yaml"].Data),
-				c.deployment)
+			if _, ok := result.Files["deploy/k8s/service.yaml"]; ok != (c.typ != "worker") {
+				t.Errorf("deploy/k8s/service.yaml written = %v for a %s, want it for every type but worker", ok, c.typ)
+			}
+			deployment := string(result.Files["deploy/k8s/deployment.yaml"].Data)
+			assertContains(t, "deploy/k8s/deployment.yaml", deployment, c.deployment)
+			for _, w := range c.never {
+				if strings.Contains(string(result.Files["Dockerfile"].Data), w) || strings.Contains(deployment, w) {
+					t.Errorf("the Dockerfile or deploy/k8s/deployment.yaml contains %q", w)
+				}
+			}
 		})
 	}
 }
