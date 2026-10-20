@@ -21,7 +21,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.28.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.28.1`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -29,7 +29,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.28.0
+VERSION=0.28.1
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -180,7 +180,7 @@ planner Agent writes the model, a Crew per Container and the first issues, and
 says what it chose; steps 3 to 5 show the same loop written by hand.
 
 The example is the webshop, the application the factory is judged by, from
-the release after `0.28.0`.
+the release after `0.28.1`.
 [config/samples/webshop/brief.yaml](../config/samples/webshop/brief.yaml)
 says in a customer's words what the shop does: browse, order, pay through an
 external payment provider and reorder.
@@ -204,7 +204,7 @@ DeployTarget ships to a cluster yet, so the manifests stay in the
 repositories ([#1072](https://github.com/JairJosafath/c4factory/issues/1072)).
 
 For an app of your own, write only the idea, and the planner writes the model
-too; on `0.28.0`, whose tag has no `brief.yaml`, take this way. For a project
+too; on `0.28.1`, whose tag has no `brief.yaml`, take this way. For a project
 of its own, say `cel-lens`, set
 `gitea.projects={webshop,cel-lens}` where step 1 says `webshop`. The seed
 makes Project `cel-lens`, so the UI offers the project.
@@ -832,7 +832,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.28.0
+VERSION=0.28.1
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```

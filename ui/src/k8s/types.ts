@@ -107,7 +107,7 @@ export interface SoftwareSystem extends K8sObject {
   }
 }
 
-/** When a Container's CI runs its full check (design.md, the owner chooses when the full check runs). */
+/** When a Container's CI runs its full check (design.md, Crews and releases, "The full check"). */
 export type ChecksMode = 'EveryChange' | 'BeforeRelease'
 
 /** One of a Standard's files in a Container's repository, at a ref of the Standard. */
