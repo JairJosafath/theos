@@ -1,7 +1,7 @@
 # C4 Factory UI
 
 A view of a C4 Factory project, drawn live from the custom resources.
-Milestone 6 in [docs/design.md](../docs/design.md#mvp-v1-plan): someone who has
+Milestone 6 in [the MVP plan](../docs/plans/done/mvp-v1.md): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
 idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),

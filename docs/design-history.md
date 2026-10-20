@@ -1,3 +1,5 @@
+> The design as it grew, version by version, up to 2026-10-20; kept unchanged for its reasons and dates. The spec is [design.md](design.md).
+
 # C4 Factory: Design
 
 Sep 30, 2026 · @Jeremy Jo.

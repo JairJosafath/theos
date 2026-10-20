@@ -16,7 +16,7 @@ import { FormError } from '../briefs/PromptForm'
 
 /**
  * The Containers on a Standard, split by who gets an update pull request: the
- * Ready ones do (design.md, v4, A Standard's fixes reach its Containers), the
+ * Ready ones do (design.md, A Standard's fixes reach its Containers), the
  * rest don't.
  */
 export function standardUpdates(name: string, containers: Container[]): { ready: string[]; notReady: string[] } {

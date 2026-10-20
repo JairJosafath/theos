@@ -86,7 +86,7 @@ all of these:
   past `v1alpha1` that existing objects convert to;
 - every release checks the upgrade from the previous one;
 - the agent fence closes its known gap: today the Claude token is readable
-  inside the sandbox ([docs/design.md](docs/design.md), v2);
+  inside the sandbox ([docs/design.md](docs/design.md#the-fence));
 - the [OpenSSF Best Practices](https://www.bestpractices.dev/) passing
   criteria ([docs/openssf.md](docs/openssf.md) has the gaps);
 - a device builds and releases an app from a Brief with only the published

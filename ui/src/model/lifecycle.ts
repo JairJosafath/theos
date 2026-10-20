@@ -469,7 +469,7 @@ export function describeStandardUpdate(container: Container): { title: string; t
   }
 }
 
-/** The command that re-runs a Crew's failed release runs (design.md, *A failed release run re-runs on request*). */
+/** The command that re-runs a Crew's failed release runs (design.md, *Crews and releases*, "The release run"). */
 export function rerunReleaseCommand(crew: Crew): string {
   const ns = crew.metadata.namespace ?? 'default'
   return `kubectl -n ${ns} annotate crews.c4.factory.io ${crew.metadata.name} c4.factory.io/rerun-release=$(date +%s) --overwrite`
