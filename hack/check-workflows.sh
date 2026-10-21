@@ -15,7 +15,7 @@
 # and Tests (test.yml) run on pull requests to main, Lint has a test-hack job
 # running make test-hack, and Tests groups main's runs by commit
 # (${{ github.workflow }}-${{ github.event_name == 'pull_request' &&
-# github.ref || github.sha }}), so every merge commit on main gets a verdict.
+# github.ref || github.sha }}), so every release tag gets a verdict.
 # Every job of a workflow that runs on pull requests is listed, by its
 # workflow file and its name:, in .github/required-checks (the checks
 # hack/lib/github.sh land waits for), the names are distinct, and every line
@@ -148,7 +148,7 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       ;;
     test.yml)
       if [ "$group" != "$BY_PR_SHA" ]; then
-        echo "$f: groups runs by $group, not $BY_PR_SHA, so a merge commit on main can go without a verdict" >&2
+        echo "$f: groups runs by $group, not $BY_PR_SHA, so a release tag can go without a verdict" >&2
         fail=1
       fi
       ;;

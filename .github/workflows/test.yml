@@ -4,30 +4,14 @@ name: Tests
 # (make test-gitea). They read the Go code, the generated CRDs, the admission
 # policy, the templates (the fake Git host serves them) and the seed, so only
 # documentation, the UI and the Kind-only parts of the test environment are left out.
-# It runs on pull requests to main too, with the same paths: the pull request's
-# run is the check hack/lib/github.sh land waits for (.github/required-checks).
+# A pull request to main tests only the packages its change affects
+# (hack/test-packages.sh against the base branch); its run is the check
+# hack/lib/github.sh land waits for (.github/required-checks). Every package
+# is tested only on a pushed release tag and on a manual run: the owner wants
+# the whole suite when a release is made, not after each merge (#1522).
 on:
   push:
-    branches: [main]
-    paths:
-      - '**'
-      - '!**/*.md'
-      - '!docs/**'
-      - '!ui/**'
-      - '!config/ui/**'
-      - '!config/samples/**'
-      - '!test/e2e/**'
-      - '!.golangci.yml'
-      - '!.custom-gcl.yml'
-      - '!hack/**'
-      - hack/boilerplate.go.txt
-      - hack/gitea-local.sh
-      - hack/seed/seed.sh
-      - hack/testenv.mk
-      - '!dev'
-      - '!.vscode/**'
-      - '!.github/**'
-      - .github/workflows/test.yml
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   pull_request:
     branches: [main]
     paths:
@@ -51,10 +35,10 @@ on:
       - .github/workflows/test.yml
   workflow_dispatch:
 
-# On main, one group per commit, so no run is ever dropped and every merge
-# commit gets its own verdict. On a pull request, one group per pull request,
-# and a new push cancels the run in progress: only the newest head counts
-# (hack/check-workflows.sh, docs/dev/testenv.md).
+# On a tag, one group per commit, so no run is ever dropped. On a pull
+# request, one group per pull request, and a new push cancels the run in
+# progress: only the newest head counts (hack/check-workflows.sh,
+# docs/dev/testenv.md).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -72,6 +56,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          # The whole history: hack/test-packages.sh diffs against the merge
+          # base with the base branch.
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -80,8 +67,8 @@ jobs:
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
           cache: ${{ runner.environment == 'github-hosted' }}
 
-      # Every package: make test elsewhere tests only those a change affects,
-      # and this run after each merge is the one that catches what that missed.
+      # A pull request tests the packages its change affects, like land's
+      # make check; a release tag or a manual run tests every package (#1522).
       # COVER=1: the coverage each package prints stays in the log; a local
       # make test leaves it out (docs/dev/testenv.md).
       # TEST_TIMEOUT: the self-hosted runners share their device with the relay
@@ -94,7 +81,8 @@ jobs:
       - name: Running Tests
         env:
           C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
-          TEST_ALL: 1
+          TEST_ALL: ${{ github.event_name != 'pull_request' && '1' || '' }}
+          TEST_BASE: origin/${{ github.base_ref || 'main' }}
           TEST_TIMEOUT: 60m
         run: |
           go mod tidy
