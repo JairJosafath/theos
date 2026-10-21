@@ -127,6 +127,10 @@ const (
 	// spec.deploy runs its wanted version; False with the first reason that
 	// holds, in the order of internal/model's DeployedCondition.
 	ConditionDeployed = "Deployed"
+	// ConditionImagePublished is True on a Container whose Deployment builds an
+	// image when its newest release's image is pushed to the owner's
+	// registry; False with status.image's state as the reason.
+	ConditionImagePublished = "ImagePublished"
 )
 
 // Condition reasons.

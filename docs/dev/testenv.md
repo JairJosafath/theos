@@ -716,8 +716,14 @@ cron doesn't start one while the file is there. `hack/relay-watch.sh` starts
 the unit again (with the unit's worker count), `--uninstall` removes the unit or
 the crontab lines. Install from the main checkout, not a worktree; the unit and
 cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `C4_CLUSTER*`
-settings, and the GitHub token from the git credential helper, not `GH_TOKEN`. `systemctl --user status
-c4factory-relay-watch` shows the unit.
+settings, and the GitHub token from the git credential helper, not `GH_TOKEN`.
+They also get the Claude Code login of the shell you install from
+(`CLAUDE_CONFIG_DIR`, or `~/.claude` when unset), set after `./dev run`, which
+would otherwise point every session at `.dev/claude` (#1435); `--install`
+refuses a login without `.credentials.json`, so install from a logged-in
+shell: `CLAUDE_CONFIG_DIR=$HOME/.claude hack/relay-watch.sh --install` uses
+the VS Code login. `systemctl --user status c4factory-relay-watch` shows the
+unit.
 
 On the device with the Kind cluster, the systemd user manager must have the
 `docker` group: the watch, its workers and their sessions inherit the

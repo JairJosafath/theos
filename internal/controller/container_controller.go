@@ -69,6 +69,12 @@ type ContainerReconciler struct {
 	// deploySaid remembers each deploy's last Event, by Container UID and
 	// target.
 	deploySaid sync.Map
+	// imageSaid remembers each Container's last image Event, by UID: its
+	// release's tag and state.
+	imageSaid sync.Map
+	// imagePushed remembers each Container's last image push, by UID: the
+	// cache can lag a status write by a reconcile, which must not push again.
+	imagePushed sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -147,10 +153,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		failed := r.updateOperations(ctx, &container, status, live)
-		if poll := r.deploy(ctx, &container, status); poll > 0 &&
-			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
-			result.RequeueAfter = poll
-		}
+		result = sooner(result, ctrl.Result{RequeueAfter: r.keepNewestRelease(ctx, &container, status)})
+		result = sooner(result, ctrl.Result{RequeueAfter: r.publishImage(ctx, &container, status)})
+		result = sooner(result, ctrl.Result{RequeueAfter: r.deploy(ctx, &container, status)})
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
