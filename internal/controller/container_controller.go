@@ -72,6 +72,9 @@ type ContainerReconciler struct {
 	// imageSaid remembers each Container's last image Event, by UID: its
 	// release's tag and state.
 	imageSaid sync.Map
+	// imagePushed remembers each Container's last image push, by UID: the
+	// cache can lag a status write by a reconcile, which must not push again.
+	imagePushed sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete

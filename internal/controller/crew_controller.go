@@ -142,9 +142,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if !crew.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-	status := crew.Status.DeepCopy()
-	status.ObservedGeneration = crew.Generation
-	r.releaseTarget(ctx, &crew, status)
+	status := r.observe(ctx, &crew)
 
 	var container c4v1alpha1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: crew.Spec.ContainerRef.Name}, &container)
@@ -160,6 +158,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &crew, labels); err != nil {
 		return ctrl.Result{}, err
 	}
+	// Adopting reads the Crew back, newer than the cache: take its status
+	// too, or a release written since the read is patched away (#591, #1455).
+	status = r.observe(ctx, &crew)
 	for _, name := range crewAgentNames(&crew.Spec) {
 		var agent c4v1alpha1.Agent
 		err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: name}, &agent)
@@ -415,6 +416,15 @@ func release(issue gitprovider.Issue) *model.Release {
 func (r *CrewReconciler) wait(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus, reason, message string) {
 	status.Phase = c4v1alpha1.CrewWaiting
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, metav1.ConditionFalse, reason, message)
+}
+
+// observe starts the status this reconcile writes from the Crew as read:
+// its generation observed, its release target checked.
+func (r *CrewReconciler) observe(ctx context.Context, crew *c4v1alpha1.Crew) *c4v1alpha1.CrewStatus {
+	status := crew.Status.DeepCopy()
+	status.ObservedGeneration = crew.Generation
+	r.releaseTarget(ctx, crew, status)
+	return status
 }
 
 func (r *CrewReconciler) writeStatus(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) error {

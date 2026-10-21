@@ -49,8 +49,7 @@ func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1a
 	}
 	prev := status.Image
 	if prev == nil || prev.Tag != tag || !model.ImageSettled(prev.State) {
-		status.Image = r.pushImage(ctx, container, tag)
-		r.reportImage(ctx, container, prev, status.Image)
+		status.Image = r.pushedImage(ctx, container, prev, tag)
 	}
 	img := status.Image
 	value := metav1.ConditionFalse
@@ -63,6 +62,25 @@ func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1a
 		return r.deployPoll()
 	}
 	return 0
+}
+
+// pushedImage is release tag's image for a Container whose status.image,
+// prev, does not report it: the push this Reconciler last made when status
+// has not caught up with it (the cache can lag a status write by a
+// reconcile), else a new push, reported.
+func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1alpha1.Container,
+	prev *c4v1alpha1.ContainerImageStatus, tag string) *c4v1alpha1.ContainerImageStatus {
+	if last, ok := r.imagePushed.Load(container.UID); ok {
+		img := last.(*c4v1alpha1.ContainerImageStatus)
+		behind := prev == nil || prev.Tag != tag || prev.State != img.State || prev.Message != img.Message
+		if img.Tag == tag && behind {
+			return img.DeepCopy()
+		}
+	}
+	img := r.pushImage(ctx, container, tag)
+	r.imagePushed.Store(container.UID, img.DeepCopy())
+	r.reportImage(ctx, container, prev, img)
+	return img
 }
 
 // pushImage pushes release tag's image archive and says how it went.
