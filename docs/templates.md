@@ -45,7 +45,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | postgres | Connector | W | yes | #1472 | yes | n/a | #1471 | n/a | #1471 |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
-| k8s-manifests | Deployment | W | yes | yes | yes | #1470 | yes, #1457 #1072 | n/a | n/a |
+| k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
