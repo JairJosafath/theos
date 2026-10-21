@@ -677,7 +677,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site, operator]
     - kind: Deployment
       name: k8s-manifests
-      ref: v1.4.0
+      ref: v1.5.0
       spec:
         displayName: Kubernetes manifests
         description: A Dockerfile for the Framework (python-fastapi, python-cli or react-vite) and plain Kubernetes manifests, built with kustomize.

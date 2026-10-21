@@ -1,0 +1,112 @@
+{{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
+{{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
+{{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
+{{- $dockerfile := or (eq .Framework "python-fastapi") (eq .Framework "python-cli") (eq .Framework "react-vite") -}}
+{{- $service := or (eq .Type "service") (eq .Type "static-site") -}}
+# Deploying {{ .Container }} to Kubernetes
+
+This folder holds plain Kubernetes manifests for {{ .Container }}, built with
+kustomize. Shipping is up to you: point Argo CD, Flux or a pipeline at
+`deploy/k8s`, or apply it by hand as below. Run the commands from the
+repository's root.
+
+## 1. Build the image
+
+{{ if $dockerfile -}}
+The `Dockerfile` at the root builds the image:
+{{- else -}}
+This repository brings its own `Dockerfile`; the manifests expect the app to
+listen on port {{ $port }} and answer `GET {{ $probe }}`. Build it with:
+{{- end }}
+
+```sh
+docker build -t {{ .Container }}:1.0.0 .
+```
+
+Push it where your cluster can pull it from, for example:
+
+```sh
+docker tag {{ .Container }}:1.0.0 registry.example.com/{{ .Container }}:1.0.0
+docker push registry.example.com/{{ .Container }}:1.0.0
+```
+
+## 2. Set the image
+
+`deployment.yaml` runs the placeholder image `{{ .Container }}:dev`. Point it at
+the image you pushed; this writes an `images` entry into `kustomization.yaml`:
+
+```sh
+cd deploy/k8s
+kustomize edit set image {{ .Container }}=registry.example.com/{{ .Container }}:1.0.0
+cd -
+```
+
+## 3. Preview
+
+```sh
+kustomize build deploy/k8s
+```
+
+`kubectl kustomize deploy/k8s` prints the same without kustomize installed.
+
+## 4. Apply
+{{- if has .Connectors "postgres" }}
+
+The database and the app read the Postgres password from Secret
+`{{ .Container }}-postgres`, key `password`. Make it once, before the first
+apply; it is never written in this repository:
+
+```sh
+kubectl create secret generic {{ .Container }}-postgres --from-literal=password="$(openssl rand -hex 24)"
+```
+{{- end }}
+
+```sh
+kubectl apply -k deploy/k8s
+kubectl rollout status deployment/{{ .Container }}
+```
+
+Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
+
+## What is here
+
+- `kustomization.yaml`: lists the files below and the image to run.
+- `deployment.yaml`: one replica of container `app`, as a non-root user with
+  no privilege escalation.
+{{- if $service }}
+- `service.yaml`: Service `{{ .Container }}` on port 80, forwarding to the
+  container's port `http`.
+{{- end }}
+{{- if .Compute }}
+- `compute.yaml`: the CPU and memory requests and limits of container `app`,
+  written by the Compute layer ({{ .Compute }}). A patch, listed under `patches`
+  in `kustomization.yaml`; change the sizes there.
+{{- end }}
+{{- range .Connectors }}
+{{- if eq . "postgres" }}
+- `connector-postgres.yaml`: the database, written by the postgres Connector:
+  StatefulSet and Service `{{ $.Container }}-postgres` (one Postgres with its
+  own volume) and ConfigMap `{{ $.Container }}-postgres` with `DATABASE_URL`,
+  which the Deployment loads through `envFrom`. Postgres and the app read the
+  password from Secret `{{ $.Container }}-postgres`.
+{{- else }}
+- `connector-{{ . }}.yaml`: ConfigMap `{{ $.Container }}-{{ . }}`, the
+  connection settings for {{ . }}, written by its Connector. The Deployment
+  loads it into the container's environment through `envFrom`; read the file
+  for what to point at what you provision. Keep passwords in a Secret, never
+  in the ConfigMap.
+{{- end }}
+{{- end }}
+
+## Port and probes
+
+{{ if $http -}}
+The container listens on port {{ $port }}, named `http`. Kubernetes asks
+`GET {{ $probe }}` on it: the readiness probe holds traffic until it answers, and
+the liveness probe restarts the container when it stops answering (after 10
+seconds' grace at start).
+{{- else -}}
+The container serves nothing, so it has no port and no probes. Kubernetes
+restarts it when it exits; it stops cleanly on the SIGTERM a pod gets when it
+is stopped.
+{{- end }}

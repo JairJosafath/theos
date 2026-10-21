@@ -149,6 +149,18 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/c4factory/internal
               desc: the model proxy's handler uses the standard library only (docs/architecture.md)
+        oci-is-plain-go:
+          files:
+            - "**/internal/oci/**"
+          deny:
+            - pkg: k8s.io
+              desc: internal/oci pushes and copies images over go-containerregistry; it needs no cluster access (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: internal/oci needs no cluster access (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/api
+              desc: internal/oci takes plain values; its callers convert resources (docs/architecture.md)
+            - pkg: github.com/JairJosafath/c4factory/internal
+              desc: internal/oci is a leaf; adapters use it, it uses none of ours (docs/architecture.md)
         api-stands-alone:
           files:
             - "**/api/**"

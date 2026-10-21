@@ -214,6 +214,75 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	}
 }
 
+// TestK8sManifestsWritesItsREADME checks that k8s-manifests writes
+// deploy/k8s/README.md (#1470): how to build the image, set it, preview and
+// apply the manifests, for the Container, with the files the other layers
+// wrote and the Framework's port and probes.
+func TestK8sManifestsWritesItsREADME(t *testing.T) {
+	cases := map[string]struct {
+		want  []string
+		never []string
+	}{
+		"fastapi service with postgres": {
+			want: []string{
+				"# Deploying sample-app to Kubernetes",
+				"docker build -t sample-app:1.0.0 .",
+				"kustomize edit set image sample-app=registry.example.com/sample-app:1.0.0",
+				"kustomize build deploy/k8s",
+				"kubectl apply -k deploy/k8s",
+				"`service.yaml`: Service `sample-app` on port 80",
+				"`compute.yaml`: the CPU and memory requests and limits",
+				"(small)",
+				"`connector-postgres.yaml`: the database",
+				// #1471: the user makes the password's Secret before applying.
+				"kubectl create secret generic sample-app-postgres --from-literal=password=",
+				"port 8000",
+				"`GET /healthz`",
+			},
+			never: []string{"brings its own `Dockerfile`", "no port and no probes"},
+		},
+		"react web app on kubernetes": {
+			want: []string{
+				"# Deploying sample-app to Kubernetes",
+				"docker build -t sample-app:1.0.0 .",
+				"kubectl apply -k deploy/k8s",
+				"`service.yaml`: Service `sample-app`",
+				"`compute.yaml`",
+				"port 8080",
+				"`GET /` on it",
+			},
+			never: []string{"connector-", "/healthz"},
+		},
+		"python worker on kubernetes": {
+			want:  []string{"`connector-postgres.yaml`", "no port and no probes"},
+			never: []string{"service.yaml", "GET "},
+		},
+	}
+	for _, c := range templateCombos {
+		want, ok := cases[c.name]
+		if !ok {
+			continue
+		}
+		delete(cases, c.name)
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			readme, ok := result.Files["deploy/k8s/README.md"]
+			if !ok {
+				t.Fatal("deploy/k8s/README.md not written")
+			}
+			assertContains(t, "deploy/k8s/README.md", string(readme.Data), want.want)
+			for _, w := range want.never {
+				if strings.Contains(string(readme.Data), w) {
+					t.Errorf("deploy/k8s/README.md contains %q:\n%s", w, readme.Data)
+				}
+			}
+		})
+	}
+	for name := range cases {
+		t.Errorf("no combo %q in templateCombos", name)
+	}
+}
+
 // TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
 // the factory's c4factory.local modules come from the owner's package registry
 // alone, before make check, and make check never asks a proxy for them. A
