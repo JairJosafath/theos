@@ -67,7 +67,7 @@ var _ = Describe("Container images", func() {
 		Expect(img.Platforms).To(Equal([]string{"linux/amd64", "linux/arm64"}))
 		Expect(img.PublishedTime).NotTo(BeNil())
 		saidOnce(ns, model.ImageEventPublished, repository+":v0.1.0 is "+testDigest)
-		Expect(gitFake.imagePushes(ns, "orders-api", "v0.1.0")).To(Equal(1))
+		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(Equal(1))
 
 		By("shipping the image by digest")
 		Eventually(func(g Gomega) {
@@ -95,7 +95,7 @@ var _ = Describe("Container images", func() {
 			if event != "" {
 				saidOnce(ns, event, message)
 			}
-			Consistently(func() int { return gitFake.imagePushes(ns, "orders-api", "v0.1.0") },
+			Consistently(func() int { return gitFake.imagePushes(ns + "/orders-api@v0.1.0") },
 				3*time.Second).Should(Equal(1))
 		},
 		Entry("no archive", gitprovider.Image{}, model.ImageStateNoImage, "",
@@ -118,7 +118,7 @@ var _ = Describe("Container images", func() {
 
 		img := imageIs(ns, "v0.1.0", model.ImageStatePublished)
 		Expect(img.Digest).To(Equal(testDigest))
-		Expect(gitFake.imagePushes(ns, "orders-api", "v0.1.0")).To(Equal(3))
+		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(Equal(3))
 		saidOnce(ns, model.ImageEventPublished, testDigest)
 	})
 
@@ -166,6 +166,6 @@ var _ = Describe("Container images", func() {
 			g.Expect(container.Status.Image).To(BeNil())
 			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionImagePublished)).To(BeNil())
 		}, 3*time.Second).Should(Succeed())
-		Expect(gitFake.imagePushes(ns, "orders-api", "v0.1.0")).To(BeZero())
+		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(BeZero())
 	})
 })

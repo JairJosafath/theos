@@ -418,12 +418,12 @@ func (g *fakeGit) failImagePushes(owner, name string, n int) {
 	g.releaseState().imageFailures[owner+"/"+name] = n
 }
 
-// imagePushes is how many times the Container asked to push owner/name's
-// image of tag.
-func (g *fakeGit) imagePushes(owner, name, tag string) int {
+// imagePushes is how many times the Container asked to push the image
+// owner/name@tag.
+func (g *fakeGit) imagePushes(image string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.releaseState().imagePushes[owner+"/"+name+"@"+tag]
+	return g.releaseState().imagePushes[image]
 }
 
 // ReadSource hands on the files setSource gave the repository at tag.

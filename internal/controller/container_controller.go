@@ -153,18 +153,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		failed := r.updateOperations(ctx, &container, status, live)
-		if poll := r.keepNewestRelease(ctx, &container, status); poll > 0 &&
-			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
-			result.RequeueAfter = poll
-		}
-		if poll := r.publishImage(ctx, &container, status); poll > 0 &&
-			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
-			result.RequeueAfter = poll
-		}
-		if poll := r.deploy(ctx, &container, status); poll > 0 &&
-			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
-			result.RequeueAfter = poll
-		}
+		result = sooner(result, ctrl.Result{RequeueAfter: r.keepNewestRelease(ctx, &container, status)})
+		result = sooner(result, ctrl.Result{RequeueAfter: r.publishImage(ctx, &container, status)})
+		result = sooner(result, ctrl.Result{RequeueAfter: r.deploy(ctx, &container, status)})
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
