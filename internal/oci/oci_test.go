@@ -39,7 +39,7 @@ type fakeRegistry struct {
 func newRegistry(t *testing.T, wrap func(http.Handler) http.Handler) *fakeRegistry {
 	t.Helper()
 	f := &fakeRegistry{}
-	h := http.Handler(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+	h := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
 	if wrap != nil {
 		h = wrap(h)
 	}
