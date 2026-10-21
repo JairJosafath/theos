@@ -37,7 +37,7 @@ type fakeRegistry struct {
 func newRegistry(t *testing.T, wrap func(http.Handler) http.Handler) *fakeRegistry {
 	t.Helper()
 	f := &fakeRegistry{}
-	var h http.Handler = registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	h := http.Handler(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
 	if wrap != nil {
 		h = wrap(h)
 	}
@@ -81,8 +81,8 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-// platformImage is an OCI image for os/arch with a layer of each size.
-func platformImage(t *testing.T, os, arch string, sizes ...int64) v1.Image {
+// platformImage is an OCI image for linux/arch with a layer of each size.
+func platformImage(t *testing.T, arch string, sizes ...int64) v1.Image {
 	t.Helper()
 	img := mutate.MediaType(empty.Image, types.OCIManifestSchema1)
 	img = mutate.ConfigMediaType(img, types.OCIConfigJSON)
@@ -90,7 +90,7 @@ func platformImage(t *testing.T, os, arch string, sizes ...int64) v1.Image {
 		img = must(mutate.AppendLayers(img, must(random.Layer(size, types.OCILayer))))
 	}
 	cf := must(img.ConfigFile()).DeepCopy()
-	cf.OS, cf.Architecture = os, arch
+	cf.OS, cf.Architecture = "linux", arch
 	return must(mutate.ConfigFile(img, cf))
 }
 
@@ -114,18 +114,19 @@ func attestation(t *testing.T, subject v1.Image) mutate.IndexAddendum {
 // MaxManifestSize so it streams, and linux/arm64, and amd64's attestation.
 func twoPlatforms(t *testing.T) v1.ImageIndex {
 	t.Helper()
-	amd := platformImage(t, "linux", "amd64", 1024, MaxManifestSize+1024)
-	arm := platformImage(t, "linux", "arm64", 2048)
+	amd := platformImage(t, "amd64", 1024, MaxManifestSize+1024)
+	arm := platformImage(t, "arm64", 2048)
 	return addPlatforms(t, amd, arm, attestation(t, amd))
 }
 
 func addPlatforms(t *testing.T, amd, arm v1.Image, more ...mutate.IndexAddendum) v1.ImageIndex {
 	t.Helper()
 	idx := mutate.IndexMediaType(empty.Index, types.OCIImageIndex)
-	adds := []mutate.IndexAddendum{
-		{Add: amd, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}},
-		{Add: arm, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}}},
-	}
+	adds := make([]mutate.IndexAddendum, 0, 2+len(more))
+	adds = append(adds,
+		mutate.IndexAddendum{Add: amd, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}},
+		mutate.IndexAddendum{Add: arm, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}}},
+	)
 	return mutate.AppendManifests(idx, append(adds, more...)...)
 }
 
@@ -253,9 +254,9 @@ func TestPushRepeatUploadsNoBlob(t *testing.T) {
 }
 
 func TestPushRefusesAnInvalidArchive(t *testing.T) {
-	big := platformImage(t, "linux", "amd64", 1024)
+	big := platformImage(t, "amd64", 1024)
 	big = mutate.Annotations(big, map[string]string{"padding": strings.Repeat("x", MaxManifestSize)}).(v1.Image)
-	oversized := addPlatforms(t, big, platformImage(t, "linux", "arm64", 1024))
+	oversized := addPlatforms(t, big, platformImage(t, "arm64", 1024))
 
 	tests := []struct {
 		name string

@@ -56,7 +56,7 @@ func (r Registry) repository(repo string) (name.Repository, error) {
 }
 
 func (r Registry) options(ctx context.Context) []remote.Option {
-	var auth authn.Authenticator = authn.Anonymous
+	auth := authn.Anonymous
 	if r.Username != "" || r.Password != "" {
 		auth = &authn.Basic{Username: r.Username, Password: r.Password}
 	}
