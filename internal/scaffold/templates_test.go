@@ -343,6 +343,51 @@ func TestK8sManifestsBuildsItsImageOnRelease(t *testing.T) {
 	})
 }
 
+// TestGiteaReleaseBuildsAnOperatorsImage checks that gitea-release's release
+// run, for Gitea Actions, builds an operator's image on the image runner
+// before the release job, which names it by digest on the Git host's
+// registry in make dist's IMG, and that a CLI's release has no image job
+// (#1458).
+func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
+	const workflow = ".gitea/workflows/release.yaml"
+	_, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "go-operator-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	f, ok := result.Files[workflow]
+	if !ok {
+		t.Fatalf("%s not written for an operator; files: %v", workflow, result.Files.Paths())
+	}
+	assertContains(t, "operator "+workflow, string(f.Data), []string{
+		"runs-on: image", "needs: image", "digest: ${{ steps.build.outputs.digest }}",
+		"DIGEST: ${{ needs.image.outputs.digest }}", "buildctl-daemonless.sh build",
+		"platform=linux/amd64,linux/arm64", `${REPOSITORY##*/}-$TAG.oci.tar`,
+		"an operator's release needs one", `host=${SERVER_URL#*://}`,
+		`tr A-Z a-z)@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
+	})
+	// Gitea's ${{ }} expressions stay; a Go template action would not parse.
+	if strings.Contains(strings.ReplaceAll(string(f.Data), "${{", ""), "{{") {
+		t.Errorf("operator %s keeps a template action:\n%s", workflow, f.Data)
+	}
+
+	_, result = renderCombo(t, "cli", []side{
+		{model.SideFramework, "go-cli"},
+		{model.SideStandard, "go-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	f, ok = result.Files[workflow]
+	if !ok {
+		t.Fatalf("%s not written for a CLI; files: %v", workflow, result.Files.Paths())
+	}
+	assertContains(t, "cli "+workflow, string(f.Data), []string{`make dist VERSION="$TAG"`})
+	for _, never := range []string{"runs-on: image", "needs:", "IMG=", "DIGEST", "buildctl"} {
+		if strings.Contains(string(f.Data), never) {
+			t.Errorf("cli %s contains %q, an operator's image job:\n%s", workflow, never, f.Data)
+		}
+	}
+}
+
 // TestK8sManifestsWritesItsREADME checks that k8s-manifests writes
 // deploy/k8s/README.md (#1470): how to build the image, set it, preview and
 // apply the manifests, for the Container, with the files the other layers

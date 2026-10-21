@@ -339,8 +339,9 @@ tools and envtest) run every check without a cluster.
 - **`operator`:** Framework `go-kubebuilder`, Standard
   `go-operator-standard`, Compute `small`. The factory never installs it;
   Deployment `gitea-release` ships its binaries, `install.yaml` and
-  `SHA256SUMS` on a version tag, the image left to the user until release
-  images (#1069).
+  `SHA256SUMS` on a version tag, with the image its release built
+  (#1458): `install.yaml` names it by digest on the Git host's registry,
+  where the operator pushes it.
 - **AWS** (`function`, `service`, `static-site`, `worker`, `job`): the
   `aws-*` Frameworks, each a CDK app in TypeScript that deploys itself, with
   the `aws-standard` Standard; `make check` synthesizes the stacks offline
@@ -525,7 +526,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   phase, the tool's health, URL), summed by `Deployed`.
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
-  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`), the
+  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`, and
+  `gitea-release` for an `operator`), the
   operator pushes `status.newestRelease`'s `*.oci.tar` to the owner's
   registry once and reports it in `status.image` (`tag`, `repository`,
   `digest`, `platforms`, `state`, `message`, `publishedTime`) and

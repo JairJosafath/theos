@@ -52,15 +52,15 @@ request templates.
   `./cmd` into `dist/<container>_<os>_<arch>[.exe]` for Linux, macOS and
   Windows on amd64 and arm64, with `CGO_ENABLED=0`, `-trimpath` and
   `-X main.version=$(VERSION)`, then runs `make build-installer` with
-  `IMG=controller:$(VERSION)` (`DIST_IMG` overrides it) into
-  `dist/install.yaml`, and writes a `SHA256SUMS` of the binaries and
-  `install.yaml`. `make dist` and `make clean` remove only those files, so a
-  `dist/chart/` from kubebuilder's helm plugin stays. `build-installer` and
-  `deploy` set the image on a copy of `config/`, so no committed file
-  changes. `VERSION` defaults to `git describe --tags --always --dirty`;
-  gitea-release passes the tag. No image is built or pushed: whoever installs
-  a release builds the image and sets it in `install.yaml`, as go-kubebuilder's
-  README says.
+  `IMG=$(IMG)` into `dist/install.yaml`, and writes a `SHA256SUMS` of the
+  binaries and `install.yaml`. `IMG` is the manager image, for `docker-build`
+  too; it defaults to `controller:$(VERSION)`, a tag no registry has. `make
+  dist` and `make clean` remove only those files, so a `dist/chart/` from
+  kubebuilder's helm plugin stays. `build-installer` and `deploy` set the
+  image on a copy of `config/`, so no committed file changes. `VERSION`
+  defaults to `git describe --tags --always --dirty`; gitea-release passes
+  the tag, and the image it built, by digest on the Git host's registry
+  where the factory pushes it, as `IMG` (#1458).
 - **Framework contract:** kubebuilder's `go/v4` layout: the main package in
   `./cmd`, `hack/boilerplate.go.txt` for controller-gen's headers, the
   kustomize tree in `config/` with `config/default` and the manager image
