@@ -108,8 +108,8 @@
 #                                        was checked, else merge it in and check again under the turn (at most
 #                                        GH_LAND_RECHECKS times; that check takes the device's next free heavy-job
 #                                        slot ahead of the waiters); give the turn up, merged or not (a conflict or a
-#                                        red check is said, and so is a check that rewrote a tracked file, which
-#                                        pushes nothing (#1449); make check's output, the path taken and how long the turn
+#                                        red check is said, and so is a check that rewrote a tracked file or left a
+#                                        new untracked one, which pushes nothing (#1449, #1462); make check's output, the path taken and how long the turn
 #                                        was held are kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
 #                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
@@ -2664,6 +2664,11 @@ gh_land_sync() {
     done
   ) >/dev/null 2>&1 &
   GH_LAND_BEATER=$!
+  # The untracked files before the check, so the ones it leaves can be named
+  # (#1462); the log is made first, where a checkout doesn't ignore it.
+  local untracked
+  : >>"$GH_LAND_LOG"
+  untracked=$(git -C "$GH_LIB_ROOT" ls-files --others --exclude-standard | sort)
   C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
   rc=$?
   kill "$GH_LAND_BEATER" 2>/dev/null
@@ -2682,10 +2687,14 @@ gh_land_sync() {
   # make check's fmt, manifests and generate rewrite files in place, so its
   # lint passes on a tree the commit isn't: pushing it would merge the stale
   # files, and the Lint workflow, which only checks, goes red on main (#1449).
-  local rewrote
+  # A file it created (a new zz_generated or CRD file) is untracked, which git
+  # diff never lists: it is named too, and nothing is pushed (#1462).
+  local rewrote left what
   rewrote=$(git -C "$GH_LIB_ROOT" diff --name-only HEAD | tr '\n' ' ')
-  if [ -n "$rewrote" ]; then
-    gh_land_say "$pr" ": make check rewrote ${rewrote% } (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again"
+  left=$(comm -13 <(echo "$untracked") <(git -C "$GH_LIB_ROOT" ls-files --others --exclude-standard | sort) | tr '\n' ' ')
+  what=${rewrote:+rewrote ${rewrote% }}${rewrote:+${left:+ and }}${left:+left untracked ${left% }}
+  if [ -n "$what" ]; then
+    gh_land_say "$pr" ": make check $what (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again"
     return 1
   fi
   git -C "$GH_LIB_ROOT" push -q origin HEAD || { gh_land_say "$pr" ": git push failed"; return 1; }
