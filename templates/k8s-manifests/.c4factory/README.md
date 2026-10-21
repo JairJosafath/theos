@@ -9,7 +9,9 @@ outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
 - **Expects from other layers:** `deploy/k8s/compute.yaml` from the Compute layer (a
   patch listed under `patches`), and `deploy/k8s/connector-<name>.yaml` from each
   Connector (listed under `resources`). The Deployment loads a ConfigMap
-  `<container>-<connector>` per Connector through `envFrom`.
+  `<container>-<connector>` per Connector through `envFrom`. With the
+  `postgres` Connector (since v1.4.0) it also sets `PGPASSWORD` from Secret
+  `<container>-postgres`, key `password`.
 - **The Dockerfile follows the Framework** (`.Framework`):
   - `python-fastapi`: a uv project with an ASGI app at `app.main:app`, served by
     uvicorn on port 8000 as user 1000; the probes ask `GET /healthz`.

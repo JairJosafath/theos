@@ -1,7 +1,7 @@
 python-fastapi v1.3.0
 small v1.1.0
-k8s-manifests v1.3.0
-postgres v1.1.0
+k8s-manifests v1.4.0
+postgres v1.2.0
 dynamodb v1.0.0
 go-cli v1.0.0
 go-kubebuilder v1.0.1

@@ -1,8 +1,10 @@
-# Connection settings for the {{ .Container }} database, loaded by the Deployment
-# through envFrom. Provisioning the database is out of scope for C4 Factory (use
-# Crossplane, an operator or a managed service), so point DATABASE_URL at the
-# database you provision. Keep the password out of this file: put it in a Secret
-# and expose it as PGPASSWORD, which psycopg reads.
+# The {{ .Container }} database: a single Postgres, its Service and the app's
+# connection settings. Before applying, make the Secret with its password, for example:
+#   kubectl create secret generic {{ .Container }}-postgres --from-literal=password="$(openssl rand -hex 24)"
+# Postgres reads it as POSTGRES_PASSWORD and the app as PGPASSWORD, so the
+# ConfigMap's DATABASE_URL holds no secret. To use a database provisioned
+# elsewhere (a managed service, an operator), drop the StatefulSet and Service
+# and point DATABASE_URL at it.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,3 +14,96 @@ metadata:
     app.kubernetes.io/part-of: {{ .SoftwareSystem }}
 data:
   DATABASE_URL: postgresql://{{ snake .Container }}@{{ .Container }}-postgres:5432/{{ snake .Container }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Container }}-postgres
+  labels:
+    app.kubernetes.io/name: {{ .Container }}-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+spec:
+  # Headless: the name resolves to the Postgres pod once it is ready.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ .Container }}-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Container }}-postgres
+  labels:
+    app.kubernetes.io/name: {{ .Container }}-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+spec:
+  serviceName: {{ .Container }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Container }}-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Container }}-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+    spec:
+      # The image's postgres user (uid 70 in the alpine image); fsGroup makes
+      # the volume writable for it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          # postgres:17.11-alpine, pinned by digest.
+          image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ snake .Container }}
+            - name: POSTGRES_DB
+              value: {{ snake .Container }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Container }}-postgres
+                  key: password
+            # A folder inside the volume, since its root may hold lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "{{ snake .Container }}", "-d", "{{ snake .Container }}"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "{{ snake .Container }}", "-d", "{{ snake .Container }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi

@@ -43,7 +43,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | python-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
-| postgres | Connector | W | yes | #1472 | yes | n/a | #1471 | n/a | #1471 |
+| postgres | Connector | W | yes | #1472 | yes | n/a | yes | n/a | yes |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
 | k8s-manifests | Deployment | W | yes | yes | yes | #1470 | yes, #1457 #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
@@ -185,22 +185,28 @@ The TypeScript rulebook for react-vite, node-cli and vscode-extension.
   user data); `AGENTS.md.tmpl` (an extension logs to a `LogOutputChannel`).
 - README, Deploy, Auth: n/a: a Standard.
 
-### postgres (v1.1.0)
+### postgres (v1.2.0)
 
-A Connector: `DATABASE_URL` in a ConfigMap (`deploy/k8s/connector-postgres.yaml`)
-and a Postgres in the devcontainer.
+A Connector: on Kubernetes (`deploy/k8s/connector-postgres.yaml`) a
+single-replica Postgres StatefulSet and headless Service `<container>-postgres`
+and a ConfigMap with `DATABASE_URL`; a Postgres in the devcontainer.
 
 - CI: `make test-templates`, combo "fastapi service with postgres": the
   app's `make check`, then `kustomize build deploy/k8s` with its manifests.
-- Tests: the scaffold has no code that connects; python-fastapi's `/readyz`
-  only checks the variable is set (#1472).
-- Lint: `make validate-yaml` builds the orders-api render with it and
-  validates the result with kubectl-validate.
+- Tests: `TestPostgresRunsOnKubernetes` (the pinned image, probe, volume,
+  non-root, and no password literal in its manifests or the Deployment);
+  the scaffold has no code that connects; python-fastapi's `/readyz` only
+  checks the variable is set (#1472).
+- Lint: `make validate-yaml` builds the orders-api render with it, checks
+  the StatefulSet, both Services and both `secretKeyRef`s, and validates
+  the result with kubectl-validate.
 - README: n/a: it writes none; python-fastapi's README names it.
-- Deploy: the host `<container>-postgres` its URL names is never created
-  (#1471).
-- Auth: no password is set; the ConfigMap's comment asks for a Secret
-  (#1471).
+- Deploy: `postgres:17.11-alpine` by digest, user 70, a 1Gi volume per
+  replica, `pg_isready` as the readiness and liveness probe. A human run of
+  Kind would show the pod Ready; no agent runs one.
+- Auth: the password comes from Secret `<container>-postgres` (key
+  `password`), which the user makes: Postgres reads it as
+  `POSTGRES_PASSWORD`, the app (k8s-manifests' Deployment) as `PGPASSWORD`.
 - Logging: n/a: no code.
 
 ### small (v1.1.0)
@@ -214,7 +220,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.3.0)
+### k8s-manifests (v1.4.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -224,7 +230,8 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 - Tests: `TestK8sManifestsFollowsTheFramework` (the Dockerfile,
   `.dockerignore`, port and probes per Framework, no Service for a worker);
   `make validate-yaml` builds the orders-api, storefront and payments-worker
-  renders.
+  renders. With the `postgres` Connector, the Deployment sets `PGPASSWORD`
+  from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`).
 - Lint: those builds are validated with kubectl-validate.
 - README: nothing in the scaffold says how to build the image or apply the
   manifests (#1470).

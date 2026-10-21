@@ -29,7 +29,7 @@ import (
 )
 
 var ordersAPIScaffoldedFrom = []string{
-	"python-fastapi@v1.3.0", "small@v1.1.0", "k8s-manifests@v1.3.0", "postgres@v1.1.0",
+	"python-fastapi@v1.3.0", "small@v1.1.0", "k8s-manifests@v1.4.0", "postgres@v1.2.0",
 }
 
 // createWebshop creates the sample story in ns: webshop-core with orders-api
@@ -238,7 +238,7 @@ var _ = Describe("Container scaffolding", func() {
 			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService),
 		)
 		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
-		Expect(container.Status.ScaffoldedFrom).NotTo(ContainElement("postgres@v1.1.0"))
+		Expect(container.Status.ScaffoldedFrom).NotTo(ContainElement("postgres@v1.2.0"))
 
 		mustCreate(newRelationship(ns, "orders-api-to-orders-db",
 			element(c4v1alpha1.ElementContainer, "orders-api"),
