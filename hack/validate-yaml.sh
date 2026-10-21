@@ -54,6 +54,23 @@ if [ "$kinds" != "Deployment " ]; then
 	echo "payments-worker's kustomize build has kinds ${kinds:-none}, want only a Deployment" >&2
 	exit 1
 fi
+# A python-cli job: a Job and nothing else, annotated for Argo CD to replace
+# it at each release, with small's patch on it (#1587).
+rm -rf "$OUT/nightly-sync"
+go run ./hack/render -out "$OUT/nightly-sync" -type job -container nightly-sync -display-name "Nightly sync" \
+	Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests >/dev/null
+"$KUSTOMIZE" build "$OUT/nightly-sync/deploy/k8s" >"$OUT/nightly-sync.yaml"
+kinds=$(sed -n 's/^kind: //p' "$OUT/nightly-sync.yaml" | sort | tr '\n' ' ')
+if [ "$kinds" != "Job " ]; then
+	echo "nightly-sync's kustomize build has kinds ${kinds:-none}, want only a Job" >&2
+	exit 1
+fi
+for want in 'cpu: 50m' 'argocd.argoproj.io/sync-options: Replace=true' 'restartPolicy: Never'; do
+	if ! grep -qF -- "$want" "$OUT/nightly-sync.yaml"; then
+		echo "nightly-sync's kustomize build lacks '$want': small's patch didn't find the Job, or job.yaml changed" >&2
+		exit 1
+	fi
+done
 # A kubebuilder operator with gitea-release: the Framework's config/default,
 # with small's patch on the manager.
 rm -rf "$OUT/backup-operator"

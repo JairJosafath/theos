@@ -1,11 +1,16 @@
 # Kubernetes manifests for {{ .Container }}; render them with `kubectl kustomize deploy/k8s`.
-# Shipping is left to your tools (Argo CD, Flux, a pipeline). Point the image at
-# what you build from the Dockerfile, for example:
+# C4 Factory ships them through an `argoCD` DeployTarget: Argo CD syncs this
+# folder at each release's tag with the release's image. To ship them yourself,
+# point the image at what you build from the Dockerfile, for example:
 #   cd deploy/k8s && kustomize edit set image {{ .Container }}=registry.example.com/{{ .Container }}:1.0.0
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+{{- if eq .Type "job" }}
+  - job.yaml
+{{- else }}
   - deployment.yaml
+{{- end }}
 {{- if or (eq .Type "service") (eq .Type "static-site") }}
   - service.yaml
 {{- end }}
@@ -17,6 +22,6 @@ resources:
 {{- end }}
 {{- if .Compute }}
 patches:
-  # Resources from the Compute layer.
+  # Resources from the Compute layer, on the Deployment or the Job.
   - path: compute.yaml
 {{- end }}

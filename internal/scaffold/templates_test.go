@@ -57,6 +57,13 @@ var templateCombos = []struct {
 		{model.SideDeployment, "k8s-manifests"},
 		{model.SideConnector, "postgres"},
 	}},
+	{"python job on kubernetes", "job", []side{
+		{model.SideFramework, "python-cli"},
+		{model.SideStandard, "python-standard"},
+		{model.SideCompute, "small"},
+		{model.SideDeployment, "k8s-manifests"},
+		{model.SideConnector, "postgres"},
+	}},
 	{"vscode extension", "extension", []side{
 		{model.SideFramework, "vscode-extension"},
 		{model.SideStandard, "ts-standard"},
@@ -325,6 +332,61 @@ func TestFastAPIVerifiesABearerJWT(t *testing.T) {
 // for Gitea Actions, the release run that builds the image on the image
 // runner for both platforms with an SBOM and provenance, into the archive the
 // operator pushes (#1457).
+// TestK8sManifestsRunsAJob checks that for type job k8s-manifests writes
+// job.yaml instead of deployment.yaml (#1587): a batch/v1 Job that runs once
+// (restartPolicy Never), annotated for Argo CD to replace it at each release,
+// with no TTL (the argoCD target's selfHeal would rerun a deleted Job), no
+// port and no probes, loading each Connector's ConfigMap and PGPASSWORD like
+// the Deployment; the kustomization lists it, and small's compute.yaml
+// patches the Job.
+func TestK8sManifestsRunsAJob(t *testing.T) {
+	var combo []side
+	for _, c := range templateCombos {
+		if c.name == "python job on kubernetes" {
+			combo = c.layers
+		}
+	}
+	if combo == nil {
+		t.Fatal(`no combo "python job on kubernetes" in templateCombos`)
+	}
+	_, result := renderCombo(t, "job", combo)
+	for _, name := range []string{"deploy/k8s/deployment.yaml", "deploy/k8s/service.yaml"} {
+		if _, ok := result.Files[name]; ok {
+			t.Errorf("%s written for a job", name)
+		}
+	}
+	job, ok := result.Files["deploy/k8s/job.yaml"]
+	if !ok {
+		t.Fatal("deploy/k8s/job.yaml not written for a job")
+	}
+	assertContains(t, "deploy/k8s/job.yaml", string(job.Data), []string{
+		"apiVersion: batch/v1\nkind: Job\n", "name: sample-app\n", "argocd.argoproj.io/sync-options: Replace=true",
+		"backoffLimit: 3", "restartPolicy: Never", "image: sample-app:dev", "runAsNonRoot: true",
+		"envFrom:\n            # Connection settings, one ConfigMap per Connector.\n            - configMapRef:\n                name: sample-app-postgres",
+		"- name: PGPASSWORD\n              valueFrom:\n                secretKeyRef:\n                  name: sample-app-postgres\n                  key: password",
+	})
+	for _, w := range []string{"ttlSecondsAfterFinished", "containerPort", "Probe", "kind: Deployment"} {
+		if strings.Contains(string(job.Data), w) {
+			t.Errorf("deploy/k8s/job.yaml contains %q:\n%s", w, job.Data)
+		}
+	}
+	kustomization := string(result.Files["deploy/k8s/kustomization.yaml"].Data)
+	assertContains(t, "deploy/k8s/kustomization.yaml", kustomization,
+		[]string{"resources:\n  - job.yaml\n  - connector-postgres.yaml\n", "patches:", "- path: compute.yaml", "`argoCD` DeployTarget"})
+	if strings.Contains(kustomization, "deployment.yaml") {
+		t.Errorf("deploy/k8s/kustomization.yaml lists deployment.yaml for a job:\n%s", kustomization)
+	}
+	compute, ok := result.Files["deploy/k8s/compute.yaml"]
+	if !ok {
+		t.Fatal("deploy/k8s/compute.yaml not written")
+	}
+	assertContains(t, "deploy/k8s/compute.yaml", string(compute.Data),
+		[]string{"apiVersion: batch/v1\nkind: Job\n", "name: sample-app\n", "cpu: 50m"})
+	if strings.Contains(string(compute.Data), "kind: Deployment") {
+		t.Errorf("deploy/k8s/compute.yaml patches a Deployment for a job:\n%s", compute.Data)
+	}
+}
+
 func TestK8sManifestsBuildsItsImageOnRelease(t *testing.T) {
 	_, result := renderCombo(t, "service", []side{
 		{model.SideFramework, "python-fastapi"},
@@ -437,6 +499,22 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 		"python worker on kubernetes": {
 			want:  []string{"`connector-postgres.yaml`", "no port and no probes"},
 			never: []string{"service.yaml", "GET "},
+		},
+		// #1587: a job's README applies, waits for and reruns a Job.
+		"python job on kubernetes": {
+			want: []string{
+				"ships them through an `argoCD` DeployTarget",
+				"`job.yaml` runs the placeholder image `sample-app:dev`",
+				"kubectl wait --for=condition=complete job/sample-app",
+				"kubectl logs job/sample-app",
+				"kubectl replace --force -k deploy/k8s",
+				"`job.yaml`: a Job that runs container `app` once to completion",
+				"`argocd.argoproj.io/sync-options: Replace=true`",
+				"`connector-postgres.yaml`",
+				"which the Job loads through `envFrom`",
+				"runs to completion, so it has no port and no probes",
+			},
+			never: []string{"deployment.yaml", "rollout status", "service.yaml", "GET ", "the Deployment"},
 		},
 	}
 	for _, c := range templateCombos {

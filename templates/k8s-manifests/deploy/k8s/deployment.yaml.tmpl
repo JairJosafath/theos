@@ -5,7 +5,9 @@ and Kubernetes restarts it when it exits. python-fastapi with postgres has
 GET /readyz, which runs SELECT 1: the readiness probe asks it, so a pod whose
 database is down leaves the Service, and liveness stays on /healthz, so the
 outage never restarts it (#1528). python-fastapi loads OIDC_ISSUER and
-OIDC_AUDIENCE from ConfigMap <container>-auth, auth.yaml (#1540). */ -}}
+OIDC_AUDIENCE from ConfigMap <container>-auth, auth.yaml (#1540). A job is a
+Job, job.yaml, not a Deployment (#1587). */ -}}
+{{- if ne .Type "job" -}}
 {{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
 {{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
 {{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
@@ -82,3 +84,4 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+{{- end }}

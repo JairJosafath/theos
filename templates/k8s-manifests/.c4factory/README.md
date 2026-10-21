@@ -1,20 +1,33 @@
 # k8s-manifests (Deployment)
 
-A Dockerfile and plain Kubernetes manifests, built with kustomize. Shipping stays
-outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
+A Dockerfile and plain Kubernetes manifests, built with kustomize. C4 Factory
+ships them through an `argoCD` DeployTarget (#1072): at each release, Argo CD
+syncs `deploy/k8s` at the release's tag with the release's image. The README
+says how to ship them yourself, with Argo CD, Flux, a pipeline or by hand.
 
-- **Supports:** `service`, `worker`, `static-site`
+- **Supports:** `service`, `worker`, `static-site`, and (since v1.9.0) `job`
 - **Writes:** `Dockerfile`, `.dockerignore`, (since v1.6.0, for Gitea Actions)
   `.gitea/workflows/image.yaml`, and in `deploy/k8s/`: `kustomization.yaml`,
-  `deployment.yaml`, `service.yaml` for types `service` and `static-site`, and
-  (since v1.4.0) `README.md`: how to build the image, set it, preview and apply
-  the manifests, what the other layers' files there are, the port and probes.
+  `deployment.yaml` (for a `job`, `job.yaml` instead), `service.yaml` for
+  types `service` and `static-site`, and (since v1.4.0) `README.md`: how to
+  build the image, set it, preview and apply the manifests, what the other
+  layers' files there are, the port and probes.
+- **A `job` runs once per release** (since v1.9.0, #1587): `job.yaml` is a
+  `batch/v1` Job from the image, `restartPolicy: Never`, `backoffLimit: 3`,
+  no port and no probes, annotated `argocd.argoproj.io/sync-options:
+  Replace=true` so Argo CD replaces the Job at each release instead of
+  patching it (a Job's template is immutable); the annotation is inert
+  outside Argo CD. No `ttlSecondsAfterFinished`: the `argoCD` target syncs
+  with `selfHeal`, which would recreate a Job the TTL deleted and run it
+  again every TTL; the finished Job and its pod stay, with their logs, until
+  the next release replaces them. Argo CD reads a completed Job as Healthy
+  and a failed one as Degraded.
 - **Expects from other layers:** `deploy/k8s/compute.yaml` from the Compute layer (a
   patch listed under `patches`), and `deploy/k8s/connector-<name>.yaml` from each
-  Connector (listed under `resources`). The Deployment loads a ConfigMap
-  `<container>-<connector>` per Connector through `envFrom`. With the
-  `postgres` Connector (since v1.5.0) it also sets `PGPASSWORD` from Secret
-  `<container>-postgres`, key `password`.
+  Connector (listed under `resources`). The Deployment, or the Job, loads a
+  ConfigMap `<container>-<connector>` per Connector through `envFrom`. With
+  the `postgres` Connector (since v1.5.0) it also sets `PGPASSWORD` from
+  Secret `<container>-postgres`, key `password`.
 - **The Dockerfile follows the Framework** (`.Framework`):
   - `python-fastapi`: a uv project with an ASGI app at `app.main:app`, served by
     uvicorn on port 8000 as user 1000; the probes ask `GET /healthz`. With
@@ -50,8 +63,8 @@ only in stages `FROM --platform=$BUILDPLATFORM` and its target stage only
 (`--python-platform`), and Vite builds once. A repository's own Dockerfile that
 `RUN`s on the target platform fails the release run.
 
-The Deployment runs container `app` from image `<container>:dev`, a placeholder to
-override with `kustomize edit set image`. Labels: `app.kubernetes.io/name` (the
+The Deployment, or the Job, runs container `app` from image `<container>:dev`, a
+placeholder to override with `kustomize edit set image`. Labels: `app.kubernetes.io/name` (the
 Container) and `app.kubernetes.io/part-of` (the SoftwareSystem).
 
 See the python-fastapi template's `.c4factory/README.md` for how templates are rendered.
