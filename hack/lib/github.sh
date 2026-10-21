@@ -1542,8 +1542,8 @@ gh_stale() {
   claims=$(gh_recent_claims "$ttl") || return 2
   issues=$(gh_open_issues) || return 2
   rows=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson stale "$stale" \
-    --argjson issues "$issues" "$GH_CLAIM_JQ"'
-    [$issues[] | select(any(.labels[]; .name == "status/in-progress")) | .number] as $prog
+    --slurpfile issues <(printf '%s' "$issues") "$GH_CLAIM_JQ"'
+    [$issues[0][] | select(any(.labels[]; .name == "status/in-progress")) | .number] as $prog
     | group_by(.issue)[] | max_by(.id)
     | select(held and fresh and (.issue as $i | $prog | any(. == $i)))
     | (.created_at | fromdateiso8601) as $start
