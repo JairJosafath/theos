@@ -221,7 +221,8 @@ func TestAddDistIgnore(t *testing.T) {
 }
 
 func TestAddCrossBuild(t *testing.T) {
-	src := "ARG BASE_IMAGE=golang:1.26\nFROM ${BASE_IMAGE} AS builder\nARG TARGETOS\n\nFROM gcr.io/distroless/static:nonroot\n"
+	src := "ARG BASE_IMAGE=golang:1.26\nFROM ${BASE_IMAGE} AS builder\nARG TARGETOS\n\n" +
+		"FROM gcr.io/distroless/static:nonroot\n"
 	p, got, err := addCrossBuild(dockerfile, []byte(src))
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +230,8 @@ func TestAddCrossBuild(t *testing.T) {
 	if p != dockerfile {
 		t.Errorf("path = %q, want %q", p, dockerfile)
 	}
-	want := "ARG BASE_IMAGE=golang:1.26\nFROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder\nARG TARGETOS\n\nFROM gcr.io/distroless/static:nonroot\n"
+	want := "ARG BASE_IMAGE=golang:1.26\nFROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder\n" +
+		"ARG TARGETOS\n\nFROM gcr.io/distroless/static:nonroot\n"
 	if string(got) != want {
 		t.Errorf("addCrossBuild = %q, want %q", got, want)
 	}
@@ -257,7 +259,8 @@ func TestAddReleaseNote(t *testing.T) {
 		"## Project Distribution\n\n### From a release\n",
 		"`make dist VERSION=<tag> IMG=<image>`",
 		"SHA256SUMS",
-		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\nmake build-installer IMG=<some-registry>/backup-op:<tag>\n",
+		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\n" +
+			"make build-installer IMG=<some-registry>/backup-op:<tag>\n",
 		"by digest on the Git host's\ncontainer registry",
 		"kubectl apply -f install.yaml",
 		"\n" + helmHeading + "\nkubebuilder edit\n",
