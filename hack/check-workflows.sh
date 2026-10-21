@@ -19,7 +19,10 @@
 # 'refs/heads/main' }}, so only the newest head of main is tested (the
 # runners are the owner's devices), and it must run on pushes to main, since
 # yolo mode merges a pull request unchecked and main's run is what shows a
-# red main (#1556).
+# red main (#1556). Tests also runs on a pushed release tag, the
+# 'v[0-9]+.[0-9]+.[0-9]+' tags Release (release.yml) runs on, and on a manual
+# run; the tag's run tests every package before the release ships (#1522),
+# so test.yml must keep that trigger (#1525).
 # Every job of a workflow that runs on pull requests is listed, by its
 # workflow file and its name:, in .github/required-checks (the checks
 # hack/lib/github.sh land waits for), the names are distinct, and every line
@@ -39,10 +42,12 @@ BY_REF='${{ github.workflow }}-${{ github.ref }}' BY_SHA='${{ github.workflow }}
 ON_PR='${{ github.event_name == '"'pull_request'"' }}'
 # shellcheck disable=SC2016
 ON_PR_OR_MAIN='${{ github.event_name == '"'pull_request'"' || github.ref == '"'refs/heads/main'"' }}'
+# The tags Release runs on; Tests runs on them too (#1525).
+RELEASE_TAGS="['v[0-9]+.[0-9]+.[0-9]+']"
 
 # trigger FILE EVENT: the EVENT trigger of the workflow FILE, one line per
-# setting: "branches <list>" and "path <pattern>" for each path, or "none"
-# when the workflow has no such trigger.
+# setting: "branches <list>", "tags <list>" and "path <pattern>" for each
+# path, or "none" when the workflow has no such trigger.
 trigger() {
   awk -v ev="$2" '
     /^[^ #]/ { top = $0; sub(/:.*/, "", top); inev = 0; next }
@@ -50,6 +55,7 @@ trigger() {
     top == "on" && /^  [^ ]/ { inev = 0 }
     inev && /^    [^ ]/ { inpaths = 0 }
     inev && /^    branches:/ { b = $0; sub(/^    branches:[[:space:]]*/, "", b); print "branches " b }
+    inev && /^    tags:/ { t = $0; sub(/^    tags:[[:space:]]*/, "", t); print "tags " t }
     inev && /^    paths:/ { inpaths = 1; next }
     inev && inpaths && /^      - / { p = $0; sub(/^      - /, "", p); print "path " p }
     END { if (!found) print "none" }
@@ -154,6 +160,10 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     test.yml)
       if ! grep -qx 'branches \[main\]' <<<"$(trigger "$f" push)"; then
         echo "$f: doesn't run on pushes to main, so nothing tests main until a tag (#1556)" >&2
+        fail=1
+      fi
+      if ! grep -qxF "tags $RELEASE_TAGS" <<<"$(trigger "$f" push)"; then
+        echo "$f: doesn't run on a pushed release tag, push: tags: $RELEASE_TAGS as Release does, so a release ships without a run of every package (#1525)" >&2
         fail=1
       fi
       if [ "$group" != "$BY_REF" ]; then
