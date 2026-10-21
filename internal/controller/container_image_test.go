@@ -126,7 +126,8 @@ var _ = Describe("Container images", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.0.9", "Notes of v0.0.9")
+		gitFake.setGiteaRelease(ns, "orders-api", "v0.0.9", "Notes of v0.0.9",
+			fakeFile{"orders-api-v0.0.9.tar.gz", []byte("the build of v0.0.9")})
 		gitFake.setRegistryImage(ns, "orders-api", "v0.0.9", testDigest)
 		shipRelease(ns, "v0.1.0", true)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging", Version: "v0.0.9"})
