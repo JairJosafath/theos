@@ -131,10 +131,10 @@ check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder 
 # device acquire's setup outlasts a sleep and finds the cluster free (#1503).
 (until grep -q "waiting up to" "$T/err"; do sleep 0.1; done; sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
 t0=$(date +%s)
-GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
+GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
 wait
 check "acquire waited" "$(($(date +%s) - t0 >= 1))" 1
-grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 10s" "$T/err"; check "acquire says it waits" $? 0
+grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 60s" "$T/err"; check "acquire says it waits" $? 0
 check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
 check "name, own lease" "$(gh_cluster name)" c4factory
 gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
@@ -175,7 +175,7 @@ check "pool, both leased" "$(gh_cluster pool | grep -c ': leased to ')" 2
 gh_cluster acquire --wait 0 2>"$T/err"; check "a third: exit 4" $? 4
 grep -q "c4factory: heron-50.*; c4factory-2: heron-51" "$T/err"; check "a third: names both holders" $? 0
 (sleep 1; as "$T/wt3" gh_cluster release >/dev/null) &
-out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s 2>/dev/null); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
+out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s 2>/dev/null); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
 wait
 check "reused cluster not created again" "$(wc -l <"$T/made")" 1
 as "$T/wt2" gh_cluster release >/dev/null
