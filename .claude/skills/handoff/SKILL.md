@@ -148,7 +148,11 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   and you need the whole output. The check takes 15 to 25 minutes, more
   when main moved: run it in the background and follow its output (it says
   its place in the queue every few minutes; `make check`'s output, the path
-  taken and how long the turn was held go to `.relay/land-PR.log`). A conflict or a red check ends the turn with exit 1
+  taken and how long the turn was held go to `.relay/land-PR.log`). Never
+  end your turn while `land` (or any background command you started) still
+  runs: a headless session ends when its turn ends, and nothing wakes it for
+  the result; follow it, or poll its log with a short command, until it ends
+  (#1327). A conflict or a red check ends the turn with exit 1
   and says so: fix it on the branch, push and `land` again. Don't merge main
   in and `merge` by hand: `merge` refuses while another pull request holds the
   turn. If N is still open: `hack/lib/github.sh close N FILE`,

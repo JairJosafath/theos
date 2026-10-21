@@ -225,8 +225,13 @@ and the memories.
 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching.
-- A headless session ends when you end your turn. Dispatch every subagent with
-  run_in_background: false and never end your turn while one is running.
+- A headless session ends when you end your turn, and nothing wakes it: a
+  notification from a subagent or a background command never arrives. Dispatch
+  every subagent with run_in_background: false and never end your turn while
+  one is running. Never end your turn while a background command you started
+  (\`land\`, \`make check\`, a CI rerun you follow) still runs: follow it, or
+  poll it with a short command (\`tail\` of its log, never a bare \`sleep\`),
+  until it ends, and only then write the account.
 - Keep the context small: at about 80k tokens, finish the small step in
   flight, commit, push and hand off, mid-task if need be; never go on past
   120k. The next session continues #$n from your handoff, so say exactly
@@ -253,7 +258,8 @@ Rules for this headless run:
     it with a merge commit (\`hack/lib/github.sh land PR\`: it merges main in and runs make check, then
     takes the merge turn and merges, checking again only when main moved; its check is the check, so
     while you work run the targeted tests and run make check by hand only when land failed and you
-    need the whole output; run land in the background and follow it; over 400
+    need the whole output; run land in the background and follow it, and never
+    end your turn while it still runs; over 400
     changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
@@ -302,7 +308,10 @@ this worktree, relay-$K, is on origin/main for reading only.
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - Keep the context small: past about 80k tokens, finish the issue in hand and
@@ -342,7 +351,10 @@ it on. Only you set status/needs-human. End the sweep by writing the report and 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - Never wait on the factory or a run longer than about 20 minutes in one
   stretch; note it in the report and go on.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
