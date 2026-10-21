@@ -86,7 +86,7 @@ vet: ## Run go vet against code.
 ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
-HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator
+HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator test-templates
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
 $(shell hack/heavy-slot.sh acquire $(if $(C4_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
@@ -167,6 +167,15 @@ test-templates-operator: kubebuilder kustomize controller-gen envtest ## Render 
 		GOLANGCI_LINT="$(GOLANGCI_LINT_BASE)" \
 		ENVTEST_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
 		hack/test-templates-operator.sh
+
+# Renders the webshop's template combos (fastapi with postgres, python cli,
+# react on kubernetes, node cli) and runs each one's own make check, then
+# kustomize build or make dist (hack/test-templates.sh); COMBO="node cli" runs
+# one. Not part of make check: run it when a change touches one of their
+# templates. It fetches from npm and PyPI.
+.PHONY: test-templates
+test-templates: kustomize ## Render the webshop's template combos and run their make check, kustomize build and make dist.
+	KUSTOMIZE="$(KUSTOMIZE)" hack/test-templates.sh
 
 # Regenerates the go-kubebuilder Framework from the pinned kubebuilder; review
 # the diff, then tag the template (hack/template-go-kubebuilder/main.go says how

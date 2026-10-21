@@ -37,16 +37,16 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 
 | Template | Kind | W | CI | Tests | Lint | README | Deploy | Logging | Auth |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| python-fastapi | Framework | W | #1469 | yes | yes | yes | yes, #1457 #1072 | #1473 | #1474 |
-| python-cli | Framework | W | #1469 | yes | yes | yes | yes | yes | n/a |
-| react-vite | Framework | W | #1469 | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
-| node-cli | Framework | W | #1469 | yes | yes | yes | yes | yes | n/a |
-| python-standard | Standard | W | #1469 | yes | yes | n/a | n/a | yes | n/a |
-| ts-standard | Standard | W | #1469 | yes | yes | n/a | n/a | yes | n/a |
-| postgres | Connector | W | #1469 | #1472 | yes | n/a | #1471 | n/a | #1471 |
-| small | Compute | W | #1469 | yes | yes | n/a | n/a | n/a | n/a |
-| k8s-manifests | Deployment | W | #1469 | yes | yes | #1470 | yes, #1457 #1072 | n/a | n/a |
-| gitea-release | Deployment | W | #1469 | yes | yes | #1475 | yes | n/a | n/a |
+| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | #1473 | #1474 |
+| python-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
+| react-vite | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
+| node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
+| python-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
+| ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
+| postgres | Connector | W | yes | #1472 | yes | n/a | #1471 | n/a | #1471 |
+| small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
+| k8s-manifests | Deployment | W | yes | yes | yes | #1470 | yes, #1457 #1072 | n/a | n/a |
+| gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
 | vscode-extension | Framework | | #1476 | yes | yes | yes | yes | #1478 | n/a |
@@ -68,10 +68,10 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | hello-html | Framework | | n/a | n/a | n/a | yes | n/a | n/a | n/a |
 | hello-html-standard | Standard | | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
-The CI column is the widest gap: only the operator pair is ever built and
-checked as a scaffolded repository (`make test-templates-operator`, run by
-hand when either operator template changes). #1469 does the same for the
-webshop's combinations, #1476 for the rest.
+The CI column is the widest gap: only the operator pair and the webshop's
+combinations are built and checked as scaffolded repositories
+(`make test-templates-operator` and `make test-templates`, run by hand when
+one of their templates changes); #1476 does the same for the rest.
 
 ## The webshop's templates
 
@@ -80,6 +80,8 @@ webshop's combinations, #1476 for the rest.
 A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 `postgres` Connector, `/readyz`.
 
+- CI: `make test-templates`, combo "fastapi service with postgres":
+  its `make check`, then `kustomize build deploy/k8s`.
 - Tests: `tests/test_main.py.tmpl` (TestClient over every route), run by
   python-standard's `make test`.
 - Lint: python-standard's ruff (every rule) and mypy (strict); the
@@ -99,6 +101,8 @@ An argparse command-line program on uv that builds a wheel and an sdist; as
 a `worker` (#1468), a long-running `python -m app` that does a round of work,
 backs off while rounds fail and stops cleanly on SIGTERM.
 
+- CI: `make test-templates`, combo "python cli": its `make check`, then
+  `make dist VERSION=v0.1.0` and the wheel and sdist in `dist/`.
 - Tests: `tests/test_cli.py.tmpl` and `tests/test_greeting.py.tmpl`, or for a
   worker `tests/test_worker.py.tmpl` (a real SIGTERM included) and
   `tests/test_backoff.py.tmpl`, run by python-standard's `make test`.
@@ -116,6 +120,8 @@ backs off while rounds fail and stops cleanly on SIGTERM.
 
 React 19 and TypeScript, built by Vite into a static site in `dist/`.
 
+- CI: `make test-templates`, combo "react web app on kubernetes": its
+  `make check`, then `kustomize build deploy/k8s`.
 - Tests: `src/greeting.test.ts`, run by ts-standard's `make check` (vitest).
 - Lint: ts-standard's ESLint (typescript-eslint strict-type-checked, React
   hooks), Prettier and `tsc --noEmit`.
@@ -135,6 +141,9 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 `npm pack`.
 
+- CI: `make test-templates`, combo "node cli": its `make check`, then
+  `make dist VERSION=v0.0.1` (package.json's version) and the `.tgz` in
+  `dist/`.
 - Tests: `src/cli.test.ts` and `src/greeting.test.ts` (vitest), and
   `pack-check` runs the packed program with `--version`.
 - Lint: ts-standard's ESLint, Prettier and `tsc`.
@@ -149,6 +158,8 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 
 The Python rulebook and its `make check`.
 
+- CI: its `make check` in `make test-templates`' combos "fastapi service
+  with postgres" and "python cli".
 - Tests: `Makefile.tmpl`, target `test` (pytest, strict markers and config),
   part of `check`; `.c4factory/ci/giteaActions/.gitea/workflows/check.yaml.tmpl`
   runs `make check`.
@@ -164,6 +175,8 @@ The Python rulebook and its `make check`.
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension.
 
+- CI: its `make check` in `make test-templates`' combos "react web app on
+  kubernetes" and "node cli".
 - Tests: `Makefile.tmpl`, target `test` (vitest), part of `check`; its
   `check.yaml.tmpl` runs `make check`.
 - Lint: `Makefile.tmpl`: `fmt-check` (Prettier), `lint` (ESLint, no warnings,
@@ -177,6 +190,8 @@ The TypeScript rulebook for react-vite, node-cli and vscode-extension.
 A Connector: `DATABASE_URL` in a ConfigMap (`deploy/k8s/connector-postgres.yaml`)
 and a Postgres in the devcontainer.
 
+- CI: `make test-templates`, combo "fastapi service with postgres": the
+  app's `make check`, then `kustomize build deploy/k8s` with its manifests.
 - Tests: the scaffold has no code that connects; python-fastapi's `/readyz`
   only checks the variable is set (#1472).
 - Lint: `make validate-yaml` builds the orders-api render with it and
@@ -193,6 +208,8 @@ and a Postgres in the devcontainer.
 A Compute: requests and limits for the container `app` as a kustomize patch
 (`deploy/k8s/compute.yaml`; for an operator, `config/manager/compute.yaml`).
 
+- CI: `make test-templates` runs `kustomize build deploy/k8s` in the
+  combos "fastapi service with postgres" and "react web app on kubernetes".
 - Tests and Lint: `make validate-yaml` builds the orders-api, storefront and
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
@@ -202,6 +219,8 @@ A Compute: requests and limits for the container `app` as a kustomize patch
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
 
+- CI: `make test-templates` runs `kustomize build deploy/k8s` in the
+  combos "fastapi service with postgres" and "react web app on kubernetes".
 - Tests: `TestK8sManifestsFollowsTheFramework` (the Dockerfile,
   `.dockerignore`, port and probes per Framework, no Service for a worker);
   `make validate-yaml` builds the orders-api, storefront and payments-worker
@@ -219,10 +238,12 @@ A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
 and attaches `dist/` to the tag's release.
 
+- CI: `make test-templates` runs `make dist` in the combos "python cli"
+  and "node cli" and checks the files it attaches.
 - Tests: `TestTemplatesRenderTheirCIFilesForGiteaActions`
   (`internal/scaffold/ci_test.go`) renders the workflow;
-  `make test-templates-operator` runs `make dist` for the operator pair.
-  #1469 runs it for the CLIs.
+  `make test-templates-operator` runs `make dist` for the operator pair,
+  `make test-templates` for the CLIs.
 - Lint: `TestEveryTemplateRenders` parses the workflow.
 - README: nothing in the scaffold says that a tag releases (#1475).
 - Deploy: the Gitea release with the `dist/` files; no image (#1458 for an

@@ -52,6 +52,7 @@ make check               # manifests, generate, fmt, vet, lint, validate-yaml, t
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
 make test-templates-operator  # The operator combo's make check before and after kubebuilder create api, then its make dist; not in make check
+make test-templates           # The webshop's template combos' make check, kustomize build and make dist (COMBO=... for one); fetches from npm and PyPI; not in make check
 make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
@@ -810,7 +811,7 @@ queue:
   workers is `RELAY_ADMIT_GAP` seconds old (default 120), and stops after
   `RELAY_MEM_WAIT` seconds (default 3600) without headroom. It logs the wait.
 - Heavy jobs queue device-wide: `make check`, `test`, `lint`, `lint-fix`,
-  `vulncheck`, `docker-build`, `deploy`, `e2e`, `test-e2e` and `test-templates-operator` take one of `HEAVY_JOBS` slots
+  `vulncheck`, `docker-build`, `deploy`, `e2e`, `test-e2e`, `test-templates-operator` and `test-templates` take one of `HEAVY_JOBS` slots
   (default 2; 0 turns the queue off) before anything builds, shared by every
   checkout on the device (`hack/heavy-slot.sh`: `flock`ed files in
   `<git common dir>/heavy-slots`). A `make` that finds them all taken waits,
