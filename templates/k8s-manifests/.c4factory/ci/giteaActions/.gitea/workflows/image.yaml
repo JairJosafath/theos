@@ -1,0 +1,71 @@
+# Builds the image when a version tag (v1.2.3) is pushed, and attaches it to
+# the Gitea release of that tag, creating the release when it is missing; the
+# operator pushes it from there to the Git host's container registry. Rootless
+# BuildKit, on the image runner, builds the Dockerfile at the root for
+# linux/amd64 and linux/arm64 with an SBOM and provenance, into an OCI image
+# layout archive, <repository>-<tag>.oci.tar. Nothing emulates the other
+# platform: the Dockerfile RUNs only in stages FROM --platform=$BUILDPLATFORM.
+# Without a Dockerfile it attaches nothing. Running it again replaces the file.
+name: image
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  image:
+    runs-on: image
+    env:
+      API: ${{ gitea.server_url }}/api/v1/repos/${{ gitea.repository }}
+      TOKEN: ${{ gitea.token }}
+      TAG: ${{ gitea.ref_name }}
+      REPOSITORY: ${{ gitea.repository }}
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token $TOKEN" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      # buildctl-daemonless.sh starts buildkitd for this job only, its state in
+      # the job's RUNNER_TEMP; the SBOM scanner is pinned by digest.
+      - name: Build the image
+        id: build
+        run: |
+          if [ ! -f Dockerfile ]; then
+            echo "No Dockerfile at the root: no image to build, nothing attached."
+            exit 0
+          fi
+          archive="$RUNNER_TEMP/${REPOSITORY##*/}-$TAG.oci.tar"
+          buildctl-daemonless.sh build \
+            --frontend dockerfile.v0 \
+            --local context=. \
+            --local dockerfile=. \
+            --opt platform=linux/amd64,linux/arm64 \
+            --opt attest:sbom=generator=docker/buildkit-syft-scanner:1.9.0@sha256:e930c2697be77cb7271d316ecfa78768b5eac73de3b16018ed38eb0ea0b5a7cb \
+            --opt attest:provenance=mode=min \
+            --output "type=oci,dest=$archive" \
+            --metadata-file "$RUNNER_TEMP/metadata.json"
+          echo "Built $(basename "$archive"), index $(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - name: Attach the image to the release
+        if: steps.build.outputs.archive != ''
+        env:
+          ARCHIVE: ${{ steps.build.outputs.archive }}
+        run: |
+          auth="Authorization: token $TOKEN"
+          release=$(curl -sf -H "$auth" "$API/releases/tags/$TAG" || true)
+          if [ -z "$release" ]; then
+            release=$(curl -sS --fail-with-body -X POST -H "$auth" -H "Content-Type: application/json" \
+              -d "{\"tag_name\": \"$TAG\", \"name\": \"$TAG\"}" "$API/releases")
+            echo "Created release $TAG"
+          fi
+          id=$(printf '%s' "$release" | jq -r .id)
+          name=$(basename "$ARCHIVE")
+          old=$(printf '%s' "$release" | jq -r --arg n "$name" '(.assets // [])[] | select(.name == $n) | .id')
+          if [ -n "$old" ]; then
+            curl -sS --fail-with-body -X DELETE -H "$auth" "$API/releases/$id/assets/$old"
+          fi
+          curl -sS --fail-with-body -X POST -H "$auth" -F "attachment=@$ARCHIVE" \
+            "$API/releases/$id/assets?name=$name" > /dev/null
+          echo "Attached $name to release $TAG"

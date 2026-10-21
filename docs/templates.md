@@ -37,15 +37,15 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 
 | Template | Kind | W | CI | Tests | Lint | README | Deploy | Logging | Auth |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | #1473 | #1474 |
+| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1072 | #1473 | #1474 |
 | python-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
-| react-vite | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
+| react-vite | Framework | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | python-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | postgres | Connector | W | yes | yes | yes | n/a | yes | n/a | yes |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
-| k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
+| k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
@@ -91,8 +91,8 @@ runs `SELECT 1`.
   the routes. How to ship is k8s-manifests' `deploy/k8s/README.md` (#1470).
 - Deploy: k8s-manifests in "fastapi service with postgres" writes its
   Dockerfile (uv, uvicorn, port 8000), checked by
-  `TestK8sManifestsFollowsTheFramework`. No release builds the image (#1457)
-  and nothing applies it to a cluster (#1072).
+  `TestK8sManifestsFollowsTheFramework`; each release builds the image for
+  both platforms (#1457), and nothing applies it to a cluster (#1072).
 - Logging: only uvicorn's plain-text access log (#1473).
 - Auth: every route is open (#1474).
 
@@ -131,7 +131,7 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Deploy: k8s-manifests in "react web app on kubernetes" writes a Dockerfile
   (vite build, unprivileged nginx on 8080), checked by
   `TestK8sManifestsFollowsTheFramework` and `make validate-yaml`'s storefront
-  render. Image and rollout: #1457, #1072.
+  render. Each release builds the image (#1457); rollout: #1072.
 - Logging: n/a: a static page served by nginx; the code has none and ESLint
   refuses `console`.
 - Auth: n/a: a public page with no API client; the API it calls
@@ -224,7 +224,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.5.0)
+### k8s-manifests (v1.6.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -241,8 +241,15 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what
   `compute.yaml` and each Connector's file are, the port and probes; checked
   by `TestK8sManifestsWritesItsREADME`.
+- Release (since v1.6.0, #1457): `.gitea/workflows/image.yaml`, for Gitea
+  Actions, builds the Dockerfile on each `v*` tag on the `image` runner with
+  rootless BuildKit, for `linux/amd64` and `linux/arm64` with an SBOM and
+  provenance, and attaches `<repository>-<tag>.oci.tar` to the release; the
+  Dockerfiles `RUN` only in stages on `$BUILDPLATFORM`
+  (`TestDockerfilesRunOnlyOnTheBuildPlatform`,
+  `TestK8sManifestsBuildsItsImageOnRelease`).
 - Deploy: the manifests, with the image `<container>:dev`, ready for a GitOps
-  tool. No release builds the image (#1457); nothing applies it (#1072).
+  tool; nothing applies them (#1072).
 - Logging, Auth: n/a: it packages the app's.
 
 ### gitea-release (v1.2.0)

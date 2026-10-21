@@ -249,6 +249,28 @@ func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
 	}
 }
 
+// TestK8sManifestsBuildsItsImageOnRelease checks that k8s-manifests writes,
+// for Gitea Actions, the release run that builds the image on the image
+// runner for both platforms with an SBOM and provenance, into the archive the
+// operator pushes (#1457).
+func TestK8sManifestsBuildsItsImageOnRelease(t *testing.T) {
+	_, result := renderCombo(t, "service", []side{
+		{model.SideFramework, "python-fastapi"},
+		{model.SideDeployment, "k8s-manifests"},
+	})
+	f, ok := result.Files[".gitea/workflows/image.yaml"]
+	if !ok {
+		t.Fatalf(".gitea/workflows/image.yaml not written; files: %v", result.Files.Paths())
+	}
+	assertContains(t, "image.yaml", string(f.Data), []string{
+		`tags: ["v*"]`, "runs-on: image", "buildctl-daemonless.sh build",
+		"platform=linux/amd64,linux/arm64",
+		"attest:sbom=generator=docker/buildkit-syft-scanner:1.9.0@sha256:",
+		"attest:provenance=mode=min", `type=oci,dest=$archive`,
+		`${REPOSITORY##*/}-$TAG.oci.tar`, "No Dockerfile at the root", `$API/releases`,
+	})
+}
+
 // TestK8sManifestsWritesItsREADME checks that k8s-manifests writes
 // deploy/k8s/README.md (#1470): how to build the image, set it, preview and
 // apply the manifests, for the Container, with the files the other layers

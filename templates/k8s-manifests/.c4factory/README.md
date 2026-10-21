@@ -4,7 +4,8 @@ A Dockerfile and plain Kubernetes manifests, built with kustomize. Shipping stay
 outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
 
 - **Supports:** `service`, `worker`, `static-site`
-- **Writes:** `Dockerfile`, `.dockerignore`, and in `deploy/k8s/`: `kustomization.yaml`,
+- **Writes:** `Dockerfile`, `.dockerignore`, (since v1.6.0, for Gitea Actions)
+  `.gitea/workflows/image.yaml`, and in `deploy/k8s/`: `kustomization.yaml`,
   `deployment.yaml`, `service.yaml` for types `service` and `static-site`, and
   (since v1.4.0) `README.md`: how to build the image, set it, preview and apply
   the manifests, what the other layers' files there are, the port and probes.
@@ -27,6 +28,20 @@ outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
   - Any other Framework gets no `Dockerfile` or `.dockerignore`: the
     repository brings its own, and the manifests assume port 8000 and
     `GET /healthz`.
+
+**The release builds the image** (since v1.6.0). On each `v*` tag,
+`.gitea/workflows/image.yaml` runs on the `image` runner: with a `Dockerfile` at
+the root, `buildctl-daemonless.sh` (rootless BuildKit, no Docker) builds it for
+`linux/amd64` and `linux/arm64`, with an SBOM (BuildKit's Syft scanner, pinned
+by digest) and provenance (`mode=min`), into an OCI image layout archive,
+`<repository>-<tag>.oci.tar`, attached to the tag's Gitea release (created when
+missing). The operator pushes it from there to the Git host's container
+registry. Without a Dockerfile the run says so and attaches nothing. Nothing
+emulates the other platform, so **a Dockerfile must cross-build**: it `RUN`s
+only in stages `FROM --platform=$BUILDPLATFORM` and its target stage only
+`COPY`s. The factory's do: uv installs the target platform's wheels
+(`--python-platform`), and Vite builds once. A repository's own Dockerfile that
+`RUN`s on the target platform fails the release run.
 
 The Deployment runs container `app` from image `<container>:dev`, a placeholder to
 override with `kustomize edit set image`. Labels: `app.kubernetes.io/name` (the

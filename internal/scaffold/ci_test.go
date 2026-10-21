@@ -122,7 +122,7 @@ func TestTemplatesRefuseACISystemTheyDontSupport(t *testing.T) {
 // that writes a CI system's files outside .c4factory/ci/ can't go unnoticed.
 func TestTemplatesKeepingCIFiles(t *testing.T) {
 	want := []string{"aws-standard", "gitea-release", "go-operator-standard", "go-standard", "hello-html",
-		"hello-standard", "python-standard", "ts-standard"}
+		"hello-standard", "k8s-manifests", "python-standard", "ts-standard"}
 	var got []string
 	for _, c := range templateCombos {
 		_, layers := loadCombo(t, c.typ, c.layers, "")
