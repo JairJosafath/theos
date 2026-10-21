@@ -203,11 +203,13 @@ var _ = Describe("Container scaffolding", func() {
 		}).Should(Succeed())
 
 		ordersFiles := gitFake.repo(ns, "orders-api").files
+		// auth.yaml: python-fastapi's OIDC issuer and audience (#1540).
 		Expect(kustomizationFiles(ordersFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
-			"deploy/k8s/service.yaml", "deploy/k8s/connector-postgres.yaml", "deploy/k8s/compute.yaml"))
+			"deploy/k8s/service.yaml", "deploy/k8s/auth.yaml", "deploy/k8s/connector-postgres.yaml",
+			"deploy/k8s/compute.yaml"))
 		catalogFiles := gitFake.repo(ns, "catalog-api").files
 		Expect(kustomizationFiles(catalogFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
-			"deploy/k8s/service.yaml"))
+			"deploy/k8s/service.yaml", "deploy/k8s/auth.yaml"))
 		for _, files := range []scaffold.Tree{ordersFiles, catalogFiles} {
 			for _, p := range kustomizationFiles(files) {
 				Expect(files).To(HaveKey(p))
