@@ -42,10 +42,10 @@ func TestImageSettled(t *testing.T) {
 
 func TestImageEvent(t *testing.T) {
 	for _, tt := range []struct {
-		name                          string
+		name                           string
 		prevTag, prevState, tag, state string
-		reason                        string
-		warning                       bool
+		reason                         string
+		warning                        bool
 	}{
 		{"first publish", "", "", "v1.0.0", ImageStatePublished, ImageEventPublished, false},
 		{"published after a failure", "v1.0.0", ImageStateFailed, "v1.0.0", ImageStatePublished,
