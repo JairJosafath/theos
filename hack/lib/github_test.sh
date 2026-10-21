@@ -1295,6 +1295,8 @@ elif [ -n "\${CHECK_BEATS:-}" ]; then
 fi
 # With \$T/rewrite, it rewrites a tracked file in place, as make fmt does (#1449).
 [ ! -e "$T/rewrite" ] || echo formatted >"$T/land/feat"
+# With \$T/add, it creates a file, as make generate does for a new kind (#1462).
+[ ! -e "$T/add" ] || echo generated >"$T/land/zz_generated.go"
 [ ! -e "$T/red" ]
 MAKE
   chmod +x "$T/bin/check-make"
@@ -1477,6 +1479,25 @@ MAKE
   grep -q '#40: make check rewrote feat (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again' <<<"$out"
   check "land: names the file the check rewrote (#1449)" $? 0
   rm "$T/rewrite"
+  git -C "$T/land" checkout -q -- feat
+
+  # A check that created a file (make generate's new zz_generated.go) leaves it
+  # untracked, which git diff HEAD never lists: it is named and nothing is pushed
+  # (#1462). An untracked file that was there before the check is not its.
+  rm -f "$T/landed"
+  touch "$T/add" "$T/land/scratch"
+  out=$(gh_land 40 2>&1)
+  check "land: a check that left an untracked file fails, pushes and merges nothing (#1462)" \
+    "$? $(cat "$T/landed" 2>/dev/null) | $(git -C "$T/origin.git" rev-parse feat) | $(queue)" "1  | $pushed | "
+  grep -q '#40: make check left untracked zz_generated.go (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again' <<<"$out"
+  check "land: names the file the check left, not the one there before (#1462)" $? 0
+  # Both at once: the rewritten file and the new one are named together.
+  rm -f "$T/landed" "$T/land/zz_generated.go"
+  touch "$T/rewrite"
+  out=$(gh_land 40 2>&1)
+  grep -q '#40: make check rewrote feat and left untracked zz_generated.go (fmt, manifests or generate' <<<"$out"
+  check "land: names the rewritten and the new file together (#1462)" $? 0
+  rm "$T/add" "$T/rewrite" "$T/land/zz_generated.go" "$T/land/scratch"
   git -C "$T/land" checkout -q -- feat
 
   # Not its turn within --wait: gives its place up, exit 4.
