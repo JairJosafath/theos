@@ -19,9 +19,32 @@ job() { sleep 3600 & job=$!; }
 # free a slot or outlast a wait the test counts on (#1409).
 until_ok() { local i; for i in $(seq "${UNTIL:-600}"); do "$@" && return 0; sleep 0.1; done; return 1; }
 free() { "$SLOT" status | head -1; }
+# waiter NAME [--first] PID JOB: start a job's acquire in the background, its
+# stderr in $T/NAME, its PID in $NAME, and wait until it says it waits. The
+# file is emptied first: a NAME reused from an earlier section still says
+# "waits for one", and the acquire truncates it only once it has forked, so
+# the next step would otherwise start before this waiter holds a ticket (#1493).
+waiter() {
+  local name=$1; shift
+  : >"$T/$name"
+  "$SLOT" acquire "$@" 2>"$T/$name" &
+  printf -v "$name" %s "$!"
+  until_ok grep -q "waits for one" "$T/$name"
+}
+# ended PID: whether the background job PID has ended, from this shell's job
+# table, which a PID reused by a stranger can't fool as `kill -0` can (#1493).
+ended() { local p; for p in $(jobs -rp); do [ "$p" = "$1" ] && return 1; done; return 0; }
 
 check "status: all free" "$(free)" "heavy-slot: 2 of 2 slots free, 0 waiting"
 "$SLOT" status >/dev/null; check "status: exit 0 with a free slot" $? 0
+# A reader that closes early (`| head -1`, `| grep -q`) must not make status
+# complain; where SIGPIPE is ignored (a Docker runner) a write to a closed pipe
+# fails with EPIPE instead of ending the writer (#1493).
+exec {closed}> >(exec <&-); wait $!
+( trap '' PIPE; "$SLOT" status >&"$closed" ) 2>"$T/pipe"
+exec {closed}>&-
+( trap '' PIPE; "$SLOT" status | head -c1 >/dev/null ) 2>>"$T/pipe"
+check "status, reader closed (#1493): no broken-pipe complaint" "$(grep -c "Broken pipe" "$T/pipe")" 0
 
 # Two jobs run; a third waits and names who holds the slots.
 job; a=$job
@@ -33,22 +56,21 @@ check "status: none free" "$(free)" "heavy-slot: 0 of 2 slots free, 0 waiting"
 "$SLOT" status >/dev/null; check "status: exit 1 when all are taken" $? 1
 "$SLOT" status | grep -q "pid $a in .*\`make check\`"; check "status: names the holder" $? 0
 "$SLOT" acquire "$a" "make check" 2>/dev/null; check "same job again: does not wait on itself" $? 0
-"$SLOT" acquire "$c" "make test" 2>"$T/wait" &
-waiter=$!
-until_ok grep -q "all 2 heavy-job slots on this device are taken" "$T/wait"; check "third job: says it waits" $? 0
-kill -0 "$waiter" 2>/dev/null; check "third job: waits" $? 0
-grep -q "not a hang" "$T/wait"; check "third job: says waiting is not a hang" $? 0
-grep -q "pid $a .*make check" "$T/wait" && grep -q "pid $b .*make lint" "$T/wait"
+waiter third "$c" "make test"
+grep -q "all 2 heavy-job slots on this device are taken" "$T/third"; check "third job: says it waits" $? 0
+! ended "$third"; check "third job: waits" $? 0
+grep -q "not a hang" "$T/third"; check "third job: says waiting is not a hang" $? 0
+grep -q "pid $a .*make check" "$T/third" && grep -q "pid $b .*make lint" "$T/third"
 check "third job: names who holds the slots" $? 0
-check "third job: says it once while the holders stay" "$(grep -c "slots on this device are taken" "$T/wait")" 1
+check "third job: says it once while the holders stay" "$(grep -c "slots on this device are taken" "$T/third")" 1
 
 # A job that ends frees its slot, and the one waiting takes it.
 kill "$a"; wait "$a" 2>/dev/null
-until_ok eval '! kill -0 $waiter 2>/dev/null'; check "ended job: the waiting job starts" $? 0
-wait "$waiter"; check "waiting job: acquire succeeds" $? 0
-grep -q "got slot .*\`make test\` starts" "$T/wait"; check "waiting job: says it starts" $? 0
+until_ok ended "$third"; check "ended job: the waiting job starts" $? 0
+wait "$third"; check "waiting job: acquire succeeds" $? 0
+grep -q "got slot .*\`make test\` starts" "$T/third"; check "waiting job: says it starts" $? 0
 "$SLOT" status | grep -q "pid $c "; check "waiting job: holds a slot" $? 0
-grep -q "unbound variable" "$T/wait"; check "waiting job: exits without an unbound variable" $? 1
+grep -q "unbound variable" "$T/third"; check "waiting job: exits without an unbound variable" $? 1
 
 # A killed job frees its slot.
 kill -9 "$b"; wait "$b" 2>/dev/null
@@ -62,7 +84,7 @@ job; a=$job; job; b=$job; job; c=$job
 "$SLOT" acquire "$c" z 2>"$T/gone" &
 waiter=$!
 kill "$c"
-until_ok eval '! kill -0 $waiter 2>/dev/null'; check "waiter's job gone: stops waiting" $? 0
+until_ok ended "$waiter"; check "waiter's job gone: stops waiting" $? 0
 wait "$waiter"; check "waiter's job gone: exit 1" $? 1
 check "waiter's job gone: removes its ticket" "$(ls "$HEAVY_SLOTS_DIR" | grep -c "^wait-")" 0
 grep -q "unbound variable" "$T/gone"; check "waiter's job gone: exits without an unbound variable" $? 1
@@ -73,26 +95,20 @@ until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
 # Waiters get slots first come, first served, and a dead waiter loses its turn.
 job; a=$job; job; b=$job; job; c=$job; job; d=$job; job; e=$job
 "$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
-"$SLOT" acquire "$c" older 2>"$T/older" &
-older=$!
-until_ok grep -q "waits for one" "$T/older"
-"$SLOT" acquire "$d" dead 2>/dev/null &
-dead=$!
-until_ok eval '"$SLOT" status | grep -q "^heavy-slot: 0 of 2 slots free, 2 waiting"'
-"$SLOT" acquire "$e" newer 2>"$T/newer" &
-newer=$!
-until_ok grep -q "waits for one" "$T/newer"
+waiter older "$c" older
+waiter dead "$d" dead
+waiter newer "$e" newer
 grep -q "with 0 job(s) waiting ahead" "$T/older"; check "older waiter: none ahead" $? 0
 grep -q "with 2 job(s) waiting ahead" "$T/newer"; check "newer waiter: says two wait ahead" $? 0
 "$SLOT" status | grep -q "waiting 1: pid $c .*\`older\`"; check "status: names the waiters in order" $? 0
 "$SLOT" status | grep -q "waiting 3: pid $e .*\`newer\`"; check "status: the newest waiter last" $? 0
 kill "$a"; wait "$a" 2>/dev/null
-until_ok eval '! kill -0 $older 2>/dev/null'; check "freed slot: the oldest waiter takes it" $? 0
+until_ok ended "$older"; check "freed slot: the oldest waiter takes it" $? 0
 until_ok grep -q "with 1 job(s) waiting ahead" "$T/newer"; check "newer waiter: says one waits ahead now" $? 0
-kill -0 "$newer" 2>/dev/null; check "freed slot: the newer waiter keeps waiting" $? 0
+! ended "$newer"; check "freed slot: the newer waiter keeps waiting" $? 0
 kill -9 "$dead"; wait "$dead" 2>/dev/null
 kill "$b"; wait "$b" 2>/dev/null
-until_ok eval '! kill -0 $newer 2>/dev/null'; check "dead waiter: skipped, the newer one takes the slot" $? 0
+until_ok ended "$newer"; check "dead waiter: skipped, the newer one takes the slot" $? 0
 "$SLOT" status | grep -q "pid $e "; check "newer waiter: holds a slot" $? 0
 ls "$HEAVY_SLOTS_DIR" | grep -c "^wait-" >"$T/tickets"; check "no tickets left" "$(cat "$T/tickets")" 0
 kill "$c" "$d" "$e"; wait "$c" "$d" "$e" 2>/dev/null
@@ -103,33 +119,27 @@ until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
 # their order behind it.
 job; a=$job; job; b=$job; job; c=$job; job; d=$job; job; f=$job
 "$SLOT" acquire "$a" x 2>/dev/null; "$SLOT" acquire "$b" y 2>/dev/null
-"$SLOT" acquire "$c" older 2>"$T/older" &
-older=$!
-until_ok grep -q "waits for one" "$T/older"
-"$SLOT" acquire "$d" newer 2>"$T/newer" &
-newer=$!
-until_ok grep -q "waits for one" "$T/newer"
-"$SLOT" acquire --first "$f" "make check" 2>"$T/first" &
-first=$!
-until_ok grep -q "waits for one" "$T/first"
+waiter older "$c" older
+waiter newer "$d" newer
+waiter first --first "$f" "make check"
 grep -q "\`make check\` waits for one, with 0 job(s) waiting ahead of it; it goes first, ahead of 2 other waiting job(s)" "$T/first"
-check "--first, slots taken: says it goes first, ahead of the older waiters" $? 0
+check "--first, slots taken (#1493): says it goes first, ahead of the older waiters" $? 0
 until_ok grep -q "with 1 job(s) waiting ahead" "$T/older"; check "older waiter: says the --first one waits ahead of it" $? 0
 "$SLOT" status | grep -q "waiting 1: pid $f .*\`make check\`, since [0-9:]*, goes first$"; check "status: the --first waiter first, marked" $? 0
 "$SLOT" status | grep -q "waiting 2: pid $c .*\`older\`"; check "status: the older waiters after it" $? 0
 "$SLOT" status | grep -q "waiting 3: pid $d .*\`newer\`"; check "status: the newer waiter last" $? 0
 sleep 1
-kill -0 "$first" 2>/dev/null; check "--first: never takes a held slot" $? 0
+! ended "$first"; check "--first: never takes a held slot" $? 0
 kill "$a"; wait "$a" 2>/dev/null
-until_ok eval '! kill -0 $first 2>/dev/null'; check "--first: takes the next free slot ahead of older waiters" $? 0
+until_ok ended "$first"; check "--first (#1493): takes the next free slot ahead of older waiters" $? 0
 wait "$first"; check "--first: acquire succeeds" $? 0
-kill -0 "$older" 2>/dev/null && kill -0 "$newer" 2>/dev/null; check "--first: the older waiters keep waiting" $? 0
+! ended "$older" && ! ended "$newer"; check "--first: the older waiters keep waiting" $? 0
 "$SLOT" status | grep -q "slot [12]: pid $f .*\`make check\`, since [0-9:]*, went first$"; check "status: shows the job that went first" $? 0
 kill "$b"; wait "$b" 2>/dev/null
-until_ok eval '! kill -0 $older 2>/dev/null'; check "after --first: the oldest ordinary waiter takes the next slot" $? 0
-kill -0 "$newer" 2>/dev/null; check "after --first: the newer ordinary waiter keeps waiting" $? 0
+until_ok ended "$older"; check "after --first: the oldest ordinary waiter takes the next slot" $? 0
+! ended "$newer"; check "after --first: the newer ordinary waiter keeps waiting" $? 0
 kill "$f"; wait "$f" 2>/dev/null
-until_ok eval '! kill -0 $newer 2>/dev/null'; check "after --first: the newer ordinary waiter takes the slot after" $? 0
+until_ok ended "$newer"; check "after --first: the newer ordinary waiter takes the slot after" $? 0
 ls "$HEAVY_SLOTS_DIR" | grep -c "^first-\|^wait-" >"$T/tickets"; check "--first: no tickets left" "$(cat "$T/tickets")" 0
 kill "$c" "$d"; wait "$c" "$d" 2>/dev/null
 until_ok eval '[ "$(free)" = "heavy-slot: 2 of 2 slots free, 0 waiting" ]'
