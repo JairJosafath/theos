@@ -363,8 +363,9 @@ var _ = Describe("Brief rounds", func() {
 		}).Should(Succeed())
 		Expect(getBrief(Default, ns).Status.History).To(HaveEach(HaveField("Summary",
 			"The model has no Containers; the round files no issues.")), "a plan without summary.md says what it holds")
-		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
-			To(ContainSubstring("1. (planned) Support VAP files first.\n"), "brief.md marks it planned")
+		// The status says Planned first; the next reconcile rewrites brief.md (#1293).
+		Eventually(func() string { return string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data) }).
+			Should(ContainSubstring("1. (planned) Support VAP files first.\n"), "brief.md marks it planned")
 
 		By("starting round 3 at once for a prompt appended while idle")
 		brief = getBrief(Default, ns)
