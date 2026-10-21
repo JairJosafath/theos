@@ -126,7 +126,10 @@ gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
 C4_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
 C4_CLUSTERS=0 gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad C4_CLUSTERS" $? 64
 check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder c4factory | cut -d' ' -f1)" heron-50
-(sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
+: >"$T/err"
+# Release once acquire says it waits, not after a fixed sleep: on a loaded
+# device acquire's setup outlasts a sleep and finds the cluster free (#1503).
+(until grep -q "waiting up to" "$T/err"; do sleep 0.1; done; sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
 t0=$(date +%s)
 GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
 wait
