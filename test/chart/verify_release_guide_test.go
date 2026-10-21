@@ -376,7 +376,8 @@ func readFile(t *testing.T, root string, path ...string) string {
 // followed to its release run.
 func TestVerifyReleaseFailsAStandInThatStoppedReleasing(t *testing.T) {
 	root := filepath.Join("..", "..")
-	step := workflowStep(t, readFile(t, root, ".github", "workflows", "verify-release.yml"), "verify-release", verifyBriefStep)
+	workflow := readFile(t, root, ".github", "workflows", "verify-release.yml")
+	step := workflowStep(t, workflow, "verify-release", verifyBriefStep)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "step.sh")
 	if err := os.WriteFile(script, []byte(step.Run), 0o600); err != nil {
@@ -404,7 +405,8 @@ esac
 	if err := os.MkdirAll(filepath.Join(guide, "config", "samples", "brief"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(guide, "config", "samples", "brief", "stand-in.yaml"), []byte("kind: Brief\n"), 0o600); err != nil {
+	sample := filepath.Join(guide, "config", "samples", "brief", "stand-in.yaml")
+	if err := os.WriteFile(sample, []byte("kind: Brief\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
