@@ -46,9 +46,11 @@ comes first. The `priority/N` labels say it, 1 picked first:
   minor release. 1.0 is reached through these steps, not as one big release.
 - A release never ships a half-built feature that users can see. If main
   already shows a feature (a UI box, a chart value) and the step that turns it
-  on is still in progress, the release waits for that step. The only exception
-  is a reporter waiting on the release: then it ships anyway, and its notes say
-  what is a preview.
+  on is still in progress, the release waits for that step. Two exceptions
+  ship anyway, and their notes say what is a preview: a reporter waiting on
+  the release, and a security fix. A security fix is a change that fixes a
+  reported vulnerability or one a scanner (govulncheck, Trivy, CodeQL) finds
+  reachable; a dependency bump with no finding doesn't count.
 - Release notes use the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   categories and name each milestone the release completes.
 
