@@ -209,13 +209,22 @@ function needsNoBackup(id: string, properties: unknown): boolean {
 }
 
 /**
+ * What a selection reaching past the stack should be instead, as the `aws-*`
+ * Frameworks' `infra/backups.ts` do since #1267.
+ */
+const SELECT_BY_ARN =
+  "pass the stack's data tables to infra/backups.ts and select each with BackupResource.fromArn(table.tableArn)";
+
+/**
  * What is wrong with a backup selection in a stack whose tables are `tables`,
  * each one's logical id and properties. It names the stack's own tables by
  * `Fn::GetAtt` and nothing else, every one but the idempotency table among
  * them (`needsNoBackup`). A tag
  * (`ListOfTags`), a condition, `*` or an ARN written out reaches past the
  * stack: its `<name>-development` stack in the same account carries the same
- * tag and names its tables alike (#1267).
+ * tag and names its tables alike (#1267). A fault of that kind names the fix
+ * (`SELECT_BY_ARN`), as a Container scaffolded before #1267 meets it first on
+ * the Standard's update (#1490).
  */
 function selectionFaults(
   selection: unknown,
@@ -227,14 +236,16 @@ function selectionFaults(
   const faults: string[] = [];
   for (const key of ['ListOfTags', 'Conditions']) {
     if (key in selection) {
-      faults.push(`selects by ${key}, which reaches every stack of the Container`);
+      faults.push(
+        `selects by ${key}, which reaches every stack of the Container: ${SELECT_BY_ARN}`,
+      );
     }
   }
   const named: unknown[] = [selection['Resources'] ?? []].flat();
   const arnOf = (id: string): string => JSON.stringify({ 'Fn::GetAtt': [id, 'Arn'] });
   for (const resource of named) {
     if (!tables.some(([id]) => JSON.stringify(resource) === arnOf(id))) {
-      faults.push(`${JSON.stringify(resource)} is none of the stack's tables`);
+      faults.push(`${JSON.stringify(resource)} is none of the stack's tables: ${SELECT_BY_ARN}`);
     }
   }
   for (const [id, properties] of tables) {
@@ -413,7 +424,7 @@ describe('a backup selection', () => {
         ],
       },
       [
-        'selects by ListOfTags, which reaches every stack of the Container',
+        `selects by ListOfTags, which reaches every stack of the Container: ${SELECT_BY_ARN}`,
         'ItemsA1B2 is in no backup selection',
       ],
     ],
@@ -428,15 +439,15 @@ describe('a backup selection', () => {
         },
       },
       [
-        'selects by Conditions, which reaches every stack of the Container',
-        '"*" is none of the stack\'s tables',
+        `selects by Conditions, which reaches every stack of the Container: ${SELECT_BY_ARN}`,
+        `"*" is none of the stack's tables: ${SELECT_BY_ARN}`,
         'ItemsA1B2 is in no backup selection',
       ],
     ],
     [
       "names the development stack's tables by an ARN written out (#1267)",
       { Resources: [arn('ItemsA1B2'), development] },
-      [`${JSON.stringify(development)} is none of the stack's tables`],
+      [`${JSON.stringify(development)} is none of the stack's tables: ${SELECT_BY_ARN}`],
     ],
     [
       'leaves the data table out',
@@ -445,6 +456,12 @@ describe('a backup selection', () => {
     ],
   ])('that %s has the faults it lists', (_, selection, faults) => {
     expect(selectionFaults(selection, tables)).toEqual(faults);
+  });
+
+  it('that selects by tag has a fault naming the fix in infra/backups.ts (#1490)', () => {
+    const [fault] = selectionFaults({ ListOfTags: [] }, tables);
+    expect(fault).toContain('infra/backups.ts');
+    expect(fault).toContain('BackupResource.fromArn(table.tableArn)');
   });
 
   it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
