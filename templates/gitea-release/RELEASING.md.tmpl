@@ -1,0 +1,92 @@
+{{- $files := "the files `make dist` writes" -}}
+{{- if eq .Framework "go-cli" }}{{ $files = "the binaries for each platform and `SHA256SUMS`" }}{{ end -}}
+{{- if eq .Framework "python-cli" }}{{ $files = "the wheel and the sdist" }}{{ end -}}
+{{- if eq .Framework "node-cli" }}{{ $files = "the npm tarball (`.tgz`)" }}{{ end -}}
+{{- if eq .Framework "vscode-extension" }}{{ $files = "the extension's `.vsix`" }}{{ end -}}
+{{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager binaries, `install.yaml` and `SHA256SUMS`" }}{{ end -}}
+{{- $manifest := "" -}}
+{{- if eq .Framework "python-cli" }}{{ $manifest = "pyproject.toml" }}{{ end -}}
+{{- if or (eq .Framework "node-cli") (eq .Framework "vscode-extension") }}{{ $manifest = "package.json" }}{{ end -}}
+# Releasing {{ .Container }}
+
+A pushed version tag releases {{ .Container }}: the workflow
+`.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` and attaches
+every file directly in `dist/` to the Gitea release of that tag, creating the
+release when it is missing: {{ $files }}. Nothing is published anywhere else;
+people download the files from the release page.
+
+## Cut a release
+
+1. Make sure main is green and holds what you want to ship.
+{{- if $manifest }}
+2. Set the version in `{{ $manifest }}` to the one you are about to tag,
+   without the `v` (`0.2.0` for `v0.2.0`), and merge that to main: `make dist`
+   fails when the tag and `{{ $manifest }}` disagree.
+3. Tag main and push the tag:
+{{- else }}
+2. Tag main and push the tag:
+{{- end }}
+
+   ```sh
+   git switch main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+   Or create the tag on main in Gitea's web UI. Tags are `vX.Y.Z`; only a
+   tag starting with `v` starts the workflow. On a protected repository only
+   the operator's Git user may push `v*` tags.
+{{- if $manifest }}
+4. Watch the run under the repository's **Actions** tab; when it is green,
+   the release page lists the files.
+{{- else }}
+3. Watch the run under the repository's **Actions** tab; when it is green,
+   the release page lists the files.
+{{- end }}
+
+The workflow runs on a runner labelled `go`, the one the checks use, with the
+workflow's own token: no secrets to set.
+
+## Check a release locally
+
+Build the release files the way the workflow does, before you tag:
+{{ if $manifest }}
+```sh
+make dist VERSION=v0.2.0   # the version in {{ $manifest }}, with a v
+ls dist/
+```
+
+`make dist` checks the version against `{{ $manifest }}`, so a throwaway one
+such as `v0.0.0-test` fails there; that failure is the check working.
+{{- else }}
+```sh
+make dist VERSION=v0.0.0-test
+ls dist/
+```
+{{- end }}
+
+Every file directly in `dist/` is what the release would get; folders in
+`dist/` are not attached. Remove `dist/` afterwards; it is not committed.
+
+## When a run fails
+
+The run's log says which step failed: `make dist`, or attaching the files.
+
+- **`make dist` failed** (a build error{{ if $manifest }}, or the tag doesn't
+  match `{{ $manifest }}`{{ end }}): nothing was attached. Fix it on main, then
+  move the tag to the fixed commit and push it again:
+
+  ```sh
+  git tag -f v0.2.0 && git push -f origin v0.2.0
+  ```
+
+  Or, when the tag was already shared, leave it and tag the fix as the next
+  version (`v0.2.1`).
+- **Attaching failed** (Gitea was unreachable, or an upload broke halfway):
+  re-run the job from the **Actions** tab, or push the tag again. A run
+  replaces the files that are already on the release, so running it again
+  is safe.
+- **A wrong file got attached:** delete the asset on the release page (edit
+  the release), fix `make dist`, and run the release again as above. Only
+  files that the new run writes are replaced; one it no longer writes stays
+  until you delete it.

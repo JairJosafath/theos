@@ -893,7 +893,7 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
 		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "a refused change gets no approval")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a1"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "orders-api-1-r1-review-a1") // #1293
 
 		By("handing the issue back")
 		issue := gitFake.issue(ns, "orders-api", n)

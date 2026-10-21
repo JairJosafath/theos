@@ -359,6 +359,7 @@ hack/lib/github.sh cluster release # drop it once verification is done
 hack/lib/github.sh cluster holder  # who holds which cluster
 hack/lib/github.sh cluster pool    # each pool cluster: leased, free or not created yet
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
+hack/lib/github.sh yolo on|off|status  # yolo mode: a pull request merges once made (no make check, review or merge turn) until only the Maintainer report is open
 RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
 hack/relay.sh                      # headless sessions one after another, overnight (billed)
 hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
@@ -394,6 +395,19 @@ holding its claim gets it released; a worker stops when a session leaves no
 handoff comment and doesn't close the issue or escalate it
 (`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
 nothing ready a worker stops.
+Yolo mode (#1534) is the owner's switch: while it is on, a pull request merges
+once it is made, with no `make check`, no review pass, no merge turn and no
+bug-fix-test gate; only the closing-keyword refusals stay, since they guard
+the issues' state, not the code. `hack/lib/github.sh yolo on` puts the
+`mode/yolo` label on the pinned Maintainer report issue, so every device sees
+the same answer, and `yolo off` takes it off; `land` and `merge` ask `yolo
+status` first and, while it is on, merge at once from any checkout (a branch
+behind main gets main merged in by GitHub first). Before each session a relay
+worker runs `yolo merge`, which merges every open non-draft pull request to
+main, saying which one it could not and going on with the rest. `yolo status`
+turns the mode off itself when the Maintainer report is the only open issue.
+The relay's sessions run on `RELAY_MODEL` (default `fable`), and their
+prompts send subagents to that model.
 A follow-up a session decided goes to the front of its own worker's queue:
 `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
 `status/ready` and reserves it, with a claim comment that says "reserved this
@@ -746,9 +760,10 @@ command: a Brief on the chart's Agent `stand-in` plans, its Crew's stand-in
 Tasks merge the issue and "Prepare v0.1.0", the Crew tags `v0.1.0` and the
 release run puts the binaries and `SHA256SUMS` on the Gitea release, in up to
 75 minutes (#1083). `test/chart/verify_release_guide_test.go` holds that step
-to the guide's commands. A tag whose stand-in releases nothing stops at the
-Crew's first Task. Publishing to GitHub isn't checked: it needs a repository
-and token of the owner's (#1216).
+to the guide's commands. A tag before v0.24.0, whose stand-in releases
+nothing, stops at the Crew's first Task; from v0.24.0 on a Crew without
+`tagReleases` fails the step (#1240). Publishing to GitHub isn't checked: it
+needs a repository and token of the owner's (#1216).
 
 The upgrade check takes the path a device takes: `helm upgrade` from the
 release it already runs. It installs the previous release (the highest

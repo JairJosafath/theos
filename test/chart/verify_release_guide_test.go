@@ -365,3 +365,78 @@ func readFile(t *testing.T, root string, path ...string) string {
 	}
 	return string(data)
 }
+
+// TestVerifyReleaseFailsAStandInThatStoppedReleasing runs the Brief step's
+// script on a stub kubectl whose Brief plans at once and whose Crew lacks
+// spec.tagReleases (#1240). Before v0.24.0 the stand-in released nothing, so
+// the step stops at the Crew's first Task and passes; from v0.24.0 on it
+// fails and prints the Crew's spec, so a regression that loses the Crew's
+// tagReleases (the sample, the stand-in's plan or the Brief's Crew settings)
+// can't pass Verify Release at the first Task. A Crew that releases is
+// followed to its release run.
+func TestVerifyReleaseFailsAStandInThatStoppedReleasing(t *testing.T) {
+	root := filepath.Join("..", "..")
+	workflow := readFile(t, root, ".github", "workflows", "verify-release.yml")
+	step := workflowStep(t, workflow, "verify-release", verifyBriefStep)
+	dir := t.TempDir()
+	script := filepath.Join(dir, "step.sh")
+	if err := os.WriteFile(script, []byte(step.Run), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The step's reads, answered: the Brief is Planned with Container and Crew
+	// stand-in-demo and issue 7, the Crew's tagReleases is $STUB_TAG_RELEASES,
+	// its first Task exists, and its release run has Failed. Writes and waits
+	// succeed silently.
+	kubectl := filepath.Join(dir, "kubectl")
+	if err := os.WriteFile(kubectl, []byte(`#!/usr/bin/env bash
+case "$*" in
+  *'{.status.phase}'*) printf Planned ;;
+  *'kind=="Container"'*|*'kind=="Crew"'*) printf stand-in-demo ;;
+  *'issues[0].number'*) printf 7 ;;
+  *'{.spec.tagReleases}'*) printf '%s' "$STUB_TAG_RELEASES" ;;
+  *'{.spec}'*) printf '{"repository":"webshop/stand-in-demo","tagReleases":false}' ;;
+  *'{.status.lastRelease.run}'*) printf Failed ;;
+  *'get tasks'*) echo task.c4.factory.io/stand-in-demo-7 ;;
+esac
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	guide := filepath.Join(dir, "guide")
+	if err := os.MkdirAll(filepath.Join(guide, "config", "samples", "brief"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sample := filepath.Join(guide, "config", "samples", "brief", "stand-in.yaml")
+	if err := os.WriteFile(sample, []byte("kind: Brief\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		tag, tagReleases string
+		fails            bool
+		says             string
+	}{
+		{"v0.23.0", "", false, "stops at the Crew's first Task"},
+		{"v0.24.0", "", true, "::error::v0.24.0's stand-in releases"},
+		{"v0.24.1", "", true, "::error::v0.24.1's stand-in releases"},
+		{"v0.30.0", "", true, `"repository": "webshop/stand-in-demo"`},
+		{"v1.0.0", "", true, "::error::v1.0.0's stand-in releases"},
+		{"v0.30.0", "true", true, "crew/stand-in-demo is Failed"},
+	}
+	for _, c := range cases {
+		t.Run(c.tag+"/tagReleases="+c.tagReleases, func(t *testing.T) {
+			cmd := exec.Command("bash", "-eo", "pipefail", script)
+			cmd.Dir = guide
+			cmd.Env = append(os.Environ(), "KUBECTL="+kubectl, "TAG="+c.tag, "RUNNER_TEMP="+t.TempDir(),
+				"STUB_TAG_RELEASES="+c.tagReleases)
+			out, err := cmd.CombinedOutput()
+			if (err != nil) != c.fails {
+				t.Errorf("tag %s, Crew tagReleases %q: exit %v; want failure %v\n%s", c.tag, c.tagReleases, err, c.fails, out)
+			}
+			if !strings.Contains(string(out), c.says) {
+				t.Errorf("tag %s, Crew tagReleases %q: the step doesn't say %q\n%s", c.tag, c.tagReleases, c.says, out)
+			}
+			if c.tag != "v0.23.0" && strings.Contains(string(out), "stops at the Crew's first Task") {
+				t.Errorf("tag %s: the step stops at the first Task, which only a tag before v0.24.0 may\n%s", c.tag, out)
+			}
+		})
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -34,6 +35,9 @@ type schema struct {
 	AdditionalProperties json.RawMessage    `json:"additionalProperties"`
 	Required             []string           `json:"required"`
 	Enum                 []json.RawMessage  `json:"enum"`
+	Default              json.RawMessage    `json:"default"`
+	Nullable             bool               `json:"nullable"`
+	PreserveUnknown      bool               `json:"x-kubernetes-preserve-unknown-fields"`
 
 	MaxLength     *float64 `json:"maxLength"`
 	MaxItems      *float64 `json:"maxItems"`
@@ -43,6 +47,9 @@ type schema struct {
 	MinItems      *float64 `json:"minItems"`
 	MinProperties *float64 `json:"minProperties"`
 	Minimum       *float64 `json:"minimum"`
+
+	ExclusiveMaximum bool `json:"exclusiveMaximum"`
+	ExclusiveMinimum bool `json:"exclusiveMinimum"`
 
 	Pattern     string   `json:"pattern"`
 	Format      string   `json:"format"`
@@ -83,9 +90,18 @@ func widens(from, to string) bool {
 	return from == to || (to == "int-or-string" && (from == "integer" || from == "string"))
 }
 
+// sameJSON says whether two JSON values are equal, however they are spelled.
+func sameJSON(a, b json.RawMessage) bool {
+	var av, bv any
+	return json.Unmarshal(a, &av) == nil && json.Unmarshal(b, &bv) == nil && reflect.DeepEqual(av, bv)
+}
+
 // compareBounds adds to breaks every bound cur tightens: a maximum lowered or
-// added, a minimum raised or added, a pattern, format or list or map type
-// changed.
+// added, a minimum raised or added, a bound made exclusive, a pattern, format
+// or list or map type changed, a default changed or removed (#1188), null or
+// unknown fields no longer kept. A default added where the base had none is
+// left to review: the schema can't say whether the operator already read an
+// unset field that way.
 func compareBounds(path string, base, cur *schema, breaks *[]string) {
 	upper := func(name string, b, c *float64) {
 		if c != nil && (b == nil || *c < *b) {
@@ -102,6 +118,11 @@ func compareBounds(path string, base, cur *schema, breaks *[]string) {
 			*breaks = append(*breaks, fmt.Sprintf("%s: %s %q became %q", path, name, b, c))
 		}
 	}
+	kept := func(name string, b, c bool) {
+		if b && !c {
+			*breaks = append(*breaks, fmt.Sprintf("%s: %s true became false", path, name))
+		}
+	}
 	upper("maxLength", base.MaxLength, cur.MaxLength)
 	upper("maxItems", base.MaxItems, cur.MaxItems)
 	upper("maxProperties", base.MaxProperties, cur.MaxProperties)
@@ -110,11 +131,27 @@ func compareBounds(path string, base, cur *schema, breaks *[]string) {
 	lower("minItems", base.MinItems, cur.MinItems)
 	lower("minProperties", base.MinProperties, cur.MinProperties)
 	lower("minimum", base.Minimum, cur.Minimum)
+	exclusive := func(name string, b, c bool) {
+		if c && !b {
+			*breaks = append(*breaks, fmt.Sprintf("%s: %s tightened", path, name))
+		}
+	}
+	exclusive("exclusiveMaximum", base.ExclusiveMaximum, cur.ExclusiveMaximum)
+	exclusive("exclusiveMinimum", base.ExclusiveMinimum, cur.ExclusiveMinimum)
 	same("pattern", base.Pattern, cur.Pattern)
 	same("format", base.Format, cur.Format)
 	same("x-kubernetes-list-type", base.ListType, cur.ListType)
 	same("x-kubernetes-list-map-keys", strings.Join(base.ListMapKeys, ","), strings.Join(cur.ListMapKeys, ","))
 	same("x-kubernetes-map-type", base.MapType, cur.MapType)
+	kept("nullable", base.Nullable, cur.Nullable)
+	kept("x-kubernetes-preserve-unknown-fields", base.PreserveUnknown, cur.PreserveUnknown)
+	switch {
+	case len(base.Default) == 0:
+	case len(cur.Default) == 0:
+		*breaks = append(*breaks, fmt.Sprintf("%s: default %s removed", path, base.Default))
+	case !sameJSON(base.Default, cur.Default):
+		*breaks = append(*breaks, fmt.Sprintf("%s: default %s became %s", path, base.Default, cur.Default))
+	}
 }
 
 // mapValues is the schema of a map's values, or nil when it has none.
@@ -126,9 +163,10 @@ func mapValues(s *schema) *schema {
 	return &v
 }
 
-// compareSchema adds to breaks every way cur refuses an object base accepted
-// at path: a lost path, a changed type, a new enum or a lost enum value, a
-// tightened bound, a field required under an object the base already had.
+// compareSchema adds to breaks every way cur refuses, or reads differently,
+// an object base accepted at path: a lost path, a changed type, a new enum or
+// a lost enum value, a tightened bound or default, a field required under an
+// object the base already had.
 func compareSchema(path string, base, cur *schema, breaks *[]string) {
 	if cur == nil {
 		*breaks = append(*breaks, path+": removed")
@@ -382,6 +420,124 @@ properties:
       tags: {type: array, items: {type: object, properties: {key: {type: string}}}}
       labels: {type: object, additionalProperties: {type: string}}
 `, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			compareSchema("", parseSchema(t, base), parseSchema(t, c.cur), &got)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestCompareSchemaDefaults holds the guard to what a default and the flags
+// mean (#1188): a default that changes or goes, a bound made exclusive, null
+// or unknown fields no longer kept, each break the promise; an added default
+// is left to review.
+func TestCompareSchemaDefaults(t *testing.T) {
+	const base = `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 1, minimum: 0, maximum: 10}
+      mode: {type: string, default: Fast}
+      planner: {type: object, default: {name: planner}, properties: {name: {type: string}}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string}
+`
+	cases := []struct {
+		name string
+		cur  string
+		want []string
+	}{
+		{"unchanged", base, nil},
+		{"a default spelled differently but equal is accepted", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 1.0, minimum: 0, maximum: 10}
+      mode: {type: string, default: "Fast"}
+      planner:
+        type: object
+        default:
+          name: planner
+        properties: {name: {type: string}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string}
+`, nil},
+		{"an added default is accepted", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 1, minimum: 0, maximum: 10}
+      mode: {type: string, default: Fast}
+      planner: {type: object, default: {name: planner}, properties: {name: {type: string}}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string, default: ""}
+`, nil},
+		{"a changed default is refused", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 3, minimum: 0, maximum: 10}
+      mode: {type: string, default: Slow}
+      planner: {type: object, default: {name: architect}, properties: {name: {type: string}}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string}
+`, []string{
+			`.spec.mode: default "Fast" became "Slow"`,
+			`.spec.planner: default {"name":"planner"} became {"name":"architect"}`,
+			".spec.replicas: default 1 became 3",
+		}},
+		{"a removed default is refused", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, minimum: 0, maximum: 10}
+      mode: {type: string, default: Fast}
+      planner: {type: object, properties: {name: {type: string}}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string}
+`, []string{`.spec.planner: default {"name":"planner"} removed`, ".spec.replicas: default 1 removed"}},
+		{"a bound made exclusive is refused", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 1, minimum: 0, exclusiveMinimum: true, maximum: 10, exclusiveMaximum: true}
+      mode: {type: string, default: Fast}
+      planner: {type: object, default: {name: planner}, properties: {name: {type: string}}}
+      extra: {type: object, nullable: true, x-kubernetes-preserve-unknown-fields: true}
+      note: {type: string}
+`, []string{".spec.replicas: exclusiveMaximum tightened", ".spec.replicas: exclusiveMinimum tightened"}},
+		{"null or unknown fields no longer kept are refused", `
+type: object
+properties:
+  spec:
+    type: object
+    properties:
+      replicas: {type: integer, default: 1, minimum: 0, maximum: 10}
+      mode: {type: string, default: Fast}
+      planner: {type: object, default: {name: planner}, properties: {name: {type: string}}}
+      extra: {type: object}
+      note: {type: string}
+`, []string{
+			".spec.extra: nullable true became false",
+			".spec.extra: x-kubernetes-preserve-unknown-fields true became false",
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

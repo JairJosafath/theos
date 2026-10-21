@@ -190,8 +190,11 @@ unanswered for 14 days.
    ([ROADMAP.md](../../../ROADMAP.md)).
    - Hold the release while a step is in progress (or ready) that turns on a
      feature main already shows a user: a UI box, a chart value, a field that
-     does nothing yet. The only exception is a reporter waiting on the
-     release; then it ships, and its notes say what is a preview.
+     does nothing yet. Two exceptions ship anyway, and their notes say what
+     is a preview: a reporter waiting on the release, and a security fix. A
+     security fix is a change that fixes a reported vulnerability or one a
+     scanner (govulncheck, Trivy, CodeQL) finds reachable; a dependency bump
+     with no finding doesn't count.
    - Release on every sweep where that holds; there is no daily cap, and
      changes aren't batched into a bigger release. Don't tag while
      a *Verify Release* run still runs, or a

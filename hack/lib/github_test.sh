@@ -9,7 +9,7 @@
 # for parents closing a plan's parent when its last step closes (close doing it too), moving a waiting one to status/waiting and leaving a plain Depends on wait alone,
 # for status needs-maintainer releasing the claim and lease, for status and closed swapping the labels in one PUT so a second writer between the read and the write leaves one status label (none after closed), never two, for escalated listing the issues waiting on the maintainer,
 # for milestone setting and clearing an issue's milestone and milestones listing the open ones,
-# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), that check alone going first in the heavy-job queue, retrying a failed fetch, and giving the turn up merged, red, conflicting, failing to merge with no conflict (no committer identity, said as such), unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description, creating the missing ones and deleting the retired ones present, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
+# for proposed listing the issues the relay's triage reads, for report creating the pinned Maintainer report once and then editing it, for report-note putting the watch's line under Health and Needs you, or under Health alone when its NEEDS is empty, for activity leaving the report out, for closes-check and pr-check refusing a closing keyword for a plan's parent too early and reading a pull request's Refs #N from its body alone, for close and duplicate refusing a parent with an open step, for close keeping the claim when the close fails and releasing it when a pull request already closed the issue, for close, duplicate and closed dropping the status labels, for merge refusing a pull request that says Refs #N and would close N (by #N, OWNER/REPO#N or the issue URL) or is behind main or while another pull request holds the merge turn, for merge letting through a pull request whose body says Closes #N though a commit says Refs #N, for merge and land refusing a kind/bug fix that changes no test file unless its body says No test: <why>, for land merging main in and checking before it queues, waiting for the merge turn, taking over an abandoned one, heartbeating it, merging at once when main has not moved and checking again under the turn when it has (at most GH_LAND_RECHECKS times), that check alone going first in the heavy-job queue, retrying a failed fetch, and giving the turn up merged, red, conflicting, failing to merge with no conflict (no committer identity, said as such), unable to fetch or out of time, and refusing a large pull request with no review pass before it queues, for yolo mode (#1534: on, off and status against the mode/yolo label on the Maintainer report, status turning it off when the report is the only open issue, land and merge merging at once while it is on with GitHub merging main into a branch behind it, only the closing-keyword refusals kept, and yolo merge merging every open non-draft pull request, one refused not stopping the rest), for review-check counting hand-written lines only (generated files, lockfiles and screenshots left out) against GH_REVIEW_LINES and accepting only a Review: comment by the owner's account that names its agent and settles every finding, for take releasing a claim on a closed issue, for take losing a race (its comment deleted, also when the re-read fails), refusing a live claim, expiring a stale one, naming its agent (the next unused word, then agentK-N) and reusing the newest earlier claim's branch, for beat rewriting a held claim's heartbeat, asking nothing within GH_BEAT_EVERY, riding out GitHub failing and stopping on a takeover, for claims listing the newest held claim on each open issue, for show printing every comment without a handoff and else the newest handoff and the comments after it, for labels leaving a label as it is, updating a changed description, creating the missing ones and deleting the retired ones present, for a released or expired claim keeping the host it was held on, and for pick's order, against a stubbed GitHub and a throwaway repository with two worktrees, a fake kind and a fake make.
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
@@ -1529,6 +1529,167 @@ MAKE
   out=$(gh_land 40 2>&1)
   check "land: refuses a large pull request with no review" "$? $(queue) $(grep -c '#40 changes 401 lines in hand-written files (over 400) and has no review pass' <<<"$out")" "1  1"
   rm "$T/files-40"
+  exit $fail
+) || fail=1
+
+# yolo mode (#1534): the mode/yolo label on the Maintainer report #7. A fake
+# GitHub keeps #7's labels in $Y/labels and the repository's in $Y/repo-labels
+# (one per line), the open issues in $Y/open, the open pull requests in $Y/prs
+# (JSON), pull request N's head in $Y/head-N, each pull request's GraphQL view
+# in $Y/view-N (else $PR, as the merge cases above), and what was asked in
+# $Y/calls. $Y/down makes every call fail. GitHub's update-branch moves a head
+# to h2 on the second look after it ($Y/updated-N), never with $Y/stuck, and
+# fails with $Y/conflict.
+(
+  Y=$T/y
+  rm -rf "$Y"
+  mkdir -p "$Y"
+  : >"$Y/labels"
+  echo 7 >"$Y/open"
+  gh_api() {
+    local url= a m=GET q= in= n data polls
+    [ ! -e "$Y/down" ] || return 1
+    if [ "$1" = graphql ]; then
+      for a in "$@"; do case $a in pr=*) n=${a#pr=} ;; esac; done
+      echo "graphql $n" >>"$Y/calls"
+      cat "$Y/view-$n" 2>/dev/null || echo "$PR"
+      return
+    fi
+    for a in "$@"; do case $a in repos/*) url=$a ;; POST | PATCH | DELETE | PUT) m=$a ;; esac; done
+    [[ " $* " == *" --input - "* ]] && in=" $(jq -c . </dev/stdin)"
+    while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
+    echo "$m $url$in" >>"$Y/calls"
+    case "$m $url" in
+      "GET $R/issues?state=open&labels=maintainer%2Freport"*) data='[{"number":7}]' ;;
+      "GET $R/issues?state=open&per_page=100") data=$(jq -Rn '[inputs | {number: tonumber}]' <"$Y/open") ;;
+      "GET $R/issues/7") data=$(jq -Rn '{labels: [inputs | {name: .}]}' <"$Y/labels") ;;
+      "GET $R/issues/"*) data='{"body": ""}' ;;
+      "GET $R/labels/mode%2Fyolo") grep -qx mode/yolo "$Y/repo-labels" 2>/dev/null || return 1; data='{"name": "mode/yolo"}' ;;
+      "POST $R/labels") echo mode/yolo >>"$Y/repo-labels" ;;
+      "POST $R/issues/7/labels") echo mode/yolo >>"$Y/labels" ;;
+      "DELETE $R/issues/7/labels/mode%2Fyolo") grep -qx mode/yolo "$Y/labels" || return 1; sed -i '/^mode\/yolo$/d' "$Y/labels" ;;
+      "GET $R/compare/"*) echo "$url" >>"$Y/compared"; echo "${BEHIND:-0}"; return ;;
+      "PUT $R/pulls/"*"/update-branch") [ ! -e "$Y/conflict" ] || return 1; n=${url#"$R/pulls/"}; touch "$Y/updated-${n%%/*}" ;;
+      "GET $R/pulls?state=open&base=main&per_page=100") data=$(cat "$Y/prs") ;;
+      "GET $R/pulls/"*)
+        n=${url##*/}
+        if [ -e "$Y/updated-$n" ] && [ ! -e "$Y/stuck" ]; then
+          polls=$(($(cat "$Y/polls-$n" 2>/dev/null || echo 0) + 1))
+          echo "$polls" >"$Y/polls-$n"
+          [ "$polls" -lt 2 ] || echo h2 >"$Y/head-$n"
+        fi
+        data=$(jq -nc --arg s "$(cat "$Y/head-$n" 2>/dev/null || echo h1)" \
+          '{state: "open", merged: false, merged_by: null, merged_at: null, base: {ref: "main"}, head: {ref: "feat", sha: $s}}') ;;
+      *) return 1 ;;
+    esac
+    [ -n "${data:-}" ] || return 0
+    if [ -n "$q" ]; then jq -r "$q" <<<"$data"; else echo "$data"; fi
+  }
+  gh_token() { :; }
+  gh() { echo "gh $*" >>"$Y/merged"; }
+  pr() { jq -n --arg b "$1" --argjson c "${2:-[]}" --arg m "${3:-feat: plan}" \
+    '{body: $b, baseRefName: "main", headRefOid: "h1", closingIssuesReferences: {nodes: [$c[] | {number: .}]}, commits: {nodes: [{commit: {message: $m}}]}}'; }
+  bugpr() { jq -n --arg b "$1" --arg l "$2" --argjson f "$3" \
+    '{body: $b, baseRefName: "main", headRefOid: "h1", closingIssuesReferences: {nodes: [{number: 5, labels: {nodes: [{name: $l}, {name: "source/dev"}]}}]},
+      files: {totalCount: ($f | length), nodes: [$f[] | {path: .}]}, commits: {nodes: [{commit: {message: "fix: thing"}}]}}'; }
+  # A make that records it ran: yolo never runs it.
+  printf '#!/bin/sh\necho "$*" >>"%s/checked"\n' "$Y" >"$Y/make"
+  chmod +x "$Y/make"
+  C4_MAKE=$Y/make GH_LAND_SETTLE=0
+  # on creates the label the repository lacks and puts it on the report.
+  out=$(gh_yolo on 2>&1)
+  check "yolo on: creates the label and puts it on the Maintainer report (#1534)" "$? $out | $(grep -E '^(POST|DELETE)' "$Y/calls" | paste -sd'|')" \
+    "0 yolo: on | POST $R/labels|POST $R/issues/7/labels {\"labels\":[\"mode/yolo\"]}"
+  echo 8 >>"$Y/open"
+  out=$(gh_yolo status 2>&1)
+  check "yolo status: on, exit 0 (#1534)" "$? $out" "0 on"
+  : >"$Y/calls"
+  out=$(gh_yolo on 2>&1)
+  check "yolo on: a label the repository has is not created again (#1534)" "$? $out $(grep -c "^POST $R/labels" "$Y/calls")" "0 yolo: on 0"
+  out=$(gh_yolo off 2>&1)
+  check "yolo off: takes the label off the report (#1534)" "$? $out | $(cat "$Y/labels") | $(grep -c "^DELETE $R/issues/7/labels/mode%2Fyolo" "$Y/calls")" "0 yolo: off |  | 1"
+  out=$(gh_yolo status 2>&1)
+  check "yolo status: off, exit 1 (#1534)" "$? $out" "1 off"
+  out=$(gh_yolo off 2>&1)
+  check "yolo off: off already stays off (#1534)" "$? $out" "0 yolo: off"
+  touch "$Y/down"
+  out=$(gh_yolo status 2>&1)
+  check "yolo status: GitHub can't be asked, exit 2 (#1534)" "$? $(grep -c 'yolo mode unknown' <<<"$out")" "2 1"
+  rm "$Y/down"
+  gh_yolo bogus 2>/dev/null; check "yolo: bad argument" $? 64
+  # Auto-off: on, with the report the only open issue, status turns it off.
+  gh_yolo on >/dev/null
+  : >"$Y/calls"
+  out=$(gh_yolo status 2>"$Y/err")
+  check "yolo status: stays on while another issue is open (#1534)" "$? $out | $(cat "$Y/err") | $(grep -c '^DELETE' "$Y/calls")" "0 on |  | 0"
+  echo 7 >"$Y/open"
+  out=$(gh_yolo status 2>"$Y/err")
+  check "yolo status: the report alone open turns it off (#1534)" "$? $out | $(cat "$Y/err") | $(cat "$Y/labels")" \
+    "1 off | yolo: off: the Maintainer report is the only open issue | "
+  out=$(gh_yolo status 2>&1)
+  check "yolo status: and it is off after (#1534)" "$? $out" "1 off"
+  # land in yolo mode: no make check, no merge turn, from a checkout on another
+  # branch; a branch behind main gets main merged in by GitHub first, and the
+  # merge is pinned to the new head.
+  gh_yolo on >/dev/null
+  echo 8 >>"$Y/open"
+  : >"$Y/calls"
+  rm -f "$Y/merged" "$Y/checked" "$Y/compared"
+  echo h1 >"$Y/head-40"
+  out=$(BEHIND=2 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
+  check "land, yolo: a branch behind main gets main merged in, then merges at the new head (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT $R/pulls/40/update-branch" "$Y/calls") $(cat "$Y/polls-40")" \
+    "0 | gh pr merge 40 --repo $C4_GITHUB_REPO --merge --match-head-commit h2 | 1 2"
+  check "land, yolo: says so" "$(grep -c '^github: #40 merged (yolo mode: no make check, review or merge turn)$' <<<"$out")" 1
+  check "land, yolo: no make check, no merge turn (#1534)" "$(cat "$Y/checked" 2>/dev/null) | $(grep -c "issues/7/comments" "$Y/calls")" " | 0"
+  [ "$(git -C "$GH_LIB_ROOT" symbolic-ref --short -q HEAD)" != feat ]; check "land, yolo: from a checkout on another branch (#1534)" $? 0
+  check "land, yolo: compares main with the head it was given" "$(cat "$Y/compared")" "$R/compare/main...h1"
+  rm -f "$Y/merged" "$Y/updated-40" "$Y/polls-40"
+  echo h1 >"$Y/head-40"
+  out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
+  check "land, yolo: a branch that contains main merges as it is (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT " "$Y/calls")" \
+    "0 | gh pr merge 40 --repo $C4_GITHUB_REPO --merge --match-head-commit h1 | 1"
+  rm -f "$Y/merged"
+  touch "$Y/conflict"
+  out=$(BEHIND=2 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
+  check "land, yolo: GitHub can't merge main in, said, nothing merged (#1534)" "$? $out $(cat "$Y/merged" 2>/dev/null)" \
+    "1 github: #40: GitHub could not merge main into its branch (a conflict?); merge it by hand and push "
+  rm "$Y/conflict"
+  touch "$Y/stuck"
+  out=$(BEHIND=2 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
+  check "land, yolo: a head that never moves after update-branch, said, nothing merged (#1534)" "$? $(grep -c 'but its head is still h1' <<<"$out") $(cat "$Y/merged" 2>/dev/null)" "1 1 "
+  rm "$Y/stuck" "$Y/updated-40"
+  # merge in yolo mode: no bug-fix-test gate, no merge turn, behind main is
+  # fine; the closing-keyword refusals stay.
+  rm -f "$Y/merged"
+  out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go"]') gh_merge 17 2>&1)
+  check "merge, yolo: a bug fix without a test merges (#1534)" "$? | $(cat "$Y/merged")" "0 | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  rm -f "$Y/merged"
+  echo h1 >"$Y/head-16"
+  out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
+  check "merge, yolo: a pull request behind main merges after update-branch (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT $R/pulls/16/update-branch" "$Y/calls")" \
+    "0 | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h2 | 1"
+  rm -f "$Y/merged"
+  out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
+  check "merge, yolo: Refs #7 plus prose that closes #7 is still refused (#1534)" "$? $out | $(cat "$Y/merged" 2>/dev/null)" \
+    '1 github: #12 says Refs #7, but "#9 (the prompt path; its PR closes #7)" in it closes #7 on merge; reword it (no close, fix or resolve word before #7) | '
+  # yolo merge, the relay's round: every open non-draft pull request, one
+  # refused not stopping the rest; off, nothing.
+  echo '[{"number":1,"draft":false},{"number":2,"draft":true},{"number":3,"draft":false}]' >"$Y/prs"
+  pr $'Refs #7\n\n#9 (its PR closes #7)' '[7]' >"$Y/view-1"
+  rm -f "$Y/merged"
+  : >"$Y/calls"
+  out=$(PR=$(pr 'Closes #5' '[5]') gh_yolo merge 2>&1)
+  check "yolo merge: merges the open non-draft pull requests, a refused one not stopping the rest (#1534)" "$? | $(paste -sd'|' "$Y/merged") | $(grep -o '^graphql [0-9]*' "$Y/calls" | paste -sd,)" \
+    "0 | gh pr merge 3 --repo $C4_GITHUB_REPO --merge --match-head-commit h1 | graphql 1,graphql 3"
+  check "yolo merge: says why #1 was not merged (#1534)" "$(grep -c '^github: #1 says Refs #7' <<<"$out") $(grep -c '^github: #1: not merged$' <<<"$out") $(grep -c '^github: #3 merged (yolo mode' <<<"$out")" "1 1 1"
+  gh_yolo off >/dev/null
+  rm -f "$Y/merged"
+  out=$(PR=$(pr 'Closes #5' '[5]') gh_yolo merge 2>&1)
+  check "yolo merge: off, nothing merged (#1534)" "$? [$out] $(cat "$Y/merged" 2>/dev/null)" "0 [] "
+  touch "$Y/down"
+  out=$(gh_yolo merge 2>&1)
+  check "yolo merge: GitHub can't be asked, nothing merged, exit 0 (#1534)" "$? $(grep -c 'yolo mode unknown' <<<"$out") $(cat "$Y/merged" 2>/dev/null)" "0 1 "
+  rm "$Y/down"
   exit $fail
 ) || fail=1
 

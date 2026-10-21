@@ -1,41 +1,58 @@
 """{{ .DisplayName }}: the {{ .Container }} {{ .Type }} of {{ .SoftwareSystem }}."""
-{{ if has .Connectors "postgres" }}
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Response
+{{ if has .Connectors "postgres" -}}
+from fastapi import APIRouter, Depends, FastAPI, Response
 from psycopg_pool import ConnectionPool
 
-from app import db
-{{- else }}
-from fastapi import FastAPI
+from app import auth, db, logs
+{{- else -}}
+from fastapi import APIRouter, Depends, FastAPI
+
+from app import auth, logs
 {{- end }}
 
 CONTAINER = "{{ .Container }}"
 SOFTWARE_SYSTEM = "{{ .SoftwareSystem }}"
-{{- if has .Connectors "postgres" }}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Hold the database pool for as long as the app runs."""
+{{- if has .Connectors "postgres" }}
+    """Refuse to start without auth settings; hold the database pool while the app runs."""
+    app.state.verifier = auth.from_env()
     with db.open_pool() as pool:
         app.state.pool = pool
         yield
-
-
-app = FastAPI(title={{ printf "%q" .DisplayName }}, lifespan=lifespan)
 {{- else }}
-
-app = FastAPI(title={{ printf "%q" .DisplayName }})
+    """Refuse to start without auth settings."""
+    app.state.verifier = auth.from_env()
+    yield
 {{- end }}
 
 
-@app.get("/")
+logs.configure()
+app = FastAPI(title={{ printf "%q" .DisplayName }}, lifespan=lifespan)
+app.middleware("http")(logs.log_request)
+
+# Every route on api takes a verified bearer token (app/auth.py); only the
+# probes below sit on app itself, open.
+api = APIRouter(dependencies=[Depends(auth.verified_claims)])
+
+
+@api.get("/")
 def root() -> dict[str, str]:
     """Name this container and its software system."""
     return {"container": CONTAINER, "softwareSystem": SOFTWARE_SYSTEM}
+
+
+@api.get("/me")
+def me(claims: Annotated[auth.Claims, Depends(auth.verified_claims)]) -> dict[str, str]:
+    """Name the subject of the request's token."""
+    return {"subject": str(claims.get("sub", ""))}
 
 
 @app.get("/healthz")
@@ -55,3 +72,7 @@ def readyz(
     response.status_code = 503
     return {"database": "unreachable"}
 {{- end }}
+
+
+# After the routes: include_router copies the routes api has by now.
+app.include_router(api)

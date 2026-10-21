@@ -21,7 +21,7 @@ spec:
   supportedTypes: [service]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
-    ref: v1.4.0
+    ref: v1.6.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Framework
@@ -100,7 +100,7 @@ spec:
   supportedTypes: [service, worker, static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
-    ref: v1.6.0
+    ref: v1.8.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Connector

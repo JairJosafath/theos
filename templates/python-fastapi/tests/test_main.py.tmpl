@@ -1,23 +1,87 @@
-{{- if has .Connectors "postgres" -}}
+import io
+import json
+import logging
+{{- if has .Connectors "postgres" }}
 import os
+{{- end }}
+import threading
+import time
 from collections.abc import Iterator
+{{- if has .Connectors "postgres" }}
 from contextlib import contextmanager
+{{- end }}
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, override
 
+import jwt
+{{- if has .Connectors "postgres" }}
 import psycopg
+{{- end }}
 import pytest
-{{ end -}}
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi.testclient import TestClient
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
-{{ if has .Connectors "postgres" -}}
-from app import db
-{{ end -}}
+from app import auth{{ if has .Connectors "postgres" }}, db{{ end }}, logs
 from app.main import app
 
 client = TestClient(app)
 
+ISSUER = "https://issuer.example.test"
+AUDIENCE = "{{ .Container }}"
+
+# The issuer's signing keys, made for these tests.
+RSA_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+EC_KEY = ec.generate_private_key(ec.SECP256R1())
+JWKS: dict[str, Any] = {
+    "keys": [
+        {**RSAAlgorithm.to_jwk(RSA_KEY.public_key(), as_dict=True), "kid": "rsa", "use": "sig"},
+        {**ECAlgorithm.to_jwk(EC_KEY.public_key(), as_dict=True), "kid": "ec", "use": "sig"},
+    ]
+}
+
+
+def find_test_key(token: str) -> jwt.PyJWK:
+    """Find the key the way the JWKS does: by the token's kid."""
+    kid = str(jwt.get_unverified_header(token).get("kid"))
+    return jwt.PyJWKSet.from_dict(JWKS)[kid]
+
+
+# What these tests sign with: a private key, or a string for HS256 and "none".
+SigningKey = rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey | str
+
+
+def token(
+    *,
+    key: SigningKey = RSA_KEY,
+    algorithm: str = "RS256",
+    kid: str = "rsa",
+    expires_in: int = 300,
+    **claims: object,
+) -> str:
+    """A token the test issuer signs, with claims overriding the defaults."""
+    now = int(time.time())
+    payload: dict[str, object] = {"iss": ISSUER, "aud": AUDIENCE, "sub": "alice", "iat": now}
+    payload["exp"] = now + expires_in
+    payload.update(claims)
+    return jwt.encode(payload, key, algorithm=algorithm, headers={"kid": kid})
+
+
+def bearer(value: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {value}"}
+
+
+@pytest.fixture(autouse=True)
+def verify_with_test_key() -> Iterator[None]:
+    """Verify against the test issuer; a test may override more."""
+    verifier = auth.Verifier(issuer=ISSUER, audience=AUDIENCE, find_key=find_test_key)
+    app.dependency_overrides[auth.get_verifier] = lambda: verifier
+    yield
+    app.dependency_overrides.clear()
+
 
 def test_root_names_container_and_system() -> None:
-    response = client.get("/")
+    response = client.get("/", headers=bearer(token()))
     assert response.status_code == 200
     assert response.json() == {
         "container": "{{ .Container }}",
@@ -25,10 +89,248 @@ def test_root_names_container_and_system() -> None:
     }
 
 
-def test_healthz() -> None:
+def test_healthz_is_open() -> None:
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.fixture
+def log_lines() -> Iterator[io.StringIO]:
+    """Catch the log lines in a buffer, then send them to stdout again."""
+    stream = io.StringIO()
+    logs.configure(stream)
+    yield stream
+    logs.configure()
+
+
+def request_lines(stream: io.StringIO) -> list[dict[str, object]]:
+    """The JSON lines logged for requests."""
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    return [line for line in lines if line["logger"] == "app.request"]
+
+
+def test_one_json_line_per_request(log_lines: io.StringIO) -> None:
+    response = client.get(
+        "/healthz?token=query-secret",
+        headers={"X-Request-Id": "req-1", "Authorization": "Bearer header-secret"},
+    )
+    assert response.headers["X-Request-Id"] == "req-1"
+    [line] = request_lines(log_lines)
+    assert isinstance(line["durationMs"], float)
+    del line["time"], line["durationMs"]
+    assert line == {
+        "level": "INFO",
+        "logger": "app.request",
+        "message": "GET /healthz 200",
+        "method": "GET",
+        "path": "/healthz",
+        "status": 200,
+        "requestId": "req-1",
+    }
+
+
+def test_a_request_without_an_id_gets_a_new_one(log_lines: io.StringIO) -> None:
+    response = client.get("/missing", headers={"X-Request-Id": "not an id"})
+    assert response.status_code == 404
+    request_id = response.headers["X-Request-Id"]
+    assert len(request_id) == 32
+    [line] = request_lines(log_lines)
+    assert line["requestId"] == request_id
+    assert line["status"] == 404
+
+
+def test_a_refused_request_logs_one_line(log_lines: io.StringIO) -> None:
+    response = client.get("/", headers={"X-Request-Id": "req-401"})
+    assert response.status_code == 401
+    assert response.headers["X-Request-Id"] == "req-401"
+    [line] = request_lines(log_lines)
+    assert (line["path"], line["status"], line["requestId"]) == ("/", 401, "req-401")
+
+
+def test_log_level_comes_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch, log_lines: io.StringIO
+) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "warning")
+    logs.configure(log_lines)
+    client.get("/healthz")
+    monkeypatch.delenv("LOG_LEVEL")
+    assert log_lines.getvalue() == ""
+
+
+@pytest.mark.usefixtures("log_lines")
+def test_uvicorns_access_log_is_off() -> None:
+    access = logging.getLogger("uvicorn.access")
+    assert access.disabled
+    assert not access.propagate
+
+
+@pytest.mark.parametrize(
+    ("key", "algorithm", "kid"), [(RSA_KEY, "RS256", "rsa"), (EC_KEY, "ES256", "ec")]
+)
+def test_a_valid_token_reaches_the_route(key: SigningKey, algorithm: str, kid: str) -> None:
+    response = client.get("/me", headers=bearer(token(key=key, algorithm=algorithm, kid=kid)))
+    assert response.status_code == 200
+    assert response.json() == {"subject": "alice"}
+
+
+def assert_unauthorized(headers: dict[str, str]) -> None:
+    response = client.get("/", headers=headers)
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_a_missing_token_is_401() -> None:
+    assert_unauthorized({})
+
+
+def test_a_non_bearer_authorization_is_401() -> None:
+    assert_unauthorized({"Authorization": "Basic YWxpY2U6c2VjcmV0"})
+
+
+def test_an_expired_token_is_401() -> None:
+    assert_unauthorized(bearer(token(expires_in=-60)))
+
+
+def test_a_token_without_expiry_is_401() -> None:
+    unexpiring = jwt.encode(
+        {"iss": ISSUER, "aud": AUDIENCE, "sub": "alice"},
+        RSA_KEY,
+        algorithm="RS256",
+        headers={"kid": "rsa"},
+    )
+    assert_unauthorized(bearer(unexpiring))
+
+
+def test_a_wrong_audience_is_401() -> None:
+    assert_unauthorized(bearer(token(aud="another-service")))
+
+
+def test_a_wrong_issuer_is_401() -> None:
+    assert_unauthorized(bearer(token(iss="https://another-issuer.example.test")))
+
+
+def test_a_wrong_algorithm_is_401() -> None:
+    assert_unauthorized(bearer(token(key="a shared secret of 32 bytes or more", algorithm="HS256")))
+
+
+def test_an_unsigned_token_is_401() -> None:
+    assert_unauthorized(bearer(token(key="", algorithm="none")))
+
+
+def test_a_token_signed_by_another_key_is_401() -> None:
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    assert_unauthorized(bearer(token(key=other)))
+
+
+def test_auth_disabled_leaves_routes_open() -> None:
+    app.dependency_overrides[auth.get_verifier] = lambda: None
+    response = client.get("/")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"OIDC_AUDIENCE": AUDIENCE},
+        {"OIDC_ISSUER": ISSUER},
+        {"OIDC_ISSUER": "file:///etc/passwd", "OIDC_AUDIENCE": AUDIENCE},
+        {"AUTH_DISABLED": "false"},
+    ],
+)
+def test_the_app_refuses_to_start_without_an_issuer(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str]
+) -> None:
+    for name in ("OIDC_ISSUER", "OIDC_AUDIENCE", "AUTH_DISABLED"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(RuntimeError, match="OIDC_ISSUER"), TestClient(app):
+        pass
+
+
+def test_auth_disabled_on_purpose(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OIDC_ISSUER", raising=False)
+    monkeypatch.setenv("AUTH_DISABLED", "true")
+    assert auth.from_env() is None
+
+
+@pytest.fixture
+def issuer(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """An issuer on localhost serving its discovery document and JWKS.
+
+    Under /liar it serves a document naming another issuer, under /file one
+    whose jwks_uri is not http.
+    """
+    monkeypatch.setenv("no_proxy", "*")
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            base = f"http://{self.headers['Host']}"
+            documents = {
+                "/.well-known/openid-configuration": {"issuer": base, "jwks_uri": base + "/jwks"},
+                "/liar/.well-known/openid-configuration": {
+                    "issuer": base,
+                    "jwks_uri": base + "/jwks",
+                },
+                "/file/.well-known/openid-configuration": {
+                    "issuer": base + "/file",
+                    "jwks_uri": "file:///etc/passwd",
+                },
+                "/jwks": JWKS,
+            }
+            if self.path not in documents:
+                self.send_error(404)
+                return
+            body = json.dumps(documents[self.path]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        @override
+        def log_message(self, *_: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_keys_come_from_the_issuers_jwks(monkeypatch: pytest.MonkeyPatch, issuer: str) -> None:
+    monkeypatch.delenv("AUTH_DISABLED", raising=False)
+    monkeypatch.setenv("OIDC_ISSUER", issuer)
+    monkeypatch.setenv("OIDC_AUDIENCE", AUDIENCE)
+    verifier = auth.from_env()
+    app.dependency_overrides[auth.get_verifier] = lambda: verifier
+    signed = token(key=EC_KEY, algorithm="ES256", kid="ec", iss=issuer)
+    response = client.get("/me", headers=bearer(signed))
+    assert response.status_code == 200
+    assert response.json() == {"subject": "alice"}
+
+
+@pytest.mark.parametrize("path", ["/liar", "/file"])
+def test_a_discovery_document_that_does_not_fit_is_503(issuer: str, path: str) -> None:
+    verifier = auth.Verifier(
+        issuer=issuer + path, audience=AUDIENCE, find_key=auth.jwks_key_finder(issuer + path)
+    )
+    app.dependency_overrides[auth.get_verifier] = lambda: verifier
+    signed = token(key=EC_KEY, algorithm="ES256", kid="ec", iss=issuer + path)
+    response = client.get("/me", headers=bearer(signed))
+    assert response.status_code == 503
+
+
+def test_an_unreachable_issuer_is_503() -> None:
+    verifier = auth.Verifier(
+        issuer=ISSUER, audience=AUDIENCE, find_key=auth.jwks_key_finder("http://127.0.0.1:9")
+    )
+    app.dependency_overrides[auth.get_verifier] = lambda: verifier
+    response = client.get("/", headers=bearer(token()))
+    assert response.status_code == 503
 {{- if has .Connectors "postgres" }}
 
 
@@ -57,13 +359,6 @@ class FakePool:
         yield self.conn
 
 
-@pytest.fixture
-def use_pool() -> Iterator[None]:
-    yield
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.usefixtures("use_pool")
 def test_readyz_when_the_database_answers() -> None:
     pool = FakePool()
     app.dependency_overrides[db.get_pool] = lambda: pool
@@ -73,7 +368,6 @@ def test_readyz_when_the_database_answers() -> None:
     assert pool.conn.queries == ["SELECT 1"]
 
 
-@pytest.mark.usefixtures("use_pool")
 def test_readyz_when_the_database_fails() -> None:
     pool = FakePool(psycopg.OperationalError("connection refused"))
     app.dependency_overrides[db.get_pool] = lambda: pool
@@ -82,8 +376,9 @@ def test_readyz_when_the_database_fails() -> None:
     assert response.json() == {"database": "unreachable"}
 
 
-def test_readyz_against_the_database() -> None:
+def test_readyz_against_the_database(monkeypatch: pytest.MonkeyPatch) -> None:
     """The devcontainer's Postgres, which DATABASE_URL names there."""
+    monkeypatch.setenv("AUTH_DISABLED", "true")
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL is not set; the devcontainer sets it to its Postgres")

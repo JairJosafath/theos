@@ -47,7 +47,7 @@ func createOperationsContainer(ns string, ops *c4v1alpha1.OperationsSpec) {
 	GinkgoHelper()
 	createFactory(ns)
 	url := templatesURL + ns + "/" + opsFramework
-	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.3.0"))
+	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.6.0"))
 	Expect(tree).NotTo(BeEmpty())
 	tree[model.OperationsFile+".tmpl"] = scaffold.File{Data: []byte(operationsTemplate)}
 	gitFake.addTemplate(url, "v1.3.0", tree)
@@ -167,7 +167,7 @@ var _ = Describe("Container operations", func() {
 		})).To(Succeed())
 		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonChangedAfterScaffold)
 		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
-			To(ContainSubstring("the Framework python-fastapi at v1.3.0 renders no infra/operations.ts"))
+			To(ContainSubstring("the Framework python-fastapi at v1.6.0 renders no infra/operations.ts"))
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps what the scaffold rendered")
 		Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped",
 			c4v1alpha1.ReasonChangedAfterScaffold)))
