@@ -38,6 +38,7 @@ every scaffolded repository.
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
 | Adapters | `internal/adapters/*` (`github`, the Deployer, from #1161; the rest from #1094) | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
+| OCI images | `internal/oci` | the standard library, `net/http`, go-containerregistry; host adapters use it | Kubernetes, controller-runtime, `api/`, any other `internal/` package |
 | Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/gitprovider`; `internal/modelproxy` any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
