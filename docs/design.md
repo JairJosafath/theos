@@ -568,7 +568,8 @@ operator does with an object may change, as the release notes say.
 
 `make check` guards what a schema shows: `test/compat` compares the CRDs with
 the last release's, in `test/compat/baseline/` (`hack/release.sh` copies
-them). CEL rules and defaults are left to review.
+them), a default's value included. CEL rules, a default added to a field that
+had none, and what the operator reads into an unset field are left to review.
 
 ## Test tiers
 
