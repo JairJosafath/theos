@@ -245,6 +245,16 @@ check "prompt: never forbids Fable (#1534)" "$(grep -c 'Never use the Fable mode
 check "prompt: subagents run on the relay's model (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out")" 2
 check "prompt: RELAY_MODEL names the model (#1534)" "$(RELAY_MODEL=opus prompt 1 t u ready n b | grep -c 'Run subagents on the opus model: name it when dispatching')" 1
 
+# No headless session ends its turn while a background command it started
+# still runs (#1327): a session ends with its turn, so the notification never
+# arrives. The worker's prompts (ready and in-progress) say so, their land step too, and so does the
+# handoff skill where it says to run land in the background; triage's and the
+# maintainer's prompts are checked with their dry runs below.
+check "prompt: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 2
+check "prompt: land is followed to its end (#1327)" "$(grep -c 'end your turn while it still runs' <<<"$out")" 2
+check "handoff skill: land is followed to its end (#1327)" \
+  "$(grep -c 'end your turn while `land` (or any background command you started) still' "$(dirname "$0")/../.claude/skills/handoff/SKILL.md")" 1
+
 # A resumed issue continues from its newest handoff at every priority (#1309):
 # pick says in-progress for a priority/3 one (#1329), and its prompt says so.
 (
@@ -295,6 +305,7 @@ check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow i
 check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
 check "triage: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
+check "triage: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
 check "triage skill: needs-human is the owner's" "$(grep -c "needs-human is the owner's" <<<"$skill")" 1
 check "triage skill: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$skill")" 1
@@ -377,10 +388,12 @@ check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out
 check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
 check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
 check "maintain: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
+check "maintain: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
+
 
 # limit_name: the few words for each limit a session can end on (#1199), the
 # most specific first: an expired OAuth session also failed to authenticate.
