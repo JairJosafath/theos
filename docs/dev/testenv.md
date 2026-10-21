@@ -760,9 +760,10 @@ command: a Brief on the chart's Agent `stand-in` plans, its Crew's stand-in
 Tasks merge the issue and "Prepare v0.1.0", the Crew tags `v0.1.0` and the
 release run puts the binaries and `SHA256SUMS` on the Gitea release, in up to
 75 minutes (#1083). `test/chart/verify_release_guide_test.go` holds that step
-to the guide's commands. A tag whose stand-in releases nothing stops at the
-Crew's first Task. Publishing to GitHub isn't checked: it needs a repository
-and token of the owner's (#1216).
+to the guide's commands. A tag before v0.24.0, whose stand-in releases
+nothing, stops at the Crew's first Task; from v0.24.0 on a Crew without
+`tagReleases` fails the step (#1240). Publishing to GitHub isn't checked: it
+needs a repository and token of the owner's (#1216).
 
 The upgrade check takes the path a device takes: `helm upgrade` from the
 release it already runs. It installs the previous release (the highest
