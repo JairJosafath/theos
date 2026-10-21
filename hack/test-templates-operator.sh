@@ -6,8 +6,9 @@
 # `make check`; then does what an agent does first, `kubebuilder create api`
 # and `make manifests generate`, fails if that changed a protected path of
 # go-operator-standard, commits, and runs `make check` again; last, what
-# gitea-release runs for a tag, `make dist VERSION=v0.1.0`, and fails unless
-# dist/ holds the binaries, install.yaml and SHA256SUMS. No cluster, no
+# gitea-release runs for a tag, `make dist VERSION=v0.1.0 IMG=<image>` with
+# an image by digest, and fails unless dist/ holds the binaries, install.yaml
+# naming that image (#1458) and SHA256SUMS. No cluster, no
 # Docker. make check doesn't run it; a change to either operator template does
 # (docs/plans/done/kubebuilder-operators.md, decision 6).
 #
@@ -82,7 +83,8 @@ git add -A
 git commit -q -m "Add the demo/v1 Widget API"
 step make check
 
-step make dist VERSION=v0.1.0
+img=example.test/o/r@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+step make dist VERSION=v0.1.0 IMG="$img"
 step ls dist
 want=(install.yaml SHA256SUMS)
 for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64.exe windows_arm64.exe; do
@@ -91,8 +93,8 @@ done
 for f in "${want[@]}"; do
 	[ -s "dist/$f" ] || { echo "make dist didn't write dist/$f" >&2; exit 1; }
 done
-grep -q '^        image: controller:v0.1.0$' dist/install.yaml ||
-	{ echo "dist/install.yaml doesn't name the image controller:v0.1.0" >&2; exit 1; }
+grep -qF "        image: $img" dist/install.yaml ||
+	{ echo "dist/install.yaml doesn't name the image $img" >&2; exit 1; }
 (cd dist && sha256sum -c --quiet SHA256SUMS)
 if [ -n "$(git status --porcelain)" ]; then
 	echo "make dist changed the working tree:" >&2

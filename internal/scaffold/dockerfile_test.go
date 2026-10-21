@@ -9,10 +9,9 @@ import (
 )
 
 // crossBuildPending names the templates whose Dockerfile still RUNs on the
-// target platform, and the issue that moves it to $BUILDPLATFORM.
-var crossBuildPending = map[string]string{
-	"go-kubebuilder": "#1458",
-}
+// target platform, and the issue that moves it to $BUILDPLATFORM. Empty
+// since #1458 moved go-kubebuilder's.
+var crossBuildPending = map[string]string{}
 
 // TestDockerfilesRunOnlyOnTheBuildPlatform checks each Dockerfile a template
 // renders, in each combination of templateCombos (so each Framework

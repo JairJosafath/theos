@@ -220,6 +220,27 @@ func TestAddDistIgnore(t *testing.T) {
 	}
 }
 
+func TestAddCrossBuild(t *testing.T) {
+	src := "ARG BASE_IMAGE=golang:1.26\nFROM ${BASE_IMAGE} AS builder\nARG TARGETOS\n\nFROM gcr.io/distroless/static:nonroot\n"
+	p, got, err := addCrossBuild(dockerfile, []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != dockerfile {
+		t.Errorf("path = %q, want %q", p, dockerfile)
+	}
+	want := "ARG BASE_IMAGE=golang:1.26\nFROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder\nARG TARGETOS\n\nFROM gcr.io/distroless/static:nonroot\n"
+	if string(got) != want {
+		t.Errorf("addCrossBuild = %q, want %q", got, want)
+	}
+	if _, _, err := addCrossBuild(dockerfile, got); err == nil {
+		t.Error("want an error when the builder stage already builds on $BUILDPLATFORM")
+	}
+	if _, _, err := addCrossBuild(dockerfile, []byte("FROM golang:1.26 AS build\n")); err == nil {
+		t.Error("want an error when the builder stage's FROM is not kubebuilder's")
+	}
+}
+
 func TestAddReleaseNote(t *testing.T) {
 	src := "## Project Distribution\n\n" + bundleHeading +
 		"\nkubectl apply -f https://raw/{{ .Container }}/dist/install.yaml\n\n" +
@@ -234,10 +255,11 @@ func TestAddReleaseNote(t *testing.T) {
 	out := render(t, p, got, data)
 	for _, want := range []string{
 		"## Project Distribution\n\n### From a release\n",
-		"`make dist VERSION=<tag>`",
+		"`make dist VERSION=<tag> IMG=<image>`",
 		"SHA256SUMS",
-		"IMG=<some-registry>/backup-op:<tag>",
-		"image: controller:<tag>|image: <some-registry>/backup-op:<tag>|",
+		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\nmake build-installer IMG=<some-registry>/backup-op:<tag>\n",
+		"by digest on the Git host's\ncontainer registry",
+		"kubectl apply -f install.yaml",
 		"\n" + helmHeading + "\nkubebuilder edit\n",
 	} {
 		if !strings.Contains(out, want) {
