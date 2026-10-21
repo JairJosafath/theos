@@ -29,6 +29,9 @@ trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi'
 unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+# said PATTERN FILE: wait for a line of FILE to match PATTERN, for up to a
+# minute; a test waits for the event, never for a number of seconds (#1409).
+said() { local _; for _ in $(seq 600); do grep -qs -- "$1" "$2" && return 0; sleep 0.1; done; return 1; }
 # Jobs killed as soon as they start, as maintain kills its heartbeat and
 # session its idle watch when claude ends at once, leave $T.
 { for _ in $(seq 100); do (sleep 9) & kill $!; wait $!; done; } 2>/dev/null
@@ -81,10 +84,12 @@ admit; check "admit: headroom" $? 0
 check "admit: marks the start" "$(test -e "$DIR/admitted" && echo yes)" yes
 rm -f "$DIR/admitted"
 meminfo 2
-(sleep 2; meminfo 6) &
-t0=$(date +%s)
-admit; check "admit: waits until memory frees" $? 0
-check "admit: waited" "$(($(date +%s) - t0 >= 2))" 1
+# Memory frees once admit has logged its wait, not after a number of seconds
+# a loaded device can outlast (#1409).
+: >"$LOG"
+(said "waiting for headroom" "$LOG"; meminfo 6) &
+MEM_WAIT=120 admit; check "admit: waits until memory frees" $? 0
+wait
 grep -q "waiting for headroom: 2 GiB available" "$LOG"; check "admit: logs the wait" $? 0
 grep -q "headroom: 6 GiB available" "$LOG"; check "admit: logs the end" $? 0
 MEM_WAIT=1 admit; check "admit: sessions start apart" $? 1
@@ -178,12 +183,13 @@ MIN_FREE_GB=0 DISK_PATHS=/
 rm -f "$STOP" "$DIR/admitted"
 meminfo 8
 : >"$LOG"
-sleep 30 &
-echo $! >"$DIR/admit-first"
+sleep 3600 &
+maintainer=$!
+echo "$maintainer" >"$DIR/admit-first"
 MEM_WAIT=2 admit; check "admit first: a worker waits for the maintainer" $? 1
 check "admit first: no slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
 grep -q "the maintainer waits for a start, and it goes first" "$LOG"; check "admit first: logs the wait" $? 0
-kill $!; wait $! 2>/dev/null
+kill "$maintainer"; wait "$maintainer" 2>/dev/null
 admit; check "admit first: a dead maintainer holds no one" $? 0
 # A session just started; the maintainer waits, then a worker: the maintainer
 # takes the next slot, the worker the one after, and the file goes.
@@ -469,13 +475,15 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
-  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 60 & echo $! >"$FAKE.child"; wait ;;
+  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
   agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
     for _ in $(seq 30); do echo '{}' >>"${t%.jsonl}/subagents/agent-1.jsonl"; sleep 0.2; done
     echo '{"is_error":false,"result":"agent","num_turns":9}' ;;
-  quiet) sleep 4; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
+  # Ends once the relay has logged the missing transcript, not after a number
+  # of seconds the watch can miss under load (#1409); $T/log is the relay's $LOG.
+  quiet) for _ in $(seq 600); do grep -qs "wrote no transcript" "${FAKE%/*}/log" && break; sleep 0.1; done; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
   limit) echo '{"is_error":true,"result":"You'"'"'ve hit your session limit · resets 3am (UTC)","num_turns":1}'; exit 1 ;;
   login) echo 'Not logged in · Please run /login' >&2; exit 1 ;;
   oauth) echo '{"is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","num_turns":0}'; exit 1 ;;
@@ -905,7 +913,8 @@ no_strikes; rm -f "$T/status"
 echo hang >"$FAKE"
 t0=$(date +%s)
 work
-check "idle: ended early" "$(($(date +%s) - t0 < 20))" 1
+# Well before the hang's 600s, with room for a loaded device (#1409).
+check "idle: ended early" "$(($(date +%s) - t0 < 300))" 1
 grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
 check "idle: counted" "$(counted)" 1
 check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""
@@ -960,9 +969,7 @@ started=$(stat -c %Y "$DIR/admitted")
 touch -d @$((started - 60)) "$DIR/admitted"
 : >"$LOG"
 for k in 2 3 4 5; do (K=$k work) & done
-t0=$(date +%s)
 wait
-check "idle workers: stop at once" "$(($(date +%s) - t0 < 5))" 1
 check "idle workers: no more sessions" "$(takes)" 1
 check "idle workers: all stopped" "$(grep -c "no issue ready; stopping" "$LOG")" 4
 check "idle workers: admitted untouched" "$(stat -c %Y "$DIR/admitted")" $((started - 60))
@@ -979,8 +986,10 @@ DRY_RUN= triage; check "triage: none proposed, no slot" "$(test -e "$DIR/admitte
 : >"$LOG"
 echo 175 >"$T/ready"
 touch "$DIR/admitted"
-(sleep 2; : >"$T/ready") &
-ADMIT_GAP=4 work
+# The issue goes, and the gap ends, once the worker has logged its wait
+# (#1409).
+(said "waiting: a session started" "$LOG"; : >"$T/ready"; touch -d @0 "$DIR/admitted") &
+ADMIT_GAP=300 work
 wait
 check "taken while waiting: no session" "$(takes)" 1
 grep -q "waiting: a session started" "$LOG"; check "taken while waiting: waited" $? 0

@@ -13,9 +13,11 @@ unset C4_HEAVY_SLOT C4_HEAVY_FIRST
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # job: start a stand-in heavy job; its PID in $job.
-job() { sleep 60 & job=$!; }
-# until_ok CMD...: retry CMD for up to 5 seconds (UNTIL, in tenths).
-until_ok() { local i; for i in $(seq "${UNTIL:-50}"); do "$@" && return 0; sleep 0.1; done; return 1; }
+job() { sleep 3600 & job=$!; }
+# until_ok CMD...: retry CMD for up to a minute (UNTIL, in tenths); it waits for
+# the event, and the stand-in jobs outlive any load, so a loaded device can't
+# free a slot or outlast a wait the test counts on (#1409).
+until_ok() { local i; for i in $(seq "${UNTIL:-600}"); do "$@" && return 0; sleep 0.1; done; return 1; }
 free() { "$SLOT" status | head -1; }
 
 check "status: all free" "$(free)" "heavy-slot: 2 of 2 slots free, 0 waiting"

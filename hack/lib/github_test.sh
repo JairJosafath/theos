@@ -76,6 +76,9 @@ eval "real_set_status() $(declare -f gh_set_status | tail -n +2)"
 gh_set_status() { :; }
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
+# said PATTERN FILE: wait for a line of FILE to match PATTERN, for up to a
+# minute; a test waits for the event, never for a number of seconds (#1409).
+said() { local _; for _ in $(seq 600); do grep -qs -- "$1" "$2" && return 0; sleep 0.1; done; return 1; }
 claim() { mkdir -p "$1/.relay"; jq -n --argjson i "$2" --argjson b "$3" '{issue:$i,id:1,name:"heron-\($i)",branch:"b",beat:$b}' >"$1/.relay/claim"; }
 clear() { rm -rf "$T"/{main,wt2,wt3}/.relay; }
 
@@ -126,12 +129,13 @@ gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
 C4_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
 C4_CLUSTERS=0 gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad C4_CLUSTERS" $? 64
 check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder c4factory | cut -d' ' -f1)" heron-50
-(sleep 1; as "$T/wt2" gh_cluster release >/dev/null) &
-t0=$(date +%s)
-GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
+# The release waits for acquire's waiting line, not for a second, so a loaded
+# device can't release before acquire looks (#1409).
+: >"$T/err"
+(said "waiting up to" "$T/err"; as "$T/wt2" gh_cluster release >/dev/null) &
+GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
 wait
-check "acquire waited" "$(($(date +%s) - t0 >= 1))" 1
-grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 10s" "$T/err"; check "acquire says it waits" $? 0
+grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 60s" "$T/err"; check "acquire says it waits" $? 0
 check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
 check "name, own lease" "$(gh_cluster name)" c4factory
 gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
@@ -171,8 +175,9 @@ check "holder NAME" "$(gh_cluster holder c4factory-2 | cut -d: -f1)" c4factory-2
 check "pool, both leased" "$(gh_cluster pool | grep -c ': leased to ')" 2
 gh_cluster acquire --wait 0 2>"$T/err"; check "a third: exit 4" $? 4
 grep -q "c4factory: heron-50.*; c4factory-2: heron-51" "$T/err"; check "a third: names both holders" $? 0
-(sleep 1; as "$T/wt3" gh_cluster release >/dev/null) &
-out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 10s 2>/dev/null); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
+: >"$T/err"
+(said "waiting up to" "$T/err"; as "$T/wt3" gh_cluster release >/dev/null) &
+out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s 2>"$T/err"); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
 wait
 check "reused cluster not created again" "$(wc -l <"$T/made")" 1
 as "$T/wt2" gh_cluster release >/dev/null
@@ -397,12 +402,17 @@ check "escalated" "$(OPEN='[[{"number":88,"labels":[{"name":"status/needs-mainta
 check "escalated, none" "$(OPEN='[[]]' gh_escalated)" ""
 
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted"
-flock "$T/main/.git/c4-take.lock" sleep 2 &
-sleep 0.2
-t0=$(date +%s)
-gh_take 61 >/dev/null 2>&1
-check "take waits for another checkout's take" "$(( $(date +%s) - t0 >= 1 ))" 1
+# The other take holds the lock until told to let go, and this one is seen
+# waiting while it holds it, not timed (#1409).
+(exec 9>"$T/main/.git/c4-take.lock"; flock 9; echo held >"$T/held"; said . "$T/go") &
+said . "$T/held"
+gh_take 61 >/dev/null 2>&1 &
+taker=$!
+sleep 1
+kill -0 "$taker" 2>/dev/null; check "take waits for another checkout's take" $? 0
+echo go >"$T/go"
 wait
+rm -f "$T/held" "$T/go"
 rm -rf "$T"/{main,wt2,wt3}/.relay
 claim "$T/main" 71 "$GH_NOW"
 echo landed | gh_close 71 - >/dev/null 2>&1; check "close fails" $? 1
