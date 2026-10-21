@@ -144,6 +144,85 @@ var _ = Describe("Container images", func() {
 		Expect(images).To(Equal([]string{imageRegistry + ns + "/orders-api@" + testDigest}))
 	})
 
+	// shippedImages are the images of the deploys started at ns's target.
+	shippedImages := func(ns, target string) []string {
+		var images []string
+		for _, s := range deployFake.Shipments() {
+			if s.Target == targetName(ns, target) {
+				images = append(images, s.Shipment.Image)
+			}
+		}
+		return images
+	}
+
+	It("holds the ship while the newest release's push fails, then ships by digest (#1570)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: testDigest, Platforms: []string{"linux/amd64"}})
+		gitFake.failImagePushes(ns, "orders-api", 5)
+		shipRelease(ns, "v0.1.0", true)
+
+		d := deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployGitHostUnreachable, "", model.DeployDeploying)
+		Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
+		Expect(shippedImages(ns, "staging")).To(BeEmpty())
+
+		By("shipping once the push succeeds")
+		imageIs(ns, "v0.1.0", model.ImageStatePublished)
+		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		Expect(shippedImages(ns, "staging")).To(Equal([]string{imageRegistry + ns + "/orders-api@" + testDigest}))
+	})
+
+	It("ships no image, not the registry's, when the newest release's tag is taken (#1570)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImageTagTaken,
+			Reason: "v0.1.0 already names sha256:other"})
+		gitFake.setRegistryImage(ns, "orders-api", "v0.1.0", "sha256:other")
+		shipRelease(ns, "v0.1.0", true)
+
+		imageIs(ns, "v0.1.0", model.ImageStateTagTaken)
+		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		Expect(shippedImages(ns, "staging")).To(Equal([]string{""}))
+	})
+
+	It("leaves the image and the deploys as they were while the Crew list fails (#1570)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: testDigest, Platforms: []string{"linux/amd64"}})
+		shipRelease(ns, "v0.1.0", true)
+		imageIs(ns, "v0.1.0", model.ImageStatePublished)
+		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+
+		By("not reading the target while the list fails")
+		crewListFaults.failNext(ns, 1000)
+		DeferCleanup(crewListFaults.failNext, ns, 0)
+		deployFake.SetState(targetName(ns, "staging"), ns+"/orders-api", ports.DeployState{Version: "v0.1.0",
+			Phase: ports.PhaseDeployed, Health: ports.HealthDegraded})
+		Consistently(func(g Gomega) {
+			d, _ := deployOf(g, ns, targetName(ns, "staging"))
+			g.Expect(d.Health).To(Equal(ports.HealthHealthy))
+			container := &c4v1alpha1.Container{}
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Image).NotTo(BeNil())
+			g.Expect(container.Status.Image.State).To(Equal(model.ImageStatePublished))
+		}, 3*time.Second).Should(Succeed())
+
+		By("reading it again once the list succeeds")
+		crewListFaults.failNext(ns, 0)
+		Eventually(func(g Gomega) {
+			d, _ := deployOf(g, ns, targetName(ns, "staging"))
+			g.Expect(d.Health).To(Equal(ports.HealthDegraded))
+		}, deployWait).Should(Succeed())
+	})
+
 	It("reports no image for a Container whose choice builds none", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
