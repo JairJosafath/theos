@@ -347,12 +347,16 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 			g.Expect(b.Status.SuggestionsWaiting).To(Equal(int32(56)))
 		}).Should(Succeed())
-		for _, n := range newest {
-			taken := gitFake.issue(ns, "linter-vscode", n)
-			// The Crew may have worked a taken one by now (#1504).
-			Expect(taken.Labels).NotTo(ContainElement(model.LabelProposed), "linter-vscode#%d", n)
-			Expect(taken.comments).To(ContainElement(ContainSubstring("Taken for Brief `cel-lens` in round 2")))
-		}
+		// The round answers the suggestions before its status is written, but
+		// the spec waits for what it asserts rather than for the status (#1293).
+		Eventually(func(g Gomega) {
+			for _, n := range newest {
+				taken := gitFake.issue(ns, "linter-vscode", n)
+				// The Crew may have worked a taken one by now (#1504).
+				g.Expect(taken.Labels).NotTo(ContainElement(model.LabelProposed), "linter-vscode#%d", n)
+				g.Expect(taken.comments).To(ContainElement(ContainSubstring("Taken for Brief `cel-lens` in round 2")))
+			}
+		}).Should(Succeed())
 		for _, n := range []int{364, 371} {
 			untouched := gitFake.issue(ns, "linter", n)
 			Expect(untouched.State).To(Equal("open"))

@@ -75,8 +75,9 @@ func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 }
 
 // expectSandboxGone waits for the operator to delete a run's Sandbox: it
-// writes the Task's status before it deletes the run, so a loaded API server
-// can show the status first (#1504).
+// writes the Task's status before it deletes the run, on purpose (the run's
+// result is saved before its sandbox goes), so a loaded API server can show
+// the status first (#1504, #1293).
 func expectSandboxGone(ns, name string) {
 	GinkgoHelper()
 	Eventually(func() bool {
@@ -224,7 +225,7 @@ var _ = Describe("Task", func() {
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r2-review-a1"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "add-crop-r2-review-a1") // #1293
 
 		By("keeping its timeline")
 		var steps []string
@@ -438,7 +439,7 @@ var _ = Describe("Task", func() {
 			roles = append(roles, fmt.Sprintf("r%d-%s", run.Round, run.Role))
 		}
 		Expect(roles).To(Equal([]string{"r1-implement", "r1-review"}), "no second review ran")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-review-a1"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "add-crop-r1-review-a1") // #1293
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-review-a2"), newSandbox()))).To(BeTrue())
 	})
 
