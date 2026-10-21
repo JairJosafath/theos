@@ -407,6 +407,14 @@ behind main gets main merged in by GitHub first). Before each session a relay
 worker runs `yolo merge`, which merges every open non-draft pull request to
 main, saying which one it could not and going on with the rest. `yolo status`
 turns the mode off itself when the Maintainer report is the only open issue.
+The simple path (#1524) needs no switch: a pull request that changes only
+files nothing but the docs read (`docs/` but `docs/getting-started.md`,
+`.claude/skills/`, and `*.md` anywhere but the root README.md and under
+`templates/`, `dist/` or `ui/`), under 200 lines in all, merges without a
+heavy-job slot or the merge turn, with `make test-hack` only when one of them
+is `docs/dev/testenv.md` or under `.claude/skills/`; `land` says it took the
+simple path, and a move of main by such files under the turn is merged in
+unchecked the same way.
 The relay's sessions run on `RELAY_MODEL` (default `fable`), and their
 prompts send subagents to that model.
 A follow-up a session decided goes to the front of its own worker's queue:
