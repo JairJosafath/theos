@@ -1810,13 +1810,51 @@ gh_close() {
 # does both in its turn). The merge is pinned to the head checked, so a push
 # after the check refuses too.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view body text refs closing meant line n bad= base head behind turn
+  local pr=${1:?usage: merge PR} view base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
-  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+  view=$(gh_merge_view "$pr") || return 1
+  gh_merge_closes "$pr" "$view" || return 1
+  # Nor may it fix a bug without a test.
+  gh_bugfix_check "$pr" "$view" || return 1
+  # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
+  turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
+  if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
+    echo "github: #$pr: it is #${turn%%$'\t'*}'s turn to merge (${turn#*$'\t'}); land with hack/lib/github.sh land $pr, which waits for its turn" >&2
+    return 1
+  fi
+  # Nor may it be behind its base: the merged tree is one no make check ran on.
+  base=$(jq -r '.baseRefName // "main"' <<<"$view")
+  head=$(jq -r '.headRefOid // empty' <<<"$view")
+  [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; merge refused" >&2; return 1; }
+  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
+    echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
+  if [ "$behind" != 0 ]; then
+    echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, runs make check and merges in its turn" >&2
+    return 1
+  fi
+  gh_token || return 1
+  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
+}
+
+# gh_merge_view PR: pull request PR as merge reads it from GitHub's GraphQL
+# API: body, base, head, closing references with their labels, files and
+# commit messages.
+gh_merge_view() {
+  gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$1" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
       files(first: 100) { totalCount nodes { path changeType } } commits(last: 100) { nodes { commit { message } } } } } }' \
-    --jq .data.repository.pullRequest) || return 1
+    --jq .data.repository.pullRequest
+}
+
+# gh_merge_closes PR VIEW: refuse (exit 1, saying why) pull request PR, as
+# gh_merge_view read it into VIEW, when what it closes on merge is wrong: a
+# Refs #N it would close, an issue it closes that no line starting with
+# Closes, Fixes or Resolves names, or a plan's parent with a step still open
+# (closes-check). These guard the issues' state, not the code, so yolo mode
+# keeps them.
+gh_merge_closes() {
+  local pr=$1 view=$2 body text refs closing meant line n bad=
   body=$(jq -r '.body // ""' <<<"$view")
   text=$(jq -r '.body // "", (.commits.nodes[]?.commit.message)' <<<"$view")
   closing=$(jq -r '.closingIssuesReferences.nodes[]?.number' <<<"$view")
@@ -1847,26 +1885,6 @@ gh_merge() {
   [ -z "$bad" ] || return 1
   # Nor may it close an issue with a Depends on step still open (closes-check).
   gh_closes_check - "$body" <<<"$text" || return 1
-  # Nor may it fix a bug without a test.
-  gh_bugfix_check "$pr" "$view" || return 1
-  # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
-  turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
-  if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
-    echo "github: #$pr: it is #${turn%%$'\t'*}'s turn to merge (${turn#*$'\t'}); land with hack/lib/github.sh land $pr, which waits for its turn" >&2
-    return 1
-  fi
-  # Nor may it be behind its base: the merged tree is one no make check ran on.
-  base=$(jq -r '.baseRefName // "main"' <<<"$view")
-  head=$(jq -r '.headRefOid // empty' <<<"$view")
-  [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; merge refused" >&2; return 1; }
-  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
-    echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
-  if [ "$behind" != 0 ]; then
-    echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, runs make check and merges in its turn" >&2
-    return 1
-  fi
-  gh_token || return 1
-  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
 }
 
 # gh_bugfix_check PR VIEW: refuse (exit 1, naming the rule and the issue) a
