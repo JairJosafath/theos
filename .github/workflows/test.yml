@@ -6,12 +6,36 @@ name: Tests
 # documentation, the UI and the Kind-only parts of the test environment are left out.
 # A pull request to main tests only the packages its change affects
 # (hack/test-packages.sh against the base branch); its run is the check
-# hack/lib/github.sh land waits for (.github/required-checks). Every package
-# is tested only on a pushed release tag and on a manual run: the owner wants
-# the whole suite when a release is made, not after each merge (#1522).
+# hack/lib/github.sh land waits for (.github/required-checks). A push to main
+# tests every package, with the same paths: while yolo mode merges a pull
+# request unchecked (hack/lib/github.sh yolo), this run is what shows a red
+# main (#1556). A pushed release tag and a manual run test every package too
+# (#1522).
 on:
   push:
+    branches: [main]
+    # The paths filter is not evaluated for a pushed tag (GitHub's rule), so
+    # every release tag runs.
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    paths:
+      - '**'
+      - '!**/*.md'
+      - '!docs/**'
+      - '!ui/**'
+      - '!config/ui/**'
+      - '!config/samples/**'
+      - '!test/e2e/**'
+      - '!.golangci.yml'
+      - '!.custom-gcl.yml'
+      - '!hack/**'
+      - hack/boilerplate.go.txt
+      - hack/gitea-local.sh
+      - hack/seed/seed.sh
+      - hack/testenv.mk
+      - '!dev'
+      - '!.vscode/**'
+      - '!.github/**'
+      - .github/workflows/test.yml
   pull_request:
     branches: [main]
     paths:
@@ -35,13 +59,14 @@ on:
       - .github/workflows/test.yml
   workflow_dispatch:
 
-# On a tag, one group per commit, so no run is ever dropped. On a pull
-# request, one group per pull request, and a new push cancels the run in
-# progress: only the newest head counts (hack/check-workflows.sh,
-# docs/dev/testenv.md).
+# One group per ref: a pull request, main, or a tag. On a pull request and on
+# main a new push cancels the run in progress, so only the newest head counts;
+# the runners are the owner's devices, and a superseded head of main needs no
+# verdict of its own (#1556). A tag's ref is its own, so no release run is
+# ever dropped (hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 permissions: {}
 
@@ -68,7 +93,8 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
 
       # A pull request tests the packages its change affects, like land's
-      # make check; a release tag or a manual run tests every package (#1522).
+      # make check; a push to main, a release tag or a manual run tests every
+      # package (#1522, #1556).
       # COVER=1: the coverage each package prints stays in the log; a local
       # make test leaves it out (docs/dev/testenv.md).
       # TEST_TIMEOUT: the self-hosted runners share their device with the relay
