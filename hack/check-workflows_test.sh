@@ -4,7 +4,8 @@
 # c4factory-kind label fails, and so does a workflow on pushes to a branch
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
-# test-hack job (#1101), and Tests off pull requests, grouped by branch, or
+# test-hack job (#1101), and Tests off pull requests or off pushes to main
+# (#1556), grouped by commit, not cancelling a superseded head of main, or
 # without cancel-in-progress on pull requests fail, and so does a job on pull
 # requests missing from .github/required-checks, a line there naming no job,
 # or two checks with one name (#1380);
@@ -153,17 +154,29 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Tests off pull requests fails" "$?" 1
 check "Tests off pull requests says so" "$(grep -c "test.yml: doesn't run on pull requests to main" <<<"$out")" 1
 
-real test 's/github.sha }}/github.ref }}/'
+# #1556: Tests off pushes to main left main untested until a tag.
+real test '/^  push:/,/^  pull_request:/{/^    branches: \[main\]/d;}'
 out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests grouped by branch on main fails" "$?" 1
-check "Tests grouped by branch says so" "$(grep -c 'test.yml: groups runs by' <<<"$out")" 1
+check "Tests off pushes to main fails (#1556)" "$?" 1
+check "Tests off pushes to main says so" "$(grep -c "test.yml: doesn't run on pushes to main" <<<"$out")" 1
+
+real test 's/^  group: .*/  group: ${{ github.workflow }}-${{ github.sha }}/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests grouped by commit fails" "$?" 1
+check "Tests grouped by commit says so" "$(grep -c 'test.yml: groups runs by' <<<"$out")" 1
+
+onpr="\${{ github.event_name == 'pull_request' }}"
+real test "s/^  cancel-in-progress: .*/  cancel-in-progress: $onpr/"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests keeping a superseded head of main fails" "$?" 1
+check "Tests keeping a superseded head says so" "$(grep -c 'test.yml: cancel-in-progress:' <<<"$out")" 1
 
 real ui '/^  cancel-in-progress:/d'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "UI without cancel-in-progress fails" "$?" 1
 check "UI without cancel-in-progress says so" "$(grep -c 'ui.yml: runs on pull requests without cancel-in-progress' <<<"$out")" 1
 
-# Lint, not Tests: test.yml no longer runs on pushes to main (#1525, #1531).
+# Lint, not Tests: Tests alone may cancel a superseded head of main (#1556).
 real lint 's/^  cancel-in-progress:.*/  cancel-in-progress: true/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint cancelling main's runs fails" "$?" 1
