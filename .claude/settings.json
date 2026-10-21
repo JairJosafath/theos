@@ -58,7 +58,25 @@
       "Bash(gh api repos/JairJosafath/c4factory/milestones:*)",
        "Edit(hack/relay.sh)",
       "Edit(hack/lib/github.sh)",
-      "Bash(claude -p --model fable:*)"
+      "Bash(claude -p --model fable:*)",
+      "Bash(hack/lib/github.sh:*)",
+      "Bash(hack/relay-watch.sh:*)",
+      "Bash(hack/relay.sh:*)",
+      "Edit(hack/**)",
+      "Write(hack/**)",
+      "Edit(AGENTS.md)",
+      "Edit(docs/**)",
+      "Edit(.claude/skills/**)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh label create:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(make test-hack:*)",
+      "Bash(bash hack/relay_test.sh:*)",
+      "Bash(bash hack/lib/github_test.sh:*)"
     ]
   }
 }
