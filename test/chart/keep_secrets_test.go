@@ -189,7 +189,7 @@ func TestSeedImageRunsTheHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`(?m)^RUN apk add .*\bkubectl\b`).Match(dockerfile) {
+	if !regexp.MustCompile(`(?m)^(RUN|\s*&&)( retry)? apk add .*\bkubectl\b`).Match(dockerfile) {
 		t.Errorf("hack/seed/Dockerfile no longer installs kubectl, which %s's Job runs", keepSource)
 	}
 	tmpl, err := os.ReadFile(filepath.Join(chartDir, keepSource))

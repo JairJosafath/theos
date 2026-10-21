@@ -1,3 +1,4 @@
+{{- if ne .Type "worker" -}}
 """The command line: parse the flags, do the work, return the exit code."""
 
 import argparse
@@ -40,3 +41,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     sys.stdout.write(greeting(args.name) + "\n")
     return 0
+{{ end -}}

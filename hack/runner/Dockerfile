@@ -7,7 +7,7 @@ ARG BASE=c4factory/base:dev
 FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
 ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73
-RUN curl -fsSL -o /usr/local/bin/gitea-runner \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/gitea-runner \
       "https://gitea.com/gitea/runner/releases/download/v${RUNNER_VERSION}/gitea-runner-${RUNNER_VERSION}-linux-amd64" \
  && echo "${RUNNER_SHA256}  /usr/local/bin/gitea-runner" | sha256sum -c - \
  && chmod +x /usr/local/bin/gitea-runner

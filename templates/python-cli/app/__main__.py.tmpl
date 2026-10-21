@@ -2,6 +2,10 @@
 
 import sys
 
+{{ if eq .Type "worker" -}}
+from app.worker import main
+{{- else -}}
 from app.cli import main
+{{- end }}
 
 sys.exit(main())

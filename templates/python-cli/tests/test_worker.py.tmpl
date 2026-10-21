@@ -1,0 +1,90 @@
+{{- if eq .Type "worker" -}}
+import logging
+import os
+import signal
+import time
+from collections.abc import Iterator
+from typing import override
+
+import pytest
+
+from app import worker
+from app.backoff import next_delay
+from app.worker import Stop, run
+
+
+class StopAfter(Stop):
+    """A Stop that records each wait and asks to stop after `rounds` of them."""
+
+    def __init__(self, rounds: int) -> None:
+        super().__init__()
+        self.rounds = rounds
+        self.waits: list[float] = []
+
+    @override
+    def sleep(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        if len(self.waits) == self.rounds:
+            self.signal = "SIGTERM"
+
+
+def test_runs_rounds_until_stopped() -> None:
+    rounds: list[int] = []
+    stop = StopAfter(3)
+    run(lambda: rounds.append(1), stop)
+    assert len(rounds) == 3
+    assert stop.waits == [next_delay(0)] * 3
+
+
+def test_a_failing_round_backs_off_and_the_worker_goes_on(caplog: pytest.LogCaptureFixture) -> None:
+    outcomes = iter([RuntimeError("provider down"), RuntimeError("provider down"), None])
+
+    def work() -> None:
+        outcome = next(outcomes)
+        if outcome is not None:
+            raise outcome
+
+    stop = StopAfter(3)
+    run(work, stop)
+    assert stop.waits == [next_delay(1), next_delay(2), next_delay(0)]
+    assert "round failed, 2 in a row" in caplog.text
+    assert "provider down" in caplog.text
+
+
+def test_sleep_returns_at_once_when_a_stop_was_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_wait(seconds: float) -> None:
+        pytest.fail(f"waited {seconds} seconds after a stop was asked")
+
+    monkeypatch.setattr(time, "sleep", no_wait)
+    stop = Stop()
+    stop.ask(signal.SIGTERM, None)
+    stop.sleep(60)
+    assert stop.signal == "SIGTERM"
+
+
+@pytest.fixture
+def restore_signal_handlers() -> Iterator[None]:
+    """Give back pytest's own SIGTERM and SIGINT handlers after `main` set its."""
+    saved = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+    yield
+    for signum, handler in saved.items():
+        signal.signal(signum, handler)
+
+
+@pytest.mark.usefixtures("restore_signal_handlers")
+def test_sigterm_stops_the_worker_cleanly(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    rounds: list[int] = []
+
+    def work() -> None:
+        # A real SIGTERM, as Kubernetes sends to stop the pod, in the middle of a round.
+        rounds.append(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    monkeypatch.setattr(worker, "work", work)
+    caplog.set_level(logging.INFO)
+    assert worker.main() == 0
+    assert rounds == [1]
+    assert "stopped on SIGTERM" in caplog.text
+{{ end -}}

@@ -25,10 +25,9 @@ import (
 // webshopGaps are the webshop's Containers whose type an entry of the
 // sample's catalog doesn't support yet (the operator's UnsupportedType), each
 // with the issue that closes the gap. Once it lands, the Container's choices
-// fit and the test says to remove its line.
-var webshopGaps = map[string]string{
-	"payments-worker": "#1468: no Framework runs a worker on Kubernetes",
-}
+// fit and the test says to remove its line. None is left: payments-worker's
+// was #1468, python-cli's worker on Kubernetes.
+var webshopGaps = map[string]string{}
 
 // TestWebshopSampleIsTheReferenceApp holds config/samples/webshop to the
 // reference application of docs/plans/fresh-start.md (#1428): four Containers
