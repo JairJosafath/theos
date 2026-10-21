@@ -36,6 +36,7 @@ const (
 // Deployment, and the Container type it does so for, "" for any.
 var imageBuilders = []struct{ deployment, typ string }{
 	{"k8s-manifests", ""},
+	{"gitea-release", TypeOperator},
 }
 
 // BuildsImage reports whether a release of a Container with Deployment

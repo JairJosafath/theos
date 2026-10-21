@@ -19,7 +19,7 @@ func TestBuildsImage(t *testing.T) {
 		{"k8s-manifests", TypeWorker, true},
 		{"k8s-manifests", TypeOperator, true},
 		{"gitea-release", TypeCLI, false},
-		{"gitea-release", TypeOperator, false},
+		{"gitea-release", TypeOperator, true},
 		{"aws-fargate-ts", TypeService, false},
 		{"", TypeService, false},
 	} {
