@@ -10,6 +10,7 @@ import type { UiSession } from '../../k8s/session'
 import type { DeployTarget, GitProvider } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import { demoStory } from '../../demo/fixture'
+import { absoluteTime } from '../../model/format'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { GitProviderPage } from './CatalogPages'
 import { DeployTargetPage } from './DeployPages'
@@ -25,6 +26,10 @@ const STANDARD_WRITER = {} as StandardWriter
 beforeAll(() => {
   // The pages link to each other through the URL the shell is on.
   vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
+  // The first date formatted in a locale loads ICU's data, about 60 ms on an
+  // idle device; the Session page's times did it under the test's 5 s timer,
+  // which a loaded device outlasted (#1526). Here it runs under the hook's own.
+  absoluteTime(NOW)
 })
 afterAll(() => {
   vi.unstubAllGlobals()
