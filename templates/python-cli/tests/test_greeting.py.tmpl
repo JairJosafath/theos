@@ -1,3 +1,4 @@
+{{- if ne .Type "worker" -}}
 import pytest
 
 from app.greeting import greeting
@@ -16,3 +17,4 @@ from app.greeting import greeting
 )
 def test_greeting(name: str, expected: str) -> None:
     assert greeting(name) == expected
+{{ end -}}

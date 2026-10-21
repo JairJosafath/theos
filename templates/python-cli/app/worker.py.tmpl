@@ -1,0 +1,102 @@
+{{- if eq .Type "worker" -}}
+"""The worker: a round of work, then a wait, until SIGTERM or SIGINT asks it to stop."""
+
+import logging
+import signal
+import time
+from collections.abc import Callable
+from types import FrameType
+
+from app.backoff import next_delay
+
+TICK_SECONDS = 0.1
+"""How often a wait looks whether a stop was asked: the longest a stop waits."""
+
+logger = logging.getLogger(__name__)
+
+
+class Stop:
+    """Whether SIGTERM or SIGINT asked the worker to stop.
+
+    The signal handler only notes the signal, so a round in progress always
+    finishes; `sleep` returns early once a stop is asked.
+    """
+
+    def __init__(self) -> None:
+        """Start with no stop asked."""
+        self.signal: str | None = None
+
+    @property
+    def requested(self) -> bool:
+        """Whether a signal asked the worker to stop."""
+        return self.signal is not None
+
+    def ask(self, signum: int, _frame: FrameType | None) -> None:
+        """Ask the worker to stop: the handler of SIGTERM and SIGINT.
+
+        It only notes the signal: logging from a signal handler can break a
+        log line the worker is writing.
+
+        Args:
+            signum: The signal received.
+        """
+        self.signal = signal.Signals(signum).name
+
+    def sleep(self, seconds: float) -> None:
+        """Wait `seconds`, or less when a stop is asked meanwhile.
+
+        Args:
+            seconds: The longest wait.
+        """
+        deadline = time.monotonic() + seconds
+        while not self.requested and (left := deadline - time.monotonic()) > 0:
+            time.sleep(min(left, TICK_SECONDS))
+
+
+def run(work: Callable[[], None], stop: Stop) -> None:
+    """Do a round of `work`, then wait, until `stop` is asked.
+
+    A round that raises is logged with its traceback, and the wait before
+    the next one grows with each failure in a row (`next_delay`); the worker
+    goes on.
+
+    Args:
+        work: One round of the worker's work.
+        stop: Says when to stop, and waits between rounds.
+    """
+    failures = 0
+    while not stop.requested:
+        try:
+            work()
+        except Exception:
+            failures += 1
+            logger.exception("round failed, %d in a row", failures)
+        else:
+            failures = 0
+        stop.sleep(next_delay(failures))
+
+
+def work() -> None:
+    """One round of the worker's work: take what waits, handle it, record it."""
+    logger.info("round done")
+
+
+def main() -> int:
+    """Run the worker until SIGTERM or SIGINT, the `[project.scripts]` entry point.
+
+    Logs go to stderr, one line per event.
+
+    Returns:
+        The exit code: 0 once the worker stopped.
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    stop = Stop()
+    signal.signal(signal.SIGTERM, stop.ask)
+    signal.signal(signal.SIGINT, stop.ask)
+    logger.info("started")
+    run(work, stop)
+    logger.info("stopped on %s", stop.signal)
+    return 0
+{{ end -}}

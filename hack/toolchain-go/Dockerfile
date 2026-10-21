@@ -25,25 +25,47 @@ ARG SETUP_ENVTEST_VERSION=0.25.0
 ARG ENVTEST_K8S_VERSION=1.37.0
 
 ENV GOBIN=/out/bin
-RUN mkdir -p /out/bin /out/kubebuilder/bin  && curl -fsSL -o /out/bin/kubebuilder       "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_linux_amd64"  && chmod 0755 /out/bin/kubebuilder  && curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"       | tar -xz -C /out/bin kustomize  && go install "sigs.k8s.io/controller-tools/cmd/controller-gen@v${CONTROLLER_TOOLS_VERSION}"  && go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@v${SETUP_ENVTEST_VERSION}"  && cp -a "$(/out/bin/setup-envtest use "${ENVTEST_K8S_VERSION}" --bin-dir /tmp/envtest -p path)/." /out/kubebuilder/bin/  && chmod -R a+rX,u+w /out  && /out/bin/kubebuilder version && /out/bin/controller-gen --version  && /out/bin/kustomize version && ls /out/kubebuilder/bin
+# Every download retries (#1494): curl with --retry, written to a file so a
+# retried transfer isn't piped to tar twice; go install and setup-envtest under
+# retry (5 tries, 10 to 40 seconds apart).
+RUN retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+ && mkdir -p /out/bin /out/kubebuilder/bin \
+ && curl -fsSL --retry 5 --retry-all-errors -o /out/bin/kubebuilder \
+      "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_linux_amd64" \
+ && chmod 0755 /out/bin/kubebuilder \
+ && curl -fsSL --retry 5 --retry-all-errors -o /tmp/kustomize.tar.gz \
+      "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
+ && tar -xzf /tmp/kustomize.tar.gz -C /out/bin kustomize && rm /tmp/kustomize.tar.gz \
+ && retry go install "sigs.k8s.io/controller-tools/cmd/controller-gen@v${CONTROLLER_TOOLS_VERSION}" \
+ && retry go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@v${SETUP_ENVTEST_VERSION}" \
+ && retry /out/bin/setup-envtest use "${ENVTEST_K8S_VERSION}" --bin-dir /tmp/envtest \
+ && cp -a "$(/out/bin/setup-envtest use -i "${ENVTEST_K8S_VERSION}" --bin-dir /tmp/envtest -p path)/." /out/kubebuilder/bin/ \
+ && chmod -R a+rX,u+w /out \
+ && /out/bin/kubebuilder version && /out/bin/controller-gen --version \
+ && /out/bin/kustomize version && ls /out/kubebuilder/bin
 
 FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
 
 ARG NODE_VERSION=24.21.0
 ARG GOLANGCI_LINT_VERSION=2.14.0
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
       bash ca-certificates curl git jq make unzip xz-utils zip \
  && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-      | tar -xJ -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE \
+ && rm /tmp/node.tar.xz \
  && node --version && npm --version \
  && npm config set fund false --location=global \
  && npm config set update-notifier false --location=global
 
-RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
-      | tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/golangci-lint.tar.gz \
+      "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
+ && tar -xzf /tmp/golangci-lint.tar.gz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" \
+ && rm /tmp/golangci-lint.tar.gz \
  && golangci-lint version
 
 COPY --from=uv /uv /uvx /usr/local/bin/
@@ -63,9 +85,13 @@ ENV GOTOOLCHAIN=local \
 # commonly build on. Cold, they take about 7 minutes and 3 GB to compile (half of it for
 # -race); CI and agents only compile their own packages on top. Pods don't
 # write here: c4-go-cache copies it into the node's caches once.
+# go get and go list -deps fetch the modules under retry (#1494), so the
+# builds after them need no network.
 COPY warm.go.txt /tmp/warm/main.go
-RUN cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
- && go get k8s.io/client-go@v0.37.0 sigs.k8s.io/controller-runtime@v0.25.0 \
+RUN retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+ && cd /tmp/warm && go mod init warm >/dev/null 2>&1 \
+ && retry go get k8s.io/client-go@v0.37.0 sigs.k8s.io/controller-runtime@v0.25.0 \
+ && retry go list -deps ./... >/dev/null \
  && go build ./... && go build -race ./... && go vet ./... \
  && cd / && rm -rf /tmp/warm \
  && chmod -R a+rX /go/pkg/mod /root/.cache

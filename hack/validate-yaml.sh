@@ -30,6 +30,17 @@ rm -rf "$OUT/storefront"
 go run ./hack/render -out "$OUT/storefront" -type static-site -container storefront -display-name "Storefront" \
 	Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests >/dev/null
 "$KUSTOMIZE" build "$OUT/storefront/deploy/k8s" >"$OUT/storefront.yaml"
+# The webshop's payments-worker, a python-cli worker: a Deployment and no
+# Service (#1468).
+rm -rf "$OUT/payments-worker"
+go run ./hack/render -out "$OUT/payments-worker" -type worker -container payments-worker -display-name "Payments worker" \
+	Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests >/dev/null
+"$KUSTOMIZE" build "$OUT/payments-worker/deploy/k8s" >"$OUT/payments-worker.yaml"
+kinds=$(sed -n 's/^kind: //p' "$OUT/payments-worker.yaml" | sort | tr '\n' ' ')
+if [ "$kinds" != "Deployment " ]; then
+	echo "payments-worker's kustomize build has kinds ${kinds:-none}, want only a Deployment" >&2
+	exit 1
+fi
 # A kubebuilder operator with gitea-release: the Framework's config/default,
 # with small's patch on the manager.
 rm -rf "$OUT/backup-operator"

@@ -1,6 +1,6 @@
 python-fastapi v1.3.0
 small v1.1.0
-k8s-manifests v1.2.1
+k8s-manifests v1.3.0
 postgres v1.1.0
 dynamodb v1.0.0
 go-cli v1.0.0
@@ -10,7 +10,7 @@ go-operator-standard v1.2.0
 vscode-extension v1.0.0
 react-vite v1.0.0
 node-cli v1.0.0
-python-cli v1.0.0
+python-cli v1.1.0
 ts-standard v1.5.0
 aws-lambda-ts v1.3.1
 aws-ec2-ts v1.1.1
@@ -21,8 +21,8 @@ aws-lambda-py v1.2.1
 aws-queue-ts v1.1.1
 aws-schedule-ts v1.1.1
 aws-static-site-ts v1.0.0
-aws-standard v1.17.2
-python-standard v1.3.0
+aws-standard v1.17.3
+python-standard v1.4.0
 gitea-release v1.2.0
 hello v1.0.0
 hello-standard v1.1.0
