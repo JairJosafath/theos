@@ -214,7 +214,12 @@ operator, and the Container's `status.image` naming the pushed digest.
 - A push runs when the newest release's tag differs from `status.image.tag`
   or the last state was `Failed`; a `Failed` push asks for the next poll
   (`DeployPoll`). The Reconciler remembers the last Event per Container, so a
-  status write that fails after its Event doesn't say it twice.
+  status write that fails after its Event doesn't say it twice, and the last
+  push, so a cached read that is behind the status write doesn't push twice.
+- A Crew's `adopt` patch answers with the Crew as the server has it, status
+  included, so the Crew reconciler takes its status copy again after it
+  (`observe`); before, a release the Crew reconciler wrote between the read
+  and the patch was nulled (the Task reconciler fixed its own case in #591).
 - A pin's image is `ImageDigest` on `<ImageRegistry>/<lower name>`; a
   registry that can't be reached fails the ship as `GitHostUnreachable`.
 - Envtest (`container_image_test.go`) drives the fake provider's
