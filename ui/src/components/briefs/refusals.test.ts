@@ -15,6 +15,11 @@ declare global {
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+// Six times Vitest's 5 s default, for this file only: its cases take
+// milliseconds alone, and one took 7.7 s beside two make checks, which
+// aborts make check before the Go tests run (#1294). A hung case still fails.
+vi.setConfig({ testTimeout: 30_000 })
+
 /** The API server's answer to a write a CRD rule refuses. */
 function refused(message: string): Response {
   return new Response(JSON.stringify({ kind: 'Status', status: 'Failure', code: 422, reason: 'Invalid', message }), {
