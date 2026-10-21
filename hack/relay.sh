@@ -55,8 +55,10 @@
 # maintainer lease on the report issue (gh_maint_take in hack/lib/github.sh),
 # keeps it fresh while the session runs and releases it at the end; while
 # another device holds a live lease it starts nothing and logs the holder, and
-# a lease past C4_LEASE_TTL is taken over. When it
-# ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
+# a lease that missed GH_MAINT_BEATS heartbeats (3, 45m) is taken over (#1322). When it
+# ends it writes .relay/maintained, `<epoch> <activity>`, and records the
+# same on the report issue (hack/lib/github.sh swept), for every device: the
+# watch and the next sweep's prompt count the newer of the two (#1322). When the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
 # count as new activity; a sweep that didn't run to
@@ -225,8 +227,13 @@ and the memories.
 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching.
-- A headless session ends when you end your turn. Dispatch every subagent with
-  run_in_background: false and never end your turn while one is running.
+- A headless session ends when you end your turn, and nothing wakes it: a
+  notification from a subagent or a background command never arrives. Dispatch
+  every subagent with run_in_background: false and never end your turn while
+  one is running. Never end your turn while a background command you started
+  (\`land\`, \`make check\`, a CI rerun you follow) still runs: follow it, or
+  poll it with a short command (\`tail\` of its log, never a bare \`sleep\`),
+  until it ends, and only then write the account.
 - Keep the context small: at about 80k tokens, finish the small step in
   flight, commit, push and hand off, mid-task if need be; never go on past
   120k. The next session continues #$n from your handoff, so say exactly
@@ -253,7 +260,8 @@ Rules for this headless run:
     it with a merge commit (\`hack/lib/github.sh land PR\`: it merges main in and runs make check, then
     takes the merge turn and merges, checking again only when main moved; its check is the check, so
     while you work run the targeted tests and run make check by hand only when land failed and you
-    need the whole output; run land in the background and follow it; over 400
+    need the whole output; run land in the background and follow it, and never
+    end your turn while it still runs; over 400
     changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
@@ -302,7 +310,10 @@ this worktree, relay-$K, is on origin/main for reading only.
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - Keep the context small: past about 80k tokens, finish the issue in hand and
@@ -342,7 +353,10 @@ it on. Only you set status/needs-human. End the sweep by writing the report and 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - Never wait on the factory or a run longer than about 20 minutes in one
   stretch; note it in the report and go on.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
@@ -894,6 +908,41 @@ stray() {
   printf '\nThe relay: this session left the main checkout %s with uncommitted changes: %s\n' "$REPO" "$paths" >>"$2.md"
 }
 
+# proc_start PID: PID's start time in clock ticks since boot (/proc/PID/stat
+# field 22), which tells a live process from a later one with the same pid.
+# Nothing when PID is gone.
+proc_start() {
+  sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+}
+
+# stray_session: a worker that restarted (crashed, was killed, or the watch
+# started it again) while its session still ran would release the session's
+# claim and start another one in the same worktree: two agents in one
+# checkout (#1341). So the worker records each session's pid and start time in
+# .relay/session-K.pid while it runs, and a new worker, before it touches the
+# worktree or the claim, ends the session the file names if it still lives:
+# SIGTERM to its process group (timeout's), SIGKILL after RELAY_IDLE_KILL.
+stray_session() {
+  local f=$DIR/session-$K.pid pid start kill_after i
+  read -r pid start 2>/dev/null <"$f" || return 0
+  rm -f "$f"
+  [[ $pid =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ "$(proc_start "$pid")" = "$start" ] || return 0
+  kill_after=$(gh_seconds "$IDLE_KILL" RELAY_IDLE_KILL 2>/dev/null) || kill_after=60
+  log "worker $K restarted while its last session (pid $pid) still ran in $WT; stopping it before anything else (#1341)"
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+  for ((i = 0; i < kill_after * 10; i++)); do
+    [ "$(proc_start "$pid")" = "$start" ] || return 0
+    sleep 0.1
+  done
+  log "the last session (pid $pid) still ran $IDLE_KILL after SIGTERM; SIGKILL"
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+  for ((i = 0; i < 100; i++)); do
+    [ "$(proc_start "$pid")" = "$start" ] || return 0
+    sleep 0.1
+  done
+  log "the last session (pid $pid) survived SIGKILL; going on"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT. Exit 3: it ended on one of LIMITS, whose message
@@ -925,6 +974,8 @@ session() {
   (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
+  # For stray_session (#1341): the pid and its start time, while it runs.
+  echo "$pid $(proc_start "$pid")" >"$DIR/session-$K.pid"
   rm -f "$out.idle"
   if [ -n "$idle" ]; then
     idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" "$idle" "$kill_after" 9>&- &
@@ -932,6 +983,7 @@ session() {
   fi
   wait "$pid"
   rc=$?
+  rm -f "$DIR/session-$K.pid"
   if [ -n "$watch" ]; then
     kill "$watch" 2>/dev/null
     wait "$watch" 2>/dev/null
@@ -1150,21 +1202,37 @@ start_triage() {
 # next one still looks back to the last full sweep.
 maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
+# last_sweep: the start of the last full sweep, as an ISO time, or "never":
+# the newer of this device's (.relay/maintained) and the project's, recorded
+# on the report issue by whichever device swept (hack/lib/github.sh swept,
+# #1322). A dry run, or one that can't ask GitHub, counts this device's alone.
+last_sweep() {
+  local t= pt= rec
+  [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
+  [[ $t =~ ^[0-9]+$ ]] || t=0
+  if [ -z "$DRY_RUN" ]; then
+    if rec=$(gh_swept 2>>"$LOG"); then
+      pt=${rec%% *}
+      [[ $pt =~ ^[0-9]+$ ]] && [ "$pt" -gt "$t" ] && t=$pt
+    else
+      log "could not read the project's last sweep; this device's counts"
+    fi
+  fi
+  [ "$t" -gt 0 ] && date -d "@$t" -Is || echo never
+}
+
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out start lease beat
+  local id last act rc out start lease beat
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
   admit first || { log "no sweep"; return 1; }
-  last=never t=
-  [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
-  [[ $t =~ ^[0-9]+$ ]] && last=$(date -d "@$t" -Is)
   id=$(cat /proc/sys/kernel/random/uuid)
   if [ -n "$DRY_RUN" ]; then
     log "would switch $WT to origin/main and start maintainer session $id, with this prompt:"
     echo "-----"
-    maintain_prompt "$last"
+    maintain_prompt "$(last_sweep)"
     echo "-----"
     return 0
   fi
@@ -1174,9 +1242,10 @@ maintain() {
   lease=$(gh_maint_take 2>>"$LOG")
   case $? in
     0) ;;
-    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 0 ;;
+    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 3 ;;
     *) log "could not take the maintainer lease; no sweep"; return 1 ;;
   esac
+  last=$(last_sweep)
   log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD), lease $lease"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
   start=$(date +%s)
@@ -1197,7 +1266,7 @@ maintain() {
   if gh_delete_comment "$lease" 2>>"$LOG"; then
     log "released the maintainer lease $lease"
   else
-    log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
+    log "could not release the maintainer lease $lease; it goes stale after $GH_MAINT_BEATS missed heartbeats"
   fi
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
   if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
@@ -1206,6 +1275,8 @@ maintain() {
   fi
   act=$(gh_activity 2>>"$LOG") || { log "could not read the activity after the sweep; not recorded"; return 1; }
   maintained "$start" "$act"
+  # For the other devices' watches and the next sweep's prompt (#1322).
+  gh_swept "$start" "$act" 2>>"$LOG" || log "could not record the sweep on the report issue; this device's record alone says when it ran"
 }
 
 # work: the worker's sessions, one after another (see the header).
@@ -1216,6 +1287,7 @@ work() {
     if [ -z "$DRY_RUN" ]; then
       update $((MAX_SESSIONS - i + 1))
       worktree || { log "could not prepare the worktree $WT; stopping"; break; }
+      # The session that held it is gone: stray_session ran at the start (#1341).
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
@@ -1393,12 +1465,14 @@ if [ -z "$DRY_RUN" ]; then
     flock -n 9 || { log "another worker $K holds the lock; exiting"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
   fi
 fi
+# Before the worktree, the claim or a session is touched (#1341).
+[ -n "$DRY_RUN" ] || stray_session
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
-  maintain
-  log "the maintainer finished its sweep"
+  # Only a sweep that ran says so; one held off, cut short or not recorded said why (#1322).
+  maintain && log "the maintainer finished its sweep"
   exit 0
 fi
 if [ -n "$TRIAGE" ]; then

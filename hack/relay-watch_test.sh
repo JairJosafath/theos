@@ -87,6 +87,11 @@ MAINTAIN_EVERY=0 ACT='t1 sha1' ACT_RC=0 MAINT_RC=0
 activity() { echo "$ACT"; return "$ACT_RC"; }
 ESC= ESC_RC=0
 escalated() { [ -n "$ESC" ] && printf '%s\n' "$ESC"; return "$ESC_RC"; }
+# The project's last sweep, recorded on the report issue (#1322): SWEPT is
+# "<epoch> <activity>", or nothing when no device swept.
+SWEPT= SWEPT_RC=0
+swept() { echo swept >>"$T/swepts"; [ -n "$SWEPT" ] && echo "$SWEPT"; return "$SWEPT_RC"; }
+swepts() { cat "$T/swepts" 2>/dev/null | wc -l | tr -d ' '; }
 run_maintain() { echo maintain >>"$T/maintains"; echo "maintainer started (pid 1)"; return "$MAINT_RC"; }
 maintains() { cat "$T/maintains" 2>/dev/null | wc -l | tr -d ' '; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
@@ -578,6 +583,44 @@ MAINT_T=0; round
 check "escalated: can't list: logged once" "$(logged 'could not list the issues escalated to the maintainer: boom')" 1
 check "escalated: can't list: the regular sweep runs" "$(maintains)" 7
 ESC= ESC_RC=0
+
+# The last sweep is the project's (#1322): the record on the report issue is
+# read only when this device's says a sweep is due; a sweep elsewhere younger
+# than WATCH_MAINTAIN holds this device's off, an older one starts it and is
+# the one named; a record started after an escalation covers it; one that
+# can't be read is logged once, and this device's counts.
+now=$(date +%s)
+SWEPT=boom SWEPT_RC=1 ACT='t5 sha1'
+echo "$((now - 600)) t4 sha1" >"$DIR/maintained"
+rm -f "$T/swepts"
+MAINT_T=0; round
+check "swept: not read while this device's sweep is recent" "$(swepts) $(maintains)" "0 7"
+SWEPT="$((now - 600)) t4 sha1" SWEPT_RC=0
+echo "$((now - 7200)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round; round
+check "swept elsewhere, younger than WATCH_MAINTAIN: no sweep" "$(maintains)" 7
+check "swept elsewhere: read once per WATCH_RETRY" "$(swepts)" 1
+SWEPT="$((now - 7200)) t4 sha1"
+echo "$((now - 9000)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+check "swept elsewhere, WATCH_MAINTAIN old: starts" "$(maintains)" 8
+check "swept elsewhere: names the other device's sweep" "$(logged "maintainer: activity since the sweep of $(date -d "@$((now - 7200))" -Is) (t5 sha1)")" 1
+# Escalated, and a sweep elsewhere started after it: it saw the issue.
+ESC="248 $((now - 300))" SWEPT="$((now - 100)) t5 sha1"
+echo "$((now - 600)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+check "escalated, swept elsewhere since: no sweep" "$(maintains)" 8
+ESC="248 $((now - 50))"
+MAINT_T=0; round
+check "escalated after the sweep elsewhere: starts" "$(maintains)" 9
+check "escalated after the sweep elsewhere: one line" "$(logged 'maintainer: escalated #248 (status/needs-maintainer); hack/relay.sh --maintain: maintainer started (pid 1)$')" 1
+ESC= SWEPT=boom SWEPT_RC=1 ACT='t6 sha1'
+echo "$((now - 7200)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+MAINT_T=0; round
+check "swept: can't read: logged once" "$(logged "could not read the project's last sweep: boom; this device's counts")" 1
+check "swept: can't read: this device's record counts" "$(maintains)" 11
+SWEPT= SWEPT_RC=0
 MAINTAIN_EVERY=0 ACT_RC=0
 
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in
@@ -1145,6 +1188,8 @@ SH
 chmod +x "$T/bin/"*
 SAVED_PATH=$PATH SAVED_HOME=$HOME
 export FAKE=$T PATH="$T/bin:$PATH" HOME=$T/home
+# $HOME has no .gitconfig: an identity, so that only the #1362 cases lack one.
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 STOP=$DIR/stop REPO=$T/repo WORKERS=3
 mkdir -p "$REPO/.relay"
 touch "$STOP"
@@ -1166,6 +1211,30 @@ check "install: enables and starts it" \
   "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
 check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
 check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
+
+# --install warns when git has no committer identity in the checkout (#1362),
+# with git's reason and the commands that set one, and installs all the same;
+# with one, it says nothing of it. The global config says useConfigOnly, as
+# hack/relay_test.sh's #1289 case does: git would guess an identity from the
+# account and the host otherwise, on some devices.
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+printf '[user]\n\tname = t\n\temail = t@t\n' >"$T/ident"
+mkdir -p "$T/xdg"
+rm -f "$unit"
+(
+  export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/xdg
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL
+  RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
+)
+check "install, no identity (#1362): warns, with git's reason and the commands" \
+  "$(grep -c "^relay-watch: git has no committer identity in $REPO (fatal: no email was given and auto-detection is disabled): .*git config --global user.name .*git config --global user.email " "$T/install.err")" 1
+check "install, no identity (#1362): still installs" "$([ -s "$unit" ] && echo yes)" yes
+(
+  export GIT_CONFIG_GLOBAL=$T/ident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/xdg
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL
+  RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
+)
+check "install, identity (#1362): says nothing of it" "$(grep -c 'committer identity' "$T/install.err")" 0
 
 # --uninstall without the user bus: the unit stays, and it says so.
 touch "$T/no-systemd"

@@ -12,10 +12,14 @@
 # same paths as on pushes, and carries cancel-in-progress
 # ${{ github.event_name == 'pull_request' }}, so a new push to a pull request
 # replaces its run and main's runs still finish. Lint (lint.yml), UI (ui.yml)
-# and Tests (test.yml) run on pull requests to main, Lint has a test-hack job
-# running make test-hack, and Tests groups main's runs by commit
-# (${{ github.workflow }}-${{ github.event_name == 'pull_request' &&
-# github.ref || github.sha }}), so every release tag gets a verdict.
+# and Tests (test.yml) run on pull requests to main, and Lint has a test-hack
+# job running make test-hack. Tests is the one workflow that runs on pushes
+# to main with cancel-in-progress there: it groups by ref with
+# cancel-in-progress ${{ github.event_name == 'pull_request' || github.ref ==
+# 'refs/heads/main' }}, so only the newest head of main is tested (the
+# runners are the owner's devices), and it must run on pushes to main, since
+# yolo mode merges a pull request unchecked and main's run is what shows a
+# red main (#1556).
 # Every job of a workflow that runs on pull requests is listed, by its
 # workflow file and its name:, in .github/required-checks (the checks
 # hack/lib/github.sh land waits for), the names are distinct, and every line
@@ -32,9 +36,9 @@ set -euo pipefail
 # shellcheck disable=SC2016 # the expressions are GitHub's, not the shell's
 BY_REF='${{ github.workflow }}-${{ github.ref }}' BY_SHA='${{ github.workflow }}-${{ github.sha }}'
 # shellcheck disable=SC2016
-BY_PR_SHA='${{ github.workflow }}-${{ github.event_name == '"'pull_request'"' && github.ref || github.sha }}'
-# shellcheck disable=SC2016
 ON_PR='${{ github.event_name == '"'pull_request'"' }}'
+# shellcheck disable=SC2016
+ON_PR_OR_MAIN='${{ github.event_name == '"'pull_request'"' || github.ref == '"'refs/heads/main'"' }}'
 
 # trigger FILE EVENT: the EVENT trigger of the workflow FILE, one line per
 # setting: "branches <list>" and "path <pattern>" for each path, or "none"
@@ -110,11 +114,12 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     END { print (push ? "push" : "-") "\t" (group != "" ? group : "-") "\t" (cancel != "" ? cancel : "-") }
   ' "$f")
   group=${group#[\'\"]} group=${group%[\'\"]} cancel=${cancel#[\'\"]} cancel=${cancel%[\'\"]}
+  # Tests alone may cancel a run on main (its case below says what it must).
   if [ "$push" = push ]; then
-    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ] && [ "$group" != "$BY_PR_SHA" ]; then
-      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF, $BY_SHA or $BY_PR_SHA" >&2
+    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ]; then
+      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF or $BY_SHA" >&2
       fail=1
-    elif [ "$cancel" != - ] && [ "$cancel" != false ] && [ "$cancel" != "$ON_PR" ]; then
+    elif [ "${f##*/}" != test.yml ] && [ "$cancel" != - ] && [ "$cancel" != false ] && [ "$cancel" != "$ON_PR" ]; then
       echo "$f: cancels the run in progress (cancel-in-progress: $cancel); a running job on main must finish" >&2
       fail=1
     fi
@@ -127,7 +132,7 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       echo "$f: runs on pull requests with other paths than on pushes" >&2
       fail=1
     fi
-    if [ "$cancel" != "$ON_PR" ]; then
+    if [ "$cancel" != "$ON_PR" ] && [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
       echo "$f: runs on pull requests without cancel-in-progress: $ON_PR, so a new push doesn't replace the old run" >&2
       fail=1
     fi
@@ -147,8 +152,16 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       ;;
     test.yml)
-      if [ "$group" != "$BY_PR_SHA" ]; then
-        echo "$f: groups runs by $group, not $BY_PR_SHA, so a release tag can go without a verdict" >&2
+      if ! grep -qx 'branches \[main\]' <<<"$(trigger "$f" push)"; then
+        echo "$f: doesn't run on pushes to main, so nothing tests main until a tag (#1556)" >&2
+        fail=1
+      fi
+      if [ "$group" != "$BY_REF" ]; then
+        echo "$f: groups runs by $group, not $BY_REF, so a push to main doesn't replace the run of the head it supersedes (#1556)" >&2
+        fail=1
+      fi
+      if [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
+        echo "$f: cancel-in-progress: $cancel, not $ON_PR_OR_MAIN, so a superseded head of main keeps its runner (#1556)" >&2
         fail=1
       fi
       ;;
