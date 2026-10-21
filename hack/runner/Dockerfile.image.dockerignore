@@ -1,0 +1,6 @@
+# Build context for hack/runner/Dockerfile.image: only the runner files.
+**
+!hack/runner/**
+
+# Local agent worktrees (Claude Code) are not part of any image.
+.claude/

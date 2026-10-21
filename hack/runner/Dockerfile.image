@@ -1,0 +1,36 @@
+# The image runner: the Gitea runner on rootless BuildKit, labelled image, for
+# release runs that build a Container's image (docs/plans/images.md, decision 2).
+# A job runs buildctl-daemonless.sh, which starts buildkitd for that job only
+# (c4-buildkitd), with its state under the job's RUNNER_TEMP: no layer, cache
+# or process outlives the job. No Docker, no privileged container, no added
+# capability; the pod runs the job container with seccomp and AppArmor
+# Unconfined, as uid 1000 (config/runner/image.yaml). `make runner-image`
+# builds it.
+# The BuildKit image is Alpine, running as uid 1000, with git, rootlesskit and
+# buildctl-daemonless.sh; it lacks bash, which the runner's scripts and jobs'
+# run steps use, curl and jq, so this is a Dockerfile of its own.
+ARG BASE=moby/buildkit:v0.34.0-rootless@sha256:65eca3c01cd1180c8f64565c4e3c5983af5145818b0e6fa863385d099eb73855
+FROM ${BASE}
+ARG RUNNER_VERSION=3.5.0
+ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73
+USER root
+RUN retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+ && retry apk add --no-cache bash curl findutils jq \
+ && curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/gitea-runner \
+      "https://gitea.com/gitea/runner/releases/download/v${RUNNER_VERSION}/gitea-runner-${RUNNER_VERSION}-linux-amd64" \
+ && echo "${RUNNER_SHA256}  /usr/local/bin/gitea-runner" | sha256sum -c - \
+ && chmod +x /usr/local/bin/gitea-runner
+COPY hack/runner/config.yaml /etc/gitea-runner/config.yaml
+# Read by the runner for every job (env_file in hack/runner/config.yaml).
+COPY hack/runner/image-job.env /etc/gitea-runner/job.env
+# The pod's init container registers (c4-runner-register), the only one given
+# the registration token; the entrypoint runs jobs and refuses the token.
+COPY --chmod=0755 hack/runner/register.sh /usr/local/bin/c4-runner-register
+COPY --chmod=0755 hack/runner/entrypoint.sh /usr/local/bin/entrypoint
+COPY --chmod=0755 hack/runner/tmp-sweep.sh /usr/local/bin/c4-tmp-sweep
+COPY --chmod=0755 hack/runner/buildkitd.sh /usr/local/bin/c4-buildkitd
+USER 1000:1000
+# The image's TMPDIR is in its own filesystem; /tmp is the pod's volume,
+# which c4-tmp-sweep keeps clear.
+ENV TMPDIR=/tmp
+ENTRYPOINT ["/usr/local/bin/entrypoint"]

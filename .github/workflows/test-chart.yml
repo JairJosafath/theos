@@ -4,11 +4,12 @@ name: Test Chart
 # would: Agent Sandbox, then `helm install` with Gitea and project webshop, on
 # images built here, since the code isn't published yet. Checks
 # that the seed made its organizations and webshop's credentials, the chart made
-# GitProvider webshop/gitea, both runners registered, the manager and UI are
+# GitProvider webshop/gitea, the three runners registered, the manager and UI are
 # ready, and the admission policy refuses a Project named unlike its namespace.
 # The go runner runs on the base runner image without its Go cache and with
 # the base runner's requests: the Go toolchain is several GB, Release builds
-# it, and a hosted runner's two-CPU node has no room for its 500m.
+# it, and a hosted runner's two-CPU node has no room for its 500m. The image
+# runner runs with the same small requests, for the same node.
 # A Kind cluster and the image builds take minutes, so like every workflow that
 # needs Kind it runs only on demand (Actions → Test Chart → Run workflow). The
 # chart stays checked offline by `make validate-yaml` (helm lint) in `make check`.
@@ -33,6 +34,7 @@ jobs:
       UI_IMG: c4factory/ui:chart-test
       SEED_IMG: c4factory/seed:chart-test
       RUNNER_IMG: c4factory/gitea-runner-base:chart-test
+      RUNNER_IMAGE_IMG: c4factory/gitea-runner-image:chart-test
       KIND_CLUSTER_NAME: chart-test
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
     steps:
@@ -73,10 +75,11 @@ jobs:
           docker build -t "$SEED_IMG" -f hack/seed/Dockerfile .
           docker build -t c4factory/base:chart-test hack/toolchain-base
           docker build -t "$RUNNER_IMG" --build-arg BASE=c4factory/base:chart-test -f hack/runner/Dockerfile .
+          docker build -t "$RUNNER_IMAGE_IMG" -f hack/runner/Dockerfile.image .
           # The chart doesn't run the agent, but Release builds it; its Go stage
           # fails here, not at a tag, when its ignore file drops a file c4agent needs.
           docker build --target build -f hack/agent/Dockerfile .
-          kind load docker-image "$IMG" "$UI_IMG" "$SEED_IMG" "$RUNNER_IMG"
+          kind load docker-image "$IMG" "$UI_IMG" "$SEED_IMG" "$RUNNER_IMG" "$RUNNER_IMAGE_IMG"
 
       - name: Install Agent Sandbox
         run: |
@@ -100,6 +103,9 @@ jobs:
             --set runners.go.goCache= \
             --set runners.go.resources.requests.cpu=100m \
             --set runners.go.resources.requests.memory=128Mi \
+            --set runners.image.image.repository=${RUNNER_IMAGE_IMG%:*} --set runners.image.image.tag=${RUNNER_IMAGE_IMG##*:} \
+            --set runners.image.resources.requests.cpu=100m \
+            --set runners.image.resources.requests.memory=128Mi \
             --set gitea.projects={webshop}"
 
       - name: Check the release
@@ -110,6 +116,7 @@ jobs:
           kubectl -n gitea get deployments,pods
           kubectl -n gitea rollout status deployment/gitea-runner-base --timeout=120s
           kubectl -n gitea rollout status deployment/gitea-runner-go --timeout=120s
+          kubectl -n gitea rollout status deployment/gitea-runner-image --timeout=120s
           kubectl -n webshop get gitprovider gitea -o jsonpath='{.spec.url}{"\n"}'
           kubectl -n webshop get secret gitea-credentials
           # The seed's organizations and the registered runners, from Gitea's API.
@@ -124,10 +131,10 @@ jobs:
           for i in $(seq 1 24); do
             runners=$(api admin/actions/runners | jq -r '[.runners[] | select(.status != "offline") | .labels[].name] | sort | join(" ")')
             echo "runners: $runners"
-            [ "$runners" = "base go" ] && break
+            [ "$runners" = "base go image" ] && break
             sleep 5
           done
-          [ "$runners" = "base go" ]
+          [ "$runners" = "base go image" ]
           # A new admission policy takes a few seconds to apply; until then a
           # misnamed Project gets in, so delete it and try again.
           for i in $(seq 1 12); do

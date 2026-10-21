@@ -3,7 +3,7 @@
 Installs the whole C4 Factory: the operator, its CRDs and RBAC, the admission
 policy (a Project is named after its namespace), the UI (it writes only Briefs
 unless `ui.actions.enabled` is set), and Gitea,
-seeded with the tagged templates, with its `base` and `go` CI runners. A device
+seeded with the tagged templates, with its `base`, `go` and `image` CI runners. A device
 installs [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
 itself, first. The Kind test environment installs with kustomize and `make`
 instead (`make gitea seed deploy`); this chart is how a device installs it.
@@ -21,9 +21,10 @@ cluster. Anyone who can create a Project or a Brief in the cluster, the UI's
 users included, can have the factory run code: in an agent's sandbox, which
 holds the Claude token, and in a CI job. The token is readable inside the
 sandbox ([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closes
-it), and the `base` and `go` runners run every project's checks one after
-another in host mode, a NetworkPolicy keeping them to DNS, Gitea and public
-HTTPS ([#1076](https://github.com/JairJosafath/c4factory/issues/1076) gives
+it), and the `base`, `go` and `image` runners run every project's checks and
+image builds one after another in host mode, a NetworkPolicy keeping them to
+DNS, Gitea and public HTTPS; the `image` runner's job container runs with
+seccomp and AppArmor `Unconfined`, which rootless BuildKit needs ([#1076](https://github.com/JairJosafath/c4factory/issues/1076) gives
 each job a pod of its own).
 [docs/getting-started.md](../../docs/getting-started.md#what-the-factory-trusts)
 says more.
@@ -68,9 +69,11 @@ pull request.
      --set 'gitea.projects={webshop}'
    ```
 
-The release requests about 1.1 CPU and 1.4 GiB of memory on top of
-Kubernetes' own, most of it Gitea and the `go` runner; on a two-CPU node, lower
-`runners.go.resources` or turn the runner off (`runners.go.enabled=false`).
+The release requests about 2.1 CPU and 3.4 GiB of memory on top of
+Kubernetes' own, most of it Gitea and the `go` and `image` runners; on a
+two-CPU node, lower `runners.image.resources` and `runners.go.resources`, or
+turn a runner off (`runners.go.enabled=false`; with `runners.image.enabled=false`
+no release builds an image, its run waiting for a runner).
 
 That is the whole factory. The chart made namespace `webshop`, labeled
 `c4.factory.io/shared-secrets=true` and kept on uninstall like Gitea's; a
@@ -218,7 +221,7 @@ as the run's artifact); a failing release gets an issue titled
 | `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make once in the release's namespace (default `claude-credentials`), which the operator copies into each project namespace (default on) |
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
-| `runners.base`, `runners.go` | the CI runners: `enabled`, `image`, `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache |
+| `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default) |

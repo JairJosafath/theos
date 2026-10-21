@@ -100,7 +100,7 @@ spec:
   supportedTypes: [service, worker, static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
-    ref: v1.4.0
+    ref: v1.5.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Connector
@@ -108,8 +108,8 @@ metadata:
   name: postgres
 spec:
   displayName: PostgreSQL
-  description: A Postgres service in the devcontainer and connection settings.
+  description: A Postgres in the devcontainer, and on Kubernetes a Postgres StatefulSet and its connection settings, the password from a Secret.
   supportedTypes: [service, worker, job]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/postgres
-    ref: v1.1.0
+    ref: v1.2.0

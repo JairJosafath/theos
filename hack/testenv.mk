@@ -189,6 +189,7 @@ RUNNER_GO_IMG ?= c4factory/gitea-runner-go:dev
 AGENT_GO_IMG ?= c4factory/agent-go:dev
 BASE_TOOLCHAIN_IMG ?= c4factory/base:dev
 RUNNER_BASE_IMG ?= c4factory/gitea-runner-base:dev
+RUNNER_IMAGE_IMG ?= c4factory/gitea-runner-image:dev
 AGENT_BASE_IMG ?= c4factory/agent-base:dev
 
 .PHONY: toolchain-go
@@ -216,6 +217,13 @@ runner-base: ## Build the minimal CI runner (label base), load it into Kind and 
 	$(TESTENV_KUBECTL) apply -f config/runner/network-policy.yaml -f config/runner/base.yaml
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-base
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-base --timeout=600s
+
+.PHONY: runner-image
+runner-image: ## Build the image-building CI runner (label image, rootless BuildKit), load it into Kind and run it.
+	$(call build-load,$(RUNNER_IMAGE_IMG),-f hack/runner/Dockerfile.image .)
+	$(TESTENV_KUBECTL) apply -f config/runner/network-policy.yaml -f config/runner/image.yaml
+	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-image
+	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-image --timeout=600s
 
 .PHONY: agent-image-base
 agent-image-base: ## Build the agent image on the minimal toolchain and load it into Kind.

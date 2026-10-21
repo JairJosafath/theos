@@ -10,7 +10,8 @@ runner:
   # c4-tmp-sweep (entrypoint.sh) keeps /tmp files for twice this.
   timeout: 1h
   # Extra variables for jobs, when the file exists: the go runner's build caches
-  # (config/runner/go.yaml).
+  # (config/runner/go.yaml, mounted), the image runner's BuildKit settings
+  # (hack/runner/image-job.env, in its image).
   env_file: /etc/gitea-runner/job.env
   envs:
     # Node keeps compiled code in /tmp/node-compile-cache, keyed by the job's

@@ -203,10 +203,14 @@ var _ = Describe("Crew publishing releases", func() {
 		files := publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
 			crew.Spec.PublishReleases.Latest = new(false)
 		})
-		var container c4v1alpha1.Container
-		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-		container.Spec.DisplayName = "Orders API"
-		Expect(k8sClient.Update(ctx, &container)).To(Succeed())
+		// The Container controller may still be writing orders-api, so the
+		// Update retries on a conflict (#1518).
+		Eventually(func(g Gomega) {
+			var container c4v1alpha1.Container
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+			container.Spec.DisplayName = "Orders API"
+			g.Expect(k8sClient.Update(ctx, &container)).To(Succeed())
+		}).Should(Succeed())
 		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
 
 		mustCreate(publishSecret(ns, token))

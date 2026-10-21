@@ -25,6 +25,18 @@ rm -rf "$OUT/orders-api"
 go run ./hack/render -out "$OUT/orders-api" -type service -container orders-api -display-name "Orders API" \
 	Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres >/dev/null
 "$KUSTOMIZE" build "$OUT/orders-api/deploy/k8s" >"$OUT/orders-api.yaml"
+# postgres runs its database next to the app, both reading the password from
+# Secret orders-api-postgres (#1471).
+kinds=$(sed -n 's/^kind: //p' "$OUT/orders-api.yaml" | sort | tr '\n' ' ')
+if [ "$kinds" != "ConfigMap Deployment Service Service StatefulSet " ]; then
+	echo "orders-api's kustomize build has kinds ${kinds:-none}, want a ConfigMap, a Deployment, two Services and a StatefulSet" >&2
+	exit 1
+fi
+refs=$(grep -A1 'secretKeyRef:' "$OUT/orders-api.yaml" | grep -c 'key: password' || true)
+if [ "$refs" != 2 ]; then
+	echo "orders-api's kustomize build has $refs secretKeyRefs to key password, want 2 (POSTGRES_PASSWORD and PGPASSWORD)" >&2
+	exit 1
+fi
 # A react-vite web app on the same Compute and Deployment, served by nginx.
 rm -rf "$OUT/storefront"
 go run ./hack/render -out "$OUT/storefront" -type static-site -container storefront -display-name "Storefront" \
