@@ -207,7 +207,7 @@ var _ = Describe("Container images", func() {
 		deployFake.SetState(targetName(ns, "staging"), ns+"/orders-api", ports.DeployState{Version: "v0.1.0",
 			Phase: ports.PhaseDeployed, Health: ports.HealthDegraded})
 		Consistently(func(g Gomega) {
-			d, _ := deployOf(g, ns, targetName(ns, "staging"))
+			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Health).To(Equal(ports.HealthHealthy))
 			container := &c4v1alpha1.Container{}
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
@@ -218,7 +218,7 @@ var _ = Describe("Container images", func() {
 		By("reading it again once the list succeeds")
 		crewListFaults.failNext(ns, 0)
 		Eventually(func(g Gomega) {
-			d, _ := deployOf(g, ns, targetName(ns, "staging"))
+			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Health).To(Equal(ports.HealthDegraded))
 		}, deployWait).Should(Succeed())
 	})
