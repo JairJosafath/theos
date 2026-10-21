@@ -1827,9 +1827,14 @@ gh_close() {
 # only a branch that has main merged in and passed make check merges (land
 # does both in its turn). The merge is pinned to the head checked, so a push
 # after the check refuses too.
+# gh_merge PR HEAD (land's call, #1320): the head is HEAD, the commit land
+# checked and pushed, not whatever GitHub shows at merge time; when GitHub's
+# head differs (a push while land waited for its turn), refused, the two
+# named, and nothing merges. Without HEAD, merge reads GitHub's head.
 gh_merge() {
-  local pr=${1:?usage: merge PR} view base head behind turn
+  local pr=${1:?usage: merge PR [HEAD]} checked=${2:-} view base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
+  [ -z "$checked" ] || [[ $checked =~ ^[0-9a-f]{40}$ ]] || { echo "github: merge's head is a commit SHA, not $checked" >&2; return 1; }
   # Yolo mode (#1534): it merges at once; unknown (exit 2) takes the normal path.
   if gh_yolo status >/dev/null 2>&1; then gh_yolo_merge "$pr"; return; fi
   view=$(gh_merge_view "$pr") || return 1
@@ -1846,6 +1851,10 @@ gh_merge() {
   base=$(jq -r '.baseRefName // "main"' <<<"$view")
   head=$(jq -r '.headRefOid // empty' <<<"$view")
   [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; merge refused" >&2; return 1; }
+  if [ -n "$checked" ] && [ "$head" != "$checked" ]; then
+    echo "github: #$pr: the branch moved since the check (${checked:0:12} checked, GitHub's head is ${head:0:12}); land again" >&2
+    return 1
+  fi
   behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
     echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
   if [ "$behind" != 0 ]; then
@@ -2560,7 +2569,9 @@ gh_land_fetch() {
 # merge-turn comment ID is heartbeaten while make check runs, and make check
 # goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
 # device's lands wait on it, and only the turn's one holder may. Exit 3: PR
-# was merged outside land meanwhile, make check stopped (#1369).
+# was merged outside land meanwhile, make check stopped (#1369). Exit 0 sets
+# GH_LAND_HEAD to the commit it checked and pushed: the one the merge is
+# pinned to (#1320).
 gh_land_sync() {
   local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self out
   # The tree is clean, so the copy at HEAD before the merge is the one running.
@@ -2625,12 +2636,13 @@ gh_land_sync() {
     return 1
   fi
   git -C "$GH_LIB_ROOT" push -q origin HEAD || { gh_land_say "$pr" ": git push failed"; return 1; }
-  # merge reads the head from GitHub: wait until it shows the push.
+  # merge compares the head it is given with GitHub's: wait until it shows the push.
   local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
   for i in 1 2 3 4 5 6 7 8 9 10; do
     [ "$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
     sleep "$GH_LAND_SETTLE"
   done
+  GH_LAND_HEAD=$local_head
 }
 
 gh_land_turn() {
@@ -2737,10 +2749,20 @@ gh_land_turn() {
     s=$?
     ((s == 0)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return $((s == 3 ? 0 : 1)); }
   done
+  # Only the head it checked and pushed merges (#1320): a push to the branch
+  # while it waited (an Also fixes commit, say) is one no check ran on, and
+  # main did not move, so nothing above saw it. GitHub's head is compared
+  # here, and the merge is pinned to the checked one besides.
+  now=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha) || {
+    gh_land_say "$pr" ": could not ask GitHub for its head; nothing merged, gave the turn up after $((SECONDS - t1))s: land again"; return 1; }
+  if [ "$now" != "$GH_LAND_HEAD" ]; then
+    gh_land_say "$pr" ": its branch $branch moved since the check (${GH_LAND_HEAD:0:12} checked, GitHub's head is ${now:0:12}): nothing merged, gave the turn up after $((SECONDS - t1))s; land again"
+    return 1
+  fi
   if ((rechecks == 0)); then
     gh_land_say "$pr" ": its turn; origin/$base is still ${checked:0:12}, as checked: merging at once"
   fi
-  gh_merge "$pr"
+  gh_merge "$pr" "$GH_LAND_HEAD"
   s=$?
   gh_land_say "$pr" ": $( ((s == 0)) && echo merged || echo "merge failed (exit $s)"); held the turn $((SECONDS - t1))s, $rechecks check(s) under it"
   return "$s"
