@@ -585,6 +585,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `static-site`, `job`); operators stay out. The factory never installs
   Argo CD. The first cluster is the factory's own; another cluster, by a
   `kubeconfig` key in the Secret, comes later.
+- **AWS targets** (#1071, [plans/aws-deploy.md](plans/aws-deploy.md)): a
+  `cloudFormation` target names a region and, as a guard, an account. CI
+  synthesizes the CDK app and the release carries the cloud assembly
+  (templates, manifests and file assets, no image); the operator, with the
+  target's credential, assumes the CDK bootstrap roles, publishes the assets
+  and creates or updates the stack through one CloudFormation change set,
+  bootstrapping the environment when the credential may (else *Needs you*
+  says the command). State comes from the stack's status and its newest
+  event, the URL from the `EntryPoint` output. The factory never deletes a
+  stack. Fargate's image comes by digest from the Registry (#1069).
 
 ## Distribution and issues
 
