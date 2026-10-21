@@ -8,6 +8,7 @@ comes from the jwks_uri of the issuer's /.well-known/openid-configuration.
 import json
 import logging
 import os
+import threading
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,9 @@ ALGORITHMS = ["RS256", "ES256"]
 
 # How long the app waits for the issuer's discovery document or JWKS.
 FETCH_TIMEOUT_SECONDS = 5.0
+
+# How far the issuer's clock may be from ours when checking exp, nbf and iat.
+LEEWAY_SECONDS = 30
 
 Claims = dict[str, Any]
 
@@ -47,6 +51,7 @@ class Verifier:
             algorithms=ALGORITHMS,
             audience=self.audience,
             issuer=self.issuer,
+            leeway=LEEWAY_SECONDS,
             options={"require": ["exp", "iss", "aud"]},
         )
         return claims
@@ -56,24 +61,44 @@ def jwks_key_finder(issuer: str) -> KeyFinder:
     """Find keys in the JWKS the issuer's discovery document names.
 
     The document is fetched on the first request, so the app starts while the
-    issuer is down; PyJWKClient caches the keys and refetches for a new kid.
+    issuer is down; PyJWKClient caches the keys and refetches for a new kid. The
+    document must name the issuer itself and an http or https jwks_uri.
     """
     clients: list[jwt.PyJWKClient] = []
+    lock = threading.Lock()
+
+    def client() -> jwt.PyJWKClient:
+        with lock:
+            if not clients:
+                clients.append(
+                    jwt.PyJWKClient(discover_jwks_uri(issuer), timeout=int(FETCH_TIMEOUT_SECONDS))
+                )
+            return clients[0]
 
     def find_key(token: str) -> jwt.PyJWK:
-        if not clients:
-            url = issuer.rstrip("/") + "/.well-known/openid-configuration"
-            try:
-                # from_env allows only http and https URLs.
-                with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
-                    jwks_uri = str(json.load(response)["jwks_uri"])
-            except (OSError, ValueError, KeyError) as err:
-                msg = f"fetch {url}: {err}"
-                raise jwt.PyJWKClientConnectionError(msg) from err
-            clients.append(jwt.PyJWKClient(jwks_uri, timeout=int(FETCH_TIMEOUT_SECONDS)))
-        return clients[0].get_signing_key_from_jwt(token)
+        return client().get_signing_key_from_jwt(token)
 
     return find_key
+
+
+def discover_jwks_uri(issuer: str) -> str:
+    """The jwks_uri of the issuer's discovery document."""
+    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    try:
+        # from_env allows only http and https URLs.
+        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
+            document = json.load(response)
+        named, jwks_uri = str(document["issuer"]), str(document["jwks_uri"])
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        msg = f"fetch {url}: {err}"
+        raise jwt.PyJWKClientConnectionError(msg) from err
+    if named != issuer:
+        msg = f"{url} names issuer {named!r}, not {issuer!r}"
+        raise jwt.PyJWKClientConnectionError(msg)
+    if urlsplit(jwks_uri).scheme not in {"http", "https"}:
+        msg = f"{url} names jwks_uri {jwks_uri!r}, not an http or https URL"
+        raise jwt.PyJWKClientConnectionError(msg)
+    return jwks_uri
 
 
 def from_env() -> Verifier | None:

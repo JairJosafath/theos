@@ -185,14 +185,27 @@ def test_auth_disabled_on_purpose(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def issuer() -> Iterator[str]:
-    """An issuer on localhost serving its discovery document and JWKS."""
+def issuer(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """An issuer on localhost serving its discovery document and JWKS.
+
+    Under /liar it serves a document naming another issuer, under /file one
+    whose jwks_uri is not http.
+    """
+    monkeypatch.setenv("no_proxy", "*")
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             base = f"http://{self.headers['Host']}"
             documents = {
                 "/.well-known/openid-configuration": {"issuer": base, "jwks_uri": base + "/jwks"},
+                "/liar/.well-known/openid-configuration": {
+                    "issuer": base,
+                    "jwks_uri": base + "/jwks",
+                },
+                "/file/.well-known/openid-configuration": {
+                    "issuer": base + "/file",
+                    "jwks_uri": "file:///etc/passwd",
+                },
                 "/jwks": JWKS,
             }
             if self.path not in documents:
@@ -226,6 +239,17 @@ def test_keys_come_from_the_issuers_jwks(monkeypatch: pytest.MonkeyPatch, issuer
     response = client.get("/me", headers=bearer(signed))
     assert response.status_code == 200
     assert response.json() == {"subject": "alice"}
+
+
+@pytest.mark.parametrize("path", ["/liar", "/file"])
+def test_a_discovery_document_that_does_not_fit_is_503(issuer: str, path: str) -> None:
+    verifier = auth.Verifier(
+        issuer=issuer + path, audience=AUDIENCE, find_key=auth.jwks_key_finder(issuer + path)
+    )
+    app.dependency_overrides[auth.get_verifier] = lambda: verifier
+    signed = token(key=EC_KEY, algorithm="ES256", kid="ec", iss=issuer + path)
+    response = client.get("/me", headers=bearer(signed))
+    assert response.status_code == 503
 
 
 def test_an_unreachable_issuer_is_503() -> None:
