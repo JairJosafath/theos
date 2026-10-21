@@ -54,7 +54,10 @@ export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_ME
 . "$(dirname "$0")/relay.sh"
 DIR=$T/relay STOP=$DIR/stop LOG=$T/log
 mkdir -p "$DIR"
-meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO"; }
+# Written whole and moved in: admit polls the file while a background job
+# changes it, and a read between the truncate and the write saw no
+# MemAvailable and started at once (#1526).
+meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO.new" && mv "$RELAY_MEMINFO.new" "$RELAY_MEMINFO"; }
 
 # The cap, on the device with the cluster.
 cap 9 2>/dev/null; check "cap: nine workers by default" $? 0
@@ -90,8 +93,8 @@ meminfo 2
 (said "waiting for headroom" "$LOG"; meminfo 6) &
 MEM_WAIT=120 admit; check "admit: waits until memory frees" $? 0
 wait
-grep -q "waiting for headroom: 2 GiB available" "$LOG"; check "admit: logs the wait" $? 0
-grep -q "headroom: 6 GiB available" "$LOG"; check "admit: logs the end" $? 0
+grep -q "waiting for headroom: 2 GiB available" "$LOG"; check "admit: logs the wait #1526" $? 0
+grep -q "headroom: 6 GiB available" "$LOG"; check "admit: logs the end #1526" $? 0
 MEM_WAIT=1 admit; check "admit: sessions start apart" $? 1
 grep -q "sessions start at least 300s apart" "$LOG"; check "admit: logs the gap" $? 0
 rm -f "$DIR/admitted"
@@ -475,7 +478,7 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
-  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait ;;
+  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
   agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
@@ -518,6 +521,9 @@ esac
 FAKE
 chmod +x "$T/bin/claude"
 export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
+# The sessions' TMPDIRs are in $T, not the user's ~/.cache/c4factory/tmp/wt,
+# which every run of this test on the device would share and clear (#1526).
+SCRATCH=$T/cache/c4factory/tmp
 # The main checkout the relay runs from, apart from the worktree (#1371).
 REPO=$T/repo-main MAIN=$T/repo-main
 export MAIN
@@ -744,7 +750,6 @@ no_strikes
 # would find the worktree (#1307): emptied before it starts and removed after
 # it ends.
 echo tmp >"$FAKE"
-SCRATCH=$T/cache/c4factory/tmp
 mkdir -p "$SCRATCH/wt" && echo old >"$SCRATCH/wt/left"
 work
 check "tmp #1269: TMPDIR is SCRATCH/<worktree>" "$(cat "$FAKE.tmpdir")" "$SCRATCH/wt"
@@ -911,10 +916,11 @@ IDLE=2s IDLE_KILL=2s IDLE_POLL=1
 : >"$LOG"
 no_strikes; rm -f "$T/status"
 echo hang >"$FAKE"
-t0=$(date +%s)
+rm -f "$FAKE.hung"
 work
-# Well before the hang's 600s, with room for a loaded device (#1409).
-check "idle: ended early" "$(($(date +%s) - t0 < 300))" 1
+# Ended by the watch, before the hang's 600s ran out: told by the file the
+# hang writes at its end, not by a clock a loaded device outlasts (#1409, #1526).
+check "idle: ended early #1526" "$(test -e "$FAKE.hung" && echo ran-out)" ""
 grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
 check "idle: counted" "$(counted)" 1
 check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""
