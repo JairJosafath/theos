@@ -276,6 +276,27 @@ func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
 	}
 }
 
+// TestFastAPILogsJSONLines checks that python-fastapi, with or without the
+// postgres Connector, writes app/logs.py, installs its request logger and
+// carries the tests that show one JSON line per request (#1473).
+func TestFastAPILogsJSONLines(t *testing.T) {
+	files := map[string][]string{
+		"app/logs.py":        {"class JSONFormatter", `"LOG_LEVEL"`, `REQUEST_ID_HEADER = "X-Request-Id"`, "access.disabled = True", "request.url.path"},
+		"app/main.py":        {"logs.configure()", `app.middleware("http")(logs.log_request)`},
+		"tests/test_main.py": {"def test_one_json_line_per_request", "def test_log_level_comes_from_the_environment", "def test_uvicorns_access_log_is_off"},
+	}
+	for _, postgres := range []bool{false, true} {
+		sides := []side{{model.SideFramework, "python-fastapi"}, {model.SideStandard, "python-standard"}}
+		if postgres {
+			sides = append(sides, side{model.SideConnector, "postgres"})
+		}
+		_, result := renderCombo(t, "service", sides)
+		for name, want := range files {
+			assertContains(t, name, string(result.Files[name].Data), want)
+		}
+	}
+}
+
 // TestFastAPIVerifiesABearerJWT checks that python-fastapi, with and without
 // postgres, writes app/auth.py, puts every route but the probes behind it,
 // refuses to start without an issuer and tests the token cases (#1474).

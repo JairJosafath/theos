@@ -41,7 +41,7 @@ func createFactory(ns string) {
 			},
 		},
 		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
-			Spec: newFrameworkSpec(templatesURL+"python-fastapi", "v1.3.0", service)},
+			Spec: newFrameworkSpec(templatesURL+"python-fastapi", "v1.6.0", service)},
 		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-kubebuilder"),
 			Spec: newFrameworkSpec(templatesURL+"go-kubebuilder", "v1.0.0", operator)},
 		&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "small"),

@@ -8,11 +8,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, Response
 from psycopg_pool import ConnectionPool
 
-from app import auth, db
+from app import auth, db, logs
 {{- else -}}
 from fastapi import APIRouter, Depends, FastAPI
 
-from app import auth
+from app import auth, logs
 {{- end }}
 
 CONTAINER = "{{ .Container }}"
@@ -34,7 +34,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 {{- end }}
 
 
+logs.configure()
 app = FastAPI(title={{ printf "%q" .DisplayName }}, lifespan=lifespan)
+app.middleware("http")(logs.log_request)
 
 # Every route on api takes a verified bearer token (app/auth.py); only the
 # probes below sit on app itself, open.

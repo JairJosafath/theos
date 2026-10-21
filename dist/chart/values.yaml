@@ -514,7 +514,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: python-fastapi
-      ref: v1.5.0
+      ref: v1.6.0
       spec:
         displayName: Python, FastAPI (uv)
         description: A uv project with FastAPI, ruff, mypy and pytest, and its lock file.
