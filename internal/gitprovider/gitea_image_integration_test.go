@@ -92,10 +92,10 @@ func TestGiteaImageIntegration(t *testing.T) {
 
 // packageRepository is the repository webshop's container package name is
 // linked to, "" when none.
-func packageRepository(ctx context.Context, t *testing.T, base, name string, as Credentials) string {
+func packageRepository(ctx context.Context, t *testing.T, base, pkgName string, as Credentials) string {
 	t.Helper()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-		base+"/api/v1/packages/webshop/container/"+url.PathEscape(name)+"/v0.1.0", nil)
+		base+"/api/v1/packages/webshop/container/"+url.PathEscape(pkgName)+"/v0.1.0", nil)
 	req.Header.Set("Authorization", "token "+as.Token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -108,7 +108,7 @@ func packageRepository(ctx context.Context, t *testing.T, base, name string, as 
 		} `json:"repository"`
 	}
 	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&pkg) != nil {
-		t.Fatalf("reading the container package %s: HTTP %d", name, resp.StatusCode)
+		t.Fatalf("reading the container package %s: HTTP %d", pkgName, resp.StatusCode)
 	}
 	if pkg.Repository == nil {
 		return ""
