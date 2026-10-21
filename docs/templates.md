@@ -224,7 +224,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.6.0)
+### k8s-manifests (v1.7.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -235,7 +235,10 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   `.dockerignore`, port and probes per Framework, no Service for a worker);
   `make validate-yaml` builds the orders-api, storefront and payments-worker
   renders. With the `postgres` Connector, the Deployment sets `PGPASSWORD`
-  from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`).
+  from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`), and
+  for python-fastapi (since v1.7.0, #1528) its readiness probe asks
+  `/readyz`, which runs `SELECT 1`: a pod whose database is down leaves the
+  Service, and liveness stays on `/healthz`.
 - Lint: those builds are validated with kubectl-validate.
 - README: `deploy/k8s/README.md.tmpl` (#1470): build the image, set it with
   `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what

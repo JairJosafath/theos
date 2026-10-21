@@ -17,7 +17,11 @@ outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
   `<container>-postgres`, key `password`.
 - **The Dockerfile follows the Framework** (`.Framework`):
   - `python-fastapi`: a uv project with an ASGI app at `app.main:app`, served by
-    uvicorn on port 8000 as user 1000; the probes ask `GET /healthz`.
+    uvicorn on port 8000 as user 1000; the probes ask `GET /healthz`. With
+    the `postgres` Connector (since v1.7.0) the readiness probe asks
+    `GET /readyz`, which runs `SELECT 1` (python-fastapi v1.4.0+): a pod whose
+    database is down leaves the Service, and liveness stays on `/healthz`, so
+    the outage never restarts it.
   - `python-cli` (since v1.3.0): the same uv build, running `python -m app` as
     user 1000; it serves nothing, so the Deployment has no port and no probes
     (Kubernetes restarts the container when it exits) and, as a `worker`, no

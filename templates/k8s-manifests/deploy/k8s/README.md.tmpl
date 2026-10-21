@@ -1,6 +1,7 @@
 {{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
 {{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
 {{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
+{{- $readyz := and (eq .Framework "python-fastapi") (has .Connectors "postgres") -}}
 {{- $dockerfile := or (eq .Framework "python-fastapi") (eq .Framework "python-cli") (eq .Framework "react-vite") -}}
 {{- $service := or (eq .Type "service") (eq .Type "static-site") -}}
 # Deploying {{ .Container }} to Kubernetes
@@ -106,7 +107,15 @@ Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
 
 ## Port and probes
 
-{{ if $http -}}
+{{ if $readyz -}}
+The container listens on port {{ $port }}, named `http`. The readiness probe
+asks `GET /readyz`, which runs `SELECT 1` on the database: while the database
+doesn't answer, the pod leaves Service `{{ .Container }}` and gets no traffic,
+and it comes back when the database does. The liveness probe asks
+`GET {{ $probe }}`, which doesn't touch the database, and restarts the container
+when it stops answering (after 10 seconds' grace at start), so a database
+outage never restarts the app.
+{{- else if $http -}}
 The container listens on port {{ $port }}, named `http`. Kubernetes asks
 `GET {{ $probe }}` on it: the readiness probe holds traffic until it answers, and
 the liveness probe restarts the container when it stops answering (after 10
