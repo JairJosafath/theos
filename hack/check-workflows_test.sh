@@ -163,10 +163,11 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "UI without cancel-in-progress fails" "$?" 1
 check "UI without cancel-in-progress says so" "$(grep -c 'ui.yml: runs on pull requests without cancel-in-progress' <<<"$out")" 1
 
-real test 's/^  cancel-in-progress:.*/  cancel-in-progress: true/'
+# Lint, not Tests: test.yml no longer runs on pushes to main (#1525, #1531).
+real lint 's/^  cancel-in-progress:.*/  cancel-in-progress: true/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests cancelling main's runs fails" "$?" 1
-check "Tests cancelling main's runs says so" "$(grep -c 'test.yml: cancels the run in progress' <<<"$out")" 1
+check "Lint cancelling main's runs fails" "$?" 1
+check "Lint cancelling main's runs says so" "$(grep -c 'lint.yml: cancels the run in progress' <<<"$out")" 1
 
 real list '/^ui.yml UI$/d'
 out=$("$CHECK" "$T/r/wf" 2>&1)
