@@ -1,16 +1,35 @@
 """{{ .DisplayName }}: the {{ .Container }} {{ .Type }} of {{ .SoftwareSystem }}."""
 {{ if has .Connectors "postgres" }}
-import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Response
+from psycopg_pool import ConnectionPool
+
+from app import db
 {{- else }}
 from fastapi import FastAPI
 {{- end }}
 
 CONTAINER = "{{ .Container }}"
 SOFTWARE_SYSTEM = "{{ .SoftwareSystem }}"
+{{- if has .Connectors "postgres" }}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Hold the database pool for as long as the app runs."""
+    with db.open_pool() as pool:
+        app.state.pool = pool
+        yield
+
+
+app = FastAPI(title={{ printf "%q" .DisplayName }}, lifespan=lifespan)
+{{- else }}
 
 app = FastAPI(title={{ printf "%q" .DisplayName }})
+{{- end }}
 
 
 @app.get("/")
@@ -27,10 +46,12 @@ def healthz() -> dict[str, str]:
 
 
 @app.get("/readyz")
-def readyz(response: Response) -> dict[str, bool]:
-    """Ready once DATABASE_URL is set. It does not connect to the database."""
-    configured = bool(os.environ.get("DATABASE_URL"))
-    if not configured:
-        response.status_code = 503
-    return {"databaseConfigured": configured}
+def readyz(
+    response: Response, pool: Annotated[ConnectionPool, Depends(db.get_pool)]
+) -> dict[str, str]:
+    """Ready while the database answers SELECT 1; 503 when it doesn't."""
+    if db.ping(pool):
+        return {"database": "ok"}
+    response.status_code = 503
+    return {"database": "unreachable"}
 {{- end }}

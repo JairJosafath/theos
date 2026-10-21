@@ -8,7 +8,7 @@ dependencies = [
     "fastapi>=0.140",
     "uvicorn[standard]>=0.50",
 {{- if has .Connectors "postgres" }}
-    "psycopg[binary]>=3.3",
+    "psycopg[binary,pool]>=3.3",
 {{- end }}
 ]
 

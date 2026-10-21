@@ -1,0 +1,46 @@
+{{- if has .Connectors "postgres" -}}
+"""The {{ .Container }} database: a psycopg connection pool on DATABASE_URL."""
+
+import logging
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+import psycopg
+from fastapi import Request
+from psycopg_pool import ConnectionPool
+
+logger = logging.getLogger(__name__)
+
+# How long /readyz waits for a connection before it answers 503.
+READY_TIMEOUT_SECONDS = 2.0
+
+
+@contextmanager
+def open_pool() -> Iterator[ConnectionPool]:
+    """Open a pool on DATABASE_URL and close it on exit.
+
+    libpq reads the password from PGPASSWORD, and the other PG* variables for
+    what DATABASE_URL leaves out. The pool connects in the background, so the
+    app starts while the database is down; /readyz says when it is reachable.
+    """
+    with ConnectionPool(os.environ.get("DATABASE_URL", ""), min_size=1, open=False) as pool:
+        yield pool
+
+
+def get_pool(request: Request) -> ConnectionPool:
+    """Return the pool the app's lifespan opened."""
+    pool: ConnectionPool = request.app.state.pool
+    return pool
+
+
+def ping(pool: ConnectionPool) -> bool:
+    """Run SELECT 1 on a pooled connection; False when the database doesn't answer."""
+    try:
+        with pool.connection(timeout=READY_TIMEOUT_SECONDS) as conn:
+            conn.execute("SELECT 1")
+    except psycopg.Error as err:
+        logger.warning("database unreachable: %s", err)
+        return False
+    return True
+{{- end }}

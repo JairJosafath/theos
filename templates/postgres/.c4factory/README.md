@@ -13,8 +13,8 @@ Relationship to a DataStore backed by this Connector.
   dependency on a healthy `postgres`. It has no password, since Postgres accepts
   the connections it receives and publishes no port, so only the devcontainer
   reaches it.
-- **Frameworks:** python-fastapi adds the driver (`psycopg[binary]`) and a `/readyz`
-  endpoint when this Connector is present.
+- **Frameworks:** python-fastapi adds the driver and its pool (`psycopg[binary,pool]`),
+  `app/db.py` and a `/readyz` that runs `SELECT 1` when this Connector is present.
 
 The Connector only scaffolds. Creating real databases is out of scope; the
 ConfigMap's `DATABASE_URL` points at a database provisioned elsewhere.
