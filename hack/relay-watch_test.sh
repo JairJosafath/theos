@@ -1193,13 +1193,18 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 STOP=$DIR/stop REPO=$T/repo WORKERS=3
 mkdir -p "$REPO/.relay"
 touch "$STOP"
+# The installer's login (#1435): a logged-in dir, as the project shell's
+# CLAUDE_CONFIG_DIR would be; the #1435 cases below try one without credentials.
+mkdir -p "$T/login"
+echo '{}' >"$T/login/.credentials.json"
+export CLAUDE_CONFIG_DIR=$T/login
 RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
 unit=$T/home/.config/systemd/user/c4factory-relay-watch.service
 check "install: warns of the manager's missing group" \
   "$(grep -c '^relay-watch: the systemd user manager lacks the group(s) docker that math has in /etc/group: .*wsl --shutdown' "$T/install.err")" 1
 check "install: writes the unit" "$([ -s "$unit" ] && echo yes)" yes
-check "install: runs this checkout's watch in the foreground" \
-  "$(grep -c "^ExecStart=\"$REPO/dev\" run \"$REPO/hack/relay-watch.sh\" --foreground --workers 3$" "$unit")" 1
+check "install: runs this checkout's watch in the foreground, under the installer's login (#1435)" \
+  "$(grep -c "^ExecStart=\"$REPO/dev\" run env \"CLAUDE_CONFIG_DIR=$T/login\" \"$REPO/hack/relay-watch.sh\" --foreground --workers 3$" "$unit")" 1
 check "install: keeps the installer's PATH" "$(grep -cF "Environment=\"PATH=$PATH\"" "$unit")" 1
 check "install: restarts, but not after the stop file" \
   "$(grep -E '^(Restart|RestartPreventExitStatus|KillMode)=' "$unit" | tr '\n' ' ')" \
@@ -1211,6 +1216,25 @@ check "install: enables and starts it" \
   "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
 check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
 check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
+
+# --install refuses a login without credentials (#1435): the sessions the watch
+# starts would run logged out; it says which dir and how to log in or install
+# from the right shell, and writes nothing. Unset, the login is ~/.claude.
+rm -f "$unit"
+touch "$STOP"
+mkdir -p "$T/nologin"
+CLAUDE_CONFIG_DIR=$T/nologin install_watch >/dev/null 2>"$T/install.err"
+check "install, no credentials (#1435): refused" $? 1
+check "install, no credentials (#1435): says which dir and what to do" \
+  "$(grep -c "^relay-watch: $T/nologin has no .credentials.json, so every session the watch starts would run logged out. Log in there (CLAUDE_CONFIG_DIR=$T/nologin claude, then /login), or install from the shell whose login the relay should use: CLAUDE_CONFIG_DIR=\\\$HOME/.claude hack/relay-watch.sh --install$" "$T/install.err")" 1
+check "install, no credentials (#1435): no unit" "$([ -e "$unit" ] && echo there)" ""
+check "install, no credentials (#1435): the stop file stays" "$([ -e "$STOP" ] && echo there)" there
+(
+  unset CLAUDE_CONFIG_DIR
+  install_watch >/dev/null 2>"$T/install.err"
+  check "install, unset (#1435): the login is ~/.claude" "$(grep -c "^relay-watch: $HOME/.claude has no .credentials.json" "$T/install.err")" 1
+  exit $fail
+) || fail=1
 
 # --install warns when git has no committer identity in the checkout (#1362),
 # with git's reason and the commands that set one, and installs all the same;
@@ -1260,10 +1284,12 @@ RELAY_MAX_WORKERS=5 install_watch >/dev/null
 RELAY_MAX_WORKERS=5 install_watch >/dev/null
 check "cron: no unit" "$([ -e "$unit" ] && echo there)" ""
 check "cron: keeps the other lines" "$(grep -c backup "$T/crontab")" 1
-check "cron: at boot" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run hack/relay-watch.sh --cron --workers 3 .*# c4factory relay watch: $REPO$" "$T/crontab")" 1
+check "cron: at boot, under the installer's login (#1435)" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run env CLAUDE_CONFIG_DIR=$T/login hack/relay-watch.sh --cron --workers 3 .*# c4factory relay watch: $REPO$" "$T/crontab")" 1
 check "cron: passes the relay settings" "$(grep -c ' RELAY_MAX_WORKERS=5 .*./dev run' "$T/crontab")" 2
 check "cron: every 5 minutes" "$(grep -c "^\*/5 \* \* \* \* cd $REPO && .* --cron --workers 3 " "$T/crontab")" 1
-check "cron: starts the watch now" "$(cat "$T/started")" $'hack/relay-watch.sh --cron --workers 3\nhack/relay-watch.sh --cron --workers 3'
+check "cron: starts the watch now, under the installer's login (#1435)" "$(cat "$T/started")" \
+  "env CLAUDE_CONFIG_DIR=$T/login hack/relay-watch.sh --cron --workers 3
+env CLAUDE_CONFIG_DIR=$T/login hack/relay-watch.sh --cron --workers 3"
 # A crontab -l still writing when the tag is found doesn't fail the uninstall.
 touch "$T/slow-crontab"
 uninstall_watch >/dev/null
@@ -1278,6 +1304,7 @@ REPO=$T/wt install_watch 2>/dev/null
 check "worktree: refused" $? 1
 check "worktree: no unit" "$([ -e "$unit" ] && echo there)" ""
 export PATH=$SAVED_PATH HOME=$SAVED_HOME
+unset CLAUDE_CONFIG_DIR
 
 # The watch itself, in a scratch copy: a --cron start with the stop file starts
 # nothing; a --foreground watch waits while another holds the lock, takes over
