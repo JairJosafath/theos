@@ -144,11 +144,12 @@ var _ = Describe("Container images", func() {
 		Expect(images).To(Equal([]string{imageRegistry + ns + "/orders-api@" + testDigest}))
 	})
 
-	It("reports no image for a Container whose Deployment builds none", func() {
+	It("reports no image for a Container whose choice builds none", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeCLI)
-		container.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: "gitea-release"}
+		// A service without a Deployment: no catalog choice of its builds an image.
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.DeploymentRef = nil
 		mustCreate(newSystem(ns, "webshop-core"), container, newCrew(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
@@ -156,6 +157,10 @@ var _ = Describe("Container images", func() {
 		}).Should(Succeed())
 		shipRelease(ns, "v0.1.0", true)
 
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.NewestRelease).To(Equal("v0.1.0"))
+		}, deployWait).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).To(BeNil())
