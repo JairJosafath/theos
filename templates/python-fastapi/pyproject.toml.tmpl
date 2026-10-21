@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.140",
+    "pyjwt[crypto]>=2.15",
     "uvicorn[standard]>=0.50",
 {{- if has .Connectors "postgres" }}
     "psycopg[binary,pool]>=3.3",
