@@ -111,10 +111,14 @@ unanswered for 14 days.
    - A defect becomes a `kind/bug` issue, ready. Name good work, specifically,
      in the report.
 6. **Health:**
-   - main's CI: `gh run list --branch main --limit 10`. Every red workflow
-     has a moving `main is red` issue, unless Actions started no jobs: then
-     the watch's `GitHub Actions starts no jobs` issue comes to you, and only
-     the owner can fix it (billing, the spending limit); take it to them.
+   - main's CI: `gh run list --branch main --limit 10`. *Tests* runs every
+     package on each push to main, on a pushed `vX.Y.Z` tag and on a manual
+     run, and only the packages a change affects on a pull request: main's
+     runs are the full-suite signal, and the tag's run is the release's
+     (#1525, #1556). Every red workflow has a moving `main is red` issue,
+     unless Actions started no jobs: then the watch's `GitHub Actions starts
+     no jobs` issue comes to you, and only the owner can fix it (billing, the
+     spending limit); take it to them.
      Closing it as a duplicate of an issue already tracking the outage is
      safe: the watch files it once per outage.
    - Flaky specs: `hack/lib/github.sh flakes --count` lists the specs that
