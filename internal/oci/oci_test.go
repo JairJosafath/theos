@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -28,10 +29,11 @@ import (
 )
 
 // fakeRegistry is go-containerregistry's in-memory registry on httptest,
-// counting the blob uploads it starts.
+// counting the blob uploads it starts and the manifests it is given.
 type fakeRegistry struct {
 	Registry
 	uploads atomic.Int64
+	puts    atomic.Int64
 }
 
 func newRegistry(t *testing.T, wrap func(http.Handler) http.Handler) *fakeRegistry {
@@ -44,6 +46,9 @@ func newRegistry(t *testing.T, wrap func(http.Handler) http.Handler) *fakeRegist
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/blobs/uploads/") {
 			f.uploads.Add(1)
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/") {
+			f.puts.Add(1)
 		}
 		h.ServeHTTP(w, r)
 	}))
@@ -307,6 +312,14 @@ func TestPushRefusesAnInvalidArchive(t *testing.T) {
 			},
 			want: "no index.json",
 		},
+		{
+			name: "a manifest unlike its descriptor",
+			edit: func(t *testing.T, idx v1.ImageIndex, entries []entry) []entry {
+				root := v1.Descriptor{MediaType: types.OCIManifestSchema1, Digest: must(idx.Digest()), Size: must(idx.Size())}
+				return append(entries[:len(entries)-1], indexJSON(t, root))
+			},
+			want: "its descriptor says",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -399,5 +412,54 @@ func TestARegistryThatAsksForABearerToken(t *testing.T) {
 	pushed := must(Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, entries)))
 	if d := must(Resolve(ctx, reg.Registry, "shop/web", "v1.0.0")); d != pushed.Digest {
 		t.Errorf("v1.0.0 resolves to %q, want %s", d, pushed.Digest)
+	}
+}
+
+// The root goes up once, under its tag: index, two images, an attestation.
+func TestPushPutsEachManifestOnce(t *testing.T) {
+	reg := newRegistry(t, nil)
+	must(Push(context.Background(), reg.Registry, "shop/web", "v1.0.0", stream(t, layout(t, twoPlatforms(t)))))
+	if n := reg.puts.Load(); n != 4 {
+		t.Errorf("%d manifest puts, want 4", n)
+	}
+}
+
+// BuildKit names the root in index.json once per image name it is given.
+func TestPushTakesARootNamedTwice(t *testing.T) {
+	ctx := context.Background()
+	reg := newRegistry(t, nil)
+	idx := twoPlatforms(t)
+	entries := layout(t, idx)
+	root := v1.Descriptor{MediaType: types.OCIImageIndex, Digest: must(idx.Digest()), Size: must(idx.Size())}
+	entries = append(entries[:len(entries)-1], indexJSON(t, root, root))
+	got, err := Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, entries))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Digest != root.Digest.String() {
+		t.Errorf("pushed %s, want %s", got.Digest, root.Digest)
+	}
+}
+
+// A stream cut between entries is the reader's error, which a retry may
+// not see, never ErrInvalid.
+func TestPushACutStreamIsNotInvalid(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, e := range layout(t, twoPlatforms(t))[:2] {
+		if err := tw.WriteHeader(&tar.Header{Name: e.name, Mode: 0o644, Size: int64(len(e.data)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		must(tw.Write(e.data))
+	}
+	if err := tw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	cut := errors.New("connection reset")
+	archive := io.MultiReader(&buf, iotest.ErrReader(cut))
+	reg := newRegistry(t, nil)
+	_, err := Push(context.Background(), reg.Registry, "shop/web", "v1.0.0", archive)
+	if !errors.Is(err, cut) || errors.Is(err, ErrInvalid) {
+		t.Fatalf("err %v, want the cut and not ErrInvalid", err)
 	}
 }

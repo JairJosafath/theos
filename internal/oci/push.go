@@ -13,6 +13,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -67,7 +68,8 @@ func Push(ctx context.Context, r Registry, repository, tag string, archive io.Re
 	if err := p.walk(root, map[v1.Hash]bool{}, &order); err != nil {
 		return Image{}, err
 	}
-	for _, h := range order {
+	// The root is last in order; it goes up once, under tag.
+	for _, h := range order[:len(order)-1] {
 		if err := p.put(repo.Digest(h.String()), h); err != nil {
 			return Image{}, err
 		}
@@ -112,7 +114,7 @@ func (p *push) read(archive io.Reader) error {
 			return nil
 		}
 		if err != nil {
-			return invalid("read the archive: %v", err)
+			return readErr("read the archive", err)
 		}
 		if hdr.Typeflag != tar.TypeReg {
 			continue
@@ -127,7 +129,7 @@ func (p *push) read(archive io.Reader) error {
 				return invalid("index.json is %d bytes, over %d", hdr.Size, MaxManifestSize)
 			}
 			if p.index, err = io.ReadAll(tr); err != nil {
-				return invalid("read index.json: %v", err)
+				return readErr("read index.json", err)
 			}
 		case strings.HasPrefix(entry, "blobs/"):
 			if err := p.blob(entry, hdr.Size, tr); err != nil {
@@ -154,6 +156,9 @@ func (p *push) blob(entry string, size int64, r io.Reader) error {
 	vr := newVerifier(r, h)
 	if size > MaxManifestSize {
 		err := p.pusher.Upload(p.ctx, p.repo, &streamLayer{digest: h, size: size, r: vr})
+		// The transport may still read the body after Upload returns;
+		// take it back before looking at what it read.
+		rest := vr.take()
 		if vr.err != nil {
 			return vr.err
 		}
@@ -162,7 +167,7 @@ func (p *push) blob(entry string, size int64, r io.Reader) error {
 		}
 		// A blob the registry has is skipped, never read; reading it
 		// still checks its digest.
-		if _, err := io.Copy(io.Discard, vr); err != nil {
+		if _, err := io.Copy(io.Discard, rest); err != nil {
 			return err
 		}
 		return nil
@@ -199,8 +204,13 @@ func (p *push) root() (v1.Descriptor, error) {
 	if err := json.Unmarshal(p.index, &idx); err != nil {
 		return v1.Descriptor{}, invalid("index.json: %v", err)
 	}
-	if len(idx.Manifests) != 1 {
-		return v1.Descriptor{}, invalid("index.json names %d manifests, not one root", len(idx.Manifests))
+	// BuildKit names one root once per image name it was given.
+	roots := map[v1.Hash]bool{}
+	for _, d := range idx.Manifests {
+		roots[d.Digest] = true
+	}
+	if len(roots) != 1 {
+		return v1.Descriptor{}, invalid("index.json names %d manifests, not one root", len(roots))
 	}
 	root := idx.Manifests[0]
 	if !root.MediaType.IsIndex() && !root.MediaType.IsImage() {
@@ -236,6 +246,12 @@ func (p *push) walk(d v1.Descriptor, seen map[v1.Hash]bool, order *[]v1.Hash) er
 			return invalid("manifest %s is %d bytes, over %d", d.Digest, size, MaxManifestSize)
 		}
 		return invalid("%s is not a manifest", d.Digest)
+	}
+	var own struct {
+		MediaType types.MediaType `json:"mediaType"`
+	}
+	if err := json.Unmarshal(m.raw, &own); err == nil && own.MediaType != "" && own.MediaType != d.MediaType {
+		return invalid("%s is a %q, its descriptor says %q", d.Digest, own.MediaType, d.MediaType)
 	}
 	var children []v1.Descriptor
 	if d.MediaType.IsIndex() {
@@ -339,13 +355,24 @@ func asConfig(b []byte) *v1.Platform {
 	return &pl
 }
 
+// readErr is an error reading the archive: ErrInvalid when the tar itself
+// is malformed, else the reader's own error, which a retry may not see.
+func readErr(what string, err error) error {
+	if errors.Is(err, tar.ErrHeader) {
+		return invalid("%s: %v", what, err)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // verifier hashes what it reads and fails the last read when the content
 // isn't its digest.
 type verifier struct {
-	r    io.Reader
-	want v1.Hash
-	h    hash.Hash
-	err  error
+	mu    sync.Mutex
+	taken bool
+	r     io.Reader
+	want  v1.Hash
+	h     hash.Hash
+	err   error
 }
 
 func newVerifier(r io.Reader, want v1.Hash) *verifier {
@@ -353,6 +380,28 @@ func newVerifier(r io.Reader, want v1.Hash) *verifier {
 }
 
 func (v *verifier) Read(b []byte) (int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.taken {
+		return 0, errors.New("the archive's blob stream was taken back")
+	}
+	return v.read(b)
+}
+
+// take ends reads through Read, from any goroutine, and returns a reader of
+// the rest for the caller alone.
+func (v *verifier) take() io.Reader {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.taken = true
+	return readerFunc(v.read)
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(b []byte) (int, error) { return f(b) }
+
+func (v *verifier) read(b []byte) (int, error) {
 	n, err := v.r.Read(b)
 	v.h.Write(b[:n])
 	if errors.Is(err, io.EOF) {
