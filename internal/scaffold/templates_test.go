@@ -340,6 +340,67 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 	}
 }
 
+// TestGiteaReleaseWritesReleasingGuide checks that gitea-release writes
+// RELEASING.md (#1475): how to tag a release, what the workflow attaches,
+// how to check it with make dist and what to do when a run fails, with the
+// version file the Standard's make dist checks the tag against.
+func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
+	common := []string{
+		"# Releasing sample-app",
+		"git tag v0.2.0",
+		"git push origin v0.2.0",
+		"`make dist VERSION=<tag>`",
+		"every file directly in `dist/`",
+		"## Check a release locally",
+		"ls dist/",
+		"## When a run fails",
+		"git tag -f v0.2.0 && git push -f origin v0.2.0",
+		"delete the asset on the release page",
+	}
+	cases := map[string]struct {
+		want  []string
+		never []string
+	}{
+		"python cli": {
+			want: []string{"the wheel and the sdist", "Set the version in `pyproject.toml`",
+				"make dist VERSION=v0.2.0   # the version in pyproject.toml"},
+			never: []string{"package.json", "make dist VERSION=v0.0.0-test\n"},
+		},
+		"node cli": {
+			want: []string{"the npm tarball (`.tgz`)", "Set the version in `package.json`",
+				"make dist VERSION=v0.2.0   # the version in package.json"},
+			never: []string{"pyproject.toml", "make dist VERSION=v0.0.0-test\n"},
+		},
+		"go cli": {
+			want:  []string{"`SHA256SUMS`", "make dist VERSION=v0.0.0-test\n"},
+			never: []string{"pyproject.toml", "package.json"},
+		},
+	}
+	for _, c := range templateCombos {
+		want, ok := cases[c.name]
+		if !ok {
+			continue
+		}
+		delete(cases, c.name)
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			f, ok := result.Files["RELEASING.md"]
+			if !ok {
+				t.Fatalf("RELEASING.md not written; files: %v", result.Files.Paths())
+			}
+			assertContains(t, "RELEASING.md", string(f.Data), slices.Concat(common, want.want))
+			for _, w := range want.never {
+				if strings.Contains(string(f.Data), w) {
+					t.Errorf("RELEASING.md contains %q:\n%s", w, f.Data)
+				}
+			}
+		})
+	}
+	for name := range cases {
+		t.Errorf("no combo %q in templateCombos", name)
+	}
+}
+
 // TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
 // the factory's c4factory.local modules come from the owner's package registry
 // alone, before make check, and make check never asks a proxy for them. A
