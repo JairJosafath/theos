@@ -42,6 +42,12 @@
 # steps all closed is closed, one in progress that waits on its steps goes to
 # status/waiting. close and the Issue closed workflow do it as each step
 # closes; the watch catches the ones they missed, while the relay was down.
+# In the same look it escalates stale claims (hack/lib/github.sh stale
+# --apply, #1513): a live claim on an in-progress issue with no commit,
+# handoff or start for C4_CLAIM_STALE (2h) goes to status/needs-maintainer
+# with one comment; the claim is left alone, as its heartbeat says it may
+# still be worked. Every device's watch sees every claim; the comment's marker
+# keeps it to one escalation per stale stretch.
 #
 # Every WATCH_CI_EVERY seconds (default 900) it checks main's CI: each
 # workflow in .github/workflows that runs on a push to main and whose two
@@ -207,6 +213,7 @@ pick_next() { GH_NEXT_FILES=$(printf '%s\n' "$REPO"/.claude/worktrees/relay-[0-9
 blocked() { github blocked --unworked; }
 cycles() { github cycles --report; }
 parents() { github parents --apply; }
+stale_claims() { github stale --apply; }
 proposed() { github proposed "$@"; }
 run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
@@ -250,6 +257,8 @@ tend() {
   TEND_ERR=
   out=$(grep -Ev '^#[0-9]+ waits on ' <<<"$out")
   [ -z "$out" ] || log "plans' parents: ${out//$'\n'/; }"
+  out=$(stale_claims 2>&1 8>&-) || log "could not check for stale claims (stale --apply, exit $?): ${out//$'\n'/; }"
+  [ -z "$out" ] || log "stale claims: ${out//$'\n'/; }"
 }
 
 # github: hack/lib/github.sh, keeping its local state in this checkout's .relay/.

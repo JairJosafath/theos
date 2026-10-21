@@ -66,6 +66,8 @@ cycles() { [ -n "$CYCLES" ] && ! grep -qxF "$CYCLES" "$T/cycles" 2>/dev/null && 
 # parents --apply: what it did, and the parents still waiting.
 PARENTS= PARENTS_RC=0
 parents() { echo x >>"$T/tends"; [ -n "$PARENTS" ] && printf '%s\n' "$PARENTS"; return "$PARENTS_RC"; }
+STALE=
+stale_claims() { echo stale >>"$T/stales"; [ -z "$STALE" ] || echo "$STALE"; }
 tends() { cat "$T/tends" 2>/dev/null | wc -l | tr -d ' '; }
 run_relay() { echo started >>"$T/starts"; echo "worker 1 started"; return "$RELAY_RC"; }
 # run_triage records the triage in .relay/triaged as hack/relay.sh --triage
