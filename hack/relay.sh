@@ -162,8 +162,11 @@ while [ $# -gt 0 ]; do
   case $1 in
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
-    --triage) TRIAGE=1; shift ;;
-    --maintain) MAINTAIN=1; shift ;;
+    # The flag says what this run is; C4_RELAY_TRIAGE and C4_RELAY_MAINTAIN
+    # are for the detached child, which gets no flag, and a shell inherits
+    # them from a relay session (#1564).
+    --triage) TRIAGE=1 MAINTAIN=; shift ;;
+    --maintain) MAINTAIN=1 TRIAGE=; shift ;;
     *) echo "usage: hack/relay.sh [--triage | --maintain] [--workers N]" >&2; exit 64 ;;
   esac
 done
@@ -976,13 +979,16 @@ session() {
   # (#1269) nor in a checkout (#1307), and starts empty: what a dead session
   # left there goes first.
   # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
-  # --next reserves only for a numbered one's next session.
+  # --next reserves only for a numbered one's next session. The relay's own
+  # child variables (C4_RELAY_CHILD, C4_RELAY_TRIAGE, C4_RELAY_MAINTAIN) stay
+  # with the relay: a session that inherited them ran hack/relay_test.sh's
+  # --triage dry run as the maintainer (#1564).
   # OLDPWD is the worktree too: the cd would leave it at the main checkout,
   # and an agent's cd - or cd "$OLDPWD" would write to main (#1371).
   scratch_clear "$tmp"
   mkdir -p "$tmp"
   dirty=$(git -C "$REPO" status --porcelain 2>/dev/null)
-  (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
+  (cd "$WT" && export OLDPWD=$WT && drop_session_env && unset C4_RELAY_CHILD C4_RELAY_TRIAGE C4_RELAY_MAINTAIN && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   # For stray_session (#1341): the pid and its start time, while it runs.

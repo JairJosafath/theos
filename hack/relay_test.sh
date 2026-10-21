@@ -28,6 +28,9 @@ T=$(mktemp -d)
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
 unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE RELAY_MODEL
+# A relay session has the relay's variables; run from the maintainer's, the
+# --triage dry run below took the maintainer's lock (#1564).
+unset C4_HEADLESS C4_RELAY_WORKER C4_RELAY_CHILD C4_RELAY_TRIAGE C4_RELAY_MAINTAIN
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # said PATTERN FILE: wait for a line of FILE to match PATTERN, for up to a
@@ -332,6 +335,13 @@ check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues
   . "$(dirname "$0")/relay.sh" --triage
   check "triage: its own worktree, log and lock" "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}" \
     ".claude/worktrees/relay-triage relay-triage.log triage.lock"
+  # The flag wins over the variables a relay session's shell inherits (#1564).
+  check "triage #1564: --triage under the maintainer's variables" \
+    "$(export C4_RELAY_MAINTAIN=1 C4_RELAY_WORKER=maintainer C4_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --triage; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
+    ".claude/worktrees/relay-triage relay-triage.log triage.lock"
+  check "maintain #1564: --maintain under the triage's variables" \
+    "$(export C4_RELAY_TRIAGE=1 C4_RELAY_WORKER=triage C4_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --maintain; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
+    ".claude/worktrees/relay-maintainer relay-maintainer.log maintain.lock"
   DIR=$T/triage STOP=$T/triage/stop LOCK=$T/triage/triage.lock LOG=$T/triage/log MAX_WORKERS=1
   mkdir -p "$DIR"
   gh_proposed() { printf '40\n41\n'; }
@@ -754,11 +764,12 @@ echo env >"$FAKE"
   CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s CLAUDE_CODE_MESSAGING_TOKEN=x CLAUDE_EFFORT=xhigh \
   CLAUDE_PID=1 AI_AGENT=claude ELECTRON_RUN_AS_NODE=1 VSCODE_PID=1 VSCODE_IPC_HOOK_CLI=/tmp/v \
   GIT_ASKPASS=/home/u/.vscode-server/askpass.sh TERM_PROGRAM=vscode CLAUDE_CODE_OAUTH_TOKEN=kept \
-  C4_HUMAN_CLUSTER=1
+  C4_HUMAN_CLUSTER=1 C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 C4_RELAY_TRIAGE=1
   work)
 check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
 check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
+check "env #1564: none of the relay's child variables" "$(grep -c '^C4_RELAY_\(CHILD\|MAINTAIN\|TRIAGE\)=' "$FAKE.env")" 0
 check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
 check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
 check "env #1371: OLDPWD is the worktree, not the main checkout" "$(grep '^OLDPWD=' "$FAKE.env")" "OLDPWD=$WT"
