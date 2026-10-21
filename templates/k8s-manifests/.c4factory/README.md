@@ -5,7 +5,9 @@ outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
 
 - **Supports:** `service`, `worker`, `static-site`
 - **Writes:** `Dockerfile`, `.dockerignore`, and in `deploy/k8s/`: `kustomization.yaml`,
-  `deployment.yaml`, and `service.yaml` for types `service` and `static-site`.
+  `deployment.yaml`, `service.yaml` for types `service` and `static-site`, and
+  (since v1.4.0) `README.md`: how to build the image, set it, preview and apply
+  the manifests, what the other layers' files there are, the port and probes.
 - **Expects from other layers:** `deploy/k8s/compute.yaml` from the Compute layer (a
   patch listed under `patches`), and `deploy/k8s/connector-<name>.yaml` from each
   Connector (listed under `resources`). The Deployment loads a ConfigMap
