@@ -1147,6 +1147,17 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     '1 github: #16: could not ask GitHub whether it is behind main; merge refused '
   out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  # land's merge is pinned to the head it checked (#1320): GitHub's head must be it.
+  h1=$(printf 'a%.0s' $(seq 40)) h2=$(printf 'b%.0s' $(seq 40))
+  rm -f "$T/merged"
+  out=$(PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h1" '.headRefOid = $h') gh_merge 16 "$h1" 2>&1)
+  check "merge: merges the checked head when GitHub's is it (#1320)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit $h1"
+  rm -f "$T/merged"
+  out=$(PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h2" '.headRefOid = $h') gh_merge 16 "$h1" 2>&1)
+  check "merge: refuses when GitHub's head isn't the checked one (#1320)" "$? $out | $(cat "$T/merged" 2>/dev/null)" \
+    "1 github: #16: the branch moved since the check (aaaaaaaaaaaa checked, GitHub's head is bbbbbbbbbbbb); land again | "
+  out=$(PR=$(pr 'Closes #5' '[5]') gh_merge 16 h1 2>&1)
+  check "merge: the checked head is a full SHA (#1320)" "$? $out" "1 github: merge's head is a commit SHA, not h1"
   # While another pull request holds the merge turn, only that one merges.
   turn() { echo "{\"id\":$1,\"updated_at\":\"$3\",\"body\":\"<!-- c4-land -->\\n**heron-$2** lands pull request \`$2\` · host \`h\` · pid \`1\`\"}"; }
   old=$(date -u -d "@$((GH_NOW - 3600))" +%Y-%m-%dT%H:%M:%SZ)
@@ -1386,6 +1397,29 @@ MAKE
   grep -q '#40 waits for its turn to land: 2 ahead; heron-41 lands #41 (host h), heartbeat 0m ago' <<<"$out"; check "land: says who is ahead" $? 0
   grep -q '#40 waits for its turn to land: 1 ahead; heron-42 lands #42' <<<"$out"; check "land: says when the queue moves" $? 0
   check "land: gives the turn up after waiting" "$(queue)" ""
+
+  # A push to the branch while it waits for its turn (#1320): an Also fixes
+  # commit, say, as AGENTS.md says to push after every commit. Main did not
+  # move, so no check runs under the turn; the head GitHub has is not the one
+  # checked, so nothing merges, the log names both, and the turn is given up.
+  rm -f "$T/landed" "$T/checked"
+  put 1 41
+  : >"$T/calls"
+  checked=$(git -C "$T/origin.git" rev-parse feat)
+  (
+    reads 2
+    git -C "$T/other" fetch -q origin feat && git -C "$T/other" checkout -q -b also origin/feat &&
+      git -C "$T/other" -c user.name=t -c user.email=t@t commit -q --allow-empty -m also && git -C "$T/other" push -q origin HEAD:feat
+    git -C "$T/other" checkout -q main
+    rm "$Q/1.json"
+  ) &
+  out=$(gh_land 40 2>&1); rc=$?
+  wait
+  moved=$(git -C "$T/origin.git" rev-parse feat)
+  check "land: a push while it waits merges nothing (#1320)" "$rc $(cat "$T/landed" 2>/dev/null) | $(wc -l <"$T/checked") | $(queue) | $([ "$moved" != "$checked" ] && echo moved)" "1  | 1 |  | moved"
+  grep -q "land: #40: its branch feat moved since the check (${checked:0:12} checked, GitHub's head is ${moved:0:12}): nothing merged, gave the turn up after [0-9]*s; land again" "$T/land/.relay/land-40.log"
+  check "land: names the checked head and the moved one (#1320)" $? 0
+  g pull -q --no-rebase origin feat
 
   # An abandoned turn (no heartbeat for C4_LAND_TTL) is dropped, not waited on.
   rm -f "$T/landed"
