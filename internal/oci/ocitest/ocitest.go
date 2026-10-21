@@ -17,6 +17,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+// linux is the OS of both images.
+const linux = "linux"
+
 // Platforms are the platforms TwoPlatforms builds for.
 var Platforms = []string{"linux/amd64", "linux/arm64"}
 
@@ -40,7 +43,7 @@ func TwoPlatforms(t testing.TB) ([]byte, string) {
 		cf, err := img.ConfigFile()
 		must(err)
 		cf = cf.DeepCopy()
-		cf.OS, cf.Architecture = "linux", arch
+		cf.OS, cf.Architecture = linux, arch
 		img, err = mutate.ConfigFile(img, cf)
 		must(err)
 		return img
@@ -53,8 +56,8 @@ func TwoPlatforms(t testing.TB) ([]byte, string) {
 		static.NewLayer([]byte(`{"_type":"https://in-toto.io/Statement/v0.1"}`), "application/vnd.in-toto+json"))
 	must(err)
 	idx := mutate.AppendManifests(mutate.IndexMediaType(empty.Index, types.OCIImageIndex),
-		mutate.IndexAddendum{Add: amd, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}},
-		mutate.IndexAddendum{Add: arm, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}}},
+		mutate.IndexAddendum{Add: amd, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: linux, Architecture: "amd64"}}},
+		mutate.IndexAddendum{Add: arm, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: linux, Architecture: "arm64"}}},
 		mutate.IndexAddendum{Add: statement, Descriptor: v1.Descriptor{
 			Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"},
 			Annotations: map[string]string{

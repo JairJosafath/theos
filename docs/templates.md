@@ -46,7 +46,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | postgres | Connector | W | yes | yes | yes | n/a | yes | n/a | yes |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
 | k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
-| gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
+| gitea-release | Deployment | W | yes | yes | yes | yes | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
 | vscode-extension | Framework | | #1476 | yes | yes | yes | yes | #1478 | n/a |
@@ -252,7 +252,7 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   tool; nothing applies them (#1072).
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.2.0)
+### gitea-release (v1.3.0)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
@@ -265,7 +265,9 @@ and attaches `dist/` to the tag's release.
   `make test-templates-operator` runs `make dist` for the operator pair,
   `make test-templates` for the CLIs.
 - Lint: `TestEveryTemplateRenders` parses the workflow.
-- README: nothing in the scaffold says that a tag releases (#1475).
+- README: `RELEASING.md` says how to tag a release, check one with
+  `make dist` and recover from a failed run
+  (`TestGiteaReleaseWritesReleasingGuide`).
 - Deploy: the Gitea release with the `dist/` files; no image (#1458 for an
   operator's).
 - Logging, Auth: n/a: a workflow; it uses the workflow's own token.
