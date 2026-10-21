@@ -431,7 +431,19 @@ the CLI said (`a limit: no API call`, `RELAY_LIMIT_WAIT`): that is the device
 failing, not the issue (#1421). Its claim's comment then names the limit and keeps its host,
 as every released or expired claim does: `released this issue: session ended
 without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
-(45m) is ended and counts as failed. A session that ends without a handoff and
+(45m) is ended and counts as failed. A claim whose heartbeat stays live but
+whose work shows no progress for `C4_CLAIM_STALE` (2h; `0` turns it off) is
+stale (#1513, the owner asked for it on 2026-10-21): progress is the newest of
+a commit on the claim's branch on origin or a `<branch>-*` takeover branch, a
+handoff comment and the claim's start; heartbeats don't count. Every
+`WATCH_PARENTS`, the relay watch (`hack/lib/github.sh stale --apply`; without
+`--apply` it only lists) sets such an issue to `status/needs-maintainer` with
+one comment marked `<!-- c4-claim-stale -->` naming the last progress, the
+holder and its host, the heartbeat's age and the branch. The claim is left
+alone: the live heartbeat says it may still be worked, so the maintainer
+decides. A stretch is flagged once; after new progress, another
+`C4_CLAIM_STALE` of none flags it again. Watches on two devices that flag at
+once keep the older comment. A session that ends without a handoff and
 without a new commit on the issue's branch, or on `<branch>-2` or
 `<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
 the issue naming the session, its host and the last lines of its stderr and

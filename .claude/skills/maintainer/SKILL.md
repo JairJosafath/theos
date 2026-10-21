@@ -64,6 +64,17 @@ unanswered for 14 days.
      and say what.
    - If the item is reserved, set or keep `status/needs-human`, comment your
      recommendation, and add the item to *Needs you*.
+   - **A stale claim** (a `<!-- c4-claim-stale -->` comment: a live heartbeat
+     but no commit or handoff for `C4_CLAIM_STALE`, 2h): look at the holder's
+     branch (and `<branch>-*`) on origin and its newest handoff, then pick
+     one. Ask the holder in a comment what it is doing and set it back to
+     `in-progress`; or, if the work is stuck or lost, release the claim
+     (`hack/lib/github.sh release` from its checkout, else edit the claim
+     comment to say it was released) and set `ready`, so a worker takes it
+     over and the holder's heartbeat tells it to push to `<branch>-<name>`
+     and stop; or set it back to `in-progress` with a comment naming a new
+     deadline. The relay watch flags it again only after new progress and
+     another 2h of none.
 3. **Reporters:** answer each `source/user` issue that has no maintainer
    comment yet. Thank the reporter, say what you understood and what happens
    next. When you ask a reporter to explain and get no answer in 20 days,

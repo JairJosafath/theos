@@ -1933,4 +1933,81 @@ later"
   rm "$TK/delete-fails"
   exit $fail
 ) || fail=1
+
+# stale (#1513): a live claim with no progress for C4_CLAIM_STALE is escalated
+# to the maintainer once per stale stretch, and the claim is left alone.
+# $T/st/comments is #140's comments, $T/st/refs origin's branches (REF SHA
+# AGE), $T/st/claims the claim comments; a POST adds its comment as id 700,
+# and $T/st/rival is another watch's marker posted meanwhile.
+(
+  ST=$T/st
+  mkdir -p "$ST"
+  R=repos/$C4_GITHUB_REPO
+  iso() { date -u -d "@$((GH_NOW - $1))" +%Y-%m-%dT%H:%M:%SZ; }
+  # cm ID CREATED_AGE UPDATED_AGE BODY: a comment on #140.
+  cm() { jq -nc --argjson id "$1" --arg c "$(iso "$2")" --arg u "$(iso "$3")" --arg b "$4" \
+    '{id: $id, created_at: $c, updated_at: $u, html_url: "u", user: {login: "x"}, body: $b,
+      issue_url: "https://api.github.com/repos/o/r/issues/140"}'; }
+  holds() { printf '<!-- c4-claim -->\n**otter-140** works on this issue · host `gray` · branch `feat/140-a`\nHeartbeat: x'; }
+  gh_api() {
+    local url= m=GET in= a
+    for a in "$@"; do case $a in repos/*) url=$a ;; POST | DELETE) m=$a ;; esac; done
+    [[ " $* " == *" --input - "* ]] && in=$(jq -r .body </dev/stdin)
+    echo "$m $url" >>"$ST/calls"
+    case "$m $url" in
+      "GET $R/issues/comments?since="*) jq -c '[[.[] | select(.body | startswith("<!-- c4-claim -->"))]]' "$ST/comments" ;;
+      "GET $R/issues?state=open"*) echo '[[{"number":140,"labels":[{"name":"status/in-progress"}]}]]' ;;
+      "GET $R/issues/140/comments"*) jq -c '[.]' "$ST/comments" ;;
+      "POST $R/issues/140/comments")
+        { jq -c '.[]' "$ST/comments"; cat "$ST/rival" 2>/dev/null; cm 700 0 0 "$in"; } | jq -s . >"$ST/c.new" && mv "$ST/c.new" "$ST/comments"
+        echo 700 ;;
+      "DELETE $R/issues/comments/"*) : ;;
+      "GET $R/git/matching-refs/heads/feat/140-a") [ -e "$ST/refs" ] || return 0; awk '{printf "refs/heads/%s\t%s\n", $1, $2}' "$ST/refs" 2>/dev/null ;;
+      "GET $R/commits/"*) iso "$(awk -v s="${url##*/}" '$2 == s {print $3}' "$ST/refs")" ;;
+      *) return 1 ;;
+    esac
+  }
+  gh_set_status() { echo "status $*" >>"$ST/calls"; }
+  setup() { rm -f "$ST"/{refs,rival}; : >"$ST/calls"; printf '%s\n' "$@" | jq -s . >"$ST/comments"; }
+  calls() { grep -c -- "$1" "$ST/calls"; }
+  H=3600
+  # A claim 3h old, heartbeat 1m ago, no commit or handoff: escalated, once.
+  setup "$(cm 10 $((3 * H)) 60 "$(holds)")"
+  out=$(gh_stale --apply)
+  check "stale: a 3h claim with no progress is escalated (#1513)" "$?|$out" \
+    "0|#140: otter-140 on host gray, no progress since $(date -u -d "@$((GH_NOW - 3 * H))" +%Y-%m-%dT%H:%MZ) (the claim's start), heartbeat 1m ago, branch feat/140-a: escalated"
+  check "stale: needs-maintainer, one marked comment, the claim not edited (#1513)" \
+    "$(calls 'status 140 needs-maintainer') $(calls '^POST ') $(calls 'PATCH') $(jq -r '.[-1].body' "$ST/comments" | head -1)" "1 1 0 <!-- c4-claim-stale -->"
+  grep -q 'otter-140.*`gray`.*heartbeat (1m ago).*no progress for 180m.*Branch `feat/140-a`' <(jq -r '.[-1].body' "$ST/comments")
+  check "stale: the comment names holder, host, heartbeat, last progress and branch (#1513)" $? 0
+  : >"$ST/calls"; out=$(gh_stale --apply)
+  check "stale: the same stretch is not flagged twice (#1513)" "$?|$out|$(calls '^POST ')" "0||0"
+  # Progress inside C4_CLAIM_STALE: a commit on a takeover branch, a handoff, a young claim.
+  setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; printf 'feat/140-a s1 %s\nfeat/140-a-heron s2 %s\nfeat/140-ab s3 0\n' $((4 * H)) $((H)) >"$ST/refs"
+  check "stale: a commit on a <branch>-* branch an hour ago is progress (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
+  printf 'feat/140-a s1 %s\nfeat/140-ab s3 0\n' $((5 * H / 2)) >"$ST/refs"
+  check "stale: a commit 2.5h ago is not, nor a feat/140-ab one (#1513)" "$(gh_stale | grep -o '(.*)')" '(a commit on `feat/140-a`)'
+  setup "$(cm 10 $((3 * H)) 60 "$(holds)")" "$(cm 11 $((H / 2)) $((H / 2)) '<!-- relay-handoff -->
+x')"
+  check "stale: a handoff half an hour ago is progress (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
+  setup "$(cm 10 $((H)) 60 "$(holds)")"
+  check "stale: a claim an hour old is not stale (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
+  setup "$(cm 10 $((3 * H)) $((3 * H)) "$(holds)")"
+  check "stale: a claim whose heartbeat stopped is take's, not stale (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
+  out=$(C4_CLAIM_STALE=0; setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; gh_stale --apply)
+  check "stale: C4_CLAIM_STALE=0 turns it off (#1513)" "$out|$(calls '^POST ')" "|0"
+  # New progress after a flag, then C4_CLAIM_STALE of none: flagged again.
+  setup "$(cm 10 $((6 * H)) 60 "$(holds)")" "$(cm 20 $((4 * H)) $((4 * H)) '<!-- c4-claim-stale -->
+old')" "$(cm 21 $((3 * H)) $((3 * H)) '<!-- relay-handoff -->
+x')"
+  out=$(gh_stale --apply)
+  check "stale: flagged again after new progress went stale (#1513)" "$(calls '^POST ')|$(grep -o '(.*)' <<<"$out")" "1|(a handoff)"
+  # Two watches at once: the other's older marker wins; this one deletes its own.
+  setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; cm 650 0 0 '<!-- c4-claim-stale -->
+rival' >"$ST/rival"
+  out=$(gh_stale --apply)
+  check "stale: a rival's marker posted meanwhile wins, ours is deleted (#1513)" \
+    "$out|$(calls '^DELETE .*comments/700') $(calls 'status 140')" "|1 0"
+  exit $fail
+) || fail=1
 exit $fail

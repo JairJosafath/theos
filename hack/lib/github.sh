@@ -32,6 +32,11 @@
 #                                        This checkout's claim on a closed issue is released first
 #   hack/lib/github.sh release [REASON]  release this checkout's claim and cluster lease (default reason: released)
 #   hack/lib/github.sh claims            the live and stale claims on open issues
+#   hack/lib/github.sh stale [--apply]   the live claims on in-progress issues with no progress (a commit on the
+#                                        claim's branch or a <branch>-* one, a handoff, the claim's start) for
+#                                        C4_CLAIM_STALE (2h; 0: off). --apply escalates each (needs-maintainer)
+#                                        with one <!-- c4-claim-stale --> comment, once per stale stretch,
+#                                        and leaves the claim alone. The relay watch runs it
 #   hack/lib/github.sh beat              refresh this checkout's claim heartbeat and cluster lease, at most every 15
 #                                        minutes. Exit 2: the claim was taken over; stop working
 #   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim and lease; if
@@ -218,6 +223,8 @@ C4_GITHUB_REPO=${C4_GITHUB_REPO:-JairJosafath/c4factory}
 GH_PENDING_DIR=${GH_PENDING_DIR:-$GH_LIB_ROOT/.relay}
 GH_HANDOFF_MARKER='<!-- relay-handoff -->'
 GH_CLAIM_MARKER='<!-- c4-claim -->'
+GH_STALE_MARKER='<!-- c4-claim-stale -->'
+C4_CLAIM_STALE=${C4_CLAIM_STALE:-2h}
 GH_CLAIM_FILE=${GH_CLAIM_FILE:-$GH_PENDING_DIR/claim}
 C4_LEASE_TTL=${C4_LEASE_TTL:-2h}
 GH_CLAIM_SETTLE=${GH_CLAIM_SETTLE:-5}  # seconds take waits before checking it won
@@ -361,13 +368,13 @@ gh_seconds() {
 gh_ttl() { gh_seconds "$C4_LEASE_TTL" C4_LEASE_TTL; }
 
 # gh_recent_claims SECONDS: the claim comments on any issue edited in the last
-# SECONDS, as one JSON array of {id, issue, updated_at, html_url, body}.
+# SECONDS, as one JSON array of {id, issue, created_at, updated_at, html_url, body}.
 gh_recent_claims() {
   local since pages
   since=$(date -u -d "@$(($(gh_now) - $1))" +%Y-%m-%dT%H:%M:%SZ)
   pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
   jq -c --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'
-    [.[][] | select(claim) | {id, issue: (.issue_url | sub(".*/"; "") | tonumber), updated_at, html_url, body}]' <<<"$pages"
+    [.[][] | select(claim) | {id, issue: (.issue_url | sub(".*/"; "") | tonumber), created_at, updated_at, html_url, body}]' <<<"$pages"
 }
 
 # gh_pick: the issue to work next, as NUMBER TITLE URL STATUS (tab-separated),
@@ -1484,6 +1491,96 @@ gh_claims() {
     | sort_by(.issue)[]
     | ["#\(.issue)", cname, (if reserved then "reserved" elif fresh then "live" else "stale" end), cfield("host"), "heartbeat \(age)", cfield("branch")]
     | @tsv' <<<"$claims"
+}
+
+# gh_branch_progress BRANCH: the newest commit on origin's BRANCH and its
+# BRANCH-* takeover branches, as EPOCH REF (tab-separated); nothing when there
+# is none. Exit 1: GitHub could not be asked.
+gh_branch_progress() {
+  local refs ref sha d best=0 bref=
+  refs=$(gh_api "repos/$C4_GITHUB_REPO/git/matching-refs/heads/$1" --jq '.[] | [.ref, .object.sha] | @tsv') || return 1
+  while IFS=$'\t' read -r ref sha; do
+    [ -n "$sha" ] || continue
+    ref=${ref#refs/heads/}
+    [ "$ref" = "$1" ] || [[ $ref == "$1"-* ]] || continue
+    d=$(gh_api "repos/$C4_GITHUB_REPO/commits/$sha" --jq .commit.committer.date) || return 1
+    d=$(date -d "$d" +%s 2>/dev/null) || continue
+    [ "$d" -le "$best" ] || { best=$d; bref=$ref; }
+  done <<<"$refs"
+  [ "$best" = 0 ] || printf '%s\t%s\n' "$best" "$bref"
+}
+
+# gh_stale_since ALL AT: whether the comments ALL hold a stale-claim marker
+# posted at or after epoch AT (this stale stretch was flagged); prints the
+# oldest such comment's id.
+gh_stale_since() {
+  jq -er --arg m "$GH_STALE_MARKER" --argjson at "$2" '
+    [.[] | select((.body | sub("^\\s+"; "") | startswith($m)) and (.created_at | fromdateiso8601) >= $at)]
+    | min_by(.id) // empty | .id' <<<"$1"
+}
+
+# gh_stale [--apply]: the live, held claims on open status/in-progress issues
+# with no progress for C4_CLAIM_STALE (2h; 0 turns it off), one line each.
+# Progress is the newest of the claim's start, a handoff comment and a commit
+# on origin's claim branch or a <branch>-* takeover branch; heartbeats don't
+# count. A live heartbeat means the work may go on, so the claim is left
+# alone: --apply escalates the issue (status/needs-maintainer) with one comment
+# marked <!-- c4-claim-stale --> for the maintainer to decide. A stretch with a
+# marker since its last progress is not flagged again; two watches flagging
+# at once keep the older comment. Exit 2: GitHub could not be asked.
+gh_stale() {
+  local apply=false ttl stale now claims issues rows rc=0 n name host branch start beat all at what h bp line id first
+  case ${1:-} in
+    --apply) apply=true ;;
+    '') ;;
+    *) echo "usage: hack/lib/github.sh stale [--apply]" >&2; return 1 ;;
+  esac
+  ttl=$(gh_ttl) || return 2
+  stale=$(gh_seconds "$C4_CLAIM_STALE" C4_CLAIM_STALE) || return 2
+  [ "$stale" -gt 0 ] || return 0
+  now=$(gh_now)
+  claims=$(gh_recent_claims "$ttl") || return 2
+  issues=$(gh_open_issues) || return 2
+  rows=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson stale "$stale" \
+    --argjson issues "$issues" "$GH_CLAIM_JQ"'
+    [$issues[] | select(any(.labels[]; .name == "status/in-progress")) | .number] as $prog
+    | group_by(.issue)[] | max_by(.id)
+    | select(held and fresh and (.issue as $i | $prog | any(. == $i)))
+    | (.created_at | fromdateiso8601) as $start
+    | select($start <= now - $stale)
+    | [.issue, cname, (cfield("host") | select(. != "") // "unknown"), cfield("branch"), $start, (.updated_at | fromdateiso8601)]
+    | @tsv' <<<"$claims") || return 2
+  while IFS=$'\t' read -r n name host branch start beat; do
+    [ -n "$n" ] || continue
+    all=$(gh_comments "$n") || { rc=2; continue; }
+    at=$start what="the claim's start"
+    h=$(jq -r --arg m "$GH_HANDOFF_MARKER" '
+      [.[] | select(.body | sub("^\\s+"; "") | startswith($m)) | .created_at | fromdateiso8601] | max // 0' <<<"$all")
+    [ "$h" -le "$at" ] || { at=$h what="a handoff"; }
+    if [ -n "$branch" ]; then
+      bp=$(gh_branch_progress "$branch") || { rc=2; continue; }
+      [ -z "$bp" ] || [ "${bp%%$'\t'*}" -le "$at" ] || { at=${bp%%$'\t'*} what="a commit on \`${bp#*$'\t'}\`"; }
+    fi
+    [ $((now - at)) -ge "$stale" ] || continue
+    gh_stale_since "$all" "$at" >/dev/null && continue
+    line="#$n: $name on host $host, no progress since $(date -u -d "@$at" +%Y-%m-%dT%H:%MZ) ($what), heartbeat $(((now - beat) / 60))m ago, branch ${branch:-none}"
+    if ! $apply; then echo "$line"; continue; fi
+    # Another device's watch may have flagged it since the first read.
+    all=$(gh_comments "$n") || { rc=2; continue; }
+    gh_stale_since "$all" "$at" >/dev/null && continue
+    id=$(printf '%s\n%s\n\n%s\n' "$GH_STALE_MARKER" \
+      "**Stale claim.** **$name** on host \`$host\` holds this issue with a live heartbeat ($(((now - beat) / 60))m ago) but no progress for $(((now - at) / 60))m: the last was $what at $(date -u -d "@$at" +%Y-%m-%dT%H:%MZ). Branch \`${branch:-none}\`." \
+      "Maintainer: decide the next step (the maintainer skill's stale claims): ask the holder, release the claim and ready the issue, or leave it with a new deadline. The claim is left as it is." |
+      jq -Rs '{body: .}' | gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || { rc=2; continue; }
+    sleep "$GH_CLAIM_SETTLE"
+    if all=$(gh_comments "$n") && first=$(gh_stale_since "$all" "$at") && [ "$first" != "$id" ]; then
+      gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+      continue
+    fi
+    gh_set_status "$n" needs-maintainer || { rc=2; continue; }
+    echo "$line: escalated"
+  done <<<"$rows"
+  return $rc
 }
 
 # gh_handoff N FILE: post FILE as N's handoff comment, the marker line first,
@@ -2789,6 +2886,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     take) gh_take "$@" ;;
     release) gh_release "$@" ;;
     claims) gh_claims ;;
+    stale) gh_stale "$@" ;;
     beat) gh_beat ;;
     handoff) gh_handoff "$@" ;;
     flush) gh_flush ;;
