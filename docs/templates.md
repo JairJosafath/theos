@@ -45,7 +45,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | ts-standard | Standard | W | #1469 | yes | yes | n/a | n/a | yes | n/a |
 | postgres | Connector | W | #1469 | #1472 | yes | n/a | #1471 | n/a | #1471 |
 | small | Compute | W | #1469 | yes | yes | n/a | n/a | n/a | n/a |
-| k8s-manifests | Deployment | W | #1469 | yes | yes | #1470 | yes, #1457 #1072 | n/a | n/a |
+| k8s-manifests | Deployment | W | #1469 | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
 | gitea-release | Deployment | W | #1469 | yes | yes | #1475 | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
@@ -85,7 +85,7 @@ A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 - Lint: python-standard's ruff (every rule) and mypy (strict); the
   pyproject's dev group carries both.
 - README: `README.md.tmpl`: run (`uv sync`, uvicorn, the devcontainer), check,
-  the routes. How to ship is k8s-manifests' (#1470).
+  the routes. How to ship is k8s-manifests' `deploy/k8s/README.md` (#1470).
 - Deploy: k8s-manifests in "fastapi service with postgres" writes its
   Dockerfile (uv, uvicorn, port 8000), checked by
   `TestK8sManifestsFollowsTheFramework`. No release builds the image (#1457)
@@ -120,7 +120,7 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Lint: ts-standard's ESLint (typescript-eslint strict-type-checked, React
   hooks), Prettier and `tsc --noEmit`.
 - README: `README.md.tmpl`: `npm ci`, `npm run dev`, `npm test`, `make check`,
-  `make dist`, layout.
+  `make dist`, layout; how to ship is k8s-manifests' `deploy/k8s/README.md`.
 - Deploy: k8s-manifests in "react web app on kubernetes" writes a Dockerfile
   (vite build, unprivileged nginx on 8080), checked by
   `TestK8sManifestsFollowsTheFramework` and `make validate-yaml`'s storefront
@@ -197,7 +197,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.3.0)
+### k8s-manifests (v1.4.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -207,8 +207,10 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   `make validate-yaml` builds the orders-api, storefront and payments-worker
   renders.
 - Lint: those builds are validated with kubectl-validate.
-- README: nothing in the scaffold says how to build the image or apply the
-  manifests (#1470).
+- README: `deploy/k8s/README.md.tmpl` (#1470): build the image, set it with
+  `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what
+  `compute.yaml` and each Connector's file are, the port and probes; checked
+  by `TestK8sManifestsWritesItsREADME`.
 - Deploy: the manifests, with the image `<container>:dev`, ready for a GitOps
   tool. No release builds the image (#1457); nothing applies it (#1072).
 - Logging, Auth: n/a: it packages the app's.
