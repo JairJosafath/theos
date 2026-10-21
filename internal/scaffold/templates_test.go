@@ -157,34 +157,46 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	cases := []struct {
 		framework, typ string
 		standard       string
+		connector      string
 		dockerfile     []string // substrings of the Dockerfile; nil: no Dockerfile
 		dockerignore   []string // lines of .dockerignore
 		deployment     []string // substrings of deploy/k8s/deployment.yaml
 		never          []string // substrings neither the Dockerfile nor deployment.yaml has
 	}{
-		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
+		{"python-fastapi", "service", "", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
 			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
-			[]string{"containerPort: 8000", "path: /healthz"}, []string{"PGPASSWORD"}},
-		{"react-vite", "static-site", "ts-standard",
+			[]string{"containerPort: 8000", "readinessProbe:\n            httpGet:\n              path: /healthz",
+				"livenessProbe:\n            httpGet:\n              path: /healthz"},
+			[]string{"PGPASSWORD", "/readyz"}},
+		// #1528: with postgres, readiness asks /readyz (SELECT 1), so a pod
+		// whose database is down leaves the Service; liveness stays on
+		// /healthz, so the outage never restarts it.
+		{"python-fastapi", "service", "", "postgres", []string{"uvicorn", "EXPOSE 8000"}, nil,
+			[]string{"PGPASSWORD", "readinessProbe:\n            httpGet:\n              path: /readyz",
+				"livenessProbe:\n            httpGet:\n              path: /healthz"}, nil},
+		{"react-vite", "static-site", "ts-standard", "",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
 			[]string{"node_modules", "dist", "coverage"},
 			[]string{"containerPort: 8080", "path: /\n"}, nil},
 		// #1468: a python-cli worker runs python -m app, serves nothing and
 		// has no probes.
-		{"python-cli", "worker", "python-standard",
+		{"python-cli", "worker", "python-standard", "",
 			[]string{"ghcr.io/astral-sh/uv", "uv sync --no-dev", "USER 1000:1000", `CMD ["python", "-m", "app"]`},
 			[]string{".venv", ".pytest_cache", ".uv", "dist", "tests"},
 			[]string{"image: sample-app:dev", "runAsNonRoot: true"},
 			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe"}},
-		{"go-cli", "service", "", nil, nil, []string{"containerPort: 8000"}, nil},
+		{"go-cli", "service", "", "", nil, nil, []string{"containerPort: 8000"}, nil},
 	}
 	for _, c := range cases {
-		t.Run(c.framework, func(t *testing.T) {
+		t.Run(strings.TrimSuffix(c.framework+"+"+c.connector, "+"), func(t *testing.T) {
 			sides := []side{{model.SideFramework, c.framework}}
 			if c.standard != "" {
 				sides = append(sides, side{model.SideStandard, c.standard})
 			}
 			sides = append(sides, side{model.SideDeployment, "k8s-manifests"})
+			if c.connector != "" {
+				sides = append(sides, side{model.SideConnector, c.connector})
+			}
 			_, result := renderCombo(t, c.typ, sides)
 			for _, name := range []string{"Dockerfile", ".dockerignore"} {
 				if _, ok := result.Files[name]; ok != (c.dockerfile != nil) {
@@ -294,7 +306,11 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				// #1471: the user makes the password's Secret before applying.
 				"kubectl create secret generic sample-app-postgres --from-literal=password=",
 				"port 8000",
+				// #1528: readiness on /readyz, liveness on /healthz, and why.
+				"The readiness probe\nasks `GET /readyz`",
+				"the pod leaves Service `sample-app`",
 				"`GET /healthz`",
+				"a database\noutage never restarts the app",
 			},
 			never: []string{"brings its own `Dockerfile`", "no port and no probes"},
 		},
