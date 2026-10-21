@@ -84,10 +84,18 @@ jobs:
       # and this run after each merge is the one that catches what that missed.
       # COVER=1: the coverage each package prints stays in the log; a local
       # make test leaves it out (docs/dev/testenv.md).
+      # TEST_TIMEOUT: the self-hosted runners share their device with the relay
+      # and sit outside its heavy-job queue (their own clones, in containers),
+      # so a loaded device runs every package 4 to 10 times slower. The
+      # controller suite's slower half took 529 s on a quiet runner and was
+      # halfway after 1170 s at a load of 55 to 90, which ran out of the
+      # Makefile's 20m (#1504). 60m gives that run 1.5 times its 2300 s, and
+      # still ends a hung spec, naming it, 30 s before.
       - name: Running Tests
         env:
           C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
           TEST_ALL: 1
+          TEST_TIMEOUT: 60m
         run: |
           go mod tidy
           COVER=1 make test

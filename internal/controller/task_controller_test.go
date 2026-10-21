@@ -74,6 +74,16 @@ func sandboxExists(g Gomega, ns, name string) *unstructured.Unstructured {
 	return sandbox
 }
 
+// expectSandboxGone waits for the operator to delete a run's Sandbox: it
+// writes the Task's status before it deletes the run, so a loaded API server
+// can show the status first (#1504).
+func expectSandboxGone(ns, name string) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, name), newSandbox()))
+	}).Should(BeTrue(), "Sandbox %s is deleted", name)
+}
+
 // finishSandbox plays Agent Sandbox and c4agent: it creates the sandbox's pod,
 // owned by the sandbox, and ends it with result as termination message, or with
 // reason and no message. Its writes are tried again: a loaded API server can

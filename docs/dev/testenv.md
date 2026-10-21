@@ -113,7 +113,8 @@ list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
 more requirements) and which takes a minute where `go list -test ./...` takes
 half a second.
 
-`make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why). The
+`make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why;
+the *Tests* workflow gives its loaded self-hosted runners 60m, #1504). The
 controller suite ends itself 30 s before that, failing the spec that was running by
 name. With `C4_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
 *Tests* workflow prints them, so a slow run's log says which specs to speed up.
