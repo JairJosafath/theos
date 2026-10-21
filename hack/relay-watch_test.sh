@@ -87,6 +87,11 @@ MAINTAIN_EVERY=0 ACT='t1 sha1' ACT_RC=0 MAINT_RC=0
 activity() { echo "$ACT"; return "$ACT_RC"; }
 ESC= ESC_RC=0
 escalated() { [ -n "$ESC" ] && printf '%s\n' "$ESC"; return "$ESC_RC"; }
+# The project's last sweep, recorded on the report issue (#1322): SWEPT is
+# "<epoch> <activity>", or nothing when no device swept.
+SWEPT= SWEPT_RC=0
+swept() { echo swept >>"$T/swepts"; [ -n "$SWEPT" ] && echo "$SWEPT"; return "$SWEPT_RC"; }
+swepts() { cat "$T/swepts" 2>/dev/null | wc -l | tr -d ' '; }
 run_maintain() { echo maintain >>"$T/maintains"; echo "maintainer started (pid 1)"; return "$MAINT_RC"; }
 maintains() { cat "$T/maintains" 2>/dev/null | wc -l | tr -d ' '; }
 starts() { cat "$T/starts" 2>/dev/null | wc -l | tr -d ' '; }
@@ -578,6 +583,44 @@ MAINT_T=0; round
 check "escalated: can't list: logged once" "$(logged 'could not list the issues escalated to the maintainer: boom')" 1
 check "escalated: can't list: the regular sweep runs" "$(maintains)" 7
 ESC= ESC_RC=0
+
+# The last sweep is the project's (#1322): the record on the report issue is
+# read only when this device's says a sweep is due; a sweep elsewhere younger
+# than WATCH_MAINTAIN holds this device's off, an older one starts it and is
+# the one named; a record started after an escalation covers it; one that
+# can't be read is logged once, and this device's counts.
+now=$(date +%s)
+SWEPT=boom SWEPT_RC=1 ACT='t5 sha1'
+echo "$((now - 600)) t4 sha1" >"$DIR/maintained"
+rm -f "$T/swepts"
+MAINT_T=0; round
+check "swept: not read while this device's sweep is recent" "$(swepts) $(maintains)" "0 7"
+SWEPT="$((now - 600)) t4 sha1" SWEPT_RC=0
+echo "$((now - 7200)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round; round
+check "swept elsewhere, younger than WATCH_MAINTAIN: no sweep" "$(maintains)" 7
+check "swept elsewhere: read once per WATCH_RETRY" "$(swepts)" 1
+SWEPT="$((now - 7200)) t4 sha1"
+echo "$((now - 9000)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+check "swept elsewhere, WATCH_MAINTAIN old: starts" "$(maintains)" 8
+check "swept elsewhere: names the other device's sweep" "$(logged "maintainer: activity since the sweep of $(date -d "@$((now - 7200))" -Is) (t5 sha1)")" 1
+# Escalated, and a sweep elsewhere started after it: it saw the issue.
+ESC="248 $((now - 300))" SWEPT="$((now - 100)) t5 sha1"
+echo "$((now - 600)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+check "escalated, swept elsewhere since: no sweep" "$(maintains)" 8
+ESC="248 $((now - 50))"
+MAINT_T=0; round
+check "escalated after the sweep elsewhere: starts" "$(maintains)" 9
+check "escalated after the sweep elsewhere: one line" "$(logged 'maintainer: escalated #248 (status/needs-maintainer); hack/relay.sh --maintain: maintainer started (pid 1)$')" 1
+ESC= SWEPT=boom SWEPT_RC=1 ACT='t6 sha1'
+echo "$((now - 7200)) t4 sha1" >"$DIR/maintained"
+MAINT_T=0; round
+MAINT_T=0; round
+check "swept: can't read: logged once" "$(logged "could not read the project's last sweep: boom; this device's counts")" 1
+check "swept: can't read: this device's record counts" "$(maintains)" 11
+SWEPT= SWEPT_RC=0
 MAINTAIN_EVERY=0 ACT_RC=0
 
 # Main's CI, with gh faked: runs from $T/runs-<file>.json, open issues in

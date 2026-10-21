@@ -669,7 +669,12 @@ commits nothing. The watch starts it when none runs, the last sweep is
 `WATCH_MAINTAIN` old (7200 s, 2h; 0 turns it off) and
 `hack/lib/github.sh activity` (the newest change to an issue or pull request,
 the report left out, and main's commit) differs from the one that sweep
-recorded in `.relay/maintained`, so a quiet night costs nothing.
+recorded, so a quiet night costs nothing. The last sweep is the project's,
+not the device's (#1322): the newer of this device's `.relay/maintained` and
+the `<!-- c4-swept -->` record on the Maintainer report issue
+(`hack/lib/github.sh swept`), which every full sweep writes in place; the
+watch reads the record only when its own says a sweep is due, and the
+sweep's prompt names the newer of the two.
 Agents escalate to the maintainer, never to the owner: a session, the triage,
 three failed sessions in a row and `cycles --report` set
 `status/needs-maintainer` (which releases the claim and lease, and ends the
@@ -688,8 +693,9 @@ waits, `.relay/admit-first` holds its PID and no worker takes the start slot
 session it takes the maintainer lease, a `<!-- c4-maintainer -->` comment on
 the Maintainer report issue that it refreshes every `GH_BEAT_EVERY` seconds
 and deletes when the session ends. While another device holds a live one it
-starts nothing and logs the holder; one past `C4_LEASE_TTL`, or this host's
-own (a crashed maintainer's), is taken over. It logs to
+starts nothing and logs the holder; one that missed `GH_MAINT_BEATS`
+heartbeats (3, 45 minutes; not the claims' `C4_LEASE_TTL`, #1322), or this
+host's own (a crashed maintainer's), is taken over. It logs to
 `.relay/relay-maintainer.log`.
 `hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
 the triage's reasons with `proposed --since` against a stubbed GitHub, and its

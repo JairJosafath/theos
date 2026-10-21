@@ -95,9 +95,12 @@
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
-# the last sweep (.relay/maintained) is WATCH_MAINTAIN seconds old (default
-# 7200, 2h; 0 turns it off), and hack/lib/github.sh activity differs from the
-# one that sweep recorded, so quiet nights cost nothing. Agents escalate to the
+# the last sweep is WATCH_MAINTAIN seconds old (default 7200, 2h; 0 turns it
+# off), and hack/lib/github.sh activity differs from the one that sweep
+# recorded, so quiet nights cost nothing. The last sweep is the project's, on
+# any device (#1322): the newer of this device's (.relay/maintained) and the
+# one recorded on the Maintainer report issue (hack/lib/github.sh swept),
+# read only when a sweep would otherwise start. Agents escalate to the
 # maintainer with status/needs-maintainer: when an issue got that label after
 # the last sweep started (hack/lib/github.sh escalated), the watch starts it at
 # once, however recent that sweep. One the sweep looked at and left there
@@ -221,6 +224,7 @@ run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
+swept() { github swept; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
 trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
@@ -586,13 +590,16 @@ triage() {
 # maintain NOW: start the maintainer when it is on, none runs, and an issue
 # got status/needs-maintainer after the last sweep started, or the last sweep
 # is MAINTAIN_EVERY seconds old and the activity changed since (see the
-# header). .relay/maintained holds the last full sweep's start and the
-# activity it saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
-# last one ran. MAINT_T keeps the watch from asking for the activity, or
-# repeating a start that didn't take, more often than every RETRY.
-MAINT_T=0 MAINT_ERR= ESC_ERR=
+# header). .relay/maintained holds this device's last full sweep's start and
+# the activity it saw, and the report issue the project's (hack/lib/github.sh
+# swept); hack/relay.sh --maintain writes both, and the newer counts, so a
+# sweep elsewhere holds this device's off too (#1322). The project's record is
+# read only when this device's says a sweep is due. MAINT_T keeps the watch
+# from asking for the activity or the project's record, or repeating a start
+# that didn't take, more often than every RETRY.
+MAINT_T=0 MAINT_ERR= ESC_ERR= SWEPT_ERR=
 maintain() {
-  local now=$1 t= seen= act out rc esc n u new=
+  local now=$1 t= seen= act out rc esc n u new= rec pt pseen
   [ "$MAINTAIN_EVERY" -gt 0 ] 2>/dev/null || return 0
   [ $((now - MAINT_T)) -ge "$RETRY" ] || return 0
   maintaining && return 0
@@ -600,12 +607,30 @@ maintain() {
   [[ $t =~ ^[0-9]+$ ]] || t=0
   if esc=$(escalated 2>&1); then
     ESC_ERR=
-    while read -r n u; do
-      [[ $u =~ ^[0-9]+$ ]] && [ "$u" -gt "$t" ] && new+=" #$n"
-    done <<<"$esc"
   else
     [ -n "$ESC_ERR" ] || log "could not list the issues escalated to the maintainer: ${esc//$'\n'/; }"
     ESC_ERR=1
+    esc=
+  fi
+  escalated_since() {
+    new=
+    while read -r n u; do
+      [[ $u =~ ^[0-9]+$ ]] && [ "$u" -gt "$t" ] && new+=" #$n"
+    done <<<"$esc"
+  }
+  escalated_since
+  [ -n "$new" ] || [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
+  # A sweep would start by this device's record: the project's may be newer (#1322).
+  if rec=$(swept 2>&1); then
+    SWEPT_ERR=
+    read -r pt pseen <<<"$rec"
+    if [[ $pt =~ ^[0-9]+$ ]] && [ "$pt" -gt "$t" ]; then
+      t=$pt seen=$pseen
+      escalated_since
+    fi
+  else
+    [ -n "$SWEPT_ERR" ] || log "could not read the project's last sweep: ${rec//$'\n'/; }; this device's counts"
+    SWEPT_ERR=1
   fi
   if [ -n "$new" ]; then
     MAINT_T=$now
@@ -614,7 +639,8 @@ maintain() {
     log "maintainer: escalated${new} (status/needs-maintainer); hack/relay.sh --maintain${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((RETRY / 60))m)")"
     return 0
   fi
-  [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
+  # A sweep elsewhere saw the escalations: asked again after RETRY, as a quiet night is.
+  [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || { MAINT_T=$now; return 0; }
   if ! act=$(activity 2>&1); then
     [ -n "$MAINT_ERR" ] || log "could not read the activity for the maintainer: ${act//$'\n'/; }"
     MAINT_ERR=1
