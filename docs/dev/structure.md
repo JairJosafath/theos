@@ -19,6 +19,7 @@ internal/sessionclient/            The Session client's logic: register, heartbe
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
 internal/modelproxy/               The model proxy's handler: drop the client's credential, add the Secret's, forward unbuffered
 internal/oci/                      Images in OCI registries: push a layout archive as a stream, resolve a tag, copy by digest
+internal/oci/ocitest/              Test archives: the OCI layout tar of a two-platform index with an attestation
 internal/buildinfo/                What a build stamps into the binary: the release Version (-ldflags -X)
 features/src/c4session/            The c4session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)

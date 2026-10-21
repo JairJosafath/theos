@@ -441,3 +441,16 @@ func TestNextPublishTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestIsImageArchive(t *testing.T) {
+	for name, want := range map[string]bool{
+		"orders-api-v1.0.0.oci.tar": true,
+		"orders-api-v1.0.0.tar":     false,
+		"orders-api.oci.tar.gz":     false,
+		"SHA256SUMS":                false,
+	} {
+		if got := IsImageArchive(name); got != want {
+			t.Errorf("IsImageArchive(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

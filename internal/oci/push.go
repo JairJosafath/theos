@@ -39,6 +39,10 @@ const attestationType = "attestation-manifest"
 // manifest the root reaches is put by digest, children first, and the root
 // under tag. An archive whose content is wrong is an error wrapping
 // ErrInvalid, and nothing is tagged.
+//
+// A tag is never moved: when it names the root already no manifest is put
+// again, and when it names another digest Push puts none and returns an
+// error wrapping ErrTagTaken, with the archive's Image.
 func Push(ctx context.Context, r Registry, repository, tag string, archive io.Reader) (Image, error) {
 	repo, err := r.repository(repository)
 	if err != nil {
@@ -68,6 +72,16 @@ func Push(ctx context.Context, r Registry, repository, tag string, archive io.Re
 	if err := p.walk(root, map[v1.Hash]bool{}, &order); err != nil {
 		return Image{}, err
 	}
+	img := Image{Digest: root.Digest.String(), Platforms: p.report(root)}
+	held, err := Resolve(ctx, r, repository, tag)
+	switch {
+	case err != nil:
+		return Image{}, err
+	case held == img.Digest:
+		return img, nil
+	case held != "":
+		return img, fmt.Errorf("%w: %s:%s names %s, not %s", ErrTagTaken, repo, tag, held, img.Digest)
+	}
 	// The root is last in order; it goes up once, under tag.
 	for _, h := range order[:len(order)-1] {
 		if err := p.put(repo.Digest(h.String()), h); err != nil {
@@ -77,7 +91,7 @@ func Push(ctx context.Context, r Registry, repository, tag string, archive io.Re
 	if err := p.put(repo.Tag(tag), root.Digest); err != nil {
 		return Image{}, err
 	}
-	return Image{Digest: root.Digest.String(), Platforms: p.report(root)}, nil
+	return img, nil
 }
 
 // manifest is a manifest or index held until the archive's end.

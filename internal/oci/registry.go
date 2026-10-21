@@ -43,6 +43,10 @@ type Image struct {
 // registry that can't be reached or refuses the push.
 var ErrInvalid = errors.New("invalid image archive")
 
+// ErrTagTaken is Push's error for a tag that names another digest: a tag,
+// once pushed, names one image for good.
+var ErrTagTaken = errors.New("the tag names another image")
+
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }

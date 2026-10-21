@@ -604,6 +604,16 @@ func ShippedFileName(files []ReleaseAsset, name string) string {
 	return name
 }
 
+// ImageArchiveSuffix ends the name of the release file that holds the
+// release's image, an OCI image layout tar (docs/plans/images.md).
+const ImageArchiveSuffix = ".oci.tar"
+
+// IsImageArchive reports whether a release file is the release's image
+// archive. The operator pushes it to the Git host's registry, and the
+// release copy to GitHub leaves it out: an image belongs in a registry,
+// and a deploy copies it to GHCR (#1070).
+func IsImageArchive(name string) bool { return strings.HasSuffix(name, ImageArchiveSuffix) }
+
 // GitHubAssetName is the name GitHub gives a file uploaded as name.
 func GitHubAssetName(name string) string {
 	return strings.Map(func(r rune) rune {

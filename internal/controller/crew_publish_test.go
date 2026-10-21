@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,7 +58,9 @@ func publishingCrew(ns, repository string, change ...func(*c4v1alpha1.Crew)) []f
 	crewAgents(ns, 1)
 	mergedIssue(ns)
 	files := []fakeFile{{"orders-api.vsix", []byte("a vsix")}, {"SHA256SUMS", []byte("abc  orders-api.vsix\n")}}
-	gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "", files...)
+	// The image archive goes to the registry; the GitHub copy leaves it out.
+	gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "",
+		append(slices.Clone(files), fakeFile{"orders-api-v0.1.0.oci.tar", []byte("an image")})...)
 	gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5,
 		Workflow: "release.yaml", Status: "completed", Conclusion: "success"})
 	crew := newCrew(ns)
@@ -162,7 +165,7 @@ var _ = Describe("Crew publishing releases", func() {
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("repository must be owner/name")))
 	})
 
-	It("publishes a release whose runs succeeded to GitHub, with its notes and every file", func() {
+	It("publishes a release whose runs succeeded to GitHub, with its notes and every file but its image", func() {
 		ns := newProjectNamespace()
 		repository := "acme/" + ns
 		token := rand.Text()
