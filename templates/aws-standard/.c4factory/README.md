@@ -184,7 +184,11 @@ byte for byte.
   update that waits for it only when the Framework has
   `infra/operations.ts`, as v1.1.0 does; a v1.0.0 gets the HTTP listener
   and the unsignalled rolling update it has (#1442). v1.17.3 names python-standard
-  v1.4.0 as the source of `aws-lambda-py`'s Python rules (#1468).
+  v1.4.0 as the source of `aws-lambda-py`'s Python rules (#1468). Since
+  v1.17.4 a selection by tag, by a condition or by a resource that is none
+  of the stack's tables names the fix in its fault: pass the stack's data
+  tables to `infra/backups.ts` and select each with
+  `BackupResource.fromArn(table.tableArn)` (#1490).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

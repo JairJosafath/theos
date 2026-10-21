@@ -370,7 +370,7 @@ aws-standard.
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.17.3)
+### aws-standard (v1.17.4)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag.
