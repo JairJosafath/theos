@@ -43,7 +43,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | python-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
-| postgres | Connector | W | yes | #1472 | yes | n/a | yes | n/a | yes |
+| postgres | Connector | W | yes | yes | yes | n/a | yes | n/a | yes |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
 | k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
@@ -75,10 +75,11 @@ one of their templates changes); #1476 does the same for the rest.
 
 ## The webshop's templates
 
-### python-fastapi (v1.3.0)
+### python-fastapi (v1.4.0)
 
 A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
-`postgres` Connector, `/readyz`.
+`postgres` Connector, `app/db.py` (a psycopg pool) and a `/readyz` that
+runs `SELECT 1`.
 
 - CI: `make test-templates`, combo "fastapi service with postgres":
   its `make check`, then `kustomize build deploy/k8s`.
@@ -194,9 +195,12 @@ and a ConfigMap with `DATABASE_URL`; a Postgres in the devcontainer.
 - CI: `make test-templates`, combo "fastapi service with postgres": the
   app's `make check`, then `kustomize build deploy/k8s` with its manifests.
 - Tests: `TestPostgresRunsOnKubernetes` (the pinned image, probe, volume,
-  non-root, and no password literal in its manifests or the Deployment);
-  the scaffold has no code that connects; python-fastapi's `/readyz` only
-  checks the variable is set (#1472).
+  non-root, and no password literal in its manifests or the Deployment).
+  python-fastapi's `tests/test_main.py` covers `/readyz` answering 200 and
+  503 with the pool faked, and runs it against the devcontainer's Postgres,
+  skipped when `DATABASE_URL` reaches no server;
+  `TestFastAPIConnectsOnlyWithPostgres` checks `app/db.py` is written only
+  with the Connector.
 - Lint: `make validate-yaml` builds the orders-api render with it, checks
   the StatefulSet, both Services and both `secretKeyRef`s, and validates
   the result with kubectl-validate.

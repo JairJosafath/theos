@@ -21,7 +21,7 @@ spec:
   supportedTypes: [service]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
-    ref: v1.3.0
+    ref: v1.4.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Framework

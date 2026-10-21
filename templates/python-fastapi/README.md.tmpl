@@ -36,8 +36,10 @@ uv run pytest               # tests
 - `GET /` returns the container and software system names.
 - `GET /healthz` returns `{"status": "ok"}` while the process is up.
 {{- if has .Connectors "postgres" }}
-- `GET /readyz` returns 200 once `DATABASE_URL` is set, 503 before. It does not connect
-  to the database.
+- `GET /readyz` returns 200 while the database answers `SELECT 1`, 503 when it doesn't.
+  `app/db.py` opens a psycopg connection pool on `DATABASE_URL`; libpq reads the
+  password from `PGPASSWORD`. In the devcontainer `DATABASE_URL` names its Postgres,
+  and `tests/test_main.py` runs `/readyz` against it; elsewhere that test is skipped.
 {{- end }}
 {{- if .Connectors }}
 
