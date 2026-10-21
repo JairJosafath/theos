@@ -102,12 +102,14 @@ A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
 tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
 that names a new `hack/` path fails `hack/test-packages_test.sh` until the
 path joins that list. `land`'s `make check` selects
-the same way. The *Tests* workflow sets `TEST_ALL=1`, so a merge to main it
-runs on tests every package and catches what a selection missed; but its
-`paths` filter skips a merge that changes only `*.md`, `docs/`, `ui/`,
-`config/ui/`, `config/samples/`, `test/e2e/`, the linter configs, `hack/` (but
-the four files it names), `dev`, `.vscode/` or `.github/` (but its own
-workflow) files, so such a merge gets only `land`'s selection. With `COVER=1`,
+the same way, and so does the *Tests* workflow on a pull request (against
+its base branch); its `paths` filter skips a pull request that changes only
+`*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
+linter configs, `hack/` (but the four files it names), `dev`, `.vscode/` or
+`.github/` (but its own workflow) files. Nothing runs after a merge to main.
+Every package is tested only when a release is made: *Tests* sets
+`TEST_ALL=1` on a pushed `vX.Y.Z` tag and on a manual run, and that run
+catches what a selection missed (#1522). With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
 did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
 selects the same way, but it loads every package of every module in the build
