@@ -90,7 +90,8 @@ func (g *gitea) Repository(name string) Repository { return g.repository(name) }
 func (g *gitea) repository(name string) Repository {
 	web := g.base.JoinPath(g.owner, name).String()
 	return Repository{Owner: g.owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy: g.base.JoinPath("api/packages", g.owner, "go").String()}
+		GoProxy:       g.base.JoinPath("api/packages", g.owner, "go").String(),
+		ImageRegistry: g.base.Host + "/" + strings.ToLower(g.owner)}
 }
 
 // History reads the default branch over Git, which is up to date at once; the

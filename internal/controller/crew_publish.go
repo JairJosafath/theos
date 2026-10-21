@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -197,6 +198,12 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		if p.gitea, err = p.provider.GetRelease(ctx, p.repo, p.tag); err != nil {
 			p.log.Error(err, "Failed to read the Gitea release")
 			return false
+		}
+		if p.gitea != nil {
+			// The image goes to a registry, not to the GitHub release.
+			p.gitea.Assets = slices.DeleteFunc(p.gitea.Assets, func(a gitprovider.ReleaseAsset) bool {
+				return model.IsImageArchive(a.Name)
+			})
 		}
 		p.facts.Gitea = sourceRelease(p.gitea)
 	case model.PublishReadIssues:

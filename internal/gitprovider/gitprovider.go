@@ -46,6 +46,10 @@ type Repository struct {
 	// GoProxy is the Go module proxy of the owner's package registry, where the
 	// owner's released Go modules are fetched from; empty when the host has none.
 	GoProxy string
+	// ImageRegistry is the owner's container registry, <host>/<owner>, where
+	// the images of the owner's releases are pushed; empty when the host has
+	// none.
+	ImageRegistry string
 }
 
 // Commit is one commit on the default branch.
@@ -247,6 +251,15 @@ type Provider interface {
 	// published before and a module that can't be published at tag are
 	// outcomes, not errors; a repeat publishes nothing.
 	PublishGoModule(ctx context.Context, repo Repository, tag string) (GoModule, error)
+	// PublishImage pushes the image archive of repo's release of tag, its
+	// *.oci.tar file, to the owner's container registry under tag and links
+	// it to repo. A tag is pushed once and never replaced: no archive, an
+	// invalid one and a tag naming another digest are outcomes, not errors;
+	// the same digest again pushes nothing. An unreachable host is an error.
+	PublishImage(ctx context.Context, repo Repository, tag string) (Image, error)
+	// ImageDigest returns the digest repo's image tag names in the owner's
+	// container registry, or "" when there is none.
+	ImageDigest(ctx context.Context, repo Repository, tag string) (string, error)
 	// ReadSource calls fn with each file of repo as of tag, as git archive makes
 	// it, its path, mode and size, and its content, which is streamed, never
 	// held whole in memory, and read only during the call. A submodule fails the
