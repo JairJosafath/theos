@@ -508,8 +508,9 @@ release to the tool that owns the target. It never builds, runs repository
 code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 - **A place is a `DeployTarget`,** shared by any number of Containers: one
-  member saying what it is (`github` today; `cloudFormation`, `argoCD` and
-  `flux` come with their adapters, #1071, #1072), a `credentialsSecretRef`, a
+  member saying what it is (`github` today; `argoCD` with #1072,
+  `cloudFormation` with #1071, `flux` later, each with its adapter), a
+  `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`
   (`Required` or `None`; empty is `Required` in production) and non-secret
   `parameters`. `Ready` says whether the target takes the credential.
@@ -536,6 +537,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   ship's `Shipment.Image` is `<repository>@<digest>` of the version shipped,
   a pin's resolved in the registry.
   `Crew.spec.publishReleases.github` moves onto a DeployTarget with #1070.
+- **Kubernetes targets** (#1072, [plans/k8s-deploy.md](plans/k8s-deploy.md)):
+  an `argoCD` target names Argo CD's namespace and project and the
+  destination; the operator writes one Argo CD `Application` per Container
+  and version (the repository at the release tag, path `deploy/k8s`, the
+  image by digest in `kustomize.images`, automated sync) and reads sync and
+  health back into `status.deploys[]`. Nothing is written to the repository
+  at deploy. It needs a `k8s-manifests` Deployment (`service`, `worker`,
+  `static-site`, `job`); operators stay out. The factory never installs
+  Argo CD. The first cluster is the factory's own; another cluster, by a
+  `kubeconfig` key in the Secret, comes later.
 
 ## Distribution and issues
 
