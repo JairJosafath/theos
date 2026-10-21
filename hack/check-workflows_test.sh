@@ -5,8 +5,9 @@
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
 # test-hack job (#1101), and Tests off pull requests or off pushes to main
-# (#1556), grouped by commit, not cancelling a superseded head of main, or
-# without cancel-in-progress on pull requests fail, and so does a job on pull
+# (#1556), off the release tags (#1525), grouped by commit, not cancelling a
+# superseded head of main, or without cancel-in-progress on pull requests
+# fail, and so does a job on pull
 # requests missing from .github/required-checks, a line there naming no job,
 # or two checks with one name (#1380);
 # and so does a release.yml that doesn't dispatch Verify Release for minors
@@ -159,6 +160,17 @@ real test '/^  push:/,/^  pull_request:/{/^    branches: \[main\]/d;}'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Tests off pushes to main fails (#1556)" "$?" 1
 check "Tests off pushes to main says so" "$(grep -c "test.yml: doesn't run on pushes to main" <<<"$out")" 1
+
+# #1525: Tests must run on the release tags Release runs on, every package.
+real test '/^  push:/,/^  pull_request:/{/^    tags: /d;}'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests off the release tags fails (#1525)" "$?" 1
+check "Tests off the release tags says so" "$(grep -c "test.yml: doesn't run on a pushed release tag" <<<"$out")" 1
+
+real test "/^  push:/,/^  pull_request:/s/^    tags: .*/    tags: ['v*']/"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests on other tags than Release fails (#1525)" "$?" 1
+check "Tests on other tags than Release says so" "$(grep -c "test.yml: doesn't run on a pushed release tag" <<<"$out")" 1
 
 real test 's/^  group: .*/  group: ${{ github.workflow }}-${{ github.sha }}/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
