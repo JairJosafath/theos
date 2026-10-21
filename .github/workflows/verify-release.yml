@@ -409,8 +409,9 @@ jobs:
       # (#1083). test/chart/verify_release_guide_test.go holds this step to the
       # section: every command of it, kubectl as $KUBECTL, and no other change
       # to the cluster. A release without the sample or the Agent skips the
-      # check; one whose stand-in releases nothing stops at the Crew's first
-      # Task. Both say so.
+      # check; one before v0.24.0, whose stand-in releases nothing, stops at
+      # the Crew's first Task. Both say so. From v0.24.0 on the stand-in
+      # releases, so a Crew without tagReleases fails the step (#1240).
       - name: "Getting started: a Brief without a token"
         if: matrix.check == 'install' && env.GUIDE == 'run'
         working-directory: guide
@@ -456,9 +457,19 @@ jobs:
           fi
           $KUBECTL -n webshop wait "container/$container" --for=jsonpath='{.status.phase}'=Ready --timeout=5m ||
             { $KUBECTL -n webshop describe container "$container" | tail -30; exit 1; }
-          # An older stand-in releases nothing: its Crew starting a Task for
-          # the Brief's issue is as far as it goes.
+          # v0.24.0's stand-in is the first that releases. Before it, the Crew
+          # starting a Task for the Brief's issue is as far as the check goes;
+          # from it on, a Crew without tagReleases is the regression this step
+          # exists to catch (#1240). test/chart/verify_release_guide_test.go
+          # holds the cut-off.
+          releases_from=v0.24.0
           if [ "$(get "crew/$crew" '{.spec.tagReleases}')" != true ]; then
+            if [ "$(printf '%s\n' "$releases_from" "$TAG" | sort -V | head -1)" = "$releases_from" ]; then
+              echo "::error::$TAG's stand-in releases ($releases_from on), but Crew $crew has no spec.tagReleases: true"
+              echo "Crew $crew's spec:"
+              $KUBECTL -n webshop get crew "$crew" -o jsonpath='{.spec}' | jq .
+              exit 1
+            fi
             task=
             for i in $(seq 1 60); do
               task=$($KUBECTL -n webshop get tasks -l "c4.factory.io/crew=$crew,c4.factory.io/issue=$issue" -o name)
