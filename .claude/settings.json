@@ -55,7 +55,10 @@
       "Bash(hack/relay.sh:*)",
       "Bash(gh issue edit:*)",
       "Bash(gh pr edit:*)",
-      "Bash(gh api repos/JairJosafath/c4factory/milestones:*)"
+      "Bash(gh api repos/JairJosafath/c4factory/milestones:*)",
+       "Edit(hack/relay.sh)",
+      "Edit(hack/lib/github.sh)",
+      "Bash(claude -p --model fable:*)"
     ]
   }
 }
