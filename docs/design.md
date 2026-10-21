@@ -296,15 +296,25 @@ The operator moves bytes with credentials it holds; it builds nothing.
 - **npm and PyPI packages** (#1087, decided, not built): the release's npm
   tarballs, wheels and sdists, published once to the Git host's registries
   ([plans/app-packages.md](plans/app-packages.md)).
-- **A copy on GitHub.** `spec.publishReleases.github` (a repository and a
-  token Secret for it alone) copies the tag, notes and files once the runs
-  succeed; the operator does it, not CI, so the token never meets the agents'
-  code. It refuses a renamed or replaced target (`Published=False`) until
-  `c4.factory.io/accept-repository: <id>` accepts it.
-- **The source on GitHub.** `publishReleases.source.path` also commits the
-  app's source at its tag into that folder, without the factory's own files
-  (`model.FactoryOwnPaths`), tagged `<path>/vX.Y.Z` so `go install` finds it.
-  Crews publishing to one repository may not overlap (`FolderOverlaps`).
+- **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
+  (a repository and a token Secret for it alone) copies the tag, notes and
+  files once the runs succeed; the operator does it, not CI, so the token
+  never meets the agents' code. It refuses a renamed or replaced target
+  (`Published=False`) until `c4.factory.io/accept-repository: <id>` accepts
+  it. The same copy is a `github` DeployTarget's (the Deploys section), and
+  the Crew's field ships through the same code path, its `Published`
+  condition and reasons kept. The field stays valid and working in
+  `v1alpha1` (Compatibility); dropping it is `v1beta1`'s (#1082). To move
+  over by hand: a DeployTarget with the same repository and the same Secret
+  (key `token`, unchanged), a `spec.deploy` entry on the Container, then the
+  field removed. Both may exist at once: each finds the release the other
+  made and leaves it alone. A Brief's `releases[]` keeps writing the field
+  on its Crews until a Brief can name DeployTargets.
+- **The source on GitHub** (deprecated by #1070). `publishReleases.source.path`
+  also commits the app's source at its tag into that folder, without the
+  factory's own files (`model.FactoryOwnPaths`), tagged `<path>/vX.Y.Z` so
+  `go install` finds it. Crews publishing to one repository may not overlap
+  (`FolderOverlaps`). It moves over with the copy, as the target's `source`.
 
 ## Standards and the catalog
 
@@ -536,7 +546,35 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `NoImage`, `Invalid`, `TagTaken`, or `Failed`, retried each poll). Each
   ship's `Shipment.Image` is `<repository>@<digest>` of the version shipped,
   a pin's resolved in the registry.
-  `Crew.spec.publishReleases.github` moves onto a DeployTarget with #1070.
+- **GitHub targets** (#1070, [plans/github-deploy.md](plans/github-deploy.md)):
+  a `github` target is how a Container is published as open source, for
+  every type. It ships three things of each release, each by its own rule
+  (`model.GitHubShipment`): the app's source at the tag, when the member's
+  `source` is set; a GitHub release of the tag, always, with its notes and
+  the files when the release has them; and the release's image on GHCR,
+  when the Container publishes one and the Secret holds `packagesToken`. A
+  release with none of the three is `ArtifactMissing`. The source is a
+  snapshot, one commit per release into `source.path` (the Container's name
+  by default, `"."` for the whole repository), without the factory's own
+  files (`model.FactoryOwnPaths`), the release tag on the published tree and
+  the folder tagged `<source.tagPrefix><version>` (`<path>/vX.Y.Z` by
+  default, so `go install` finds it); never the history, whose agent
+  commits and Gitea issue numbers don't belong in public. Two Containers
+  whose folders overlap on one target fail `FolderOverlaps`. Before the
+  first write of a version the tree to publish is checked
+  (`model.PublishChecks`): a license and a README at the folder's root, and
+  no secret the factory recognises (a private key block, a token of a known
+  shape, the value of a credential the operator holds); a problem fails the
+  entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
+  and line and never the value, until another version is wanted. The image
+  goes by digest to `ghcr.io/<owner>/<repository>/<name>` (the repository
+  alone when `tagPrefix` is `""`), tagged with the version, and
+  `status.deploys[].image` reports it. The Secret holds `token`, a
+  fine-grained token for the one repository, or a GitHub App's `appId`,
+  `installationId` and `privateKey`, from which the operator mints
+  installation tokens; `packagesToken` is a classic token with
+  `write:packages`, since GHCR takes neither. GitHub Enterprise (a `url` on
+  the member) and GitLab (its own member) come later.
 - **Kubernetes targets** (#1072, [plans/k8s-deploy.md](plans/k8s-deploy.md)):
   an `argoCD` target names Argo CD's namespace and project and the
   destination; the operator writes one Argo CD `Application` per Container
