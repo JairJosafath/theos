@@ -929,9 +929,12 @@ queue:
   records nothing. So a `hack/`-only change runs the shell tests and skips
   the UI's check and `validate-yaml`; one under `ui/` runs only the UI's check.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
-  before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
-  `docker build`). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
+  before a heavy job (a `make` of a goal in the Makefile's `HEAVY_GOALS`:
+  `check`, `test`, `lint`, `lint-fix`, `vulncheck`, `docker-build`, `deploy`,
+  `e2e`, `test-e2e`, `test-templates-operator`, `test-templates`;
+  `devcontainer up`; `docker build`). `hack/heavy-guard_test.sh` reads
+  `HEAVY_GOALS` from the Makefile, so a goal added there fails the test until
+  the hook flags it too (#1324). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
   runs, naming the processes with the most memory and the Kind node. A
   headless session (`C4_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
