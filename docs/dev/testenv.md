@@ -106,10 +106,11 @@ the same way, and so does the *Tests* workflow on a pull request (against
 its base branch); its `paths` filter skips a pull request that changes only
 `*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
 linter configs, `hack/` (but the four files it names), `dev`, `.vscode/` or
-`.github/` (but its own workflow) files. Nothing runs after a merge to main.
-Every package is tested only when a release is made: *Tests* sets
-`TEST_ALL=1` on a pushed `vX.Y.Z` tag and on a manual run, and that run
-catches what a selection missed (#1522). With `COVER=1`,
+`.github/` (but its own workflow) files. *Tests* runs on pushes to main
+too, with the same `paths`, and on a pushed `vX.Y.Z` tag: there and on a
+manual run it sets `TEST_ALL=1` and tests every package, and that run
+catches what a selection missed (#1522). Main's run is the one that shows a
+red main while yolo mode merges a pull request unchecked (#1556). With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
 did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
 selects the same way, but it loads every package of every module in the build
@@ -565,7 +566,11 @@ workers run origin/main's scripts, whatever branch the main checkout has
 to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
 the main checkout. One started from the checkout moves there at its first pull,
 and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
-the code where they were started, to try relay changes from a branch. Every 30 minutes
+the code where they were started, to try relay changes from a branch. A worker
+started again while its last session still runs (after a crash, a kill or a
+restart by hand) ends that session first, SIGTERM then SIGKILL after
+`RELAY_IDLE_KILL`, before it releases the claim or starts a session in the
+worktree: `.relay/session-K.pid` names the session while it runs (#1341). Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
 Docker Desktop's disk images never shrink (#1343). It prunes:
@@ -935,9 +940,12 @@ queue:
   records nothing. So a `hack/`-only change runs the shell tests and skips
   the UI's check and `validate-yaml`; one under `ui/` runs only the UI's check.
 - A PreToolUse hook on Bash, `hack/heavy-guard.sh`, reads `MemAvailable`
-  before a heavy job (`make check`, `test`, `lint`, `lint-fix`,
-  `docker-build`, `deploy`, `e2e`, `test-e2e`; `devcontainer up`;
-  `docker build`). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
+  before a heavy job (a `make` of a goal in the Makefile's `HEAVY_GOALS`:
+  `check`, `test`, `lint`, `lint-fix`, `vulncheck`, `docker-build`, `deploy`,
+  `e2e`, `test-e2e`, `test-templates-operator`, `test-templates`;
+  `devcontainer up`; `docker build`). `hack/heavy-guard_test.sh` reads
+  `HEAVY_GOALS` from the Makefile, so a goal added there fails the test until
+  the hook flags it too (#1324). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
   runs, naming the processes with the most memory and the Kind node. A
   headless session (`C4_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
@@ -1124,7 +1132,7 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
   without the label.
 - **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
-  every merge commit its `paths` match.**
+  the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and
   envtest suites and `make test-gitea`), *UI* and *Vulnerabilities* run on
   pushes to main and on pull requests to main, with the same path filters, so
@@ -1136,12 +1144,15 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   gets no run of it. On a pull request, the `concurrency` group is one per
   pull request with `cancel-in-progress: ${{ github.event_name ==
   'pull_request' }}`, so a new push cancels the run in progress and only the
-  newest head counts. On main nothing is cancelled: Lint, UI and
-  Vulnerabilities group by `${{ github.workflow }}-${{ github.ref }}`, so a
-  running job always finishes and GitHub cancels only older pending runs;
-  Tests groups main's runs by commit (`${{ github.workflow }}-${{
-  github.event_name == 'pull_request' && github.ref || github.sha }}`), so no
-  run is dropped and every merge commit gets its own verdict. The "main is
+  newest head counts. On main, Lint, UI and Vulnerabilities group by
+  `${{ github.workflow }}-${{ github.ref }}` and cancel nothing, so a
+  running job always finishes and GitHub cancels only older pending runs.
+  Tests groups by the same ref with `cancel-in-progress: ${{
+  github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}`,
+  so a push to main cancels the run of the head it supersedes and only the
+  newest head of main is tested: the runners are the owner's devices, and
+  since yolo mode merges unchecked, main's run is what shows a red main
+  (#1556). A tag's ref is its own, so no release run is dropped. The "main is
   red" watch (`gh_red` in `hack/lib/github.sh`) skips cancelled runs,
   and failed runs a self-hosted runner lost (`gh_lost`): a runner stopped
   mid-job cancels its step ("The operation was canceled.", Ginkgo prints
@@ -1152,8 +1163,9 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   one of those groups, or cancelling a run on main; a workflow on pull
   requests to another branch, with other paths there or without the
   pull-request `cancel-in-progress`; Lint, UI or Tests off pull requests to
-  main; Lint without its `test-hack` job; Tests grouped on main by anything
-  but the commit; and a job on pull requests without a `name:` or missing
+  main; Lint without its `test-hack` job; Tests off pushes to main, grouped
+  by anything but the ref, or not cancelling a superseded head of main
+  (#1556); and a job on pull requests without a `name:` or missing
   from `.github/required-checks`, a line there naming no such job, or two
   checks with one name.
 - **Vulnerabilities runs govulncheck.** *Vulnerabilities* (`vulncheck.yml`)

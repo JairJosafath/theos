@@ -12,7 +12,8 @@
 # creation and stash of what a session left, and update() pulling nothing
 # under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing, and each session's
+# session the relay ends when its transcript stops growing, the session a
+# restarted worker finds still running and ends first (#1341), and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; a
 # worktree's own .dev/, which becomes the link to the main checkout's; the worktree
 # with no git identity, which starts no session (#1289); and idle workers,
@@ -244,6 +245,16 @@ check "prompt: never forbids Fable (#1534)" "$(grep -c 'Never use the Fable mode
 check "prompt: subagents run on the relay's model (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out")" 2
 check "prompt: RELAY_MODEL names the model (#1534)" "$(RELAY_MODEL=opus prompt 1 t u ready n b | grep -c 'Run subagents on the opus model: name it when dispatching')" 1
 
+# No headless session ends its turn while a background command it started
+# still runs (#1327): a session ends with its turn, so the notification never
+# arrives. The worker's prompts (ready and in-progress) say so, their land step too, and so does the
+# handoff skill where it says to run land in the background; triage's and the
+# maintainer's prompts are checked with their dry runs below.
+check "prompt: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 2
+check "prompt: land is followed to its end (#1327)" "$(grep -c 'end your turn while it still runs' <<<"$out")" 2
+check "handoff skill: land is followed to its end (#1327)" \
+  "$(grep -c 'end your turn while `land` (or any background command you started) still' "$(dirname "$0")/../.claude/skills/handoff/SKILL.md")" 1
+
 # A resumed issue continues from its newest handoff at every priority (#1309):
 # pick says in-progress for a priority/3 one (#1329), and its prompt says so.
 (
@@ -294,6 +305,7 @@ check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow i
 check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
 check "triage: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
+check "triage: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
 check "triage skill: needs-human is the owner's" "$(grep -c "needs-human is the owner's" <<<"$skill")" 1
 check "triage skill: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$skill")" 1
@@ -376,10 +388,12 @@ check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out
 check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
 check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
 check "maintain: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
+check "maintain: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
+
 
 # limit_name: the few words for each limit a session can end on (#1199), the
 # most specific first: an expired OAuth session also failed to authenticate.
@@ -488,6 +502,7 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
+  pidfile) cp "${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
@@ -986,6 +1001,49 @@ echo leftover >"$FAKE"
 check "leftover: still running" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" running
 flock -n "$DIR/lock-7" true; check "leftover: the lock is free" $? 0
 kill "$(cat "$FAKE.child")" 2>/dev/null
+
+# A worker that restarts while its last session still runs ends that session
+# first (#1341): the session's pid and start time are in .relay/session-K.pid
+# while it runs, and stray_session stops the process group they name, SIGTERM
+# then SIGKILL, before the worker touches the worktree or the claim.
+: >"$LOG"
+echo pidfile >"$FAKE"
+work
+check "stray #1341: the session's pid file names timeout, while it runs" "$(cut -d' ' -f1 "$FAKE.pidfile") $(cut -d' ' -f2 "$FAKE.pidfile" | grep -c '^[0-9]\+$')" "$(cat "$FAKE.ppid") 1"
+check "stray #1341: the pid file goes with the session" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+# A process group like timeout's, with a child, that dies on SIGTERM.
+setsid bash -c 'sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+stray_session
+check "stray #1341: the session and its child are gone" "$(kill -0 "$stray" 2>/dev/null && echo leader)$(kill -0 "$(cat "$T/stray.child")" 2>/dev/null && echo child)" ""
+check "stray #1341: the pid file is gone" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+grep -q "worker $K restarted while its last session (pid $stray) still ran in $WT; stopping it before anything else (#1341)" "$LOG"; check "stray #1341: logged" $? 0
+grep -q SIGKILL "$LOG"; check "stray #1341: SIGTERM was enough" $? 1
+# One that ignores SIGTERM gets SIGKILL after RELAY_IDLE_KILL.
+rm -f "$T/stray.child"
+setsid bash -c 'trap "" TERM; sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+IDLE_KILL=1s stray_session
+check "stray #1341: SIGKILL ends one that ignores SIGTERM" "$(kill -0 "$stray" 2>/dev/null && echo leader)" ""
+grep -q "the last session (pid $stray) still ran 1s after SIGTERM; SIGKILL" "$LOG"; check "stray #1341: SIGKILL logged" $? 0
+kill "$(cat "$T/stray.child")" 2>/dev/null
+# A pid file of a session that ended, or whose pid a later process has
+# (another start time), kills nothing and says nothing.
+: >"$LOG"
+echo "$$ 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a reused pid is left alone" "$(kill -0 $$ && echo alive) $(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" "alive  0"
+sleep 0.01 & gone=$!; wait "$gone"
+echo "$gone 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a dead pid is left alone" "$(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" " 0"
+stray_session; check "stray #1341: no pid file, no fuss" "$? $(grep -c . "$LOG")" "0 0"
 
 # Idle workers take no start slot (#242): pick asks before admit, so with one
 # ready issue N workers start one session, and the other N-1 stop without

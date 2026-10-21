@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# PreToolUse hook on Bash (.claude/settings.json): before a heavy job (make
-# check, test, lint, lint-fix, docker-build, deploy, e2e, test-e2e;
-# devcontainer up; docker build) it reads MemAvailable. Below
+# PreToolUse hook on Bash (.claude/settings.json): before a heavy job (a make
+# of a goal in the Makefile's HEAVY_GOALS: check, test, lint, lint-fix,
+# vulncheck, docker-build, deploy, e2e, test-e2e, test-templates-operator,
+# test-templates; devcontainer up; docker build) it reads MemAvailable. Below
 # RELAY_MIN_MEM_GIB (default 2, the relay's own threshold) it names what uses
 # the memory: the processes with the most, and the Kind node. An interactive
 # session then asks the user before running the job; a headless one
@@ -33,8 +34,12 @@ loose='make.*(check|test|e2e|lint|build|deploy|sample|up|down)|devcontainer.*up|
 [[ $input =~ $loose ]] || exit 0
 
 # A heavy job: one command, its words on one line, continued lines joined.
+# The make goals are the Makefile's HEAVY_GOALS, the ones that take a
+# heavy-job slot; hack/heavy-guard_test.sh reads that line and fails when a
+# goal there is missing here (#1324).
 nl=$'\n'
-jobs="(make([[:blank:]][^;&|$nl]*)?[[:blank:]](check|test|test-e2e|e2e|lint|lint-fix|docker-build|deploy)|devcontainer[[:blank:]]+up|docker[[:blank:]]+((buildx|compose|image)[[:blank:]]+)?build)"
+goals='check|test|test-e2e|e2e|lint|lint-fix|vulncheck|docker-build|deploy|test-templates-operator|test-templates'
+jobs="(make([[:blank:]][^;&|$nl]*)?[[:blank:]]($goals)|devcontainer[[:blank:]]+up|docker[[:blank:]]+((buildx|compose|image)[[:blank:]]+)?build)"
 sep='(^|[;&|(/]|[[:space:]])'
 end='([;&|)<>]|[[:space:]]|$)'
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null) || exit 0

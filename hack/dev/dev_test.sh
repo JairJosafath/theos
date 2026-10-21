@@ -2,7 +2,9 @@
 # Tests for ./dev and hack/dev/env.sh in git worktrees (#1132): a worktree
 # whose .dev/ make or a test made before ./dev setup could link it still runs
 # with the main checkout's tools and caches, against a throwaway repository with
-# a fake tool in the main checkout's .dev/bin and fakes for curl, kind and zsh.
+# a fake tool in the main checkout's .dev/bin and fakes for curl, kind and zsh;
+# and ./dev setup in the main checkout, every tool already there, warning when
+# git has no committer identity (#1362).
 # Run: hack/dev/dev_test.sh
 T=$(mktemp -d)
 trap 'chmod -R u+w "$T" 2>/dev/null; rm -rf "$T"' EXIT
@@ -30,6 +32,8 @@ mkdir -p "$T/fake" "$T/home"
 for f in curl kind kubectl sudo; do
   printf '#!/bin/sh\necho "%s $*" >>"%s/called"\nexit 1\n' "$f" "$T" >"$T/fake/$f"
 done
+# The system packages ./dev setup would ask apt for.
+for f in make gcc; do printf '#!/bin/sh\n' >"$T/fake/$f"; done
 printf '#!/bin/sh\necho "ZDOTDIR=$ZDOTDIR"\n' >"$T/fake/zsh"
 chmod +x "$T/fake/"*
 
@@ -89,6 +93,37 @@ if [ -x /usr/bin/zsh ] || [ -x /bin/zsh ]; then
 else
   echo "skip zsh: no zsh on this device"
 fi
+
+# ./dev setup in the main checkout, every tool already there (a lite device:
+# no Docker, Kind or Helm), warns when git has no committer identity, in the
+# project environment (XDG_CONFIG_HOME in .dev/, empty), with the commands
+# that set one, and still finishes (#1362). The global config says
+# useConfigOnly, as hack/relay_test.sh's #1289 case does: git would guess an
+# identity from the account and the host otherwise, on some devices.
+touch "$T/main/.dev/lite"
+mkdir -p "$T/main/.dev/tools/go/bin" "$T/main/.dev/tools/node/bin" "$T/main/.dev/npm/bin" \
+  "$T/main/.dev/zsh/oh-my-zsh" "$T/main/.dev/zsh/custom/plugins/zsh-autosuggestions" \
+  "$T/main/.dev/zsh/custom/plugins/zsh-syntax-highlighting"
+for f in tools/go/bin/go tools/node/bin/node npm/bin/claude bin/uv bin/jq bin/fzf bin/kubebuilder; do
+  printf '#!/bin/sh\necho "%s"\n' "${f##*/} fake" >"$T/main/.dev/$f"
+  chmod +x "$T/main/.dev/$f"
+done
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+printf '[user]\n\tname = t\n\temail = t@t\n' >"$T/ident"
+setup_main() { # GIT_CONFIG_GLOBAL
+  (cd "$T/main" && env -i HOME="$T/home" PATH="$T/fake:/usr/bin:/bin" \
+    GIT_CONFIG_GLOBAL="$1" GIT_CONFIG_NOSYSTEM=1 ./dev setup 2>&1)
+}
+out=$(setup_main "$T/noident")
+check "no identity (#1362): ./dev setup still finishes" "$?" 0
+check "no identity (#1362): says git can't commit, with git's reason" \
+  "$(grep -c "WARNING: git can't commit here: fatal: no email was given and auto-detection is disabled" <<<"$out")" 1
+check "no identity (#1362): names the two commands" "$(grep -c "git config --global user\.\(name\|email\) " <<<"$out")" 2
+check "no identity (#1362): the warning comes after the tools" \
+  "$(grep -o "==> Versions\|==> Git identity\|^Ready" <<<"$out" | tr '\n' ' ')" "==> Versions ==> Git identity Ready "
+out=$(setup_main "$T/ident")
+check "identity (#1362): ./dev setup finishes" "$?" 0
+check "identity (#1362): says nothing of it" "$(grep -c "Git identity\|can't commit" <<<"$out")" 0
 
 check "nothing downloaded or touched a cluster" "$(cat "$T/called" 2>/dev/null)" ""
 exit $fail

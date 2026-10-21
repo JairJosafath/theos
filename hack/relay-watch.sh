@@ -141,6 +141,8 @@
 # repository's labels follow the code and retired ones go (#1329); a failure
 # is logged and the watch goes on.
 #
+# --install warns when git in the main checkout has no committer identity
+# (#1362): the relay starts no session there until it is set (#1289).
 # At start, the watch logs a warning when it lacks one of the user's groups in
 # /etc/group, and --install prints it when the systemd user manager does: a
 # manager that started before the user joined docker passes its groups to the
@@ -787,6 +789,17 @@ group_warning() {
   echo "$1 lacks the group(s) $missing that $(id -un) has in /etc/group: it inherits the groups of the systemd user manager, which started before $(id -un) joined them, so its sessions can't reach Docker (make test-gitea runs Gitea in it). Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u \"\$USER\" -x systemd)/status"
 }
 
+# ident_warning: the warning when git in the main checkout has no committer
+# identity (#1362): no session there could commit, and the relay starts none
+# (#1289, hack/relay.sh can_commit). The check runs as the installer does,
+# from the project shell, where XDG_CONFIG_HOME points into .dev/ and hides
+# an identity kept under ~/.config, as it does for every session.
+ident_warning() {
+  local err
+  err=$(git -C "$REPO" var GIT_COMMITTER_IDENT 2>&1 >/dev/null) && return 0
+  echo "relay-watch: git has no committer identity in $REPO ($(grep fatal <<<"$err" || tail -n1 <<<"$err")): no session can commit there, so the relay starts none until it is set: git config --global user.name 'Your Name'; git config --global user.email 'you@example.com'"
+}
+
 # own_groups: log the warning when this watch lacks one of the user's groups.
 own_groups() {
   local warning
@@ -892,6 +905,7 @@ install_watch() {
     echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
     (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
   fi
+  ident_warning >&2
   echo "stop: touch $STOP; start again: hack/relay-watch.sh"
 }
 

@@ -1328,7 +1328,11 @@ describe('server.mjs', () => {
     it('lets no flood of sign-ins push out one in flight, or lock out the next one', async () => {
       const pending = await startSignIn()
       // More than the 1000 sign-ins the server once kept, while alice is at the issuer.
-      await Promise.all(Array.from({ length: 1100 }, () => fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })))
+      // In batches: all 1100 at once outran the listen backlog (511) on a loaded
+      // device, and the kernel reset the ones it couldn't queue (#1340).
+      for (let sent = 0; sent < 1100; sent += 100) {
+        await Promise.all(Array.from({ length: 100 }, () => fetch(`${oidcBase}/ui/login`, { redirect: 'manual' })))
+      }
       assert.equal((await finishSignIn(pending)).back.status, 302)
       assert.equal((await signIn()).back.status, 302)
     })

@@ -227,8 +227,13 @@ and the memories.
 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching.
-- A headless session ends when you end your turn. Dispatch every subagent with
-  run_in_background: false and never end your turn while one is running.
+- A headless session ends when you end your turn, and nothing wakes it: a
+  notification from a subagent or a background command never arrives. Dispatch
+  every subagent with run_in_background: false and never end your turn while
+  one is running. Never end your turn while a background command you started
+  (\`land\`, \`make check\`, a CI rerun you follow) still runs: follow it, or
+  poll it with a short command (\`tail\` of its log, never a bare \`sleep\`),
+  until it ends, and only then write the account.
 - Keep the context small: at about 80k tokens, finish the small step in
   flight, commit, push and hand off, mid-task if need be; never go on past
   120k. The next session continues #$n from your handoff, so say exactly
@@ -255,7 +260,8 @@ Rules for this headless run:
     it with a merge commit (\`hack/lib/github.sh land PR\`: it merges main in and runs make check, then
     takes the merge turn and merges, checking again only when main moved; its check is the check, so
     while you work run the targeted tests and run make check by hand only when land failed and you
-    need the whole output; run land in the background and follow it; over 400
+    need the whole output; run land in the background and follow it, and never
+    end your turn while it still runs; over 400
     changed lines it refuses until a review pass is posted: the handoff skill, \"Review before landing\"), and if the issue is still
     open, \`hack/lib/github.sh close $n FILE\`, FILE saying what landed (pull
     request, commit SHAs). The relay then picks the next issue. A pull
@@ -304,7 +310,10 @@ this worktree, relay-$K, is on origin/main for reading only.
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - Keep the context small: past about 80k tokens, finish the issue in hand and
@@ -344,7 +353,10 @@ it on. Only you set status/needs-human. End the sweep by writing the report and 
 Rules for this headless run:
 - Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
   every subagent with run_in_background: false and never end your turn while
-  one is running.
+  one is running. A headless session ends when you end your turn, and nothing
+  wakes it: never end your turn while a background command you started still
+  runs; follow it, or poll it with a short command, until it ends, and only
+  then write the account.
 - Never wait on the factory or a run longer than about 20 minutes in one
   stretch; note it in the report and go on.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
@@ -896,6 +908,41 @@ stray() {
   printf '\nThe relay: this session left the main checkout %s with uncommitted changes: %s\n' "$REPO" "$paths" >>"$2.md"
 }
 
+# proc_start PID: PID's start time in clock ticks since boot (/proc/PID/stat
+# field 22), which tells a live process from a later one with the same pid.
+# Nothing when PID is gone.
+proc_start() {
+  sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+}
+
+# stray_session: a worker that restarted (crashed, was killed, or the watch
+# started it again) while its session still ran would release the session's
+# claim and start another one in the same worktree: two agents in one
+# checkout (#1341). So the worker records each session's pid and start time in
+# .relay/session-K.pid while it runs, and a new worker, before it touches the
+# worktree or the claim, ends the session the file names if it still lives:
+# SIGTERM to its process group (timeout's), SIGKILL after RELAY_IDLE_KILL.
+stray_session() {
+  local f=$DIR/session-$K.pid pid start kill_after i
+  read -r pid start 2>/dev/null <"$f" || return 0
+  rm -f "$f"
+  [[ $pid =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ "$(proc_start "$pid")" = "$start" ] || return 0
+  kill_after=$(gh_seconds "$IDLE_KILL" RELAY_IDLE_KILL 2>/dev/null) || kill_after=60
+  log "worker $K restarted while its last session (pid $pid) still ran in $WT; stopping it before anything else (#1341)"
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+  for ((i = 0; i < kill_after * 10; i++)); do
+    [ "$(proc_start "$pid")" = "$start" ] || return 0
+    sleep 0.1
+  done
+  log "the last session (pid $pid) still ran $IDLE_KILL after SIGTERM; SIGKILL"
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+  for ((i = 0; i < 100; i++)); do
+    [ "$(proc_start "$pid")" = "$start" ] || return 0
+    sleep 0.1
+  done
+  log "the last session (pid $pid) survived SIGKILL; going on"
+}
+
 # session WHAT OUT ID PROMPT: run headless session ID in the worktree with
 # PROMPT, keep its output in OUT.json and OUT.err and its account in OUT.md,
 # and log its end as WHAT. Exit 3: it ended on one of LIMITS, whose message
@@ -927,6 +974,8 @@ session() {
   (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
+  # For stray_session (#1341): the pid and its start time, while it runs.
+  echo "$pid $(proc_start "$pid")" >"$DIR/session-$K.pid"
   rm -f "$out.idle"
   if [ -n "$idle" ]; then
     idle_watch "$what" "$pid" "$(transcript "$id")" "$out.idle" "$idle" "$kill_after" 9>&- &
@@ -934,6 +983,7 @@ session() {
   fi
   wait "$pid"
   rc=$?
+  rm -f "$DIR/session-$K.pid"
   if [ -n "$watch" ]; then
     kill "$watch" 2>/dev/null
     wait "$watch" 2>/dev/null
@@ -1237,6 +1287,7 @@ work() {
     if [ -z "$DRY_RUN" ]; then
       update $((MAX_SESSIONS - i + 1))
       worktree || { log "could not prepare the worktree $WT; stopping"; break; }
+      # The session that held it is gone: stray_session ran at the start (#1341).
       if [ "$i" = 1 ] && gh_claim_read; then
         log "$(gh_release "worker $K restarted" 2>&1 | tr '\n' ' ')"
       fi
@@ -1414,6 +1465,8 @@ if [ -z "$DRY_RUN" ]; then
     flock -n 9 || { log "another worker $K holds the lock; exiting"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
   fi
 fi
+# Before the worktree, the claim or a session is touched (#1341).
+[ -n "$DRY_RUN" ] || stray_session
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"

@@ -143,8 +143,9 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   `make ui-test`), then land; `land` merges `origin/main` in and runs
   `make check` before it queues, then takes the merge turn, one across every
   device, and merges at once, checking again under the turn only when main
-  moved. Run `make check` by hand only when `land` failed and you need the
-  whole output. Over 400 changed lines it wants a review pass first, the
+  moved. It merges exactly the head it checked: a push to the branch while
+  it waits refuses the merge, so land again after one. Run `make check` by
+  hand only when `land` failed and you need the whole output. Over 400 changed lines it wants a review pass first, the
   `handoff` skill's "Review before landing". While yolo mode is on
   (`hack/lib/github.sh yolo status`), `land` merges at once, with no check,
   review pass or merge turn; only the closing-keyword refusals stay. No long-lived or stacked branches. A plan's pull request says
