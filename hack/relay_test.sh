@@ -1157,6 +1157,7 @@ check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 
 # The last sweep is the project's (#1322): the prompt names the newer of this
 # device's record and the one on the report issue, whichever device swept.
 gh_swept 172800 "t1 sha1"
+rm -f "$DIR/paused-until"
 : >"$LOG"
 echo fail >"$FAKE"
 ADMIT_GAP=0 maintain
