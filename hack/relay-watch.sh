@@ -95,9 +95,12 @@
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
 # --maintain), which acts as the project's maintainer on the owner's behalf and
 # keeps the pinned Maintainer report: when none runs (.relay/maintain.lock),
-# the last sweep (.relay/maintained) is WATCH_MAINTAIN seconds old (default
-# 7200, 2h; 0 turns it off), and hack/lib/github.sh activity differs from the
-# one that sweep recorded, so quiet nights cost nothing. Agents escalate to the
+# the last sweep is WATCH_MAINTAIN seconds old (default 7200, 2h; 0 turns it
+# off), and hack/lib/github.sh activity differs from the one that sweep
+# recorded, so quiet nights cost nothing. The last sweep is the project's, on
+# any device (#1322): the newer of this device's (.relay/maintained) and the
+# one recorded on the Maintainer report issue (hack/lib/github.sh swept),
+# read only when a sweep would otherwise start. Agents escalate to the
 # maintainer with status/needs-maintainer: when an issue got that label after
 # the last sweep started (hack/lib/github.sh escalated), the watch starts it at
 # once, however recent that sweep. One the sweep looked at and left there
@@ -138,6 +141,12 @@
 # repository's labels follow the code and retired ones go (#1329); a failure
 # is logged and the watch goes on.
 #
+# --install records the installer's Claude Code login (CLAUDE_CONFIG_DIR, or
+# ~/.claude) in the unit and the crontab lines, after ./dev run, which would
+# point every session at .dev/claude (#1435); it refuses when that login has
+# no .credentials.json, as every session would then run logged out.
+# --install warns when git in the main checkout has no committer identity
+# (#1362): the relay starts no session there until it is set (#1289).
 # At start, the watch logs a warning when it lacks one of the user's groups in
 # /etc/group, and --install prints it when the systemd user manager does: a
 # manager that started before the user joined docker passes its groups to the
@@ -219,6 +228,7 @@ run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
 run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
+swept() { github swept; }
 run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
 trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
@@ -584,13 +594,16 @@ triage() {
 # maintain NOW: start the maintainer when it is on, none runs, and an issue
 # got status/needs-maintainer after the last sweep started, or the last sweep
 # is MAINTAIN_EVERY seconds old and the activity changed since (see the
-# header). .relay/maintained holds the last full sweep's start and the
-# activity it saw; hack/relay.sh --maintain writes it, so the sweep's prompt reads when the
-# last one ran. MAINT_T keeps the watch from asking for the activity, or
-# repeating a start that didn't take, more often than every RETRY.
-MAINT_T=0 MAINT_ERR= ESC_ERR=
+# header). .relay/maintained holds this device's last full sweep's start and
+# the activity it saw, and the report issue the project's (hack/lib/github.sh
+# swept); hack/relay.sh --maintain writes both, and the newer counts, so a
+# sweep elsewhere holds this device's off too (#1322). The project's record is
+# read only when this device's says a sweep is due. MAINT_T keeps the watch
+# from asking for the activity or the project's record, or repeating a start
+# that didn't take, more often than every RETRY.
+MAINT_T=0 MAINT_ERR= ESC_ERR= SWEPT_ERR=
 maintain() {
-  local now=$1 t= seen= act out rc esc n u new=
+  local now=$1 t= seen= act out rc esc n u new= rec pt pseen
   [ "$MAINTAIN_EVERY" -gt 0 ] 2>/dev/null || return 0
   [ $((now - MAINT_T)) -ge "$RETRY" ] || return 0
   maintaining && return 0
@@ -598,12 +611,30 @@ maintain() {
   [[ $t =~ ^[0-9]+$ ]] || t=0
   if esc=$(escalated 2>&1); then
     ESC_ERR=
-    while read -r n u; do
-      [[ $u =~ ^[0-9]+$ ]] && [ "$u" -gt "$t" ] && new+=" #$n"
-    done <<<"$esc"
   else
     [ -n "$ESC_ERR" ] || log "could not list the issues escalated to the maintainer: ${esc//$'\n'/; }"
     ESC_ERR=1
+    esc=
+  fi
+  escalated_since() {
+    new=
+    while read -r n u; do
+      [[ $u =~ ^[0-9]+$ ]] && [ "$u" -gt "$t" ] && new+=" #$n"
+    done <<<"$esc"
+  }
+  escalated_since
+  [ -n "$new" ] || [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
+  # A sweep would start by this device's record: the project's may be newer (#1322).
+  if rec=$(swept 2>&1); then
+    SWEPT_ERR=
+    read -r pt pseen <<<"$rec"
+    if [[ $pt =~ ^[0-9]+$ ]] && [ "$pt" -gt "$t" ]; then
+      t=$pt seen=$pseen
+      escalated_since
+    fi
+  else
+    [ -n "$SWEPT_ERR" ] || log "could not read the project's last sweep: ${rec//$'\n'/; }; this device's counts"
+    SWEPT_ERR=1
   fi
   if [ -n "$new" ]; then
     MAINT_T=$now
@@ -612,7 +643,8 @@ maintain() {
     log "maintainer: escalated${new} (status/needs-maintainer); hack/relay.sh --maintain${out:+: ${out//$'\n'/; }}$([ "$rc" = 0 ] || echo " (failed, exit $rc; again after $((RETRY / 60))m)")"
     return 0
   fi
-  [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || return 0
+  # A sweep elsewhere saw the escalations: asked again after RETRY, as a quiet night is.
+  [ $((now - t)) -ge "$MAINTAIN_EVERY" ] || { MAINT_T=$now; return 0; }
   if ! act=$(activity 2>&1); then
     [ -n "$MAINT_ERR" ] || log "could not read the activity for the maintainer: ${act//$'\n'/; }"
     MAINT_ERR=1
@@ -761,6 +793,34 @@ group_warning() {
   echo "$1 lacks the group(s) $missing that $(id -un) has in /etc/group: it inherits the groups of the systemd user manager, which started before $(id -un) joined them, so its sessions can't reach Docker (make test-gitea runs Gitea in it). Restart the user manager: log out and in again, or on WSL run wsl --shutdown from Windows. Check: grep Groups /proc/\$(pgrep -u \"\$USER\" -x systemd)/status"
 }
 
+# ident_warning: the warning when git in the main checkout has no committer
+# identity (#1362): no session there could commit, and the relay starts none
+# (#1289, hack/relay.sh can_commit). The check runs as the installer does,
+# from the project shell, where XDG_CONFIG_HOME points into .dev/ and hides
+# an identity kept under ~/.config, as it does for every session.
+ident_warning() {
+  local err
+  err=$(git -C "$REPO" var GIT_COMMITTER_IDENT 2>&1 >/dev/null) && return 0
+  echo "relay-watch: git has no committer identity in $REPO ($(grep fatal <<<"$err" || tail -n1 <<<"$err")): no session can commit there, so the relay starts none until it is set: git config --global user.name 'Your Name'; git config --global user.email 'you@example.com'"
+}
+
+# login_dir: the Claude Code login the installer's shell uses, which the unit
+# and cron record for the sessions the watch starts (#1435): ./dev run points
+# CLAUDE_CONFIG_DIR at .dev/claude whatever the installer was logged in to, so
+# a watch installed from a shell logged in elsewhere (the VS Code login,
+# ~/.claude) would start its sessions logged out.
+login_dir() { echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+
+# login_check: refuse the install when login_dir holds no credentials: every
+# session the watch starts would end "Not logged in".
+login_check() {
+  local dir
+  dir=$(login_dir)
+  [ -s "$dir/.credentials.json" ] && return 0
+  echo "relay-watch: $dir has no .credentials.json, so every session the watch starts would run logged out. Log in there (CLAUDE_CONFIG_DIR=$dir claude, then /login), or install from the shell whose login the relay should use: CLAUDE_CONFIG_DIR=\$HOME/.claude hack/relay-watch.sh --install" >&2
+  return 1
+}
+
 # own_groups: log the warning when this watch lacks one of the user's groups.
 own_groups() {
   local warning
@@ -800,13 +860,14 @@ settings() {
 }
 
 # render_unit: the unit for this checkout and WORKERS, with the installer's PATH
-# (the user manager's own PATH lacks gh and claude) and relay settings.
+# (the user manager's own PATH lacks gh and claude), login and relay settings.
 render_unit() {
   local t env= line
   t=$(<"$TEMPLATE")
   t=${t//@REPO@/"$REPO"}
   t=${t//@WORKERS@/"$WORKERS"}
   t=${t//@PATH@/"$PATH"}
+  t=${t//@CLAUDE_CONFIG_DIR@/"$(login_dir)"}
   while IFS= read -r line; do env+=$'\n'"Environment=\"$line\""; done < <(settings)
   t=${t//$'\n'@ENV@/"$env"}
   printf '%s\n' "$t"
@@ -817,7 +878,7 @@ cron_lines() {
   local cmd
   local line env=
   while IFS= read -r line; do env+="${line%%=*}=$(printf %q "${line#*=}") "; done < <(settings)
-  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
+  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run env CLAUDE_CONFIG_DIR=$(printf %q "$(login_dir)") hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
   grep -vF "$(cron_tag)"
   echo "@reboot $cmd $(cron_tag)"
   echo "*/5 * * * * $cmd $(cron_tag)"
@@ -846,6 +907,7 @@ install_watch() {
   local groups
   # One unit per device: from a worktree it would run that worktree's watch.
   in_worktree && { echo "relay-watch: install from the main checkout, not a worktree" >&2; return 1; }
+  login_check || return 1
   mkdir -p "$DIR"
   rm -f "$STOP"
   if has_systemd; then
@@ -864,8 +926,9 @@ install_watch() {
     command -v crontab >/dev/null || { echo "relay-watch: neither systemd nor crontab here" >&2; return 1; }
     { crontab -l 2>/dev/null || true; } | cron_lines | crontab - || { echo "relay-watch: crontab failed" >&2; return 1; }
     echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
-    (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
+    (cd "$REPO" && ./dev run env "CLAUDE_CONFIG_DIR=$(login_dir)" hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
   fi
+  ident_warning >&2
   echo "stop: touch $STOP; start again: hack/relay-watch.sh"
 }
 

@@ -637,13 +637,23 @@ var _ = Describe("Task with an interrupted run", func() {
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 
-		// Agent Sandbox starts the pod; the operator remembers it.
+		// Agent Sandbox starts the pod of the round's sandbox; the operator
+		// remembers it. The sandbox is the one the Task's status names, not a
+		// fixed name: under load the operator may see the first pod gone and
+		// rerun the round before the replacement arrives (#1417), and then the
+		// pod starts under the rerun's sandbox. Either way one interrupted run
+		// costs a rerun and no round.
 		startPod := func() *corev1.Pod {
 			GinkgoHelper()
 			sandbox := newSandbox()
-			Expect(k8sClient.Get(ctx, key(ns, "add-crop-r1-implement"), sandbox)).To(Succeed())
+			Eventually(func(g Gomega) {
+				name := getTask(g, ns, "add-crop").Status.Sandbox
+				g.Expect(name).NotTo(BeEmpty(), "the Task names its run's sandbox")
+				g.Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+				g.Expect(sandbox.GetDeletionTimestamp().IsZero()).To(BeTrue(), "the sandbox %s is live", name)
+			}).Should(Succeed())
 			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "add-crop-r1-implement",
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: sandbox.GetName(),
 					Labels:          map[string]string{LabelTask: "add-crop"},
 					OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}},

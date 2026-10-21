@@ -12,7 +12,8 @@
 # creation and stash of what a session left, and update() pulling nothing
 # under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing, and each session's
+# session the relay ends when its transcript stops growing, the session a
+# restarted worker finds still running and ends first (#1341), and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; a
 # worktree's own .dev/, which becomes the link to the main checkout's; the worktree
 # with no git identity, which starts no session (#1289); and idle workers,
@@ -244,6 +245,16 @@ check "prompt: never forbids Fable (#1534)" "$(grep -c 'Never use the Fable mode
 check "prompt: subagents run on the relay's model (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out")" 2
 check "prompt: RELAY_MODEL names the model (#1534)" "$(RELAY_MODEL=opus prompt 1 t u ready n b | grep -c 'Run subagents on the opus model: name it when dispatching')" 1
 
+# No headless session ends its turn while a background command it started
+# still runs (#1327): a session ends with its turn, so the notification never
+# arrives. The worker's prompts (ready and in-progress) say so, their land step too, and so does the
+# handoff skill where it says to run land in the background; triage's and the
+# maintainer's prompts are checked with their dry runs below.
+check "prompt: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 2
+check "prompt: land is followed to its end (#1327)" "$(grep -c 'end your turn while it still runs' <<<"$out")" 2
+check "handoff skill: land is followed to its end (#1327)" \
+  "$(grep -c 'end your turn while `land` (or any background command you started) still' "$(dirname "$0")/../.claude/skills/handoff/SKILL.md")" 1
+
 # A resumed issue continues from its newest handoff at every priority (#1309):
 # pick says in-progress for a priority/3 one (#1329), and its prompt says so.
 (
@@ -294,6 +305,7 @@ check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow i
 check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
 check "triage: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
+check "triage: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
 check "triage skill: needs-human is the owner's" "$(grep -c "needs-human is the owner's" <<<"$skill")" 1
 check "triage skill: writes a missing Depends on itself" "$(grep -c 'a "Depends on #M" line it lacks' <<<"$skill")" 1
@@ -376,10 +388,12 @@ check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out
 check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
 check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
 check "maintain: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
+check "maintain: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
 check "maintain: a dry run records nothing" "$(cat "$DIR/maintained")" "86400 x y"
+
 
 # limit_name: the few words for each limit a session can end on (#1199), the
 # most specific first: an expired OAuth session also failed to authenticate.
@@ -488,6 +502,7 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
+  pidfile) cp "${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
@@ -987,6 +1002,49 @@ check "leftover: still running" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null &&
 flock -n "$DIR/lock-7" true; check "leftover: the lock is free" $? 0
 kill "$(cat "$FAKE.child")" 2>/dev/null
 
+# A worker that restarts while its last session still runs ends that session
+# first (#1341): the session's pid and start time are in .relay/session-K.pid
+# while it runs, and stray_session stops the process group they name, SIGTERM
+# then SIGKILL, before the worker touches the worktree or the claim.
+: >"$LOG"
+echo pidfile >"$FAKE"
+work
+check "stray #1341: the session's pid file names timeout, while it runs" "$(cut -d' ' -f1 "$FAKE.pidfile") $(cut -d' ' -f2 "$FAKE.pidfile" | grep -c '^[0-9]\+$')" "$(cat "$FAKE.ppid") 1"
+check "stray #1341: the pid file goes with the session" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+# A process group like timeout's, with a child, that dies on SIGTERM.
+setsid bash -c 'sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+stray_session
+check "stray #1341: the session and its child are gone" "$(kill -0 "$stray" 2>/dev/null && echo leader)$(kill -0 "$(cat "$T/stray.child")" 2>/dev/null && echo child)" ""
+check "stray #1341: the pid file is gone" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+grep -q "worker $K restarted while its last session (pid $stray) still ran in $WT; stopping it before anything else (#1341)" "$LOG"; check "stray #1341: logged" $? 0
+grep -q SIGKILL "$LOG"; check "stray #1341: SIGTERM was enough" $? 1
+# One that ignores SIGTERM gets SIGKILL after RELAY_IDLE_KILL.
+rm -f "$T/stray.child"
+setsid bash -c 'trap "" TERM; sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+IDLE_KILL=1s stray_session
+check "stray #1341: SIGKILL ends one that ignores SIGTERM" "$(kill -0 "$stray" 2>/dev/null && echo leader)" ""
+grep -q "the last session (pid $stray) still ran 1s after SIGTERM; SIGKILL" "$LOG"; check "stray #1341: SIGKILL logged" $? 0
+kill "$(cat "$T/stray.child")" 2>/dev/null
+# A pid file of a session that ended, or whose pid a later process has
+# (another start time), kills nothing and says nothing.
+: >"$LOG"
+echo "$$ 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a reused pid is left alone" "$(kill -0 $$ && echo alive) $(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" "alive  0"
+sleep 0.01 & gone=$!; wait "$gone"
+echo "$gone 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a dead pid is left alone" "$(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" " 0"
+stray_session; check "stray #1341: no pid file, no fuss" "$? $(grep -c . "$LOG")" "0 0"
+
 # Idle workers take no start slot (#242): pick asks before admit, so with one
 # ready issue N workers start one session, and the other N-1 stop without
 # touching .relay/admitted; a triage started next isn't held up by them.
@@ -1072,6 +1130,9 @@ lease() {
       body: "<!-- c4-maintainer -->\n**maintainer** sweeps · host `\($h)` · pid `42`\nHeartbeat: x"}]' \
     "$LEASES" >"$LEASES.new" && mv "$LEASES.new" "$LEASES"
 }
+# leases: the IDs of the lease comments; swept: of the sweep records (#1322).
+leases() { jq -c 'map(select(.body | startswith("<!-- c4-maintainer -->")) | .id)' "$LEASES"; }
+swept() { jq -c 'map(select(.body | startswith("<!-- c4-swept -->")) | .id)' "$LEASES"; }
 C4_GITHUB_REPO=x C4_HOST=here C4_LEASE_TTL=1h GH_CLAIM_SETTLE=0
 git -C "$WT" update-ref refs/remotes/origin/main HEAD
 gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
@@ -1095,21 +1156,41 @@ GH_BEAT_EVERY=1 ADMIT_GAP=0 maintain
 check "lease: a stale one taken over" "$(grep -c 'maintainer start: .*, lease 11$' "$LOG")" 1
 check "lease: held during the session, the stale one gone" "$(jq -c 'map({id, host: (.body | capture("host `(?<h>[^`]+)`").h)})' "$LEASES.during")" '[{"id":11,"host":"here"}]'
 check "lease: beaten while the session runs" "$(test -s "$T/beats" && echo yes)" yes
-check "lease: released when the session ends" "$(jq -c . "$LEASES") $(grep -c 'released the maintainer lease 11' "$LOG")" "[] 1"
+check "lease: released when the session ends" "$(leases) $(grep -c 'released the maintainer lease 11' "$LOG")" "[] 1"
+# The full sweep is recorded on the report issue, for every device (#1322).
+check "swept: a full sweep records its start and activity on the report issue" "$(swept) $(gh_swept)" "[12] $(cat "$DIR/maintained")"
 # A live lease of this host is a crashed maintainer's: taken over.
 lease here 20 60
 echo 20 >"$T/next-id"
 : >"$LOG"
 echo fail >"$FAKE"
 ADMIT_GAP=0 maintain
-check "lease: this host's crashed one taken over" "$(grep -c 'maintainer start: .*, lease 21$' "$LOG") $(jq -c . "$LEASES")" "1 []"
+check "lease: this host's crashed one taken over" "$(grep -c 'maintainer start: .*, lease 21$' "$LOG") $(leases)" "1 []"
+check "swept: the next full sweep edits the record in place" "$(swept) $(gh_swept)" "[12] $(cat "$DIR/maintained")"
 # Two hosts post at once: the older lease wins and the other starts nothing.
 : >"$LOG"
 touch "$T/race"
 ADMIT_GAP=0 maintain
 check "lease: a lost race, no sweep" "$(grep -c 'maintainer start' "$LOG")" 0
 grep -q "another device's maintainer holds the lease: host raced (pid 42), heartbeat 0m ago; no sweep" "$LOG"
-check "lease: a lost race, the winner logged and ours deleted" "$? $(jq -c 'map(.id)' "$LEASES")" "0 [5]"
+check "lease: a lost race, the winner logged and ours deleted" "$? $(leases)" "0 [5]"
+echo '[]' >"$LEASES"
+# The lease is stale after GH_MAINT_BEATS (3) missed heartbeats, not after the
+# claims' C4_LEASE_TTL (#1322): one beaten 2000s ago is live though
+# C4_LEASE_TTL says 10m, one beaten 3000s ago is stale though it says 1h.
+echo 30 >"$T/next-id"
+lease there 10 2000
+: >"$LOG"
+C4_LEASE_TTL=10m ADMIT_GAP=0 maintain
+check "lease: beaten within 3 heartbeats: kept, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start' "$LOG") $(leases)" "0 [10]"
+grep -q "another device's maintainer holds the lease: host there (pid 42), heartbeat 33m ago; no sweep" "$LOG"
+check "lease: beaten within 3 heartbeats: the holder logged" $? 0
+echo '[]' >"$LEASES"
+lease there 10 3000
+: >"$LOG"
+echo fail >"$FAKE"
+C4_LEASE_TTL=1h ADMIT_GAP=0 maintain
+check "lease: 3 heartbeats missed: taken over, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start: .*, lease 31$' "$LOG") $(leases)" "1 []"
 echo '[]' >"$LEASES"
 
 # A maintainer sweep, with claude faked, on origin/main: it records the
@@ -1131,6 +1212,21 @@ echo crash >"$FAKE"
 ADMIT_GAP=0 maintain
 check "maintain: a crash records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
 check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 2
+# The last sweep is the project's (#1322): the prompt names the newer of this
+# device's record and the one on the report issue, whichever device swept.
+gh_swept 172800 "t1 sha1"
+rm -f "$DIR/paused-until"
+: >"$LOG"
+echo fail >"$FAKE"
+ADMIT_GAP=0 maintain
+check "swept: another device's newer sweep names the last sweep" "$(grep -c "maintainer start: id .*, last sweep $(date -d @172800 -Is)," "$LOG")" 1
+check "swept: one record, edited in place" "$(swept | jq length) $(gh_swept)" "1 $(cat "$DIR/maintained")"
+read -r t _ <"$DIR/maintained"
+gh_swept 86400 "t0 sha0"
+: >"$LOG"
+ADMIT_GAP=0 maintain
+check "swept: this device's newer sweep names the last sweep" "$(grep -c "maintainer start: id .*, last sweep $(date -d "@$t" -Is)," "$LOG")" 1
+echo '[]' >"$LEASES"
 
 # The relay runs origin/main's code whatever branch the checkout it was started
 # from has (#1126). A scratch origin whose main has the relay's scripts, and a

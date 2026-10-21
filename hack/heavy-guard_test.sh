@@ -67,6 +67,21 @@ for c in "make check" "make -j4 test" "cd hack && make lint" "make lint-fix" "ma
   hook "$c"
   check "low, ${c//$'\n'/\\n}: asks" "$(decision)" ask
 done
+# Every goal in the Makefile's HEAVY_GOALS is a heavy job to the hook, so the
+# two lists cannot drift: a goal added to the Makefile fails here until the
+# hook matches it (#1324).
+goals=$(sed -n 's/^HEAVY_GOALS[[:space:]]*=[[:space:]]*//p' "$(dirname "$HOOK")/../Makefile")
+check "HEAVY_GOALS: read from the Makefile" "$([ -n "$goals" ] && echo yes)" yes
+for g in $goals; do
+  hook "make $g"
+  check "low, HEAVY_GOALS make $g: asks" "$(decision)" ask
+  hook "make $g IMG=x:dev"
+  check "low, HEAVY_GOALS make $g with an argument: asks" "$(decision)" ask
+done
+for g in vulncheck test-templates-operator; do
+  case " $goals " in *" $g "*) r=yes ;; *) r=no ;; esac
+  check "HEAVY_GOALS: still lists $g" $r yes
+done
 hook "make check"
 check "ask: exits 0" $? 0
 reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")

@@ -27,7 +27,16 @@ folder. Choose **Allow**.
 
 Log in once per machine: `gh auth login` and `gh auth setup-git` (machine-wide;
 `hack/lib/github.sh` takes its token from the git credential helper), and
-`claude` in the project shell (per project, stored in `.dev/claude`).
+`claude` in the project shell (per project, stored in `.dev/claude`). The
+installed relay watch uses the login of the shell that ran
+`hack/relay-watch.sh --install` (`CLAUDE_CONFIG_DIR`, or `~/.claude`).
+
+Git needs an identity on the device, or no session can commit and the relay
+starts none: `git config --global user.name 'Your Name'` and
+`git config --global user.email 'you@example.com'`. `./dev setup` and
+`hack/relay-watch.sh --install` say so when it is missing. Set it in
+`~/.gitconfig`, not under `~/.config/git/`: the project shell points
+`XDG_CONFIG_HOME` into `.dev/`, so git in a session does not read that folder.
 
 ## The `dev` script
 
