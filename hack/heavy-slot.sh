@@ -157,7 +157,7 @@ acquire() {
 }
 
 status() {
-  local free t n=0 waiting=
+  local free t n=0 waiting= held out
   [ "$JOBS" -eq 0 ] && { echo "heavy-slot: the queue is off (HEAVY_JOBS=0)"; return 0; }
   free=$(free_slots)
   # Waiters are listed without the queue lock: status only reads.
@@ -166,9 +166,12 @@ status() {
     n=$((n + 1))
     waiting+="  waiting $n: $(cat "$t" 2>/dev/null || echo unknown)"$'\n'
   done
-  echo "heavy-slot: $free of $JOBS slots free, $n waiting"
-  holders
-  printf '%s' "$waiting"
+  held=$(holders)
+  out="heavy-slot: $free of $JOBS slots free, $n waiting"$'\n'${held:+$held$'\n'}$waiting
+  # One write: a reader that stops after the line it wanted (head -1, grep
+  # -q) has it all, so no write of ours meets a closed pipe; one that
+  # closes without reading gets no "Broken pipe" complaint either (#1493).
+  printf '%s' "$out" 2>/dev/null
   [ "$free" -gt "$n" ]
 }
 

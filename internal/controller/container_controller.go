@@ -153,9 +153,14 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		failed := r.updateOperations(ctx, &container, status, live)
-		result = sooner(result, ctrl.Result{RequeueAfter: r.keepNewestRelease(ctx, &container, status)})
-		result = sooner(result, ctrl.Result{RequeueAfter: r.publishImage(ctx, &container, status)})
-		result = sooner(result, ctrl.Result{RequeueAfter: r.deploy(ctx, &container, status)})
+		// A failed Crew list leaves status.image and status.deploys as they
+		// were: the pass would act on a newest release it couldn't read (#1570).
+		if poll := r.keepNewestRelease(ctx, &container, status); poll > 0 {
+			result = sooner(result, ctrl.Result{RequeueAfter: poll})
+		} else {
+			result = sooner(result, ctrl.Result{RequeueAfter: r.publishImage(ctx, &container, status)})
+			result = sooner(result, ctrl.Result{RequeueAfter: r.deploy(ctx, &container, status)})
+		}
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.

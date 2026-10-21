@@ -150,12 +150,21 @@ func (r *ContainerReconciler) reportImage(ctx context.Context, container *c4v1al
 }
 
 // shippedImage is the image of version, <repository>@<digest>: status.image's
-// when it is version's, else the tag resolved in the owner's registry, ""
-// when there is none.
+// when version is its tag, else (a pin) the tag resolved in the owner's
+// registry, "" when there is none. The newest release's image in a settled
+// state other than Published ships "": its ImagePublished condition says why,
+// and the registry is not asked, as the tag may name another image
+// (TagTaken) or an older release's. A Failed push fails the ship, retried at
+// the next poll like the push (#1570).
 func (p *deployPass) shippedImage(ctx context.Context, version string) (string, error) {
-	if img := p.image; img != nil && img.Tag == version && img.State == model.ImageStatePublished &&
-		img.Digest != "" {
-		return img.Repository + "@" + img.Digest, nil
+	if img := p.image; img != nil && img.Tag == version {
+		switch img.State {
+		case model.ImageStatePublished:
+			return img.Repository + "@" + img.Digest, nil
+		case model.ImageStateFailed:
+			return "", fmt.Errorf("the image of %s is not published yet: %s", version, img.Message)
+		}
+		return "", nil
 	}
 	if p.repo.ImageRegistry == "" {
 		return "", nil

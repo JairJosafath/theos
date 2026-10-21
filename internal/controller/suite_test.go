@@ -319,7 +319,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount}},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
+		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
 			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}, DeployMembers: testDeployMember,
 			DeployPoll: time.Second},

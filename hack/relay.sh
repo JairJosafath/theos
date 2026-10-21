@@ -129,6 +129,9 @@
 # A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
 # changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
 # then SIGKILL after RELAY_IDLE_KILL) and counts it as failed, commit or not.
+# A device that slept doesn't count (#1500): when the clock between two looks
+# at the transcript jumps more than a minute past RELAY_IDLE_POLL, the idle
+# time starts over from the wake.
 # Every session runs on RELAY_MODEL (default fable), and its prompt sends its
 # subagents there. Before each session the worker runs the yolo round,
 # hack/lib/github.sh yolo merge (#1534): while yolo mode is on, every open
@@ -853,13 +856,21 @@ transcript() {
 # once its transcript FILE and its subagents' haven't changed for IDLE seconds
 # (RELAY_IDLE): SIGTERM, then SIGKILL after KILL seconds (RELAY_IDLE_KILL),
 # with MARK touched so the relay counts it as failed. A transcript that never
-# appears leaves the session to SESSION_TIMEOUT.
+# appears leaves the session to SESSION_TIMEOUT. A look that comes more than a
+# minute later than IDLE_POLL says is the device waking from sleep (#1500), not
+# a stuck session: the idle time starts over from the wake, so a session the
+# sleep froze is not ended and struck for the hours the device was off.
 idle_watch() {
-  local what=$1 pid=$2 f=$3 idle=$5 kill_after=$6 t0 last m now missing= i
-  t0=$(date +%s) last=$t0
+  local what=$1 pid=$2 f=$3 idle=$5 kill_after=$6 t0 last m now prev missing= i
+  t0=$(date +%s) last=$t0 prev=$t0
   while sleep "$IDLE_POLL"; do
     kill -0 "$pid" 2>/dev/null || return 0
     now=$(date +%s)
+    if [ $((now - prev)) -gt $((IDLE_POLL + 60)) ]; then
+      log "$what: the device slept $(((now - prev) / 60))m since the last look at its transcript; its idle time starts over"
+      t0=$now last=$now
+    fi
+    prev=$now
     if ! m=$(stat -c %Y "$f" 2>/dev/null); then
       if [ -z "$missing" ] && [ $((now - t0)) -ge "$idle" ]; then
         log "$what wrote no transcript in $IDLE ($f); it runs until the $SESSION_TIMEOUT timeout"
