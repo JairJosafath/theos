@@ -1,7 +1,13 @@
-{{- if eq .Framework "python-fastapi" -}}
+{{- if or (eq .Framework "python-fastapi") (eq .Framework "python-cli") -}}
 # syntax=docker/dockerfile:1
+{{- if eq .Framework "python-fastapi" }}
 # Image for a uv project that serves an ASGI app at app.main:app on port 8000
 # (the python-fastapi Framework layout). Build it with: docker build -t <image> .
+{{- else }}
+# Image for a uv project that runs its app package with python -m app (the
+# python-cli Framework layout), a worker that stops on SIGTERM. Build it with:
+# docker build -t <image> .
+{{- end }}
 
 ARG PYTHON_IMAGE=python:3.12-slim-trixie
 
@@ -27,8 +33,12 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 # A numeric user, so Kubernetes can check runAsNonRoot.
 USER 1000:1000
+{{- if eq .Framework "python-fastapi" }}
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+{{- else }}
+CMD ["python", "-m", "app"]
+{{- end }}
 {{- else if eq .Framework "react-vite" -}}
 # syntax=docker/dockerfile:1
 # Image for a Vite web app (the react-vite Framework layout): npm builds the

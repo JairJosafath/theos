@@ -93,19 +93,24 @@ A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 - Logging: only uvicorn's plain-text access log (#1473).
 - Auth: every route is open (#1474).
 
-### python-cli (v1.0.0)
+### python-cli (v1.1.0)
 
-An argparse command-line program on uv that builds a wheel and an sdist.
+An argparse command-line program on uv that builds a wheel and an sdist; as
+a `worker` (#1468), a long-running `python -m app` that does a round of work,
+backs off while rounds fail and stops cleanly on SIGTERM.
 
-- Tests: `tests/test_cli.py.tmpl` and `tests/test_greeting.py`, run by
-  python-standard's `make test`.
+- Tests: `tests/test_cli.py.tmpl` and `tests/test_greeting.py.tmpl`, or for a
+  worker `tests/test_worker.py.tmpl` (a real SIGTERM included) and
+  `tests/test_backoff.py.tmpl`, run by python-standard's `make test`.
 - Lint: python-standard's ruff and mypy.
 - README: `README.md.tmpl`: use, install the wheel, develop, `make dist`,
   layout.
 - Deploy: gitea-release in "python cli" attaches `make dist`'s wheel and sdist
-  to the tag's release. Publishing to a package registry is #1229.
+  to the tag's release. Publishing to a package registry is #1229. A worker
+  ships with k8s-manifests ("python worker on kubernetes").
 - Logging: results to stdout, errors to stderr (`app/cli.py.tmpl`), which is
-  what a command-line program owes its user.
+  what a command-line program owes its user; a worker logs each event to
+  stderr with `logging` (`app/worker.py.tmpl`).
 
 ### react-vite (v1.0.0)
 
@@ -140,7 +145,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.3.0)
+### python-standard (v1.4.0)
 
 The Python rulebook and its `make check`.
 
@@ -192,14 +197,15 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.2.1)
+### k8s-manifests (v1.3.0)
 
-A Deployment: a Dockerfile for python-fastapi or react-vite, and
-`deploy/k8s/` (kustomization, Deployment, Service).
+A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
+`deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
 
 - Tests: `TestK8sManifestsFollowsTheFramework` (the Dockerfile,
-  `.dockerignore`, port and probes per Framework); `make validate-yaml` builds
-  the orders-api and storefront renders.
+  `.dockerignore`, port and probes per Framework, no Service for a worker);
+  `make validate-yaml` builds the orders-api, storefront and payments-worker
+  renders.
 - Lint: those builds are validated with kubectl-validate.
 - README: nothing in the scaffold says how to build the image or apply the
   manifests (#1470).
@@ -318,7 +324,7 @@ aws-standard.
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.17.1)
+### aws-standard (v1.17.3)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag.

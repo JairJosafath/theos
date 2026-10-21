@@ -7,14 +7,18 @@ ARG BASE=c4factory/base:dev
 FROM golang:1.26.9@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+# go mod download retries (retry: 5 tries, 10 to 40 seconds apart), so one
+# slow handshake with the module proxy doesn't fail a release (#1494).
+RUN --mount=type=cache,target=/go/pkg/mod \
+    retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i * 10)); done; return 1; } \
+    && retry go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /c4agent ./cmd/c4agent
 
 FROM ${BASE}
 ARG CLAUDE_CODE_VERSION=2.1.286
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
+RUN npm install -g --fetch-retries=5 "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
 COPY --from=build /c4agent /usr/local/bin/c4agent
 # IS_SANDBOX: the pod is the sandbox, so Claude Code may skip permission prompts
 # as root. The rest keeps the CLI from updating itself or phoning home for
