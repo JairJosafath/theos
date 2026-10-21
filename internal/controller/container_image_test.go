@@ -28,7 +28,7 @@ const imageRegistry = "gitea.gitea.svc.cluster.local:3000/"
 
 // imageIs waits for orders-api's status.image to have tag and state, and the
 // condition ImagePublished to match it.
-func imageIs(ns, tag, state string) *c4v1alpha1.ContainerImageStatus {
+func imageIs(ns, tag, state string) *c4v1alpha1.ContainerImageStatus { //nolint:unparam // the helper names the release, as its callers read; every spec of this file releases v0.1.0
 	GinkgoHelper()
 	var img *c4v1alpha1.ContainerImageStatus
 	Eventually(func(g Gomega) {

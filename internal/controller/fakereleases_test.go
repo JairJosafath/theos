@@ -398,7 +398,7 @@ func (p *fakeProvider) ImageDigest(_ context.Context, repo gitprovider.Repositor
 }
 
 // setImage makes PublishImage of owner/name's release of tag give img.
-func (g *fakeGit) setImage(owner, name, tag string, img gitprovider.Image) {
+func (g *fakeGit) setImage(owner, name, tag string, img gitprovider.Image) { //nolint:unparam // the fake is generic; every deploy spec's Container is orders-api
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.releaseState().images[owner+"/"+name+"@"+tag] = img
