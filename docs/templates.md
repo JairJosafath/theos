@@ -231,10 +231,11 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.8.0)
+### k8s-manifests (v1.9.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
-`deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
+`deploy/k8s/` (kustomization, Deployment, and a Service but for a worker; for
+a job, a Job instead of the Deployment).
 
 - CI: `make test-templates` runs `kustomize build deploy/k8s` in the
   combos "fastapi service with postgres" and "react web app on kubernetes".
@@ -248,7 +249,14 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   Service, and liveness stays on `/healthz`. For python-fastapi (since
   v1.8.0, #1540) `auth.yaml` writes ConfigMap `<container>-auth` with
   placeholder `OIDC_ISSUER` and `OIDC_AUDIENCE`, which the Deployment loads
-  through `envFrom`, so the app starts; the README says to set both.
+  through `envFrom`, so the app starts; the README says to set both. For a
+  job (since v1.9.0, #1587) `job.yaml` is a `batch/v1` Job, `restartPolicy:
+  Never`, annotated `argocd.argoproj.io/sync-options: Replace=true` so Argo
+  CD replaces it at each release (a Job's template is immutable), with no
+  `ttlSecondsAfterFinished` (the `argoCD` target's `selfHeal` would recreate
+  a deleted Job and rerun it), and small's `compute.yaml` patches the Job
+  (`TestK8sManifestsRunsAJob`); `make validate-yaml` builds the nightly-sync
+  job render and finds the patch's `cpu: 50m` and the annotation on the Job.
 - Lint: those builds are validated with kubectl-validate.
 - README: `deploy/k8s/README.md.tmpl` (#1470): build the image, set it with
   `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what
@@ -261,8 +269,9 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   Dockerfiles `RUN` only in stages on `$BUILDPLATFORM`
   (`TestDockerfilesRunOnlyOnTheBuildPlatform`,
   `TestK8sManifestsBuildsItsImageOnRelease`).
-- Deploy: the manifests, with the image `<container>:dev`, ready for a GitOps
-  tool; nothing applies them (#1072).
+- Deploy: the manifests, with the image `<container>:dev`; the `argoCD`
+  DeployTarget ships them at each release (#1072), and the README says how
+  to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
 ### gitea-release (v1.4.0)

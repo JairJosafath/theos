@@ -96,11 +96,11 @@ metadata:
   name: k8s-manifests
 spec:
   displayName: Kubernetes manifests
-  description: A Dockerfile for the Framework (python-fastapi, python-cli or react-vite) and plain Kubernetes manifests, built with kustomize.
-  supportedTypes: [service, worker, static-site]
+  description: A Dockerfile for the Framework (python-fastapi, python-cli or react-vite) and plain Kubernetes manifests, built with kustomize; a Job for a job.
+  supportedTypes: [service, worker, job, static-site]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
-    ref: v1.8.0
+    ref: v1.9.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Connector
