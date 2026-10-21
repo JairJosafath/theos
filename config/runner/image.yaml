@@ -1,0 +1,86 @@
+# The image runner: the Gitea runner on rootless BuildKit (hack/runner/Dockerfile.image),
+# labelled image, for release runs that build a Container's image
+# (docs/plans/images.md, decisions 2 and 9). A job runs buildctl-daemonless.sh,
+# which starts BuildKit for that job only, its state under the job's work
+# directory, so nothing outlives the job.
+# `make runner-image` builds it and applies this, it is applied by that target alone.
+# Its init container registers with the token the seed Job stores in Secret
+# gitea/gitea-runner; the runner container, where jobs run, never gets it.
+# config/runner/network-policy.yaml fences it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner-image
+  namespace: gitea
+  labels:
+    app.kubernetes.io/part-of: c4factory-testenv
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner-image
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner-image
+        app.kubernetes.io/part-of: c4factory-testenv
+        # The CI fence selects it: config/runner/network-policy.yaml.
+        app.kubernetes.io/component: ci-runner
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        # Registers the runner, writing /data/.runner: the only container given
+        # the registration token, which the jobs in the runner container must
+        # not read (hack/runner/register.sh).
+        - name: register
+          image: c4factory/gitea-runner-image:dev
+          imagePullPolicy: Never
+          command: [c4-runner-register]
+          env:
+            - name: GITEA_INSTANCE
+              value: http://gitea.gitea.svc.cluster.local:3000
+            - name: RUNNER_TOKEN
+              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
+            - name: RUNNER_LABELS
+              value: image:host
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: runner
+          image: c4factory/gitea-runner-image:dev
+          imagePullPolicy: Never
+          # The one loosening of the CI fence, on this container alone: rootless
+          # BuildKit makes user namespaces, which the runtime's default seccomp
+          # and AppArmor profiles refuse. Never privileged, no capability, not
+          # root; make validate-yaml checks it (hack/runner-fence).
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            seccompProfile: {type: Unconfined}
+            appArmorProfile: {type: Unconfined}
+          # One build at a time (capacity 1), at most 4 of the node's cores.
+          resources:
+            requests: {cpu: "1", memory: 2Gi}
+            limits: {cpu: "4", memory: 8Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: work
+              mountPath: /data/work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        # Checkouts and BuildKit's state, on disk: layers are large.
+        - name: work
+          emptyDir: {sizeLimit: 20Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 1Gi}

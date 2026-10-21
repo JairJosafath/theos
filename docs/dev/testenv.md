@@ -62,6 +62,7 @@ make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind clus
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node, uv and kubebuilder toolchain, CI runner (label go) and agent image
+make runner-image        # CI runner (label image): rootless BuildKit, which builds release images
 make claude-secret       # The real agent's token, once for every project, from .dev/secrets/claude-token (below) or CLAUDE_TOKEN=...
 make e2e                 # Only when the user asks: all of the above but the Go images, then check the whole loop in Kind
 make down / make up       # Stop the factory to free the machine; bring it back healthy
@@ -731,7 +732,7 @@ main files (or comments on) `Release vX.Y.Z fails its check`, ready and
 `priority/1`, as the watch does for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
-waits for the seed's repositories, both runners, the manager and the UI, and
+waits for the seed's repositories, the runners, the manager and the UI, and
 scaffolds the release's `orders-api` sample. Then it follows
 [getting-started](../getting-started.md) for the first app: the `ghcr` pull
 Secret on `webshop`'s `default` ServiceAccount (it pulls `agent-go` through

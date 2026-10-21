@@ -473,6 +473,26 @@ runners:
     workSize: 2Gi
     tmpSize: 1Gi
     goCache: /var/cache/c4factory/go/ci
+  ## Rootless BuildKit, for release runs that build a Container's image:
+  ## buildctl-daemonless.sh starts BuildKit for one job, its state in the job's
+  ## work directory. One build at a time per replica; more queue in Gitea.
+  ## buildkit: its job container runs with seccomp and AppArmor Unconfined, as
+  ## uid 1000, which rootless BuildKit's user namespaces need; never privileged,
+  ## no capability. Its work and tmp directories are on the node's disk, not
+  ## in memory: layers are large.
+  image:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-image
+      tag: ""
+      pullPolicy: IfNotPresent
+    replicas: 1
+    resources:
+      requests: {cpu: "1", memory: 2Gi}
+      limits: {cpu: "4", memory: 8Gi}
+    workSize: 20Gi
+    tmpSize: 1Gi
+    buildkit: true
 
 ## For each of gitea.projects, the catalog its Containers pick from: the
 ## templates the seed pushes to the templates organization, each pinned to its

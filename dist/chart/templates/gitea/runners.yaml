@@ -77,7 +77,7 @@ metadata:
   labels:
     {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ hasKey $r "replicas" | ternary $r.replicas 1 }}
   strategy:
     type: Recreate
   selector:
@@ -127,6 +127,18 @@ spec:
         - name: runner
           image: {{ $image | quote }}
           imagePullPolicy: {{ $r.image.pullPolicy }}
+          {{- if $r.buildkit }}
+          # The one loosening of the CI fence, on this container alone: rootless
+          # BuildKit makes user namespaces, which the runtime's default seccomp
+          # and AppArmor profiles refuse. Never privileged, no capability, not
+          # root; make validate-yaml checks it (hack/runner-fence).
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            seccompProfile: {type: Unconfined}
+            appArmorProfile: {type: Unconfined}
+          {{- end }}
           resources:
             {{- toYaml $r.resources | nindent 12 }}
           volumeMounts:
@@ -159,11 +171,19 @@ spec:
       volumes:
         - name: data
           emptyDir: {}
+        {{- if $r.buildkit }}
+        # Checkouts and BuildKit's state, on disk: layers are large.
+        - name: work
+          emptyDir: {sizeLimit: {{ $r.workSize }}}
+        - name: tmp
+          emptyDir: {sizeLimit: {{ $r.tmpSize }}}
+        {{- else }}
         # Checkouts and test output in memory, to spare the disk.
         - name: work
           emptyDir: {medium: Memory, sizeLimit: {{ $r.workSize }}}
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: {{ $r.tmpSize }}}
+        {{- end }}
         {{- if $r.goCache }}
         # The build cache on the node, so a job compiles only what changed.
         # Only this runner mounts it: agent sandboxes, which run untrusted

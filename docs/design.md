@@ -222,9 +222,14 @@ HTTPS. Every CI adapter meets this or says which part it can't
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
 (`app.kubernetes.io/component: ci-runner`) lets nothing in and only DNS,
 Gitea's port 3000 and public HTTPS out, and the registration token goes only to
-the init container; `make validate-yaml` checks both. Still to come with release
-images (#1069): an `image` runner whose job container alone runs seccomp and
-AppArmor `Unconfined` for rootless BuildKit, never privileged. Still open: one long-lived runner per label serves
+the init container; `make validate-yaml` checks both. The `image` runner builds
+release images (#1069) with rootless BuildKit: its job container alone runs
+seccomp and AppArmor `Unconfined`, which BuildKit's user namespaces need, as uid
+1000, never privileged, with no added capability and no node directory;
+`make validate-yaml` checks that too. Each job starts its own BuildKit, its
+state in the job's temporary directory, removed from inside BuildKit's user
+namespace when the build ends, since the runner outside it can't remove a file
+a `RUN` step gave another user. Still open: one long-lived runner per label serves
 every project, so a job can leave something for the next; a pool of single-job
 runners per project closes it (#1076). Until then one install is one trust
 domain ([getting-started](getting-started.md#what-the-factory-trusts)).
