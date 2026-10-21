@@ -198,6 +198,33 @@ func addDistIgnore(p string, data []byte) (string, []byte, error) {
 	return p, append(data, distIgnore...), nil
 }
 
+// dockerfile is the Dockerfile the builder stage is pinned to $BUILDPLATFORM in.
+const dockerfile = "Dockerfile"
+
+// The builder stage's FROM, as kubebuilder writes it and as the release
+// builds it: the image runner builds linux/amd64 and linux/arm64 with no
+// emulation, so a stage that RUNs must be FROM --platform=$BUILDPLATFORM
+// (docs/plans/images.md, decision 3); kubebuilder's go build already takes
+// TARGETOS and TARGETARCH.
+const (
+	builderFrom      = "FROM ${BASE_IMAGE} AS builder\n"
+	crossBuilderFrom = "FROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder\n"
+)
+
+// addCrossBuild is the fourth edit besides the substitutions: it builds the
+// Dockerfile's builder stage on $BUILDPLATFORM (#1458). p and data are
+// transform's result.
+func addCrossBuild(p string, data []byte) (string, []byte, error) {
+	if bytes.Contains(data, []byte(crossBuilderFrom)) {
+		return "", nil, fmt.Errorf("%s: already builds on $BUILDPLATFORM; drop addCrossBuild", p)
+	}
+	if !bytes.Contains(data, []byte(builderFrom)) {
+		return "", nil, fmt.Errorf("%s: no %q line; place --platform=$BUILDPLATFORM by hand in addCrossBuild",
+			p, strings.TrimSpace(builderFrom))
+	}
+	return p, bytes.Replace(data, []byte(builderFrom), []byte(crossBuilderFrom), 1), nil
+}
+
 // readme is the README the release section is replaced in.
 const readme = "README.md"
 
@@ -209,30 +236,37 @@ const (
 	helmHeading   = "### By providing a Helm Chart\n"
 )
 
-// releaseNote says what go-operator-standard's `make dist` writes and that the
-// manager image in install.yaml is a placeholder to replace
-// (docs/plans/done/kubebuilder-operators.md, decision 8). It is template text: the
-// README is a .tmpl once the substitutions name the Container.
+// releaseNote says what go-operator-standard's `make dist` writes and that a
+// release names the manager image in install.yaml by digest, where the
+// factory pushes it (docs/plans/images.md, decision 6). It is template text:
+// the README is a .tmpl once the substitutions name the Container.
 const releaseNote = `### From a release
 
-` + "`make dist VERSION=<tag>`" + ` writes the release files into ` + "`dist/`" + `: the manager
-binaries ` + "`{{ .Container }}_<os>_<arch>`" + ` for Linux, macOS and Windows,
+` + "`make dist VERSION=<tag> IMG=<image>`" + ` writes the release files into ` + "`dist/`" + `: the
+manager binaries ` + "`{{ .Container }}_<os>_<arch>`" + ` for Linux, macOS and Windows,
 ` + "`install.yaml`" + ` (the CRDs, RBAC and the manager Deployment, from
-` + "`make build-installer`" + `) and ` + "`SHA256SUMS`" + `. A version tag's release pipeline,
-such as the factory's gitea-release, attaches them to the tag's release.
+` + "`make build-installer`" + `, naming the manager image ` + "`IMG`" + `) and ` + "`SHA256SUMS`" + `.
 
-No image is built or pushed: ` + "`install.yaml`" + ` names the manager image
-` + "`controller:<tag>`" + `, which no registry has. Before applying it, build and push
-the image from a checkout of the tag, and set it in ` + "`install.yaml`" + `:
+A version tag's release pipeline, such as the factory's gitea-release, builds
+the image from the Dockerfile first, attaches it and those files to the tag's
+release, and names the image in ` + "`install.yaml`" + ` by digest on the Git host's
+container registry, where the factory pushes it; applying ` + "`install.yaml`" + ` as
+attached works:
 
 ` + "```sh" + `
-make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
-sed -i 's|image: controller:<tag>|image: <some-registry>/{{ .Container }}:<tag>|' install.yaml
 kubectl apply -f install.yaml
 ` + "```" + `
 
-Or, in that checkout, ` + "`make build-installer IMG=<some-registry>/{{ .Container }}:<tag>`" + `
-writes ` + "`dist/install.yaml`" + ` with the image set.
+For another registry, build and push the image from a checkout of the tag,
+and write ` + "`install.yaml`" + ` with it set:
+
+` + "```sh" + `
+make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
+make build-installer IMG=<some-registry>/{{ .Container }}:<tag>
+kubectl apply -f dist/install.yaml
+` + "```" + `
+
+Without ` + "`IMG`" + `, ` + "`make dist`" + ` names ` + "`controller:<tag>`" + `, which no registry has.
 
 `
 
@@ -301,6 +335,9 @@ func frameworkFiles(dir string) (map[string]file, error) {
 		}
 		if err == nil && p == readme {
 			name, data, err = addReleaseNote(name, data)
+		}
+		if err == nil && p == dockerfile {
+			name, data, err = addCrossBuild(name, data)
 		}
 		if err != nil {
 			errs = append(errs, err)

@@ -72,24 +72,31 @@ Following the options to release and provide this solution to the users.
 
 ### From a release
 
-`make dist VERSION=<tag>` writes the release files into `dist/`: the manager
-binaries `{{ .Container }}_<os>_<arch>` for Linux, macOS and Windows,
+`make dist VERSION=<tag> IMG=<image>` writes the release files into `dist/`: the
+manager binaries `{{ .Container }}_<os>_<arch>` for Linux, macOS and Windows,
 `install.yaml` (the CRDs, RBAC and the manager Deployment, from
-`make build-installer`) and `SHA256SUMS`. A version tag's release pipeline,
-such as the factory's gitea-release, attaches them to the tag's release.
+`make build-installer`, naming the manager image `IMG`) and `SHA256SUMS`.
 
-No image is built or pushed: `install.yaml` names the manager image
-`controller:<tag>`, which no registry has. Before applying it, build and push
-the image from a checkout of the tag, and set it in `install.yaml`:
+A version tag's release pipeline, such as the factory's gitea-release, builds
+the image from the Dockerfile first, attaches it and those files to the tag's
+release, and names the image in `install.yaml` by digest on the Git host's
+container registry, where the factory pushes it; applying `install.yaml` as
+attached works:
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
-sed -i 's|image: controller:<tag>|image: <some-registry>/{{ .Container }}:<tag>|' install.yaml
 kubectl apply -f install.yaml
 ```
 
-Or, in that checkout, `make build-installer IMG=<some-registry>/{{ .Container }}:<tag>`
-writes `dist/install.yaml` with the image set.
+For another registry, build and push the image from a checkout of the tag,
+and write `install.yaml` with it set:
+
+```sh
+make docker-build docker-push IMG=<some-registry>/{{ .Container }}:<tag>
+make build-installer IMG=<some-registry>/{{ .Container }}:<tag>
+kubectl apply -f dist/install.yaml
+```
+
+Without `IMG`, `make dist` names `controller:<tag>`, which no registry has.
 
 ### By providing a Helm Chart
 

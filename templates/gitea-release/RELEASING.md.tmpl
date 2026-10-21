@@ -3,7 +3,7 @@
 {{- if eq .Framework "python-cli" }}{{ $files = "the wheel and the sdist" }}{{ end -}}
 {{- if eq .Framework "node-cli" }}{{ $files = "the npm tarball (`.tgz`)" }}{{ end -}}
 {{- if eq .Framework "vscode-extension" }}{{ $files = "the extension's `.vsix`" }}{{ end -}}
-{{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager binaries, `install.yaml` and `SHA256SUMS`" }}{{ end -}}
+{{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager image (an `.oci.tar` the factory pushes to the Git host's registry), the manager binaries, `install.yaml` naming that image by digest, and `SHA256SUMS`" }}{{ end -}}
 {{- $manifest := "" -}}
 {{- if eq .Framework "python-cli" }}{{ $manifest = "pyproject.toml" }}{{ end -}}
 {{- if or (eq .Framework "node-cli") (eq .Framework "vscode-extension") }}{{ $manifest = "package.json" }}{{ end -}}
@@ -70,7 +70,8 @@ Every file directly in `dist/` is what the release would get; folders in
 
 ## When a run fails
 
-The run's log says which step failed: `make dist`, or attaching the files.
+The run's log says which step failed: `make dist`, or attaching the files{{ if eq .Type "operator" }};
+for an operator, the `image` job before them, which builds the image{{ end }}.
 
 - **`make dist` failed** (a build error{{ if $manifest }}, or the tag doesn't
   match `{{ $manifest }}`{{ end }}): nothing was attached. Fix it on main, then

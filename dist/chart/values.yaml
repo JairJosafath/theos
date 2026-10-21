@@ -630,7 +630,7 @@ catalog:
         supportedTypes: [cli, worker]
     - kind: Framework
       name: go-kubebuilder
-      ref: v1.0.1
+      ref: v1.1.0
       spec:
         displayName: Kubernetes operator (Go, kubebuilder)
         description: "An operator that extends Kubernetes: watches and reconciles cluster objects. What kubebuilder init writes, in Go, ready for kubebuilder create api."
@@ -649,7 +649,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -704,7 +704,7 @@ catalog:
         supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.3.0
+      ref: v1.4.0
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
