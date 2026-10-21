@@ -20,6 +20,10 @@ A Python service with [FastAPI](https://fastapi.tiangolo.com/), managed with
   Python and ruff VS Code extensions. The operator merges it
   into `.devcontainer/devcontainer.json`; with Connectors, the same image becomes
   the `app` service of the Docker Compose setup.
+- **Logs:** `app/logs.py` sends every log record to stdout as a JSON line, at
+  `LOG_LEVEL`, and a middleware logs one line per request (method, path without
+  its query, status, `durationMs`, `requestId` from `X-Request-Id` or a new one,
+  echoed in the response). uvicorn's access log is off; only the standard library.
 - **Auth:** `app/auth.py` verifies a bearer JWT (RS256 or ES256, `iss`, `aud` and
   `exp` checked) on every route of the `api` router, against the JWKS of the issuer
   in `OIDC_ISSUER`, for the audience `OIDC_AUDIENCE`; `/healthz` and `/readyz` stay

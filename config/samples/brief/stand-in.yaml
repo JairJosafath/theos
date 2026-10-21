@@ -7,7 +7,8 @@
 # Gitea release. Each follow-up prompt becomes one more issue. Needs the chart
 # installed with gitea.projects={webshop}, which makes the catalog, Agent
 # stand-in and the GitProvider. Verify Release follows docs/getting-started.md
-# with it on every release, up to the Gitea release.
+# with it up to the Gitea release, for every minor release on its own and for
+# a patch when a human dispatches it.
 # Apply with: kubectl apply -f config/samples/brief/stand-in.yaml
 apiVersion: c4.factory.io/v1alpha1
 kind: Brief

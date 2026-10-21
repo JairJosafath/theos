@@ -37,7 +37,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 
 | Template | Kind | W | CI | Tests | Lint | README | Deploy | Logging | Auth |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1072 | #1473 | yes |
+| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | yes | yes |
 | python-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | react-vite | Framework | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
@@ -75,7 +75,7 @@ one of their templates changes); #1476 does the same for the rest.
 
 ## The webshop's templates
 
-### python-fastapi (v1.5.0)
+### python-fastapi (v1.6.0)
 
 A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 `postgres` Connector, `app/db.py` (a psycopg pool) and a `/readyz` that
@@ -93,7 +93,10 @@ runs `SELECT 1`.
   Dockerfile (uv, uvicorn, port 8000), checked by
   `TestK8sManifestsFollowsTheFramework`; each release builds the image for
   both platforms (#1457), and nothing applies it to a cluster (#1072).
-- Logging: only uvicorn's plain-text access log (#1473).
+- Logging: `app/logs.py`: JSON lines on stdout at `LOG_LEVEL`, one per
+  request (method, path, status, `durationMs`, `requestId` from
+  `X-Request-Id`, echoed), no query string, header value or body; uvicorn's
+  access log off. `tests/test_main.py` and `TestFastAPILogsJSONLines` (#1473).
 - Auth: `app/auth.py.tmpl` verifies a bearer JWT (RS256/ES256, `iss`,
   `aud`, `exp`) against the JWKS of `OIDC_ISSUER` on every route but
   `/healthz` and `/readyz`; without `OIDC_ISSUER` the app refuses to start
