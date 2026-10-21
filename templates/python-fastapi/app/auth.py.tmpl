@@ -1,0 +1,170 @@
+"""Bearer JWT verification for every {{ .Container }} route but the probes.
+
+A token is accepted when it is signed with RS256 or ES256 by a key of the issuer's
+JWKS, was issued by OIDC_ISSUER for OIDC_AUDIENCE, and has not expired. The JWKS
+comes from the jwks_uri of the issuer's /.well-known/openid-configuration.
+"""
+
+import json
+import logging
+import os
+import threading
+import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Annotated, Any
+from urllib.parse import urlsplit
+
+import jwt
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+logger = logging.getLogger(__name__)
+
+ALGORITHMS = ["RS256", "ES256"]
+
+# How long the app waits for the issuer's discovery document or JWKS.
+FETCH_TIMEOUT_SECONDS = 5.0
+
+# How far the issuer's clock may be from ours when checking exp, nbf and iat.
+LEEWAY_SECONDS = 30
+
+Claims = dict[str, Any]
+
+# Finds the issuer's key a token was signed with.
+KeyFinder = Callable[[str], jwt.PyJWK]
+
+
+@dataclass(frozen=True)
+class Verifier:
+    """Verifies a token against one issuer and audience."""
+
+    issuer: str
+    audience: str
+    find_key: KeyFinder
+
+    def verify(self, token: str) -> Claims:
+        """Return the token's claims; raise jwt.PyJWTError when it is not valid."""
+        claims: Claims = jwt.decode(
+            token,
+            self.find_key(token),
+            algorithms=ALGORITHMS,
+            audience=self.audience,
+            issuer=self.issuer,
+            leeway=LEEWAY_SECONDS,
+            options={"require": ["exp", "iss", "aud"]},
+        )
+        return claims
+
+
+def jwks_key_finder(issuer: str) -> KeyFinder:
+    """Find keys in the JWKS the issuer's discovery document names.
+
+    The document is fetched on the first request, so the app starts while the
+    issuer is down; PyJWKClient caches the keys and refetches for a new kid. The
+    document must name the issuer itself and an http or https jwks_uri.
+    """
+    clients: list[jwt.PyJWKClient] = []
+    lock = threading.Lock()
+
+    def client() -> jwt.PyJWKClient:
+        with lock:
+            if not clients:
+                clients.append(
+                    jwt.PyJWKClient(discover_jwks_uri(issuer), timeout=int(FETCH_TIMEOUT_SECONDS))
+                )
+            return clients[0]
+
+    def find_key(token: str) -> jwt.PyJWK:
+        return client().get_signing_key_from_jwt(token)
+
+    return find_key
+
+
+def discover_jwks_uri(issuer: str) -> str:
+    """The jwks_uri of the issuer's discovery document."""
+    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    try:
+        # from_env allows only http and https URLs.
+        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
+            document = json.load(response)
+        named, jwks_uri = str(document["issuer"]), str(document["jwks_uri"])
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        msg = f"fetch {url}: {err}"
+        raise jwt.PyJWKClientConnectionError(msg) from err
+    if named != issuer:
+        msg = f"{url} names issuer {named!r}, not {issuer!r}"
+        raise jwt.PyJWKClientConnectionError(msg)
+    if urlsplit(jwks_uri).scheme not in {"http", "https"}:
+        msg = f"{url} names jwks_uri {jwks_uri!r}, not an http or https URL"
+        raise jwt.PyJWKClientConnectionError(msg)
+    return jwks_uri
+
+
+def from_env() -> Verifier | None:
+    """The Verifier OIDC_ISSUER and OIDC_AUDIENCE describe.
+
+    None when AUTH_DISABLED is true: every route is then open. Without
+    OIDC_ISSUER or OIDC_AUDIENCE, and auth not disabled, the app must not start.
+    """
+    if os.environ.get("AUTH_DISABLED", "").lower() == "true":
+        logger.warning("AUTH_DISABLED=true: every route is open")
+        return None
+    issuer = os.environ.get("OIDC_ISSUER", "")
+    audience = os.environ.get("OIDC_AUDIENCE", "")
+    if not issuer or not audience:
+        msg = (
+            "set OIDC_ISSUER and OIDC_AUDIENCE to verify bearer tokens,"
+            " or AUTH_DISABLED=true to leave every route open"
+        )
+        raise RuntimeError(msg)
+    if urlsplit(issuer).scheme not in {"http", "https"}:
+        msg = f"OIDC_ISSUER {issuer!r} is not an http or https URL"
+        raise RuntimeError(msg)
+    return Verifier(issuer=issuer, audience=audience, find_key=jwks_key_finder(issuer))
+
+
+def get_verifier(request: Request) -> Verifier | None:
+    """Return the Verifier the app's lifespan made."""
+    verifier: Verifier | None = request.app.state.verifier
+    return verifier
+
+
+bearer = HTTPBearer(auto_error=False)
+
+NO_BEARER = "missing bearer token"
+BAD_BEARER = "invalid bearer token"
+
+
+def unauthorized(detail: str) -> HTTPException:
+    """A 401 that asks for a bearer token."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def verified_claims(
+    verifier: Annotated[Verifier | None, Depends(get_verifier)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> Claims:
+    """The claims of the request's bearer token; 401 when it has none or a bad one.
+
+    503 when the issuer's keys can't be fetched. With auth disabled every request
+    passes, with no claims.
+    """
+    if verifier is None:
+        return {}
+    if credentials is None:
+        raise unauthorized(NO_BEARER)
+    try:
+        return verifier.verify(credentials.credentials)
+    except jwt.PyJWKClientConnectionError as err:
+        logger.warning("the issuer's keys are unreachable: %s", err)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="issuer unreachable"
+        ) from err
+    except jwt.PyJWTError as err:
+        logger.info("rejected a bearer token: %s", err)
+        raise unauthorized(BAD_BEARER) from err

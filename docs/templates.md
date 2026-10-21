@@ -37,7 +37,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 
 | Template | Kind | W | CI | Tests | Lint | README | Deploy | Logging | Auth |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1072 | #1473 | #1474 |
+| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1072 | #1473 | yes |
 | python-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | react-vite | Framework | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
@@ -75,7 +75,7 @@ one of their templates changes); #1476 does the same for the rest.
 
 ## The webshop's templates
 
-### python-fastapi (v1.4.0)
+### python-fastapi (v1.5.0)
 
 A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 `postgres` Connector, `app/db.py` (a psycopg pool) and a `/readyz` that
@@ -94,7 +94,11 @@ runs `SELECT 1`.
   `TestK8sManifestsFollowsTheFramework`; each release builds the image for
   both platforms (#1457), and nothing applies it to a cluster (#1072).
 - Logging: only uvicorn's plain-text access log (#1473).
-- Auth: every route is open (#1474).
+- Auth: `app/auth.py.tmpl` verifies a bearer JWT (RS256/ES256, `iss`,
+  `aud`, `exp`) against the JWKS of `OIDC_ISSUER` on every route but
+  `/healthz` and `/readyz`; without `OIDC_ISSUER` the app refuses to start
+  unless `AUTH_DISABLED=true` (the devcontainer sets it). The tests sign
+  tokens with a key they make (#1474).
 
 ### python-cli (v1.1.0)
 
@@ -135,7 +139,7 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Logging: n/a: a static page served by nginx; the code has none and ESLint
   refuses `console`.
 - Auth: n/a: a public page with no API client; the API it calls
-  authenticates (#1474).
+  verifies a bearer JWT (#1474).
 
 ### node-cli (v1.0.0)
 
