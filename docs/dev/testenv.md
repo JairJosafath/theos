@@ -450,7 +450,9 @@ the CLI said (`a limit: no API call`, `RELAY_LIMIT_WAIT`): that is the device
 failing, not the issue (#1421). Its claim's comment then names the limit and keeps its host,
 as every released or expired claim does: `released this issue: session ended
 without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
-(45m) is ended and counts as failed. A claim whose heartbeat stays live but
+(45m) is ended and counts as failed; a device that slept doesn't count (#1500):
+when the clock between two looks at the transcript (`RELAY_IDLE_POLL`, 60s)
+jumps more than a minute past the poll, the idle time starts over at the wake. A claim whose heartbeat stays live but
 whose work shows no progress for `C4_CLAIM_STALE` (2h; `0` turns it off) is
 stale (#1513, the owner asked for it on 2026-10-21): progress is the newest of
 a commit on the claim's branch on origin or a `<branch>-*` takeover branch, a

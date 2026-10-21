@@ -509,6 +509,13 @@ case $(cat "$FAKE") in
   agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
     for _ in $(seq 30); do echo '{}' >>"${t%.jsonl}/subagents/agent-1.jsonl"; sleep 0.2; done
     echo '{"is_error":false,"result":"agent","num_turns":9}' ;;
+  # Writes its transcript, then the device sleeps an hour (the date in $T/bin
+  # moves +%s ahead by $FAKE.skew); the session's first write after the wake
+  # comes past the watch's first look (IDLE_POLL=1), with the woken clock's
+  # time, as a live session's would (#1500).
+  sleep) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 1.5; echo 3600 >"$FAKE.skew"; sleep 2.5
+    for _ in $(seq 5); do touch -d "@$(date +%s)" "$t"; sleep 0.3; done
+    echo $((RANDOM + 100)) >"$HANDOFF"; echo '{"is_error":false,"result":"slept","num_turns":9}' ;;
   # Ends once the relay has logged the missing transcript, not after a number
   # of seconds the watch can miss under load (#1409); $T/log is the relay's $LOG.
   quiet) for _ in $(seq 600); do grep -qs "wrote no transcript" "${FAKE%/*}/log" && break; sleep 0.1; done; echo '{"is_error":false,"result":"quiet","num_turns":1}' ;;
@@ -545,6 +552,13 @@ case $(cat "$FAKE") in
 esac
 FAKE
 chmod +x "$T/bin/claude"
+# The clock: +%s is moved ahead by the seconds in $FAKE.skew, a device that
+# slept (#1500); every other date is the real one.
+cat >"$T/bin/date" <<FAKE
+#!/usr/bin/env bash
+if [ "\$1" = +%s ] && [ -s "\$FAKE.skew" ]; then echo \$((\$($(command -v date) +%s) + \$(cat "\$FAKE.skew"))); else exec $(command -v date) "\$@"; fi
+FAKE
+chmod +x "$T/bin/date"
 export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
 # The sessions' TMPDIRs are in $T, not the user's ~/.cache/c4factory/tmp/wt,
 # which every run of this test on the device would share and clear (#1526).
@@ -968,6 +982,19 @@ check "idle: ended early #1526" "$(test -e "$FAKE.hung" && echo ran-out)" ""
 grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
 check "idle: counted" "$(counted)" 1
 check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""
+# A device waking from sleep (#1500): the clock between two looks at the
+# transcript jumps an hour, far past IDLE, and the session's next write comes
+# a look later; the idle time starts over at the wake, so the session runs to
+# its end and is not struck. IDLE leaves the write room on a loaded device.
+: >"$LOG"
+no_strikes; rm -f "$FAKE.skew"
+echo sleep >"$FAKE"
+IDLE=5s work
+rm -f "$FAKE.skew"
+grep -q "stopped: its transcript was idle" "$LOG"; check "sleep #1500: not ended" $? 1
+check "sleep #1500: logged" "$(grep -c "session 1: the device slept 60m since the last look at its transcript; its idle time starts over$" "$LOG")" 1
+grep -q "session 1 end: exit 0 after 60m, 9 turns" "$LOG"; check "sleep #1500: ran to its end" $? 0
+check "sleep #1500: no strike" "$(counted)" 0
 : >"$LOG"
 echo busy >"$FAKE"
 work

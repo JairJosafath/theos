@@ -118,6 +118,43 @@ type ContainerDeploy struct {
 	Approved string `json:"approved,omitempty"`
 }
 
+// ContainerImageStatus is a release's image in the owner's container registry.
+type ContainerImageStatus struct {
+	// tag is the release's tag, the image's tag.
+	// +required
+	Tag string `json:"tag"`
+
+	// repository is the image's repository, <host>/<owner>/<repository>.
+	// +optional
+	Repository string `json:"repository,omitempty"`
+
+	// digest is the image index's digest; "" when there is no archive or it is
+	// invalid.
+	// +optional
+	Digest string `json:"digest,omitempty"`
+
+	// platforms are the platforms the image runs on, attestations left out.
+	// +listType=atomic
+	// +optional
+	Platforms []string `json:"platforms,omitempty"`
+
+	// state is Published once the registry has the image under the tag,
+	// NoImage when the release has no image archive, Invalid when its archive
+	// can't be pushed, TagTaken when the tag names another digest, and Failed
+	// while the Git host can't be reached, tried again each poll.
+	// +kubebuilder:validation:Enum=Published;NoImage;Invalid;TagTaken;Failed
+	// +required
+	State string `json:"state"`
+
+	// message says the state for a person.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// publishedTime is when the operator found the image pushed.
+	// +optional
+	PublishedTime *metav1.Time `json:"publishedTime,omitempty"`
+}
+
 // ContainerDeployStatus is what runs at one of a Container's targets.
 type ContainerDeployStatus struct {
 	// target is the entry's DeployTarget.
@@ -499,6 +536,12 @@ type ContainerStatus struct {
 	// +optional
 	NewestRelease string `json:"newestRelease,omitempty"`
 
+	// image is newestRelease's image in the owner's container registry on the
+	// Git host. Only a Container whose Deployment builds an image has it, once
+	// a release has succeeded its runs.
+	// +optional
+	Image *ContainerImageStatus `json:"image,omitempty"`
+
 	// deploys is what runs at each of spec.deploy's targets, in its order.
 	// +listType=map
 	// +listMapKey=target
@@ -515,7 +558,8 @@ type ContainerStatus struct {
 
 	// conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
 	// and, for a Container with a Standard, StandardUpdated and ChecksApplied;
-	// once scaffolded, OperationsApplied; with spec.deploy, Deployed.
+	// once scaffolded, OperationsApplied; with spec.deploy, Deployed; with
+	// status.image, ImagePublished.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
