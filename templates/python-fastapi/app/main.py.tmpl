@@ -7,9 +7,11 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Response
 from psycopg_pool import ConnectionPool
 
-from app import db
+from app import db, logs
 {{- else }}
 from fastapi import FastAPI
+
+from app import logs
 {{- end }}
 
 CONTAINER = "{{ .Container }}"
@@ -30,6 +32,8 @@ app = FastAPI(title={{ printf "%q" .DisplayName }}, lifespan=lifespan)
 
 app = FastAPI(title={{ printf "%q" .DisplayName }})
 {{- end }}
+logs.configure()
+app.middleware("http")(logs.log_request)
 
 
 @app.get("/")

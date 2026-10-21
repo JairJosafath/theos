@@ -41,6 +41,15 @@ uv run pytest               # tests
   password from `PGPASSWORD`. In the devcontainer `DATABASE_URL` names its Postgres,
   and `tests/test_main.py` runs `/readyz` against it; elsewhere that test is skipped.
 {{- end }}
+
+## Logs
+
+`app/logs.py` writes logs to stdout as JSON, one object per line: one line per
+request (`method`, `path` without its query string, `status`, `durationMs` and
+`requestId`), and whatever the app and uvicorn log. The request id is the caller's
+`X-Request-Id` when it looks like an id, else a new one, and the response echoes it.
+Request bodies, header values and query strings are never logged. `LOG_LEVEL` sets
+the level (`INFO` when unset); uvicorn's own access log is off.
 {{- if .Connectors }}
 
 ## Connectors
