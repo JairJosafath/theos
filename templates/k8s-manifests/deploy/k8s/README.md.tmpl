@@ -57,6 +57,16 @@ kustomize build deploy/k8s
 `kubectl kustomize deploy/k8s` prints the same without kustomize installed.
 
 ## 4. Apply
+{{- if eq .Framework "python-fastapi" }}
+
+The app verifies a bearer token on every route but its probes, and refuses to
+start without `OIDC_ISSUER` and `OIDC_AUDIENCE`. It reads both from ConfigMap
+`{{ .Container }}-auth` in `auth.yaml`, which ships placeholders: set
+`OIDC_ISSUER` to your issuer's URL (the app reads its keys from
+`$OIDC_ISSUER/.well-known/openid-configuration`) and `OIDC_AUDIENCE` to the
+`aud` its tokens carry. Until you do, the app starts and every route but the
+probes answers 503.
+{{- end }}
 {{- if has .Connectors "postgres" }}
 
 The database and the app read the Postgres password from Secret
@@ -83,6 +93,11 @@ Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
 {{- if $service }}
 - `service.yaml`: Service `{{ .Container }}` on port 80, forwarding to the
   container's port `http`.
+{{- end }}
+{{- if eq .Framework "python-fastapi" }}
+- `auth.yaml`: ConfigMap `{{ .Container }}-auth` with `OIDC_ISSUER` and
+  `OIDC_AUDIENCE`, the token issuer and audience the app verifies against,
+  which the Deployment loads through `envFrom`.
 {{- end }}
 {{- if .Compute }}
 - `compute.yaml`: the CPU and memory requests and limits of container `app`,

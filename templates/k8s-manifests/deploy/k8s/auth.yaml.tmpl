@@ -1,0 +1,20 @@
+{{- /* python-fastapi (v1.5.0+) verifies a bearer JWT and refuses to start
+without OIDC_ISSUER and OIDC_AUDIENCE (#1474). The Deployment loads this
+ConfigMap through envFrom; the placeholders let the pod start, and every route
+but the probes answers 503 until OIDC_ISSUER names the real issuer (#1540). */ -}}
+{{- if eq .Framework "python-fastapi" -}}
+# Who issues the bearer tokens the app accepts. Set both before you apply:
+# OIDC_ISSUER is the issuer's URL (its keys come from
+# $OIDC_ISSUER/.well-known/openid-configuration), OIDC_AUDIENCE the `aud` a
+# token must carry.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Container }}-auth
+  labels:
+    app.kubernetes.io/name: {{ .Container }}
+    app.kubernetes.io/part-of: {{ .SoftwareSystem }}
+data:
+  OIDC_ISSUER: https://issuer.example.com
+  OIDC_AUDIENCE: {{ .Container }}
+{{- end }}
