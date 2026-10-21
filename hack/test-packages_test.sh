@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # Tests for hack/test-packages.sh: a change to a leaf package tests it alone,
 # one to a package others import tests them too, a docs-only change tests
-# nothing, and go.mod, api/, config/, the hack/ files Go tests read,
-# testdata, main, no merge base, TEST_ALL and FORCE test every package
-# (#1295); a package below test/e2e is tested, a non-Go file or a //go:embed
-# line also tests cmd (#1321); in a throwaway module and clone. A hack/ script
-# no Go test reads tests no package, and every hack/ path a Go test of this
-# repository names tests every package or lies in a package (#1318).
+# nothing, and go.mod, testdata, main, no merge base, TEST_ALL and FORCE test
+# every package (#1295); a package below test/e2e is tested, a non-Go file or
+# a //go:embed line also tests cmd (#1321); in a throwaway module and clone.
+# A path of the readers table (templates/, config/, api/, the hack/ files Go
+# tests read) tests the packages whose tests read it and not every package,
+# nor the readers' dependents (#1523). A hack/ script no Go test reads tests
+# no package (#1318).
+#
+# Against this repository: every package the readers table names exists; a
+# _test.go that climbs to a table path ("../../templates",
+# filepath.Join("..", "..", "config", ...), filepath.Join(root, "dist", ...))
+# lies in a package the table lists for it (#1523); and every hack/ path a Go
+# test names lies in a package, is listed in the table for that test's
+# package, or tests every package (#1318).
 # Run: hack/test-packages_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -16,7 +24,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GOWORK=off
-unset TEST_ALL FORCE TEST_BASE
+unset TEST_ALL FORCE TEST_BASE TEST_READERS
 
 # A module: leaf (no imports), mid imports leaf, top imports mid, other alone,
 # api imported by nothing, cmd alone (it guards embeds), hack/tool a package
@@ -111,7 +119,7 @@ change
 printf 'package top\nimport _ "embed"\n//go:embed top.go\nvar s string\n' >top/new.go
 check "#1321 a new file with //go:embed: its package and cmd" "$(run)" "cmd top"
 
-for f in go.mod api/v1/v1.go config/crd.yaml hack/seed/catalog.sh hack/boilerplate.go.txt hack/agent/Dockerfile leaf/testdata/in.txt Makefile .github/workflows/t.yml; do
+for f in go.mod hack/agent/Dockerfile leaf/testdata/in.txt Makefile .github/workflows/t.yml; do
   change "$f"
   check "$f: every package" "$(run)" "$every"
   check "$f: says why" "$(grep -c "every package (8): $f changed" "$T/err")" 1
@@ -125,12 +133,82 @@ done
 change hack/tool/assets/a.txt
 check "a file in a package under hack/: that package and cmd (#1318, #1321)" "$(run)" "cmd hack/tool"
 
+# The readers table (#1523): mid's and other's tests read templates/, top's
+# config/, other's hack/seed/; nothing reads api/ as files; ghost holds no
+# package.
+cat >"$T/readers" <<EOF
+templates mid other ghost
+config top
+api
+hack/seed other
+EOF
+export TEST_READERS=$T/readers
+check "the table prints" "$(hack/test-packages.sh --readers | paste -sd'|')" "api |config top|hack/seed other|templates mid other ghost"
+
+change templates/x/a.txt
+check "#1523 templates/<x>: the packages whose tests read templates, not their dependents" "$(run)" "mid other"
+check "#1523 says which path" "$(grep -c 'testing 2 of 8 packages.*read by their tests: templates' "$T/err")" 1
+
+change templates/x/a.txt templates/y/b.txt
+check "#1523 two files under one path: its readers once" "$(run)" "mid other"
+
+change templates/x/a.txt leaf/leaf.go
+check "#1523 a read path and a changed package: the readers and the dependents" "$(run)" "leaf mid other top"
+check "#1523 says both" "$(grep -c 'changed: leaf; read by their tests: templates' "$T/err")" 1
+
+change config/crd.yaml
+check "#1523 config/: its readers" "$(run)" "top"
+
+change api/v1/v1.go
+check "#1523 api/ has no readers: the package and its dependents, from the graph" "$(run)" "api/v1"
+
+change hack/seed/catalog.sh
+check "#1523 a hack/ file of the table: its readers" "$(run)" "other"
+
+unset TEST_READERS
+change config/crd.yaml
+check "#1523 the table's readers not in the module: no package" "$(run)" ""
+
+# Against this repository (#1523, #1318). The table's packages exist and have
+# tests; a test that climbs to a table path lies in a listed package.
+mapfile -t table < <(cd "$REPO" && hack/test-packages.sh --readers)
+check "the table has entries" "$([ ${#table[@]} -gt 5 ] && echo yes)" yes
+# reads PATH: the directories of the _test.go files of this repository that
+# climb to PATH: "../../PATH", or "..", "PATH-segments" or root, "PATH-segments".
+reads() {
+  local segs
+  segs=$(sed 's|/|", *"|g' <<<"$1")
+  (cd "$REPO" && git ls-files '*_test.go' |
+    xargs grep -lE "\"(\.\./)+$1(/|\")|(\.\.\", *|root, *)\"$segs\"" | xargs -rn1 dirname | sort -u)
+}
+# listed PATH DIR: the table lists package DIR for PATH.
+listed() {
+  local line
+  for line in "${table[@]}"; do
+    [ "${line%% *}" = "$1" ] || continue
+    [[ " ${line#* } " == *" $2 "* ]] && return 0
+  done
+  return 1
+}
+for line in "${table[@]}"; do
+  path=${line%% *}
+  for p in ${line#* }; do
+    check "$path: reader $p is a package with tests" "$(ls "$REPO/$p"/*_test.go >/dev/null 2>&1 && echo yes)" yes
+  done
+  case "$path" in hack/*) continue ;; esac
+  for d in $(reads "$path"); do
+    check "$d's tests read $path: the table lists it" "$(listed "$path" "$d" && echo yes)" yes
+  done
+done
+check "internal/scaffold's tests climb to templates/" "$(reads templates | grep -c '^internal/scaffold$')" 1
+
 # Every hack/ path a Go test of this repository names, in a string or a
-# filepath.Join, tests every package or lies in a package, so a new test that
-# reads a script can't be skipped (#1318). A directory gets a file in it.
-mapfile -t named < <(cd "$REPO" && git ls-files '*_test.go' | xargs grep -ohE \
+# filepath.Join, lies in a package, is listed in the table for that test's
+# package, or tests every package, so a new test that reads a script can't be
+# skipped (#1318, #1523). A directory gets a file in it.
+mapfile -t named < <(cd "$REPO" && git ls-files '*_test.go' | xargs grep -oE \
   'hack/[A-Za-z0-9._/-]*|"hack"(, *"[A-Za-z0-9._-]+")+' |
-  sed -E 's/", *"/\//g; s/"//g; s/\.+$//; s|/$|/x|' | sort -u)
+  sed -E 's/", *"/\//g; s/"//g; s/\.+$//; s|/$|/x|; s|^([^:]*)/[^/:]*:|\1 |' | sort -u)
 check "Go tests name hack/ paths" "$([ ${#named[@]} -gt 0 ] && echo yes)" yes
 # in_package PATH: a directory of PATH or above it, under hack/, holds Go
 # files other than tests.
@@ -143,8 +221,22 @@ in_package() {
   done
   return 1
 }
-for f in "${named[@]}"; do
+# tabled PATH: the table's path that is PATH or holds it, if any.
+tabled() {
+  local line path
+  for line in "${table[@]}"; do
+    path=${line%% *}
+    if [ "$1" = "$path" ] || [[ "$1" == "$path"/* ]]; then echo "$path"; return; fi
+  done
+}
+for pair in "${named[@]}"; do
+  d=${pair%% *}
+  f=${pair#* }
   if in_package "$f"; then echo "ok   $f: in a package"; continue; fi
+  if t=$(tabled "$f") && [ -n "$t" ]; then
+    check "$f, named by $d's tests: the table lists $d for $t" "$(listed "$t" "$d" && echo yes)" yes
+    continue
+  fi
   [ ! -d "$REPO/$f" ] || f=$f/x
   change "$f"
   check "$f, named by a Go test: every package" "$(run)" "$every"
