@@ -268,14 +268,16 @@ func TestPushNeverMovesATag(t *testing.T) {
 	if again := must(Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, entries))); again.Digest != first.Digest {
 		t.Errorf("the repeat pushed %s, the first %s", again.Digest, first.Digest)
 	}
-	// Each manifest below the root goes again by digest; the root not at all.
-	if n := reg.puts.Load(); n != 3 {
-		t.Errorf("the repeat put %d manifests, want the 3 below the root", n)
+	if n := reg.puts.Load(); n != 0 {
+		t.Errorf("the repeat put %d manifests, want none", n)
 	}
 
 	other, err := Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, layout(t, twoPlatforms(t))))
 	if !errors.Is(err, ErrTagTaken) || other.Digest == "" || other.Digest == first.Digest {
 		t.Fatalf("another image under v1.0.0 = %+v, %v; want ErrTagTaken with its digest", other, err)
+	}
+	if n := reg.puts.Load(); n != 0 {
+		t.Errorf("a refused image put %d manifests, want none", n)
 	}
 	if d := must(Resolve(ctx, reg.Registry, "shop/web", "v1.0.0")); d != first.Digest {
 		t.Errorf("v1.0.0 resolves to %s, want the first push's %s", d, first.Digest)

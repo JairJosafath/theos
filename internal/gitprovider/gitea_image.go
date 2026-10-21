@@ -37,8 +37,8 @@ type Image struct {
 	Repository string
 	// Tag is the release's tag, the image's tag.
 	Tag string
-	// Digest is the root manifest's digest, "" when there is no archive or it
-	// is invalid.
+	// Digest is the archive's root manifest digest, also when the tag names
+	// another; "" when there is no archive or it is invalid.
 	Digest string
 	// Platforms are the platforms the image runs on, attestations left out.
 	Platforms []string
@@ -90,7 +90,7 @@ func (g *gitea) PublishImage(ctx context.Context, repo Repository, tag string) (
 		out.Outcome, out.Reason = ImageInvalid, archives[0].Name+": "+err.Error()
 		return out, nil
 	case errors.Is(err, oci.ErrTagTaken):
-		out.Outcome, out.Reason = ImageTagTaken, err.Error()
+		out.Outcome, out.Reason, out.Digest, out.Platforms = ImageTagTaken, err.Error(), pushed.Digest, pushed.Platforms
 		return out, nil
 	case err != nil:
 		return out, fmt.Errorf("gitea: pushing %s of %s: %w", archives[0].Name, repoPath(repo), err)
@@ -164,8 +164,9 @@ func (t tokenAt) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // linkPackage links version of owner's package name of type kind to repo,
-// so it shows on the repository, unless it is linked already: Gitea refuses
-// a second link.
+// so it shows on the repository, unless it is linked to a repository
+// already: Gitea refuses a second link, and one a person made elsewhere is
+// theirs to keep.
 func (g *gitea) linkPackage(ctx context.Context, repo Repository, kind, name, version string) error {
 	pkg := "/api/v1/packages/" + url.PathEscape(repo.Owner) + "/" + kind + "/" + url.PathEscape(name)
 	status, data, err := g.do(ctx, http.MethodGet, pkg+"/"+url.PathEscape(version), nil)
@@ -181,7 +182,8 @@ func (g *gitea) linkPackage(ctx context.Context, repo Repository, kind, name, ve
 		return fmt.Errorf("gitea: reading the %s package %s %s failed (HTTP %d): %s", kind, name, version, status,
 			apiMessage(data))
 	}
-	if linked.Repository != nil && linked.Repository.Name == repo.Name {
+	if linked.Repository != nil {
+		// Linked here already, or by a person elsewhere: theirs to keep.
 		return nil
 	}
 	status, data, err = g.do(ctx, http.MethodPost, pkg+"/-/link/"+url.PathEscape(repo.Name), nil)

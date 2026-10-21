@@ -169,8 +169,9 @@ func TestPublishImage(t *testing.T) {
 	other, _ := ocitest.TwoPlatforms(t)
 	h.release(map[string][]byte{"orders-api-v1.0.0.oci.tar": other})
 	taken, err := p.PublishImage(ctx, repo, "v1.0.0")
-	if err != nil || taken.Outcome != ImageTagTaken || !strings.Contains(taken.Reason, digest) {
-		t.Fatalf("PublishImage() of another image = %+v, %v; want TagTaken naming %s", taken, err, digest)
+	if err != nil || taken.Outcome != ImageTagTaken || !strings.Contains(taken.Reason, digest) ||
+		taken.Digest == "" || taken.Digest == digest {
+		t.Fatalf("PublishImage() of another image = %+v, %v; want TagTaken naming %s and its own digest", taken, err, digest)
 	}
 	if d, _ := p.ImageDigest(ctx, repo, "v1.0.0"); d != digest {
 		t.Errorf("v1.0.0 moved to %s, want it to stay %s", d, digest)
