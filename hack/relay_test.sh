@@ -26,7 +26,7 @@ T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
-unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE
+unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE RELAY_MODEL
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # said PATTERN FILE: wait for a line of FILE to match PATTERN, for up to a
@@ -39,6 +39,7 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 30"
+check "defaults: RELAY_MODEL is fable (#1534)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" fable
 check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
 check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
 # With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
@@ -54,7 +55,10 @@ export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 RELAY_ADMIT_GAP=300 RELAY_ME
 . "$(dirname "$0")/relay.sh"
 DIR=$T/relay STOP=$DIR/stop LOG=$T/log
 mkdir -p "$DIR"
-meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO"; }
+# Written whole and moved in: admit polls the file while a background job
+# changes it, and a read between the truncate and the write saw no
+# MemAvailable and started at once (#1526).
+meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO.new" && mv "$RELAY_MEMINFO.new" "$RELAY_MEMINFO"; }
 
 # The cap, on the device with the cluster.
 cap 9 2>/dev/null; check "cap: nine workers by default" $? 0
@@ -90,8 +94,8 @@ meminfo 2
 (said "waiting for headroom" "$LOG"; meminfo 6) &
 MEM_WAIT=120 admit; check "admit: waits until memory frees" $? 0
 wait
-grep -q "waiting for headroom: 2 GiB available" "$LOG"; check "admit: logs the wait" $? 0
-grep -q "headroom: 6 GiB available" "$LOG"; check "admit: logs the end" $? 0
+grep -q "waiting for headroom: 2 GiB available" "$LOG"; check "admit: logs the wait #1526" $? 0
+grep -q "headroom: 6 GiB available" "$LOG"; check "admit: logs the end #1526" $? 0
 MEM_WAIT=1 admit; check "admit: sessions start apart" $? 1
 grep -q "sessions start at least 300s apart" "$LOG"; check "admit: logs the gap" $? 0
 rm -f "$DIR/admitted"
@@ -233,6 +237,13 @@ check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.
 check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
 check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
 
+# The relay runs on RELAY_MODEL, fable by default (#1534): no prompt forbids
+# Fable any more, and each sends subagents to that model.
+out=$(prompt 1 t u ready n b; prompt 1 t u in-progress n b)
+check "prompt: never forbids Fable (#1534)" "$(grep -c 'Never use the Fable model' <<<"$out")" 0
+check "prompt: subagents run on the relay's model (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out")" 2
+check "prompt: RELAY_MODEL names the model (#1534)" "$(RELAY_MODEL=opus prompt 1 t u ready n b | grep -c 'Run subagents on the opus model: name it when dispatching')" 1
+
 # A resumed issue continues from its newest handoff at every priority (#1309):
 # pick says in-progress for a priority/3 one (#1329), and its prompt says so.
 (
@@ -281,6 +292,7 @@ skill=$(cat "$(dirname "$0")/../.claude/skills/triage/SKILL.md")
 check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$out")" 1
 check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow it' <<<"$out")" 1
 check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
+check "triage: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
 check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
 check "triage skill: needs-human is the owner's" "$(grep -c "needs-human is the owner's" <<<"$skill")" 1
@@ -363,6 +375,7 @@ check "maintain: the owner's word wins" "$(grep -c "The owner's word wins" <<<"$
 check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out")" 1
 check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
 check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
+check "maintain: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
 check "maintain: the last sweep's time" "$(DRY_RUN=1 maintain | grep -c "The last sweep was at $(date -d @86400 -Is);")" 1
@@ -475,7 +488,7 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
-  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait ;;
+  hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
   agent) mkdir -p "${t%.jsonl}/subagents"; echo '{}' >"$t"
@@ -518,6 +531,9 @@ esac
 FAKE
 chmod +x "$T/bin/claude"
 export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
+# The sessions' TMPDIRs are in $T, not the user's ~/.cache/c4factory/tmp/wt,
+# which every run of this test on the device would share and clear (#1526).
+SCRATCH=$T/cache/c4factory/tmp
 # The main checkout the relay runs from, apart from the worktree (#1371).
 REPO=$T/repo-main MAIN=$T/repo-main
 export MAIN
@@ -744,7 +760,6 @@ no_strikes
 # would find the worktree (#1307): emptied before it starts and removed after
 # it ends.
 echo tmp >"$FAKE"
-SCRATCH=$T/cache/c4factory/tmp
 mkdir -p "$SCRATCH/wt" && echo old >"$SCRATCH/wt/left"
 work
 check "tmp #1269: TMPDIR is SCRATCH/<worktree>" "$(cat "$FAKE.tmpdir")" "$SCRATCH/wt"
@@ -753,6 +768,25 @@ check "tmp #1269: a dead session's scratch is gone before the next starts" "$(ca
 check "tmp #1269: mktemp -d lands in it" "$(case $(cat "$FAKE.scratch") in "$SCRATCH/wt/"?*) echo in ;; esac)" in
 check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SCRATCH/wt" && echo left)" ""
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
+no_strikes
+
+# The session runs on RELAY_MODEL, fable by default (#1534): the dry run names
+# it. Before each session the yolo round runs (gh_yolo merge) and what it says
+# is logged; a dry run skips it.
+echo handoff >"$FAKE"
+out=$(DRY_RUN=1 work 2>&1)
+check "dry run #1534: the session runs on fable" "$(grep -c 'claude -p --permission-mode auto --model fable --session-id' <<<"$out")" 1
+check "dry run #1534: RELAY_MODEL picks the model" "$(RELAY_MODEL=opus DRY_RUN=1 work 2>&1 | grep -c -- 'auto --model opus --session-id')" 1
+eval "$(declare -f gh_yolo | sed '1s/^gh_yolo/gh_yolo_real/')"
+gh_yolo() { echo "yolo called $*" >>"$T/yolo"; echo "#3 merged (yolo mode)"; echo "#4: not merged" >&2; }
+rm -f "$T/yolo"
+: >"$LOG"
+work
+check "yolo round #1534: gh_yolo merge runs before the session, its lines logged" "$(cat "$T/yolo") | $(grep -c 'yolo: #3 merged (yolo mode)$' "$LOG") $(grep -c 'yolo: #4: not merged$' "$LOG")" "yolo called merge | 1 1"
+rm -f "$T/yolo"
+(DRY_RUN=1 work >/dev/null 2>&1)
+check "yolo round #1534: a dry run skips it" "$(cat "$T/yolo" 2>/dev/null)" ""
+eval "$(declare -f gh_yolo_real | sed '1s/^gh_yolo_real/gh_yolo/')"
 no_strikes
 
 # Before a session, a worktree's .dev/ of its own, the caches make check left
@@ -911,10 +945,11 @@ IDLE=2s IDLE_KILL=2s IDLE_POLL=1
 : >"$LOG"
 no_strikes; rm -f "$T/status"
 echo hang >"$FAKE"
-t0=$(date +%s)
+rm -f "$FAKE.hung"
 work
-# Well before the hang's 600s, with room for a loaded device (#1409).
-check "idle: ended early" "$(($(date +%s) - t0 < 300))" 1
+# Ended by the watch, before the hang's 600s ran out: told by the file the
+# hang writes at its end, not by a clock a loaded device outlasts (#1409, #1526).
+check "idle: ended early #1526" "$(test -e "$FAKE.hung" && echo ran-out)" ""
 grep -q "session 1 stopped: its transcript was idle for 2s$" "$LOG"; check "idle: logged" $? 0
 check "idle: counted" "$(counted)" 1
 check "idle: what claude started ended too" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" ""

@@ -9,6 +9,9 @@ resources:
 {{- if or (eq .Type "service") (eq .Type "static-site") }}
   - service.yaml
 {{- end }}
+{{- if eq .Framework "python-fastapi" }}
+  - auth.yaml
+{{- end }}
 {{- range .Connectors }}
   - connector-{{ . }}.yaml
 {{- end }}

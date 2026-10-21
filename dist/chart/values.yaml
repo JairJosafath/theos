@@ -514,7 +514,7 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: python-fastapi
-      ref: v1.5.0
+      ref: v1.6.0
       spec:
         displayName: Python, FastAPI (uv)
         description: A uv project with FastAPI, ruff, mypy and pytest, and its lock file.
@@ -669,7 +669,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.17.3
+      ref: v1.17.4
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -697,14 +697,14 @@ catalog:
         supportedTypes: [service, worker, job, static-site, operator]
     - kind: Deployment
       name: k8s-manifests
-      ref: v1.5.0
+      ref: v1.8.0
       spec:
         displayName: Kubernetes manifests
         description: A Dockerfile for the Framework (python-fastapi, python-cli or react-vite) and plain Kubernetes manifests, built with kustomize.
         supportedTypes: [service, worker, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.

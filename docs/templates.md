@@ -37,16 +37,16 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 
 | Template | Kind | W | CI | Tests | Lint | README | Deploy | Logging | Auth |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | yes | #1474 |
+| python-fastapi | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | yes | yes |
 | python-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
-| react-vite | Framework | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
+| react-vite | Framework | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | node-cli | Framework | W | yes | yes | yes | yes | yes | yes | n/a |
 | python-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | ts-standard | Standard | W | yes | yes | yes | n/a | n/a | yes | n/a |
 | postgres | Connector | W | yes | yes | yes | n/a | yes | n/a | yes |
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
-| k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1457 #1072 | n/a | n/a |
-| gitea-release | Deployment | W | yes | yes | yes | #1475 | yes | n/a | n/a |
+| k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
+| gitea-release | Deployment | W | yes | yes | yes | yes | yes | n/a | n/a |
 | go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | #1477 | yes, #1458 | yes | yes |
 | vscode-extension | Framework | | #1476 | yes | yes | yes | yes | #1478 | n/a |
@@ -75,7 +75,7 @@ one of their templates changes); #1476 does the same for the rest.
 
 ## The webshop's templates
 
-### python-fastapi (v1.5.0)
+### python-fastapi (v1.6.0)
 
 A Python service on uv and FastAPI, with `/`, `/healthz` and, with the
 `postgres` Connector, `app/db.py` (a psycopg pool) and a `/readyz` that
@@ -91,13 +91,17 @@ runs `SELECT 1`.
   the routes. How to ship is k8s-manifests' `deploy/k8s/README.md` (#1470).
 - Deploy: k8s-manifests in "fastapi service with postgres" writes its
   Dockerfile (uv, uvicorn, port 8000), checked by
-  `TestK8sManifestsFollowsTheFramework`. No release builds the image (#1457)
-  and nothing applies it to a cluster (#1072).
+  `TestK8sManifestsFollowsTheFramework`; each release builds the image for
+  both platforms (#1457), and nothing applies it to a cluster (#1072).
 - Logging: `app/logs.py`: JSON lines on stdout at `LOG_LEVEL`, one per
   request (method, path, status, `durationMs`, `requestId` from
   `X-Request-Id`, echoed), no query string, header value or body; uvicorn's
   access log off. `tests/test_main.py` and `TestFastAPILogsJSONLines` (#1473).
-- Auth: every route is open (#1474).
+- Auth: `app/auth.py.tmpl` verifies a bearer JWT (RS256/ES256, `iss`,
+  `aud`, `exp`) against the JWKS of `OIDC_ISSUER` on every route but
+  `/healthz` and `/readyz`; without `OIDC_ISSUER` the app refuses to start
+  unless `AUTH_DISABLED=true` (the devcontainer sets it). The tests sign
+  tokens with a key they make (#1474).
 
 ### python-cli (v1.1.0)
 
@@ -134,11 +138,11 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Deploy: k8s-manifests in "react web app on kubernetes" writes a Dockerfile
   (vite build, unprivileged nginx on 8080), checked by
   `TestK8sManifestsFollowsTheFramework` and `make validate-yaml`'s storefront
-  render. Image and rollout: #1457, #1072.
+  render. Each release builds the image (#1457); rollout: #1072.
 - Logging: n/a: a static page served by nginx; the code has none and ESLint
   refuses `console`.
 - Auth: n/a: a public page with no API client; the API it calls
-  authenticates (#1474).
+  verifies a bearer JWT (#1474).
 
 ### node-cli (v1.0.0)
 
@@ -227,7 +231,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.5.0)
+### k8s-manifests (v1.8.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -238,17 +242,30 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   `.dockerignore`, port and probes per Framework, no Service for a worker);
   `make validate-yaml` builds the orders-api, storefront and payments-worker
   renders. With the `postgres` Connector, the Deployment sets `PGPASSWORD`
-  from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`).
+  from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`), and
+  for python-fastapi (since v1.7.0, #1528) its readiness probe asks
+  `/readyz`, which runs `SELECT 1`: a pod whose database is down leaves the
+  Service, and liveness stays on `/healthz`. For python-fastapi (since
+  v1.8.0, #1540) `auth.yaml` writes ConfigMap `<container>-auth` with
+  placeholder `OIDC_ISSUER` and `OIDC_AUDIENCE`, which the Deployment loads
+  through `envFrom`, so the app starts; the README says to set both.
 - Lint: those builds are validated with kubectl-validate.
 - README: `deploy/k8s/README.md.tmpl` (#1470): build the image, set it with
   `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what
   `compute.yaml` and each Connector's file are, the port and probes; checked
   by `TestK8sManifestsWritesItsREADME`.
+- Release (since v1.6.0, #1457): `.gitea/workflows/image.yaml`, for Gitea
+  Actions, builds the Dockerfile on each `v*` tag on the `image` runner with
+  rootless BuildKit, for `linux/amd64` and `linux/arm64` with an SBOM and
+  provenance, and attaches `<repository>-<tag>.oci.tar` to the release; the
+  Dockerfiles `RUN` only in stages on `$BUILDPLATFORM`
+  (`TestDockerfilesRunOnlyOnTheBuildPlatform`,
+  `TestK8sManifestsBuildsItsImageOnRelease`).
 - Deploy: the manifests, with the image `<container>:dev`, ready for a GitOps
-  tool. No release builds the image (#1457); nothing applies it (#1072).
+  tool; nothing applies them (#1072).
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.2.0)
+### gitea-release (v1.3.0)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
@@ -261,7 +278,9 @@ and attaches `dist/` to the tag's release.
   `make test-templates-operator` runs `make dist` for the operator pair,
   `make test-templates` for the CLIs.
 - Lint: `TestEveryTemplateRenders` parses the workflow.
-- README: nothing in the scaffold says that a tag releases (#1475).
+- README: `RELEASING.md` says how to tag a release, check one with
+  `make dist` and recover from a failed run
+  (`TestGiteaReleaseWritesReleasingGuide`).
 - Deploy: the Gitea release with the `dist/` files; no image (#1458 for an
   operator's).
 - Logging, Auth: n/a: a workflow; it uses the workflow's own token.
@@ -361,7 +380,7 @@ aws-standard.
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.17.3)
+### aws-standard (v1.17.4)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag.

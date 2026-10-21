@@ -153,38 +153,56 @@ func TestEveryTemplateRenders(t *testing.T) {
 // TestK8sManifestsFollowsTheFramework checks that k8s-manifests writes the
 // Dockerfile, .dockerignore, port and probes of the Framework's image, no
 // Dockerfile for a Framework it has none for, and no Service for a worker.
+// python-fastapi's Deployment loads OIDC_ISSUER and OIDC_AUDIENCE from
+// ConfigMap <container>-auth, which only python-fastapi gets (#1540).
 func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	cases := []struct {
 		framework, typ string
 		standard       string
+		connector      string
 		dockerfile     []string // substrings of the Dockerfile; nil: no Dockerfile
 		dockerignore   []string // lines of .dockerignore
 		deployment     []string // substrings of deploy/k8s/deployment.yaml
 		never          []string // substrings neither the Dockerfile nor deployment.yaml has
 	}{
-		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
+		// #1540: python-fastapi refuses to start without OIDC_ISSUER and
+		// OIDC_AUDIENCE; the Deployment loads both from sample-app-auth.
+		{"python-fastapi", "service", "", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
 			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
-			[]string{"containerPort: 8000", "path: /healthz"}, []string{"PGPASSWORD"}},
-		{"react-vite", "static-site", "ts-standard",
+			[]string{"containerPort: 8000", "envFrom:\n            # The token issuer and audience the app verifies against.\n            - configMapRef:\n                name: sample-app-auth",
+				"readinessProbe:\n            httpGet:\n              path: /healthz",
+				"livenessProbe:\n            httpGet:\n              path: /healthz"},
+			[]string{"PGPASSWORD", "/readyz"}},
+		// #1528: with postgres, readiness asks /readyz (SELECT 1), so a pod
+		// whose database is down leaves the Service; liveness stays on
+		// /healthz, so the outage never restarts it.
+		{"python-fastapi", "service", "", "postgres", []string{"uvicorn", "EXPOSE 8000"}, nil,
+			[]string{"PGPASSWORD", "name: sample-app-auth\n            # Connection settings, one ConfigMap per Connector.\n            - configMapRef:\n                name: sample-app-postgres",
+				"readinessProbe:\n            httpGet:\n              path: /readyz",
+				"livenessProbe:\n            httpGet:\n              path: /healthz"}, nil},
+		{"react-vite", "static-site", "ts-standard", "",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
 			[]string{"node_modules", "dist", "coverage"},
 			[]string{"containerPort: 8080", "path: /\n"}, nil},
 		// #1468: a python-cli worker runs python -m app, serves nothing and
 		// has no probes.
-		{"python-cli", "worker", "python-standard",
+		{"python-cli", "worker", "python-standard", "",
 			[]string{"ghcr.io/astral-sh/uv", "uv sync --no-dev", "USER 1000:1000", `CMD ["python", "-m", "app"]`},
 			[]string{".venv", ".pytest_cache", ".uv", "dist", "tests"},
 			[]string{"image: sample-app:dev", "runAsNonRoot: true"},
-			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe"}},
-		{"go-cli", "service", "", nil, nil, []string{"containerPort: 8000"}, nil},
+			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe", "-auth"}},
+		{"go-cli", "service", "", "", nil, nil, []string{"containerPort: 8000"}, []string{"envFrom", "-auth"}},
 	}
 	for _, c := range cases {
-		t.Run(c.framework, func(t *testing.T) {
+		t.Run(strings.TrimSuffix(c.framework+"+"+c.connector, "+"), func(t *testing.T) {
 			sides := []side{{model.SideFramework, c.framework}}
 			if c.standard != "" {
 				sides = append(sides, side{model.SideStandard, c.standard})
 			}
 			sides = append(sides, side{model.SideDeployment, "k8s-manifests"})
+			if c.connector != "" {
+				sides = append(sides, side{model.SideConnector, c.connector})
+			}
 			_, result := renderCombo(t, c.typ, sides)
 			for _, name := range []string{"Dockerfile", ".dockerignore"} {
 				if _, ok := result.Files[name]; ok != (c.dockerfile != nil) {
@@ -203,6 +221,15 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 			if _, ok := result.Files["deploy/k8s/service.yaml"]; ok != (c.typ != "worker") {
 				t.Errorf("deploy/k8s/service.yaml written = %v for a %s, want it for every type but worker", ok, c.typ)
 			}
+			auth, ok := result.Files["deploy/k8s/auth.yaml"]
+			if fastapi := c.framework == "python-fastapi"; ok != fastapi {
+				t.Errorf("deploy/k8s/auth.yaml written = %v, want %v", ok, fastapi)
+			} else if fastapi {
+				assertContains(t, "deploy/k8s/auth.yaml", string(auth.Data),
+					[]string{"kind: ConfigMap", "name: sample-app-auth", "OIDC_ISSUER: https://", "OIDC_AUDIENCE: sample-app"})
+				assertContains(t, "deploy/k8s/kustomization.yaml", string(result.Files["deploy/k8s/kustomization.yaml"].Data),
+					[]string{"  - auth.yaml"})
+			}
 			deployment := string(result.Files["deploy/k8s/deployment.yaml"].Data)
 			assertContains(t, "deploy/k8s/deployment.yaml", deployment, c.deployment)
 			for _, w := range c.never {
@@ -220,7 +247,7 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
 	files := map[string][]string{
 		"app/db.py":          {"ConnectionPool(", `"SELECT 1"`, "PGPASSWORD"},
-		"app/main.py":        {"lifespan=lifespan", `@app.get("/readyz")`, "db.ping(pool)", "status_code = 503"},
+		"app/main.py":        {"db.open_pool()", `@app.get("/readyz")`, "db.ping(pool)", "status_code = 503"},
 		"tests/test_main.py": {"def test_readyz_when_the_database_answers", "def test_readyz_when_the_database_fails", "DATABASE_URL reaches no server"},
 		"pyproject.toml":     {`"psycopg[binary,pool]>=3.3"`},
 		"uv.lock":            {`name = "psycopg-pool"`, `extras = ["binary", "pool"]`},
@@ -270,6 +297,52 @@ func TestFastAPILogsJSONLines(t *testing.T) {
 	}
 }
 
+// TestFastAPIVerifiesABearerJWT checks that python-fastapi, with and without
+// postgres, writes app/auth.py, puts every route but the probes behind it,
+// refuses to start without an issuer and tests the token cases (#1474).
+func TestFastAPIVerifiesABearerJWT(t *testing.T) {
+	files := map[string][]string{
+		"app/auth.py":        {`ALGORITHMS = ["RS256", "ES256"]`, `"WWW-Authenticate": "Bearer"`, "OIDC_ISSUER", "OIDC_AUDIENCE", "AUTH_DISABLED"},
+		"app/main.py":        {"api = APIRouter(dependencies=[Depends(auth.verified_claims)])", "app.state.verifier = auth.from_env()", `@app.get("/healthz")`, "app.include_router(api)"},
+		"pyproject.toml":     {`"pyjwt[crypto]>=2.15"`},
+		"uv.lock":            {`name = "pyjwt"`, `name = "cryptography"`},
+		"README.md":          {"## Auth", "OIDC_ISSUER", "OIDC_AUDIENCE", "AUTH_DISABLED=true"},
+		"tests/test_main.py": {"HS256", "expired", "audience"},
+	}
+	for _, postgres := range []bool{false, true} {
+		sides := []side{{model.SideFramework, "python-fastapi"}, {model.SideStandard, "python-standard"}}
+		if postgres {
+			sides = append(sides, side{model.SideConnector, "postgres"})
+		}
+		_, result := renderCombo(t, "service", sides)
+		for name, want := range files {
+			assertContains(t, name, string(result.Files[name].Data), want)
+		}
+	}
+}
+
+// TestK8sManifestsBuildsItsImageOnRelease checks that k8s-manifests writes,
+// for Gitea Actions, the release run that builds the image on the image
+// runner for both platforms with an SBOM and provenance, into the archive the
+// operator pushes (#1457).
+func TestK8sManifestsBuildsItsImageOnRelease(t *testing.T) {
+	_, result := renderCombo(t, "service", []side{
+		{model.SideFramework, "python-fastapi"},
+		{model.SideDeployment, "k8s-manifests"},
+	})
+	f, ok := result.Files[".gitea/workflows/image.yaml"]
+	if !ok {
+		t.Fatalf(".gitea/workflows/image.yaml not written; files: %v", result.Files.Paths())
+	}
+	assertContains(t, "image.yaml", string(f.Data), []string{
+		`tags: ["v*"]`, "runs-on: image", "buildctl-daemonless.sh build",
+		"platform=linux/amd64,linux/arm64",
+		"attest:sbom=generator=docker/buildkit-syft-scanner:1.9.0@sha256:",
+		"attest:provenance=mode=min", `type=oci,dest=$archive`,
+		`${REPOSITORY##*/}-$TAG.oci.tar`, "No Dockerfile at the root", `$API/releases`,
+	})
+}
+
 // TestK8sManifestsWritesItsREADME checks that k8s-manifests writes
 // deploy/k8s/README.md (#1470): how to build the image, set it, preview and
 // apply the manifests, for the Container, with the files the other layers
@@ -293,7 +366,14 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				// #1471: the user makes the password's Secret before applying.
 				"kubectl create secret generic sample-app-postgres --from-literal=password=",
 				"port 8000",
+				// #1528: readiness on /readyz, liveness on /healthz, and why.
+				"The readiness probe\nasks `GET /readyz`",
+				"the pod leaves Service `sample-app`",
 				"`GET /healthz`",
+				"a database\noutage never restarts the app",
+				// #1540: the user sets the issuer and audience before applying.
+				"ConfigMap\n`sample-app-auth` in `auth.yaml`",
+				"`auth.yaml`: ConfigMap `sample-app-auth` with `OIDC_ISSUER`",
 			},
 			never: []string{"brings its own `Dockerfile`", "no port and no probes"},
 		},
@@ -307,7 +387,7 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				"port 8080",
 				"`GET /` on it",
 			},
-			never: []string{"connector-", "/healthz"},
+			never: []string{"connector-", "/healthz", "OIDC_ISSUER"},
 		},
 		"python worker on kubernetes": {
 			want:  []string{"`connector-postgres.yaml`", "no port and no probes"},
@@ -330,6 +410,67 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 			for _, w := range want.never {
 				if strings.Contains(string(readme.Data), w) {
 					t.Errorf("deploy/k8s/README.md contains %q:\n%s", w, readme.Data)
+				}
+			}
+		})
+	}
+	for name := range cases {
+		t.Errorf("no combo %q in templateCombos", name)
+	}
+}
+
+// TestGiteaReleaseWritesReleasingGuide checks that gitea-release writes
+// RELEASING.md (#1475): how to tag a release, what the workflow attaches,
+// how to check it with make dist and what to do when a run fails, with the
+// version file the Standard's make dist checks the tag against.
+func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
+	common := []string{
+		"# Releasing sample-app",
+		"git tag v0.2.0",
+		"git push origin v0.2.0",
+		"`make dist VERSION=<tag>`",
+		"every file directly in `dist/`",
+		"## Check a release locally",
+		"ls dist/",
+		"## When a run fails",
+		"git tag -f v0.2.0 && git push -f origin v0.2.0",
+		"delete the asset on the release page",
+	}
+	cases := map[string]struct {
+		want  []string
+		never []string
+	}{
+		"python cli": {
+			want: []string{"the wheel and the sdist", "Set the version in `pyproject.toml`",
+				"make dist VERSION=v0.2.0   # the version in pyproject.toml"},
+			never: []string{"package.json", "make dist VERSION=v0.0.0-test\n"},
+		},
+		"node cli": {
+			want: []string{"the npm tarball (`.tgz`)", "Set the version in `package.json`",
+				"make dist VERSION=v0.2.0   # the version in package.json"},
+			never: []string{"pyproject.toml", "make dist VERSION=v0.0.0-test\n"},
+		},
+		"go cli": {
+			want:  []string{"`SHA256SUMS`", "make dist VERSION=v0.0.0-test\n"},
+			never: []string{"pyproject.toml", "package.json"},
+		},
+	}
+	for _, c := range templateCombos {
+		want, ok := cases[c.name]
+		if !ok {
+			continue
+		}
+		delete(cases, c.name)
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			f, ok := result.Files["RELEASING.md"]
+			if !ok {
+				t.Fatalf("RELEASING.md not written; files: %v", result.Files.Paths())
+			}
+			assertContains(t, "RELEASING.md", string(f.Data), slices.Concat(common, want.want))
+			for _, w := range want.never {
+				if strings.Contains(string(f.Data), w) {
+					t.Errorf("RELEASING.md contains %q:\n%s", w, f.Data)
 				}
 			}
 		})

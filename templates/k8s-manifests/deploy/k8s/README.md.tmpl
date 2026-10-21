@@ -1,6 +1,7 @@
 {{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
 {{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
 {{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
+{{- $readyz := and (eq .Framework "python-fastapi") (has .Connectors "postgres") -}}
 {{- $dockerfile := or (eq .Framework "python-fastapi") (eq .Framework "python-cli") (eq .Framework "react-vite") -}}
 {{- $service := or (eq .Type "service") (eq .Type "static-site") -}}
 # Deploying {{ .Container }} to Kubernetes
@@ -23,7 +24,13 @@ listen on port {{ $port }} and answer `GET {{ $probe }}`. Build it with:
 docker build -t {{ .Container }}:1.0.0 .
 ```
 
-Push it where your cluster can pull it from, for example:
+Each `v*` tag's release builds it too, for `linux/amd64` and `linux/arm64`
+(`.gitea/workflows/image.yaml`), and the factory pushes it to the Git host's
+container registry. Nothing emulates the other platform, so the `Dockerfile`
+`RUN`s only in stages `FROM --platform=$BUILDPLATFORM` and its last stage only
+`COPY`s; keep it so, or the release fails.
+
+To push one yourself where your cluster can pull it from, for example:
 
 ```sh
 docker tag {{ .Container }}:1.0.0 registry.example.com/{{ .Container }}:1.0.0
@@ -50,6 +57,16 @@ kustomize build deploy/k8s
 `kubectl kustomize deploy/k8s` prints the same without kustomize installed.
 
 ## 4. Apply
+{{- if eq .Framework "python-fastapi" }}
+
+The app verifies a bearer token on every route but its probes, and refuses to
+start without `OIDC_ISSUER` and `OIDC_AUDIENCE`. It reads both from ConfigMap
+`{{ .Container }}-auth` in `auth.yaml`, which ships placeholders: set
+`OIDC_ISSUER` to your issuer's URL (the app reads its keys from
+`$OIDC_ISSUER/.well-known/openid-configuration`) and `OIDC_AUDIENCE` to the
+`aud` its tokens carry. Until you do, the app starts and every route but the
+probes answers 503.
+{{- end }}
 {{- if has .Connectors "postgres" }}
 
 The database and the app read the Postgres password from Secret
@@ -77,6 +94,11 @@ Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
 - `service.yaml`: Service `{{ .Container }}` on port 80, forwarding to the
   container's port `http`.
 {{- end }}
+{{- if eq .Framework "python-fastapi" }}
+- `auth.yaml`: ConfigMap `{{ .Container }}-auth` with `OIDC_ISSUER` and
+  `OIDC_AUDIENCE`, the token issuer and audience the app verifies against,
+  which the Deployment loads through `envFrom`.
+{{- end }}
 {{- if .Compute }}
 - `compute.yaml`: the CPU and memory requests and limits of container `app`,
   written by the Compute layer ({{ .Compute }}). A patch, listed under `patches`
@@ -100,7 +122,15 @@ Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
 
 ## Port and probes
 
-{{ if $http -}}
+{{ if $readyz -}}
+The container listens on port {{ $port }}, named `http`. The readiness probe
+asks `GET /readyz`, which runs `SELECT 1` on the database: while the database
+doesn't answer, the pod leaves Service `{{ .Container }}` and gets no traffic,
+and it comes back when the database does. The liveness probe asks
+`GET {{ $probe }}`, which doesn't touch the database, and restarts the container
+when it stops answering (after 10 seconds' grace at start), so a database
+outage never restarts the app.
+{{- else if $http -}}
 The container listens on port {{ $port }}, named `http`. Kubernetes asks
 `GET {{ $probe }}` on it: the readiness probe holds traffic until it answers, and
 the liveness probe restarts the container when it stops answering (after 10

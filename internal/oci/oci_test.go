@@ -258,6 +258,32 @@ func TestPushRepeatUploadsNoBlob(t *testing.T) {
 	}
 }
 
+func TestPushNeverMovesATag(t *testing.T) {
+	ctx := context.Background()
+	reg := newRegistry(t, nil)
+	entries := layout(t, twoPlatforms(t))
+	first := must(Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, entries)))
+
+	reg.puts.Store(0)
+	if again := must(Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, entries))); again.Digest != first.Digest {
+		t.Errorf("the repeat pushed %s, the first %s", again.Digest, first.Digest)
+	}
+	if n := reg.puts.Load(); n != 0 {
+		t.Errorf("the repeat put %d manifests, want none", n)
+	}
+
+	other, err := Push(ctx, reg.Registry, "shop/web", "v1.0.0", stream(t, layout(t, twoPlatforms(t))))
+	if !errors.Is(err, ErrTagTaken) || other.Digest == "" || other.Digest == first.Digest {
+		t.Fatalf("another image under v1.0.0 = %+v, %v; want ErrTagTaken with its digest", other, err)
+	}
+	if n := reg.puts.Load(); n != 0 {
+		t.Errorf("a refused image put %d manifests, want none", n)
+	}
+	if d := must(Resolve(ctx, reg.Registry, "shop/web", "v1.0.0")); d != first.Digest {
+		t.Errorf("v1.0.0 resolves to %s, want the first push's %s", d, first.Digest)
+	}
+}
+
 func TestPushRefusesAnInvalidArchive(t *testing.T) {
 	big := platformImage(t, "amd64", 1024)
 	big = mutate.Annotations(big, map[string]string{"padding": strings.Repeat("x", MaxManifestSize)}).(v1.Image)

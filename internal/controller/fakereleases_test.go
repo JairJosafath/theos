@@ -353,6 +353,17 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
+// PublishImage finds no image: no reconciler publishes one yet (#1455).
+func (p *fakeProvider) PublishImage(_ context.Context, _ gitprovider.Repository, tag string) (
+	gitprovider.Image, error) {
+	return gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag}, nil
+}
+
+// ImageDigest finds no image.
+func (p *fakeProvider) ImageDigest(context.Context, gitprovider.Repository, string) (string, error) {
+	return "", nil
+}
+
 // ReadSource hands on the files setSource gave the repository at tag.
 func (p *fakeProvider) ReadSource(_ context.Context, repo gitprovider.Repository, tag string,
 	fn func(gitprovider.SourceFile, io.Reader) error) error {

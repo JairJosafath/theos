@@ -34,12 +34,14 @@ uv run pytest               # tests
 ## Endpoints
 
 - `GET /` returns the container and software system names.
-- `GET /healthz` returns `{"status": "ok"}` while the process is up.
+- `GET /me` returns the `sub` of the caller's token.
+- `GET /healthz` returns `{"status": "ok"}` while the process is up; it needs no token.
 {{- if has .Connectors "postgres" }}
 - `GET /readyz` returns 200 while the database answers `SELECT 1`, 503 when it doesn't.
   `app/db.py` opens a psycopg connection pool on `DATABASE_URL`; libpq reads the
   password from `PGPASSWORD`. In the devcontainer `DATABASE_URL` names its Postgres,
   and `tests/test_main.py` runs `/readyz` against it; elsewhere that test is skipped.
+  It needs no token.
 {{- end }}
 
 ## Logs
@@ -50,6 +52,26 @@ request (`method`, `path` without its query string, `status`, `durationMs` and
 `X-Request-Id` when it looks like an id, else a new one, and the response echoes it.
 Request bodies, header values and query strings are never logged. `LOG_LEVEL` sets
 the level (`INFO` when unset); uvicorn's own access log is off.
+
+## Auth
+
+Every route but the probes takes a bearer JWT (`Authorization: Bearer <token>`);
+without a valid one it answers 401 with `WWW-Authenticate: Bearer`. `app/auth.py`
+verifies it against your OpenID Connect issuer:
+
+- `OIDC_ISSUER`: the issuer's URL. The app reads its keys from the JWKS that
+  `$OIDC_ISSUER/.well-known/openid-configuration` names, on the first request, and
+  answers 503 while the issuer can't be reached.
+- `OIDC_AUDIENCE`: the `aud` a token must carry.
+
+Only RS256 and ES256 tokens pass, and `iss`, `aud` and `exp` must be there and right.
+A route reads the token's claims with `Depends(auth.verified_claims)`, as `/me` does.
+Add new routes to the `api` router in `app/main.py`, so they are protected too;
+routes on `app` itself are open.
+
+With `OIDC_ISSUER` unset the app refuses to start, unless `AUTH_DISABLED=true` turns
+verification off on purpose: the devcontainer sets it, and then every route is open.
+Never set it in production. The tests sign their tokens with a key they make.
 {{- if .Connectors }}
 
 ## Connectors

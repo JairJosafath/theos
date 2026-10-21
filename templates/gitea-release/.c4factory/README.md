@@ -7,7 +7,8 @@ sdist for a Python CLI, a `.vsix` for an extension, the manager binaries and
 release page.
 
 - **Supports:** `cli`, `extension`, `operator`
-- **Writes:** `.gitea/workflows/release.yaml`
+- **Writes:** `.gitea/workflows/release.yaml`, and `RELEASING.md`: how to
+  cut a release, check one locally and recover from a failed run.
 - **Contract:** the repository's `Makefile` has a `dist` target that takes
   `VERSION=<tag>` and writes the release files, and only those, into `dist/`.
   go-standard's cross-compiles the binaries plus `SHA256SUMS`; ts-standard's
