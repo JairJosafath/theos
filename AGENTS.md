@@ -148,7 +148,10 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   hand only when `land` failed and you need the whole output. Over 400 changed lines it wants a review pass first, the
   `handoff` skill's "Review before landing". While yolo mode is on
   (`hack/lib/github.sh yolo status`), `land` merges at once, with no check,
-  review pass or merge turn; only the closing-keyword refusals stay. No long-lived or stacked branches. A plan's pull request says
+  review pass or merge turn; only the closing-keyword refusals stay. A
+  docs-only pull request (`*.md`, `docs/`, `.claude/skills/`; under 200
+  lines) takes `land`'s simple path: no heavy-job slot, no merge turn, only
+  the checks those files have. No long-lived or stacked branches. A plan's pull request says
   `Refs #N` and never a closing word next to `#N`; the parent gets a
   `Depends on #S` line per step, goes `status/waiting` and closes itself when
   its last step closes. Never close a parent by hand (`hack/close-guard.sh`

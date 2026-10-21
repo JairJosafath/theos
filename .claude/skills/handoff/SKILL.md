@@ -142,7 +142,10 @@ and `docs/screenshots/` don't count. Smaller pull requests land as before.
   turn: it waits until the pull requests queued before it have landed or
   failed, and when main is still what it checked, merges at once, holding
   the turn for seconds; when main moved, it merges it in and checks again
-  under the turn. `land`'s check is the check: while you work, run the
+  under the turn. A docs-only pull request (`*.md`, `docs/`,
+  `.claude/skills/`; under 200 lines) takes the simple path instead: no
+  heavy-job slot, no merge turn, `make test-hack` only when a file of it is
+  one `test-hack` reads. `land`'s check is the check: while you work, run the
   targeted tests (`make test-hack`, `go test ./internal/...`,
   `make ui-test`) and land; run `make check` by hand only when `land` failed
   and you need the whole output. The check takes 15 to 25 minutes, more
