@@ -2,7 +2,7 @@
 # The Session client image: c4session plus git, for the test Session pod
 # (hack/session/pod.yaml). Build it from the repository root:
 #   docker build -f hack/session/Dockerfile -t c4factory/c4session:dev .
-ARG BASE_IMAGE=golang:1.26.9@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89
+ARG BASE_IMAGE=golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./

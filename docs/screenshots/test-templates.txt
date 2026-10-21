@@ -1,0 +1,265 @@
+$ make test-templates   # on main + #1469, 2026-10-20
+KUSTOMIZE="/home/josaf/c4factory/.dev/make/bin/kustomize-v5.8.1" hack/test-templates.sh
+
+=== fastapi service with postgres (Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres)
+Rendered 33 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+
+$ make check
+uv sync --locked
+Using CPython 3.12.15
+Creating virtual environment at: .venv
+Resolved 40 packages in 1ms
+   Building orders @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.1
+      Built orders @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+Prepared 1 package in 5ms
+Installed 37 packages in 40ms
+ + annotated-doc==0.0.5
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + ast-serialize==0.12.1
+ + click==8.5.0
+ + fastapi==0.142.2
+ + h11==0.16.0
+ + httpcore2==2.13.1
+ + httptools==0.8.0
+ + httpx2==2.13.1
+ + idna==3.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + opentelemetry-api==1.45.1
+ + orders==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders)
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + psycopg==3.3.6
+ + psycopg-binary==3.3.6
+ + pydantic==2.13.5
+ + pydantic-core==2.46.5
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + python-dotenv==1.2.4
+ + pyyaml==6.0.3
+ + ruff==0.16.10
+ + starlette==1.7.0
+ + truststore==0.10.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + uvicorn==0.54.0
+ + uvloop==0.23.0
+ + watchfiles==1.3.0
+ + websockets==17.2
+uv run --no-sync ruff format --diff .
+12 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 3 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collected 4 items
+
+tests/test_main.py ....                                                  [100%]
+
+============================== 4 passed in 2.35s ===============================
+
+$ kustomize build deploy/k8s
+deploy/k8s builds 3 objects
+
+=== python cli (Framework=python-cli Standard=python-standard Deployment=gitea-release)
+Rendered 28 files from python-cli@local, python-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+
+$ make check
+uv sync --locked
+Using CPython 3.12.15
+Creating virtual environment at: .venv
+Resolved 14 packages in 1ms
+   Building shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.1
+      Built shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+Prepared 1 package in 6ms
+Installed 13 packages in 59ms
+ + ast-serialize==0.12.1
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + ruff==0.16.10
+ + shop-admin==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin)
+ + typing-extensions==4.16.0
+uv run --no-sync ruff format --diff .
+16 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 6 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+configfile: pyproject.toml
+testpaths: tests
+collected 10 items
+
+tests/test_cli.py .....                                                  [ 50%]
+tests/test_greeting.py .....                                             [100%]
+
+============================== 10 passed in 0.08s ==============================
+
+$ make dist VERSION=v0.1.0
+uv sync --locked
+Resolved 14 packages in 0.77ms
+Checked 13 packages in 0.42ms
+rm -rf dist
+uv build --out-dir dist
+Building source distribution...
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.1
+Building wheel from source distribution...
+Successfully built dist/shop_admin-0.1.0.tar.gz
+Successfully built dist/shop_admin-0.1.0-py3-none-any.whl
+
+$ ls dist
+shop_admin-0.1.0-py3-none-any.whl
+shop_admin-0.1.0.tar.gz
+
+=== react web app on kubernetes (Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests)
+Rendered 37 files from react-vite@local, ts-standard@local, small@local, k8s-manifests@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/storefront
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 175 packages in 5s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/storefront
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  10:48:51
+   Duration  152ms (transform 57%, import 27%, worker 8%, tests 8%)
+
+vite v8.3.3 building client environment for production...
+transforming...
+✓ 17 modules transformed.
+rendering chunks...
+computing gzip size...
+../../tmp.NWduA1LWVL/index.html                   0.46 kB │ gzip:  0.29 kB
+../../tmp.NWduA1LWVL/assets/index-CG9Gp7u3.css    0.35 kB │ gzip:  0.23 kB
+../../tmp.NWduA1LWVL/assets/index-BSiccNDf.js   220.03 kB │ gzip: 68.77 kB
+
+✓ built in 156ms
+
+$ kustomize build deploy/k8s
+deploy/k8s builds 2 objects
+
+=== node cli (Framework=node-cli Standard=ts-standard Deployment=gitea-release)
+Rendered 31 files from node-cli@local, ts-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 132 packages in 3s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
+
+
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+   Start at  10:49:00
+   Duration  181ms (transform 56%, import 28%, tests 9%, worker 6%)
+
+
+  out/cli.js  1.6kb
+
+⚡ Done in 3ms
+shop-tool 0.0.1
+
+$ make dist VERSION=v0.0.1
+npm ci --no-audit --no-fund
+
+added 132 packages in 2s
+rm -rf dist
+mkdir -p dist
+npm pack --pack-destination dist
+
+> shop-tool@0.0.1 prepack
+> node esbuild.mjs
+
+
+  out/cli.js  1.6kb
+
+⚡ Done in 3ms
+npm notice
+npm notice 📦  shop-tool@0.0.1
+npm notice Tarball Contents
+npm notice 324B CHANGELOG.md
+npm notice 1.6kB README.md
+npm notice 1.7kB out/cli.js
+npm notice 872B package.json
+npm notice Tarball Details
+npm notice name: shop-tool
+npm notice version: 0.0.1
+npm notice filename: shop-tool-0.0.1.tgz
+npm notice package size: 2.2 kB
+npm notice unpacked size: 4.4 kB
+npm notice shasum: 7fef0489e2a052c428d0bcf29f6edad498f36904
+npm notice integrity: sha512-TVyzqXjbs50T/[...]qgeWw/KobTjcg==
+npm notice total files: 4
+npm notice
+shop-tool-0.0.1.tgz
+
+$ ls dist
+shop-tool-0.0.1.tgz
+
+test-templates: 4 combos pass their make check and their Deployment's build
+
+--- a ruff error in python-fastapi's app/main.py.tmpl (an unused import sys) fails it naming the combo:
+$ make test-templates COMBO="fastapi service with postgres"
+ --> app/main.py:4:8
+  |
+3 | import os
+4 | import sys
+  |        ^^^
+5 |
+6 | from fastapi import FastAPI, Response
+  |
+help: Remove unused import: `sys`
+  |
+3 | import os
+  - import sys
+4 |
+  |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+make: *** [Makefile:34: lint] Error 1
+
+test-templates: combo "fastapi service with postgres" failed: make check
+
+test-templates: 1 of 1 combos failed:
+  fastapi service with postgres: make check
+make: *** [Makefile:178: test-templates] Error 1
