@@ -1072,6 +1072,9 @@ lease() {
       body: "<!-- c4-maintainer -->\n**maintainer** sweeps · host `\($h)` · pid `42`\nHeartbeat: x"}]' \
     "$LEASES" >"$LEASES.new" && mv "$LEASES.new" "$LEASES"
 }
+# leases: the IDs of the lease comments; swept: of the sweep records (#1322).
+leases() { jq -c 'map(select(.body | startswith("<!-- c4-maintainer -->")) | .id)' "$LEASES"; }
+swept() { jq -c 'map(select(.body | startswith("<!-- c4-swept -->")) | .id)' "$LEASES"; }
 C4_GITHUB_REPO=x C4_HOST=here C4_LEASE_TTL=1h GH_CLAIM_SETTLE=0
 git -C "$WT" update-ref refs/remotes/origin/main HEAD
 gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
@@ -1095,21 +1098,41 @@ GH_BEAT_EVERY=1 ADMIT_GAP=0 maintain
 check "lease: a stale one taken over" "$(grep -c 'maintainer start: .*, lease 11$' "$LOG")" 1
 check "lease: held during the session, the stale one gone" "$(jq -c 'map({id, host: (.body | capture("host `(?<h>[^`]+)`").h)})' "$LEASES.during")" '[{"id":11,"host":"here"}]'
 check "lease: beaten while the session runs" "$(test -s "$T/beats" && echo yes)" yes
-check "lease: released when the session ends" "$(jq -c . "$LEASES") $(grep -c 'released the maintainer lease 11' "$LOG")" "[] 1"
+check "lease: released when the session ends" "$(leases) $(grep -c 'released the maintainer lease 11' "$LOG")" "[] 1"
+# The full sweep is recorded on the report issue, for every device (#1322).
+check "swept: a full sweep records its start and activity on the report issue" "$(swept) $(gh_swept)" "[12] $(cat "$DIR/maintained")"
 # A live lease of this host is a crashed maintainer's: taken over.
 lease here 20 60
 echo 20 >"$T/next-id"
 : >"$LOG"
 echo fail >"$FAKE"
 ADMIT_GAP=0 maintain
-check "lease: this host's crashed one taken over" "$(grep -c 'maintainer start: .*, lease 21$' "$LOG") $(jq -c . "$LEASES")" "1 []"
+check "lease: this host's crashed one taken over" "$(grep -c 'maintainer start: .*, lease 21$' "$LOG") $(leases)" "1 []"
+check "swept: the next full sweep edits the record in place" "$(swept) $(gh_swept)" "[12] $(cat "$DIR/maintained")"
 # Two hosts post at once: the older lease wins and the other starts nothing.
 : >"$LOG"
 touch "$T/race"
 ADMIT_GAP=0 maintain
 check "lease: a lost race, no sweep" "$(grep -c 'maintainer start' "$LOG")" 0
 grep -q "another device's maintainer holds the lease: host raced (pid 42), heartbeat 0m ago; no sweep" "$LOG"
-check "lease: a lost race, the winner logged and ours deleted" "$? $(jq -c 'map(.id)' "$LEASES")" "0 [5]"
+check "lease: a lost race, the winner logged and ours deleted" "$? $(leases)" "0 [5]"
+echo '[]' >"$LEASES"
+# The lease is stale after GH_MAINT_BEATS (3) missed heartbeats, not after the
+# claims' C4_LEASE_TTL (#1322): one beaten 2000s ago is live though
+# C4_LEASE_TTL says 10m, one beaten 3000s ago is stale though it says 1h.
+echo 30 >"$T/next-id"
+lease there 10 2000
+: >"$LOG"
+C4_LEASE_TTL=10m ADMIT_GAP=0 maintain
+check "lease: beaten within 3 heartbeats: kept, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start' "$LOG") $(leases)" "0 [10]"
+grep -q "another device's maintainer holds the lease: host there (pid 42), heartbeat 33m ago; no sweep" "$LOG"
+check "lease: beaten within 3 heartbeats: the holder logged" $? 0
+echo '[]' >"$LEASES"
+lease there 10 3000
+: >"$LOG"
+echo fail >"$FAKE"
+C4_LEASE_TTL=1h ADMIT_GAP=0 maintain
+check "lease: 3 heartbeats missed: taken over, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start: .*, lease 31$' "$LOG") $(leases)" "1 []"
 echo '[]' >"$LEASES"
 
 # A maintainer sweep, with claude faked, on origin/main: it records the
@@ -1131,6 +1154,20 @@ echo crash >"$FAKE"
 ADMIT_GAP=0 maintain
 check "maintain: a crash records nothing" "$(cat "$DIR/maintained")" "86400 t0 sha0"
 check "maintain: says so" "$(grep -c "the sweep didn't run to its end" "$LOG")" 2
+# The last sweep is the project's (#1322): the prompt names the newer of this
+# device's record and the one on the report issue, whichever device swept.
+gh_swept 172800 "t1 sha1"
+: >"$LOG"
+echo fail >"$FAKE"
+ADMIT_GAP=0 maintain
+check "swept: another device's newer sweep names the last sweep" "$(grep -c "maintainer start: id .*, last sweep $(date -d @172800 -Is)," "$LOG")" 1
+check "swept: one record, edited in place" "$(swept | jq length) $(gh_swept)" "1 $(cat "$DIR/maintained")"
+read -r t _ <"$DIR/maintained"
+gh_swept 86400 "t0 sha0"
+: >"$LOG"
+ADMIT_GAP=0 maintain
+check "swept: this device's newer sweep names the last sweep" "$(grep -c "maintainer start: id .*, last sweep $(date -d "@$t" -Is)," "$LOG")" 1
+echo '[]' >"$LEASES"
 
 # The relay runs origin/main's code whatever branch the checkout it was started
 # from has (#1126). A scratch origin whose main has the relay's scripts, and a
