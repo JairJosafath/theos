@@ -1956,7 +1956,7 @@ later"
     echo "$m $url" >>"$ST/calls"
     case "$m $url" in
       "GET $R/issues/comments?since="*) jq -c '[[.[] | select(.body | startswith("<!-- c4-claim -->"))]]' "$ST/comments" ;;
-      "GET $R/issues?state=open"*) echo '[[{"number":140,"labels":[{"name":"status/in-progress"}]}]]' ;;
+      "GET $R/issues?state=open"*) if [ -e "$ST/open" ]; then cat "$ST/open"; else echo '[[{"number":140,"labels":[{"name":"status/in-progress"}]}]]'; fi ;;
       "GET $R/issues/140/comments"*) jq -c '[.]' "$ST/comments" ;;
       "POST $R/issues/140/comments")
         { jq -c '.[]' "$ST/comments"; cat "$ST/rival" 2>/dev/null; cm 700 0 0 "$in"; } | jq -s . >"$ST/c.new" && mv "$ST/c.new" "$ST/comments"
@@ -2008,6 +2008,12 @@ rival' >"$ST/rival"
   out=$(gh_stale --apply)
   check "stale: a rival's marker posted meanwhile wins, ours is deleted (#1513)" \
     "$out|$(calls '^DELETE .*comments/700') $(calls 'status 140')" "|1 0"
+  # An open-issue list well over one argument's 128 KiB (#1529): still read.
+  setup "$(cm 10 $((3 * H)) 60 "$(holds)")"
+  jq -nc '[[{number: 140, labels: [{name: "status/in-progress"}], body: ("x" * 300000)}] + [range(141; 251) | {number: ., labels: [], body: "y"}]]' >"$ST/open"
+  out=$(gh_stale --apply 2>&1)
+  check "stale: a 300 KiB open-issue list, the claim still escalated (#1529)" "$?|$(grep -c ': escalated$' <<<"$out")|$(calls '^POST ')" "0|1|1"
+  rm -f "$ST/open"
   exit $fail
 ) || fail=1
 exit $fail
