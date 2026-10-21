@@ -349,7 +349,8 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 		}).Should(Succeed())
 		for _, n := range newest {
 			taken := gitFake.issue(ns, "linter-vscode", n)
-			Expect(taken.Labels).To(ConsistOf(model.LabelReady), "linter-vscode#%d", n)
+			// The Crew may have worked a taken one by now (#1504).
+			Expect(taken.Labels).NotTo(ContainElement(model.LabelProposed), "linter-vscode#%d", n)
 			Expect(taken.comments).To(ContainElement(ContainSubstring("Taken for Brief `cel-lens` in round 2")))
 		}
 		for _, n := range []int{364, 371} {
