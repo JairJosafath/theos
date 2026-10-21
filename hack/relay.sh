@@ -127,6 +127,10 @@
 # A session whose transcript (under $CLAUDE_CONFIG_DIR/projects/) hasn't
 # changed for RELAY_IDLE (default 45m) is stuck: the relay ends it (SIGTERM,
 # then SIGKILL after RELAY_IDLE_KILL) and counts it as failed, commit or not.
+# Every session runs on RELAY_MODEL (default fable), and its prompt sends its
+# subagents there. Before each session the worker runs the yolo round,
+# hack/lib/github.sh yolo merge (#1534): while yolo mode is on, every open
+# non-draft pull request to main merges at once, and what that says is logged.
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -175,6 +179,7 @@ IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change 
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
 SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
+RELAY_MODEL=${RELAY_MODEL:-fable} # the model every session runs on (claude -p --model), and names for its subagents (#1534)
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own
@@ -219,8 +224,7 @@ handoff comment and the comments after it. Follow AGENTS.md, the handoff skill
 and the memories.
 
 Rules for this headless run:
-- Never use the Fable model: not for subagents, not for factory Agents, not
-  for anything. Always name the model when dispatching (sonnet or opus).
+- Run subagents on the $RELAY_MODEL model: name it when dispatching.
 - A headless session ends when you end your turn. Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
 - Keep the context small: at about 80k tokens, finish the small step in
@@ -296,9 +300,9 @@ You take no issue, change no code, commit nothing and open no pull request;
 this worktree, relay-$K, is on origin/main for reading only.
 
 Rules for this headless run:
-- Never use the Fable model: not for subagents, not for anything. Always name
-  the model when dispatching (sonnet or opus). Dispatch every subagent with
-  run_in_background: false and never end your turn while one is running.
+- Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
+  every subagent with run_in_background: false and never end your turn while
+  one is running.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
 - Keep the context small: past about 80k tokens, finish the issue in hand and
@@ -336,9 +340,9 @@ it on. Only you set status/needs-human. End the sweep by writing the report and 
 \`hack/lib/github.sh report FILE\` (the pinned *Maintainer report* issue).
 
 Rules for this headless run:
-- Never use the Fable model: not for subagents, not for anything. Always name
-  the model when dispatching (sonnet or opus). Dispatch every subagent with
-  run_in_background: false and never end your turn while one is running.
+- Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
+  every subagent with run_in_background: false and never end your turn while
+  one is running.
 - Never wait on the factory or a run longer than about 20 minutes in one
   stretch; note it in the report and go on.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
@@ -918,7 +922,7 @@ session() {
   scratch_clear "$tmp"
   mkdir -p "$tmp"
   dirty=$(git -C "$REPO" status --porcelain 2>/dev/null)
-  (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model opus \
+  (cd "$WT" && export OLDPWD=$WT && drop_session_env && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   rm -f "$out.idle"
@@ -1206,7 +1210,7 @@ maintain() {
 
 # work: the worker's sessions, one after another (see the header).
 work() {
-  local i id rc try claim name branch before head refs out limited limit result reason released
+  local i id rc try claim name branch before head refs out limited limit result reason released l
   for i in $(seq 1 "$MAX_SESSIONS"); do
     [ -e "$STOP" ] && { log "stop file found; stopping"; break; }
     if [ -z "$DRY_RUN" ]; then
@@ -1218,6 +1222,11 @@ work() {
       can_commit || { log "stopping: a session here couldn't commit"; break; }
     fi
     flush || { log "GitHub can't be reached; stopping"; break; }
+    # The yolo round (#1534): while yolo mode is on, every open non-draft pull
+    # request merges now; off or unknown, gh_yolo merge says and does nothing.
+    if [ -z "$DRY_RUN" ]; then
+      gh_yolo merge 2>&1 | while read -r l; do log "yolo: $l"; done
+    fi
 
     # Ask before admit too, so a worker with nothing to do stops without
     # taking the start slot from a triage or a worker that has an issue; ask
@@ -1238,7 +1247,7 @@ work() {
     id=$(cat /proc/sys/kernel/random/uuid)
     if [ -n "$DRY_RUN" ]; then
       log "would claim #$ISSUE ($HOW) for session $id: $TITLE, $URL"
-      log "would switch $WT to the issue's branch and start session $i there: claude -p --permission-mode auto --model opus --session-id $id, with this prompt:"
+      log "would switch $WT to the issue's branch and start session $i there: claude -p --permission-mode auto --model $RELAY_MODEL --session-id $id, with this prompt:"
       echo "-----"
       prompt "$ISSUE" "$TITLE" "$URL" "$HOW" "<name>" "<branch>"
       echo "-----"

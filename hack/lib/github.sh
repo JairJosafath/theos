@@ -94,7 +94,9 @@
 #                                        pull request holds the merge turn (land), naming it, and when it closes a
 #                                        kind/bug issue but changes no test file (*_test.go, *_test.sh, *.test.ts,
 #                                        *.test.mjs; a deleted one is none) and no line of its body says
-#                                        No test: <why>, a reason in place of <why>
+#                                        No test: <why>, a reason in place of <why>. While yolo mode is on
+#                                        (yolo status), it merges at once instead: only the closing-keyword
+#                                        refusals stay
 #   hack/lib/github.sh land PR [--wait DURATION]
 #                                        the way to merge PR: in this checkout of PR's branch (a bug fix without a
 #                                        test is refused before it queues, as merge refuses it), git fetch (retried
@@ -118,7 +120,20 @@
 #                                        work: land looks at its state at the start, every GH_LAND_BEAT seconds
 #                                        of a make check (stopping it), on every look at the queue and before each
 #                                        check under the turn, and exits 0 naming who merged it (#1369); one
-#                                        closed without a merge exits 1
+#                                        closed without a merge exits 1. While yolo mode is on (yolo status),
+#                                        land skips all of that and merges PR at once, from any checkout
+#   hack/lib/github.sh yolo on|off|status|merge
+#                                        yolo mode (#1534): once a pull request is made, it merges: no make
+#                                        check, no review pass, no merge turn, no bug-fix-test gate; only the
+#                                        closing-keyword refusals stay (they guard issue state, not code). The
+#                                        mode is the mode/yolo label on the Maintainer report issue, so every
+#                                        device sees it: on puts it there (creating the label the first time),
+#                                        off takes it off. status prints on (exit 0) or off (exit 1; exit 2:
+#                                        GitHub could not be asked), and turns the mode off itself when the
+#                                        Maintainer report is the only open issue. merge, the relay's round,
+#                                        merges every open non-draft pull request to main while on (one it
+#                                        can't is said, the rest go on; a branch behind main gets main merged
+#                                        in by GitHub first), and does nothing while off
 #   hack/lib/github.sh review-check PR  whether PR may land as reviewed: the lines it changes in hand-written
 #                                        files (zz_generated.*, config/crd/bases/, config/rbac/role.yaml,
 #                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
@@ -293,12 +308,15 @@ GH_LABELS=(
   'source/dev|bfd4f2|Made while developing c4factory'
   'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
+  'mode/yolo|ff7f0e|Yolo mode: a pull request merges once made, until only the Maintainer report is open'
 )
 # Labels gh_labels deletes from the repository when present: the old priority
 # words the 1-10 scale replaced (#1329).
 GH_RETIRED_LABELS=(priority/urgent priority/velocity)
 GH_REPORT_LABEL=maintainer/report
 GH_REPORT_TITLE='Maintainer report'
+# Yolo mode (#1534) is this label on the Maintainer report issue: see gh_yolo.
+GH_YOLO_LABEL=mode/yolo
 
 # gh_token: export GH_TOKEN, from the git credential helper unless already set.
 gh_token() {
@@ -1812,6 +1830,8 @@ gh_close() {
 gh_merge() {
   local pr=${1:?usage: merge PR} view base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
+  # Yolo mode (#1534): it merges at once; unknown (exit 2) takes the normal path.
+  if gh_yolo status >/dev/null 2>&1; then gh_yolo_merge "$pr"; return; fi
   view=$(gh_merge_view "$pr") || return 1
   gh_merge_closes "$pr" "$view" || return 1
   # Nor may it fix a bug without a test.
@@ -1919,6 +1939,105 @@ gh_bugfix_pr() {
       files(first: 100) { totalCount nodes { path changeType } } } } }' \
     --jq .data.repository.pullRequest) || { echo "github: #$pr: could not ask GitHub what it closes and changes; land refused" >&2; return 1; }
   gh_bugfix_check "$pr" "$view"
+}
+
+# gh_yolo on|off|status|merge: yolo mode (#1534), the owner's call. While it
+# is on, a pull request merges once it is made: no make check, no review
+# pass, no merge turn and no bug-fix-test gate; only the closing-keyword
+# refusals (gh_merge_closes) stay, as they guard the issues' state, not the
+# code. The mode is the mode/yolo label on the Maintainer report issue, so
+# every device sees the same answer. status prints on (exit 0) or off (exit
+# 1; exit 2: GitHub could not be asked, said on stderr), and turns the mode
+# off when the Maintainer report is the only open issue. merge, the relay's
+# round, merges every open non-draft pull request to main while on, saying
+# which one it could not; off or unknown, it does nothing.
+gh_yolo() {
+  local cmd=${1:-status} n s open prs p
+  case $cmd in
+    on)
+      gh_label_make "$GH_YOLO_LABEL" || return 1
+      n=$(gh_report_issue) || return 1
+      jq -n --arg l "$GH_YOLO_LABEL" '{labels: [$l]}' |
+        gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
+      echo "yolo: on" ;;
+    off)
+      n=$(gh_report_issue) || return 1
+      if gh_yolo_labeled "$n"; then gh_yolo_off "$n" || return 1; fi
+      echo "yolo: off" ;;
+    status)
+      n=$(gh_report_find) || { echo "github: could not ask GitHub for the Maintainer report; yolo mode unknown" >&2; return 2; }
+      [ -n "$n" ] || { echo off; return 1; }
+      s=0
+      gh_yolo_labeled "$n" || s=$?
+      case $s in
+        1) echo off; return 1 ;;
+        2) echo "github: could not read the Maintainer report's labels; yolo mode unknown" >&2; return 2 ;;
+      esac
+      open=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
+        --jq '.[] | select(.pull_request | not) | .number') || {
+        echo "github: could not list the open issues; yolo mode unknown" >&2; return 2; }
+      if [ "$(grep -vx "$n" <<<"$open" | grep -c .)" = 0 ]; then
+        gh_yolo_off "$n" || echo "github: could not take $GH_YOLO_LABEL off the Maintainer report (#$n); yolo off is retried at the next status" >&2
+        echo "yolo: off: the Maintainer report is the only open issue" >&2
+        echo off
+        return 1
+      fi
+      echo on ;;
+    merge)
+      gh_yolo status >/dev/null || return 0
+      prs=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls?state=open&base=main&per_page=100" \
+        --jq '.[] | select(.draft | not) | .number') || {
+        echo "github: could not list the open pull requests; nothing merged" >&2; return 0; }
+      for p in $prs; do
+        gh_yolo_merge "$p" || echo "github: #$p: not merged" >&2
+      done
+      return 0 ;;
+    *) echo "usage: yolo on|off|status|merge" >&2; return 64 ;;
+  esac
+}
+
+# gh_yolo_labeled N: whether issue N carries the mode/yolo label. Exit 1: no;
+# 2: GitHub could not be asked.
+gh_yolo_labeled() {
+  local labels
+  labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$1" --jq '[.labels[].name] | join(" ")') || return 2
+  [[ " $labels " == *" $GH_YOLO_LABEL "* ]]
+}
+
+# gh_yolo_off N: take the mode/yolo label off issue N.
+gh_yolo_off() {
+  gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$1/labels/${GH_YOLO_LABEL//\//%2F}" >/dev/null
+}
+
+# gh_yolo_merge PR: merge pull request PR as yolo mode does: the
+# closing-keyword refusals (gh_merge_closes), then, when it is behind its base,
+# GitHub merges the base into its branch (update-branch) and the new head is
+# waited for; then gh pr merge, pinned to that head. No bug-fix-test gate, no
+# review check, no merge turn, no make.
+gh_yolo_merge() {
+  local pr=$1 view base head behind new= i
+  view=$(gh_merge_view "$pr") || return 1
+  gh_merge_closes "$pr" "$view" || return 1
+  base=$(jq -r '.baseRefName // "main"' <<<"$view")
+  head=$(jq -r '.headRefOid // empty' <<<"$view")
+  [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; not merged" >&2; return 1; }
+  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
+    echo "github: #$pr: could not ask GitHub whether it is behind $base; not merged" >&2; return 1; }
+  if [ "$behind" != 0 ]; then
+    gh_api --method PUT "repos/$C4_GITHUB_REPO/pulls/$pr/update-branch" -f expected_head_sha="$head" >/dev/null || {
+      echo "github: #$pr: GitHub could not merge $base into its branch (a conflict?); merge it by hand and push" >&2; return 1; }
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      new=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha) || new=
+      [ -n "$new" ] && [ "$new" != "$head" ] && break
+      new=
+      sleep "$GH_LAND_SETTLE"
+    done
+    [ -n "$new" ] || { echo "github: #$pr: GitHub merged $base into its branch, but its head is still $head; merge it again" >&2; return 1; }
+    head=$new
+  fi
+  gh_token || return 1
+  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head" || return 1
+  echo "github: #$pr merged (yolo mode: no make check, review or merge turn)" >&2
 }
 
 # gh_duplicate N M: comment on N that it duplicates M, close N as not planned
@@ -2043,12 +2162,28 @@ gh_report_find() {
     --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
 }
 
+# gh_label_make NAME: create label NAME, as GH_LABELS describes it, when the
+# repository lacks it.
+gh_label_make() {
+  local name=$1 line color desc
+  gh_api "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null 2>&1 && return 0
+  for line in "${GH_LABELS[@]}"; do
+    [[ $line == "$name|"* ]] || continue
+    IFS='|' read -r _ color desc <<<"$line"
+    gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$name" -f color="$color" \
+      -f description="$desc" >/dev/null || return 1
+    return 0
+  done
+  echo "github: no label $name in GH_LABELS" >&2
+  return 1
+}
+
 # gh_report FILE: make FILE the body of the open issue labeled
 # maintainer/report, and print its URL. The first time there is none, create
 # it (and the label) and pin it; a pin that fails is said, not fatal. The issue
 # carries no status, so nothing picks or triages it.
 gh_report() {
-  local body n url id line color desc old
+  local body n url id old
   body=$(gh_read "${1:?usage: report FILE}") || return 1
   [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
   n=$(gh_report_find) || return 1
@@ -2059,14 +2194,7 @@ gh_report() {
       gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
     return
   fi
-  if ! gh_api "repos/$C4_GITHUB_REPO/labels/${GH_REPORT_LABEL//\//%2F}" >/dev/null 2>&1; then
-    for line in "${GH_LABELS[@]}"; do
-      [[ $line == "$GH_REPORT_LABEL|"* ]] || continue
-      IFS='|' read -r _ color desc <<<"$line"
-      gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$GH_REPORT_LABEL" -f color="$color" \
-        -f description="$desc" >/dev/null || return 1
-    done
-  fi
+  gh_label_make "$GH_REPORT_LABEL" || return 1
   url=$(jq -n --arg t "$GH_REPORT_TITLE" --arg b "$body" --arg l "$GH_REPORT_LABEL" '{title: $t, body: $b, labels: [$l]}' |
     gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq '"\(.node_id) \(.html_url)"') || return 1
   id=${url%% *} url=${url#* }
@@ -2515,6 +2643,8 @@ gh_land_turn() {
   info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
   read -r state base head <<<"$info"
   [ "$state" = open ] || { echo "github: #$pr is $state; nothing to land" >&2; return 1; }
+  # Yolo mode (#1534): merged at once, from any checkout; unknown (exit 2) takes the normal path.
+  if gh_yolo status >/dev/null 2>&1; then gh_yolo_merge "$pr"; return; fi
   branch=$(git -C "$GH_LIB_ROOT" symbolic-ref --short -q HEAD)
   [ "$branch" = "$head" ] || {
     echo "github: #$pr's branch is $head, but this checkout is on ${branch:-a detached HEAD}: land it from its own checkout" >&2; return 1; }
@@ -2919,6 +3049,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     pr-check) gh_pr_check "$@" ;;
     merge) gh_merge "$@" ;;
     land) gh_land "$@" ;;
+    yolo) gh_yolo "$@" ;;
     review-check) gh_review_check "$@" ;;
     duplicate) gh_duplicate "$@" ;;
     closed) gh_closed "$@" ;;
