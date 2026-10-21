@@ -100,6 +100,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.WithValue(r.Context(), credentialKey{}, keyValue{key: name, value: value})
+	// The upstream may answer while the request's body is still on its way
+	// to it (the transport copies it in another goroutine). Without full
+	// duplex the server consumes and closes the unread body as the answer's
+	// headers go out, the transport's copy then fails on the closed body,
+	// and the upstream request dies mid-stream (#1349). Only HTTP/1 needs
+	// it; HTTP/2 streams both ways and reports it unsupported.
+	_ = http.NewResponseController(w).EnableFullDuplex()
 	p.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
