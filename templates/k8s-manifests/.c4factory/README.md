@@ -21,7 +21,10 @@ outside C4 Factory: Argo CD, Flux or a pipeline picks these files up.
     the `postgres` Connector (since v1.7.0) the readiness probe asks
     `GET /readyz`, which runs `SELECT 1` (python-fastapi v1.4.0+): a pod whose
     database is down leaves the Service, and liveness stays on `/healthz`, so
-    the outage never restarts it.
+    the outage never restarts it. Since v1.8.0, `deploy/k8s/auth.yaml` writes
+    ConfigMap `<container>-auth` with placeholder `OIDC_ISSUER` and
+    `OIDC_AUDIENCE` (python-fastapi v1.5.0+ refuses to start without them),
+    which the Deployment loads through `envFrom`; the README says to set both.
   - `python-cli` (since v1.3.0): the same uv build, running `python -m app` as
     user 1000; it serves nothing, so the Deployment has no port and no probes
     (Kubernetes restarts the container when it exits) and, as a `worker`, no

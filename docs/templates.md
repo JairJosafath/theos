@@ -228,7 +228,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.7.0)
+### k8s-manifests (v1.8.0)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker).
@@ -242,7 +242,10 @@ A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
   from Secret `<container>-postgres` (`TestPostgresRunsOnKubernetes`), and
   for python-fastapi (since v1.7.0, #1528) its readiness probe asks
   `/readyz`, which runs `SELECT 1`: a pod whose database is down leaves the
-  Service, and liveness stays on `/healthz`.
+  Service, and liveness stays on `/healthz`. For python-fastapi (since
+  v1.8.0, #1540) `auth.yaml` writes ConfigMap `<container>-auth` with
+  placeholder `OIDC_ISSUER` and `OIDC_AUDIENCE`, which the Deployment loads
+  through `envFrom`, so the app starts; the README says to set both.
 - Lint: those builds are validated with kubectl-validate.
 - README: `deploy/k8s/README.md.tmpl` (#1470): build the image, set it with
   `kustomize edit set image`, preview, `kubectl apply -k deploy/k8s`, what

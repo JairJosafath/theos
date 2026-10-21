@@ -4,11 +4,13 @@ page is the check. A python-cli worker serves nothing: no port and no probes,
 and Kubernetes restarts it when it exits. python-fastapi with postgres has
 GET /readyz, which runs SELECT 1: the readiness probe asks it, so a pod whose
 database is down leaves the Service, and liveness stays on /healthz, so the
-outage never restarts it (#1528). */ -}}
+outage never restarts it (#1528). python-fastapi loads OIDC_ISSUER and
+OIDC_AUDIENCE from ConfigMap <container>-auth, auth.yaml (#1540). */ -}}
 {{- $port := 8000 }}{{ $probe := "/healthz" }}{{ $http := true -}}
 {{- if eq .Framework "react-vite" }}{{ $port = 8080 }}{{ $probe = "/" }}{{ end -}}
 {{- if eq .Framework "python-cli" }}{{ $http = false }}{{ end -}}
 {{- $ready := $probe -}}
+{{- $auth := eq .Framework "python-fastapi" -}}
 {{- if and (eq .Framework "python-fastapi") (has .Connectors "postgres") }}{{ $ready = "/readyz" }}{{ end -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -41,9 +43,16 @@ spec:
             - name: http
               containerPort: {{ $port }}
 {{- end }}
-{{- if .Connectors }}
-          # Connection settings, one ConfigMap per Connector.
+{{- if or .Connectors $auth }}
           envFrom:
+{{- if $auth }}
+            # The token issuer and audience the app verifies against.
+            - configMapRef:
+                name: {{ .Container }}-auth
+{{- end }}
+{{- if .Connectors }}
+            # Connection settings, one ConfigMap per Connector.
+{{- end }}
 {{- range .Connectors }}
             - configMapRef:
                 name: {{ $.Container }}-{{ . }}

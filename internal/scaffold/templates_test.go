@@ -153,6 +153,8 @@ func TestEveryTemplateRenders(t *testing.T) {
 // TestK8sManifestsFollowsTheFramework checks that k8s-manifests writes the
 // Dockerfile, .dockerignore, port and probes of the Framework's image, no
 // Dockerfile for a Framework it has none for, and no Service for a worker.
+// python-fastapi's Deployment loads OIDC_ISSUER and OIDC_AUDIENCE from
+// ConfigMap <container>-auth, which only python-fastapi gets (#1540).
 func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	cases := []struct {
 		framework, typ string
@@ -163,16 +165,20 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 		deployment     []string // substrings of deploy/k8s/deployment.yaml
 		never          []string // substrings neither the Dockerfile nor deployment.yaml has
 	}{
+		// #1540: python-fastapi refuses to start without OIDC_ISSUER and
+		// OIDC_AUDIENCE; the Deployment loads both from sample-app-auth.
 		{"python-fastapi", "service", "", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
 			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
-			[]string{"containerPort: 8000", "readinessProbe:\n            httpGet:\n              path: /healthz",
+			[]string{"containerPort: 8000", "envFrom:\n            # The token issuer and audience the app verifies against.\n            - configMapRef:\n                name: sample-app-auth",
+				"readinessProbe:\n            httpGet:\n              path: /healthz",
 				"livenessProbe:\n            httpGet:\n              path: /healthz"},
 			[]string{"PGPASSWORD", "/readyz"}},
 		// #1528: with postgres, readiness asks /readyz (SELECT 1), so a pod
 		// whose database is down leaves the Service; liveness stays on
 		// /healthz, so the outage never restarts it.
 		{"python-fastapi", "service", "", "postgres", []string{"uvicorn", "EXPOSE 8000"}, nil,
-			[]string{"PGPASSWORD", "readinessProbe:\n            httpGet:\n              path: /readyz",
+			[]string{"PGPASSWORD", "name: sample-app-auth\n            # Connection settings, one ConfigMap per Connector.\n            - configMapRef:\n                name: sample-app-postgres",
+				"readinessProbe:\n            httpGet:\n              path: /readyz",
 				"livenessProbe:\n            httpGet:\n              path: /healthz"}, nil},
 		{"react-vite", "static-site", "ts-standard", "",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
@@ -184,8 +190,8 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 			[]string{"ghcr.io/astral-sh/uv", "uv sync --no-dev", "USER 1000:1000", `CMD ["python", "-m", "app"]`},
 			[]string{".venv", ".pytest_cache", ".uv", "dist", "tests"},
 			[]string{"image: sample-app:dev", "runAsNonRoot: true"},
-			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe"}},
-		{"go-cli", "service", "", "", nil, nil, []string{"containerPort: 8000"}, nil},
+			[]string{"EXPOSE", "uvicorn", "containerPort", "Probe", "-auth"}},
+		{"go-cli", "service", "", "", nil, nil, []string{"containerPort: 8000"}, []string{"envFrom", "-auth"}},
 	}
 	for _, c := range cases {
 		t.Run(strings.TrimSuffix(c.framework+"+"+c.connector, "+"), func(t *testing.T) {
@@ -214,6 +220,15 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 			}
 			if _, ok := result.Files["deploy/k8s/service.yaml"]; ok != (c.typ != "worker") {
 				t.Errorf("deploy/k8s/service.yaml written = %v for a %s, want it for every type but worker", ok, c.typ)
+			}
+			auth, ok := result.Files["deploy/k8s/auth.yaml"]
+			if fastapi := c.framework == "python-fastapi"; ok != fastapi {
+				t.Errorf("deploy/k8s/auth.yaml written = %v, want %v", ok, fastapi)
+			} else if fastapi {
+				assertContains(t, "deploy/k8s/auth.yaml", string(auth.Data),
+					[]string{"kind: ConfigMap", "name: sample-app-auth", "OIDC_ISSUER: https://", "OIDC_AUDIENCE: sample-app"})
+				assertContains(t, "deploy/k8s/kustomization.yaml", string(result.Files["deploy/k8s/kustomization.yaml"].Data),
+					[]string{"  - auth.yaml"})
 			}
 			deployment := string(result.Files["deploy/k8s/deployment.yaml"].Data)
 			assertContains(t, "deploy/k8s/deployment.yaml", deployment, c.deployment)
@@ -335,6 +350,9 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				"the pod leaves Service `sample-app`",
 				"`GET /healthz`",
 				"a database\noutage never restarts the app",
+				// #1540: the user sets the issuer and audience before applying.
+				"ConfigMap\n`sample-app-auth` in `auth.yaml`",
+				"`auth.yaml`: ConfigMap `sample-app-auth` with `OIDC_ISSUER`",
 			},
 			never: []string{"brings its own `Dockerfile`", "no port and no probes"},
 		},
@@ -348,7 +366,7 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				"port 8080",
 				"`GET /` on it",
 			},
-			never: []string{"connector-", "/healthz"},
+			never: []string{"connector-", "/healthz", "OIDC_ISSUER"},
 		},
 		"python worker on kubernetes": {
 			want:  []string{"`connector-postgres.yaml`", "no port and no probes"},
