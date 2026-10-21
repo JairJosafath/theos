@@ -9,7 +9,12 @@
 #   hack/test-hack.sh [DIR]   the tests under DIR (default this hack/)
 #
 # The tests run with make's own variables cleared, so a test that runs make
-# sees a make started from a shell, not a sub-make of make check.
+# sees a make started from a shell, not a sub-make of make check; and with the
+# relay's variables cleared, so a test run from a relay session (hack/relay.sh
+# exports C4_HEADLESS, C4_RELAY_WORKER and, to its children, C4_RELAY_CHILD,
+# C4_RELAY_TRIAGE and C4_RELAY_MAINTAIN) sees the same environment as one run
+# from a shell: under the maintainer session, relay_test.sh's --triage dry run
+# took the maintainer's lock (#1564).
 set -uo pipefail
 
 DIR=${1:-$(dirname "$0")}
@@ -27,6 +32,7 @@ fi
 run() {
   local start=$SECONDS rc
   env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u C4_HEAVY_SLOT \
+    -u C4_HEADLESS -u C4_RELAY_WORKER -u C4_RELAY_CHILD -u C4_RELAY_TRIAGE -u C4_RELAY_MAINTAIN \
     bash "$1" >"$LOGS/$2.log" 2>&1 </dev/null
   rc=$?
   echo "$rc $((SECONDS - start))" >"$LOGS/$2.rc"
