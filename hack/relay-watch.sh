@@ -141,6 +141,10 @@
 # repository's labels follow the code and retired ones go (#1329); a failure
 # is logged and the watch goes on.
 #
+# --install records the installer's Claude Code login (CLAUDE_CONFIG_DIR, or
+# ~/.claude) in the unit and the crontab lines, after ./dev run, which would
+# point every session at .dev/claude (#1435); it refuses when that login has
+# no .credentials.json, as every session would then run logged out.
 # --install warns when git in the main checkout has no committer identity
 # (#1362): the relay starts no session there until it is set (#1289).
 # At start, the watch logs a warning when it lacks one of the user's groups in
@@ -800,6 +804,23 @@ ident_warning() {
   echo "relay-watch: git has no committer identity in $REPO ($(grep fatal <<<"$err" || tail -n1 <<<"$err")): no session can commit there, so the relay starts none until it is set: git config --global user.name 'Your Name'; git config --global user.email 'you@example.com'"
 }
 
+# login_dir: the Claude Code login the installer's shell uses, which the unit
+# and cron record for the sessions the watch starts (#1435): ./dev run points
+# CLAUDE_CONFIG_DIR at .dev/claude whatever the installer was logged in to, so
+# a watch installed from a shell logged in elsewhere (the VS Code login,
+# ~/.claude) would start its sessions logged out.
+login_dir() { echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+
+# login_check: refuse the install when login_dir holds no credentials: every
+# session the watch starts would end "Not logged in".
+login_check() {
+  local dir
+  dir=$(login_dir)
+  [ -s "$dir/.credentials.json" ] && return 0
+  echo "relay-watch: $dir has no .credentials.json, so every session the watch starts would run logged out. Log in there (CLAUDE_CONFIG_DIR=$dir claude, then /login), or install from the shell whose login the relay should use: CLAUDE_CONFIG_DIR=\$HOME/.claude hack/relay-watch.sh --install" >&2
+  return 1
+}
+
 # own_groups: log the warning when this watch lacks one of the user's groups.
 own_groups() {
   local warning
@@ -839,13 +860,14 @@ settings() {
 }
 
 # render_unit: the unit for this checkout and WORKERS, with the installer's PATH
-# (the user manager's own PATH lacks gh and claude) and relay settings.
+# (the user manager's own PATH lacks gh and claude), login and relay settings.
 render_unit() {
   local t env= line
   t=$(<"$TEMPLATE")
   t=${t//@REPO@/"$REPO"}
   t=${t//@WORKERS@/"$WORKERS"}
   t=${t//@PATH@/"$PATH"}
+  t=${t//@CLAUDE_CONFIG_DIR@/"$(login_dir)"}
   while IFS= read -r line; do env+=$'\n'"Environment=\"$line\""; done < <(settings)
   t=${t//$'\n'@ENV@/"$env"}
   printf '%s\n' "$t"
@@ -856,7 +878,7 @@ cron_lines() {
   local cmd
   local line env=
   while IFS= read -r line; do env+="${line%%=*}=$(printf %q "${line#*=}") "; done < <(settings)
-  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
+  cmd="cd $(printf %q "$REPO") && PATH=$(printf %q "$PATH") $env./dev run env CLAUDE_CONFIG_DIR=$(printf %q "$(login_dir)") hack/relay-watch.sh --cron --workers $WORKERS >>.relay/watch.out 2>&1"
   grep -vF "$(cron_tag)"
   echo "@reboot $cmd $(cron_tag)"
   echo "*/5 * * * * $cmd $(cron_tag)"
@@ -885,6 +907,7 @@ install_watch() {
   local groups
   # One unit per device: from a worktree it would run that worktree's watch.
   in_worktree && { echo "relay-watch: install from the main checkout, not a worktree" >&2; return 1; }
+  login_check || return 1
   mkdir -p "$DIR"
   rm -f "$STOP"
   if has_systemd; then
@@ -903,7 +926,7 @@ install_watch() {
     command -v crontab >/dev/null || { echo "relay-watch: neither systemd nor crontab here" >&2; return 1; }
     { crontab -l 2>/dev/null || true; } | cron_lines | crontab - || { echo "relay-watch: crontab failed" >&2; return 1; }
     echo "relay watch installed in the crontab (at boot and every 5 minutes) for $WORKERS worker(s): tail -f $LOG"
-    (cd "$REPO" && ./dev run hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
+    (cd "$REPO" && ./dev run env "CLAUDE_CONFIG_DIR=$(login_dir)" hack/relay-watch.sh --cron --workers "$WORKERS" >>"$DIR/watch.out" 2>&1)
   fi
   ident_warning >&2
   echo "stop: touch $STOP; start again: hack/relay-watch.sh"
