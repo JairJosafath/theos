@@ -21,7 +21,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.28.1`; for a later one, change `VERSION`. Run
+The commands use the release `0.29.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -29,7 +29,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.28.1
+VERSION=0.29.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -832,7 +832,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.28.1
+VERSION=0.29.0
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```
