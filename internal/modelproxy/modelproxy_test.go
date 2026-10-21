@@ -276,22 +276,35 @@ func TestPicksUpARotatedToken(t *testing.T) {
 func TestStreamsWithoutBuffering(t *testing.T) {
 	first := "event: message_start\ndata: {}\n\n"
 	rest := "event: message_stop\ndata: {}\n\n"
+	sse := http.Header{"Content-Type": {"text/event-stream"}}
 	for _, tt := range []struct {
 		name   string
 		header http.Header
+		// slow sends the request's body in parts, each after the upstream has
+		// sent the first event: a client still uploading when the answer
+		// starts. By default the server consumes and closes the unread body
+		// before it writes the response, under the transport still copying it
+		// to the upstream, and the upstream request fails mid-stream (#1349).
+		slow bool
 	}{
 		// What the API streams; httputil flushes these whatever FlushInterval says.
-		{name: "server-sent events", header: http.Header{"Content-Type": {"text/event-stream"}}},
+		{name: "server-sent events", header: sse},
 		// Only FlushInterval: -1 flushes a body of known length as it comes.
 		{name: "a body of known length", header: http.Header{
 			"Content-Type": {"application/octet-stream"}, "Content-Length": {strconv.Itoa(len(first + rest))}}},
+		{name: "a request body still arriving", header: sse, slow: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			release := make(chan struct{})
+			sent := make(chan struct{}) // closed once the upstream has sent first
+			sentFirst := sync.OnceFunc(func() { close(sent) })
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Answer before the request's body is in, as the API may.
+				_ = http.NewResponseController(w).EnableFullDuplex()
 				maps.Copy(w.Header(), tt.header)
 				_, _ = io.WriteString(w, first)
 				_ = http.NewResponseController(w).Flush()
+				sentFirst()
 				select {
 				case <-release:
 				case <-r.Context().Done():
@@ -314,7 +327,36 @@ func TestStreamsWithoutBuffering(t *testing.T) {
 			}
 			got := make(chan read, 1)
 			go func() {
-				resp, err := proxy.Client().Post(proxy.URL+"/v1/messages", "application/json", strings.NewReader("{}"))
+				const payload = `{"a":1}`
+				var body io.Reader = strings.NewReader(payload)
+				if tt.slow {
+					pr, pw := io.Pipe()
+					body = pr
+					go func() {
+						select {
+						case <-sent:
+						case <-t.Context().Done():
+							_ = pw.CloseWithError(t.Context().Err())
+							return
+						}
+						// Three parts, each long enough after the last for the
+						// server's drain, when there is one, to queue on the body.
+						for _, part := range []string{`{"a"`, `:1`, `}`} {
+							time.Sleep(20 * time.Millisecond)
+							if _, err := io.WriteString(pw, part); err != nil {
+								return
+							}
+						}
+						_ = pw.Close()
+					}()
+				}
+				req, err := http.NewRequest(http.MethodPost, proxy.URL+"/v1/messages", body)
+				if err != nil {
+					got <- read{err: err}
+					return
+				}
+				req.ContentLength = int64(len(payload)) // the pipe's length is not known to the client
+				resp, err := proxy.Client().Do(req)
 				if err != nil {
 					got <- read{err: err}
 					return
