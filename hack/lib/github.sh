@@ -182,6 +182,11 @@
 #                                        that are all offline; the relay watch asks this
 #   hack/lib/github.sh activity          one line that changes whenever an issue or pull request changes (the
 #                                        Maintainer report excluded) or main moves; the relay watch compares it
+#   hack/lib/github.sh swept [START ACTIVITY]
+#                                        the project's last full maintainer sweep, "START ACTIVITY" (its start
+#                                        in epoch seconds and the activity it saw), from the record on the
+#                                        Maintainer report issue, nothing when none; with START ACTIVITY,
+#                                        record that sweep (hack/relay.sh --maintain does, #1322)
 #   hack/lib/github.sh report FILE       set FILE as the body of the pinned Maintainer report issue (label
 #                                        maintainer/report, no status), creating and pinning it the first time;
 #                                        prints its URL. The watch's notes (report-note) the old body has and
@@ -244,6 +249,7 @@ GH_CLAIM_FILE=${GH_CLAIM_FILE:-$GH_PENDING_DIR/claim}
 C4_LEASE_TTL=${C4_LEASE_TTL:-2h}
 GH_CLAIM_SETTLE=${GH_CLAIM_SETTLE:-5}  # seconds take waits before checking it won
 GH_BEAT_EVERY=${GH_BEAT_EVERY:-900}    # seconds between heartbeats
+GH_MAINT_BEATS=${GH_MAINT_BEATS:-3}    # missed heartbeats after which the maintainer lease is stale (#1322)
 export GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1
 
 # Agent names are WORD-N; the Nth agent on an issue gets the Nth unused word.
@@ -2296,10 +2302,11 @@ gh_report_note() {
 # The maintainer lease (#526): the maintainer runs once per project, not once
 # per device. Before hack/relay.sh --maintain starts a session it takes the
 # lease, a comment on the pinned Maintainer report issue that starts with
-# <!-- c4-maintainer --> and names the host and pid. It is live while it was
-# edited within C4_LEASE_TTL, as a claim is; the relay refreshes it every
-# GH_BEAT_EVERY seconds while the session runs and deletes it when the session
-# ends. Only the relay's maintainer, under its device lock
+# <!-- c4-maintainer --> and names the host and pid. The relay refreshes it
+# every GH_BEAT_EVERY seconds while the session runs and deletes it when the
+# session ends; it is live while it was edited within GH_MAINT_BEATS
+# heartbeats (3, 45m), not the claims' C4_LEASE_TTL: a dead device's lease
+# held the maintainer off for two hours (#1322). Only the relay's maintainer, under its device lock
 # (.relay/maintain.lock), takes it, so a live lease of this host is one a
 # crashed maintainer left: it is taken over like a stale one.
 GH_MAINT_MARKER='<!-- c4-maintainer -->'
@@ -2328,12 +2335,15 @@ gh_maint_body() {
     "$GH_MAINT_MARKER" "${C4_HOST:-$(hostname)}" "${GH_MAINT_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
+# gh_maint_ttl: seconds a maintainer lease stays live without a heartbeat.
+gh_maint_ttl() { echo $((GH_MAINT_BEATS * GH_BEAT_EVERY)); }
+
 # gh_maint_take: take the maintainer lease and print its comment's ID. Exit 4:
 # another host holds a live one, or won the race to it; prints who, as "host
 # H (pid P), heartbeat 5m ago". Exit 1: GitHub could not be asked.
 gh_maint_take() {
   local ttl n all id holder winner
-  ttl=$(gh_ttl) || return 1
+  ttl=$(gh_maint_ttl)
   n=$(gh_report_issue) || return 1
   all=$(gh_comments "$n") || return 1
   local q=(--arg m "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
@@ -2371,6 +2381,49 @@ gh_maint_take() {
 # gh_maint_beat ID: refresh lease ID's heartbeat. Exit 1: it is gone (another
 # host took it over as stale) or GitHub could not be asked.
 gh_maint_beat() { gh_edit_comment "${1:?usage: gh_maint_beat ID}" "$(gh_maint_body)"; }
+
+# The last full sweep (#1322): the maintainer's cadence is the project's, not
+# a device's. A sweep that ran to its end is recorded on the Maintainer report
+# issue, in one comment per project that starts with <!-- c4-swept --> and
+# names its start and the activity it saw, edited in place, next to the
+# sweeping device's own .relay/maintained. The watch and the next sweep's
+# prompt count the newer of the two, so a sweep on one device holds the
+# others' off for WATCH_MAINTAIN, and an escalation one sweep looked at and
+# left waits for the next regular sweep on every device.
+GH_SWEPT_MARKER='<!-- c4-swept -->'
+
+# gh_swept [START ACTIVITY]: with no arguments, print the project's last full
+# sweep as "START ACTIVITY" (its start in epoch seconds, then the activity it
+# saw), or nothing when none was recorded. With them, record the sweep that
+# started at START and saw ACTIVITY in place of the last record. Exit 1:
+# GitHub could not be asked.
+gh_swept() {
+  local n all ids id first body
+  n=$(gh_report_issue) || return 1
+  all=$(gh_comments "$n") || return 1
+  local q=(--arg m "$GH_SWEPT_MARKER" --argjson ttl 0)
+  if [ $# = 0 ]; then
+    jq -r "${q[@]}" "$GH_MARKED_JQ"'
+      [.[] | select(marked)] | max_by(.id) // empty
+      | "\(cfield("start")) \(cfield("activity"))"' <<<"$all"
+    return
+  fi
+  [ $# = 2 ] && [[ $1 =~ ^[0-9]+$ ]] || { echo "usage: swept [START ACTIVITY]" >&2; return 64; }
+  body=$(printf '%s\n**maintainer** swept · host `%s` · start `%s` · activity `%s`\nStarted: %s\n' \
+    "$GH_SWEPT_MARKER" "${C4_HOST:-$(hostname)}" "$1" "$2" "$(date -u -d "@$1" +%Y-%m-%dT%H:%MZ)")
+  ids=$(jq -r "${q[@]}" "$GH_MARKED_JQ"'[.[] | select(marked)] | sort_by(.id) | reverse | .[].id' <<<"$all")
+  if [ -n "$ids" ]; then
+    # The newest record is edited in place; any older one is a leftover.
+    first=${ids%%$'\n'*}
+    gh_edit_comment "$first" "$body" || return 1
+    for id in $ids; do
+      [ "$id" = "$first" ] || gh_delete_comment "$id" || return 1
+    done
+    return 0
+  fi
+  jq -n --arg b "$body" '{body: $b}' |
+    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - >/dev/null
+}
 
 # The merge turn (#1037): merge refuses a pull request behind main, so with
 # several agents landing at once a branch's make check is outrun by the next
@@ -3059,6 +3112,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     flakes) gh_flakes "$@" ;;
     queued) gh_queued "$@" ;;
     activity) gh_activity ;;
+    swept) gh_swept "$@" ;;
     report) gh_report "$@" ;;
     report-note) gh_report_note "$@" ;;
     *)

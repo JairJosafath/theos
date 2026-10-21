@@ -55,8 +55,10 @@
 # maintainer lease on the report issue (gh_maint_take in hack/lib/github.sh),
 # keeps it fresh while the session runs and releases it at the end; while
 # another device holds a live lease it starts nothing and logs the holder, and
-# a lease past C4_LEASE_TTL is taken over. When it
-# ends it writes .relay/maintained, `<epoch> <activity>`: when the sweep
+# a lease that missed GH_MAINT_BEATS heartbeats (3, 45m) is taken over (#1322). When it
+# ends it writes .relay/maintained, `<epoch> <activity>`, and records the
+# same on the report issue (hack/lib/github.sh swept), for every device: the
+# watch and the next sweep's prompt count the newer of the two (#1322). When the sweep
 # started (so an issue escalated while it ran is still new to the watch) and
 # hack/lib/github.sh activity, read after the sweep so its own comments don't
 # count as new activity; a sweep that didn't run to
@@ -1150,21 +1152,37 @@ start_triage() {
 # next one still looks back to the last full sweep.
 maintained() { [ -n "$DRY_RUN" ] || echo "$1 $2" >"$DIR/maintained"; }
 
+# last_sweep: the start of the last full sweep, as an ISO time, or "never":
+# the newer of this device's (.relay/maintained) and the project's, recorded
+# on the report issue by whichever device swept (hack/lib/github.sh swept,
+# #1322). A dry run, or one that can't ask GitHub, counts this device's alone.
+last_sweep() {
+  local t= pt= rec
+  [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
+  [[ $t =~ ^[0-9]+$ ]] || t=0
+  if [ -z "$DRY_RUN" ]; then
+    if rec=$(gh_swept 2>>"$LOG"); then
+      pt=${rec%% *}
+      [[ $pt =~ ^[0-9]+$ ]] && [ "$pt" -gt "$t" ] && t=$pt
+    else
+      log "could not read the project's last sweep; this device's counts"
+    fi
+  fi
+  [ "$t" -gt 0 ] && date -d "@$t" -Is || echo never
+}
+
 # maintain: one maintainer session (see the header).
 maintain() {
-  local id last t act rc out start lease beat
+  local id last act rc out start lease beat
   if [ -z "$DRY_RUN" ]; then
     worktree || { log "could not prepare the worktree $WT; no sweep"; return 1; }
   fi
   admit first || { log "no sweep"; return 1; }
-  last=never t=
-  [ -r "$DIR/maintained" ] && read -r t _ <"$DIR/maintained"
-  [[ $t =~ ^[0-9]+$ ]] && last=$(date -d "@$t" -Is)
   id=$(cat /proc/sys/kernel/random/uuid)
   if [ -n "$DRY_RUN" ]; then
     log "would switch $WT to origin/main and start maintainer session $id, with this prompt:"
     echo "-----"
-    maintain_prompt "$last"
+    maintain_prompt "$(last_sweep)"
     echo "-----"
     return 0
   fi
@@ -1174,9 +1192,10 @@ maintain() {
   lease=$(gh_maint_take 2>>"$LOG")
   case $? in
     0) ;;
-    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 0 ;;
+    4) log "another device's maintainer holds the lease: $lease; no sweep"; return 3 ;;
     *) log "could not take the maintainer lease; no sweep"; return 1 ;;
   esac
+  last=$(last_sweep)
   log "maintainer start: id $id, last sweep $last, HEAD $(git -C "$WT" rev-parse --short HEAD), lease $lease"
   out="$DIR/maintain-$(date +%Y%m%d-%H%M%S)"
   start=$(date +%s)
@@ -1197,7 +1216,7 @@ maintain() {
   if gh_delete_comment "$lease" 2>>"$LOG"; then
     log "released the maintainer lease $lease"
   else
-    log "could not release the maintainer lease $lease; it goes stale after $C4_LEASE_TTL"
+    log "could not release the maintainer lease $lease; it goes stale after $GH_MAINT_BEATS missed heartbeats"
   fi
   # A limit, a crash, a timeout or an idle kill cut the sweep short: not recorded.
   if [ "$rc" != 0 ] || [ "$S_RC" != 0 ] || [ -n "$S_IDLE" ] || [ ! -s "$out.md" ]; then
@@ -1206,6 +1225,8 @@ maintain() {
   fi
   act=$(gh_activity 2>>"$LOG") || { log "could not read the activity after the sweep; not recorded"; return 1; }
   maintained "$start" "$act"
+  # For the other devices' watches and the next sweep's prompt (#1322).
+  gh_swept "$start" "$act" 2>>"$LOG" || log "could not record the sweep on the report issue; this device's record alone says when it ran"
 }
 
 # work: the worker's sessions, one after another (see the header).
@@ -1397,8 +1418,8 @@ CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
 log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
-  maintain
-  log "the maintainer finished its sweep"
+  # Only a sweep that ran says so; one held off, cut short or not recorded said why (#1322).
+  maintain && log "the maintainer finished its sweep"
   exit 0
 fi
 if [ -n "$TRIAGE" ]; then
