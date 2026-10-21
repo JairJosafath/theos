@@ -214,6 +214,41 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	}
 }
 
+// TestFastAPIConnectsOnlyWithPostgres checks that python-fastapi writes
+// app/db.py, a /readyz that runs SELECT 1, its tests and psycopg's pool only
+// when the Container has the postgres Connector (#1472).
+func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
+	files := map[string][]string{
+		"app/db.py":          {"ConnectionPool(", `"SELECT 1"`, "PGPASSWORD"},
+		"app/main.py":        {"lifespan=lifespan", `@app.get("/readyz")`, "db.ping(pool)", "status_code = 503"},
+		"tests/test_main.py": {"def test_readyz_when_the_database_answers", "def test_readyz_when_the_database_fails", "DATABASE_URL reaches no server"},
+		"pyproject.toml":     {`"psycopg[binary,pool]>=3.3"`},
+		"uv.lock":            {`name = "psycopg-pool"`, `extras = ["binary", "pool"]`},
+	}
+	for _, postgres := range []bool{false, true} {
+		sides := []side{{model.SideFramework, "python-fastapi"}, {model.SideStandard, "python-standard"}}
+		if postgres {
+			sides = append(sides, side{model.SideConnector, "postgres"})
+		}
+		_, result := renderCombo(t, "service", sides)
+		if _, ok := result.Files["app/db.py"]; ok != postgres {
+			t.Errorf("postgres %v: app/db.py written = %v", postgres, ok)
+		}
+		for name, want := range files {
+			got := string(result.Files[name].Data)
+			if postgres {
+				assertContains(t, name, got, want)
+				continue
+			}
+			for _, w := range want {
+				if strings.Contains(got, w) {
+					t.Errorf("without postgres, %s contains %q", name, w)
+				}
+			}
+		}
+	}
+}
+
 // TestK8sManifestsWritesItsREADME checks that k8s-manifests writes
 // deploy/k8s/README.md (#1470): how to build the image, set it, preview and
 // apply the manifests, for the Container, with the files the other layers

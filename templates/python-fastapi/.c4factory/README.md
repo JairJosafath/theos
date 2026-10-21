@@ -19,8 +19,9 @@ A Python service with [FastAPI](https://fastapi.tiangolo.com/), managed with
   after create, and the Python and ruff VS Code extensions. The operator merges it
   into `.devcontainer/devcontainer.json`; with Connectors, the same image becomes
   the `app` service of the Docker Compose setup.
-- **Connectors it knows:** `postgres` adds `psycopg[binary]` to the dependencies and a
-  `GET /readyz` that reports whether `DATABASE_URL` is set. Other Connectors are listed
+- **Connectors it knows:** `postgres` adds `psycopg[binary,pool]` to the dependencies,
+  `app/db.py` (a connection pool on `DATABASE_URL`, opened for the app's lifetime) and a
+  `GET /readyz` that runs `SELECT 1` on it and answers 503 when that fails. Other Connectors are listed
   in the README only.
 
 ## How a template works
