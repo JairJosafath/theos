@@ -298,8 +298,9 @@ The stand-in implements and reviews the issue, and once it is merged the
 Crew releases the app as in *Release a Brief's app*: it files "Prepare
 v0.1.0", the stand-in does that too, the Crew tags `v0.1.0`, and the release
 run puts the binaries and `SHA256SUMS` on the Gitea release of
-`webshop/stand-in-demo`. That takes about half an hour, and every release
-checks it does:
+`webshop/stand-in-demo`. That takes about half an hour. The factory's
+*Verify Release* run checks it does for every minor release on its own, and
+for a patch when a human dispatches it:
 
 ```bash
 kubectl -n webshop wait crew/stand-in-demo --for=jsonpath='{.status.lastRelease.run}'=Succeeded --timeout=60m
