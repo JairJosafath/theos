@@ -169,7 +169,9 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
 ## Working in Sessions
 
 Quality drops as a session's context grows, long before the window is full.
-Treat about 140k tokens as the limit, and keep each session to one piece of work.
+Hand off at about 80k tokens and never go on past 120k, and keep each session
+to one piece of work. The context guard hook (`hack/context-guard.sh`) says
+when.
 
 - **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
   piece of work, labeled `status/*`, `priority/*`, `kind/*` and
@@ -222,11 +224,11 @@ Treat about 140k tokens as the limit, and keep each session to one piece of work
 - **Delegate broad searches** to a subagent; it returns the conclusion, not the
   file dumps. Keep large outputs out of the context: filter with `jq`, `grep`,
   `tail`, `--tail=N`, and summary flags.
-- **Hand off between tasks.** After a task, past about 100k tokens, hand off
-  instead of starting the next: the `handoff` skill posts the in-flight state
-  as a comment on the issue. When you must stop inside one (the context, a
-  lost claim, the user says stop), hand off anyway and say exactly where it
-  stands. The next session starts by reading the newest handoff. Close the
+- **Hand off at about 80k tokens,** mid-task if need be: finish the small
+  step in flight, commit, push, and the `handoff` skill posts the in-flight
+  state as a comment on the issue, saying exactly where it stands; then end
+  the session. Past 120k, stop at once and hand off. Hand off, too, when a
+  claim is lost or the user says stop. The next session starts by reading the newest handoff. Close the
   issue when its work lands.
 - **The relay** (`hack/relay.sh`, kept running by `hack/relay-watch.sh`) runs
   headless sessions, each on the in-progress or next ready issue. Its triage

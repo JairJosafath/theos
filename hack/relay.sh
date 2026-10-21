@@ -223,10 +223,11 @@ Rules for this headless run:
   for anything. Always name the model when dispatching (sonnet or opus).
 - A headless session ends when you end your turn. Dispatch every subagent with
   run_in_background: false and never end your turn while one is running.
-- Hand off between tasks, never inside one: finish the task in flight (its
-  implementation, review and fix rounds) before handing off, even past 140k
-  tokens. After each task, if your context is past about 100k tokens, hand off
-  instead of starting the next one.
+- Keep the context small: at about 80k tokens, finish the small step in
+  flight, commit, push and hand off, mid-task if need be; never go on past
+  120k. The next session continues #$n from your handoff, so say exactly
+  where it stands. The context guard hook (hack/context-guard.sh) tells you
+  when.
 - Never wait on the factory (a Crew, a Task, an agent) longer than about 20
   minutes in one stretch; if it still isn't done, note it in the handoff and
   move on to other work or hand off.
@@ -300,6 +301,8 @@ Rules for this headless run:
   run_in_background: false and never end your turn while one is running.
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   your account.
+- Keep the context small: past about 80k tokens, finish the issue in hand and
+  end your turn; the next triage takes the rest. Never go on past 120k.
 - End your turn with a short account, the relay's log of this triage: one
   line per issue, readied (why, and its milestone or none), left proposed
   (what is missing), closed as a duplicate (of #M) or sent to the maintainer
@@ -341,7 +344,9 @@ Rules for this headless run:
 - If an action is refused (permissions, auto mode), don't retry it: say so in
   the report and your account.
 - Keep the context small: filter with jq, grep and tail; delegate broad reads
-  to a subagent.
+  to a subagent. Past about 80k tokens, finish the item in hand, write the
+  report and end your turn; the next sweep takes the rest. Never go on past
+  120k.
 - End your turn with a short account, the relay's log of this sweep: what you
   decided, corrected, filed and released, and what went to the owner.
 EOF

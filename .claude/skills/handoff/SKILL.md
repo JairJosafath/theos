@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, write the handoff comment, close or escalate to the maintainer (needs-maintainer), file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 100k tokens between tasks, when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
+description: Pick up, claim, hand off or finish a GitHub issue on JairJosafath/c4factory with hack/lib/github.sh - pick and take, write the handoff comment, close or escalate to the maintainer (needs-maintainer), file a follow-up. Use when taking or continuing a factory issue, when the context grows past about 80k tokens (mid-task too; never past 120k), when work stops mid-way, or when the user asks to hand off, pause, wrap up or continue later.
 ---
 
 # Handoff
@@ -74,6 +74,10 @@ The relay points `$TMPDIR` at `~/.cache/c4factory/tmp/<worktree>`, outside any
 git checkout (#1307), and removes it after the session.
 
 ## Write a handoff
+
+Hand off when the context reaches about 80k tokens, mid-task if need be, and
+never go on past 120k; the context guard hook (`hack/context-guard.sh`) says
+when. Then end the session: the next one continues from the handoff.
 
 1. Commit and push first, so the SHAs you name exist on the remote.
 2. Write it to a scratch file (`mktemp`), first line `<!-- relay-handoff -->`,
