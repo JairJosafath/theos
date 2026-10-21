@@ -121,7 +121,14 @@
 #                                        of a make check (stopping it), on every look at the queue and before each
 #                                        check under the turn, and exits 0 naming who merged it (#1369); one
 #                                        closed without a merge exits 1. While yolo mode is on (yolo status),
-#                                        land skips all of that and merges PR at once, from any checkout
+#                                        land skips all of that and merges PR at once, from any checkout. A PR
+#                                        that changes only files nothing but the docs read (docs/ but
+#                                        docs/getting-started.md, .claude/skills/, and *.md anywhere but the
+#                                        root README.md and under templates/, dist/ or ui/), under
+#                                        GH_SIMPLE_LINES (200) lines in all, takes the simple path (#1524):
+#                                        origin/main merged in, make test-hack only when one of them is
+#                                        docs/dev/testenv.md or under .claude/skills/ (no heavy-job slot),
+#                                        pushed and merged without the merge turn; said in the log
 #   hack/lib/github.sh yolo on|off|status|merge
 #                                        yolo mode (#1534): once a pull request is made, it merges: no make
 #                                        check, no review pass, no merge turn, no bug-fix-test gate; only the
@@ -1837,8 +1844,11 @@ gh_close() {
 # checked and pushed, not whatever GitHub shows at merge time; when GitHub's
 # head differs (a push while land waited for its turn), refused, the two
 # named, and nothing merges. Without HEAD, merge reads GitHub's head.
+# gh_merge PR [HEAD [simple]]: merge PR, pinned to HEAD when given (#1320).
+# With simple, land's simple path (#1524): the merge-turn refusal is skipped
+# (nothing it merges can turn main red), every other one stays.
 gh_merge() {
-  local pr=${1:?usage: merge PR [HEAD]} checked=${2:-} view base head behind turn
+  local pr=${1:?usage: merge PR [HEAD]} checked=${2:-} simple=${3:-} view base head behind turn
   [[ $pr =~ ^[0-9]+$ ]] || { echo "github: merge takes a pull request number" >&2; return 1; }
   [ -z "$checked" ] || [[ $checked =~ ^[0-9a-f]{40}$ ]] || { echo "github: merge's head is a commit SHA, not $checked" >&2; return 1; }
   # Yolo mode (#1534): it merges at once; unknown (exit 2) takes the normal path.
@@ -1848,7 +1858,7 @@ gh_merge() {
   # Nor may it fix a bug without a test.
   gh_bugfix_check "$pr" "$view" || return 1
   # Nor may it jump the merge queue: while another pull request holds the turn, only that one merges.
-  turn=$(gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
+  turn=$( [ "$simple" = simple ] || gh_land_holder) || { echo "github: #$pr: could not ask GitHub who holds the merge turn; merge refused" >&2; return 1; }
   if [ -n "$turn" ] && [ "${turn%%$'\t'*}" != "$pr" ]; then
     echo "github: #$pr: it is #${turn%%$'\t'*}'s turn to merge (${turn#*$'\t'}); land with hack/lib/github.sh land $pr, which waits for its turn" >&2
     return 1
@@ -2456,11 +2466,53 @@ GH_LAND_FETCH_TRIES=${GH_LAND_FETCH_TRIES:-5}
 GH_LAND_FETCH_PAUSE=${GH_LAND_FETCH_PAUSE:-5} # seconds between those tries
 # checks under the turn when main moved since the last one, before land gives the turn up
 GH_LAND_RECHECKS=${GH_LAND_RECHECKS:-4}
+# The simple path (#1524): a pull request that changes only files nothing but
+# the docs read, under GH_SIMPLE_LINES lines in all, merges without a heavy-job
+# slot or the merge turn (gh_land_simple, gh_land_turn). A move of main under
+# the turn by such files is merged in the same way, with no make check.
+GH_SIMPLE_LINES=${GH_SIMPLE_LINES:-200}
 # GH_MARKED_JQ with --arg m "$GH_LAND_MARKER".
 GH_LAND_JQ=$GH_MARKED_JQ'
   def turn: marked;
   def who: "\(cname | select(. != "") // "someone") lands #\(cfield("pull request")) (host \(cfield("host"))), heartbeat \(age)";
 '
+
+# gh_land_simple_goal: the paths on stdin, one a line, classified for the
+# simple path (#1524). The simple set is what no Go test, linter or workflow
+# reads: docs/ but docs/getting-started.md (the release reads it),
+# .claude/skills/, and *.md anywhere but the root README.md and under
+# templates/, dist/ or ui/ (rendered, released or Prettier-checked). Exit 0
+# prints the make goal that reads them: test-hack when one is
+# docs/dev/testenv.md or under .claude/skills/ (hack/check-cache.sh
+# tier_paths), else none. Exit 1: a path outside the set, or no path at all.
+gh_land_simple_goal() {
+  awk '
+    function simple(p) {
+      if (p == "docs/getting-started.md" || p == "README.md") return 0
+      if (p ~ /^docs\// || p ~ /^\.claude\/skills\//) return 1
+      if (p ~ /^(templates|dist|ui)\//) return 0
+      return p ~ /\.md$/
+    }
+    NF == 0 { next }
+    { n++ }
+    !simple($0) { bad = 1; exit }
+    $0 == "docs/dev/testenv.md" || $0 ~ /^\.claude\/skills\// { goal = "test-hack" }
+    END { if (bad || !n) exit 1; print (goal ? goal : "none") }'
+}
+
+# gh_land_simple PR: whether pull request PR takes the simple path (#1524):
+# every file it changes (a rename's old path too) is in the simple set, and
+# they change under GH_SIMPLE_LINES lines in all. Exit 0 prints GOAL<tab>LINES;
+# exit 1: not simple; exit 2: GitHub could not be asked.
+gh_land_simple() {
+  local files goal lines
+  files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$1/files?per_page=100" \
+    --jq '.[] | "\(.additions + .deletions)\t\(.filename)\t\(.previous_filename // "")"') || return 2
+  goal=$(cut -f2- <<<"$files" | tr '\t' '\n' | gh_land_simple_goal) || return 1
+  lines=$(awk -F'\t' '{ n += $1 } END { print n + 0 }' <<<"$files")
+  ((lines < GH_SIMPLE_LINES)) || return 1
+  printf '%s\t%s\n' "$goal" "$lines"
+}
 
 # gh_land_queue N: the merge-turn comments on issue N, as JSON.
 gh_land_queue() {
@@ -2618,7 +2670,8 @@ gh_land_fetch() {
 }
 
 # gh_land_sync PR BASE BRANCH [ID]: merge origin/BASE (as fetched) into BRANCH,
-# run make check, push, and wait until GitHub shows the push. With ID, the
+# run make GH_LAND_GOAL (default check; with none, nothing runs and nothing is
+# looked at: the simple path, #1524), push, and wait until GitHub shows the push. With ID, the
 # merge-turn comment ID is heartbeaten while make check runs, and make check
 # goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
 # device's lands wait on it, and only the turn's one holder may. Exit 3: PR
@@ -2647,6 +2700,11 @@ gh_land_sync() {
     trap - EXIT INT TERM
     GH_LAND_TURN=$id exec bash "$GH_LIB_ROOT/hack/lib/github.sh" land "$pr" --wait "${wait}s"
   fi
+  local goal=${GH_LAND_GOAL:-check}
+  if [ "$goal" = none ]; then
+    gh_land_push "$pr"
+    return
+  fi
   # The watcher: every GH_LAND_BEAT seconds it heartbeats the turn (with ID)
   # and looks whether PR got merged or closed meanwhile; then it stops make
   # check, this shell's other child (#1369). Its sleep is killed with it, and it
@@ -2669,19 +2727,19 @@ gh_land_sync() {
   local untracked
   : >>"$GH_LAND_LOG"
   untracked=$(git -C "$GH_LIB_ROOT" ls-files --others --exclude-standard | sort)
-  C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" check >>"$GH_LAND_LOG" 2>&1
+  C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" "$goal" >>"$GH_LAND_LOG" 2>&1
   rc=$?
   kill "$GH_LAND_BEATER" 2>/dev/null
   wait "$GH_LAND_BEATER" 2>/dev/null
   GH_LAND_BEATER=
   if [ -e "$done" ]; then
     rm -f "$done"
-    gh_land_say "$pr" ": stopped make check: the pull request was merged meanwhile"
+    gh_land_say "$pr" ": stopped make $goal: the pull request was merged meanwhile"
     gh_land_done "$pr" && return 3
   fi
   if [ "$rc" != 0 ]; then
     tail -40 "$GH_LAND_LOG" >&2
-    gh_land_say "$pr" ": make check failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $GH_LAND_LOG); fix it, push and land again"
+    gh_land_say "$pr" ": make $goal failed (exit $rc) with origin/$base merged in (the merge is committed here, not pushed; the whole output is in $GH_LAND_LOG); fix it, push and land again"
     return 1
   fi
   # make check's fmt, manifests and generate rewrite files in place, so its
@@ -2694,9 +2752,16 @@ gh_land_sync() {
   left=$(comm -13 <(echo "$untracked") <(git -C "$GH_LIB_ROOT" ls-files --others --exclude-standard | sort) | tr '\n' ' ')
   what=${rewrote:+rewrote ${rewrote% }}${rewrote:+${left:+ and }}${left:+left untracked ${left% }}
   if [ -n "$what" ]; then
-    gh_land_say "$pr" ": make check $what (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again"
+    gh_land_say "$pr" ": make $goal $what (fmt, manifests or generate; the merge is committed here, not pushed); commit them, push and land again"
     return 1
   fi
+  gh_land_push "$pr"
+}
+
+# gh_land_push PR: push HEAD to origin and wait until GitHub shows it; exit 0
+# sets GH_LAND_HEAD to it (gh_land_sync's last step).
+gh_land_push() {
+  local pr=$1 local_head i
   git -C "$GH_LIB_ROOT" push -q origin HEAD || { gh_land_say "$pr" ": git push failed"; return 1; }
   # merge compares the head it is given with GitHub's: wait until it shows the push.
   local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
@@ -2708,7 +2773,7 @@ gh_land_sync() {
 }
 
 gh_land_turn() {
-  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat s who checked now t1 rechecks=0
+  local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat s who checked now t1 rechecks=0 moves=0 simple goal
   wait=$(gh_seconds "$2" --wait) || return 64
   ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
   gh_land_done "$pr"
@@ -2738,10 +2803,25 @@ gh_land_turn() {
   [ -z "$id" ] || gh_land_trap
   gh_bugfix_pr "$pr" || return 1
   gh_review_check "$pr" || return 1
-  n=$(gh_report_issue) || return 1
   mkdir -p "$GH_PENDING_DIR"
   GH_LAND_LOG=$GH_PENDING_DIR/land-$pr.log
   [ -n "$id" ] || : >"$GH_LAND_LOG"
+  # The simple path (#1524): files nothing but the docs read need no heavy
+  # slot, and no merge turn: a main that moved under them can't go red by them.
+  if simple=$(gh_land_simple "$pr"); then
+    goal=${simple%%$'\t'*}
+    gh_land_say "$pr" ": the simple path: changes only files nothing but the docs read (${simple#*$'\t'} lines, under $GH_SIMPLE_LINES): merging origin/$base in, then $([ "$goal" = none ] && echo "no check" || echo "make $goal"), and merging without the merge turn"
+    gh_land_fetch "$pr" || return 1
+    GH_LAND_GOAL=$goal gh_land_sync "$pr" "$base" "$branch"
+    s=$?
+    ((s == 3)) && return 0
+    ((s == 0)) || return 1
+    gh_merge "$pr" "$GH_LAND_HEAD" simple
+    s=$?
+    gh_land_say "$pr" ": $( ((s == 0)) && echo merged || echo "merge failed (exit $s)") on the simple path"
+    return "$s"
+  fi
+  n=$(gh_report_issue) || return 1
   # The check before the turn (#1281): the turn is held for seconds when main
   # has not moved by the time it comes.
   gh_land_say "$pr" ": merging origin/$base, then make check, before queuing for the merge turn"
@@ -2795,6 +2875,17 @@ gh_land_turn() {
     gh_land_fetch "$pr" || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return 1; }
     now=$(git -C "$GH_LIB_ROOT" rev-parse "origin/$base") || return 1
     [ "$now" = "$checked" ] && break
+    # A move by files nothing but the docs read (the simple path, #1524) is
+    # merged in with what reads them, no make check, GH_LAND_RECHECKS times at most.
+    if goal=$(git -C "$GH_LIB_ROOT" diff --name-only "$checked" "$now" | gh_land_simple_goal) && ((moves < GH_LAND_RECHECKS)); then
+      ((moves++))
+      gh_land_say "$pr" ": its turn; origin/$base moved since the check (${checked:0:12} -> ${now:0:12}) by files nothing but the docs read: merging it in with $([ "$goal" = none ] && echo "no check" || echo "make $goal"), holding the turn"
+      checked=$now
+      GH_LAND_GOAL=$goal gh_land_sync "$pr" "$base" "$branch" "$id"
+      s=$?
+      ((s == 0)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return $((s == 3 ? 0 : 1)); }
+      continue
+    fi
     if ((rechecks >= GH_LAND_RECHECKS)); then
       gh_land_say "$pr" ": origin/$base moved again after $rechecks checks under the turn (something merges without land); gave the turn up after $((SECONDS - t1))s: land again"
       return 1
@@ -2821,12 +2912,12 @@ gh_land_turn() {
     gh_land_say "$pr" ": its branch $branch moved since the check (${GH_LAND_HEAD:0:12} checked, GitHub's head is ${now:0:12}): nothing merged, gave the turn up after $((SECONDS - t1))s; land again"
     return 1
   fi
-  if ((rechecks == 0)); then
+  if ((rechecks == 0 && moves == 0)); then
     gh_land_say "$pr" ": its turn; origin/$base is still ${checked:0:12}, as checked: merging at once"
   fi
   gh_merge "$pr" "$GH_LAND_HEAD"
   s=$?
-  gh_land_say "$pr" ": $( ((s == 0)) && echo merged || echo "merge failed (exit $s)"); held the turn $((SECONDS - t1))s, $rechecks check(s) under it"
+  gh_land_say "$pr" ": $( ((s == 0)) && echo merged || echo "merge failed (exit $s)"); held the turn $((SECONDS - t1))s, $rechecks check(s) under it$( ((moves > 0)) && echo ", $moves docs-only move(s) of origin/$base merged in unchecked")"
   return "$s"
 }
 
