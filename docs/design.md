@@ -319,6 +319,14 @@ operator merges the Standard's version) or `c4.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
 refs, `status.standard` the current.
 
+An update whose CI fails (`ChecksFailed`) is the Crew's to fix
+([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447,
+decided, not built). The operator files `Standard <name> <ref> fails this
+repository's check`, `kind/bug` and `status/ready`, once per target ref,
+linking the pull request and the run. The fix lands on main in the Crew's own
+pull request; once main moves, the operator plans the update again from it.
+A check a Standard tightens says in its message what to write.
+
 **The templates** live in `templates/`; [templates.md](templates.md) scores
 each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
 tools and envtest) run every check without a cluster.
