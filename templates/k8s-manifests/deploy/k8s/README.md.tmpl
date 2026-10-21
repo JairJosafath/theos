@@ -23,7 +23,13 @@ listen on port {{ $port }} and answer `GET {{ $probe }}`. Build it with:
 docker build -t {{ .Container }}:1.0.0 .
 ```
 
-Push it where your cluster can pull it from, for example:
+Each `v*` tag's release builds it too, for `linux/amd64` and `linux/arm64`
+(`.gitea/workflows/image.yaml`), and the factory pushes it to the Git host's
+container registry. Nothing emulates the other platform, so the `Dockerfile`
+`RUN`s only in stages `FROM --platform=$BUILDPLATFORM` and its last stage only
+`COPY`s; keep it so, or the release fails.
+
+To push one yourself where your cluster can pull it from, for example:
 
 ```sh
 docker tag {{ .Container }}:1.0.0 registry.example.com/{{ .Container }}:1.0.0
