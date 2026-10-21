@@ -108,6 +108,13 @@ review pass before it lands; `land` refuses it until it has one, and
 (`zz_generated.*`, `config/crd/bases/`, `config/rbac/role.yaml`), lockfiles
 and `docs/screenshots/` don't count. Smaller pull requests land as before.
 
+While yolo mode is on (`hack/lib/github.sh yolo status`), none of this
+applies: `land` merges the pull request at once, with no `make check`, no
+review pass, no merge turn and no bug-fix-test gate; only the closing-keyword
+refusals stay (AGENTS.md, "Small pull requests to main"). Run the targeted
+tests before you land anyway: nothing else runs before the merge, and the
+Tests run on main is the first thing that sees your change.
+
 1. Run `/code-review` in a subagent (the Agent tool, model named: sonnet or
    opus), not in your own context: the author reads past its own mistakes.
    Give it the branch against `origin/main` and ask for its findings back.

@@ -103,6 +103,12 @@ unanswered for 14 days.
      [Kubernetes reviewer](https://www.kubernetes.dev/docs/guide/pull-requests/)
      would. Check for tests at the lowest tier that sees the rule, scope of one
      issue, docs that match, and claims in the body that the evidence backs.
+     While yolo mode is on (`hack/lib/github.sh yolo status`; AGENTS.md,
+     "Small pull requests to main"), `land` merged it with no `make check`,
+     review pass or bug-fix-test gate, so this review is the first check the
+     change gets: read main's health from the Tests run on main (Health,
+     below), never from `land`, and a merge that turned main red is a
+     `priority/1` bug on the pull request's issue, not on the mode.
    - A merged fix of a `kind/bug` issue: its test names the issue, would
      have failed before the fix and covers what the report says, not a
      neighbour of it; a `No test:` line gives a reason that holds. When the
