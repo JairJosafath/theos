@@ -1145,6 +1145,8 @@ SH
 chmod +x "$T/bin/"*
 SAVED_PATH=$PATH SAVED_HOME=$HOME
 export FAKE=$T PATH="$T/bin:$PATH" HOME=$T/home
+# $HOME has no .gitconfig: an identity, so that only the #1362 cases lack one.
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 STOP=$DIR/stop REPO=$T/repo WORKERS=3
 mkdir -p "$REPO/.relay"
 touch "$STOP"
@@ -1166,6 +1168,30 @@ check "install: enables and starts it" \
   "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
 check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
 check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
+
+# --install warns when git has no committer identity in the checkout (#1362),
+# with git's reason and the commands that set one, and installs all the same;
+# with one, it says nothing of it. The global config says useConfigOnly, as
+# hack/relay_test.sh's #1289 case does: git would guess an identity from the
+# account and the host otherwise, on some devices.
+printf '[user]\n\tuseConfigOnly = true\n' >"$T/noident"
+printf '[user]\n\tname = t\n\temail = t@t\n' >"$T/ident"
+mkdir -p "$T/xdg"
+rm -f "$unit"
+(
+  export GIT_CONFIG_GLOBAL=$T/noident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/xdg
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL
+  RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
+)
+check "install, no identity (#1362): warns, with git's reason and the commands" \
+  "$(grep -c "^relay-watch: git has no committer identity in $REPO (fatal: no email was given and auto-detection is disabled): .*git config --global user.name .*git config --global user.email " "$T/install.err")" 1
+check "install, no identity (#1362): still installs" "$([ -s "$unit" ] && echo yes)" yes
+(
+  export GIT_CONFIG_GLOBAL=$T/ident GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$T/xdg
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL
+  RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
+)
+check "install, identity (#1362): says nothing of it" "$(grep -c 'committer identity' "$T/install.err")" 0
 
 # --uninstall without the user bus: the unit stays, and it says so.
 touch "$T/no-systemd"

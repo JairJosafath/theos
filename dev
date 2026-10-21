@@ -176,6 +176,21 @@ check_docker() {
   fi
 }
 
+# A device where git has no committer identity commits nothing: every relay
+# session there fails, and hack/relay.sh starts none (#1289). Say so, with the
+# two commands that fix it, in the project environment, which hides an
+# identity kept under ~/.config (XDG_CONFIG_HOME points into .dev/), and go
+# on (#1362). Whose name it is is the person's to say: nothing is set here.
+check_git_identity() {
+  local err
+  err=$(git -C "$C4_ROOT" var GIT_COMMITTER_IDENT 2>&1 >/dev/null) && return 0
+  step "Git identity"
+  info "WARNING: git can't commit here: $(grep fatal <<<"$err" || tail -n1 <<<"$err")"
+  info "No session on this device can commit, and the relay starts none. Set yours:"
+  info "  git config --global user.name 'Your Name'"
+  info "  git config --global user.email 'you@example.com'"
+}
+
 install_vscode_extensions() {
   # The `code` command inside WSL installs on the WSL side, where Go must run.
   have code || { info "skipped: no code command (open the folder in VS Code to get it)"; return 0; }
@@ -282,6 +297,8 @@ cmd_setup() {
     devcontainer --version
   fi
   set -e
+
+  check_git_identity
   echo
   echo "Ready. Open a new terminal in VS Code, or run ./dev shell."
 }
