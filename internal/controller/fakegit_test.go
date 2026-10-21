@@ -201,7 +201,8 @@ func (p *fakeProvider) EnsureRepository(_ context.Context, name, _ string) (gitp
 	}
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy: strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go"}, nil
+		GoProxy:       strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go",
+		ImageRegistry: imageHost(p.cfg.URL) + "/" + strings.ToLower(p.cfg.Owner)}, nil
 }
 
 func (p *fakeProvider) History(ctx context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
@@ -609,10 +610,18 @@ func (g *fakeGit) pullComments(owner, name string, number int) []string {
 	return slices.Clone(g.agentState().comments[fmt.Sprintf("%s/%s#%d", owner, name, number)])
 }
 
+// imageHost is the host of a Git host's URL, its container registry's.
+func imageHost(url string) string {
+	host := strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
+	host, _, _ = strings.Cut(host, "/")
+	return host
+}
+
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy: strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go"}
+		GoProxy:       strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go",
+		ImageRegistry: imageHost(p.cfg.URL) + "/" + strings.ToLower(p.cfg.Owner)}
 }
 
 func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string,

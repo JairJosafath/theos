@@ -203,6 +203,23 @@ A human run of Kind would show what no tier below it can: the `image` runner
 building both platforms of a scaffolded `python-fastapi` service and an
 operator, and the Container's `status.image` naming the pushed digest.
 
+### Step 4, as built
+
+- `model.BuildsImage(deployment, type)` is the table `imageBuilders`, one row
+  (`k8s-manifests`, any type); `model.ImageEvent` decides the Event once per
+  release's state, `model.ImageSettled` that only `Failed` is tried again.
+- The newest-release read moved out of `deploy` into `keepNewestRelease`, run
+  in `Reconcile` before `publishImage` (`internal/controller/container_image.go`)
+  and `deploy`, so the image is pushed before a deploy ships it.
+- A push runs when the newest release's tag differs from `status.image.tag`
+  or the last state was `Failed`; a `Failed` push asks for the next poll
+  (`DeployPoll`). The Reconciler remembers the last Event per Container, so a
+  status write that fails after its Event doesn't say it twice.
+- A pin's image is `ImageDigest` on `<ImageRegistry>/<lower name>`; a
+  registry that can't be reached fails the ship as `GitHostUnreachable`.
+- Envtest (`container_image_test.go`) drives the fake provider's
+  `setImage`, `failImagePushes` and `setRegistryImage`.
+
 ## Out of scope
 
 - Copying the image to GHCR (#1070), ECR (#1071) or a cluster's registry

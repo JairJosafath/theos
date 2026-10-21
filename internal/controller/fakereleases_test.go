@@ -56,6 +56,15 @@ type fakeReleaseState struct {
 	moduleDelays    map[string]time.Duration
 	// sources is each repository's files at a tag, by owner/name@tag.
 	sources map[string][]fakeSourceFile
+	// images is the outcome PublishImage gives each release, by
+	// owner/name@tag, none when unset; imageFailures how many PublishImage
+	// calls fail before one gets through, by owner/name; imagePushes counts
+	// the calls, by owner/name@tag; and registry is the digest each tag
+	// names in the owner's registry, by owner/name@tag.
+	images        map[string]gitprovider.Image
+	imageFailures map[string]int
+	imagePushes   map[string]int
+	registry      map[string]string
 }
 
 // fakeSourceFile is a file of a repository at a tag, as ReadSource hands it on.
@@ -74,7 +83,8 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			modulePublishes: map[string]int{}, moduleDelays: map[string]time.Duration{}, reruns: map[string]int{},
 			refused: map[string]bool{}, commitRuns: map[string][]gitprovider.WorkflowRun{},
 			sources: map[string][]fakeSourceFile{}, runJobs: map[string][]gitprovider.WorkflowJob{},
-			onlineRunners: map[int64]bool{}}
+			onlineRunners: map[int64]bool{}, images: map[string]gitprovider.Image{},
+			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{}}
 	}
 	return g.releases
 }
@@ -353,15 +363,67 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
-// PublishImage finds no image: no reconciler publishes one yet (#1455).
-func (p *fakeProvider) PublishImage(_ context.Context, _ gitprovider.Repository, tag string) (
+// PublishImage gives the outcome setImage gave the release, after the
+// failures failImagePushes asked for; a Published image's digest lands in
+// the registry.
+func (p *fakeProvider) PublishImage(_ context.Context, repo gitprovider.Repository, tag string) (
 	gitprovider.Image, error) {
-	return gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag}, nil
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.releaseState()
+	key := repo.Owner + "/" + repo.Name
+	s.imagePushes[key+"@"+tag]++
+	out := gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag,
+		Repository: repo.ImageRegistry + "/" + strings.ToLower(repo.Name)}
+	if s.imageFailures[key] > 0 {
+		s.imageFailures[key]--
+		return out, fmt.Errorf("gitea unavailable")
+	}
+	img, ok := s.images[key+"@"+tag]
+	if !ok {
+		return out, nil
+	}
+	img.Tag, img.Repository = tag, out.Repository
+	if img.Outcome == gitprovider.ImagePublished {
+		s.registry[key+"@"+tag] = img.Digest
+	}
+	return img, nil
 }
 
-// ImageDigest finds no image.
-func (p *fakeProvider) ImageDigest(context.Context, gitprovider.Repository, string) (string, error) {
-	return "", nil
+// ImageDigest is the digest tag names in the owner's registry, "" when none.
+func (p *fakeProvider) ImageDigest(_ context.Context, repo gitprovider.Repository, tag string) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.git.releaseState().registry[repo.Owner+"/"+repo.Name+"@"+tag], nil
+}
+
+// setImage makes PublishImage of owner/name's release of tag give img.
+func (g *fakeGit) setImage(owner, name, tag string, img gitprovider.Image) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().images[owner+"/"+name+"@"+tag] = img
+}
+
+// setRegistryImage puts digest in the owner's registry under owner/name's tag.
+func (g *fakeGit) setRegistryImage(owner, name, tag, digest string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().registry[owner+"/"+name+"@"+tag] = digest
+}
+
+// failImagePushes makes the next n PublishImage calls of owner/name fail.
+func (g *fakeGit) failImagePushes(owner, name string, n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().imageFailures[owner+"/"+name] = n
+}
+
+// imagePushes is how many times the Container asked to push owner/name's
+// image of tag.
+func (g *fakeGit) imagePushes(owner, name, tag string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().imagePushes[owner+"/"+name+"@"+tag]
 }
 
 // ReadSource hands on the files setSource gave the repository at tag.

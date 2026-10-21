@@ -523,8 +523,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `Incompatible` there.
 - **Reports:** `status.deploys[]` per target (version running and wanted,
   phase, the tool's health, URL), summed by `Deployed`.
-- **Release images** (#1069, decided, not built): built by the `image` runner,
-  pushed by digest, shipped by digest ([plans/images.md](plans/images.md)).
+- **Release images** (#1069): built by the `image` runner, pushed by digest,
+  shipped by digest ([plans/images.md](plans/images.md)). When the
+  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`), the
+  operator pushes `status.newestRelease`'s `*.oci.tar` to the owner's
+  registry once and reports it in `status.image` (`tag`, `repository`,
+  `digest`, `platforms`, `state`, `message`, `publishedTime`) and
+  `ImagePublished` (True when `Published`, else False with the state:
+  `NoImage`, `Invalid`, `TagTaken`, or `Failed`, retried each poll). Each
+  ship's `Shipment.Image` is `<repository>@<digest>` of the version shipped,
+  a pin's resolved in the registry.
   `Crew.spec.publishReleases.github` moves onto a DeployTarget with #1070.
 
 ## Distribution and issues
