@@ -184,11 +184,12 @@ rm -f "$STOP" "$DIR/admitted"
 meminfo 8
 : >"$LOG"
 sleep 3600 &
-echo $! >"$DIR/admit-first"
+maintainer=$!
+echo "$maintainer" >"$DIR/admit-first"
 MEM_WAIT=2 admit; check "admit first: a worker waits for the maintainer" $? 1
 check "admit first: no slot taken" "$(test -e "$DIR/admitted" && echo taken)" ""
 grep -q "the maintainer waits for a start, and it goes first" "$LOG"; check "admit first: logs the wait" $? 0
-kill $!; wait $! 2>/dev/null
+kill "$maintainer"; wait "$maintainer" 2>/dev/null
 admit; check "admit first: a dead maintainer holds no one" $? 0
 # A session just started; the maintainer waits, then a worker: the maintainer
 # takes the next slot, the worker the one after, and the file goes.
