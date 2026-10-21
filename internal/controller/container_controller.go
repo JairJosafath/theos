@@ -69,6 +69,9 @@ type ContainerReconciler struct {
 	// deploySaid remembers each deploy's last Event, by Container UID and
 	// target.
 	deploySaid sync.Map
+	// imageSaid remembers each Container's last image Event, by UID: its
+	// release's tag and state.
+	imageSaid sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -147,6 +150,14 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		failed := r.updateOperations(ctx, &container, status, live)
+		if poll := r.keepNewestRelease(ctx, &container, status); poll > 0 &&
+			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
+			result.RequeueAfter = poll
+		}
+		if poll := r.publishImage(ctx, &container, status); poll > 0 &&
+			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
+			result.RequeueAfter = poll
+		}
 		if poll := r.deploy(ctx, &container, status); poll > 0 &&
 			(result.RequeueAfter == 0 || poll < result.RequeueAfter) {
 			result.RequeueAfter = poll

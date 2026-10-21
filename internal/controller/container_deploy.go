@@ -57,16 +57,7 @@ func (r *ContainerReconciler) deployMember(name string) (model.DeployMember, err
 func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) time.Duration {
 	log := logf.FromContext(ctx)
-	// Kept with or without spec.deploy, so a target added later ships it.
-	newest, err := r.newestRelease(ctx, container)
-	if err != nil {
-		log.Error(err, "Failed to list the Container's Crews")
-		return r.deployPoll()
-	}
-	if newest != "" {
-		status.NewestRelease = newest
-	}
-	newest = status.NewestRelease
+	newest := status.NewestRelease
 	if len(container.Spec.Deploy) == 0 {
 		status.Deploys = nil
 		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionDeployed)
@@ -84,7 +75,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 		prevs[d.Target] = &model.DeployReport{Target: d.Target, Version: d.Version, WantedVersion: d.WantedVersion,
 			Phase: d.Phase, Health: d.Health, URL: d.URL, Reason: d.Reason, Message: d.Message}
 	}
-	pass := &deployPass{r: r, container: container, log: log}
+	pass := &deployPass{r: r, container: container, log: log, image: status.Image}
 	reports := map[string]*model.DeployReport{}
 	steps := make([]model.DeployStep, 0, len(container.Spec.Deploy))
 	for _, e := range container.Spec.Deploy {
@@ -137,6 +128,8 @@ type deployPass struct {
 	r         *ContainerReconciler
 	container *c4v1alpha1.Container
 	log       logr.Logger
+	// image is the newest release's, status.image.
+	image *c4v1alpha1.ContainerImageStatus
 	// provider and repo reach the Container's repository, once a ship needs it.
 	provider gitprovider.Provider
 	repo     gitprovider.Repository
@@ -218,6 +211,11 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
 		Version: version, Notes: release.Body}
+	if buildsImage(p.container) {
+		if shipment.Image, err = p.shippedImage(ctx, version); err != nil {
+			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
+		}
+	}
 	shipment.Files = releaseFiles(p.provider, p.repo, release.Assets)
 	log := p.log.WithValues("target", target.Name, "version", version)
 	err = deployer.Ship(logr.NewContext(ctx, log), target, shipment)
@@ -263,6 +261,23 @@ func (r *ContainerReconciler) deployEvent(ctx context.Context, container *c4v1al
 	if r.Recorder != nil {
 		r.Recorder.Eventf(container, nil, eventType, reason, "Deploy", "%s", next.Message)
 	}
+}
+
+// keepNewestRelease sets status.newestRelease to the newest release of the
+// Container's Crews whose runs succeeded, kept with or without spec.deploy so
+// a target added later ships it. It returns how soon to look again after a
+// failed read.
+func (r *ContainerReconciler) keepNewestRelease(ctx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.ContainerStatus) time.Duration {
+	newest, err := r.newestRelease(ctx, container)
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list the Container's Crews")
+		return r.deployPoll()
+	}
+	if newest != "" {
+		status.NewestRelease = newest
+	}
+	return 0
 }
 
 // newestRelease is the newest release of the Container's Crews whose runs

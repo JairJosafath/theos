@@ -357,7 +357,8 @@ spec:
                 description: |-
                   conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
                   and, for a Container with a Standard, StandardUpdated and ChecksApplied;
-                  once scaffolded, OperationsApplied; with spec.deploy, Deployed.
+                  once scaffolded, OperationsApplied; with spec.deploy, Deployed; with
+                  status.image, ImagePublished.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -478,6 +479,55 @@ spec:
                 x-kubernetes-list-map-keys:
                 - target
                 x-kubernetes-list-type: map
+              image:
+                description: |-
+                  image is newestRelease's image in the owner's container registry on the
+                  Git host. Only a Container whose Deployment builds an image has it, once
+                  a release has succeeded its runs.
+                properties:
+                  digest:
+                    description: |-
+                      digest is the image index's digest; "" when there is no archive or it is
+                      invalid.
+                    type: string
+                  message:
+                    description: message says the state for a person.
+                    type: string
+                  platforms:
+                    description: platforms are the platforms the image runs on, attestations
+                      left out.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  publishedTime:
+                    description: publishedTime is when the operator found the image
+                      pushed.
+                    format: date-time
+                    type: string
+                  repository:
+                    description: repository is the image's repository, <host>/<owner>/<repository>.
+                    type: string
+                  state:
+                    description: |-
+                      state is Published once the registry has the image under the tag,
+                      NoImage when the release has no image archive, Invalid when its archive
+                      can't be pushed, TagTaken when the tag names another digest, and Failed
+                      while the Git host can't be reached, tried again each poll.
+                    enum:
+                    - Published
+                    - NoImage
+                    - Invalid
+                    - TagTaken
+                    - Failed
+                    type: string
+                  tag:
+                    description: tag is the release's tag, the image's tag.
+                    type: string
+                required:
+                - state
+                - tag
+                type: object
               newestRelease:
                 description: |-
                   newestRelease is the newest release of the Container's Crews whose runs
