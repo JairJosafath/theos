@@ -1,7 +1,8 @@
 {
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
   "containerEnv": {
-    "UV_LINK_MODE": "copy"
+    "UV_LINK_MODE": "copy",
+    "AUTH_DISABLED": "true"
   },
   "postCreateCommand": "pipx install uv && uv sync",
   "forwardPorts": [8000],

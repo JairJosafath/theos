@@ -220,7 +220,7 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
 	files := map[string][]string{
 		"app/db.py":          {"ConnectionPool(", `"SELECT 1"`, "PGPASSWORD"},
-		"app/main.py":        {"lifespan=lifespan", `@app.get("/readyz")`, "db.ping(pool)", "status_code = 503"},
+		"app/main.py":        {"db.open_pool()", `@app.get("/readyz")`, "db.ping(pool)", "status_code = 503"},
 		"tests/test_main.py": {"def test_readyz_when_the_database_answers", "def test_readyz_when_the_database_fails", "DATABASE_URL reaches no server"},
 		"pyproject.toml":     {`"psycopg[binary,pool]>=3.3"`},
 		"uv.lock":            {`name = "psycopg-pool"`, `extras = ["binary", "pool"]`},
@@ -245,6 +245,30 @@ func TestFastAPIConnectsOnlyWithPostgres(t *testing.T) {
 					t.Errorf("without postgres, %s contains %q", name, w)
 				}
 			}
+		}
+	}
+}
+
+// TestFastAPIVerifiesABearerJWT checks that python-fastapi, with and without
+// postgres, writes app/auth.py, puts every route but the probes behind it,
+// refuses to start without an issuer and tests the token cases (#1474).
+func TestFastAPIVerifiesABearerJWT(t *testing.T) {
+	files := map[string][]string{
+		"app/auth.py":        {`ALGORITHMS = ["RS256", "ES256"]`, `"WWW-Authenticate": "Bearer"`, "OIDC_ISSUER", "OIDC_AUDIENCE", "AUTH_DISABLED"},
+		"app/main.py":        {"api = APIRouter(dependencies=[Depends(auth.verified_claims)])", "app.state.verifier = auth.from_env()", `@app.get("/healthz")`, "app.include_router(api)"},
+		"pyproject.toml":     {`"pyjwt[crypto]>=2.15"`},
+		"uv.lock":            {`name = "pyjwt"`, `name = "cryptography"`},
+		"README.md":          {"## Auth", "OIDC_ISSUER", "OIDC_AUDIENCE", "AUTH_DISABLED=true"},
+		"tests/test_main.py": {"HS256", "expired", "audience"},
+	}
+	for _, postgres := range []bool{false, true} {
+		sides := []side{{model.SideFramework, "python-fastapi"}, {model.SideStandard, "python-standard"}}
+		if postgres {
+			sides = append(sides, side{model.SideConnector, "postgres"})
+		}
+		_, result := renderCombo(t, "service", sides)
+		for name, want := range files {
+			assertContains(t, name, string(result.Files[name].Data), want)
 		}
 	}
 }
