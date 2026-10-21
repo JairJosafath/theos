@@ -98,6 +98,21 @@ func (r *ContainerReconciler) secretRecheck() time.Duration {
 	return defaultSecretRecheck
 }
 
+// forget drops what the per-UID maps remember of a Container that is being
+// deleted (#1571): deploySaid's keys are the UID and a target, the others the
+// UID alone.
+func (r *ContainerReconciler) forget(uid types.UID) {
+	r.imageSaid.Delete(uid)
+	r.imagePushed.Delete(uid)
+	prefix := string(uid) + "/"
+	r.deploySaid.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, prefix) {
+			r.deploySaid.Delete(key)
+		}
+		return true
+	})
+}
+
 // Reconcile adopts the Container, resolves its references, checks its catalog
 // choices and scaffolds its repository once.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -108,6 +123,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !container.DeletionTimestamp.IsZero() {
+		r.forget(container.UID)
 		return ctrl.Result{}, nil
 	}
 	status := container.Status.DeepCopy()
