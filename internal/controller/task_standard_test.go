@@ -143,8 +143,8 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing).Reason).To(Equal("WaitingForStandardChange"))
 		}, "3s").Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r2-implement"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "orders-api-1-r1-implement")
+		expectSandboxGone(ns, "orders-api-1-r2-implement")
 	})
 
 	It("reuses the open Standard change it filed when the step repeats", func() {
@@ -182,7 +182,7 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(BeEmpty())
 		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(BeEmpty())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "orders-api-1-r1-implement")
 	})
 
 	It("fails a Task with a goal that proposes, filing nothing", func() {
@@ -202,7 +202,7 @@ var _ = Describe("Task with a Standard change", func() {
 				"Message": And(ContainSubstring("only an issue's Task can propose"), ContainSubstring("Makefile"))})))
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(BeEmpty())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "orders-api-1-r1-implement")
 	})
 
 	It("fails an issue Task no Crew started that proposes, filing nothing", func() {
@@ -294,7 +294,7 @@ var _ = Describe("Task with a Standard change", func() {
 			"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.", m,
 			task.Status.StandardChange.IssueURL)))
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1), "the resumed Task opened no pull request")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-implement-s1"), newSandbox()))).To(BeTrue())
+		expectSandboxGone(ns, "orders-api-1-r1-implement-s1")
 	})
 
 	// #1008: a close the host refuses, for a dependency opened since, leaves
