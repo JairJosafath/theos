@@ -44,6 +44,15 @@ spec:
                 name: {{ $.Container }}-{{ . }}
 {{- end }}
 {{- end }}
+{{- if has .Connectors "postgres" }}
+          env:
+            # The database password, from the Secret the postgres Connector reads.
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Container }}-postgres
+                  key: password
+{{- end }}
 {{- if $http }}
           readinessProbe:
             httpGet:

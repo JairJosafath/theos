@@ -591,8 +591,10 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 ## Out of scope and open points
 
 - **Out of scope:** existing repositories and monorepos; Component and Code
-  levels; provisioning data stores (a Connector only scaffolds); monitoring
-  the apps beyond what a deploy target's tool reports.
+  levels; provisioning data stores (a Connector only scaffolds: the files
+  it writes may run the store, as postgres's StatefulSet or dynamodb's table,
+  but the operator creates none); monitoring the apps beyond what a deploy
+  target's tool reports.
 - **One Git host.** Gitea is the only one built; another plugs into the
   [ports](#factory-components-ports-and-adapters) (#1094).
 - **Shared files between layers.** A Connector often needs a line in a file

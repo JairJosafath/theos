@@ -164,7 +164,7 @@ func TestK8sManifestsFollowsTheFramework(t *testing.T) {
 	}{
 		{"python-fastapi", "service", "", []string{"ghcr.io/astral-sh/uv", "uvicorn", "EXPOSE 8000"},
 			[]string{".venv", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".uv", "dist"},
-			[]string{"containerPort: 8000", "path: /healthz"}, nil},
+			[]string{"containerPort: 8000", "path: /healthz"}, []string{"PGPASSWORD"}},
 		{"react-vite", "static-site", "ts-standard",
 			[]string{"npm ci", "npm run build", "nginxinc/nginx-unprivileged", "/app/dist", "USER 101", "EXPOSE 8080"},
 			[]string{"node_modules", "dist", "coverage"},
@@ -233,7 +233,9 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				"`service.yaml`: Service `sample-app` on port 80",
 				"`compute.yaml`: the CPU and memory requests and limits",
 				"(small)",
-				"`connector-postgres.yaml`: ConfigMap `sample-app-postgres`",
+				"`connector-postgres.yaml`: the database",
+				// #1471: the user makes the password's Secret before applying.
+				"kubectl create secret generic sample-app-postgres --from-literal=password=",
 				"port 8000",
 				"`GET /healthz`",
 			},
