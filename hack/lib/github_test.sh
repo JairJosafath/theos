@@ -1165,6 +1165,13 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses while another pull request holds the merge turn" "$? $out $(cat "$T/merged" 2>/dev/null)" \
     '1 github: #16: it is #20'"'"'s turn to merge (heron-20 lands #20 (host h), heartbeat 0m ago); land with hack/lib/github.sh land 16, which waits for its turn '
+  # land's simple path (#1524) merges without the turn; the other refusals stay.
+  rm -f "$T/merged"
+  out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h1" '.headRefOid = $h') gh_merge 16 "$h1" simple 2>&1)
+  check "merge: the simple path merges while another holds the turn (#1524)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit $h1"
+  out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h2" '.headRefOid = $h') gh_merge 16 "$h1" simple 2>&1)
+  check "merge: the simple path still refuses a moved branch (#1524)" "$? $(grep -c 'the branch moved since the check' <<<"$out")" "1 1"
+  rm -f "$T/merged"
   # A turn 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
   half=$(date -u -d "@$((GH_NOW + 30))" +%Y-%m-%dT%H:%M:%SZ)
   age() { GH_NOW=$((GH_NOW + $1)) TURNS="[[$(turn 1 20 "$half"),$(turn 2 16 "$half")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1 |
@@ -1257,7 +1264,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     [ -n "${data:-}" ] || return 0
     if [ -n "$q" ]; then jq -r "$q" <<<"$data"; else echo "$data"; fi
   }
-  gh_merge() { echo "merge $1 at $(git -C "$GH_LIB_ROOT" rev-parse HEAD)" >>"$T/landed"; }
+  gh_merge() { echo "merge $1 at $(git -C "$GH_LIB_ROOT" rev-parse HEAD)${3:+ $3}" >>"$T/landed"; }
   g() { git -C "$T/land" "$@"; }
   git init -q --bare -b main "$T/origin.git"
   git clone -q "$T/origin.git" "$T/land" 2>/dev/null
@@ -1271,7 +1278,8 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
   # The fake make: records it ran (and whether it goes first in the heavy-job
   # queue, C4_HEAVY_FIRST), fails when $T/red exists, and while $T/move
-  # counts down, another pull request merges to main during it. A run that
+  # counts down, another pull request merges to main during it (adding the
+  # file $T/move-file names, when it is there; #1524). A run that
   # moves nothing, with CHECK_BEATS=N, first waits (up to about 30 s) until land
   # has beaten N times since it started, and writes the beats it saw to
   # $T/beats: a loaded device slows the beats down, it doesn't drop them (#1192).
@@ -1280,7 +1288,11 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
 echo "\$*\${C4_HEAVY_FIRST:+ (first)}" >>"$T/checked"
 if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
   echo \$((\$(cat "$T/move") - 1)) >"$T/move"
-  git -C "$T/other" pull -q --no-rebase origin main && git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
+  git -C "$T/other" pull -q --no-rebase origin main
+  if [ -e "$T/move-file" ]; then
+    f=\$(cat "$T/move-file"); mkdir -p "$T/other/\${f%/*}" && echo moved >"$T/other/\$f" && git -C "$T/other" add -A
+  fi
+  git -C "$T/other" commit -q --allow-empty -m moved && git -C "$T/other" push -q origin main
 elif [ -n "\${CHECK_MERGE:-}" ]; then
   # Merged by hand while it runs (#1369): wait (up to about 30 s) for land to stop it.
   touch "$T/pr-merged"
@@ -1557,6 +1569,58 @@ MAKE
   : >"$T/calls"
   out=$(LANDPR=$(jq '.closingIssuesReferences.nodes[0].labels.nodes[0].name = "kind/bug" | .files.nodes[0].path = "feat_test.sh"' <<<"$NOBUG") gh_land 40 2>&1)
   check "land: queues a bug fix with a test" "$(grep -c '^POST ' "$T/calls") $(grep -c 'kind/bug' <<<"$out")" "1 0"
+  # The simple path (#1524): a pull request changing only files nothing but
+  # the docs read merges with no make, no heavy-job slot and no merge turn;
+  # one of them docs/dev/testenv.md or under .claude/skills/, make test-hack
+  # runs (not first in the heavy queue: it takes no slot). Any other file,
+  # 200 lines or more, or no file takes the normal path.
+  files() { printf '%s\n' "$@" | jq -Rc '{filename: ., additions: 2, deletions: 1}' | jq -sc .; }
+  simple() { rm -f "$T/landed" "$T/checked"; : >"$T/calls"; echo "$1" >"$T/files-40"; gh_land 40 2>&1; }
+  out=$(simple "$(files docs/design.md GOVERNANCE.md .claude/settings.md docs/plans/x.md)")
+  check "land: the simple path merges with no make and no merge turn (#1524)" "$? | $(cat "$T/landed") | $(cat "$T/checked" 2>/dev/null) | $(grep -c '^POST ' "$T/calls") | $(queue)" \
+    "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) simple |  | 0 | "
+  grep -q 'land: #40: the simple path: changes only files nothing but the docs read (12 lines, under 200): merging origin/main in, then no check, and merging without the merge turn' "$T/land/.relay/land-40.log"; check "land: says the simple path (#1524)" $? 0
+  grep -q 'land: #40: merged on the simple path' "$T/land/.relay/land-40.log"; check "land: says it merged on the simple path (#1524)" $? 0
+  check "land: the simple path pushed the head it merges, with main in" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
+  out=$(simple "$(files docs/dev/testenv.md)")
+  check "land: the simple path runs make test-hack for docs/dev/testenv.md (#1524)" "$? | $(cat "$T/checked") | $(grep -c '^POST ' "$T/calls")" "0 | -C $T/land test-hack | 0"
+  grep -q 'then make test-hack, and merging without the merge turn' "$T/land/.relay/land-40.log"; check "land: says make test-hack (#1524)" $? 0
+  out=$(simple "$(files .claude/skills/handoff/SKILL.md docs/design.md)")
+  check "land: the simple path runs make test-hack for a skill (#1524)" "$? | $(cat "$T/checked")" "0 | -C $T/land test-hack"
+  touch "$T/red"
+  out=$(simple "$(files .claude/skills/handoff/SKILL.md)")
+  check "land: a red make test-hack on the simple path merges nothing (#1524)" "$? $(cat "$T/landed" 2>/dev/null) $(grep -c '#40: make test-hack failed (exit 1)' <<<"$out")" "1  1"
+  rm "$T/red"
+  g reset -q --hard origin/feat
+  for f in a.go README.md docs/getting-started.md templates/x/README.md ui/README.md dist/chart/README.md; do
+    out=$(simple "$(files docs/design.md "$f")")
+    check "land: $f takes the normal path (#1524)" "$? | $(cat "$T/checked") | $(grep -c '^POST .*/issues/7/comments' "$T/calls") | $(cat "$T/landed")" \
+      "0 | -C $T/land check | 1 | merge 40 at $(git -C "$T/origin.git" rev-parse feat)"
+  done
+  out=$(simple "$(files docs/design.md | jq -c '.[0].additions = 199')")
+  check "land: 200 docs lines take the normal path (#1524)" "$? | $(cat "$T/checked")" "0 | -C $T/land check"
+  out=$(simple "$(files docs/design.md | jq -c '.[0].additions = 198')")
+  check "land: 199 docs lines take the simple path (#1524)" "$? | $(cat "$T/checked" 2>/dev/null)" "0 | "
+  out=$(simple '[]')
+  check "land: no file takes the normal path (#1524)" "$? | $(cat "$T/checked")" "0 | -C $T/land check"
+  out=$(simple "$(files docs/a.md | jq -c '.[0].previous_filename = "internal/a.go"')")
+  check "land: a rename out of the code takes the normal path (#1524)" "$? | $(cat "$T/checked")" "0 | -C $T/land check"
+  rm "$T/files-40"
+  # Main moved under the turn by a docs file alone: merged in with no check (#1524).
+  rm -f "$T/landed" "$T/checked"
+  echo 1 >"$T/move"; echo docs/moved.md >"$T/move-file"
+  out=$(gh_land 40 2>&1)
+  check "land: main moved under the turn by a docs file: merged in unchecked (#1524)" "$? | $(cat "$T/landed") | $(paste -sd'|' "$T/checked")" \
+    "0 | merge 40 at $(git -C "$T/origin.git" rev-parse feat) | -C $T/land check"
+  check "land: the merged head has the docs move in (#1524)" "$(git -C "$T/origin.git" merge-base --is-ancestor main feat && echo yes)" yes
+  grep -q 'land: #40: its turn; origin/main moved since the check ([0-9a-f]* -> [0-9a-f]*) by files nothing but the docs read: merging it in with no check, holding the turn' "$T/land/.relay/land-40.log"; check "land: says the docs-only move (#1524)" $? 0
+  grep -q 'land: #40: merged; held the turn [0-9]*s, 0 check(s) under it, 1 docs-only move(s) of origin/main merged in unchecked' "$T/land/.relay/land-40.log"; check "land: counts the docs-only move (#1524)" $? 0
+  rm -f "$T/landed" "$T/checked"
+  echo 1 >"$T/move"; echo docs/dev/testenv.md >"$T/move-file"
+  out=$(gh_land 40 2>&1)
+  check "land: main moved under the turn by docs/dev/testenv.md: make test-hack under the turn (#1524)" "$? | $(paste -sd'|' "$T/checked")" "0 | -C $T/land check|-C $T/land test-hack (first)"
+  rm -f "$T/move" "$T/move-file"
+
   # A merge that fails on no conflict, here git having no committer identity
   # (#1289), says what stopped it, not that it conflicts.
   rm -f "$T/landed"
