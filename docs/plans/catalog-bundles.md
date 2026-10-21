@@ -107,26 +107,26 @@ the bundle expanded to.
 
 ## Steps
 
-1. **The `Bundle` kind** (`kubebuilder create api`, no controller): spec,
+1. **The `Bundle` kind** (#1619) (`kubebuilder create api`, no controller): spec,
    printcolumns, CEL (`frameworkRef` required, the three optional), samples
    under `config/samples/`, `make validate-yaml`, the design's model table
    (nineteen kinds) and `docs/dev/structure.md`. `internal/model`:
    `BundleChoices` expanding a bundle's names and the computed
    `supportedTypes`, table tests.
-2. **A Container names a bundle:** `spec.bundleRef`, `frameworkRef`
+2. **A Container names a bundle** (#1620): `spec.bundleRef`, `frameworkRef`
    optional, the exactly-one CEL rule with its failing cases in envtest;
    `resolve` expands and writes `status.bundle`; `Container.Choices()` and
    every `Spec.*Ref` reader in `internal/controller` on it; the checks name
    the bundle; envtest: a bundled Container scaffolds with the same
    `scaffoldedFrom` as its hand-named twin, a Bundle changed before the
    scaffold is re-expanded, one changed after is not.
-3. **The Container reports a changed Bundle:** `BundleCurrent`, the watch on
+3. **The Container reports a changed Bundle** (#1621): `BundleCurrent`, the watch on
    Bundles, envtest for changed and deleted.
-4. **The planner picks bundles:** `catalog.yaml`'s `bundles:`, the guide,
+4. **The planner picks bundles** (#1622): `catalog.yaml`'s `bundles:`, the guide,
    the plan check, the stand-in planner; `internal/model` tests.
-5. **The chart's bundles:** `catalog.bundles`, the seed, `validate-yaml`'s
+5. **The chart's bundles** (#1623): `catalog.bundles`, the seed, `validate-yaml`'s
    check, `make test-gitea` and `make seed-local` where the seed changes.
-6. **The UI:** a Bundles catalog page (entries, computed types, the
+6. **The UI** (#1624): a Bundles catalog page (entries, computed types, the
    Containers naming it) and the Container page showing `bundleRef`, the
    expansion and `BundleCurrent`; `make ui-test`.
 
