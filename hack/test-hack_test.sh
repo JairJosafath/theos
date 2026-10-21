@@ -37,13 +37,14 @@ check "long log: it comes first" "$(sed -n 2p <<<"$out")" "    FAIL early case: 
 check "long log: then the last 30 lines" "$(grep -c '^    ok   case ' <<<"$out")" 30
 check "long log: not the lines between" "$(grep -c '^    ok   first$' <<<"$out")" 0
 
-# The tests run at once, not one after another: 12s in a row, well under that
-# at once, with room for a loaded device (#1503).
-mkdir -p "$T/slow"
-for n in 1 2 3; do printf 'sleep 4\n' >"$T/slow/s${n}_test.sh"; done
-start=$SECONDS
-"$RUN" "$T/slow" >/dev/null
-check "three 4s tests: under 10s" "$(( SECONDS - start < 10 ))" 1
+# The tests run at once, not one after another: each marks its start and
+# passes only once all three have started, which run one after another they
+# never do. Overlap, not elapsed seconds, which load stretches (#1409).
+mkdir -p "$T/slow" "$T/started"
+for n in 1 2 3; do
+  printf 'touch %q/%s\nfor _ in $(seq 600); do [ "$(ls %q | wc -l)" = 3 ] && exit 0; sleep 0.1; done\nexit 1\n' "$T/started" "$n" "$T/started" >"$T/slow/s${n}_test.sh"
+done
+"$RUN" "$T/slow" >/dev/null; check "three tests: run at once" $? 0
 
 # A test sees no make variables, even when the runner is a recipe of make check.
 mkdir -p "$T/envfail"

@@ -134,11 +134,13 @@ ran ui-test >/dev/null; [ ! -e "$T/ran" ]; check "run, back to inputs that passe
 # The Makefile: a cached plain `make check` answers without a heavy slot; a
 # miss or FORCE=1 queues for one. The one slot is held while it runs.
 cd "$HACK/.." || exit 1
-sleep 60 & holder=$!
+# The holder outlives any load, and the cached run's timeout only ends a
+# broken one: it answers at once, but a loaded device took over 5s (#1409).
+sleep 3600 & holder=$!
 "$HACK/heavy-slot.sh" acquire "$holder" "holder" 2>/dev/null
 timeout 5 make -n check >/dev/null 2>&1; check "make check, not cached: waits for a slot" $? 124
 "$CACHE" record >/dev/null
-out=$(timeout 5 make check 2>&1); check "make check, cached: exit 0 without a slot" $? 0
+out=$(timeout 120 make check 2>&1); check "make check, cached: exit 0 without a slot" $? 0
 check "make check, cached: says so" "$(grep -c '(cached); FORCE=1 to rerun' <<<"$out")" 1
 FORCE=1 timeout 5 make -n check >/dev/null 2>&1; check "FORCE=1 make check: waits for a slot" $? 124
 timeout 5 make -n manifests check >/dev/null 2>&1; check "make manifests check: not answered from the cache" $? 124
