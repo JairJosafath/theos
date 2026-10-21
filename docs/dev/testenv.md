@@ -565,7 +565,11 @@ workers run origin/main's scripts, whatever branch the main checkout has
 to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
 the main checkout. One started from the checkout moves there at its first pull,
 and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
-the code where they were started, to try relay changes from a branch. Every 30 minutes
+the code where they were started, to try relay changes from a branch. A worker
+started again while its last session still runs (after a crash, a kill or a
+restart by hand) ends that session first, SIGTERM then SIGKILL after
+`RELAY_IDLE_KILL`, before it releases the claim or starts a session in the
+worktree: `.relay/session-K.pid` names the session while it runs (#1341). Every 30 minutes
 (`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
 dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
 Docker Desktop's disk images never shrink (#1343). It prunes:

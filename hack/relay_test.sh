@@ -12,7 +12,8 @@
 # creation and stash of what a session left, and update() pulling nothing
 # under RELAY_PULL=0 and stopping, not restarting, on the stop file; and, with claude faked, the pause a usage
 # limit sets and the limit the claim's release names, the issue that goes to the user after failed sessions and the
-# session the relay ends when its transcript stops growing, and each session's
+# session the relay ends when its transcript stops growing, the session a
+# restarted worker finds still running and ends first (#1341), and each session's
 # TMPDIR, outside any checkout, emptied before and removed after it; a
 # worktree's own .dev/, which becomes the link to the main checkout's; the worktree
 # with no git identity, which starts no session (#1289); and idle workers,
@@ -501,6 +502,7 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
+  pidfile) cp "${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
@@ -999,6 +1001,49 @@ echo leftover >"$FAKE"
 check "leftover: still running" "$(kill -0 "$(cat "$FAKE.child")" 2>/dev/null && echo running)" running
 flock -n "$DIR/lock-7" true; check "leftover: the lock is free" $? 0
 kill "$(cat "$FAKE.child")" 2>/dev/null
+
+# A worker that restarts while its last session still runs ends that session
+# first (#1341): the session's pid and start time are in .relay/session-K.pid
+# while it runs, and stray_session stops the process group they name, SIGTERM
+# then SIGKILL, before the worker touches the worktree or the claim.
+: >"$LOG"
+echo pidfile >"$FAKE"
+work
+check "stray #1341: the session's pid file names timeout, while it runs" "$(cut -d' ' -f1 "$FAKE.pidfile") $(cut -d' ' -f2 "$FAKE.pidfile" | grep -c '^[0-9]\+$')" "$(cat "$FAKE.ppid") 1"
+check "stray #1341: the pid file goes with the session" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+# A process group like timeout's, with a child, that dies on SIGTERM.
+setsid bash -c 'sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+stray_session
+check "stray #1341: the session and its child are gone" "$(kill -0 "$stray" 2>/dev/null && echo leader)$(kill -0 "$(cat "$T/stray.child")" 2>/dev/null && echo child)" ""
+check "stray #1341: the pid file is gone" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
+grep -q "worker $K restarted while its last session (pid $stray) still ran in $WT; stopping it before anything else (#1341)" "$LOG"; check "stray #1341: logged" $? 0
+grep -q SIGKILL "$LOG"; check "stray #1341: SIGTERM was enough" $? 1
+# One that ignores SIGTERM gets SIGKILL after RELAY_IDLE_KILL.
+rm -f "$T/stray.child"
+setsid bash -c 'trap "" TERM; sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &
+stray=$!; disown "$stray"
+until [ -s "$T/stray.child" ]; do sleep 0.1; done
+echo "$stray $(proc_start "$stray")" >"$DIR/session-$K.pid"
+: >"$LOG"
+IDLE_KILL=1s stray_session
+check "stray #1341: SIGKILL ends one that ignores SIGTERM" "$(kill -0 "$stray" 2>/dev/null && echo leader)" ""
+grep -q "the last session (pid $stray) still ran 1s after SIGTERM; SIGKILL" "$LOG"; check "stray #1341: SIGKILL logged" $? 0
+kill "$(cat "$T/stray.child")" 2>/dev/null
+# A pid file of a session that ended, or whose pid a later process has
+# (another start time), kills nothing and says nothing.
+: >"$LOG"
+echo "$$ 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a reused pid is left alone" "$(kill -0 $$ && echo alive) $(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" "alive  0"
+sleep 0.01 & gone=$!; wait "$gone"
+echo "$gone 1" >"$DIR/session-$K.pid"
+stray_session
+check "stray #1341: a dead pid is left alone" "$(test -e "$DIR/session-$K.pid" && echo kept) $(grep -c . "$LOG")" " 0"
+stray_session; check "stray #1341: no pid file, no fuss" "$? $(grep -c . "$LOG")" "0 0"
 
 # Idle workers take no start slot (#242): pick asks before admit, so with one
 # ready issue N workers start one session, and the other N-1 stop without
