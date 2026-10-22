@@ -114,6 +114,12 @@ type CrewReconciler struct {
 	// moduleWarned is, by Crew UID, the version of the last module reported
 	// not fetchable, so each release gets one Warning.
 	moduleWarned sync.Map
+	// packagesSaid is, by Crew UID, the tag, state and message of the last
+	// release packages publish reported, so each gets one log line.
+	packagesSaid sync.Map
+	// packagesWarned is, by Crew UID, the tag of the last release whose
+	// packages were reported Invalid, so each release gets one Warning.
+	packagesWarned sync.Map
 	// tagged is, by Crew UID, the tag of the last release the Crew tagged, so
 	// a cached Crew that lags behind its status doesn't publish, or write the
 	// module of, an earlier release over the newer one.
@@ -306,6 +312,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 		// After publishing, so the module reads a source tag put out this poll,
 		// and a release published this poll files its bumps.
 		r.publishGoModule(ctx, crew, status, provider, repo)
+		r.publishPackages(ctx, crew, status, provider, repo)
 		r.fileBumps(ctx, crew, status, repo)
 	}
 	return filed, preparing

@@ -199,10 +199,7 @@ func (p *fakeProvider) EnsureRepository(_ context.Context, name, _ string) (gitp
 	if _, ok := p.git.repos[key]; !ok {
 		p.git.repos[key] = &fakeRepo{}
 	}
-	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
-	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy:       strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go",
-		ImageRegistry: imageHost(p.cfg.URL) + "/" + strings.ToLower(p.cfg.Owner)}, nil
+	return p.repository(name), nil
 }
 
 func (p *fakeProvider) History(ctx context.Context, repo gitprovider.Repository, limit int) ([]gitprovider.Commit, error) {
@@ -617,11 +614,27 @@ func imageHost(url string) string {
 	return host
 }
 
+// Repository builds a repository's addresses as Gitea's adapter does, the
+// package registries under api/packages/<owner> and the npm scope the owner's
+// GitProvider names.
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {
-	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	return p.repository(name)
+}
+
+// repository is Repository under the fake's lock.
+func (p *fakeProvider) repository(name string) gitprovider.Repository {
+	base := strings.TrimSuffix(p.cfg.URL, "/")
+	web := base + "/" + path.Join(p.cfg.Owner, name)
+	registry := base + "/api/packages/" + p.cfg.Owner
 	return gitprovider.Repository{Owner: p.cfg.Owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy:       strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner + "/go",
-		ImageRegistry: imageHost(p.cfg.URL) + "/" + strings.ToLower(p.cfg.Owner)}
+		GoProxy:       registry + "/go",
+		ImageRegistry: imageHost(p.cfg.URL) + "/" + strings.ToLower(p.cfg.Owner),
+		NpmScope:      p.git.releaseState().npmScopeLocked(p.cfg.Owner),
+		NpmRegistry:   registry + "/npm/",
+		PyPIIndex:     registry + "/pypi/simple",
+		PyPIUpload:    registry + "/pypi"}
 }
 
 func (p *fakeProvider) ProtectBranch(_ context.Context, repo gitprovider.Repository, branch string,
