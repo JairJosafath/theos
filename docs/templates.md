@@ -168,14 +168,16 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.5.0)
+### python-standard (v1.5.1)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
 secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`, `C4_PYPI_INDEX`, `C4_NPM_TOKEN`,
 `C4_PYPI_TOKEN`), falling back to the host's own registries and the
 workflow's token, so `uv` fetches factory packages; `AGENTS.md` says how a
-package is declared (#1231).
+package is declared (#1231). Since v1.5.1 `~/.netrc` names the index's host
+without its port, which `uv` matches on, and its login is `__token__` when
+`C4_PYPI_TOKEN` is set (#1696).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -190,14 +192,16 @@ package is declared (#1231).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.6.1)
+### ts-standard (v1.6.2)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
 Actions variables and secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`,
 `C4_PYPI_INDEX`, `C4_NPM_TOKEN`, `C4_PYPI_TOKEN`), falling back to the host's
 own registries and the workflow's token, so `npm ci` fetches factory
-packages; `AGENTS.md` says how one is added (#1231).
+packages; `AGENTS.md` says how one is added (#1231). Since v1.6.2 `~/.netrc`
+names the index's host without its port, which `uv` matches on, and its
+login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes" and "node cli".
@@ -292,7 +296,7 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.5.0)
+### gitea-release (v1.5.1)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
@@ -308,7 +312,9 @@ the digest just built, any other answer fails the step (#1583). Since
 v1.5.0 the release job writes `~/.npmrc` and `~/.netrc` from the owner's
 Actions variables and secrets before `make dist`, falling back to the
 host's own registries and the workflow's token, so a build that installs
-factory packages finds them (#1231).
+factory packages finds them (#1231). Since v1.5.1 `~/.netrc` names the
+index's host without its port, which `uv` matches on, and its login is
+`__token__` when `C4_PYPI_TOKEN` is set (#1696).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli"
   and "node cli" and checks the files it attaches.
@@ -426,12 +432,13 @@ aws-standard.
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.18.0)
+### aws-standard (v1.18.1)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` as ts-standard's does, so `npm ci` and `uv`
-fetch factory packages (#1231).
+fetch factory packages (#1231); since v1.18.1 `~/.netrc` names the index's
+host without its port, as ts-standard v1.6.2's does (#1696).
 
 - CI: #1476.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

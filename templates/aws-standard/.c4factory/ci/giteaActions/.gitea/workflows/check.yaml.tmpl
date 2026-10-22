@@ -39,8 +39,11 @@
         # GitProvider's spec.packages names others: then the operator sets
         # these Actions variables and secrets, and empty ones mean the host.
         # npm sends the scope to the registry through ~/.npmrc; uv logs in to
-        # the index's host with ~/.netrc. A package the registry lacks fails
-        # here instead of being asked of npmjs.org or pypi.org.
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
         env:
           NPM_SCOPE: {{`${{ vars.C4_NPM_SCOPE }}`}}
           NPM_REGISTRY: {{`${{ vars.C4_NPM_REGISTRY }}`}}
@@ -56,9 +59,13 @@
           registry=${registry%/}/
           index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
           host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
           umask 077
           printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@c4factory}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
-          printf 'machine %s\nlogin %s\npassword %s\n' "${host%%/*}" "$ACTOR" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
 {{- end -}}
 {{- if $beforeRelease -}}
 # Runs the light check, make check-light, on every pull request and on main,
