@@ -788,6 +788,50 @@ func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
 	}
 }
 
+// TestGiteaReleaseGuideSeparatesLooseListItems checks that RELEASING.md's
+// lists render Prettier-clean (#1707): an item that holds a fenced block
+// makes its list loose, so ts-standard's Prettier check wants a blank line
+// before the step that watches the run and before each item of "When a run
+// fails". Every Framework's render is checked: python-cli's and go-cli's go
+// unchecked by a Standard, and the operator's adds an item.
+func TestGiteaReleaseGuideSeparatesLooseListItems(t *testing.T) {
+	watch := regexp.MustCompile("may push `v\\*` tags\\.\\n\\n[34]\\. Watch the run")
+	for _, c := range templateCombos {
+		if !slices.ContainsFunc(c.layers, func(s side) bool { return s.Name == "gitea-release" }) {
+			continue
+		}
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			f, ok := result.Files["RELEASING.md"]
+			if !ok {
+				t.Fatalf("RELEASING.md not written; files: %v", result.Files.Paths())
+			}
+			got := string(f.Data)
+			if !watch.MatchString(got) {
+				t.Errorf("RELEASING.md has no blank line before the step that watches the run (#1707):\n%s", got)
+			}
+			_, fails, ok := strings.Cut(got, "## When a run fails\n")
+			if !ok {
+				t.Fatalf("RELEASING.md has no \"When a run fails\" section:\n%s", got)
+			}
+			lines := strings.Split(fails, "\n")
+			items := 0
+			for i, l := range lines {
+				if !strings.HasPrefix(l, "- **") {
+					continue
+				}
+				items++
+				if i == 0 || lines[i-1] != "" {
+					t.Errorf("RELEASING.md has no blank line before %q (#1707):\n%s", l, fails)
+				}
+			}
+			if items < 3 {
+				t.Errorf("RELEASING.md's \"When a run fails\" lists %d items, want at least 3:\n%s", items, fails)
+			}
+		})
+	}
+}
+
 // TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
 // the factory's c4factory.local modules come from the owner's package registry
 // alone, before make check, and make check never asks a proxy for them. A

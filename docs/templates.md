@@ -296,7 +296,7 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.5.1)
+### gitea-release (v1.5.2)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
@@ -314,7 +314,10 @@ Actions variables and secrets before `make dist`, falling back to the
 host's own registries and the workflow's token, so a build that installs
 factory packages finds them (#1231). Since v1.5.1 `~/.netrc` names the
 index's host without its port, which `uv` matches on, and its login is
-`__token__` when `C4_PYPI_TOKEN` is set (#1696).
+`__token__` when `C4_PYPI_TOKEN` is set (#1696). Since v1.5.2 `RELEASING.md`
+renders its lists loose, a blank line before the step that watches the run
+and before each item of "When a run fails", so ts-standard's Prettier check
+passes it (#1707).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli"
   and "node cli" and checks the files it attaches.
