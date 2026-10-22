@@ -105,11 +105,16 @@ the rollout itself is the one tier only Kind shows.
    `GitHubDeployState`) takes the Application's `spec.source.targetRevision`,
    `status.sync` (`status`, `comparedTo.source.targetRevision`),
    `status.health` (`status`, `message`) and `status.operationState`
-   (`phase`, `message`):
+   (`phase`, `message`, and the operation's revision:
+   `syncResult.source.targetRevision`, or
+   `operation.sync.source.targetRevision` before the result exists):
    - no Application: the zero state; an operation `Running`, or no sync yet,
      or `OutOfSync`: `Deploying` at the wanted tag;
-   - an operation `Failed` or `Error`: `Failed` at that tag, reason
-     `SyncFailed`, Argo CD's message;
+   - an operation `Failed` or `Error` at the wanted tag: `Failed` at it,
+     reason `SyncFailed`, Argo CD's message. One of another revision is
+     the previous version's, which Argo CD hasn't replaced yet: `Deploying`
+     at the wanted tag (#1667). An operation whose revision Argo CD didn't
+     record counts as the wanted tag's;
    - `Synced` at the tag with the operation `Succeeded`: `Deployed` at the
      tag.
    - Health is Argo CD's `Healthy`, `Progressing` and `Degraded` as they

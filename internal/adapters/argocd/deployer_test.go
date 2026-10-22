@@ -172,25 +172,32 @@ func (f *fakeArgoCD) sync(ctx context.Context, app *unstructured.Unstructured) {
 
 // status is what a fake Argo CD, or a test, writes to an Application's
 // status; the Application CRD has no status subresource, so a plain Update
-// writes it.
+// writes it. operationRevision is the tag the operation synced, revision
+// when "".
 type status struct {
-	sync, revision, operation, operationMessage, health, healthMessage string
+	sync, revision, operation, operationMessage, operationRevision, health, healthMessage string
 }
 
 func setStatus(app *unstructured.Unstructured, s status) {
 	// comparedTo and operationState carry what Argo CD compared and ran,
 	// which the CRD requires: the source and destination it synced, the
-	// operation and when it started.
+	// operation and when it started, and its result's revision and source.
 	source, _, _ := unstructured.NestedMap(app.Object, "spec", "source")
 	destination, _, _ := unstructured.NestedMap(app.Object, "spec", "destination")
 	source["targetRevision"] = s.revision
+	opSource, _, _ := unstructured.NestedMap(app.Object, "spec", "source")
+	opSource["targetRevision"] = s.revision
+	if s.operationRevision != "" {
+		opSource["targetRevision"] = s.operationRevision
+	}
 	app.Object["status"] = map[string]any{
 		"sync": map[string]any{"status": s.sync,
 			"comparedTo": map[string]any{"source": source, "destination": destination}},
 		"health": map[string]any{"status": s.health, "message": s.healthMessage},
 		"operationState": map[string]any{"phase": s.operation, "message": s.operationMessage,
-			"operation": map[string]any{"sync": map[string]any{"revision": s.revision}},
-			"startedAt": time.Now().UTC().Format(time.RFC3339)},
+			"operation":  map[string]any{"sync": map[string]any{"revision": opSource["targetRevision"]}},
+			"syncResult": map[string]any{"revision": opSource["targetRevision"], "source": opSource},
+			"startedAt":  time.Now().UTC().Format(time.RFC3339)},
 	}
 }
 
@@ -363,6 +370,11 @@ func TestDeployer(t *testing.T) {
 				operationMessage: "one or more objects failed to apply", health: model.ArgoCDHealthDegraded},
 			ports.DeployState{Version: "v1.2.0", Phase: ports.PhaseFailed, Health: ports.HealthDegraded,
 				Reason: model.DeployReasonSyncFailed, Message: "one or more objects failed to apply"}},
+		{"the previous version's failed sync is Deploying at the new tag (#1667)",
+			status{sync: model.ArgoCDSyncOutOfSync, revision: "v1.2.0", operation: model.ArgoCDOperationFailed,
+				operationMessage: "one or more objects failed to apply", operationRevision: "v1.1.0",
+				health: model.ArgoCDHealthDegraded},
+			ports.DeployState{Version: "v1.2.0", Phase: ports.PhaseDeploying, Health: ports.HealthDegraded}},
 		{"health Missing is Unknown with the message",
 			status{sync: model.ArgoCDSyncSynced, revision: "v1.2.0", operation: model.ArgoCDOperationSucceeded,
 				health: model.ArgoCDHealthMissing, healthMessage: "Deployment orders-api not found"},

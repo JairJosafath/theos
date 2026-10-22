@@ -77,19 +77,25 @@ type ArgoCDAppFacts struct {
 	// HealthStatus and HealthMessage are status.health's.
 	HealthStatus, HealthMessage string
 	// OperationPhase and OperationMessage are status.operationState's, "" when
-	// no sync operation ran yet.
-	OperationPhase, OperationMessage string
+	// no sync operation ran yet. OperationRevision is the tag that operation
+	// synced, status.operationState.syncResult.source.targetRevision (or
+	// operation.sync.source.targetRevision, when the result isn't there yet);
+	// "" when Argo CD recorded none.
+	OperationPhase, OperationMessage, OperationRevision string
 }
 
 // ArgoCDDeployState is what the argoCD member reports for f. One version
 // runs at a time and the Application says which, so the wanted version
 // plays no part: no Application is the zero state; a sync operation Failed
-// or Error is Failed at the wanted tag, reason SyncFailed, with Argo CD's
-// message; Synced at the tag with the operation Succeeded is Deployed; all
-// else (an operation Running, no sync yet, OutOfSync, Synced at another
-// revision) is Deploying. Health is Argo CD's where the port has it
-// (Healthy, Progressing, Degraded); Suspended, Missing and Unknown are
-// Unknown, with Argo CD's message unless the operation's says more.
+// or Error at the wanted tag is Failed at it, reason SyncFailed, with Argo
+// CD's message; Synced at the tag with the operation Succeeded is Deployed;
+// all else (an operation Running, no sync yet, OutOfSync, Synced at another
+// revision, or a Failed or Error operation of another revision, the previous
+// version's that Argo CD hasn't replaced yet, #1667) is Deploying. An
+// operation whose revision Argo CD didn't record counts as the wanted tag's.
+// Health is Argo CD's where the port has it (Healthy, Progressing,
+// Degraded); Suspended, Missing and Unknown are Unknown, with Argo CD's
+// message unless the operation's says more.
 func ArgoCDDeployState(f ArgoCDAppFacts) DeployRun {
 	if !f.Exists {
 		return DeployRun{}
@@ -97,6 +103,9 @@ func ArgoCDDeployState(f ArgoCDAppFacts) DeployRun {
 	run := DeployRun{Version: f.TargetRevision, Phase: DeployPhaseDeploying}
 	switch f.OperationPhase {
 	case ArgoCDOperationFailed, ArgoCDOperationError:
+		if f.OperationRevision != "" && f.OperationRevision != f.TargetRevision {
+			break // the previous version's operation; the new one hasn't started
+		}
 		run.Phase = DeployPhaseFailed
 		run.Reason = DeployReasonSyncFailed
 		run.Message = f.OperationMessage
