@@ -167,15 +167,22 @@ func facts(app *unstructured.Unstructured) model.ArgoCDAppFacts {
 		v, _, _ := unstructured.NestedString(app.Object, path...)
 		return v
 	}
+	// The operation's revision is the source its result records; before the
+	// result exists, the source the operation was started with (#1667).
+	opRevision := str("status", "operationState", "syncResult", "source", "targetRevision")
+	if opRevision == "" {
+		opRevision = str("status", "operationState", "operation", "sync", "source", "targetRevision")
+	}
 	return model.ArgoCDAppFacts{
-		Exists:           true,
-		TargetRevision:   str("spec", "source", "targetRevision"),
-		SyncStatus:       str("status", "sync", "status"),
-		SyncedRevision:   str("status", "sync", "comparedTo", "source", "targetRevision"),
-		HealthStatus:     str("status", "health", "status"),
-		HealthMessage:    str("status", "health", "message"),
-		OperationPhase:   str("status", "operationState", "phase"),
-		OperationMessage: str("status", "operationState", "message"),
+		Exists:            true,
+		TargetRevision:    str("spec", "source", "targetRevision"),
+		SyncStatus:        str("status", "sync", "status"),
+		SyncedRevision:    str("status", "sync", "comparedTo", "source", "targetRevision"),
+		HealthStatus:      str("status", "health", "status"),
+		HealthMessage:     str("status", "health", "message"),
+		OperationPhase:    str("status", "operationState", "phase"),
+		OperationMessage:  str("status", "operationState", "message"),
+		OperationRevision: opRevision,
 	}
 }
 

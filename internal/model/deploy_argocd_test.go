@@ -9,9 +9,15 @@ import (
 // the Application's sync, operation and health decide, the wanted version
 // plays no part.
 func TestArgoCDDeployState(t *testing.T) {
+	// app's operation is the wanted tag's, v1.1.0; opAt moves it to another.
 	app := func(sync, syncedRev, health, healthMsg, op, opMsg string) ArgoCDAppFacts {
 		return ArgoCDAppFacts{Exists: true, TargetRevision: "v1.1.0", SyncStatus: sync, SyncedRevision: syncedRev,
-			HealthStatus: health, HealthMessage: healthMsg, OperationPhase: op, OperationMessage: opMsg}
+			HealthStatus: health, HealthMessage: healthMsg, OperationPhase: op, OperationMessage: opMsg,
+			OperationRevision: "v1.1.0"}
+	}
+	opAt := func(rev string, f ArgoCDAppFacts) ArgoCDAppFacts {
+		f.OperationRevision = rev
+		return f
 	}
 	tests := []struct {
 		name string
@@ -49,6 +55,16 @@ func TestArgoCDDeployState(t *testing.T) {
 			app("Unknown", "v1.1.0", "Missing", "", "Error", "rpc error: repository not found"),
 			DeployRun{Version: "v1.1.0", Phase: DeployPhaseFailed, Health: DeployHealthUnknown,
 				Reason: DeployReasonSyncFailed, Message: "rpc error: repository not found"}},
+		{"an operation Failed without a recorded revision counts as the wanted tag's",
+			opAt("", app("OutOfSync", "v1.1.0", "Degraded", "", "Failed", "one or more objects failed to apply")),
+			DeployRun{Version: "v1.1.0", Phase: DeployPhaseFailed, Health: DeployHealthDegraded,
+				Reason: DeployReasonSyncFailed, Message: "one or more objects failed to apply"}},
+		{"the previous version's operation Failed is Deploying at the new tag (#1667)",
+			opAt("v1.0.0", app("OutOfSync", "v1.0.0", "Degraded", "", "Failed", "one or more objects failed to apply")),
+			DeployRun{Version: "v1.1.0", Phase: DeployPhaseDeploying, Health: DeployHealthDegraded}},
+		{"the previous version's operation Error is Deploying at the new tag (#1667)",
+			opAt("v1.0.0", app("OutOfSync", "v1.1.0", "Missing", "", "Error", "rpc error: repository not found")),
+			DeployRun{Version: "v1.1.0", Phase: DeployPhaseDeploying, Health: DeployHealthUnknown}},
 		{"Suspended is Unknown with the message",
 			app("Synced", "v1.1.0", "Suspended", "deployment is paused", "Succeeded", ""),
 			DeployRun{Version: "v1.1.0", Phase: DeployPhaseDeployed, Health: DeployHealthUnknown,
