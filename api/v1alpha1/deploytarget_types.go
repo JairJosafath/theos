@@ -147,7 +147,7 @@ type DeployTargetArgoCD struct {
 	// clone URL in each Application; unset, Argo CD clones the URL the
 	// operator does.
 	// +kubebuilder:validation:MaxLength=253
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https?://[^/?#@]+/?$')",message="gitURL must be scheme://host[:port]"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https?://[A-Za-z0-9.-]+(:[0-9]+)?/?$')",message="gitURL must be scheme://host[:port]"
 	// +optional
 	GitURL string `json:"gitURL,omitempty"`
 }

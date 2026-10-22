@@ -117,6 +117,11 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{GitURL: "http://git.example/path",
 				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
 		}, "gitURL must be scheme://host[:port]"),
+		Entry("a gitURL with no host", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{GitURL: "http://:3000",
+				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "gitURL must be scheme://host[:port]"),
 		Entry("an imageRegistry with a scheme", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{ImageRegistry: "https://nodes.example",
