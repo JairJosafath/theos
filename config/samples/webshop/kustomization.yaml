@@ -11,5 +11,6 @@ resources:
 - namespace.yaml
 - project.yaml
 - factory.yaml
+- bundle.yaml
 - deploytarget-argocd.yaml
 - story.yaml
