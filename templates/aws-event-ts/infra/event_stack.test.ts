@@ -366,7 +366,10 @@ describe('EventStack data stores', () => {
     const template = synth('production', {}, {}, [['Store', connect]]);
     expect(connected).toEqual(['Handler']);
     template.resourceCountIs('AWS::DynamoDB::Table', TABLES + 1);
-    template.resourceCountIs('AWS::CloudWatch::Alarm', LOST_EVENT_METRICS.length + 1 + 3 + (TABLES + 1) * 3);
+    template.resourceCountIs(
+      'AWS::CloudWatch::Alarm',
+      LOST_EVENT_METRICS.length + 1 + 3 + (TABLES + 1) * 3,
+    );
     // Its table is data: backed up with the stack's own (#1267).
     const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
     const backedUp = ['Items', 'Store'].map((name) => tables.find((id) => id.startsWith(name)));
