@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // MaxBlobSize is GitHub's limit for one blob: a file over it can't be published.
@@ -373,4 +375,84 @@ func (g *githubReleases) UpdateRef(ctx context.Context, ref, sha string) error {
 		return ErrNotFastForward
 	}
 	return err
+}
+
+// SourceFolder is what was read of a repository for a release's source: the
+// facts the source rule decides on, and the branch and head's root tree a
+// source commit builds on.
+type SourceFolder struct {
+	Facts    *model.GitHubSource
+	Branch   string
+	HeadRoot string
+}
+
+// ReadSourceFolder reads the default branch's head and path's tree at it,
+// with the blobs in it, and the commit sourceTag names with path's tree there.
+func ReadSourceFolder(ctx context.Context, target SourceTarget, path, sourceTag string) (SourceFolder, error) {
+	branch, err := target.DefaultBranch(ctx)
+	if err != nil {
+		return SourceFolder{}, err
+	}
+	out := SourceFolder{Facts: &model.GitHubSource{}, Branch: branch}
+	if out.Facts.Head, err = target.Ref(ctx, "heads/"+branch); err != nil {
+		return SourceFolder{}, err
+	}
+	if out.Facts.Head != "" {
+		head, err := target.Commit(ctx, out.Facts.Head)
+		if err != nil {
+			return SourceFolder{}, err
+		}
+		out.HeadRoot = head.Tree
+		if out.Facts.HeadTree, err = folderTree(ctx, target, head.Tree, path); err != nil {
+			return SourceFolder{}, err
+		}
+		if out.Facts.HeadTree != "" {
+			// Only to skip uploads: a listing cut short uploads a few blobs again.
+			tree, err := target.Tree(ctx, out.Facts.HeadTree, true)
+			if err != nil {
+				return SourceFolder{}, err
+			}
+			for _, e := range tree.Entries {
+				if e.Type == "blob" {
+					out.Facts.HeadBlobs = append(out.Facts.HeadBlobs, e.SHA)
+				}
+			}
+		}
+	}
+	if out.Facts.TagCommit, err = target.Ref(ctx, "tags/"+sourceTag); err != nil || out.Facts.TagCommit == "" {
+		return out, err
+	}
+	tagged, err := target.Commit(ctx, out.Facts.TagCommit)
+	if err != nil {
+		return SourceFolder{}, err
+	}
+	if out.Facts.TagTree, err = folderTree(ctx, target, tagged.Tree, path); err != nil {
+		return SourceFolder{}, err
+	}
+	return out, nil
+}
+
+// folderTree is the tree of path under root, one folder at a time, or "" when
+// there is no folder there.
+func folderTree(ctx context.Context, target SourceTarget, root, path string) (string, error) {
+	if path == "." {
+		return root, nil
+	}
+	sha := root
+	for name := range strings.SplitSeq(path, "/") {
+		tree, err := target.Tree(ctx, sha, false)
+		if err != nil {
+			return "", err
+		}
+		sha = ""
+		for _, e := range tree.Entries {
+			if e.Path == name && e.Type == "tree" {
+				sha = e.SHA
+			}
+		}
+		if sha == "" {
+			return "", nil
+		}
+	}
+	return sha, nil
 }

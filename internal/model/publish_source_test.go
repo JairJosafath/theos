@@ -168,7 +168,7 @@ func TestSourceTag(t *testing.T) {
 	if got := SourceURL("JairJosafath/cel-lens", ".", "v0.6.1"); got != "https://github.com/JairJosafath/cel-lens/tree/v0.6.1" {
 		t.Errorf("SourceURL(.) = %q", got)
 	}
-	if got, want := SourceMessage("CEL engine", "cel-lens", "engine", "v0.6.1", "core-v0.6.1"),
+	if got, want := SourceMessage("CEL engine", "cel-lens/engine", "v0.6.1", "core-v0.6.1"),
 		"CEL engine v0.6.1: source\n\nC4factory-Source: cel-lens/engine core-v0.6.1\n"; got != want {
 		t.Errorf("SourceMessage = %q, want %q", got, want)
 	}
@@ -635,5 +635,28 @@ func TestNextPublishStepSourceRuns(t *testing.T) {
 			}
 			t.Fatalf("not published after 20 polls: %v", actions)
 		})
+	}
+}
+
+// NextSourceStep is the source rule the github adapter asks (#1598): it reads
+// GitHub first, then commits the folder, then tags the commit.
+func TestNextSourceStep(t *testing.T) {
+	files := &ReleaseSource{Files: []SourceFile{{Path: "main.go", Mode: "100644", Size: 3, Blob: "b1"}}, Tree: "t1"}
+	s := SourceShip{Source: PublishSource{Path: "."}, Files: files, Repository: "o/r", App: "shop",
+		Owner: "ns/api", Tag: "v1.0.0", GitHubTag: "api-v1.0.0"}
+	if step, done := NextSourceStep(s, nil); step.Action != PublishReadGitHubSource || done != nil {
+		t.Errorf("unread: got %v, %v", step.Action, done)
+	}
+	if step, _ := NextSourceStep(s, &GitHubSource{Head: "h1", HeadTree: "t0"}); step.Action != PublishSourceCommit ||
+		step.SourceCommit.Parent != "h1" || len(step.SourceCommit.Upload) != 1 {
+		t.Errorf("behind: got %+v", step)
+	}
+	if step, _ := NextSourceStep(s, &GitHubSource{Head: "h2", HeadTree: "t1"}); step.Action != PublishSourceTag ||
+		step.Commit != "h2" || step.Tag != SourceTag(s.Source, s.Tag) {
+		t.Errorf("committed: got %+v", step)
+	}
+	if _, done := NextSourceStep(s, &GitHubSource{Head: "h2", HeadTree: "t1", TagCommit: "h2", TagTree: "t1"}); done == nil ||
+		done.Commit != "h2" {
+		t.Errorf("tagged: got %+v", done)
 	}
 }

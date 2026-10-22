@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"testing"
 
@@ -24,33 +25,57 @@ import (
 )
 
 // TestGitHubDeployerContract runs the Deployer's contract on the github
-// member's adapter, against the fake GitHub the publish tests use.
+// member's adapter, against the fake GitHub the publish tests use: once with
+// the release alone, once with its source committed to a folder first, each
+// release then of its source tag's commit (#1598).
 func TestGitHubDeployerContract(t *testing.T) {
-	gh := newFakeGitHub()
-	t.Cleanup(gh.server.Close)
-	repos := 0
-	target := func(token string) ports.Target {
-		repos++
-		repository := fmt.Sprintf("contract/repo-%d", repos)
-		gh.addRepository(repository, "t0ken")
-		return ports.Target{Name: "contract/" + repository, Member: model.DeployMemberGitHub,
-			Settings: map[string]string{model.GitHubSettingRepository: repository},
-			Secret:   map[string][]byte{"token": []byte(token)}}
-	}
-	contract.Deployer(t, contract.DeployerEnv{
-		Deployer: githubdeploy.New(gh),
-		Target:   func(*testing.T) ports.Target { return target("t0ken") },
-		Refused:  func(*testing.T) ports.Target { return target("wrong") },
-		Deploys: func(_ *testing.T, tt ports.Target, app string) int {
-			n := 0
-			for _, r := range gh.releases(tt.Settings[model.GitHubSettingRepository]) {
-				if strings.Contains(r.Body, model.ShipMarkerPrefix(app)) {
-					n++
-				}
+	for _, tt := range []struct {
+		name     string
+		settings map[string]string
+	}{
+		{name: "release", settings: map[string]string{}},
+		{name: "release and source", settings: map[string]string{model.GitHubSettingSourcePath: "cli"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gh := newFakeGitHub()
+			t.Cleanup(gh.server.Close)
+			repos := 0
+			target := func(token string) ports.Target {
+				repos++
+				repository := fmt.Sprintf("contract/repo-%d", repos)
+				// The fake's repository holds a first commit, which a source
+				// commit builds on.
+				gh.addRepository(repository, "t0ken")
+				settings := maps.Clone(tt.settings)
+				settings[model.GitHubSettingRepository] = repository
+				return ports.Target{Name: "contract/" + repository, Member: model.DeployMemberGitHub,
+					Settings: settings, Secret: map[string][]byte{"token": []byte(token)}}
 			}
-			return n
-		},
-	})
+			contract.Deployer(t, contract.DeployerEnv{
+				Deployer: githubdeploy.New(gh),
+				Target:   func(*testing.T) ports.Target { return target("t0ken") },
+				Refused:  func(*testing.T) ports.Target { return target("wrong") },
+				Deploys: func(t *testing.T, tg ports.Target, app string) int {
+					repository := tg.Settings[model.GitHubSettingRepository]
+					n := 0
+					for _, r := range gh.releases(repository) {
+						if !strings.Contains(r.Body, model.ShipMarkerPrefix(app)) {
+							continue
+						}
+						n++
+						if path := tg.Settings[model.GitHubSettingSourcePath]; path != "" {
+							tag := model.SourceTag(model.PublishSource{Path: path}, r.TagName)
+							if commit := gh.ref(repository, "tags/"+tag); commit == "" || r.Target != commit {
+								t.Errorf("release %s is of %q, want its source tag %s's commit %q",
+									r.TagName, r.Target, tag, commit)
+							}
+						}
+					}
+					return n
+				},
+			})
+		})
+	}
 }
 
 // The GitHub adapter's own cases: a repository the token can't see refuses
