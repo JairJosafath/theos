@@ -66,6 +66,12 @@ describe('describeCondition', () => {
     expect(info.tone).toBe('error')
   })
 
+  it('says what an UnsupportedCI Container failed on (#1179)', () => {
+    const info = describeCondition({ type: 'Scaffolded', status: 'False', reason: 'UnsupportedCI' })
+    expect(info.title).toBe('A template has CI files, but none for the Git host’s CI system')
+    expect(info.tone).toBe('error')
+  })
+
   it('falls back to the condition type for unknown conditions', () => {
     expect(describeCondition({ type: 'SomethingNew', status: 'True' }).title).toBe('Something new: yes')
     expect(describeCondition({ type: 'SomethingNew', status: 'Unknown' }).tone).toBe('unknown')
