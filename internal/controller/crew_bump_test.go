@@ -279,7 +279,7 @@ var _ = Describe("Crew release bumps", func() {
 		})
 
 		// The runs succeeded, but without its Secret the release isn't published.
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		Consistently(func(g Gomega) {
 			g.Expect(bumpIssues(ns, "web")).To(BeEmpty(), "a bump waits for the release to be published")
 			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(BeEmpty())

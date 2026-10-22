@@ -221,7 +221,7 @@ var _ = Describe("Crew publishing releases", func() {
 			container.Spec.DisplayName = "Orders API"
 			g.Expect(k8sClient.Update(ctx, &container)).To(Succeed())
 		}).Should(Succeed())
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 
 		mustCreate(publishSecret(ns, token))
 		rel := publishedTo(ns, repository, files)
@@ -322,7 +322,7 @@ var _ = Describe("Crew publishing releases", func() {
 		githubFake.addRepository(repository, token)
 		files := publishingCrew(ns, repository)
 
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		mustCreate(publishSecret(ns, token))
@@ -372,7 +372,7 @@ var _ = Describe("Crew publishing releases", func() {
 		// No Secret yet: the Crew published to another repository of the
 		// name before, which is gone.
 		files := publishingCrew(ns, repository)
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		crew := getCrew(Default, ns)
 		orig := crew.DeepCopy()
 		crew.Status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id + 500}
