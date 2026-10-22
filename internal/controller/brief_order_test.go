@@ -11,6 +11,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -80,6 +81,15 @@ The CLI checks a file with the core's checker.
 	}
 }
 
+// orderWait bounds each wait for a round's issues in these specs. One spans the
+// plan Task finished, the plan applied, the SoftwareSystem and both Containers
+// made, scaffolded and Ready, the issues filed and a failed apply retried after
+// its backoff: a chain of reconciles across the Task, Brief, Container and
+// Project controllers. 10 s ran out on a loaded device (#832) and the suite's
+// 30 s on a loaded CI runner, before Container cli existed (#1848); a passing
+// wait returns as soon as it holds, so only a failing spec waits this long.
+const orderWait = 90 * time.Second
+
 var _ = Describe("Brief issue order", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
@@ -102,7 +112,7 @@ var _ = Describe("Brief issue order", func() {
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("waits for Container core"))))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "cli")).To(BeEmpty())
 			g.Expect(getBrief(g, ns).Status.Issues).To(BeEmpty())
@@ -116,7 +126,7 @@ var _ = Describe("Brief issue order", func() {
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", ContainSubstring("dependencies are down"))))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 		cli := gitFake.issue(ns, "cli", 1)
 		Expect(cli.Labels).NotTo(ContainElement(model.LabelReady), "no Crew may take it before it depends on the core's")
 		Expect(cli.blockers).To(BeEmpty())
@@ -126,7 +136,7 @@ var _ = Describe("Brief issue order", func() {
 		gitFake.failDependencies(ns, "cli", nil)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 		cli = gitFake.issue(ns, "cli", 1)
 		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
 		Expect(cli.Labels).To(ContainElements(model.LabelReady, "kind/feature"))
@@ -159,7 +169,7 @@ The README shows the CLI checking a file.
 
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 		core, cli := gitFake.issue(ns, "core", 1), gitFake.issue(ns, "cli", 1)
 		Expect(core.milestone).To(BeEmpty())
 		Expect(cli.Labels).To(ConsistOf(model.LabelNeedsHuman, "kind/docs", model.LabelByHand),
@@ -171,7 +181,7 @@ The README shows the CLI checking a file.
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Failed).To(ContainElement(And(HaveField("Container", "cli"),
 				HaveField("Number", int32(1)), HaveField("Kind", model.FailedByHand))))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 	})
 
 	It("finishes an issue a restart left filed but not ready, adding nothing twice", func() {
@@ -195,7 +205,7 @@ The README shows the CLI checking a file.
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).
 				To(HaveField("Status", metav1.ConditionTrue))
-		}).Should(Succeed())
+		}, orderWait).Should(Succeed())
 		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
 		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
 		cli := gitFake.issue(ns, "cli", 1)
