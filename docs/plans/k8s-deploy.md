@@ -99,6 +99,24 @@ the rollout itself is the one tier only Kind shows.
      `spec.deploy`, or the Container, leaves what runs, as a GitHub release
      stays published. The Application has no ownerReference (another
      namespace); the labels find it.
+   - The joined name is readable, not unique: `a-b/c` and `a/b-c` both
+     join to `a-b-c` (#1669). As two layers writing one file fail the
+     Container with the path, `Ship` and `State` refuse an Application
+     whose `c4.factory.io/namespace` and `c4.factory.io/container` labels
+     name another Container, with that Container in the message
+     ("belongs to Container a/b-c, whose name joins to the same: rename
+     one of them"); `Ship` writes nothing, and `State` reports nothing.
+     The error is a plain one, not one of the port's: the deploy is
+     `DeployFailed` with the message, until the owner renames one, and
+     the other Container keeps its Application. No hash suffix: a
+     collision is a naming mistake the owner should see, and a suffix
+     makes every Argo CD listing opaque. `Ship` and `State` also refuse a
+     joined name over 63 characters (`model.ArgoCDApplicationName`
+     returns the error) before anything is written: under label tracking
+     Argo CD writes the name into the `app.kubernetes.io/instance` label of
+     every resource it manages, and a label value holds 63; Argo CD 3.x
+     tracks by annotation by default, so not every install would hit it,
+     but the guard is cheap and deterministic.
 
 3. **`State` reads the Application back, by a pure rule in
    `internal/model`.** `ArgoCDDeployState` (table-tested, like

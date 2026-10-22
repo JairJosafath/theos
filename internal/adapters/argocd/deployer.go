@@ -97,13 +97,23 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // Ship applies s's Application: the repository at the release tag, the
 // manifests path, the image, the destination and an automated sync policy.
 // Applying the same version again changes nothing, so Argo CD starts
-// nothing new. A release without an image is ErrArtifactMissing.
+// nothing new. A release without an image is ErrArtifactMissing. A name over
+// what a label value holds, or an Application there whose labels name
+// another Container (two names can join to the same, #1669), is a plain
+// error naming it: the deploy fails, and nothing is written.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	if s.Image == "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release has no image")}
 	}
 	cfg := read(t)
-	app := application(cfg, s)
+	name, err := model.ArgoCDApplicationName(s.App)
+	if err != nil {
+		return err
+	}
+	if _, err := d.get(ctx, cfg, name, s.App); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	app := application(cfg, name, s)
 	if err := d.c.Apply(ctx, client.ApplyConfigurationFromUnstructured(app), client.FieldOwner(FieldManager),
 		client.ForceOwnership); err != nil {
 		return portError(err, "patch", "applications", cfg.Namespace)
@@ -113,14 +123,37 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	return nil
 }
 
-// application is s's Application at a target with cfg, as Ship applies it.
-func application(cfg settings, s ports.Shipment) *unstructured.Unstructured {
-	namespace, name, _ := strings.Cut(s.App, "/")
+// get reads the Application name in cfg's namespace for app: the port's
+// error where the Get fails with one, NotFound as the API server's own, and
+// a plain error naming the other Container when the Application's labels
+// name one (#1669).
+func (d *Deployer) get(ctx context.Context, cfg settings, name, app string) (*unstructured.Unstructured, error) {
+	var obj unstructured.Unstructured
+	obj.SetGroupVersionKind(ApplicationGVK)
+	err := d.c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: name}, &obj)
+	if apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, portError(err, "get", "applications", cfg.Namespace)
+	}
+	labels := obj.GetLabels()
+	if err := model.ArgoCDApplicationConflict(app, labels[LabelNamespace], labels[LabelContainer]); err != nil {
+		//nolint:staticcheck // ST1005: Application is Argo CD's kind.
+		return nil, fmt.Errorf("Application %s in namespace %s %w", name, cfg.Namespace, err)
+	}
+	return &obj, nil
+}
+
+// application is s's Application, named name, at a target with cfg, as Ship
+// applies it.
+func application(cfg settings, name string, s ports.Shipment) *unstructured.Unstructured {
+	namespace, container, _ := strings.Cut(s.App, "/")
 	app := &unstructured.Unstructured{Object: map[string]any{
 		"metadata": map[string]any{
-			"name":       model.ArgoCDApplicationName(s.App),
+			"name":       name,
 			"namespace":  cfg.Namespace,
-			"labels":     map[string]any{LabelNamespace: namespace, LabelContainer: name},
+			"labels":     map[string]any{LabelNamespace: namespace, LabelContainer: container},
 			"finalizers": []any{Finalizer},
 		},
 		"spec": map[string]any{
@@ -129,7 +162,7 @@ func application(cfg settings, s ports.Shipment) *unstructured.Unstructured {
 				"repoURL":        s.Repository,
 				"targetRevision": s.Version,
 				"path":           model.ArgoCDManifestsPath,
-				"kustomize":      map[string]any{"images": []any{name + "=" + s.Image}},
+				"kustomize":      map[string]any{"images": []any{container + "=" + s.Image}},
 			},
 			"destination": map[string]any{"server": cfg.DestinationServer, "namespace": cfg.DestinationNamespace},
 			"syncPolicy": map[string]any{
@@ -144,19 +177,22 @@ func application(cfg settings, s ports.Shipment) *unstructured.Unstructured {
 
 // State reads app's Application back, as model.ArgoCDDeployState says. One
 // version runs at a time and the Application names it, so version is
-// ignored.
+// ignored. An Application whose labels name another Container is that
+// Container's deploy, not app's: a plain error naming it (#1669).
 func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
 	cfg := read(t)
-	var obj unstructured.Unstructured
-	obj.SetGroupVersionKind(ApplicationGVK)
-	err := d.c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: model.ArgoCDApplicationName(app)}, &obj)
+	name, err := model.ArgoCDApplicationName(app)
+	if err != nil {
+		return ports.DeployState{}, err
+	}
+	obj, err := d.get(ctx, cfg, name, app)
 	if apierrors.IsNotFound(err) {
 		return ports.DeployState{}, nil
 	}
 	if err != nil {
-		return ports.DeployState{}, portError(err, "get", "applications", cfg.Namespace)
+		return ports.DeployState{}, err
 	}
-	run := model.ArgoCDDeployState(facts(&obj))
+	run := model.ArgoCDDeployState(facts(obj))
 	return ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
 		Reason: run.Reason, Message: run.Message}, nil
 }

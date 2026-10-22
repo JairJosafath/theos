@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -87,7 +88,46 @@ func TestArgoCDDeployState(t *testing.T) {
 }
 
 func TestArgoCDApplicationName(t *testing.T) {
-	if got := ArgoCDApplicationName("webshop/orders-api"); got != "webshop-orders-api" {
-		t.Errorf("ArgoCDApplicationName() = %q, want webshop-orders-api", got)
+	tests := []struct {
+		name, app, want, err string
+	}{
+		{"joins with a dash", "webshop/orders-api", "webshop-orders-api", ""},
+		{"a-b/c joins to a-b-c (#1669)", "a-b/c", "a-b-c", ""},
+		{"a/b-c joins to a-b-c too (#1669)", "a/b-c", "a-b-c", ""},
+		{"63 characters fit (#1669)", "webshop/" + strings.Repeat("a", 55), "webshop-" + strings.Repeat("a", 55), ""},
+		{"64 characters are refused (#1669)", "webshop/" + strings.Repeat("a", 56), "",
+			"the Application name webshop-" + strings.Repeat("a", 56) + " is 64 characters, over the 63 a label value holds"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ArgoCDApplicationName(tt.app)
+			if got != tt.want {
+				t.Errorf("ArgoCDApplicationName(%q) = %q, want %q", tt.app, got, tt.want)
+			}
+			if (err == nil) != (tt.err == "") || (err != nil && !strings.Contains(err.Error(), tt.err)) {
+				t.Errorf("ArgoCDApplicationName(%q) error = %v, want %q", tt.app, err, tt.err)
+			}
+		})
+	}
+}
+
+func TestArgoCDApplicationConflict(t *testing.T) {
+	tests := []struct {
+		name, app, namespace, container, err string
+	}{
+		{"its own labels", "a-b/c", "a-b", "c", ""},
+		{"no labels", "a-b/c", "", "", ""},
+		{"another Container's labels name it (#1669)", "a-b/c", "a", "b-c",
+			"belongs to Container a/b-c, whose name joins to the same"},
+		{"the other way round (#1669)", "a/b-c", "a-b", "c", "belongs to Container a-b/c"},
+		{"one label is still another's", "a-b/c", "", "c", "belongs to Container /c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ArgoCDApplicationConflict(tt.app, tt.namespace, tt.container)
+			if (err == nil) != (tt.err == "") || (err != nil && !strings.Contains(err.Error(), tt.err)) {
+				t.Errorf("ArgoCDApplicationConflict(%q, %q, %q) = %v, want %q", tt.app, tt.namespace, tt.container, err, tt.err)
+			}
+		})
 	}
 }

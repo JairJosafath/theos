@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
@@ -57,13 +58,21 @@ func readyArgoTarget(ns, name string) string {
 	return argoNS
 }
 
+// argoKey is orders-api's Application in argoNS, as the adapter names it.
+func argoKey(ns, argoNS string) types.NamespacedName {
+	GinkgoHelper()
+	name, err := model.ArgoCDApplicationName(ns + "/orders-api")
+	Expect(err).NotTo(HaveOccurred())
+	return key(argoNS, name)
+}
+
 // argoApplication waits for orders-api's Application in argoNS and returns it.
 func argoApplication(ns, argoNS string) *unstructured.Unstructured {
 	GinkgoHelper()
 	app := &unstructured.Unstructured{}
 	app.SetGroupVersionKind(argocd.ApplicationGVK)
 	Eventually(func() error {
-		return k8sClient.Get(ctx, key(argoNS, model.ArgoCDApplicationName(ns+"/orders-api")), app)
+		return k8sClient.Get(ctx, argoKey(ns, argoNS), app)
 	}, deployWait).Should(Succeed())
 	return app
 }
@@ -172,7 +181,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		app := &unstructured.Unstructured{}
 		app.SetGroupVersionKind(argocd.ApplicationGVK)
 		Consistently(func() error {
-			return k8sClient.Get(ctx, key(argoNS, model.ArgoCDApplicationName(ns+"/orders-api")), app)
+			return k8sClient.Get(ctx, argoKey(ns, argoNS), app)
 		}, 2*time.Second).ShouldNot(Succeed())
 	})
 })

@@ -217,8 +217,12 @@ func TestDeployerContract(t *testing.T) {
 			return target(ns)
 		},
 		Refused: func(*testing.T) ports.Target { return target("argocd-not-there") },
-		Deploys: func(_ *testing.T, tt ports.Target, app string) int {
-			return argo.deploys(tt.Settings[model.ArgoCDSettingNamespace], model.ArgoCDApplicationName(app))
+		Deploys: func(t *testing.T, tt ports.Target, app string) int {
+			name, err := model.ArgoCDApplicationName(app)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return argo.deploys(tt.Settings[model.ArgoCDSettingNamespace], name)
 		},
 	})
 }
@@ -345,6 +349,8 @@ func TestDeployer(t *testing.T) {
 		}
 	})
 
+	refusals(t, c, d, tt, s)
+
 	t.Run("State ignores the wanted version", func(t *testing.T) {
 		st, err := d.State(ctx, tt, s.App, "v0.9.0")
 		if err != nil || st.Version != "v1.2.0" || st.Phase != ports.PhaseDeploying || st.Health != ports.HealthUnknown {
@@ -417,6 +423,64 @@ func TestDeployer(t *testing.T) {
 			t.Errorf("Check() = %v, want ErrCredentialRefused: project default doesn't exist in namespace argocd", err)
 		}
 	})
+}
+
+// refusals are the adapter's answers of #1669, on the Application Ship
+// wrote for s at tt: a Container whose name joins to the same is refused by
+// Ship, with nothing written, and by State, both naming s's Container; a
+// name over 63 characters is refused before anything is written.
+func refusals(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s ports.Shipment) {
+	t.Helper()
+	ctx := context.Background()
+	// webshop-orders/api joins to the same name as webshop/orders-api, whose
+	// Application is there (#1669).
+	colliding := shipment("v2.0.0")
+	colliding.App = "webshop-orders/api"
+	const other = "Application webshop-orders-api in namespace argocd belongs to Container webshop/orders-api"
+
+	t.Run("Ship refuses an Application labeled for another Container (#1669)", func(t *testing.T) {
+		before := getApplication(t, c)
+		err := d.Ship(ctx, tt, colliding)
+		if err == nil || !strings.Contains(err.Error(), other) {
+			t.Errorf("Ship() = %v, want an error with %q", err, other)
+		}
+		if errors.Is(err, ports.ErrCredentialRefused) || errors.Is(err, ports.ErrUnreachable) ||
+			errors.Is(err, ports.ErrArtifactMissing) {
+			t.Errorf("Ship() = %v, want a plain error, not one of the port's", err)
+		}
+		after := getApplication(t, c)
+		if after.GetResourceVersion() != before.GetResourceVersion() {
+			t.Errorf("resourceVersion %s -> %s, want unchanged: nothing written", before.GetResourceVersion(),
+				after.GetResourceVersion())
+		}
+		assertApplied(t, after, s)
+	})
+
+	t.Run("State refuses an Application labeled for another Container (#1669)", func(t *testing.T) {
+		st, err := d.State(ctx, tt, colliding.App, "")
+		if err == nil || !strings.Contains(err.Error(), other) || st != (ports.DeployState{}) {
+			t.Errorf("State() = %+v, %v; want the zero state and an error with %q", st, err, other)
+		}
+	})
+
+	t.Run("Ship refuses a name over 63 characters (#1669)", func(t *testing.T) {
+		long := shipment("v1.0.0")
+		long.App = "webshop/" + strings.Repeat("a", 56)
+		err := d.Ship(ctx, tt, long)
+		want := "is 64 characters, over the 63 a label value holds"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Ship() = %v, want an error with %q", err, want)
+		}
+		var apps unstructured.UnstructuredList
+		apps.SetGroupVersionKind(ApplicationGVK.GroupVersion().WithKind("ApplicationList"))
+		if err := c.List(ctx, &apps, client.InNamespace(model.ArgoCDDefaultNamespace)); err != nil {
+			t.Fatal(err)
+		}
+		if len(apps.Items) != 1 {
+			t.Errorf("%d Applications in argocd, want 1: nothing written", len(apps.Items))
+		}
+	})
+
 }
 
 // Check's other answers, on a fake client whose Get fails as the API server
