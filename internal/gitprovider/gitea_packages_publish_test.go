@@ -458,7 +458,14 @@ func TestPublishReleasePackagesUploads(t *testing.T) {
 		t.Errorf("downloaded %v, want %v", h.downloads, wantDownloads)
 	}
 
-	// The npm publish: the version looked up first, then PUT as npm publish does.
+	checkNpmPublish(t, h, ui)
+	checkPyPIUploads(t, h, whl, sd)
+}
+
+// checkNpmPublish checks the npm publish: the version looked up first, then
+// the publish document PUT as npm publish does, its tarball attached.
+func checkNpmPublish(t *testing.T, h *packageHost, ui []byte) {
+	t.Helper()
 	npmPath := "/api/packages/webshop/npm/@c4factory%2Fshop-ui"
 	if i, j := slices.Index(h.calls, "GET "+npmPath), slices.Index(h.calls, "PUT "+npmPath); i < 0 || j < i {
 		t.Errorf("calls = %v, want GET then PUT of %s", h.calls, npmPath)
@@ -494,7 +501,12 @@ func TestPublishReleasePackagesUploads(t *testing.T) {
 		t.Errorf("npm PUT Content-Length = %d, body is %d bytes", h.npmLength, len(h.npmPut))
 	}
 
-	// The PyPI uploads: the index read first, then the form twine sends.
+}
+
+// checkPyPIUploads checks the PyPI uploads: the simple index read first, then
+// the form twine sends, one per file.
+func checkPyPIUploads(t *testing.T, h *packageHost, whl, sd []byte) {
+	t.Helper()
 	if i, j := slices.Index(h.calls, "GET /api/packages/webshop/pypi/simple/shop-api/"),
 		slices.Index(h.calls, "POST /api/packages/webshop/pypi"); i < 0 || j < i {
 		t.Errorf("calls = %v, want the simple index read before the upload", h.calls)

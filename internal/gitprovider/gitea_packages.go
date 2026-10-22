@@ -83,6 +83,10 @@ type ReleasePackages struct {
 // larger one is no package the registries would take, and is left alone.
 const maxPackageFile = 512 << 20
 
+// nameField is the field that names a package, in an npm manifest and in
+// the PyPI upload form.
+const nameField = "name"
+
 // PublishReleasePackages publishes the package files of repo's release of tag
 // to the registries repo names: an npm tarball to repo.NpmRegistry, a wheel
 // and an sdist to repo.PyPIUpload. It recognises each file by its content (a
@@ -268,7 +272,7 @@ func readPackageJSON(data []byte, asset ReleaseAsset) (*Package, packageMeta, er
 		return nil, meta, nil
 	}
 	var name, version string
-	_ = json.Unmarshal(meta.manifest["name"], &name)
+	_ = json.Unmarshal(meta.manifest[nameField], &name)
 	_ = json.Unmarshal(meta.manifest["version"], &version)
 	if name == "" || version == "" {
 		return nil, meta, nil
@@ -560,7 +564,7 @@ func (g *gitea) publishPyPI(ctx context.Context, repo Repository, pkg *Package, 
 	for _, field := range [][2]string{
 		{":action", "file_upload"}, {"protocol_version", "1"},
 		{"metadata_version", orDefault(meta.metadataVersion, "2.1")},
-		{"name", pkg.Name}, {"version", pkg.Version}, {"filetype", filetype}, {"pyversion", pyversion}, //nolint:goconst // the form's fields
+		{nameField, pkg.Name}, {"version", pkg.Version}, {"filetype", filetype}, {"pyversion", pyversion},
 		{"summary", meta.summary}, {"requires_python", meta.requiresPython},
 		{"md5_digest", hex.EncodeToString(sums.md5)}, {"sha256_digest", hex.EncodeToString(sums.sha256)},
 	} {
