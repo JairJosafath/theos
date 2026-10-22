@@ -74,6 +74,7 @@ func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1alpha1.Brief)
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,
 		Credentials: creds,
+		Packages:    packagesOf(&provider),
 	})
 }
 
