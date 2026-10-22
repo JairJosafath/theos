@@ -159,6 +159,10 @@ var (
 	ErrUnreachable = errors.New("the target can't be reached")
 	// ErrArtifactMissing: the shipment lacks a file the member needs.
 	ErrArtifactMissing = errors.New("the release lacks a file the target needs")
+	// ErrPrerequisiteMissing: something a person sets up once at the target
+	// is missing (the CDK bootstrap, a template parameter with no default
+	// the target's parameters don't give); shipped again on the next poll.
+	ErrPrerequisiteMissing = errors.New("the target lacks something a person sets up there")
 )
 
 // Error is an adapter's error that is one of the port's errors and keeps the

@@ -1,0 +1,2571 @@
+{
+ "Description": "The price-fn function of shop. An HTTP API, a Lambda function and a DynamoDB table.",
+ "Resources": {
+  "Items5C12978B": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "id",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "DeletionProtectionEnabled": true,
+    "KeySchema": [
+     {
+      "AttributeName": "id",
+      "KeyType": "HASH"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": true
+    },
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Items/Resource"
+   }
+  },
+  "IdempotencyC15CBC33": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "id",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "DeletionProtectionEnabled": true,
+    "KeySchema": [
+     {
+      "AttributeName": "id",
+      "KeyType": "HASH"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": true
+    },
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "TimeToLiveSpecification": {
+     "AttributeName": "expiration",
+     "Enabled": true
+    }
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Idempotency/Resource"
+   }
+  },
+  "HandlerLogs6FD01908": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 365,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/HandlerLogs/Resource"
+   }
+  },
+  "HandlerRoleF4C27E12": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/HandlerRole/Resource"
+   }
+  },
+  "HandlerRoleDefaultPolicy0112C0A8": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "HandlerLogs6FD01908",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "xray:PutTelemetryRecords",
+        "xray:PutTraceSegments"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "Items5C12978B",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "dynamodb:DeleteItem",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "IdempotencyC15CBC33",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "HandlerRoleDefaultPolicy0112C0A8",
+    "Roles": [
+     {
+      "Ref": "HandlerRoleF4C27E12"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/HandlerRole/DefaultPolicy/Resource"
+   }
+  },
+  "Handler886CB40B": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "arm64"
+    ],
+    "Code": {
+     "S3Bucket": {
+      "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}"
+     },
+     "S3Key": "2ab6994d9e7bc0d45f63553f0bcecd425c25b142dab3ce3cd794b5fce299c553.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TABLE_NAME": {
+       "Ref": "Items5C12978B"
+      },
+      "IDEMPOTENCY_TABLE_NAME": {
+       "Ref": "IdempotencyC15CBC33"
+      },
+      "POWERTOOLS_SERVICE_NAME": "price-fn",
+      "POWERTOOLS_METRICS_NAMESPACE": "price-fn"
+     }
+    },
+    "Handler": "index.handler",
+    "LoggingConfig": {
+     "LogFormat": "JSON",
+     "LogGroup": {
+      "Ref": "HandlerLogs6FD01908"
+     }
+    },
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "HandlerRoleF4C27E12",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs24.x",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Timeout": 10,
+    "TracingConfig": {
+     "Mode": "Active"
+    }
+   },
+   "DependsOn": [
+    "HandlerRoleDefaultPolicy0112C0A8",
+    "HandlerRoleF4C27E12"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Handler/Resource",
+    "aws:asset:path": "asset.2ab6994d9e7bc0d45f63553f0bcecd425c25b142dab3ce3cd794b5fce299c553",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ApiAccessLogsE9DF007D": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 365,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/ApiAccessLogs/Resource"
+   }
+  },
+  "ApiF70053CD": {
+   "Type": "AWS::ApiGatewayV2::Api",
+   "Properties": {
+    "Name": "Api",
+    "ProtocolType": "HTTP",
+    "Tags": {
+     "c4factory:container": "price-fn",
+     "c4factory:project": "webshop",
+     "c4factory:system": "shop"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/Resource"
+   }
+  },
+  "ApiDefaultStage189A7074": {
+   "Type": "AWS::ApiGatewayV2::Stage",
+   "Properties": {
+    "AccessLogSettings": {
+     "DestinationArn": {
+      "Fn::GetAtt": [
+       "ApiAccessLogsE9DF007D",
+       "Arn"
+      ]
+     },
+     "Format": "{\"requestId\":\"$context.requestId\",\"requestTime\":\"$context.requestTime\",\"sourceIp\":\"$context.identity.sourceIp\",\"caller\":\"$context.identity.caller\",\"routeKey\":\"$context.routeKey\",\"protocol\":\"$context.protocol\",\"status\":\"$context.status\",\"responseLength\":\"$context.responseLength\",\"responseLatency\":\"$context.responseLatency\",\"integrationLatency\":\"$context.integrationLatency\",\"integrationStatus\":\"$context.integrationStatus\",\"integrationError\":\"$context.integrationErrorMessage\"}"
+    },
+    "ApiId": {
+     "Ref": "ApiF70053CD"
+    },
+    "AutoDeploy": true,
+    "DefaultRouteSettings": {
+     "ThrottlingBurstLimit": 100,
+     "ThrottlingRateLimit": 50
+    },
+    "StageName": "$default",
+    "Tags": {
+     "c4factory:container": "price-fn",
+     "c4factory:project": "webshop",
+     "c4factory:system": "shop"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/DefaultStage/Resource"
+   }
+  },
+  "ApiGETitemsidItemsC55C8CF4": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiF70053CD"
+    },
+    "IntegrationType": "AWS_PROXY",
+    "IntegrationUri": {
+     "Fn::GetAtt": [
+      "Handler886CB40B",
+      "Arn"
+     ]
+    },
+    "PayloadFormatVersion": "2.0"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/GET--items--{id}/Items/Resource"
+   }
+  },
+  "ApiGETitemsidItemsPermission3BC687F1": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "Handler886CB40B",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:",
+       {
+        "Ref": "AWS::Partition"
+       },
+       ":execute-api:",
+       {
+        "Ref": "AWS::Region"
+       },
+       ":",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "/*/*/items/{id}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/GET--items--{id}/Items-Permission"
+   }
+  },
+  "ApiGETitemsid0354A0F7": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiF70053CD"
+    },
+    "AuthorizationType": "AWS_IAM",
+    "RouteKey": "GET /items/{id}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGETitemsidItemsC55C8CF4"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/GET--items--{id}/Resource"
+   }
+  },
+  "ApiPUTitemsidItemsPermissionF3898914": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "Handler886CB40B",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:",
+       {
+        "Ref": "AWS::Partition"
+       },
+       ":execute-api:",
+       {
+        "Ref": "AWS::Region"
+       },
+       ":",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "/*/*/items/{id}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/PUT--items--{id}/Items-Permission"
+   }
+  },
+  "ApiPUTitemsid8E504FD1": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiF70053CD"
+    },
+    "AuthorizationType": "AWS_IAM",
+    "RouteKey": "PUT /items/{id}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGETitemsidItemsC55C8CF4"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Api/PUT--items--{id}/Resource"
+   }
+  },
+  "AlarmsTopicKeyAB251E47": {
+   "Type": "AWS::KMS::Key",
+   "Properties": {
+    "Description": "Encrypts the alarm topic of price-fn.",
+    "EnableKeyRotation": true,
+    "KeyPolicy": {
+     "Statement": [
+      {
+       "Action": "kms:*",
+       "Effect": "Allow",
+       "Principal": {
+        "AWS": {
+         "Fn::Join": [
+          "",
+          [
+           "arn:",
+           {
+            "Ref": "AWS::Partition"
+           },
+           ":iam::",
+           {
+            "Ref": "AWS::AccountId"
+           },
+           ":root"
+          ]
+         ]
+        }
+       },
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey*"
+       ],
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cloudwatch.amazonaws.com"
+       },
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PendingWindowInDays": 7,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/TopicKey/Resource"
+   }
+  },
+  "AlarmsTopic3A2DFEBA": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "KmsMasterKeyId": {
+     "Fn::GetAtt": [
+      "AlarmsTopicKeyAB251E47",
+      "Arn"
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Topic/Resource"
+   }
+  },
+  "AlarmsTopicPolicyED3A875E": {
+   "Type": "AWS::SNS::TopicPolicy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sns:Publish",
+       "Condition": {
+        "Bool": {
+         "aws:SecureTransport": "false"
+        }
+       },
+       "Effect": "Deny",
+       "Principal": "*",
+       "Resource": {
+        "Ref": "AlarmsTopic3A2DFEBA"
+       },
+       "Sid": "AllowPublishThroughSSLOnly"
+      },
+      {
+       "Action": "sns:Publish",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cloudwatch.amazonaws.com"
+       },
+       "Resource": {
+        "Ref": "AlarmsTopic3A2DFEBA"
+       },
+       "Sid": "1"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Topics": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Topic/Policy/Resource"
+   }
+  },
+  "AlarmsEmailSubscription71D15C2C": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": {
+     "Ref": "AlertEmail"
+    },
+    "Protocol": "email",
+    "TopicArn": {
+     "Ref": "AlarmsTopic3A2DFEBA"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/EmailSubscription"
+   },
+   "Condition": "HasAlertEmail"
+  },
+  "AlarmsDashboard322222B8": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"start\":\"-PT8H\",\"periodOverride\":\"inherit\",\"widgets\":[{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":0,\"properties\":{\"markdown\":\"### API Gateway V2 HTTP Endpoint **",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       " $default**\"}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":0,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"TPS\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"TPS\",\"expression\":\"requests / PERIOD(requests)\"}],[\"AWS/ApiGateway\",\"Count\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"Invocations\",\"id\":\"requests\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Rate\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":6,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApiGateway\",\"Latency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P50 (avg: ${AVG})\",\"stat\":\"p50\"}],[\"AWS/ApiGateway\",\"IntegrationLatency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P50 (avg: ${AVG})\",\"stat\":\"p50\"}],[\"AWS/ApiGateway\",\"Latency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P90 (avg: ${AVG})\",\"stat\":\"p90\"}],[\"AWS/ApiGateway\",\"IntegrationLatency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P90 (avg: ${AVG})\",\"stat\":\"p90\"}],[\"AWS/ApiGateway\",\"Latency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P99 (avg: ${AVG})\",\"stat\":\"p99\"}],[\"AWS/ApiGateway\",\"IntegrationLatency\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"P99 (avg: ${AVG})\",\"stat\":\"p99\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":12,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApiGateway\",\"4xx\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"4xx\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"5xx\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"5xx\",\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"5xx > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":18,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors (rate)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApiGateway\",\"4xx\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"4xx (avg)\"}],[\"AWS/ApiGateway\",\"5xx\",\"ApiId\",\"",
+       {
+        "Ref": "ApiF70053CD"
+       },
+       "\",\"Stage\",\"$default\",{\"label\":\"5xx (avg)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Rate\",\"showUnits\":false}}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":6,\"properties\":{\"markdown\":\"### Lambda Function **[Handler](https://",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".console.aws.amazon.com/lambda/home?region=",
+       {
+        "Ref": "AWS::Region"
+       },
+       "#/functions/",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       ")**\"}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":0,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"TPS\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"TPS\",\"expression\":\"FILL(requests,0) / PERIOD(requests)\"}],[\"AWS/Lambda\",\"Invocations\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Invocations\",\"id\":\"requests\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Rate\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":6,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"P50 (avg: ${AVG})\",\"stat\":\"p50\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"P90 (avg: ${AVG})\",\"stat\":\"p90\"}],[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"P99 (avg: ${AVG})\",\"stat\":\"p99\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"P99 > 8000 for 1 datapoints within 5 minutes\",\"value\":8000,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":12,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors (rate)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Faults (avg)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Rate\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":18,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Rates\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Throttles (avg)\"}],[\"AWS/Lambda\",\"ProvisionedConcurrencySpilloverInvocations\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Provisioned Concurrency Spillovers (avg)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Rate\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":8,\"height\":5,\"x\":0,\"y\":12,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Invocations\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Invocations\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Invocations\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"Throttles\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Throttles\",\"stat\":\"Sum\"}],[\"AWS/Lambda\",\"ConcurrentExecutions\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Concurrent\",\"stat\":\"Maximum\"}],[\"AWS/Lambda\",\"ProvisionedConcurrencySpilloverInvocations\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Provisioned Concurrency Spillovers\",\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Throttles > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":8,\"height\":5,\"x\":8,\"y\":12,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Faults\",\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Faults > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":8,\"height\":5,\"x\":16,\"y\":17,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Iterator\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"IteratorAge\",\"FunctionName\",\"",
+       {
+        "Ref": "Handler886CB40B"
+       },
+       "\",{\"label\":\"Iterator Age\",\"stat\":\"Maximum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":22,\"properties\":{\"markdown\":\"### Dynamo Table **[MonitoredItems](https://",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".console.aws.amazon.com/dynamodb/home?region=",
+       {
+        "Ref": "AWS::Region"
+       },
+       "#tables:selected=",
+       {
+        "Ref": "Items5C12978B"
+       },
+       ")**\"}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":23,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Read Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_rcu_sum/PERIOD(consumed_rcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedReadCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"consumed_rcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":26,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Write Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_wcu_sum/PERIOD(consumed_wcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedWriteCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"consumed_wcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":9,\"height\":6,\"x\":6,\"y\":23,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency (Average)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\" \",\"expression\":\"SEARCH('{\\\"AWS/DynamoDB\\\",\\\"TableName\\\",\\\"Operation\\\"} \\\"TableName\\\"=\\\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\\\" MetricName=\\\"SuccessfulRequestLatency\\\"', 'Average', 300)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}},\"legend\":{\"position\":\"right\"}}},{\"type\":\"metric\",\"width\":3,\"height\":6,\"x\":15,\"y\":23,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Throttles\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Read\",\"expression\":\"FILL(readThrottles,0)\"}],[\"AWS/DynamoDB\",\"ReadThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"label\":\"Read\",\"id\":\"readThrottles\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Write\",\"expression\":\"FILL(writeThrottles,0)\"}],[\"AWS/DynamoDB\",\"WriteThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"label\":\"Write\",\"id\":\"writeThrottles\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Read > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"},{\"label\":\"Write > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":18,\"y\":23,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"System Errors\",\"expression\":\"systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorBatchGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Scan\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorScan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorQuery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetRecords\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorGetRecords\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorPutItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorDeleteItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorUpdateItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorBatchWriteItem\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"System Errors > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":29,\"properties\":{\"markdown\":\"### Dynamo Table **[MonitoredIdempotency](https://",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".console.aws.amazon.com/dynamodb/home?region=",
+       {
+        "Ref": "AWS::Region"
+       },
+       "#tables:selected=",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       ")**\"}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":30,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Read Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_rcu_sum/PERIOD(consumed_rcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedReadCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"consumed_rcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":33,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Write Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_wcu_sum/PERIOD(consumed_wcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedWriteCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"consumed_wcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":9,\"height\":6,\"x\":6,\"y\":30,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency (Average)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\" \",\"expression\":\"SEARCH('{\\\"AWS/DynamoDB\\\",\\\"TableName\\\",\\\"Operation\\\"} \\\"TableName\\\"=\\\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\\\" MetricName=\\\"SuccessfulRequestLatency\\\"', 'Average', 300)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}},\"legend\":{\"position\":\"right\"}}},{\"type\":\"metric\",\"width\":3,\"height\":6,\"x\":15,\"y\":30,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Throttles\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Read\",\"expression\":\"FILL(readThrottles,0)\"}],[\"AWS/DynamoDB\",\"ReadThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"label\":\"Read\",\"id\":\"readThrottles\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Write\",\"expression\":\"FILL(writeThrottles,0)\"}],[\"AWS/DynamoDB\",\"WriteThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"label\":\"Write\",\"id\":\"writeThrottles\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Read > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"},{\"label\":\"Write > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":18,\"y\":30,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"System Errors\",\"expression\":\"systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorBatchGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Scan\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorScan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorQuery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetRecords\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorGetRecords\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorPutItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorDeleteItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorUpdateItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+       {
+        "Ref": "IdempotencyC15CBC33"
+       },
+       "\",{\"id\":\"systemErrorBatchWriteItem\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"System Errors > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "price-fn",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Dashboard/Dashboard/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnApiFaultCountCritical67C12093": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Fault count is too high.",
+    "AlarmName": "price-fn-Api-Fault-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "5xx",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "ApiId",
+          "Value": {
+           "Ref": "ApiF70053CD"
+          }
+         },
+         {
+          "Name": "Stage",
+          "Value": "$default"
+         }
+        ],
+        "MetricName": "5xx",
+        "Namespace": "AWS/ApiGateway"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Api-Fault-Count-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnHandlerLatencyP99WarningDADE97FC": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "P99 latency is too high.",
+    "AlarmName": "price-fn-Handler-Latency-P99-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "P99",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "FunctionName",
+          "Value": {
+           "Ref": "Handler886CB40B"
+          }
+         }
+        ],
+        "MetricName": "Duration",
+        "Namespace": "AWS/Lambda"
+       },
+       "Period": 300,
+       "Stat": "p99"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 8000,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Handler-Latency-P99-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnHandlerFaultCountCritical30EFBF40": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Fault count is too high.",
+    "AlarmName": "price-fn-Handler-Fault-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "Faults",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "FunctionName",
+          "Value": {
+           "Ref": "Handler886CB40B"
+          }
+         }
+        ],
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Handler-Fault-Count-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnHandlerThrottledCountCritical65871204": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Throttled count is too high.",
+    "AlarmName": "price-fn-Handler-Throttled-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "Throttles",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "FunctionName",
+          "Value": {
+           "Ref": "Handler886CB40B"
+          }
+         }
+        ],
+        "MetricName": "Throttles",
+        "Namespace": "AWS/Lambda"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Handler-Throttled-Count-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnItemsReadThrottledEventsCriticalA014A1BF": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Read throttled events above threshold.",
+    "AlarmName": "price-fn-Items-Read-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(readThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Read",
+      "ReturnData": true
+     },
+     {
+      "Id": "readThrottles",
+      "Label": "Read",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "ReadThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Items-Read-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnItemsWriteThrottledEventsCritical5B7F2044": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Write throttled events above threshold.",
+    "AlarmName": "price-fn-Items-Write-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(writeThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Write",
+      "ReturnData": true
+     },
+     {
+      "Id": "writeThrottles",
+      "Label": "Write",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "WriteThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Items-Write-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnItemsSystemErrorCountCritical326E4BEF": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "SystemError count is too high.",
+    "AlarmName": "price-fn-Items-SystemError-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem",
+      "Id": "expr_1",
+      "Label": "System Errors",
+      "ReturnData": true
+     },
+     {
+      "Id": "systemErrorGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchGetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorScan",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Scan"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorQuery",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Query"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorGetRecords",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetRecords"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorPutItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "PutItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorDeleteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "DeleteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorUpdateItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "UpdateItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchWriteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchWriteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Items-SystemError-Count-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnIdempotencyReadThrottledEventsCritical0A65045C": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Read throttled events above threshold.",
+    "AlarmName": "price-fn-Idempotency-Read-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(readThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Read",
+      "ReturnData": true
+     },
+     {
+      "Id": "readThrottles",
+      "Label": "Read",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "ReadThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Idempotency-Read-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnIdempotencyWriteThrottledEventsCriticalC3B379C1": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Write throttled events above threshold.",
+    "AlarmName": "price-fn-Idempotency-Write-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(writeThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Write",
+      "ReturnData": true
+     },
+     {
+      "Id": "writeThrottles",
+      "Label": "Write",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "WriteThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Idempotency-Write-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringpricefnIdempotencySystemErrorCountCritical89AF6D91": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "SystemError count is too high.",
+    "AlarmName": "price-fn-Idempotency-SystemError-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem",
+      "Id": "expr_1",
+      "Label": "System Errors",
+      "ReturnData": true
+     },
+     {
+      "Id": "systemErrorGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchGetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorScan",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Scan"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorQuery",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Query"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorGetRecords",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetRecords"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorPutItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "PutItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorDeleteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "DeleteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorUpdateItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "UpdateItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchWriteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchWriteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "IdempotencyC15CBC33"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Alarms/Monitoring/price-fn-Idempotency-SystemError-Count-Critical/Resource"
+   }
+  },
+  "BackupsVaultKey3AEA13F3": {
+   "Type": "AWS::KMS::Key",
+   "Properties": {
+    "Description": "Encrypts the backups of price-fn.",
+    "EnableKeyRotation": true,
+    "KeyPolicy": {
+     "Statement": [
+      {
+       "Action": "kms:*",
+       "Effect": "Allow",
+       "Principal": {
+        "AWS": {
+         "Fn::Join": [
+          "",
+          [
+           "arn:",
+           {
+            "Ref": "AWS::Partition"
+           },
+           ":iam::",
+           {
+            "Ref": "AWS::AccountId"
+           },
+           ":root"
+          ]
+         ]
+        }
+       },
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Backups/VaultKey/Resource"
+   }
+  },
+  "BackupsVault1F11AFCC": {
+   "Type": "AWS::Backup::BackupVault",
+   "Properties": {
+    "BackupVaultName": "pricefnBackupsVault3A858E49",
+    "BackupVaultTags": {
+     "c4factory:container": "price-fn",
+     "c4factory:project": "webshop",
+     "c4factory:system": "shop"
+    },
+    "EncryptionKeyArn": {
+     "Fn::GetAtt": [
+      "BackupsVaultKey3AEA13F3",
+      "Arn"
+     ]
+    }
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Backups/Vault/Resource"
+   }
+  },
+  "BackupsPlanAF2A6E1B": {
+   "Type": "AWS::Backup::BackupPlan",
+   "Properties": {
+    "BackupPlan": {
+     "BackupPlanName": "price-fn",
+     "BackupPlanRule": [
+      {
+       "CopyActions": [],
+       "Lifecycle": {
+        "DeleteAfterDays": 35
+       },
+       "RuleName": "Daily",
+       "ScheduleExpression": "cron(0 5 * * ? *)",
+       "TargetBackupVault": {
+        "Fn::GetAtt": [
+         "BackupsVault1F11AFCC",
+         "BackupVaultName"
+        ]
+       }
+      }
+     ]
+    },
+    "BackupPlanTags": {
+     "c4factory:container": "price-fn",
+     "c4factory:project": "webshop",
+     "c4factory:system": "shop"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Backups/Plan/Resource"
+   }
+  },
+  "BackupsPlanTablesRole58972E9D": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "backup.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "price-fn"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Backups/Plan/Tables/Role/Resource"
+   }
+  },
+  "BackupsPlanTables8D417F20": {
+   "Type": "AWS::Backup::BackupSelection",
+   "Properties": {
+    "BackupPlanId": {
+     "Fn::GetAtt": [
+      "BackupsPlanAF2A6E1B",
+      "BackupPlanId"
+     ]
+    },
+    "BackupSelection": {
+     "IamRoleArn": {
+      "Fn::GetAtt": [
+       "BackupsPlanTablesRole58972E9D",
+       "Arn"
+      ]
+     },
+     "Resources": [
+      {
+       "Fn::GetAtt": [
+        "Items5C12978B",
+        "Arn"
+       ]
+      }
+     ],
+     "SelectionName": "Tables"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/Backups/Plan/Tables/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/+1Y62/bNhD/W8qPBatlzh5AvimPdl1enuW1GIwgOJNn+RKKFEjKnibofx9IPew0Q1cs2z4UBhJLPN6LP94dqZskkx+Pk6NXsHVvhHx8o2iZNJkH8chh6+4bWWsojFwmzRyWChcNW5JSpPNrI5GdsGn62/30YnY/u/jl14tszjhDLWxdejKanbD0Y3Z/nd6k7y7OGWelIe3f6zkVOENhNmjrrERBKxLQCTR/xXOhg2nJTrytsOVMosLAPrXGo+gEwxRnFguzATU1ikTNTphFD6SDZbCeAucl1sGKhiJ4/5px5usyvGasbfnXvDrOPBU4N1e0wdR7S8vKd1ztHT9b6bi/PP6egsOWK5O7pLky+TtrqnLRBHuoO4eOf/j+uT8SnbemZgHHL+aNtgcjLScokmZmYqSBc1WB8jSuqbSkBZWgUiFMpX2/vo4nCKQ9VmFBwQOQcm6mg9RgeNG0d3HWexDr91qRxnGOvWZfMPl5vS+Zfel6r0FDjnKnlxX7lNT27Hcd6kEL76bC6saFz02YeYbHc7KUmQePBWrvnizyheToXedYyxUUSwn32kh8cMlNfLytdFx9CMroU8QGtbd1/74GLRXaflRa84DCz4wZcJRYuisjHt+Swin4dU+2lQ5ZMoBtxZpCElZ2IBVYGFtn9MeYYFSgqQa1qg/k3TAnnb81toDA8nN2exNkLAjSeaggwtMGo+8bskYHFHrZZaWlilwNWxkr8NyIR7SnI3kFyiFn+LtHq0FdG1kpdIOfpGlVD5XDmcoKvIZyrDKiK3CvQ7Lu/x3w/Cd4tnfcHd+Dc+hdkoYHd8fJaSUe0YdiGlOmj+SkOVvpIYBjoKMtyDkyuuVQUg4et1BvJknzk/dlWlJMzv4/pkZaEg9zmYe813220nEU6TNTeVyMEoH0XnvMbTyHRoE9WlcOKo8tfyxc0lxivWhCkRaWyrHOBFjD+XCJ9cx4+NzZNNR3zkrUknT+kbQ02yHkXqK6P/a6KnGJdcuddkkzNyWJWPKcRxtPwl5v3O0su+o3qzvtAjePv30FbJgPIzcUuB1bxxAhrpaj2y0XylRyC16sk+Yc3HppwMoA2/B+szuHnQc7RGKJloy83aC1FLOQ9BotecbZBiwFGNwIFEj5kWSOXXFkW5Jjcq2R8vWgdAtWk87dJ8MPk17TXgzxvQL+b+r+L3T+P7rjXo9byFMFtgihhN6SCAXjbzVCENnb7zg+fxbkwhQlWHJG35ZowZuhokrwEC+Hbm6i+aEcri26tVFyiOYNqCqmxzRGkXtKxyuzzaAoFZ6FS8MUrQjXsLGke4vgr0O10fk5eGAnTBt/ahHEOhRBziDWJffJrTRiH/0arh3D+e1NqvWYsYtIO+B2wO2A2wG3A24H3A64HXA74HbA7avHrfsyD6wtX4J4rMqkOY3PD1Apv2j2ese7r9PPftzuifPufaogNL2W42AP+uWOe//rcVbFpt1euw3V0Ffu234Wu4ZG/9V5t289GOmNj4JPPBgX8lTHTsMo1rZ81nPtmhOxWxJaF6Tz2A0BCwV6tGFwZrSkoT9xW/my8i0PncDkwX2zmXyXTCbJt68eHNGbvtOUzLonP0qOkqNXZcT1AyiScaeSJt26zKgqbjbP0G7QKnSu/RONDp9cCRkAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "price-fn/CDKMetadata/Default"
+   },
+   "Condition": "CDKMetadataAvailable"
+  }
+ },
+ "Parameters": {
+  "AlertEmail": {
+   "Type": "String",
+   "Default": "",
+   "AllowedPattern": "^([^@\\s]+@[^@\\s]+)?$",
+   "Description": "The email address the alarms notify; empty for none."
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Conditions": {
+  "HasAlertEmail": {
+   "Fn::Not": [
+    {
+     "Fn::Equals": [
+      {
+       "Ref": "AlertEmail"
+      },
+      ""
+     ]
+    }
+   ]
+  },
+  "CDKMetadataAvailable": {
+   "Fn::Or": [
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "af-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-3"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-south-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-3"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-4"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ca-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ca-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-northwest-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-central-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-south-2"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-3"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "il-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "sa-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-west-1"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Equals": [
+      {
+       "Ref": "AWS::Region"
+      },
+      "us-west-2"
+     ]
+    }
+   ]
+  }
+ },
+ "Outputs": {
+  "AlarmTopicArn": {
+   "Description": "The SNS topic every alarm of this stack notifies.",
+   "Value": {
+    "Ref": "AlarmsTopic3A2DFEBA"
+   }
+  },
+  "EntryPoint": {
+   "Description": "The URL of the HTTP API.",
+   "Value": {
+    "Fn::GetAtt": [
+     "ApiF70053CD",
+     "ApiEndpoint"
+    ]
+   }
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

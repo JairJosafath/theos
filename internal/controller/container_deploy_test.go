@@ -466,6 +466,21 @@ var _ = Describe("Container deploys", func() {
 		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.2.0", model.DeployDeployed)
 	})
 
+	It("says when the target lacks a prerequisite, and ships once a person sets it up (#1608)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		shipRelease(ns, "v0.1.0", true)
+		deployFake.Unprepare(targetName(ns, "staging"))
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		d := deployIs(ns, "staging", model.DeployPhaseFailed, model.DeployPrerequisiteMissing, "", model.DeployFailed)
+		Expect(d.Message).To(ContainSubstring("DeployTarget staging lacks what shipping v0.1.0 needs"))
+		Expect(deployFake.Deploys(targetName(ns, "staging"), ns+"/orders-api")).To(Equal(0))
+
+		deployFake.Fail(targetName(ns, "staging"), nil)
+		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+	})
+
 	It("tries again a call the target never had", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)

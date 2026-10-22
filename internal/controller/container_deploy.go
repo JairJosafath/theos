@@ -243,6 +243,8 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployCredentialRefused, Detail: err.Error()}
 	case errors.Is(err, ports.ErrArtifactMissing):
 		return &model.DeployShipFailure{Reason: model.DeployArtifactMissing, Detail: err.Error()}
+	case errors.Is(err, ports.ErrPrerequisiteMissing):
+		return &model.DeployShipFailure{Reason: model.DeployPrerequisiteMissing, Detail: err.Error()}
 	}
 	return &model.DeployShipFailure{Reason: model.DeployFailed, Detail: err.Error()}
 }
