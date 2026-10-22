@@ -37,18 +37,27 @@ const (
 // DeployTargetSpec is a place Containers are shipped to: exactly one member,
 // keyed by field name, says which tool owns the place and where in it. Each
 // member is added with the adapter that ships to it (docs/plans/done/deploy.md).
-// +kubebuilder:validation:XValidation:rule="[has(self.github)].exists_one(x, x)",message="set exactly one target member: github"
+// +kubebuilder:validation:XValidation:rule="[has(self.github), has(self.argoCD)].exists_one(x, x)",message="set exactly one target member: github or argoCD"
+// +kubebuilder:validation:XValidation:rule="has(self.credentialsSecretRef) || has(self.argoCD)",message="set credentialsSecretRef unless the member is argoCD"
 type DeployTargetSpec struct {
 	// github ships each release as a GitHub release of a repository: its tag,
 	// notes and files.
 	// +optional
 	GitHub *DeployTargetGitHub `json:"github,omitempty"`
 
+	// argoCD ships each release of a Container with the k8s-manifests
+	// Deployment as one Argo CD Application in the cluster the operator runs
+	// in: the Container's repository at the release tag, its deploy/k8s path
+	// and the release's image; Argo CD rolls it out.
+	// +optional
+	ArgoCD *DeployTargetArgoCD `json:"argoCD,omitempty"`
+
 	// credentialsSecretRef names a Secret in the DeployTarget's namespace that
 	// the user creates; its keys are the member's (token for github). Only the
 	// operator reads it: it is never mounted in a sandbox or passed to a CI job.
-	// +required
-	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+	// An argoCD target needs none: the operator uses its own ServiceAccount.
+	// +optional
+	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
 	// tier is development or production.
 	// +kubebuilder:default=development
@@ -94,6 +103,46 @@ type DeployTargetGitHub struct {
 	// one repository, so a library's release doesn't take Latest from it.
 	// +optional
 	Latest *bool `json:"latest,omitempty"`
+}
+
+// DeployTargetArgoCD is an Argo CD in the operator's cluster whose
+// Applications are the deploys, one per Container.
+type DeployTargetArgoCD struct {
+	// namespace is where Argo CD runs and its Applications live.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:default=argocd
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+
+	// project is the Argo CD project the Applications belong to; it exists
+	// before the target is Ready.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:default=default
+	// +optional
+	Project string `json:"project,omitempty"`
+
+	// destination is where the apps run.
+	// +required
+	Destination DeployTargetArgoCDDestination `json:"destination"`
+}
+
+// DeployTargetArgoCDDestination is where an argoCD target's apps run, as
+// Argo CD names it.
+type DeployTargetArgoCDDestination struct {
+	// namespace is the namespace the apps' manifests go in.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +required
+	Namespace string `json:"namespace"`
+
+	// server is the cluster, as Argo CD names it; the default is the
+	// cluster Argo CD runs in.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:default="https://kubernetes.default.svc"
+	// +optional
+	Server string `json:"server,omitempty"`
 }
 
 // ConditionDeployTargetReady on a DeployTarget says whether its Secret holds

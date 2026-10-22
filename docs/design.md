@@ -532,7 +532,7 @@ release to the tool that owns the target. It never builds, runs repository
 code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 - **A place is a `DeployTarget`,** shared by any number of Containers: one
-  member saying what it is (`github` today; `argoCD` with #1072,
+  member saying what it is (`github` and `argoCD` today;
   `cloudFormation` with #1071, `flux` later, each with its adapter), a
   `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`

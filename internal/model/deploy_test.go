@@ -61,11 +61,12 @@ func TestGitHubTagPrefix(t *testing.T) {
 
 func TestDeployMembers(t *testing.T) {
 	tests := []struct {
-		name     string
-		member   string
-		c        DeployContainer
-		wantKeys []string
-		wantErr  bool
+		name      string
+		member    string
+		c         DeployContainer
+		wantKeys  []string
+		wantLacks []string
+		wantErr   bool
 	}{
 		// A GitHub release needs nothing of a Container but its releases.
 		{name: "github, a bare Container", member: DeployMemberGitHub, wantKeys: []string{"token"}},
@@ -73,6 +74,14 @@ func TestDeployMembers(t *testing.T) {
 			wantKeys: []string{"token"}},
 		{name: "github, deploying itself", member: DeployMemberGitHub, c: DeployContainer{DeploysItself: true},
 			wantKeys: []string{"token"}},
+		// An argoCD target needs no Secret and a Container that writes
+		// deploy/k8s/ (#1588).
+		{name: "argoCD, with the Deployment", member: DeployMemberArgoCD,
+			c: DeployContainer{Deployment: DeploymentK8sManifests}},
+		{name: "argoCD, a bare Container", member: DeployMemberArgoCD,
+			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
+		{name: "argoCD, deploying itself", member: DeployMemberArgoCD, c: DeployContainer{DeploysItself: true},
+			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
 		// A member is added with its adapter, never before.
 		{name: "cloudFormation not yet", member: "cloudFormation", wantErr: true},
 		{name: "no member", member: "", wantErr: true},
@@ -89,12 +98,12 @@ func TestDeployMembers(t *testing.T) {
 			if m.Name != tt.member || !slices.Equal(m.SecretKeys, tt.wantKeys) {
 				t.Errorf("member = %+v, want name %s and keys %v", m, tt.member, tt.wantKeys)
 			}
-			if lacks := m.Lacks(tt.c); len(lacks) != 0 {
-				t.Errorf("Lacks(%+v) = %v, want nothing", tt.c, lacks)
+			if lacks := m.Lacks(tt.c); !slices.Equal(lacks, tt.wantLacks) {
+				t.Errorf("Lacks(%+v) = %v, want %v", tt.c, lacks, tt.wantLacks)
 			}
 		})
 	}
-	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberGitHub}) {
+	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberGitHub}) {
 		t.Errorf("DeployMemberNames() = %v", got)
 	}
 }
@@ -147,10 +156,15 @@ func TestDeployMemberMissingKeys(t *testing.T) {
 func TestDeployCheckMessage(t *testing.T) {
 	github, _ := DeployMemberByName(DeployMemberGitHub)
 	c := DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop", Member: github}
+	argo, _ := DeployMemberByName(DeployMemberArgoCD)
+	inCluster := DeployCheck{Target: "dev", Where: "project default in namespace argocd (destination apps)",
+		Member: argo}
 	tests := []struct {
 		reason string
 		c      DeployCheck
 		want   []string
+		// not is a word the message must not hold, "" for none.
+		not string
 	}{
 		{reason: DeployTargetReady, c: c, want: []string{"GitHub accepts", "prod-github", "acme/shop"}},
 		{reason: DeployTargetSecretMissing, c: c,
@@ -166,6 +180,15 @@ func TestDeployCheckMessage(t *testing.T) {
 		{reason: DeployTargetUnreachable, c: DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop",
 			Member: github, Detail: "HTTP 502"}, want: []string{"GitHub could not be reached", "DeployTarget prod",
 			"HTTP 502"}},
+		// A target without a Secret, argoCD, names no Secret (#1588).
+		{reason: DeployTargetReady, c: inCluster, want: []string{"Argo CD is there for project default in namespace argocd"},
+			not: "Secret"},
+		{reason: DeployTargetCredentialRefused, c: withDetail(inCluster, "project default doesn't exist in namespace argocd"),
+			want: []string{"Argo CD refused the operator's ServiceAccount for DeployTarget dev",
+				"project default doesn't exist in namespace argocd", "Whoever owns DeployTarget dev makes project default"},
+			not: "Secret"},
+		{reason: DeployTargetUnreachable, c: withDetail(inCluster, "the server is down"),
+			want: []string{"Argo CD could not be reached", "DeployTarget dev", "the server is down"}, not: "Secret"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.reason, func(t *testing.T) {
@@ -174,6 +197,9 @@ func TestDeployCheckMessage(t *testing.T) {
 				if !strings.Contains(got, w) {
 					t.Errorf("DeployCheckMessage(%q) = %q, want it to hold %q", tt.reason, got, w)
 				}
+			}
+			if tt.not != "" && strings.Contains(got, tt.not) {
+				t.Errorf("DeployCheckMessage(%q) = %q, want no %q", tt.reason, got, tt.not)
 			}
 		})
 	}
@@ -230,4 +256,10 @@ func TestNextReleaseStep(t *testing.T) {
 		!strings.HasPrefix(got, ShipMarkerPrefix("ns/app")) {
 		t.Errorf("PublishMarker = %q, ShipMarker = %q", got, ShipMarker("ns/app", "v1"))
 	}
+}
+
+// withDetail is c with what the tool said.
+func withDetail(c DeployCheck, detail string) DeployCheck {
+	c.Detail = detail
+	return c
 }

@@ -42,6 +42,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -256,6 +257,7 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
 			filepath.Join("..", "..", "test", "crds", "agent-sandbox"),
+			filepath.Join("..", "..", "test", "crds", "argocd"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -316,6 +318,15 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+	// The Argo CD adapter's client, uncached as in cmd/main.go, under the
+	// generated role too.
+	argoClient, err := client.New(managerCfg, client.Options{Scheme: s, Mapper: mgr.GetRESTMapper(),
+		HTTPClient: mgr.GetHTTPClient()})
+	if err != nil {
+		return err
+	}
+	deployers := ports.Deployers{model.DeployMemberGitHub: routedDeployer{},
+		model.DeployMemberArgoCD: argocd.New(argoClient)}
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
@@ -326,7 +337,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
-			Deployers: ports.Deployers{model.DeployMemberGitHub: routedDeployer{}}, DeployMembers: testDeployMember,
+			Deployers: deployers, DeployMembers: testDeployMember,
 			DeployPoll: time.Second},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
@@ -345,7 +356,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			GoProxy:   goProxyFake.server.URL,
 			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: routedDeployer{}}},
+			Deployers: deployers},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

@@ -48,6 +48,16 @@ later, create all types together with
 - **Follow K8s API conventions**: Standard field names (`spec`, `status`, `metadata`)
 - **Keep fields minimal.** `displayName` and `description` on every story kind;
   `metadata.name` is the stable id.
+- **A `DeployTarget` has exactly one member** (CEL), each with its adapter
+  ([architecture.md](../architecture.md), Deployer): `github` (`repository`,
+  `latest`) needs `credentialsSecretRef`; `argoCD` is an Argo CD in the
+  operator's cluster and needs none (the rule reads "set credentialsSecretRef
+  unless the member is argoCD"): `namespace` where Argo CD runs and its
+  Applications live (default `argocd`), `project` (default `default`),
+  `destination.namespace` (required) and `destination.server` (default
+  `https://kubernetes.default.svc`). Which Containers may name a member is
+  `deployMembers` in `internal/model/deploy.go`: `argoCD` needs a Deployment
+  that writes `deploy/k8s/`; the rest is `Incompatible`.
 
 ## Controller design
 

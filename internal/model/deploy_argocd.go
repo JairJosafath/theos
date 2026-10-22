@@ -4,8 +4,8 @@ import "strings"
 
 // DeployMemberArgoCD ships each release as one Argo CD Application that
 // points at the Container's repository at the release tag and sets the image;
-// Argo CD rolls it out (docs/plans/k8s-deploy.md). The member on
-// DeployTargetSpec and its row in deployMembers come with #1588.
+// Argo CD rolls it out (docs/plans/k8s-deploy.md); the member on
+// DeployTargetSpec and its row in deployMembers are #1588's.
 const DeployMemberArgoCD = "argoCD"
 
 // Settings of an argoCD target, as its adapter reads them.

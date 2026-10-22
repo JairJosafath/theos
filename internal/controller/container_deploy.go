@@ -173,13 +173,15 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		facts.StateFailure = err.Error()
 		return ports.Target{}, nil
 	}
-	var secret corev1.Secret
-	if err := p.r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace,
-		Name: dt.Spec.CredentialsSecretRef.Name}, &secret); err != nil {
-		facts.StateFailure = "reading Secret " + dt.Spec.CredentialsSecretRef.Name + ": " + err.Error()
-		return ports.Target{}, nil
+	if ref := dt.Spec.CredentialsSecretRef; ref != nil {
+		var secret corev1.Secret
+		if err := p.r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace, Name: ref.Name},
+			&secret); err != nil {
+			facts.StateFailure = "reading Secret " + ref.Name + ": " + err.Error()
+			return ports.Target{}, nil
+		}
+		target.Secret = secret.Data
 	}
-	target.Secret = secret.Data
 	run, err := deployer.State(ctx, target, deployApp(p.container), model.DeployWanted(facts.Version, facts.Newest))
 	if err != nil {
 		facts.StateFailure = err.Error()
@@ -210,7 +212,7 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployReleaseNotFound}
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
-		Version: version, Notes: release.Body}
+		Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
 	if buildsImage(p.container) {
 		if shipment.Image, err = p.shippedImage(ctx, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
