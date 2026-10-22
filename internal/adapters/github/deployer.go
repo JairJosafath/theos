@@ -88,7 +88,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		if err != nil {
 			return portError(err)
 		}
-		if model.GitHubLatestHeld(s.App, ours, release(latest)) {
+		if model.GitHubLatestHeld(s.App, t.Settings[model.GitHubSettingTagPrefix], ours, release(latest)) {
 			if _, err := c.PublishRelease(ctx, ours.ID, true); err != nil {
 				return portError(err)
 			}

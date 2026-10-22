@@ -1,0 +1,13 @@
+# Argo CD core for the Kind test environment, where the webshop's Containers
+# deploy to (docs/plans/k8s-deploy.md, decision 8).
+#   make argocd
+# core-install.yaml is Argo CD without its API server, UI and dex: the operator
+# writes and reads Applications through the Kubernetes API, and a person uses
+# kubectl. The version is pinned; bump it here. The namespace is argocd, the
+# DeployTarget's default, so the webshop's kind-cluster target names none.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+- namespace.yaml
+- https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/core-install.yaml

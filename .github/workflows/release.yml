@@ -34,6 +34,7 @@ jobs:
       packages: write
     name: Build and publish
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 180
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
       # What the build tags, pushed and then removed in that order.

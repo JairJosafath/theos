@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -974,5 +976,29 @@ func TestVSCodeExtensionGuidesAskForNoTestThatStartsVSCode(t *testing.T) {
 			continue
 		}
 		assertContains(t, name, strings.Join(strings.Fields(string(file.Data)), " "), want)
+	}
+}
+
+// TestGiteaReleasePinHoldsItsReleaseJobFixes checks that templates/versions.txt
+// pins gitea-release at v1.4.1 or later: #1581's digest guard and #1583's
+// registry lookup changed the release job under v1.4.0, and a tag never
+// moves (the seed only warns), so a factory seeded at v1.4.0 kept the broken
+// job (#1652).
+func TestGiteaReleasePinHoldsItsReleaseJobFixes(t *testing.T) {
+	versions, err := os.ReadFile(filepath.Join(templatesDir, "versions.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := regexp.MustCompile(`(?m)^gitea-release v(\d+)\.(\d+)\.(\d+)$`).FindStringSubmatch(string(versions))
+	if pinned == nil {
+		t.Fatal("templates/versions.txt pins no gitea-release")
+	}
+	var v [3]int
+	for i := range v {
+		v[i], _ = strconv.Atoi(pinned[i+1])
+	}
+	if slices.Compare(v[:], []int{1, 4, 1}) < 0 {
+		t.Errorf("templates/versions.txt pins gitea-release v%d.%d.%d; the release job's fixes for #1581 and #1583 need v1.4.1 or later (#1652)",
+			v[0], v[1], v[2])
 	}
 }

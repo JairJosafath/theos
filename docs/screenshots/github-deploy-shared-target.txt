@@ -1,0 +1,19 @@
+# Two Containers share one github DeployTarget (#1486, plan docs/plans/done/github-deploy-state.md)
+
+envtest, 2026-10-22, branch fix/1486-deploy-the-github-member-s-tagprefix-and, after
+`make test` passed every package (internal/controller in 2 shards, 398s and 513s).
+The focused run of the step's specs, against the fake GitHub (internal/controller/
+fakegithub_test.go) through the real github adapter (routedDeployer in suite_test.go):
+
+    $ go test ./internal/controller/ -run TestControllers -count=1 -v \
+        -ginkgo.focus='1486|tagPrefix|latest' -ginkgo.v
+
+    Container deploys ships two Containers to one github target under their names, and bare tags when tagPrefix is empty (#1486)
+    DeployTarget refuses a spec its CEL rules or schema reject a tagPrefix with a space
+    DeployTarget refuses a spec its CEL rules or schema reject a tagPrefix over 40 characters
+    DeployTarget refuses a spec its CEL rules or schema reject a tagPrefix that starts with -
+    DeployTarget refuses a spec its CEL rules or schema reject a tagPrefix with ..
+    DeployTarget takes an empty tagPrefix, one with a folder, and latest false (#1486)
+    Ran 8 of 433 Specs in 24.062 seconds
+    SUCCESS! -- 8 Passed | 0 Failed | 0 Pending | 425 Skipped
+    ok  	github.com/JairJosafath/c4factory/internal/controller	24.096s

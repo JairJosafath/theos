@@ -32,10 +32,14 @@ const (
 	ImageEventTagTaken  = "ImageTagTaken"
 )
 
+// DeploymentK8sManifests is the catalog Deployment whose release builds an
+// image and writes deploy/k8s/, what an argoCD target ships.
+const DeploymentK8sManifests = "k8s-manifests"
+
 // imageBuilders are the catalog choices whose release builds an image: a
 // Deployment, and the Container type it does so for, "" for any.
 var imageBuilders = []struct{ deployment, typ string }{
-	{"k8s-manifests", ""},
+	{DeploymentK8sManifests, ""},
 	{"gitea-release", TypeOperator},
 }
 

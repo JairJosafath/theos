@@ -49,7 +49,7 @@ the rollout itself is the one tier only Kind shows.
   public, so Argo CD in the same cluster clones without a credential. The
   kubelet can't pull: a node resolves no cluster DNS name, and containerd
   refuses plain HTTP; Gitea's Service is a ClusterIP with no fixed address
-  and no containerd configuration in `hack/kind.yaml`.
+  and the nodes' containerd knows nothing of it.
 - **Nothing reads health back.** The design's "Reading back from Argo CD
   comes later" is now.
 
@@ -99,17 +99,45 @@ the rollout itself is the one tier only Kind shows.
      `spec.deploy`, or the Container, leaves what runs, as a GitHub release
      stays published. The Application has no ownerReference (another
      namespace); the labels find it.
+   - The joined name is readable, not unique: `a-b/c` and `a/b-c` both
+     join to `a-b-c` (#1669). As two layers writing one file fail the
+     Container with the path, `Ship` and `State` refuse an Application
+     whose `c4.factory.io/namespace` and `c4.factory.io/container` labels
+     name another Container, with that Container in the message
+     ("belongs to Container a/b-c, whose name joins to the same: rename
+     one of them"); `Ship` writes nothing, and `State` reports nothing.
+     The error is a `model.DeployNameError`, not one of the port's: the
+     read step reports it `Failed`, reason `NameRejected`, condition
+     `DeployFailed`, with the message, and reads it again each poll, so a
+     rename of either Container clears it without a new release (#1677);
+     the other Container keeps its Application. No hash suffix: a
+     collision is a naming mistake the owner should see, and a suffix
+     makes every Argo CD listing opaque. `Ship` and `State` also refuse a
+     joined name over 63 characters (`model.ArgoCDApplicationName`
+     returns the error) before anything is written: under label tracking
+     Argo CD writes the name into the `app.kubernetes.io/instance` label of
+     every resource it manages, and a label value holds 63; Argo CD 3.x
+     tracks by annotation by default, so not every install would hit it,
+     but the guard is cheap and deterministic.
 
 3. **`State` reads the Application back, by a pure rule in
    `internal/model`.** `ArgoCDDeployState` (table-tested, like
    `GitHubDeployState`) takes the Application's `spec.source.targetRevision`,
    `status.sync` (`status`, `comparedTo.source.targetRevision`),
    `status.health` (`status`, `message`) and `status.operationState`
-   (`phase`, `message`):
-   - no Application: the zero state; an operation `Running`, or no sync yet,
-     or `OutOfSync`: `Deploying` at the wanted tag;
-   - an operation `Failed` or `Error`: `Failed` at that tag, reason
-     `SyncFailed`, Argo CD's message;
+   (`phase`, `message`, and the operation's revision:
+   `syncResult.source.targetRevision`, or
+   `operation.sync.source.targetRevision` before the result exists):
+   - no Application: the zero state, unless the Argo CD namespace isn't
+     there either, which refuses the credential as `Ship` does (a Get in a
+     missing namespace is NotFound like a missing Application, so `State`
+     gets the Namespace to tell, #1668); an operation `Running`, or no sync
+     yet, or `OutOfSync`: `Deploying` at the wanted tag;
+   - an operation `Failed` or `Error` at the wanted tag: `Failed` at it,
+     reason `SyncFailed`, Argo CD's message. One of another revision is
+     the previous version's, which Argo CD hasn't replaced yet: `Deploying`
+     at the wanted tag (#1667). An operation whose revision Argo CD didn't
+     record counts as the wanted tag's;
    - `Synced` at the tag with the operation `Succeeded`: `Deployed` at the
      tag.
    - Health is Argo CD's `Healthy`, `Progressing` and `Degraded` as they
@@ -159,10 +187,15 @@ the rollout itself is the one tier only Kind shows.
    image's host is Gitea's in-cluster name, which a node can't resolve, over
    HTTP, which containerd refuses. In the Kind test environment the Gitea
    Service gets a fixed ClusterIP (Kind's service range is `10.96.0.0/16`)
-   and `hack/kind.yaml` gives containerd a `hosts.toml` mapping
+   and `hack/kind.sh registry-hosts`, run by `make cluster`, writes
+   containerd a `hosts.toml` into every node mapping
    `gitea.gitea.svc.cluster.local:3000` to `http://<that IP>:3000` for pull
    and resolve, so the image reference in the Deployment is exactly the
-   digest #1069 pushed, with no rewrite. The owner organization is public,
+   digest #1069 pushed, with no rewrite. It can't live in `hack/kind.yaml`:
+   `extraMounts` needs an absolute host path, and the `registry.mirrors`
+   patch is ignored once containerd reads `certs.d`. The fixed `clusterIP`
+   is immutable, so `make gitea` deletes a Service from before the pin
+   (`hack/kind.sh gitea-service`) before it applies `config/gitea` (#1679). The owner organization is public,
    so the pull needs no Secret, as the clone needs none. This is the test
    environment's shortcut and says so: a real cluster pulls from a registry
    with a real name and TLS (#1070's GHCR, or step 6's copy).
@@ -196,7 +229,7 @@ check`, and leaves main working.
 | 2. The Argo CD adapter | #1586 | #1445 | `internal/adapters/argocd` on the port, `Shipment.Repository`, `model.ArgoCDDeployState` table-tested on each sync, health and operation state; `test/crds/argocd` holds the `Application` and `AppProject` CRDs; the adapter's tests start envtest with them and run `contract.Deployer`, and show the Application `Ship` writes (source, tag, path, image, sync policy, finalizer, labels), a repeat applying nothing, no image as `ErrArtifactMissing`, and `Check`'s three answers |
 | 3. The `argoCD` member and the loop | #1588 | step 2 | the member on `DeployTargetSpec` with its CEL rules (one member; the Secret optional for `argoCD` only), the row in `deployMembers`, `deployTarget`'s conversion, the RBAC markers, the wiring in `cmd/main.go`; `make validate-yaml` on a sample; envtest: a Ready `k8s-manifests` Container whose release has an image gets its Application with the digest, faked Application status makes `status.deploys[]` `Deployed`/`Healthy`, `Degraded`, and `Failed` with `SyncFailed`; a Container without the Deployment is `Incompatible`; a target without a Secret is `Ready`; the reconciler runs under the generated role |
 | 4. `job` in `k8s-manifests` | #1587 | | `job.yaml` rendered for type `job` with `Force=true,Replace=true` (#1628) and no TTL (decision 6), `compute.yaml` patching a Job, the README and comments, the version bump; the scaffold's table tests and `make validate-yaml` on the rendered files |
-| 5. The Kind environment and the webshop | #1589 | steps 3, 4 | `config/argocd` and `make argocd` in `make e2e`; Gitea's fixed ClusterIP and containerd's `hosts.toml` in `hack/kind.yaml`, tested in `hack/kind_test.sh`; the seed's organization public; the webshop's `kind-cluster` DeployTarget and `spec.deploy` entries pass `make validate-yaml` and `make seed-local`; the getting-started's deploy section |
+| 5. The Kind environment and the webshop | #1589 | steps 3, 4 | `config/argocd` and `make argocd` in `make e2e`; Gitea's fixed ClusterIP and containerd's `hosts.toml` written by `hack/kind.sh registry-hosts`, tested in `hack/kind_test.sh`; the seed's organization public; the webshop's `kind-cluster` DeployTarget and `spec.deploy` entries pass `make validate-yaml` and `make seed-local`; the getting-started's deploy section |
 | 6. Another cluster | #1590 | step 3 | the `kubeconfig` key, `argoCD.imageRegistry` and the copy; the adapter's tests on a second envtest as the remote cluster; priority/4 |
 
 A human run of Kind would show what no tier below it can: Argo CD syncing

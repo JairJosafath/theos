@@ -1,0 +1,26 @@
+# Where the webshop's services deploy: the Argo CD in the cluster the factory
+# runs on (docs/plans/k8s-deploy.md). The operator writes one Argo CD
+# Application per Container in namespace argocd, project default, that points
+# at the Container's repository at the release tag and sets the image; Argo CD
+# rolls it into namespace webshop-apps. It needs no Secret: the operator uses
+# its own ServiceAccount, and Ready says whether Argo CD and the project are
+# there. Only a Container whose Deployment is k8s-manifests (story.yaml) can
+# name it in spec.deploy; a cli or an operator is Incompatible. The four
+# services of story.yaml name it. In the Kind test environment `make argocd`
+# installs Argo CD core and `hack/kind.sh registry-hosts` lets the node pull
+# the image from the in-cluster Gitea; on a real cluster, install Argo CD and
+# point the Container's registry at one with a real name and TLS
+# (docs/getting-started.md, "Deploy to a cluster with Argo CD").
+apiVersion: c4.factory.io/v1alpha1
+kind: DeployTarget
+metadata:
+  name: kind-cluster
+spec:
+  argoCD:
+    # namespace (default argocd) and project (default default) are Argo CD's;
+    # destination.server defaults to the cluster Argo CD runs in.
+    destination:
+      namespace: webshop-apps
+  # development ships each release by itself; production waits for a
+  # person's approval unless approval says None.
+  tier: development

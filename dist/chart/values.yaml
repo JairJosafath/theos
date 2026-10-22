@@ -710,7 +710,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
@@ -746,7 +746,7 @@ agents:
     ## Defaults to Chart.appVersion
     tag: ""
   credentialsSecret: claude-credentials
-  ## The model proxy (docs/plans/model-proxy.md): a Deployment of the operator
+  ## The model proxy (docs/plans/done/model-proxy.md): a Deployment of the operator
   ## image running /model-proxy in the release namespace, Service c4-model-proxy
   ## on 8080, the one place the Secret above is used. It mounts the Secret as a
   ## volume and admits only agent sandboxes. Two replicas and a

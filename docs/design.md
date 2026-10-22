@@ -204,13 +204,15 @@ repository only. `main` takes no pushes: only the operator merges, the
 reviewed commit only; the Git host refuses changes to the platform's and the
 Standard's protected files (the gated merge aside) and keeps `v*` tags to the
 operator. A per-project NetworkPolicy allows only DNS, the Git host and public
-HTTPS. Each run has a deadline. A sandbox on the factory's shared token holds
-no token: it reaches Claude through the model proxy in the release namespace,
-which adds the token to the agent's requests, and the fence lets it reach the
-proxy alone ([plans/model-proxy.md](plans/model-proxy.md)). The token's one
-source is a Secret in the release namespace, copied only into namespaces with
-a label their users can't set. An Agent on a Secret of its own keeps that
-Secret as the sandbox's environment, readable inside it.
+HTTPS. Each run has a deadline. The factory's token never enters a sandbox: a
+sandbox on the shared token reaches Claude through the model proxy in the
+release namespace, which adds the token to the agent's requests, and the fence
+lets it reach the proxy alone
+([plans/done/model-proxy.md](plans/done/model-proxy.md)). The token's one
+place is that Secret in the release namespace; the operator never copies it
+into a project namespace, and deletes the copies an earlier release made. An
+Agent naming a Secret of its own gets that Secret's keys as the sandbox's
+environment, readable inside it.
 
 ### The CI fence
 
@@ -296,7 +298,13 @@ The operator moves bytes with credentials it holds; it builds nothing.
   proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
   and the Go Standard's CI fetch `c4factory.local/...` from the registry.
 - **npm and PyPI packages** (#1087, decided, not built): the release's npm
-  tarballs, wheels and sdists, published once to the Git host's registries
+  tarballs, wheels and sdists, published once to the npm registry and the
+  PyPI index `GitProvider.spec.packages` names, by default the Git host's
+  own. npm packages are named `<scope>/<container>`; the scope is a setting
+  there too, `@c4factory` by default. The factory claims no name on
+  npmjs.org or any public registry (#1234): by default nothing leaves the
+  cluster, and a user who publishes elsewhere sets a scope they hold, their
+  registry's and index's URLs and a credential Secret of their own
   ([plans/app-packages.md](plans/app-packages.md)).
 - **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
   (a repository and a token Secret for it alone) copies the tag, notes and
@@ -507,9 +515,13 @@ controllers call, not by one product's API;
   only shorten waits ([plans/git-events.md](plans/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
-  default to the host's own, a DeployTarget names each deploy's tool.
+  default to the host's own (`spec.packages` names another npm registry or
+  PyPI index, and the npm scope), a DeployTarget names each deploy's tool.
 - **A user's credential never reaches code the agents wrote:** only the
-  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets.
+  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets,
+  and a registry Secret's `token`. The one exception is a registry Secret's
+  `readToken`, which the user makes for installs alone: it reaches agent
+  pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its
   contract;** none is yet.
 
@@ -520,12 +532,18 @@ release to the tool that owns the target. It never builds, runs repository
 code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 - **A place is a `DeployTarget`,** shared by any number of Containers: one
-  member saying what it is (`github` today; `argoCD` with #1072,
+  member saying what it is (`github` and `argoCD` today;
   `cloudFormation` with #1071, `flux` later, each with its adapter), a
   `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`
   (`Required` or `None`; empty is `Required` in production) and non-secret
-  `parameters`. `Ready` says whether the target takes the credential.
+  `parameters`. `Ready` says whether the target takes the credential. A
+  `github` target's `tagPrefix` goes before each release's tag: unset, it is
+  the Container's name and `-` (`orders-cli-v0.1.0`), so any number of
+  Containers share a target; set, it is used as it is, `""` giving bare
+  tags. Its `latest` (default true) says whether each release becomes the
+  repository's Latest
+  ([plans/done/github-deploy-state.md](plans/done/github-deploy-state.md)).
 - **A Container names its targets in `spec.deploy`:** entries by `target`,
   with an optional `after` (an entry that runs a version first), `version` (a
   pinned tag, how a person rolls back) and `approved` (the version a person
@@ -611,7 +629,7 @@ its images on GHCR. The release installs:
 | Gitea and its CI runners `base` and `go` | `gitea.namespace` | `gitea.enabled`, on by default; secrets generated in the cluster, never rendered by Helm |
 | Seed job | Gitea's namespace | after every install and upgrade: templates, a GitProvider and Project per `gitea.projects` entry, the catalog and Agents applied in place |
 | Project namespaces | each of `gitea.projects` | made when missing, labeled `c4.factory.io/shared-secrets: "true"`, kept on uninstall |
-| Shared Secrets | copied from the release namespace | the Agents' token and pull Secrets; a project's own Secret of that name wins |
+| Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
 A device installs Agent Sandbox first and gives the Agents' token once. An

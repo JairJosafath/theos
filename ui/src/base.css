@@ -209,6 +209,17 @@ p {
   margin: 0;
 }
 
+/* A Crew's routes by label, in the order the operator tries them. */
+.routes {
+  margin: 14px 0 0;
+  padding-left: 22px;
+  font-size: 13px;
+}
+
+.routes li + li {
+  margin-top: 6px;
+}
+
 /* Every focusable element shows where the keyboard is; a component may draw its own ring instead. */
 :focus-visible {
   outline: 2px solid var(--link);

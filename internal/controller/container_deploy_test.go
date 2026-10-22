@@ -59,12 +59,18 @@ func shipRelease(ns, tag string, withFiles bool) {
 	crewRelease(ns, tag, model.RunSucceeded)
 }
 
-// crewRelease makes tag the Crew's last release, its runs run.
+// crewRelease makes tag orders-api's Crew's last release, its runs run.
 func crewRelease(ns, tag, run string) {
+	GinkgoHelper()
+	crewReleaseOf(ns, "orders-api", tag, run)
+}
+
+// crewReleaseOf makes tag the last release of Crew name, its runs run.
+func crewReleaseOf(ns, name, tag, run string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		crew := &c4v1alpha1.Crew{}
-		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), crew)).To(Succeed())
+		g.Expect(k8sClient.Get(ctx, key(ns, name), crew)).To(Succeed())
 		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "c-" + tag, Time: metav1.Now(),
 			Run: run}
 		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
@@ -84,9 +90,15 @@ func readyTarget(ns, name string, tier c4v1alpha1.DeployTier) {
 // setDeploy sets orders-api's spec.deploy.
 func setDeploy(ns string, deploy ...c4v1alpha1.ContainerDeploy) {
 	GinkgoHelper()
+	setDeployOf(ns, "orders-api", deploy...)
+}
+
+// setDeployOf sets Container name's spec.deploy.
+func setDeployOf(ns, name string, deploy ...c4v1alpha1.ContainerDeploy) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		container := &c4v1alpha1.Container{}
-		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+		g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
 		container.Spec.Deploy = deploy
 		g.Expect(k8sClient.Update(ctx, container)).To(Succeed())
 	}).Should(Succeed())
@@ -94,8 +106,14 @@ func setDeploy(ns string, deploy ...c4v1alpha1.ContainerDeploy) {
 
 // deployOf returns orders-api's status of target, and its Deployed condition.
 func deployOf(g Gomega, ns, target string) (*c4v1alpha1.ContainerDeployStatus, *metav1.Condition) {
+	return deployOfContainer(g, ns, "orders-api", target)
+}
+
+// deployOfContainer returns Container name's status of target, and its
+// Deployed condition.
+func deployOfContainer(g Gomega, ns, name, target string) (*c4v1alpha1.ContainerDeployStatus, *metav1.Condition) {
 	container := &c4v1alpha1.Container{}
-	g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+	g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
 	cond := condition(container.Status.Conditions, c4v1alpha1.ConditionDeployed)
 	g.Expect(cond).NotTo(BeNil())
 	for i := range container.Status.Deploys {
@@ -111,10 +129,16 @@ func deployOf(g Gomega, ns, target string) (*c4v1alpha1.ContainerDeployStatus, *
 // running, and the Deployed condition reason deployed.
 func deployIs(ns, target, phase, reason, version, deployed string) *c4v1alpha1.ContainerDeployStatus {
 	GinkgoHelper()
+	return deployOfIs(ns, "orders-api", target, phase, reason, version, deployed)
+}
+
+// deployOfIs is deployIs for Container name.
+func deployOfIs(ns, name, target, phase, reason, version, deployed string) *c4v1alpha1.ContainerDeployStatus {
+	GinkgoHelper()
 	var d *c4v1alpha1.ContainerDeployStatus
 	Eventually(func(g Gomega) {
 		var cond *metav1.Condition
-		d, cond = deployOf(g, ns, target)
+		d, cond = deployOfContainer(g, ns, name, target)
 		g.Expect(d.Phase).To(Equal(phase), d.Message)
 		g.Expect(d.Reason).To(Equal(reason), d.Message)
 		g.Expect(d.Version).To(Equal(version))
@@ -271,6 +295,54 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &c)).To(Succeed())
 			g.Expect(c.Status.Deploys).To(BeEmpty())
 			g.Expect(condition(c.Status.Conditions, c4v1alpha1.ConditionDeployed)).To(BeNil())
+		}, deployWait).Should(Succeed())
+	})
+
+	It("ships two Containers to one github target under their names, and bare tags when tagPrefix is empty (#1486)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
+		cli.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		crew := newCrew(ns)
+		crew.Name, crew.Spec.ContainerRef.Name = "orders-cli", "orders-cli"
+		mustCreate(cli, crew)
+		shared, bare := "acme/"+ns+"-shared", "acme/"+ns+"-bare"
+		githubFake.addRepository(shared, "t0ken")
+		githubFake.addRepository(bare, "t0ken")
+		for name, repository := range map[string]string{"shared": shared, "bare": bare} {
+			dt := newDeployTarget(ns, name, name+"-github")
+			dt.Spec.GitHub.Repository = repository
+			if name == "bare" {
+				dt.Spec.GitHub.TagPrefix = new("")
+			}
+			mustCreate(newDeploySecret(ns, name+"-github", map[string]string{"token": "t0ken"}), dt)
+			deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+		}
+		shipRelease(ns, "v0.1.0", true)
+		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
+		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "shared"}, c4v1alpha1.ContainerDeploy{Target: "bare"})
+		setDeployOf(ns, "orders-cli", c4v1alpha1.ContainerDeploy{Target: "shared"})
+
+		published := func(repository string) []string {
+			var tags []string
+			for _, r := range githubFake.releases(repository) {
+				if !r.Draft {
+					tags = append(tags, r.TagName)
+				}
+			}
+			return tags
+		}
+		Eventually(func(g Gomega) {
+			for _, name := range []string{"orders-api", "orders-cli"} {
+				d, cond := deployOfContainer(g, ns, name, "shared")
+				g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed), d.Message)
+				g.Expect(d.Version).To(Equal("v0.1.0"))
+				g.Expect(cond.Reason).To(Equal(model.DeployDeployed), cond.Message)
+			}
+			g.Expect(published(shared)).To(ConsistOf("orders-api-v0.1.0", "orders-cli-v0.1.0"))
+			g.Expect(published(bare)).To(ConsistOf("v0.1.0"))
 		}, deployWait).Should(Succeed())
 	})
 

@@ -107,7 +107,7 @@ type sandboxRun struct {
 
 // What a sandbox on the shared token gets instead of the token: Claude Code
 // sends every request to the proxy, with a placeholder it needs to start and
-// the proxy drops (docs/plans/model-proxy.md, decision 4).
+// the proxy drops (docs/plans/done/model-proxy.md, decision 4).
 const (
 	envAnthropicBaseURL   = "ANTHROPIC_BASE_URL"
 	envAnthropicAuthToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec // an environment variable's name

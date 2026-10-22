@@ -36,7 +36,9 @@ func TestGiteaIntegration(t *testing.T) {
 	client := Client{}
 
 	t.Run("fetches a seeded template at its tag", func(t *testing.T) {
-		tree, err := client.FetchTemplate(ctx, base+"/templates/python-fastapi", "v1.3.0", nil)
+		// The tag comes from templates/versions.txt, the one the seed pushes: a
+		// pinned tag went stale on a bump and reddened main (#1651).
+		tree, err := client.FetchTemplate(ctx, base+"/templates/python-fastapi", pinnedTemplateTag(t, "python-fastapi"), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,6 +131,23 @@ func TestGiteaIntegration(t *testing.T) {
 			t.Errorf("the repository went with its bot: HTTP %d", status)
 		}
 	})
+}
+
+// pinnedTemplateTag returns the tag templates/versions.txt pins for a template,
+// the one the seed (make seed-local) pushes to the seeded Gitea.
+func pinnedTemplateTag(t *testing.T, template string) string {
+	t.Helper()
+	data, err := os.ReadFile("../../templates/versions.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.Lines(string(data)) {
+		if name, tag, ok := strings.Cut(strings.TrimSpace(line), " "); ok && name == template {
+			return tag
+		}
+	}
+	t.Fatalf("templates/versions.txt pins no %s", template)
+	return ""
 }
 
 // TestGiteaTemplatesIntegration checks that the seeded Gitea has every template

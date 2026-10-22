@@ -39,6 +39,7 @@ pass (`FORCE=1 make check` reruns it).
 ### Never Edit These (Auto-Generated)
 - `config/crd/bases/*.yaml` - from `make manifests`
 - `config/rbac/role.yaml` - from `make manifests`
+- `dist/chart/templates/crd/*.yaml` - from `make chart`
 - `**/zz_generated.*.go` - from `make generate`
 - `PROJECT` - from `kubebuilder [OPTIONS]`
 
@@ -88,6 +89,7 @@ does only what the step says, releases the cluster and ends.
 ```
 make manifests  # Regenerate CRDs/RBAC from markers
 make generate   # Regenerate DeepCopy methods
+make chart      # Regenerate dist/chart's copy of the CRDs (make check fails when it drifts)
 ```
 
 **After editing `*.go` files:**

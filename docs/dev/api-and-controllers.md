@@ -42,12 +42,36 @@ later, create all types together with
 // +kubebuilder:default="value"
 ```
 
+**After a change to `*_types.go` or its markers**, regenerate all three copies
+of what they describe, and commit them with the change:
+
+```bash
+make manifests  # config/crd/bases and config/rbac/role.yaml
+make generate   # the zz_generated DeepCopy methods
+make chart      # dist/chart/templates/crd, the chart's copy of the CRDs
+```
+
+`hack/chart-crds_test.sh` (in `make validate-yaml`, so in `make check`) fails
+when the chart's CRDs differ from `config/crd/bases`; under yolo mode nothing
+runs it before the merge, so main goes red until someone regenerates the chart
+(#1670).
+
 - **Use** `metav1.Condition` for status (not custom string fields). Phases are a
   convenience on top of conditions.
 - **Use predefined types**: `metav1.Time` instead of `string` for dates
 - **Follow K8s API conventions**: Standard field names (`spec`, `status`, `metadata`)
 - **Keep fields minimal.** `displayName` and `description` on every story kind;
   `metadata.name` is the stable id.
+- **A `DeployTarget` has exactly one member** (CEL), each with its adapter
+  ([architecture.md](../architecture.md), Deployer): `github` (`repository`,
+  `latest`) needs `credentialsSecretRef`; `argoCD` is an Argo CD in the
+  operator's cluster and needs none (the rule reads "set credentialsSecretRef
+  unless the member is argoCD"): `namespace` where Argo CD runs and its
+  Applications live (default `argocd`), `project` (default `default`),
+  `destination.namespace` (required) and `destination.server` (default
+  `https://kubernetes.default.svc`). Which Containers may name a member is
+  `deployMembers` in `internal/model/deploy.go`: `argoCD` needs a Deployment
+  that writes `deploy/k8s/`; the rest is `Incompatible`.
 
 ## Controller design
 

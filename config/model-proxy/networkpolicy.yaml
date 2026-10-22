@@ -1,6 +1,6 @@
 # The proxy takes traffic only from agent sandboxes: pods labelled
 # c4.factory.io/agent-sandbox=true in namespaces labelled
-# c4.factory.io/shared-secrets=true (docs/plans/model-proxy.md, decision 7).
+# c4.factory.io/shared-secrets=true (docs/plans/done/model-proxy.md, decision 7).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

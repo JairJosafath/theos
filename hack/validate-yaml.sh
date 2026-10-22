@@ -9,10 +9,11 @@ set -euo pipefail
 
 : "${KUBECTL_VALIDATE:?}" "${KUSTOMIZE:?}" "${K8S_OPENAPI:?}" "${KUBECTL_VALIDATE_K8S_VERSION:?}" "${OUT:?}"
 
-# The kustomize overlays that build offline. config/agent-sandbox and
-# config/metrics-server fetch remote URLs, so they are left out.
+# The kustomize overlays that build offline. config/agent-sandbox,
+# config/argocd and config/metrics-server fetch remote URLs, so they are left
+# out.
 OVERLAYS=(default gitea ui)
-echo "Skipped, they fetch remote URLs: config/agent-sandbox, config/metrics-server"
+echo "Skipped, they fetch remote URLs: config/agent-sandbox, config/argocd, config/metrics-server"
 
 mkdir -p "$OUT"
 rm -f "$OUT"/kustomize-*.yaml
@@ -201,7 +202,7 @@ for f in chart-gitea chart-gitea-bare; do
 		'^        - name: POD_NAMESPACE$'
 done
 manager=$(doc "$OUT/chart-gitea.yaml" Deployment c4-factory-controller-manager)
-want "the operator doesn't share the Agents' token" "$manager" '^        - --shared-secret=claude-credentials$'
+want "the operator isn't told the Agents' token" "$manager" '^        - --shared-secret=claude-credentials$'
 want "the operator doesn't share pull Secret ghcr" "$manager" '^        - --shared-pull-secret=ghcr$'
 if grep -qE -e '--shared-(pull-)?secret' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment c4-factory-controller-manager)"; then
 	echo "The chart: the operator shares a Secret with agents.enabled=false and no pull Secrets" >&2
@@ -260,7 +261,7 @@ for want in '--shared-secret=claude-credentials' 'name: POD_NAMESPACE' 'fieldPat
 done
 for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
 	if ! grep -qF 'c4.factory.io/shared-secrets: "true"' "$f"; then
-		echo "$f lacks label c4.factory.io/shared-secrets: \"true\": the operator wouldn't share claude-credentials into it" >&2
+		echo "$f lacks label c4.factory.io/shared-secrets: \"true\": the operator wouldn't share the pull secret into it, and its agents wouldn't reach the model proxy" >&2
 		exit 1
 	fi
 done

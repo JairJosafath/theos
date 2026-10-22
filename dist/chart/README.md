@@ -18,10 +18,10 @@ regeneration; `Chart.yaml` is never overwritten.
 One install is one trust domain: install it on a device you own, for people
 you would hand the Claude token to, and never on a shared or production
 cluster. Anyone who can create a Project or a Brief in the cluster, the UI's
-users included, can have the factory run code: in an agent's sandbox, which
-holds the Claude token, and in a CI job. The token is readable inside the
-sandbox ([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closes
-it), and the `base`, `go` and `image` runners run every project's checks and
+users included, can have the factory run code: in an agent's sandbox and in
+a CI job. The sandbox holds no Claude token: the model proxy in the release
+namespace adds it to the agent's requests, and the token never enters a
+project namespace. The `base`, `go` and `image` runners run every project's checks and
 image builds one after another in host mode, a NetworkPolicy keeping them to
 DNS, Gitea and public HTTPS; the `image` runner's job container runs with
 seccomp and AppArmor `Unconfined`, which rootless BuildKit needs ([#1076](https://github.com/JairJosafath/c4factory/issues/1076) gives
@@ -80,11 +80,11 @@ That is the whole factory. The chart made namespace `webshop`, labeled
 project namespace that already exists and the release didn't make (by hand, as
 on v0.5.0) is left as it is, and the seed only adds the label
 (`projectNamespaces.create=false`: you make every one). Upgrading from v0.5.0,
-the `claude-credentials` and `ghcr` you made in a project namespace by hand
-stay that project's own, so a token rotated in `c4-factory-system` doesn't
-reach it; delete them there to take the shared ones. The operator copies
-the release namespace's `claude-credentials` and pull secrets into each
-labeled namespace. Gitea runs in namespace `gitea`, at
+a `claude-credentials` you made in a project namespace by hand is unused now
+(its agents reach Claude through the model proxy; delete it), and a `ghcr`
+you made there stays that project's own; delete it to take the shared one.
+The operator copies the release namespace's pull secrets into each labeled
+namespace; the token is read by the model proxy there and never copied. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
 a hook after every install and upgrade, pushed the tagged templates to
 organization `templates`, made organization `webshop`, stored its token in
@@ -218,8 +218,8 @@ as the run's artifact); a failing release gets an issue titled
 | `projectNamespaces.create` | make each of `gitea.projects`' namespaces, kept on uninstall, unless it exists and isn't the release's (default on); off, you make them and the seed labels them |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
-| `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make once in the release's namespace (default `claude-credentials`), which the operator copies into each project namespace (default on) |
-| `agents.modelProxy` | the model proxy, with `agents.enabled`: the operator image running `/model-proxy` in the release namespace as Service `c4-model-proxy` on 8080, the one place the token is used, mounted from `agents.credentialsSecret` as an optional volume (the proxy is ready before the Secret exists and answers 503 until it does) and reached only by agent sandboxes (a NetworkPolicy); `replicas` (default 2, with a PodDisruptionBudget above 1), `upstream` (default `https://api.anthropic.com`), `drainSeconds` (default 5) and `resources` ([the plan](../../docs/plans/model-proxy.md)) |
+| `agents.enabled`, `agents.image`, `agents.credentialsSecret` | for each of `gitea.projects`, Agents `planner`, `designer`, `implementer` and `reviewer` on the agent image (default `agent-go`, tag `Chart.appVersion`), reading the Secret you make once in the release's namespace (default `claude-credentials`), which the model proxy reads there; never copied into a project namespace (default on) |
+| `agents.modelProxy` | the model proxy, with `agents.enabled`: the operator image running `/model-proxy` in the release namespace as Service `c4-model-proxy` on 8080, the one place the token is used, mounted from `agents.credentialsSecret` as an optional volume (the proxy is ready before the Secret exists and answers 503 until it does) and reached only by agent sandboxes (a NetworkPolicy); `replicas` (default 2, with a PodDisruptionBudget above 1), `upstream` (default `https://api.anthropic.com`), `drainSeconds` (default 5) and `resources` ([the plan](../../docs/plans/done/model-proxy.md)) |
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
