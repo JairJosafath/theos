@@ -8,9 +8,10 @@
 // sorts every path it writes into the Framework, the Standard (go-operator-standard
 // writes its own) or dropped; a path no rule matches fails the run, so a
 // kubebuilder bump that writes a new path is a decision, not a surprise. The
-// Framework's files have their placeholders turned into template fields, three
-// edits follow (addComputePatch, addDistIgnore and addReleaseNote), and they replace everything
-// in the output folder except its .c4factory/.
+// Framework's files have their placeholders turned into template fields, edits
+// follow (addComputePatch, addDistIgnore and addCrossBuild), the README is the
+// factory's own (readmeFor), and they replace everything in the output folder
+// except its .c4factory/.
 package main
 
 import (
@@ -159,7 +160,7 @@ patches:
 {{- end }}
 `
 
-// addComputePatch is one of the three edits besides the substitutions: it makes
+// addComputePatch is one of the edits besides the substitutions: it makes
 // config/manager/kustomization.yaml a template that applies the Compute's
 // patch. p and data are transform's result.
 func addComputePatch(p string, data []byte) (string, []byte, error) {
@@ -211,7 +212,7 @@ const (
 	crossBuilderFrom = "FROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS builder\n"
 )
 
-// addCrossBuild is the fourth edit besides the substitutions: it builds the
+// addCrossBuild is another edit besides the substitutions: it builds the
 // Dockerfile's builder stage on $BUILDPLATFORM (#1458). p and data are
 // transform's result.
 func addCrossBuild(p string, data []byte) (string, []byte, error) {
@@ -225,22 +226,26 @@ func addCrossBuild(p string, data []byte) (string, []byte, error) {
 	return p, bytes.Replace(data, []byte(builderFrom), []byte(crossBuilderFrom), 1), nil
 }
 
-// readme is the README the release section is replaced in.
+// readme is the README the factory writes in place of kubebuilder's, whose
+// overview and description are left as // TODO(user) (#1477).
 const readme = "README.md"
 
-// The section of kubebuilder's README that addReleaseNote replaces, from its
-// heading up to the next one: it applies dist/install.yaml from a raw URL in
-// the repository, where /dist/ is ignored.
-const (
-	bundleHeading = "### By providing a bundle with all YAML files\n"
-	helmHeading   = "### By providing a Helm Chart\n"
-)
+// goDirective is go.mod's go line, the Go version the module needs.
+var goDirective = regexp.MustCompile(`(?m)^go ([0-9][0-9.]*)\s*$`)
+
+// goVersion returns the Go version go.mod's go line names.
+func goVersion(gomod []byte) (string, error) {
+	m := goDirective.FindSubmatch(gomod)
+	if m == nil {
+		return "", errors.New("go.mod: no go line; the README can't say which Go to install")
+	}
+	return string(m[1]), nil
+}
 
 // releaseNote says what go-operator-standard's `make dist` writes and that a
 // release names the manager image in install.yaml by digest, where the
-// factory pushes it (docs/plans/images.md, decision 6). It is template text:
-// the README is a .tmpl once the substitutions name the Container.
-const releaseNote = `### From a release
+// factory pushes it (docs/plans/images.md, decision 6).
+const releaseNote = `## Release
 
 ` + "`make dist VERSION=<tag> IMG=<image>`" + ` writes the release files into ` + "`dist/`" + `: the
 manager binaries ` + "`{{ .Container }}_<os>_<arch>`" + ` for Linux, macOS and Windows,
@@ -267,27 +272,84 @@ kubectl apply -f dist/install.yaml
 ` + "```" + `
 
 Without ` + "`IMG`" + `, ` + "`make dist`" + ` names ` + "`controller:<tag>`" + `, which no registry has.
-
 `
 
-// addReleaseNote is the third edit besides the substitutions: it replaces the
-// README's bundle section with releaseNote. p and data are transform's result.
-func addReleaseNote(p string, data []byte) (string, []byte, error) {
-	start := bytes.Index(data, []byte(bundleHeading))
-	end := bytes.Index(data, []byte(helmHeading))
-	if start < 0 || end < start {
-		return "", nil, fmt.Errorf("%s: no %q section before %q; place the release note by hand in addReleaseNote",
-			p, strings.TrimSpace(bundleHeading), strings.TrimSpace(helmHeading))
-	}
-	if !strings.HasSuffix(p, ".tmpl") {
-		p += ".tmpl"
-		data = []byte(escaper.Replace(string(data)))
-		start = bytes.Index(data, []byte(bundleHeading))
-		end = bytes.Index(data, []byte(helmHeading))
-	}
-	out := append([]byte{}, data[:start]...)
-	out = append(out, releaseNote...)
-	return p, append(out, data[end:]...), nil
+// readmeTemplate is the README template, GOVERSION standing for go.mod's Go
+// version. It says what the operator is, what to add first, how to check,
+// run and release it; the make targets are the Standard's, so without one it
+// names the go commands instead.
+const readmeTemplate = `# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}
+{{ if .Description }}
+{{ .Description }}
+{{ end }}
+The ` + "`{{ .Container }}`" + ` Kubernetes operator of {{ .SoftwareSystem }}, in project
+{{ .Project }}: a kubebuilder ` + "`go/v4`" + ` project, scaffolded by C4 Factory. It
+needs Go GOVERSION or later (` + "`go.mod`" + `'s ` + "`go`" + ` line); the devcontainer has it,
+with kubebuilder, controller-gen, kustomize and the envtest binaries.
+
+## Add an API first
+
+The manager in ` + "`cmd/main.go`" + ` runs no controller yet. Add the first kind and
+its controller, then regenerate the CRDs, RBAC and DeepCopy methods:
+
+` + "```sh" + `
+kubebuilder create api --group <group> --version v1alpha1 --kind <Kind>
+{{- if .Standard }}
+make manifests generate
+{{- else }}
+controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+{{- end }}
+` + "```" + `
+
+The kind's API group is ` + "`<group>.{{ .Project }}.c4factory.local`" + `. Its types go in
+` + "`api/v1alpha1/`" + `, its reconciler in ` + "`internal/controller/`" + `; the files under
+` + "`config/crd/bases/`" + `, ` + "`config/rbac/role.yaml`" + ` and ` + "`zz_generated.*.go`" + ` are
+generated, never edited.
+
+## Develop
+
+` + "```sh" + `
+{{- if .Standard }}
+make check           # what CI runs: tidy, generated files, format, vet, lint, test
+make test            # the unit and envtest tests
+make help            # every target
+{{- else }}
+go build ./...
+go test ./...
+{{- end }}
+` + "```" + `
+{{- if .Standard }}
+
+Read ` + "`AGENTS.md`" + ` before changing anything: it is the rulebook, for people and agents.
+{{- end }}
+
+## Run against a cluster
+
+With ` + "`~/.kube/config`" + ` naming a cluster you may change, install the CRDs
+and run the manager from your machine:
+
+` + "```sh" + `
+{{- if .Standard }}
+make install run
+{{- else }}
+kubectl apply -k config/crd
+go run ./cmd
+{{- end }}
+` + "```" + `
+{{- if .Standard }}
+
+` + "`make uninstall`" + ` removes the CRDs again. ` + "`make test-e2e`" + ` deploys the manager
+into a new Kind cluster, checks it runs and serves its metrics (` + "`test/e2e`" + `),
+and deletes the cluster.
+
+` + releaseNote + `{{- end }}
+`
+
+// readmeFor is the README template for go.mod's Go version. It holds no
+// "TODO(user)": kubebuilder's README is not used.
+func readmeFor(goVersion string) []byte {
+	return []byte(strings.ReplaceAll(readmeTemplate, "GOVERSION", goVersion))
 }
 
 // file is one file of the generated template.
@@ -299,9 +361,17 @@ type file struct {
 // frameworkFiles reads what `kubebuilder init` wrote into dir and returns the
 // Framework's template files by path, failing on every path no rule matches.
 func frameworkFiles(dir string) (map[string]file, error) {
+	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return nil, err
+	}
+	goVer, err := goVersion(gomod)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]file{}
 	var errs []error
-	err := filepath.WalkDir(dir, func(full string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(full string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -334,7 +404,7 @@ func frameworkFiles(dir string) (map[string]file, error) {
 			name, data, err = addDistIgnore(name, data)
 		}
 		if err == nil && p == readme {
-			name, data, err = addReleaseNote(name, data)
+			name, data = readme+".tmpl", readmeFor(goVer)
 		}
 		if err == nil && p == dockerfile {
 			name, data, err = addCrossBuild(name, data)
@@ -358,9 +428,6 @@ func frameworkFiles(dir string) (map[string]file, error) {
 	if !plain && !tmpl && len(errs) == 0 {
 		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; /dist/ has nowhere to be ignored",
 			gitignore))
-	}
-	if _, ok := out[readme+".tmpl"]; !ok && len(errs) == 0 {
-		errs = append(errs, fmt.Errorf("%s: kubebuilder no longer writes it; the release note has nowhere to go", readme))
 	}
 	return out, errors.Join(errs...)
 }

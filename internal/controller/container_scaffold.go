@@ -250,6 +250,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
 		Container:      container.Name,
 		DisplayName:    container.Spec.DisplayName,
+		Description:    container.Spec.Description,
 		Type:           string(container.Spec.Type),
 		Framework:      container.Spec.FrameworkRef.Name,
 		Connectors:     connectors,

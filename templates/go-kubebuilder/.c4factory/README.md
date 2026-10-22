@@ -44,8 +44,10 @@ A Kubernetes operator in Go 1.26: what `kubebuilder init --plugins go/v4` (kubeb
   writes by the table in `hack/template-go-kubebuilder/main.go` (and fails on a
   path no rule matches), turns the placeholders into template fields, escapes the
   files' own `{{ }}`, adds the Compute patch to
-  `config/manager/kustomization.yaml`, and appends `/dist/` to `.gitignore` (the
-  Standard's `make dist` writes there, and `.gitignore` is the Framework's). It replaces everything here except
+  `config/manager/kustomization.yaml`, appends `/dist/` to `.gitignore` (the
+  Standard's `make dist` writes there, and `.gitignore` is the Framework's),
+  builds the Dockerfile's builder stage on `$BUILDPLATFORM`, and writes its own
+  `README.md` in place of kubebuilder's, naming `go.mod`'s Go version. It replaces everything here except
   `.c4factory/`. To change a file, change the tool, or bump `KUBEBUILDER_VERSION`
   in C4 Factory's `Makefile`, and review the diff.
 - **Every `.go` file is a `.tmpl`**, even without template expressions: C4
@@ -61,7 +63,7 @@ same path, except `.c4factory/`, which is input for the factory. Files ending in
 suffix; a `.tmpl` that renders to only whitespace is left out. Other files are copied
 byte for byte. Paths are never rendered, only contents.
 
-Data: `.Project`, `.SoftwareSystem`, `.Container`, `.DisplayName`, `.Type`, the chosen
+Data: `.Project`, `.SoftwareSystem`, `.Container`, `.DisplayName`, `.Description`, `.Type`, the chosen
 `.Framework`, `.Standard`, `.Compute` and `.Deployment` (empty when none is chosen),
 and `.Connectors` (sorted names). Functions: `has`, `snake`, `upper`, `lower`, `dart`,
 plus the `text/template` builtins.
