@@ -141,8 +141,9 @@ service stack, the only one that takes it.
   connects each to the service, alarms on its table and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
-  the service reads its name in `DYNAMODB_TABLE_NAME`. New data goes in that
-  table: the `Items` table (`TABLE_NAME`) is the starter's example.
+  the service is handed its name in `DYNAMODB_TABLE_NAME`; the starter's
+  `src/main.ts` doesn't read it yet. New data goes in that table: the `Items`
+  table (`TABLE_NAME`) is the starter's example.
 {{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and

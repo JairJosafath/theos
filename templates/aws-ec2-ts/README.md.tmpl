@@ -140,8 +140,9 @@ to come up healthy, the update stops and CloudFormation rolls back.
   connects each to the instances, alarms on its table and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
-  the server reads its name in `DYNAMODB_TABLE_NAME`. New data goes in that
-  table: the `Items` table (`TABLE_NAME`) is the starter's example.
+  the server is handed its name in `DYNAMODB_TABLE_NAME`; the starter's
+  `src/main.ts` doesn't read it yet. New data goes in that table: the `Items`
+  table (`TABLE_NAME`) is the starter's example.
 {{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and

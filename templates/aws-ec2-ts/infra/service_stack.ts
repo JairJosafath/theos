@@ -211,7 +211,9 @@ export class ServiceStack extends Stack {
     table.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem');
     // The DataStores the Container's Relationships name, from their Connectors:
     // each grants the instance role its calls and puts the table's name in
-    // the environment the server's unit is rendered with.
+    // the environment the server's unit is rendered with. Every store is
+    // connected here, before bootCommands renders the unit: an addEnvironment
+    // after that would be dropped.
     const environment: Record<string, string> = { ...users.environment };
     const user = {
       grantPrincipal: role,
