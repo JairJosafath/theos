@@ -36,30 +36,41 @@ func TestArgoCDRepoURL(t *testing.T) {
 }
 
 // TestArgoCDImageCopyOf covers decision 9's copy (#1590): the image keeps its
-// repository and digest below the imageRegistry, path included.
+// repository and digest below the imageRegistry, path included, under the
+// nested layout, and only its name under the flat one (#1770).
 func TestArgoCDImageCopyOf(t *testing.T) {
 	const image = "gitea.gitea.svc.cluster.local:3000/acme/orders-api@sha256:abc"
 	tests := []struct {
-		name, image, registry string
-		want                  ArgoCDImageCopy
-		wantErr               string
+		name, image, registry, layout string
+		want                          ArgoCDImageCopy
+		wantErr                       string
 	}{
-		{"a host alone", image, "registry.example.com", ArgoCDImageCopy{
+		{"a host alone", image, "registry.example.com", "", ArgoCDImageCopy{
 			FromHost: "gitea.gitea.svc.cluster.local:3000", FromRepository: "acme/orders-api", Digest: "sha256:abc",
 			ToHost: "registry.example.com", ToRepository: "acme/orders-api",
 			Image: "registry.example.com/acme/orders-api@sha256:abc"}, ""},
-		{"a host, port and path", image, "10.0.0.5:5000/team/apps/", ArgoCDImageCopy{
+		{"a host, port and path", image, "10.0.0.5:5000/team/apps/", ArgoCDLayoutNested, ArgoCDImageCopy{
 			FromHost: "gitea.gitea.svc.cluster.local:3000", FromRepository: "acme/orders-api", Digest: "sha256:abc",
 			ToHost: "10.0.0.5:5000", ToRepository: "team/apps/acme/orders-api",
 			Image: "10.0.0.5:5000/team/apps/acme/orders-api@sha256:abc"}, ""},
-		{"an image without a digest", "registry.example.com/acme/orders-api:v1", "r.example.com",
+		{"flat under a Docker Hub user (#1770)", image, "docker.io/myuser", ArgoCDLayoutFlat, ArgoCDImageCopy{
+			FromHost: "gitea.gitea.svc.cluster.local:3000", FromRepository: "acme/orders-api", Digest: "sha256:abc",
+			ToHost: "docker.io", ToRepository: "myuser/orders-api",
+			Image: "docker.io/myuser/orders-api@sha256:abc"}, ""},
+		{"flat at a host alone (#1770)", image, "registry.lab:5000", ArgoCDLayoutFlat, ArgoCDImageCopy{
+			FromHost: "gitea.gitea.svc.cluster.local:3000", FromRepository: "acme/orders-api", Digest: "sha256:abc",
+			ToHost: "registry.lab:5000", ToRepository: "orders-api",
+			Image: "registry.lab:5000/orders-api@sha256:abc"}, ""},
+		{"an unknown layout (#1770)", image, "registry.example.com", "deep", ArgoCDImageCopy{},
+			`imageRepositoryLayout "deep" is not nested or flat`},
+		{"an image without a digest", "registry.example.com/acme/orders-api:v1", "r.example.com", "",
 			ArgoCDImageCopy{}, "is not host/repository@digest"},
-		{"a registry with a scheme", image, "https://registry.example.com", ArgoCDImageCopy{},
+		{"a registry with a scheme", image, "https://registry.example.com", "", ArgoCDImageCopy{},
 			"is not host[:port][/path]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ArgoCDImageCopyOf(tt.image, tt.registry)
+			got, err := ArgoCDImageCopyOf(tt.image, tt.registry, tt.layout)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)

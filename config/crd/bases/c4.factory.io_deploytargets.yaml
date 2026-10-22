@@ -120,6 +120,22 @@ spec:
                     maxLength: 253
                     pattern: ^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*$
                     type: string
+                  imageRegistryInsecure:
+                    description: |-
+                      imageRegistryInsecure speaks plain HTTP to imageRegistry, for a lab
+                      registry without a certificate; unset, the copy uses TLS (#1770).
+                    type: boolean
+                  imageRepositoryLayout:
+                    description: |-
+                      imageRepositoryLayout is where the copy goes below imageRegistry's
+                      path: nested, the default, keeps the image's own repository,
+                      <owner>/<name>, as the in-cluster Gitea registry takes it; flat keeps
+                      only <name>, for a registry that refuses a third path segment, such
+                      as Docker Hub (#1770).
+                    enum:
+                    - nested
+                    - flat
+                    type: string
                   namespace:
                     default: argocd
                     description: namespace is where Argo CD runs and its Applications
@@ -138,6 +154,12 @@ spec:
                 required:
                 - destination
                 type: object
+                x-kubernetes-validations:
+                - message: imageRegistryInsecure needs imageRegistry
+                  rule: '!(has(self.imageRegistryInsecure) && self.imageRegistryInsecure)
+                    || has(self.imageRegistry)'
+                - message: imageRepositoryLayout needs imageRegistry
+                  rule: '!has(self.imageRepositoryLayout) || has(self.imageRegistry)'
               cloudFormation:
                 description: |-
                   cloudFormation ships each release of an AWS Container, the CDK
