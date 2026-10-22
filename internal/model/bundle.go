@@ -90,9 +90,12 @@ func BundleChanges(scaffolded, now Bundle) []string {
 	return out
 }
 
+// none is how a side a Bundle doesn't name reads in a message.
+const none = "none"
+
 func orNone(name string) string {
 	if name == "" {
-		return "none"
+		return none
 	}
 	return name
 }
@@ -100,8 +103,10 @@ func orNone(name string) string {
 // String is the bundle as the scaffold's commit records it: its name, then
 // each side it names as side=entry, in side order. ParseBundle reads it back.
 func (b Bundle) String() string {
-	parts := []string{b.Name}
-	for _, c := range BundleChoices(b) {
+	choices := BundleChoices(b)
+	parts := make([]string, 0, 1+len(choices))
+	parts = append(parts, b.Name)
+	for _, c := range choices {
 		parts = append(parts, strings.ToLower(c.Side)+"="+c.Name)
 	}
 	return strings.Join(parts, " ")
