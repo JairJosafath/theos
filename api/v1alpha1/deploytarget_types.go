@@ -70,7 +70,8 @@ type DeployTargetSpec struct {
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
-	// registryPassword (the login to argoCD.imageRegistry for the copy).
+	// registryPassword (the login to argoCD.imageRegistry for the copy, which
+	// reads tags as well as pushes).
 	// +optional
 	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
