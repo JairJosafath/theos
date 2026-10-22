@@ -22,6 +22,8 @@ type fakeRunnerState struct {
 	// runner's ID, unique across owners as the host's are.
 	runners map[string][]gitprovider.Runner
 	lastID  int64
+	// tokenErr is what each owner's registration token call fails with.
+	tokenErr map[string]error
 }
 
 func (g *fakeGit) runnerState() *fakeRunnerState {
@@ -35,8 +37,26 @@ func (g *fakeGit) runnerState() *fakeRunnerState {
 // prefix and the owner's name.
 const runnerTokenPrefix = "fake-runner-registration-"
 
-// RunnerRegistrationToken is the same for an owner every time.
+// failRunnerToken makes owner's registration token call fail with err; nil
+// lets it answer again.
+func (g *fakeGit) failRunnerToken(owner string, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.runnerState()
+	if s.tokenErr == nil {
+		s.tokenErr = map[string]error{}
+	}
+	s.tokenErr[owner] = err
+}
+
+// RunnerRegistrationToken is the same for an owner every time, unless
+// failRunnerToken made it fail.
 func (p *fakeProvider) RunnerRegistrationToken(context.Context) (string, error) {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	if err := p.git.runnerState().tokenErr[p.cfg.Owner]; err != nil {
+		return "", err
+	}
 	return runnerTokenPrefix + p.cfg.Owner, nil
 }
 

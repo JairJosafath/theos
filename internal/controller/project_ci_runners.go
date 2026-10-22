@@ -35,18 +35,51 @@ import (
 // ConditionCIRunners reports the project's CI runner pool: True while every
 // GitProvider with a ci block has its pool; False, reason UnsupportedCI, when
 // one's host cannot register runners, or reason ProviderUnavailable when its
-// credentials cannot be read.
+// credentials cannot be read or its host gives no registration token.
 const ConditionCIRunners = "CIRunners"
 
 // DefaultRunnerRecordKept is how long an ended pool pod stays readable, with
 // its fate annotation, for the Task that asks who cancelled its job.
 const DefaultRunnerRecordKept = 2 * time.Hour
 
-// ciPool is one label's pool of one GitProvider: what buildRunnerPod needs and
-// how many pods are not ended.
+// ciPool is one label's pool of one GitProvider: what buildRunnerPod needs,
+// how many pods are not ended, and whether the pool gets no new pod this
+// reconcile (its provider gave no token, or it backs off from failures).
+// failed are when its kept pods that failed on their own (AnnotationRunnerFailure)
+// went, and ended when its newest pod that ran its job went.
 type ciPool struct {
-	in   runnerPodInput
-	live int32
+	in     runnerPodInput
+	live   int32
+	held   bool
+	failed []time.Time
+	ended  time.Time
+}
+
+// backoff is how long the pool still waits before it starts a pod: the
+// runnerBackoff of its failures since its last ended job, from the newest.
+func (p *ciPool) backoff(base time.Duration, now time.Time) time.Duration {
+	n, last := 0, time.Time{}
+	for _, t := range p.failed {
+		if t.After(p.ended) {
+			n++
+			if t.After(last) {
+				last = t
+			}
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return runnerBackoff(base, n) - now.Sub(last)
+}
+
+// ciRunners is what ensureCIRunners tells Reconcile: when the next kept record
+// expires or a pool's backoff ends (zero for none), the namespace's
+// GitProviders, and an error to retry with when a host gave no token.
+type ciRunners struct {
+	recheck   time.Duration
+	providers []c4v1alpha1.GitProvider
+	retry     error
 }
 
 // poolKey identifies a pool by its GitProvider and label.
@@ -77,45 +110,59 @@ func (r *ProjectReconciler) runnerRecordKept() time.Duration {
 	return DefaultRunnerRecordKept
 }
 
+// runnerBackoffBase is the wait after a pool pod's first failure in a row.
+func (r *ProjectReconciler) runnerBackoffBase() time.Duration {
+	if r.RunnerBackoff > 0 {
+		return r.RunnerBackoff
+	}
+	return DefaultRunnerBackoff
+}
+
 // ensureCIRunners keeps the project's CI runner pool: for every GitProvider with
 // a ci.giteaActions block, a Secret with its runner registration token, and per
 // label size pods not ended, each registered ephemeral for one job; the job.env
 // ConfigMap and the CI NetworkPolicy once the project has any pool. An ended
 // pod is annotated with its fate (runnerPodFate), then deleted and replaced; a
 // pod of a provider or label no longer in any ci block is deleted too, lost if
-// it was still running. Every pod keeps its finalizer, and so stays readable
-// with its fate, for runnerRecordKept after its deletion was asked; the
-// returned duration says when the next record expires, zero for none, and
-// the namespace's GitProviders are returned for ensurePackagesActions.
+// it was still running. A pod that failed on its own is replaced only after
+// the pool's backoff (#1699). A provider whose host gives no registration
+// token keeps its pods but gets none added, and the returned retry says so.
+// Every pod keeps its finalizer, and so stays readable with its fate, for
+// runnerRecordKept after its deletion was asked.
 func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1alpha1.Project,
-	status *c4v1alpha1.ProjectStatus) (time.Duration, []c4v1alpha1.GitProvider, error) {
+	status *c4v1alpha1.ProjectStatus) (ciRunners, error) {
 	var providers c4v1alpha1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
-		return 0, nil, err
+		return ciRunners{}, err
 	}
 	pools := map[poolKey]*ciPool{}
 	var failures []string
+	var retry error
 	failedReason := "ProviderUnavailable"
 	for _, p := range providers.Items {
 		if p.Spec.CI == nil || p.Spec.CI.GiteaActions == nil {
 			continue
 		}
-		token, reason, err := r.runnerToken(ctx, project.Namespace, p.Name)
+		token, reason, tokenErr, err := r.runnerToken(ctx, project.Namespace, p.Name)
 		if err != nil {
-			return 0, nil, err
+			return ciRunners{}, err
 		}
-		if reason != "" {
+		if reason != "" && tokenErr == nil {
 			failures = append(failures, fmt.Sprintf("%s: %s", p.Name, reason))
 			if reason == reasonCannotRegister {
 				failedReason = "UnsupportedCI"
 			}
 			continue
 		}
-		if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
-			return 0, nil, err
+		if tokenErr != nil {
+			// The host may answer again soon: its pods stay, none is added.
+			failures = append(failures, fmt.Sprintf("%s: %s", p.Name, reason))
+			retry = cmp.Or(retry, tokenErr)
+		} else if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
+			return ciRunners{}, err
 		}
 		for _, runner := range p.Spec.CI.GiteaActions.Runners {
-			pools[poolKey{p.Name, runner.Label}] = &ciPool{in: runnerPodInput{
+			pools[poolKey{p.Name, runner.Label}] = &ciPool{held: tokenErr != nil, in: runnerPodInput{
 				namespace: project.Namespace, provider: p.Name, gitURL: p.Spec.URL,
 				tokenSecret: ciRunnerTokenSecret(p.Name), runner: runner, goCacheRoot: r.CIGoCache,
 			}}
@@ -124,15 +171,18 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 
 	next, err := r.sweepRunnerPods(ctx, project.Namespace, pools)
 	if err != nil {
-		return 0, nil, err
+		return ciRunners{}, err
+	}
+	if wait := r.holdBackingOff(ctx, pools); wait > 0 && (next == 0 || wait < next) {
+		next = wait
 	}
 	if len(pools) > 0 {
 		if err := r.ensureCINetwork(ctx, project, gitNamespacesOf(providers.Items)); err != nil {
-			return 0, nil, err
+			return ciRunners{}, err
 		}
 	}
 	if err := r.fillPools(ctx, project, pools); err != nil {
-		return 0, nil, err
+		return ciRunners{}, err
 	}
 	switch {
 	case len(failures) > 0:
@@ -144,7 +194,27 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 	default:
 		meta.RemoveStatusCondition(&status.Conditions, ConditionCIRunners)
 	}
-	return next, providers.Items, nil
+	return ciRunners{recheck: next, providers: providers.Items, retry: retry}, nil
+}
+
+// holdBackingOff holds every pool still backing off from its pods' failures
+// and returns when the first backoff ends, zero for none.
+func (r *ProjectReconciler) holdBackingOff(ctx context.Context, pools map[poolKey]*ciPool) time.Duration {
+	log := logf.FromContext(ctx)
+	base, now := r.runnerBackoffBase(), time.Now()
+	var next time.Duration
+	for key, pool := range pools {
+		left := pool.backoff(base, now)
+		if left <= 0 || pool.held {
+			continue
+		}
+		pool.held = true
+		log.Info("CI runner pool backing off", "pool", key.provider+"/"+key.label, "wait", left.Round(time.Second))
+		if next == 0 || left < next {
+			next = left
+		}
+	}
+	return next
 }
 
 // sweepRunnerPods goes over the project's pool pods: one not ended, of a pool
@@ -162,7 +232,7 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 		pod := &pods.Items[i]
 		key := poolKey{pod.Labels[LabelCIGitProvider], pod.Labels[LabelCILabel]}
 		pool, wanted := pools[key]
-		fate := pod.Annotations[AnnotationRunnerFate]
+		fate, failure := pod.Annotations[AnnotationRunnerFate], pod.Annotations[AnnotationRunnerFailure]
 		if fate == "" {
 			fate = runnerPodFate(pod)
 			if fate == "" && !wanted {
@@ -172,10 +242,26 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 				pool.live++
 				continue
 			}
-			if err := r.recordRunnerFate(ctx, pod, fate); err != nil {
+			if fate == RunnerFateLost {
+				failure = runnerPodFailure(pod)
+			}
+			if err := r.recordRunnerFate(ctx, pod, fate, failure); err != nil {
 				return 0, err
 			}
-			log.Info("CI runner pod ended", "pod", pod.Name, "fate", fate, "pool", key.provider+"/"+key.label)
+			log.Info("CI runner pod ended", "pod", pod.Name, "fate", fate, "failure", failure,
+				"pool", key.provider+"/"+key.label)
+		}
+		if wanted {
+			went := time.Now()
+			if pod.DeletionTimestamp != nil {
+				went = pod.DeletionTimestamp.Time
+			}
+			switch {
+			case failure != "":
+				pool.failed = append(pool.failed, went)
+			case fate == RunnerFateEnded && went.After(pool.ended):
+				pool.ended = went
+			}
 		}
 		if pod.DeletionTimestamp == nil {
 			if err := client.IgnoreNotFound(r.Delete(ctx, pod)); err != nil {
@@ -197,7 +283,7 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 	return next, nil
 }
 
-// fillPools creates the pods each pool is short of, pools in name order.
+// fillPools creates the pods each pool not held is short of, pools in name order.
 func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.Project, pools map[poolKey]*ciPool) error {
 	log := logf.FromContext(ctx)
 	keys := make([]poolKey, 0, len(pools))
@@ -209,6 +295,9 @@ func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.P
 	})
 	for _, key := range keys {
 		pool := pools[key]
+		if pool.held {
+			continue
+		}
 		for ; pool.live < pool.in.runner.Size; pool.live++ {
 			pod := buildRunnerPod(pool.in)
 			if err := controllerutil.SetControllerReference(project, pod, r.Scheme); err != nil {
@@ -229,24 +318,27 @@ const reasonCannotRegister = "its Git host cannot register runners"
 
 // runnerToken is a GitProvider's runner registration token. A provider whose
 // host cannot register runners, or whose credentials cannot be read, gives a
-// reason instead and no error: the Project's condition says it.
-func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string) (token, reason string, err error) {
+// reason instead and no error: the Project's condition says it. A host that
+// gives no token (a 403, Gitea down) gives a reason and tokenErr, which the
+// reconcile retries with (#1699).
+func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string) (token, reason string, tokenErr, err error) {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, ns, name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", "", err
+			return "", "", nil, err
 		}
-		return "", err.Error(), nil
+		return "", err.Error(), nil, nil
 	}
 	runners, ok := provider.(gitprovider.OwnerRunners)
 	if !ok {
-		return "", reasonCannotRegister, nil
+		return "", reasonCannotRegister, nil, nil
 	}
 	token, err = runners.RunnerRegistrationToken(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("runner registration token of GitProvider %s: %w", name, err)
+		return "", "runner registration token: " + err.Error(),
+			fmt.Errorf("runner registration token of GitProvider %s: %w", name, err), nil
 	}
-	return token, "", nil
+	return token, "", nil, nil
 }
 
 // ensureRunnerTokenSecret writes a GitProvider's runner registration token to
@@ -306,14 +398,18 @@ func (r *ProjectReconciler) createOrUpdateUncached(ctx context.Context, obj clie
 	return r.Update(ctx, obj)
 }
 
-// recordRunnerFate writes a pod's fate as AnnotationRunnerFate, before the
-// pool deletes it, so the pool's own delete never reads as someone else's.
-func (r *ProjectReconciler) recordRunnerFate(ctx context.Context, pod *corev1.Pod, fate string) error {
+// recordRunnerFate writes a pod's fate as AnnotationRunnerFate, and how it
+// failed, if it did, as AnnotationRunnerFailure, before the pool deletes it,
+// so the pool's own delete never reads as someone else's.
+func (r *ProjectReconciler) recordRunnerFate(ctx context.Context, pod *corev1.Pod, fate, failure string) error {
 	orig := pod.DeepCopy()
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[AnnotationRunnerFate] = fate
+	if failure != "" {
+		pod.Annotations[AnnotationRunnerFailure] = failure
+	}
 	return r.Patch(ctx, pod, client.MergeFrom(orig))
 }
 
