@@ -78,11 +78,13 @@ type fakeReleaseState struct {
 	// owner/name; packagePublishes counts the calls, by owner/name@tag;
 	// packageUploads the package versions uploaded, by
 	// owner:ecosystem/name@version, each owner's registry its own as Gitea's
-	// are.
+	// are; packageTokens the registry token each upload carried, by the same
+	// key.
 	packages         map[string][]fakePackage
 	packageFailures  map[string]int
 	packagePublishes map[string]int
 	packageUploads   map[string]int
+	packageTokens    map[string]string
 }
 
 // fakePackage is the package a release's file holds: an npm tarball or a
@@ -114,7 +116,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{},
 			imageHolds: map[string]chan struct{}{},
 			packages:   map[string][]fakePackage{}, packageFailures: map[string]int{}, packagePublishes: map[string]int{},
-			packageUploads: map[string]int{}}
+			packageUploads: map[string]int{}, packageTokens: map[string]string{}}
 	}
 	return g.releases
 }
@@ -428,6 +430,10 @@ func (p *fakeProvider) PublishReleasePackages(_ context.Context, repo gitprovide
 			if s.packageUploads[upload] == 0 {
 				pkg.Outcome = gitprovider.PackagePublished
 				s.packageUploads[upload]++
+				s.packageTokens[upload] = p.cfg.Packages.PyPIToken
+				if f.ecosystem == gitprovider.EcosystemNpm {
+					s.packageTokens[upload] = p.cfg.Packages.NpmToken
+				}
 			}
 		}
 		out.Packages = append(out.Packages, pkg)
@@ -465,6 +471,14 @@ func (g *fakeGit) packageUploads(owner, ecosystem, name, version string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.releaseState().packageUploads[owner+":"+ecosystem+"/"+name+"@"+version]
+}
+
+// packageUploadToken is the registry token the upload of ecosystem package
+// name@version to owner's registry carried, "" for none.
+func (g *fakeGit) packageUploadToken(owner, ecosystem, name, version string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().packageTokens[owner+":"+ecosystem+"/"+name+"@"+version]
 }
 
 // PublishImage gives the outcome setImage gave the release, after the
