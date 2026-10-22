@@ -489,7 +489,7 @@ var _ = Describe("Container deploys", func() {
 	It("checks the source against each github target's own Secret (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		open := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		public := sourceTarget(ns, "public", c4v1alpha1.DeployTargetGitHubSource{})
 		// The mirror's token sits in the source: only the mirror knows it.
 		token := rand.Text()
 		mirror := "acme/" + ns + "-mirror"
@@ -505,10 +505,10 @@ var _ = Describe("Container deploys", func() {
 		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
 			fakeFile{"install.yaml", []byte("kind: List\n")})
 		crewRelease(ns, "v0.1.0", model.RunSucceeded)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "open"}, c4v1alpha1.ContainerDeploy{Target: "mirror"})
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "public"}, c4v1alpha1.ContainerDeploy{Target: "mirror"})
 
 		Eventually(func(g Gomega) {
-			d, _ := deployOfContainer(g, ns, "orders-api", "open")
+			d, _ := deployOfContainer(g, ns, "orders-api", "public")
 			g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed), d.Message)
 			d, _ = deployOfContainer(g, ns, "orders-api", "mirror")
 			g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
@@ -516,7 +516,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(d.Message).To(ContainSubstring("config/app.env line 1: a credential the operator holds"))
 			g.Expect(d.Message).NotTo(ContainSubstring(token))
 		}, deployWait).Should(Succeed())
-		Expect(githubFake.ref(open, "tags/orders-api/v0.1.0")).NotTo(BeEmpty())
+		Expect(githubFake.ref(public, "tags/orders-api/v0.1.0")).NotTo(BeEmpty())
 		Expect(githubFake.releases(mirror)).To(BeEmpty())
 		Expect(githubFake.ref(mirror, "tags/orders-api/v0.1.0")).To(BeEmpty())
 	})
