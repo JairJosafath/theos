@@ -42,6 +42,20 @@ later, create all types together with
 // +kubebuilder:default="value"
 ```
 
+**After a change to `*_types.go` or its markers**, regenerate all three copies
+of what they describe, and commit them with the change:
+
+```bash
+make manifests  # config/crd/bases and config/rbac/role.yaml
+make generate   # the zz_generated DeepCopy methods
+make chart      # dist/chart/templates/crd, the chart's copy of the CRDs
+```
+
+`hack/chart-crds_test.sh` (in `make validate-yaml`, so in `make check`) fails
+when the chart's CRDs differ from `config/crd/bases`; under yolo mode nothing
+runs it before the merge, so main goes red until someone regenerates the chart
+(#1670).
+
 - **Use** `metav1.Condition` for status (not custom string fields). Phases are a
   convenience on top of conditions.
 - **Use predefined types**: `metav1.Time` instead of `string` for dates
