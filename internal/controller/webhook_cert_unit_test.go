@@ -1,0 +1,253 @@
+/*
+Copyright 2026 JairJosafath. All rights reserved.
+
+This file is part of C4 Factory, which is proprietary. No license is granted
+to use, copy, modify or distribute it without the copyright holder's written
+permission. See the LICENSE file.
+*/
+
+package controller
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+)
+
+var webhookCertStart = time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+
+func webhookCertScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	s := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := apiextensionsv1.AddToScheme(s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func newWebhookCert(c client.Client, now *time.Time) *WebhookCert {
+	return &WebhookCert{Client: c, Namespace: "c4-factory-system", Secret: "c4-webhook-cert",
+		Service: "c4-webhook-service", CRDs: []string{}, Now: func() time.Time { return *now }}
+}
+
+func readWebhookSecret(t *testing.T, c client.Client) map[string][]byte {
+	t.Helper()
+	var s corev1.Secret
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "c4-factory-system",
+		Name: "c4-webhook-cert"}, &s); err != nil {
+		t.Fatal(err)
+	}
+	return s.Data
+}
+
+// served returns the leaf certificate the webhook server would present.
+func served(t *testing.T, w *WebhookCert) *x509.Certificate {
+	t.Helper()
+	pair, err := w.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+// #1614: the operator issues its webhook certificate into the Secret when
+// there is none, reuses it while it has over 30 days left, and re-issues it
+// under the same CA when it doesn't.
+func TestWebhookCertIssuesReusesAndReissues(t *testing.T) {
+	ctx := context.Background()
+	now := webhookCertStart
+	c := fake.NewClientBuilder().WithScheme(webhookCertScheme(t)).Build()
+	w := newWebhookCert(c, &now)
+
+	// Issue.
+	if _, err := w.GetCertificate(nil); err == nil {
+		t.Fatal("a certificate is served before Ensure")
+	}
+	if err := w.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	issued := readWebhookSecret(t, c)
+	cert := served(t, w)
+	if err := cert.VerifyHostname("c4-webhook-service.c4-factory-system.svc"); err != nil {
+		t.Errorf("issued for the wrong host: %v", err)
+	}
+	if got := cert.NotAfter.Sub(now); got < 364*24*time.Hour || got > 366*24*time.Hour {
+		t.Errorf("valid for %v, want a year", got)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(issued[webhookCAKey]) {
+		t.Fatal("no CA in the Secret")
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, DNSName: w.Host(), CurrentTime: now}); err != nil {
+		t.Errorf("the CA doesn't verify the serving certificate: %v", err)
+	}
+
+	// Reuse, a second replica or a restart 300 days on.
+	now = webhookCertStart.Add(300 * 24 * time.Hour)
+	other := newWebhookCert(c, &now)
+	if err := other.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(readWebhookSecret(t, c)[corev1.TLSCertKey], issued[corev1.TLSCertKey]) {
+		t.Error("the certificate was re-issued with 65 days left")
+	}
+	if !served(t, other).Equal(cert) {
+		t.Error("the second replica serves another certificate")
+	}
+
+	// Re-issue with 20 days left, under the same CA.
+	now = webhookCertStart.Add(345 * 24 * time.Hour)
+	if err := w.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	reissued := readWebhookSecret(t, c)
+	if bytes.Equal(reissued[corev1.TLSCertKey], issued[corev1.TLSCertKey]) {
+		t.Fatal("the certificate was not re-issued with 20 days left")
+	}
+	if !bytes.Equal(reissued[webhookCAKey], issued[webhookCAKey]) {
+		t.Error("re-issuing the certificate changed the CA")
+	}
+	renewed := served(t, w)
+	if renewed.Equal(cert) || renewed.NotAfter.Sub(now) < 364*24*time.Hour {
+		t.Errorf("serves a certificate valid until %v", renewed.NotAfter)
+	}
+	if _, err := renewed.Verify(x509.VerifyOptions{Roots: roots, DNSName: w.Host(), CurrentTime: now}); err != nil {
+		t.Errorf("the old CA doesn't verify the re-issued certificate: %v", err)
+	}
+
+	// The other replica's recheck serves what this one wrote.
+	if err := other.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !served(t, other).Equal(renewed) {
+		t.Error("the second replica still serves the old certificate after its recheck")
+	}
+}
+
+// #1614: a certificate for another Service is re-issued, and a replica that
+// loses the race to create the Secret serves the winner's.
+func TestWebhookCertReissuesForAnotherHostAndTakesTheFirstReplicas(t *testing.T) {
+	ctx := context.Background()
+	now := webhookCertStart
+	c := fake.NewClientBuilder().WithScheme(webhookCertScheme(t)).Build()
+	w := newWebhookCert(c, &now)
+	if err := w.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w.Service = "renamed"
+	if err := w.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := served(t, w).VerifyHostname("renamed.c4-factory-system.svc"); err != nil {
+		t.Errorf("not re-issued for the renamed Service: %v", err)
+	}
+
+	first := readWebhookSecret(t, c)
+	raced := false
+	racing := fake.NewClientBuilder().WithScheme(webhookCertScheme(t)).
+		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, cl client.WithWatch,
+			obj client.Object, opts ...client.CreateOption) error {
+			if s, ok := obj.(*corev1.Secret); ok && !raced {
+				raced = true
+				winner := s.DeepCopy()
+				winner.Data = first
+				if err := cl.Create(ctx, winner); err != nil {
+					return err
+				}
+			}
+			return cl.Create(ctx, obj, opts...)
+		}}).Build()
+	loser := newWebhookCert(racing, &now)
+	loser.Service = "renamed"
+	if err := loser.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !raced || !bytes.Equal(readWebhookSecret(t, racing)[corev1.TLSCertKey], first[corev1.TLSCertKey]) {
+		t.Error("the replica that lost the create replaced the winner's certificate")
+	}
+}
+
+// #1614: the CA goes into every CRD that converts by webhook; one at
+// strategy None is left alone, since the API server refuses a webhook stanza
+// beside it.
+func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
+	ctx := context.Background()
+	now := webhookCertStart
+	webhookCRD := &apiextensionsv1.CustomResourceDefinition{}
+	webhookCRD.Name = "crews.c4.factory.io"
+	webhookCRD.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+		Strategy: apiextensionsv1.WebhookConverter,
+		Webhook: &apiextensionsv1.WebhookConversion{ConversionReviewVersions: []string{"v1"},
+			ClientConfig: &apiextensionsv1.WebhookClientConfig{Service: &apiextensionsv1.ServiceReference{
+				Namespace: "c4-factory-system", Name: "c4-webhook-service"}}},
+	}
+	noneCRD := &apiextensionsv1.CustomResourceDefinition{}
+	noneCRD.Name = "tasks.c4.factory.io"
+	noneCRD.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{Strategy: apiextensionsv1.NoneConverter}
+	c := fake.NewClientBuilder().WithScheme(webhookCertScheme(t)).WithObjects(webhookCRD, noneCRD).Build()
+	w := newWebhookCert(c, &now)
+	w.CRDs = []string{webhookCRD.Name, noneCRD.Name}
+	if err := w.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ca := readWebhookSecret(t, c)[webhookCAKey]
+	var got apiextensionsv1.CustomResourceDefinition
+	if err := c.Get(ctx, client.ObjectKey{Name: webhookCRD.Name}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got.Spec.Conversion.Webhook.ClientConfig.CABundle, ca) {
+		t.Error("the webhook CRD's caBundle is not the CA")
+	}
+	if err := c.Get(ctx, client.ObjectKey{Name: noneCRD.Name}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.Conversion.Webhook != nil {
+		t.Error("a webhook stanza was written beside strategy None")
+	}
+}
+
+// #1614: WebhookCRDs and the RBAC marker that lets the operator patch them
+// name every CRD in config/crd/bases.
+func TestWebhookCRDsAreEveryCRD(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make([]string, 0, len(files))
+	for _, f := range files {
+		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "c4.factory.io_"), ".yaml")
+		want = append(want, plural+".c4.factory.io")
+	}
+	if !slices.Equal(want, slices.Sorted(slices.Values(WebhookCRDs))) {
+		t.Errorf("WebhookCRDs = %v, want %v", WebhookCRDs, want)
+	}
+	src, err := os.ReadFile("webhook_cert.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "resourceNames="+strings.Join(want, ";")+"\n") {
+		t.Error("the customresourcedefinitions RBAC marker doesn't name exactly WebhookCRDs")
+	}
+}
