@@ -47,7 +47,7 @@ func createFactory(ns string) {
 		&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "small"),
 			Spec: newCatalogSpec(templatesURL+"small", "v1.1.0", service, worker, job, operator)},
 		&c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),
-			Spec: newCatalogSpec(templatesURL+"k8s-manifests", "v1.9.0", service, worker, job)},
+			Spec: newCatalogSpec(templatesURL+"k8s-manifests", "v1.9.1", service, worker, job)},
 		&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
 			Spec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", service, worker)},
 	)

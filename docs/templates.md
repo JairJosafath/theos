@@ -231,7 +231,7 @@ A Compute: requests and limits for the container `app` as a kustomize patch
   backup-operator renders with it and validates them with kubectl-validate.
 - README, Deploy, Logging, Auth: n/a: it sizes a container and ships nothing.
 
-### k8s-manifests (v1.9.0)
+### k8s-manifests (v1.9.1)
 
 A Deployment: a Dockerfile for python-fastapi, python-cli or react-vite, and
 `deploy/k8s/` (kustomization, Deployment, and a Service but for a worker; for
@@ -251,8 +251,10 @@ a job, a Job instead of the Deployment).
   placeholder `OIDC_ISSUER` and `OIDC_AUDIENCE`, which the Deployment loads
   through `envFrom`, so the app starts; the README says to set both. For a
   job (since v1.9.0, #1587) `job.yaml` is a `batch/v1` Job, `restartPolicy:
-  Never`, annotated `argocd.argoproj.io/sync-options: Replace=true` so Argo
-  CD replaces it at each release (a Job's template is immutable), with no
+  Never`, annotated `argocd.argoproj.io/sync-options: Force=true,Replace=true`
+  (since v1.9.1, #1628: `Replace=true` alone is an update, which the
+  immutable template refuses) so Argo CD deletes and recreates it at each
+  release, with no
   `ttlSecondsAfterFinished` (the `argoCD` target's `selfHeal` would recreate
   a deleted Job and rerun it), and small's `compute.yaml` patches the Job
   (`TestK8sManifestsRunsAJob`); `make validate-yaml` builds the nightly-sync
