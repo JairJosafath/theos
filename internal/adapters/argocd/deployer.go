@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -97,21 +98,28 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // Ship applies s's Application: the repository at the release tag, the
 // manifests path, the image, the destination and an automated sync policy.
 // Applying the same version again changes nothing, so Argo CD starts
-// nothing new. A release without an image is ErrArtifactMissing. A name over
-// what a label value holds, or an Application there whose labels name
-// another Container (two names can join to the same, #1669), is a
-// model.DeployNameError naming it: the deploy fails NameRejected, and
+// nothing new, and only an apply that changed the Application logs at Info;
+// a repeat logs at V(1) (#1668). A release without an image, or without a
+// repository (an Application with no repoURL can never sync), is
+// ErrArtifactMissing. A name over what a label value holds, or an
+// Application there whose labels name another Container (two names can join
+// to the same, #1669), is a model.DeployNameError naming it: the deploy
+// fails NameRejected, and
 // nothing is written.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	if s.Image == "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release has no image")}
+	}
+	if s.Repository == "" {
+		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release has no repository")}
 	}
 	cfg := read(t)
 	name, err := model.ArgoCDApplicationName(s.App)
 	if err != nil {
 		return err
 	}
-	if _, err := d.get(ctx, cfg, name, s.App); err != nil && !apierrors.IsNotFound(err) {
+	existing, err := d.get(ctx, cfg, name, s.App)
+	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	app := application(cfg, name, s)
@@ -119,7 +127,13 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		client.ForceOwnership); err != nil {
 		return portError(err, "patch", "applications", cfg.Namespace)
 	}
-	logr.FromContextOrDiscard(ctx).Info("Applied Argo CD Application", "application", app.GetName(),
+	// The apply reads the server's Application back into app: the same
+	// resourceVersion as before means it wrote nothing.
+	log := logr.FromContextOrDiscard(ctx)
+	if existing != nil && existing.GetResourceVersion() == app.GetResourceVersion() {
+		log = log.V(1)
+	}
+	log.Info("Applied Argo CD Application", "application", app.GetName(),
 		"namespace", app.GetNamespace(), "revision", s.Version, "image", s.Image)
 	return nil
 }
@@ -178,9 +192,13 @@ func application(cfg settings, name string, s ports.Shipment) *unstructured.Unst
 
 // State reads app's Application back, as model.ArgoCDDeployState says. One
 // version runs at a time and the Application names it, so version is
-// ignored. An Application whose labels name another Container is that
-// Container's deploy, not app's: a model.DeployNameError naming it, which
-// the operator reports NameRejected, Failed, not a wait (#1669, #1677).
+// ignored. No Application is the zero state, unless its namespace isn't
+// there either: a Get in a missing namespace is the same NotFound as a
+// missing Application, so State gets the Namespace to tell them apart and
+// refuses the credential as Ship would (#1668). An Application whose labels
+// name another Container is that Container's deploy, not app's: a
+// model.DeployNameError naming it, which the operator reports NameRejected,
+// Failed, not a wait (#1669, #1677).
 func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
 	cfg := read(t)
 	name, err := model.ArgoCDApplicationName(app)
@@ -189,7 +207,9 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (po
 	}
 	obj, err := d.get(ctx, cfg, name, app)
 	if apierrors.IsNotFound(err) {
-		return ports.DeployState{}, nil
+		var ns corev1.Namespace
+		err := d.c.Get(ctx, types.NamespacedName{Name: cfg.Namespace}, &ns)
+		return ports.DeployState{}, portError(err, "get", "namespaces", cfg.Namespace)
 	}
 	if err != nil {
 		return ports.DeployState{}, err

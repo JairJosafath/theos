@@ -8,6 +8,7 @@
 #   hack/kind.sh keep-context CMD ARGS..  run CMD (kind create cluster, kind export kubeconfig),
 #                                         then put the kubeconfig's current context back
 #   hack/kind.sh registry-hosts CLUSTER   write containerd's hosts.toml for Gitea into CLUSTER's nodes
+#   hack/kind.sh gitea-service CLUSTER    delete CLUSTER's Gitea Service when its ClusterIP isn't the fixed one
 #
 # A build tags IMAGE-<checkout> (c4factory/operator:dev-relay-2-1a2b3c), never
 # the shared IMAGE, so another checkout's build can't replace it between the
@@ -117,13 +118,29 @@ registry_hosts() {
   echo "Mapped $GITEA_HOST to http://$GITEA_CLUSTER_IP:${GITEA_HOST##*:} in Kind cluster $cluster"
 }
 
+# gitea_service CLUSTER: delete Service gitea/gitea of CLUSTER when its
+# ClusterIP isn't GITEA_CLUSTER_IP, so the apply of config/gitea that follows
+# creates it with the fixed one. spec.clusterIP is immutable: on a pool
+# cluster whose Gitea predates the pin the Service holds an allocated IP, and
+# the apply failed with "field is immutable" (#1679). A Service that already
+# has the fixed IP, or none at all, is left alone.
+gitea_service() {
+  local cluster=$1 ip
+  ip=$("$KUBECTL" --context "kind-$cluster" -n gitea get svc gitea --ignore-not-found -o 'jsonpath={.spec.clusterIP}')
+  if [ -n "$ip" ] && [ "$ip" != "$GITEA_CLUSTER_IP" ]; then
+    echo "Deleting Service gitea/gitea of Kind cluster $cluster: its ClusterIP $ip is not the fixed $GITEA_CLUSTER_IP (immutable; the apply recreates it)"
+    "$KUBECTL" --context "kind-$cluster" -n gitea delete svc gitea
+  fi
+}
+
 main() {
   case "${1:-}" in
     checkout) checkout_tag ;;
     load) [ $# -eq 3 ] || { echo "usage: hack/kind.sh load CLUSTER IMAGE" >&2; return 64; }; load "$2" "$3" ;;
     keep-context) shift; [ $# -gt 0 ] || { echo "usage: hack/kind.sh keep-context CMD [ARGS...]" >&2; return 64; }; keep_context "$@" ;;
     registry-hosts) [ $# -eq 2 ] || { echo "usage: hack/kind.sh registry-hosts CLUSTER" >&2; return 64; }; registry_hosts "$2" ;;
-    *) echo "usage: hack/kind.sh checkout | load CLUSTER IMAGE | keep-context CMD [ARGS...] | registry-hosts CLUSTER" >&2; return 64 ;;
+    gitea-service) [ $# -eq 2 ] || { echo "usage: hack/kind.sh gitea-service CLUSTER" >&2; return 64; }; gitea_service "$2" ;;
+    *) echo "usage: hack/kind.sh checkout | load CLUSTER IMAGE | keep-context CMD [ARGS...] | registry-hosts CLUSTER | gitea-service CLUSTER" >&2; return 64 ;;
   esac
 }
 
