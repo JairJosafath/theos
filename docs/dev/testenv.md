@@ -1006,7 +1006,7 @@ drive of each distro's `BasePath` (Docker Desktop's included), read from
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` with `reg.exe` and
 mapped with `wslpath`, or `/mnt/c` when that fails. `RELAY_DISK_PATHS`
 (space-separated) overrides the list. While one has less than
-`RELAY_MIN_FREE_GB` (default 30) free, the worker starts no session, logs the
+`RELAY_MIN_FREE_GB` (default 15) free, the worker starts no session, logs the
 path, its free space and the minimum (at most once per path an hour, across
 workers: `.relay/disk-low-<path>`), and prunes the caches at once
 (`hack/prune-caches.sh`). The wait counts toward `RELAY_MEM_WAIT` like the
@@ -1017,10 +1017,9 @@ to 102 GB on 2026-10-22, about 13 GB for each of six releases (#1636): the
 self-hosted runners (`hack/gh-runner`) use the device's Docker through
 `docker.sock`, *Release* built ten images a release, three of them about
 5 GB, and kept them, *Verify Release* pulled them again, and the build cache
-reached 20 GB within the 72h the prune kept. The file never shrinks (and
-compacting it is off the table: too buggy), so what Docker holds must stay
-under the peak it reached. What keeps it there, all tested without Docker
-(`hack/check-workflows_test.sh`, `hack/prune-caches_test.sh`):
+reached 20 GB within the 72h the prune kept. What keeps it under the peak
+it reached, all tested without Docker (`hack/check-workflows_test.sh`,
+`hack/prune-caches_test.sh`):
 
 - *Release*'s last step, under `if: always()`, removes every image the build
   tagged once they are pushed, whatever the steps before did: they are on
@@ -1035,28 +1034,14 @@ under the peak it reached. What keeps it there, all tested without Docker
   every 30 minutes from `hack/relay-watch.sh` and when a worker finds a
   watched filesystem low.
 
-Deleting files inside WSL frees space in the distro, not on C:. Only
-compacting the `.vhdx` returns it to Windows:
-
-1. Quit Docker Desktop, then in PowerShell `wsl --shutdown`.
-2. In an administrator `diskpart`, for WSL's disk (its folder is the
-   distro's `BasePath`, `%LOCALAPPDATA%\wsl\{<guid>}\ext4.vhdx` on a
-   recent WSL):
-
-   ```
-   select vdisk file="C:\Users\<you>\AppData\Local\wsl\{<guid>}\ext4.vhdx"
-   attach vdisk readonly
-   compact vdisk
-   detach vdisk
-   ```
-
-3. The same for Docker Desktop's disk,
-   `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`, with Docker Desktop
-   still quit.
-
-WSL's own `wsl --manage <distro> --set-sparse true` would shrink the disk as
-it goes, but WSL marks sparse VHDs unsafe (they can corrupt the disk), so
-compact by hand instead.
+Deleting files inside WSL frees space in the distro, not on C:: the `.vhdx`
+files never shrink. We no longer compact them (`diskpart`'s `compact vdisk`)
+or purge Docker Desktop's data: compacting proved too buggy (the owner,
+2026-10-22, #1635). WSL's own `wsl --manage <distro> --set-sparse true` would
+shrink the disk as it goes, but WSL marks sparse VHDs unsafe (they can corrupt
+the disk). So what the disks hold has to stay under the peak they already
+reached: the release images are deleted once pushed (#1636), and the floor is
+15 GB, down from 30 once C: no longer got back there (#1635).
 
 `hack/relay_test.sh` tests the guard with a stub `df`: no session below the
 minimum on any watched path and the path in the log, sessions above it, the
