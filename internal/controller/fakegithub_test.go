@@ -168,7 +168,7 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	repository := parts[0] + "/" + parts[1]
-	releases, ok := f.repos[repository]
+	_, ok := f.repos[repository]
 	if !ok {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
@@ -192,6 +192,13 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		f.serveIssues(w, req, repository, rest)
 		return
 	}
+	f.serveReleases(w, req, repository, rest)
+}
+
+// serveReleases answers a request under repository's /releases, rest its
+// path below it.
+func (f *fakeGitHub) serveReleases(w http.ResponseWriter, req *http.Request, repository string, rest []string) {
+	releases := f.repos[repository]
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodGet:
 		if req.URL.Query().Get("page") != "1" {

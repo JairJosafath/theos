@@ -21,6 +21,7 @@ func TestGitHubDeployState(t *testing.T) {
 	v120draft := ours(3, "cli/v1.2.0", true)
 	theirs := release(4, "cli/v1.3.0", false, ShipMarker("ns/other", "cli/v1.3.0"))
 	foreign := release(5, "v9.0.0", false, "a release a person made")
+	otherTarget := ours(6, "lib/v1.0.0", false)
 	deploying := func(v string) DeployRun {
 		return DeployRun{Version: v, Phase: DeployPhaseDeploying, Health: DeployHealthProgressing}
 	}
@@ -53,6 +54,9 @@ func TestGitHubDeployState(t *testing.T) {
 			want: GitHubDeployReport{DeployRun: deployed("v1.0.0")}},
 		{name: "Latest held by another app's release is left alone",
 			f:    GitHubDeployFacts{Version: "v1.0.0", Releases: []TargetRelease{v100, v110, theirs}, Latest: &theirs},
+			want: GitHubDeployReport{DeployRun: deployed("v1.0.0")}},
+		{name: "Latest held by the app's release under another target's prefix is left alone (#1445)",
+			f:    GitHubDeployFacts{Version: "v1.0.0", Releases: []TargetRelease{v100, v110, otherTarget}, Latest: &otherTarget},
 			want: GitHubDeployReport{DeployRun: deployed("v1.0.0")}},
 		{name: "Latest held by a release the factory didn't make is left alone",
 			f:    GitHubDeployFacts{Version: "v1.0.0", Releases: []TargetRelease{v100, foreign}, Latest: &foreign},

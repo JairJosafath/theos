@@ -50,12 +50,13 @@ func GitHubMarkedRelease(app, tag string, releases []TargetRelease) *TargetRelea
 }
 
 // GitHubLatestHeld says GitHub's Latest, latest, is another of app's marked
-// releases than wanted, so a target that takes Latest moves it back to
-// wanted. Latest held by a release of another app, or by one the factory
+// releases than wanted under the target's tagPrefix, so a target that takes
+// Latest moves it back to wanted. Latest held by a release of another app,
+// by the app's release under another target's prefix, or by one the factory
 // didn't make, is left alone.
-func GitHubLatestHeld(app string, wanted, latest *TargetRelease) bool {
+func GitHubLatestHeld(app, tagPrefix string, wanted, latest *TargetRelease) bool {
 	return wanted != nil && latest != nil && latest.ID != wanted.ID &&
-		strings.Contains(latest.Body, ShipMarkerPrefix(app))
+		strings.Contains(latest.Body, ShipMarkerPrefix(app)) && strings.HasPrefix(latest.TagName, tagPrefix)
 }
 
 // GitHubReadsLatest says the member reads GitHub's Latest for f: the target
@@ -93,7 +94,7 @@ func GitHubDeployState(f GitHubDeployFacts) GitHubDeployReport {
 		switch {
 		case wanted.Draft:
 			return deploying(wanted)
-		case f.TakesLatest && GitHubLatestHeld(f.App, wanted, f.Latest):
+		case f.TakesLatest && GitHubLatestHeld(f.App, f.TagPrefix, wanted, f.Latest):
 			rep := deploying(wanted)
 			rep.MakeLatest = wanted.ID
 			return rep
