@@ -192,6 +192,22 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{ImageRegistry: "https://nodes.example",
 				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
 		}, "spec.argoCD.imageRegistry"),
+		// The image copy's settings need an imageRegistry (#1770).
+		Entry("imageRegistryInsecure without an imageRegistry", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{ImageRegistryInsecure: true,
+				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "imageRegistryInsecure needs imageRegistry"),
+		Entry("imageRepositoryLayout without an imageRegistry", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{ImageRepositoryLayout: "flat",
+				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "imageRepositoryLayout needs imageRegistry"),
+		Entry("an unknown imageRepositoryLayout", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{ImageRegistry: "registry.lab:5000",
+				ImageRepositoryLayout: "deep", Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "spec.argoCD.imageRepositoryLayout"),
 		// The github member's tagPrefix (#1486).
 		Entry("a tagPrefix with a space", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.TagPrefix = new("orders cli-")

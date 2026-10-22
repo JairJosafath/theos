@@ -728,7 +728,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy.
+  `registryPassword`, and `kustomize.images` names the copy. The copy
+  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
+  plain HTTP). It resolves the destination tag first: a tag already
+  naming the digest is left alone and nothing is written, so a registry
+  with immutable tags takes a retried Ship; a tag naming another image
+  fails the deploy with that reason, and is not retried as transient.
+  `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
+  `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
+  (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
+  one segment under the namespace) (#1770).
 - **AWS targets** (#1071, [plans/aws-deploy.md](plans/aws-deploy.md)): a
   `cloudFormation` target names a region and, as a guard, an account. CI
   synthesizes the CDK app and the release carries the cloud assembly
