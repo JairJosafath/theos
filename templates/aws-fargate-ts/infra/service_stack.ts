@@ -55,6 +55,8 @@ import type { Construct } from 'constructs';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 import { Users } from './user_pool';
@@ -113,6 +115,8 @@ export interface ServiceStackProps extends StackProps {
   readonly tier: Tier;
   /** What the Container promises whatever the tier: `OPERATIONS`. */
   readonly operations: Operations;
+  /** The data stores it connects the service to: `DATA_STORES` unless a test names others. */
+  readonly dataStores?: readonly (readonly [string, Connect])[];
 }
 
 /**
@@ -224,10 +228,21 @@ export class ServiceStack extends Stack {
     Validations.of(taskDefinition).acknowledge({
       id: 'AwsSolutions-ECS2',
       reason:
-        'The variables name the stack’s own table and user pool and app client and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
+        'The variables name the stack’s own table and user pool and app client, the tables of the data stores the Container’s Relationships name and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    // The DataStores the Container's Relationships name, from their Connectors:
+    // each grants the task role its calls and hands the app the table's name.
+    const user = {
+      grantPrincipal: taskDefinition.taskRole,
+      addEnvironment: (key: string, value: string) => {
+        app.addEnvironment(key, value);
+      },
+    };
+    const stores = (props.dataStores ?? DATA_STORES).map(
+      ([name, connect]) => [name, connect(this, user, rules)] as const,
+    );
     // ECS pulls the image with the execution role: pulls from the bootstrap's
     // container-assets repository only, and ecr:GetAuthorizationToken, an
     // action that takes no resource but "*".
@@ -484,6 +499,16 @@ export class ServiceStack extends Stack {
         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
+    for (const [name, store] of stores) {
+      alarms.monitoring.monitorDynamoTable({
+        table: store,
+        alarmFriendlyName: name,
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+      });
+    }
 
     // A deployment that sets off one of these rolls back. ECS reads the
     // alarms by name: the names are written out, since a reference to an
@@ -502,7 +527,7 @@ export class ServiceStack extends Stack {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table],
+        tables: [table, ...stores.map(([, store]) => store)],
       });
     }
 
