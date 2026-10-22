@@ -434,8 +434,8 @@ envtest).
 ### The AWS Frameworks
 
 aws-lambda-ts (v1.4.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
-HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.2.0) and
-aws-fargate-ts (v2.0.0): a Node service behind an HTTPS load balancer.
+HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.3.0) and
+aws-fargate-ts (v2.1.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
 Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
@@ -495,7 +495,7 @@ gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
   and `make dist` only writes the assembly the `cloudFormation` DeployTarget
   ships.
 
-### dynamodb (v1.1.0)
+### dynamodb (v1.2.0)
 
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
 on-demand, encrypted table for a function Container. Since v1.1.0
@@ -505,22 +505,29 @@ instance role with its unit's environment) in place of a Lambda, and its
 file refuses a Framework that renders no `infra/connectors.ts` with
 `{{ fail }}`, so the Container fails with a `TemplateError` naming the
 Framework and the Connector instead of getting a file nothing calls (#1739,
-[docs/plans/aws-data-stores.md](plans/aws-data-stores.md)).
+[docs/plans/aws-data-stores.md](plans/aws-data-stores.md)). Since v1.2.0 it
+supports `service` too, for aws-fargate-ts (the task role and the App
+container's environment) and aws-ec2-ts (the instance role and the unit's
+environment) (#1742).
 
 - CI: `make test-templates`, combos "aws lambda function with dynamodb",
-  "aws lambda function in go with dynamodb" and "aws python lambda function
+  "aws lambda function in go with dynamodb", "aws python lambda function
+  with dynamodb", "aws fargate service with dynamodb" and "aws ec2 service
   with dynamodb": their `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
   include, a non-Lambda grantee included;
   `TestDynamoDBConnectorConnectsToAWSLambdaTS`,
-  `TestDynamoDBConnectorConnectsToOtherAWSLambdas` and
-  `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt`
+  `TestDynamoDBConnectorConnectsToOtherAWSLambdas`,
+  `TestDynamoDBConnectorConnectsToAWSServices`,
+  `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt` and
+  `TestDynamoDBConnectorFailsAServiceFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
   production. aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it in
-  (#1393, #1740); the other AWS Frameworks fail the Container until their
-  step of the plan.
+  (#1393, #1740), and aws-fargate-ts and aws-ec2-ts (#1742); the other AWS
+  Frameworks fail the Container until their step of the plan (aws-queue-ts,
+  aws-event-ts and aws-schedule-ts: #1741).
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 

@@ -100,11 +100,22 @@ CloudFormation offline.
 - **Server:** a request target that isn't a path (`//x`, `*`) is answered
   400, a client that hangs up mid-body is dropped, and a bug in serving one
   request is logged and closes its connection; none ends the process.
+- **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
+  `DATA_STORES`: one entry per Connector of a DataStore the Container's
+  Relationships name that this Framework knows (`dynamodb`, whose
+  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  stack calls each entry with a `DataStoreUser` of the instance role and the
+  environment the systemd unit is rendered from, and the tier's `TIER_RULES`,
+  so the Connector makes its table, grants the role its calls and hands the
+  unit the table's name; the stack alarms on the table like its own and
+  backs it up by ARN. The `Items` table stays beside it as the
+  starter's example; the README says new data goes in the DataStore's table.
+  `infra/connectors.ts` is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
   `infra/service_stack.ts`, `infra/service_stack.test.ts`,
   `infra/server_asset.ts`, `infra/alarms.ts`, `infra/backups.ts`,
-  `infra/user_pool.ts`,
+  `infra/user_pool.ts`, `infra/connectors.ts`,
   `infra/operations.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients are
@@ -156,6 +167,9 @@ CloudFormation offline.
   makes a second stack, `<name>-backup-copy` (#1465).
   v1.2.0 verifies a Cognito bearer token on every route but `/health`, with
   the stack's own user pool and app client (#1479).
+  v1.3.0 renders `infra/connectors.ts` and connects the service to each
+  `dynamodb` DataStore's table through its instance role and the unit's
+  environment, alarming on it and backing it up (#1742).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 
