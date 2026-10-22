@@ -51,7 +51,8 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		{"behind an Ingress: the first allowed host", []string{"ui.allowedHosts={factory.example.com,other.example.com}"},
 			"https://factory.example.com/downloads/c4session-linux-${arch}"},
 		{"the UI off: the release's files", []string{"ui.enabled=false"}, github},
-		{"a set value replaces the default", []string{"sessionBinaryURL=https://x.example.com/${arch}"}, "https://x.example.com/${arch}"},
+		{"a set value replaces the default", []string{"sessionBinaryURL=https://x.example.com/${arch}"},
+			"https://x.example.com/${arch}"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

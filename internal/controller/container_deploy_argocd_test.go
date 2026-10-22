@@ -48,14 +48,14 @@ func argoProject(argoNS string) {
 	Expect(k8sClient.Create(ctx, project)).To(Succeed())
 }
 
-// readyArgoTarget makes argoCD DeployTarget name in ns, its Argo CD in a
+// readyArgoTarget makes argoCD DeployTarget dev in ns, its Argo CD in a
 // fresh namespace holding AppProject default, waits for it to be Ready, and
 // returns the Argo CD namespace.
-func readyArgoTarget(ns, name string) string {
+func readyArgoTarget(ns string) string {
 	GinkgoHelper()
 	argoNS := newArgoNamespace()
 	argoProject(argoNS)
-	dt := newArgoCDTarget(ns, name, argoNS, "apps")
+	dt := newArgoCDTarget(ns, "dev", argoNS, "apps")
 	mustCreate(dt)
 	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 	return argoNS
@@ -138,7 +138,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
-		argoNS := readyArgoTarget(ns, "dev")
+		argoNS := readyArgoTarget(ns)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
 
 		By("writing the Application from the release")
@@ -183,7 +183,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
 		shipRelease(ns, "v0.1.0", true)
-		readyArgoTarget(ns, "dev")
+		readyArgoTarget(ns)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
 		d := deployIs(ns, "dev", model.DeployPhaseFailed, model.DeployArtifactMissing, "", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("the release has no image"))
@@ -193,7 +193,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		ns := newProjectNamespace()
 		readyCrewContainer(ns, "orders-api", func(c *c4v1alpha1.Container) { c.Spec.DeploymentRef = nil })
 		shipRelease(ns, "v0.1.0", true)
-		argoNS := readyArgoTarget(ns, "dev")
+		argoNS := readyArgoTarget(ns)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
 		d := deployIs(ns, "dev", model.DeployPhaseWaiting, model.DeployIncompatible, "", model.DeployIncompatible)
 		Expect(d.Message).To(Equal("Container orders-api can't ship to DeployTarget dev: it lacks a Deployment " +
@@ -211,7 +211,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
-		argoNS := readyArgoTarget(ns, "dev")
+		argoNS := readyArgoTarget(ns)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
 		first := argoApplication(ns, argoNS)
 
@@ -247,7 +247,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		Expect(joined).To(BeNumerically(">", model.ArgoCDApplicationNameMax))
 		readyCrewContainer(ns, name, nil)
 		crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
-		argoNS := readyArgoTarget(ns, "dev")
+		argoNS := readyArgoTarget(ns)
 		setDeployOf(ns, name, c4v1alpha1.ContainerDeploy{Target: "dev"})
 
 		d := nameRejected(ns, name, "dev")
