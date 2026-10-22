@@ -184,7 +184,7 @@ func TestGitHubShipment(t *testing.T) {
 				PackagesToken: true},
 			want: GitHubShipmentPlan{Image: true}},
 		{name: "no packages token ships no image",
-			f: GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true},
+			f:           GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true},
 			wantProblem: GitHubNothingToPublish},
 		{name: "an image not yet published ships none",
 			f: GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests,
