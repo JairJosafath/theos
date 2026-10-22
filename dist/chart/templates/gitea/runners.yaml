@@ -25,10 +25,7 @@ spec:
   policyTypes: [Ingress, Egress]
   egress:
     - to:
-        - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: kube-system}
-          podSelector:
-            matchLabels: {k8s-app: kube-dns}
+        {{- include "c4-factory.clusterDNSPeers" $ | trim | nindent 8 }}
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}

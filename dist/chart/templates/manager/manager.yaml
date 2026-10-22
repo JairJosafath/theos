@@ -90,6 +90,9 @@ spec:
         {{- with .Values.goProxy }}
         - --go-proxy={{ . }}
         {{- end }}
+        {{- range .Values.clusterDNS }}
+        - --cluster-dns={{ . }}
+        {{- end }}
         {{- with .Values.sessionBinaryURL }}
         - --session-binary-url={{ tpl . $ }}
         {{- end }}

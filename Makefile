@@ -580,6 +580,8 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$(YAML_OUT)/chart-gitea.yaml"
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false,projectNamespaces.create=false,ui.enabled=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
+	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
+		--set 'gitea.projects={apps},clusterDNS={169.254.20.10/32,openshift-dns/dns.operator.openshift.io/daemonset-dns=default}' >"$(YAML_OUT)/chart-gitea-dns.yaml"
 	@if $(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --set 'gitea.projects={apps},agents.reviewer.model=claude-fable-5-1' >/dev/null 2>&1; then \
 		echo "helm template renders an Agent on a Fable model; the chart must refuse it"; exit 1; fi
 	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \

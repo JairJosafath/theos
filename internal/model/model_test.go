@@ -372,3 +372,27 @@ func TestMatchGlob(t *testing.T) {
 		}
 	}
 }
+
+// A cluster DNS address block (#1257) is one inside the private ranges the
+// fences keep HTTPS from; a public resolver or anywhere is not.
+func TestPrivateBlock(t *testing.T) {
+	for _, tt := range []struct {
+		cidr string
+		want bool
+	}{
+		{"169.254.20.10/32", true}, // NodeLocal DNSCache
+		{"10.96.0.10/32", true},    // a kube-dns Service address
+		{"172.20.0.0/16", true},
+		{"10.0.0.0/8", true},
+		{"8.8.8.8/32", false},
+		{"0.0.0.0/0", false},
+		{"10.0.0.0/7", false}, // wider than 10/8
+		{"169.254.20.10", false},
+		{"fd00::10/128", false},
+		{"", false},
+	} {
+		if got := PrivateBlock(tt.cidr); got != tt.want {
+			t.Errorf("PrivateBlock(%q) = %v, want %v", tt.cidr, got, tt.want)
+		}
+	}
+}

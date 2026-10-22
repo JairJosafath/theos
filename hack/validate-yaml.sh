@@ -291,6 +291,21 @@ for f in chart-gitea chart-gitea-bare; do
 done
 go run ./hack/runner-fence config/runner/*.yaml "$OUT/kustomize-gitea.yaml"
 
+# clusterDNS says where cluster DNS runs (#1257): chart-gitea-dns.yaml sets
+# NodeLocal DNSCache's address and OpenShift's DNS pods, which the CI fence's
+# DNS rule and the manager's --cluster-dns both carry; the default is kube-dns.
+go run ./hack/runner-fence "$OUT/chart-gitea-dns.yaml"
+fence=$(doc "$OUT/chart-gitea-dns.yaml" NetworkPolicy ci-runner)
+want "the CI fence doesn't let DNS out to NodeLocal DNSCache's address" "$fence" '^ *cidr: 169\.254\.20\.10/32$'
+want "the CI fence doesn't let DNS out to the openshift-dns namespace" "$fence" '^ *matchLabels: \{kubernetes\.io/metadata\.name: "openshift-dns"\}$'
+want "the CI fence doesn't select OpenShift's DNS pods" "$fence" '^ *"dns\.operator\.openshift\.io/daemonset-dns": "default"$'
+manager=$(doc "$OUT/chart-gitea-dns.yaml" Deployment c4-factory-controller-manager)
+want "the manager lacks --cluster-dns for NodeLocal DNSCache" "$manager" '^ *- --cluster-dns=169\.254\.20\.10/32$'
+want "the manager lacks --cluster-dns for openshift-dns" "$manager" '^ *- --cluster-dns=openshift-dns/dns\.operator\.openshift\.io/daemonset-dns=default$'
+want "the manager's default --cluster-dns isn't kube-dns in kube-system" \
+	"$(doc "$OUT/chart-gitea.yaml" Deployment c4-factory-controller-manager)" '^ *- --cluster-dns=kube-system/k8s-app=kube-dns$'
+echo "The CI fence and the manager take clusterDNS"
+
 # test/invalid holds YAML each create-time CEL rule must reject: each file's
 # first line says "# expect: <message>", which the rejection must contain.
 checked=0

@@ -209,6 +209,21 @@ prometheus:
 ##
 goProxy: https://proxy.golang.org
 
+## Where cluster DNS runs: the peers the agent and CI fences let port 53 out
+## to (the operator's --cluster-dns, and the CI runners' NetworkPolicy). Each
+## entry is namespace/key=value[,key=value], a namespace and pod labels, or an
+## address block inside the private ranges (a bare address means /32). The
+## default fits kube-dns or CoreDNS in kube-system. A cluster whose pods
+## resolve through NodeLocal DNSCache needs its link-local address
+## (169.254.20.10/32; keep the default too when some pods still use the
+## Service), and one with DNS in another namespace its pods' labels
+## (OpenShift: openshift-dns/dns.operator.openshift.io/daemonset-dns=default).
+## Without the right entry, sandboxes and CI runners resolve nothing. The
+## UI's ui.components dns entry is separate: set it too when DNS runs elsewhere.
+##
+clusterDNS:
+  - kube-system/k8s-app=kube-dns
+
 ## Where a scaffolded devcontainer's c4session feature downloads the Session
 ## client (the operator's --session-binary-url); ${arch} becomes amd64 or
 ## arm64. The default is the UI, whose image carries the client and serves it

@@ -120,7 +120,7 @@ var _ = Describe("CI runner pool", func() {
 		var policy networkingv1.NetworkPolicy
 		Expect(k8sClient.Get(ctx, key(ns, CINetworkPolicyName), &policy)).To(Succeed())
 		Expect(controlledBy(&policy, &project)).To(BeTrue())
-		Expect(policy.Spec).To(Equal(fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, []string{"gitea"})))
+		Expect(policy.Spec).To(Equal(fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, nil, []string{"gitea"})))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 			g.Expect(condition(project.Status.Conditions, ConditionCIRunners)).To(And(

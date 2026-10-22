@@ -276,7 +276,7 @@ func (r *ProjectReconciler) ensureCINetwork(ctx context.Context, project *c4v1al
 		Name: CINetworkPolicyName, Namespace: project.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
-		policy.Spec = fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, gitNamespaces)
+		policy.Spec = fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, r.ClusterDNS, gitNamespaces)
 		return controllerutil.SetControllerReference(project, policy, r.Scheme)
 	})
 	return err

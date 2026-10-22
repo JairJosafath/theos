@@ -145,7 +145,7 @@ func TestRunnerPodFate(t *testing.T) {
 
 // Both fences share one egress: DNS, the Git hosts' namespaces, public HTTPS.
 func TestFenceEgress(t *testing.T) {
-	egress := fenceEgress([]string{"gitea", "gitlab"})
+	egress := fenceEgress(nil, []string{"gitea", "gitlab"})
 	if len(egress) != 4 {
 		t.Fatalf("%d rules, want DNS, public HTTPS and one per Git namespace", len(egress))
 	}
@@ -153,7 +153,7 @@ func TestFenceEgress(t *testing.T) {
 		egress[3].To[0].NamespaceSelector.MatchLabels[corev1.LabelMetadataName] != "gitlab" {
 		t.Errorf("Git rules %+v, want gitea then gitlab", egress[2:])
 	}
-	if spec := fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, nil); len(spec.PolicyTypes) != 2 ||
+	if spec := fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, nil, nil); len(spec.PolicyTypes) != 2 ||
 		len(spec.Egress) != 2 || spec.PodSelector.MatchLabels[LabelCIRunner] != ciRunnerValue {
 		t.Errorf("fencePolicySpec() = %+v, want ingress and egress types, two rules, the CI selector", spec)
 	}

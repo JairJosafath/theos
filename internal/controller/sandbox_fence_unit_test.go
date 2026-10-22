@@ -149,6 +149,27 @@ func TestAgentNetworkFence(t *testing.T) {
 		t.Errorf("owners %v, want the Project", policy.OwnerReferences)
 	}
 
+	// On a cluster whose pods resolve through NodeLocal DNSCache, or through
+	// DNS in another namespace, --cluster-dns names the peers; only the DNS
+	// rule changes (#1257).
+	peers, err := ClusterDNSPeers([]string{"169.254.20.10/32", "openshift-dns/dns.operator.openshift.io/daemonset-dns=default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := fence(t, &ProjectReconciler{ClusterDNS: peers})
+	wantDNS := []networkingv1.NetworkPolicyPeer{
+		{IPBlock: &networkingv1.IPBlock{CIDR: "169.254.20.10/32"}},
+		{NamespaceSelector: namespace("openshift-dns"), PodSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}}},
+	}
+	if !reflect.DeepEqual(elsewhere.Spec.Egress[0].To, wantDNS) {
+		t.Errorf("DNS peers with --cluster-dns differ (-got +want):\n%s", diff.Diff(elsewhere.Spec.Egress[0].To, wantDNS))
+	}
+	if !reflect.DeepEqual(elsewhere.Spec.Egress[0].Ports, want.Egress[0].Ports) ||
+		!reflect.DeepEqual(elsewhere.Spec.Egress[1:], want.Egress[1:]) {
+		t.Errorf("rules beside DNS changed with --cluster-dns (-got +want):\n%s", diff.Diff(elsewhere.Spec.Egress, want.Egress))
+	}
+
 	// With a model proxy, one more rule: its pods in the release namespace, on
 	// its port, and nothing else of that namespace (#1136).
 	proxied := fence(t, &ProjectReconciler{SourceNamespace: "c4-factory-system",

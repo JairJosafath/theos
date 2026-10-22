@@ -208,7 +208,8 @@ termination message. A per-Container bot user on the Git host writes to that
 repository only. `main` takes no pushes: only the operator merges, the
 reviewed commit only; the Git host refuses changes to the platform's and the
 Standard's protected files (the gated merge aside) and keeps `v*` tags to the
-operator. A per-project NetworkPolicy allows only DNS, the Git host and public
+operator. A per-project NetworkPolicy allows only cluster DNS (where `--cluster-dns`
+says it runs; kube-dns in kube-system by default), the Git host and public
 HTTPS. Each run has a deadline. The factory's token never enters a sandbox: a
 sandbox on the shared token reaches Claude through the model proxy in the
 release namespace, which adds the token to the agent's requests, and the fence
@@ -229,9 +230,12 @@ HTTPS. Every CI adapter meets this or says which part it can't
 ([plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)).
 
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
-(`app.kubernetes.io/component: ci-runner`) lets nothing in and only DNS,
-Gitea's port 3000 and public HTTPS out, and the registration token goes only to
-the init container; `make validate-yaml` checks both. The `image` runner builds
+(`app.kubernetes.io/component: ci-runner`) lets nothing in and only cluster
+DNS, Gitea's port 3000 and public HTTPS out, and the registration token goes
+only to the init container; `make validate-yaml` checks both. Its DNS peers
+are the chart's `clusterDNS`, the same entries the operator gets as
+`--cluster-dns`, so a cluster whose pods resolve through NodeLocal DNSCache or
+through DNS in another namespace sets it once for both fences (#1257). The `image` runner builds
 release images (#1069) with rootless BuildKit: its job container alone runs
 seccomp and AppArmor `Unconfined`, which BuildKit's user namespaces need, as uid
 1000, never privileged, with no added capability and no node directory;

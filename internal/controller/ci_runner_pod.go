@@ -168,22 +168,23 @@ func runnerPodFate(pod *corev1.Pod) string {
 	return ""
 }
 
-// fenceEgress is what a fenced pod may reach: DNS, the in-cluster Git hosts in
-// gitNamespaces, and HTTPS to public addresses (the model API, package
-// registries). The Kubernetes API and every other in-cluster service stay out
-// of reach. The agent sandboxes' and the CI runners' policies share it.
-func fenceEgress(gitNamespaces []string) []networkingv1.NetworkPolicyEgressRule {
+// fenceEgress is what a fenced pod may reach: cluster DNS (the peers of
+// --cluster-dns, ClusterDNSPeers; nil means DefaultClusterDNS), the
+// in-cluster Git hosts in gitNamespaces, and HTTPS to public addresses (the
+// model API, package registries). The Kubernetes API and every other
+// in-cluster service stay out of reach. The agent sandboxes' and the CI
+// runners' policies share it.
+func fenceEgress(dns []networkingv1.NetworkPolicyPeer, gitNamespaces []string) []networkingv1.NetworkPolicyEgressRule {
+	if dns == nil {
+		dns, _ = ClusterDNSPeers(nil) // the default parses
+	}
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
-	dns, https := intstr.FromInt32(53), intstr.FromInt32(443)
+	port53, https := intstr.FromInt32(53), intstr.FromInt32(443)
 	egress := make([]networkingv1.NetworkPolicyEgressRule, 0, 2+len(gitNamespaces))
 	egress = append(egress,
 		networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-					corev1.LabelMetadataName: metav1.NamespaceSystem}},
-				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
+			To:    dns,
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &port53}, {Protocol: &tcp, Port: &port53}},
 		},
 		networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{
@@ -200,10 +201,11 @@ func fenceEgress(gitNamespaces []string) []networkingv1.NetworkPolicyEgressRule 
 
 // fencePolicySpec is the spec of a policy that fences the pods with label
 // selector: no ingress, fenceEgress out.
-func fencePolicySpec(selector map[string]string, gitNamespaces []string) networkingv1.NetworkPolicySpec {
+func fencePolicySpec(selector map[string]string, dns []networkingv1.NetworkPolicyPeer,
+	gitNamespaces []string) networkingv1.NetworkPolicySpec {
 	return networkingv1.NetworkPolicySpec{
 		PodSelector: metav1.LabelSelector{MatchLabels: selector},
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
-		Egress:      fenceEgress(gitNamespaces),
+		Egress:      fenceEgress(dns, gitNamespaces),
 	}
 }
