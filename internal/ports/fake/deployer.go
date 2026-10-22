@@ -24,10 +24,13 @@ type Deployer struct {
 	// refused are the targets, by name, that refuse their credential; fail
 	// the error each other target's calls fail with.
 	refused map[string]bool
-	fail    map[string]error
-	states  map[key]ports.DeployState
-	shipped []Shipped
-	checks  map[string]int
+	// unprepared are the targets, by name, whose Ship fails
+	// ErrPrerequisiteMissing.
+	unprepared map[string]bool
+	fail       map[string]error
+	states     map[key]ports.DeployState
+	shipped    []Shipped
+	checks     map[string]int
 	// blocked are the targets, by name, whose Ship waits until the gate
 	// closes; inShip counts the calls waiting there.
 	blocked map[string]chan struct{}
@@ -54,7 +57,19 @@ func (d *Deployer) Refuse(target string) {
 	d.refused[target] = true
 }
 
-// Fail makes every call for target fail with err; nil clears it and Refuse.
+// Unprepare makes target lack a prerequisite: its Ship fails
+// ErrPrerequisiteMissing and ships nothing. Fail(target, nil) clears it.
+func (d *Deployer) Unprepare(target string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.unprepared == nil {
+		d.unprepared = map[string]bool{}
+	}
+	d.unprepared[target] = true
+}
+
+// Fail makes every call for target fail with err; nil clears it, Refuse and
+// Unprepare.
 func (d *Deployer) Fail(target string, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -65,6 +80,7 @@ func (d *Deployer) Fail(target string, err error) {
 	if err == nil {
 		delete(d.fail, target)
 		delete(d.refused, target)
+		delete(d.unprepared, target)
 	}
 }
 
@@ -202,6 +218,10 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	defer d.mu.Unlock()
 	if err := d.failure(t.Name); err != nil {
 		return err
+	}
+	if d.unprepared[t.Name] {
+		return &ports.Error{Kind: ports.ErrPrerequisiteMissing,
+			Cause: fmt.Errorf("fake: %s lacks a prerequisite", t.Name)}
 	}
 	if len(s.Files) == 0 {
 		return &ports.Error{Kind: ports.ErrArtifactMissing,

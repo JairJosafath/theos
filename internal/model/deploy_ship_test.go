@@ -180,6 +180,14 @@ func TestNextDeploy(t *testing.T) {
 			f.Failure = &DeployShipFailure{Reason: DeployCredentialRefused, Detail: "403"}
 		}, phase: DeployPhaseFailed, reason: DeployCredentialRefused, cause: DeployFailed,
 			message: "GitHub refused the credential of DeployTarget staging shipping v1.1.0: 403"},
+		{name: "a missing prerequisite fails (#1608)", change: func(f *DeployFacts) {
+			f.Failure = &DeployShipFailure{Reason: DeployPrerequisiteMissing, Detail: "run cdk bootstrap"}
+		}, phase: DeployPhaseFailed, reason: DeployPrerequisiteMissing, cause: DeployFailed,
+			message: "DeployTarget staging lacks what shipping v1.1.0 needs: run cdk bootstrap; tried again"},
+		{name: "a missing prerequisite is shipped again (#1608)", change: func(f *DeployFacts) {
+			f.Prev = &DeployReport{Target: "staging", WantedVersion: "v1.1.0", Phase: DeployPhaseFailed,
+				Reason: DeployPrerequisiteMissing}
+		}, ship: "v1.1.0", phase: DeployPhaseDeploying, reason: DeployDeploying, cause: DeployDeploying},
 		{name: "an unreachable target waits", change: func(f *DeployFacts) {
 			f.Failure = &DeployShipFailure{Reason: DeployUnreachable, Detail: "502"}
 		}, phase: DeployPhaseWaiting, reason: DeployUnreachable, cause: DeployTargetNotReady,

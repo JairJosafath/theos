@@ -51,6 +51,10 @@ const (
 	// DeployArtifactMissing: the release lacks a file the target needs; not
 	// shipped again until another version is wanted.
 	DeployArtifactMissing = "ArtifactMissing"
+	// DeployPrerequisiteMissing: the target lacks something a person sets
+	// up there once (the CDK bootstrap, a parameter); shipped again on the
+	// next poll.
+	DeployPrerequisiteMissing = "PrerequisiteMissing"
 	// DeployReleaseNotFound: the Git host has no release of the wanted
 	// version; looked for again on the next poll.
 	DeployReleaseNotFound = "ReleaseNotFound"
@@ -83,7 +87,8 @@ type DeployReport struct {
 // DeployShipFailure is how shipping a version failed.
 type DeployShipFailure struct {
 	// Reason is DeployUnreachable, DeployCredentialRefused,
-	// DeployArtifactMissing, DeployReleaseNotFound, DeployGitHostUnreachable,
+	// DeployArtifactMissing, DeployPrerequisiteMissing, DeployReleaseNotFound,
+	// DeployGitHostUnreachable,
 	// or DeployFailed for any other failure.
 	Reason string
 	// Detail is what the tool or the Git host said.
@@ -318,6 +323,9 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 		case DeployArtifactMissing:
 			r.Message = fmt.Sprintf("Release %s lacks what DeployTarget %s needs: %s; a newer release or a "+
 				"pinned version ships instead", version, f.Target, fail.Detail)
+		case DeployPrerequisiteMissing:
+			r.Message = fmt.Sprintf("DeployTarget %s lacks what shipping %s needs: %s; tried again on the "+
+				"next poll", f.Target, version, fail.Detail)
 		case DeployReleaseNotFound:
 			r.Message = fmt.Sprintf("The Git host has no release %s to ship to %s; looked for again on the "+
 				"next poll", version, f.Target)
@@ -335,7 +343,8 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 // deployRetried says a Failed entry with reason is shipped again on the next
 // poll: the tool never had the deploy.
 func deployRetried(reason string) bool {
-	return reason == DeployCredentialRefused || reason == DeployReleaseNotFound || reason == DeployNameRejected
+	return reason == DeployCredentialRefused || reason == DeployPrerequisiteMissing ||
+		reason == DeployReleaseNotFound || reason == DeployNameRejected
 }
 
 // deployRuns says the entry r reports runs version, healthy where its target

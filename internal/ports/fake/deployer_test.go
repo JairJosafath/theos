@@ -23,6 +23,11 @@ func TestDeployerContract(t *testing.T) {
 				d.Refuse(tt.Name)
 				return tt
 			},
+			Unprepared: func(t *testing.T) ports.Target {
+				tt := target(t)
+				d.Unprepare(tt.Name)
+				return tt
+			},
 			Deploys: func(_ *testing.T, tt ports.Target, app string) int { return d.Deploys(tt.Name, app) },
 		}
 		if hold {
