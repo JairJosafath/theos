@@ -126,8 +126,11 @@ the rollout itself is the one tier only Kind shows.
    (`phase`, `message`, and the operation's revision:
    `syncResult.source.targetRevision`, or
    `operation.sync.source.targetRevision` before the result exists):
-   - no Application: the zero state; an operation `Running`, or no sync yet,
-     or `OutOfSync`: `Deploying` at the wanted tag;
+   - no Application: the zero state, unless the Argo CD namespace isn't
+     there either, which refuses the credential as `Ship` does (a Get in a
+     missing namespace is NotFound like a missing Application, so `State`
+     gets the Namespace to tell, #1668); an operation `Running`, or no sync
+     yet, or `OutOfSync`: `Deploying` at the wanted tag;
    - an operation `Failed` or `Error` at the wanted tag: `Failed` at it,
      reason `SyncFailed`, Argo CD's message. One of another revision is
      the previous version's, which Argo CD hasn't replaced yet: `Deploying`

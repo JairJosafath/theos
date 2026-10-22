@@ -7,15 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,7 +33,7 @@ import (
 // startAPIServer runs envtest with Argo CD's CRDs (test/crds/argocd) and
 // returns a client, or skips when the envtest binaries aren't installed (run
 // through make test).
-func startAPIServer(t *testing.T) client.Client {
+func startAPIServer(t *testing.T) client.WithWatch {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("KUBEBUILDER_ASSETS not set; run with make test")
@@ -45,7 +47,7 @@ func startAPIServer(t *testing.T) client.Client {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = env.Stop() })
-	c, err := client.New(cfg, client.Options{Scheme: clientgoscheme.Scheme})
+	c, err := client.NewWithWatch(cfg, client.Options{Scheme: clientgoscheme.Scheme})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,95 +81,66 @@ func target(namespace string) ports.Target {
 }
 
 // fakeArgoCD stands in for Argo CD's application controller in the
-// namespaces it watches: an Application whose targetRevision it hasn't
-// compared to yet gets one sync, OutOfSync and Running first, Synced,
-// Succeeded and Healthy on the next pass. It counts the syncs per
-// Application: the contract's deploys.
+// namespaces it watches, synchronously: it wraps the Deployer's client, and
+// an Apply there syncs the Application it wrote before Ship returns, so the
+// contract's Ship-and-State loop, which doesn't wait between calls, sees
+// the sync on its next State (#1668). An Application whose targetRevision
+// it hasn't compared to yet gets one sync: Synced, Succeeded and Healthy at
+// the tag. It counts the syncs per Application: the contract's deploys.
 type fakeArgoCD struct {
-	c          client.Client
-	mu         sync.Mutex
-	namespaces []string
+	c          client.WithWatch
+	namespaces map[string]bool
 	syncs      map[string]int
 }
 
-func newFakeArgoCD(t *testing.T, c client.Client) *fakeArgoCD {
-	t.Helper()
-	f := &fakeArgoCD{c: c, syncs: map[string]int{}}
-	// The client's first List of a kind maps it through discovery, which
-	// takes about a second on a fresh envtest; warm it before the contract's
-	// Ship-and-State loop, which doesn't wait between calls, needs the fake.
-	var apps unstructured.UnstructuredList
-	apps.SetGroupVersionKind(ApplicationGVK.GroupVersion().WithKind("ApplicationList"))
-	if err := c.List(context.Background(), &apps); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		f.run(ctx)
-	}()
-	t.Cleanup(func() { cancel(); <-done })
-	return f
+func newFakeArgoCD(c client.WithWatch) *fakeArgoCD {
+	return &fakeArgoCD{c: c, namespaces: map[string]bool{}, syncs: map[string]int{}}
+}
+
+// client is the client the Deployer under test gets: every Apply in a
+// watched namespace is followed by the fake's sync of the Application.
+func (f *fakeArgoCD) client() client.Client {
+	return interceptor.NewClient(f.c, interceptor.Funcs{
+		Apply: func(ctx context.Context, c client.WithWatch, obj runtime.ApplyConfiguration,
+			opts ...client.ApplyOption) error {
+			if err := c.Apply(ctx, obj, opts...); err != nil {
+				return err
+			}
+			if app, ok := obj.(client.Object); ok && f.namespaces[app.GetNamespace()] {
+				return f.sync(ctx, client.ObjectKeyFromObject(app))
+			}
+			return nil
+		},
+	})
 }
 
 func (f *fakeArgoCD) watch(namespace string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.namespaces = append(f.namespaces, namespace)
+	f.namespaces[namespace] = true
 }
 
 func (f *fakeArgoCD) deploys(namespace, name string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	return f.syncs[namespace+"/"+name]
 }
 
-func (f *fakeArgoCD) run(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		f.mu.Lock()
-		namespaces := append([]string(nil), f.namespaces...)
-		f.mu.Unlock()
-		for _, ns := range namespaces {
-			var apps unstructured.UnstructuredList
-			apps.SetGroupVersionKind(ApplicationGVK.GroupVersion().WithKind("ApplicationList"))
-			if err := f.c.List(ctx, &apps, client.InNamespace(ns)); err != nil {
-				continue
-			}
-			for i := range apps.Items {
-				f.sync(ctx, &apps.Items[i])
-			}
-		}
+// sync runs one sync of the Application at key when its targetRevision
+// isn't the one compared to.
+func (f *fakeArgoCD) sync(ctx context.Context, key client.ObjectKey) error {
+	var app unstructured.Unstructured
+	app.SetGroupVersionKind(ApplicationGVK)
+	if err := f.c.Get(ctx, key, &app); err != nil {
+		return fmt.Errorf("fake Argo CD: %w", err)
 	}
-}
-
-// sync runs one sync of app when its targetRevision isn't the one compared
-// to: OutOfSync and Running, then Synced, Succeeded and Healthy, in one
-// pass, since the contract's Ship-and-State loop doesn't wait between calls.
-// A conflict with a Ship in between is left for the next pass.
-func (f *fakeArgoCD) sync(ctx context.Context, app *unstructured.Unstructured) {
-	got := facts(app)
+	got := facts(&app)
 	if got.TargetRevision == got.SyncedRevision {
-		return
+		return nil
 	}
-	f.mu.Lock()
-	f.syncs[app.GetNamespace()+"/"+app.GetName()]++
-	f.mu.Unlock()
-	setStatus(app, status{sync: model.ArgoCDSyncOutOfSync, revision: got.TargetRevision,
-		operation: model.ArgoCDOperationRunning, health: model.ArgoCDHealthProgressing})
-	if err := f.c.Update(ctx, app); err != nil {
-		return
-	}
-	setStatus(app, status{sync: model.ArgoCDSyncSynced, revision: got.TargetRevision,
+	f.syncs[key.String()]++
+	setStatus(&app, status{sync: model.ArgoCDSyncSynced, revision: got.TargetRevision,
 		operation: model.ArgoCDOperationSucceeded, health: model.ArgoCDHealthHealthy})
-	_ = f.c.Update(ctx, app)
+	if err := f.c.Update(ctx, &app); err != nil {
+		return fmt.Errorf("fake Argo CD: %w", err)
+	}
+	return nil
 }
 
 // status is what a fake Argo CD, or a test, writes to an Application's
@@ -206,10 +179,10 @@ func setStatus(app *unstructured.Unstructured, s status) {
 // Ship applies.
 func TestDeployerContract(t *testing.T) {
 	c := startAPIServer(t)
-	argo := newFakeArgoCD(t, c)
+	argo := newFakeArgoCD(c)
 	namespaces := 0
 	contract.Deployer(t, contract.DeployerEnv{
-		Deployer: New(c),
+		Deployer: New(argo.client()),
 		Target: func(t *testing.T) ports.Target {
 			namespaces++
 			ns := argoNamespace(t, c, namespaces)
@@ -297,10 +270,26 @@ func assertApplied(t *testing.T, app *unstructured.Unstructured, s ports.Shipmen
 	}
 }
 
+// logging returns ctx with a logger that counts the adapter's "Applied"
+// lines written to it at Info, V(1) and up dropped, and the count. The
+// client logs the API server's warnings (Argo CD's finalizer name isn't
+// domain-qualified with a path) to the same logger; those don't count.
+func logging(ctx context.Context) (context.Context, *int) {
+	n := new(int)
+	log := funcr.New(func(_, args string) {
+		if strings.Contains(args, `"msg"="Applied Argo CD Application"`) {
+			*n++
+		}
+	}, funcr.Options{})
+	return logr.NewContext(ctx, log), n
+}
+
 // The adapter's own cases on envtest, in a namespace no fake Argo CD
 // watches, so the Application is exactly what Ship wrote: its fields, a
-// repeat applying nothing, no image as ErrArtifactMissing, each faked status
-// as State reports it, and Check on a project that isn't there.
+// repeat applying and logging nothing, no image or no repository as
+// ErrArtifactMissing, a missing Argo CD namespace refused by Ship and State
+// alike, each faked status as State reports it, and Check on a project that
+// isn't there.
 func TestDeployer(t *testing.T) {
 	c := startAPIServer(t)
 	ctx := context.Background()
@@ -314,16 +303,21 @@ func TestDeployer(t *testing.T) {
 		Settings: map[string]string{model.ArgoCDSettingDestinationNamespace: "webshop-apps"}}
 	s := shipment("v1.2.0")
 
-	t.Run("Ship writes the Application", func(t *testing.T) {
+	t.Run("Ship writes the Application and logs it", func(t *testing.T) {
+		ctx, lines := logging(ctx)
 		if err := d.Ship(ctx, tt, s); err != nil {
 			t.Fatalf("Ship() = %v", err)
 		}
 		app := getApplication(t, c)
 		assertApplied(t, app, s)
+		if *lines != 1 {
+			t.Errorf("%d Info lines, want 1: the apply wrote the Application", *lines)
+		}
 	})
 
-	t.Run("a repeat applies nothing", func(t *testing.T) {
+	t.Run("a repeat applies nothing and logs nothing at Info (#1668)", func(t *testing.T) {
 		before := getApplication(t, c)
+		ctx, lines := logging(ctx)
 		if err := d.Ship(ctx, tt, s); err != nil {
 			t.Fatalf("Ship() again = %v", err)
 		}
@@ -332,23 +326,12 @@ func TestDeployer(t *testing.T) {
 			t.Errorf("resourceVersion %s -> %s, generation %d -> %d; want unchanged", before.GetResourceVersion(),
 				after.GetResourceVersion(), before.GetGeneration(), after.GetGeneration())
 		}
-	})
-
-	t.Run("a release with no image is ErrArtifactMissing", func(t *testing.T) {
-		noImage := shipment("v1.3.0")
-		noImage.App = "webshop/catalog-api"
-		noImage.Image = ""
-		err := d.Ship(ctx, tt, noImage)
-		if !errors.Is(err, ports.ErrArtifactMissing) || !strings.Contains(err.Error(), "the release has no image") {
-			t.Errorf("Ship() = %v, want ErrArtifactMissing: the release has no image", err)
-		}
-		var app unstructured.Unstructured
-		app.SetGroupVersionKind(ApplicationGVK)
-		if err := c.Get(ctx, client.ObjectKey{Namespace: "argocd", Name: "webshop-catalog-api"}, &app); !apierrors.IsNotFound(err) {
-			t.Errorf("Get() of the Application = %v, want NotFound: nothing written", err)
+		if *lines != 0 {
+			t.Errorf("%d Info lines, want 0: the apply wrote nothing", *lines)
 		}
 	})
 
+	missing(t, c, d, tt, s)
 	refusals(t, c, d, tt, s)
 
 	t.Run("State ignores the wanted version", func(t *testing.T) {
@@ -405,6 +388,7 @@ func TestDeployer(t *testing.T) {
 		// Argo CD wrote status with its own manager; our apply owns none of
 		// it and changes nothing.
 		before := getApplication(t, c)
+		ctx, lines := logging(ctx)
 		if err := d.Ship(ctx, tt, s); err != nil {
 			t.Fatalf("Ship() again = %v", err)
 		}
@@ -415,12 +399,65 @@ func TestDeployer(t *testing.T) {
 		if _, found, _ := unstructured.NestedMap(after.Object, "status"); !found {
 			t.Error("the apply dropped the status")
 		}
+		if *lines != 0 {
+			t.Errorf("%d Info lines, want 0: the apply wrote nothing", *lines)
+		}
 	})
 
 	t.Run("Check on a project that isn't there is ErrCredentialRefused", func(t *testing.T) {
 		err := d.Check(ctx, tt)
 		if !errors.Is(err, ports.ErrCredentialRefused) || !strings.Contains(err.Error(), "project default doesn't exist in namespace argocd") {
 			t.Errorf("Check() = %v, want ErrCredentialRefused: project default doesn't exist in namespace argocd", err)
+		}
+	})
+}
+
+// missing are the adapter's answers to what isn't there, with nothing
+// written: a release without an image or a repository is
+// ErrArtifactMissing, and a target whose Argo CD namespace isn't there
+// refuses the credential from State and Ship alike (#1668).
+func missing(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s ports.Shipment) {
+	t.Helper()
+	ctx := context.Background()
+	t.Run("a release with no image is ErrArtifactMissing", func(t *testing.T) {
+		noImage := shipment("v1.3.0")
+		noImage.App = "webshop/catalog-api"
+		noImage.Image = ""
+		err := d.Ship(ctx, tt, noImage)
+		if !errors.Is(err, ports.ErrArtifactMissing) || !strings.Contains(err.Error(), "the release has no image") {
+			t.Errorf("Ship() = %v, want ErrArtifactMissing: the release has no image", err)
+		}
+		var app unstructured.Unstructured
+		app.SetGroupVersionKind(ApplicationGVK)
+		if err := c.Get(ctx, client.ObjectKey{Namespace: "argocd", Name: "webshop-catalog-api"}, &app); !apierrors.IsNotFound(err) {
+			t.Errorf("Get() of the Application = %v, want NotFound: nothing written", err)
+		}
+	})
+
+	t.Run("a release with no repository is ErrArtifactMissing (#1668)", func(t *testing.T) {
+		noRepo := shipment("v1.3.0")
+		noRepo.App = "webshop/catalog-api"
+		noRepo.Repository = ""
+		err := d.Ship(ctx, tt, noRepo)
+		if !errors.Is(err, ports.ErrArtifactMissing) || !strings.Contains(err.Error(), "the release has no repository") {
+			t.Errorf("Ship() = %v, want ErrArtifactMissing: the release has no repository", err)
+		}
+		var app unstructured.Unstructured
+		app.SetGroupVersionKind(ApplicationGVK)
+		if err := c.Get(ctx, client.ObjectKey{Namespace: "argocd", Name: "webshop-catalog-api"}, &app); !apierrors.IsNotFound(err) {
+			t.Errorf("Get() of the Application = %v, want NotFound: nothing written", err)
+		}
+	})
+
+	t.Run("a missing Argo CD namespace is ErrCredentialRefused from State and Ship alike (#1668)", func(t *testing.T) {
+		gone := target("argocd-not-there")
+		const want = "namespace argocd-not-there doesn't exist"
+		st, err := d.State(ctx, gone, s.App, "")
+		if !errors.Is(err, ports.ErrCredentialRefused) || !strings.Contains(err.Error(), want) || st != (ports.DeployState{}) {
+			t.Errorf("State() = %+v, %v; want the zero state and ErrCredentialRefused: %s", st, err, want)
+		}
+		if err := d.Ship(ctx, gone, s); !errors.Is(err, ports.ErrCredentialRefused) || !strings.Contains(err.Error(), want) {
+			t.Errorf("Ship() = %v, want ErrCredentialRefused: %s", err, want)
 		}
 	})
 }
