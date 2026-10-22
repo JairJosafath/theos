@@ -407,7 +407,7 @@ envtest).
 
 ### The AWS Frameworks
 
-aws-lambda-ts (v1.3.1), aws-lambda-go (v1.2.1) and aws-lambda-py (v1.2.1): an
+aws-lambda-ts (v1.4.0), aws-lambda-go (v1.3.0) and aws-lambda-py (v1.3.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.1.1) and
 aws-fargate-ts (v1.2.1): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
@@ -428,14 +428,15 @@ aws-standard.
   Python Lambdas, `src/handler.ts`, `app/handler.py`), `slog`'s JSON handler
   (`src/main.go.tmpl`), a JSON line per request (aws-ec2-ts `src/server.ts`,
   aws-fargate-ts `src/main.ts`); load balancer, CloudFront and S3 access logs
-  (aws-static-site-ts `infra/site_stack.ts`). The HTTP API's access log isn't
-  JSON yet (#1420).
+  (aws-static-site-ts `infra/site_stack.ts`); the HTTP API's access log, a
+  JSON object per request (the Lambda Frameworks' `infra/api_stack.ts`,
+  since aws-lambda-ts v1.4.0 and aws-lambda-go and -py v1.3.0, #1420).
 - Auth: the Lambda APIs take SigV4-signed requests (`HttpIamAuthorizer` in
   `infra/api_stack.ts`). aws-ec2-ts and aws-fargate-ts authenticate no one
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.18.1)
+### aws-standard (v1.18.2)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow

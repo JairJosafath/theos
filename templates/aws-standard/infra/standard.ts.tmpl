@@ -332,7 +332,7 @@ function acknowledgeServerless(stack: Stack, tier: Tier): void {
       Validations.of(construct).acknowledge({
         id: 'Serverless-APIGWStructuredLogging',
         reason:
-          'The stage writes its access log in the Common Log Format, as aws-lambda-ts, -py and -go did up to v1.1.0; the Standard cannot tell which version a repository was scaffolded from, so it cannot hold an older one to JSON. A new stage writes JSON.',
+          'The stage writes its access log in the Common Log Format, as aws-lambda-ts before v1.4.0 and aws-lambda-py and -go before v1.3.0 did; the Standard cannot tell which version a repository was scaffolded from, so it cannot hold an older one to JSON. A newer stage writes JSON and needs no acknowledgement.',
       });
     } else if (
       type === 'AWS::SNS::Subscription' &&

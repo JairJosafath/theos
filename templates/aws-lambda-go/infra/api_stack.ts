@@ -1,5 +1,6 @@
 import { AssetHashType, CfnOutput, DockerImage, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { StackProps } from 'aws-cdk-lib';
+import { AccessLogFormat } from 'aws-cdk-lib/aws-apigateway';
 import { HttpApi, HttpMethod, LogGroupLogDestination } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpIamAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -29,6 +30,26 @@ const SRC = path.join(import.meta.dirname, '..', 'src');
 
 // The function's time limit, which its duration alarm is a share of.
 const TIMEOUT = Duration.seconds(10);
+
+/**
+ * The stage's access log: a JSON object per request with the request id,
+ * the route, the status, the latencies and the integration's error, in
+ * HTTP API context variables.
+ */
+export const ACCESS_LOG_FIELDS = {
+  requestId: '$context.requestId',
+  requestTime: '$context.requestTime',
+  sourceIp: '$context.identity.sourceIp',
+  caller: '$context.identity.caller',
+  routeKey: '$context.routeKey',
+  protocol: '$context.protocol',
+  status: '$context.status',
+  responseLength: '$context.responseLength',
+  responseLatency: '$context.responseLatency',
+  integrationLatency: '$context.integrationLatency',
+  integrationStatus: '$context.integrationStatus',
+  integrationError: '$context.integrationErrorMessage',
+};
 
 /**
  * The function's code: `src/` built by the installed Go for Lambda's arm64
@@ -148,7 +169,11 @@ export class ApiStack extends Stack {
       stageName: '$default',
       autoDeploy: true,
       throttle: { rateLimit: 50, burstLimit: 100 },
-      accessLogSettings: { destination: new LogGroupLogDestination(accessLogs) },
+      // One JSON object per request, so Logs Insights queries it by field.
+      accessLogSettings: {
+        destination: new LogGroupLogDestination(accessLogs),
+        format: AccessLogFormat.custom(JSON.stringify(ACCESS_LOG_FIELDS)),
+      },
     });
     api.addRoutes({
       path: '/items/{id}',

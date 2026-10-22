@@ -193,7 +193,11 @@ byte for byte.
   variables and secrets, falling back to the host's own registries, so
   `npm ci` and `uv` fetch factory packages (#1231). Since v1.18.1 `~/.netrc`
   names the index's host without its port, which `uv` matches on, and its
-  login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
+  login is `__token__` when `C4_PYPI_TOKEN` is set (#1696). v1.18.2's
+  `docs/well-architected.md` says an HTTP API stage writes its access log as
+  JSON, as aws-lambda-ts v1.4.0 and aws-lambda-go and -py v1.3.0 do, and
+  that `APIGWStructuredLogging` is acknowledged only on an older
+  repository's stage, which writes the Common Log Format (#1420).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
