@@ -186,6 +186,7 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 			return
 		case model.StandardChecksFailed:
 			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksFailed, step.Message)
+			u.fileFailure(ctx, gitCtx, f)
 			return
 		case model.StandardWaitForChecks:
 			u.updating()

@@ -10,6 +10,7 @@ package controller
 
 import (
 	"maps"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -178,7 +179,7 @@ func eventuallyAtChecks(ns string, at model.StandardVersion, leftOut ...string) 
 		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		g.Expect(container.Status.Standard).To(PointTo(MatchAllFields(Fields{
 			"Name": Equal(updatedStandard), "Ref": Equal(ref), "Update": BeNil(), "LeftOut": leftOutMatcher,
-			"Behind": behindMatcher, "Kept": BeEmpty(),
+			"Behind": behindMatcher, "Kept": BeEmpty(), "FailureIssue": Ignore(),
 			"Checks": BeEquivalentTo(at.Checks)})))
 		cond := standardCondition(g, container)
 		if len(leftOut) > 0 {
@@ -528,6 +529,70 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.1.0")
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
 		Expect(mainFile(ns, "src/app.py")).To(Equal("fixed = True\n"))
+	})
+
+	It("files one issue for the Crew per target ref whose update's CI failed (#1491)", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		failureIssues := func() []fakeIssue {
+			var out []fakeIssue
+			for _, issue := range gitFake.openIssues(ns, "orders-api") {
+				if slices.Contains(issue.Labels, model.LabelBug) {
+					out = append(out, issue)
+				}
+			}
+			return out
+		}
+		filed := func(ref string) *c4v1alpha1.StandardFailureIssue {
+			GinkgoHelper()
+			var issue *c4v1alpha1.StandardFailureIssue
+			Eventually(func(g Gomega) {
+				issue = getContainer(g, ns).Status.Standard.FailureIssue
+				g.Expect(issue).To(PointTo(HaveField("Ref", ref)))
+			}).Should(Succeed())
+			return issue
+		}
+
+		bumpStandard(ns, "v1.1.0")
+		first := openedUpdate(ns, "v1.1.0")
+		gitFake.setChecks(ns, "orders-api", first.Commit, "failure")
+		issue := filed("v1.1.0")
+		Consistently(func(g Gomega) {
+			g.Expect(failureIssues()).To(HaveLen(1), "a second pass files nothing")
+		}).WithTimeout(2 * time.Second).Should(Succeed())
+		got := failureIssues()[0]
+		Expect(got.Number).To(BeEquivalentTo(issue.Number))
+		Expect(got.URL).To(Equal(issue.URL))
+		Expect(got.Title).To(Equal("Standard " + updatedStandard + " v1.1.0 fails this repository's check"))
+		Expect(got.filedLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
+		Expect(got.Body).To(ContainSubstring(first.PullRequestURL))
+
+		// The Crew's fix lands on main; the update is planned again and fails again.
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).
+				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
+		}).Should(Succeed())
+		second := openedUpdate(ns, "v1.1.0")
+		gitFake.setChecks(ns, "orders-api", second.Commit, "failure")
+		Eventually(func(g Gomega) {
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1alpha1.ReasonChecksFailed))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(failureIssues()).To(HaveLen(1), "a re-plan files nothing")
+			g.Expect(getContainer(g, ns).Status.Standard.FailureIssue).To(Equal(issue))
+		}).WithTimeout(2 * time.Second).Should(Succeed())
+
+		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		eventuallyAt(ns, "v1.1.0")
+
+		// A newer target ref files its own.
+		bumpStandard(ns, "v1.2.0")
+		third := openedUpdate(ns, "v1.2.0")
+		gitFake.setChecks(ns, "orders-api", third.Commit, "failure")
+		newer := filed("v1.2.0")
+		Expect(newer.Number).NotTo(Equal(issue.Number))
+		Eventually(failureIssues).Should(HaveLen(2))
 	})
 
 	It("refuses an update someone else pushed to", func() {

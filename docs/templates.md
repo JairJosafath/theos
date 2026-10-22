@@ -398,7 +398,7 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.3.0) and go-operator-standard (v1.3.0)
+### go-standard (v1.3.0) and go-operator-standard (v1.3.1)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).

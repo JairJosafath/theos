@@ -773,6 +773,27 @@ spec:
                     - EveryChange
                     - BeforeRelease
                     type: string
+                  failureIssue:
+                    description: |-
+                      failureIssue is the issue the operator filed for the Crew when an
+                      update's CI failed, once per target ref: a newer ref files its own.
+                    properties:
+                      number:
+                        description: number is the issue's number in the Container's
+                          repository.
+                        format: int32
+                        type: integer
+                      ref:
+                        description: ref is the Standard's template ref the failed
+                          update targets.
+                        type: string
+                      url:
+                        description: url is the issue's address.
+                        type: string
+                    required:
+                    - number
+                    - ref
+                    type: object
                   kept:
                     description: |-
                       kept are the Standard's files a person chose to keep as the repository
