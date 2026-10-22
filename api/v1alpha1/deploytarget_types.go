@@ -146,7 +146,8 @@ type DeployTargetArgoCDDestination struct {
 }
 
 // ConditionDeployTargetReady on a DeployTarget says whether its Secret holds
-// the member's keys and the target accepts the credential. Its reasons are
+// the member's keys and the target accepts the credential; for an argoCD
+// target without a Secret, whether Argo CD and its project are there. Its reasons are
 // Ready, SecretMissing, SecretIncomplete, CredentialRefused and Unreachable.
 const ConditionDeployTargetReady = "Ready"
 

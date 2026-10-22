@@ -62,9 +62,10 @@ type DeployTargetReconciler struct {
 // +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;create;patch
 // +kubebuilder:rbac:groups=argoproj.io,resources=appprojects,verbs=get;list;watch
 
-// Reconcile reads the target's Secret and, when it holds the member's keys,
-// asks the member's Deployer whether the target accepts it: on a change of
-// the spec or the Secret, and at most every CheckInterval otherwise.
+// Reconcile reads the target's Secret (an argoCD target may have none) and,
+// when it holds the member's keys, asks the member's Deployer whether the
+// target accepts it: on a change of the spec or the Secret, and at most every
+// CheckInterval otherwise.
 func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var dt c4v1alpha1.DeployTarget
 	if err := r.Get(ctx, req.NamespacedName, &dt); err != nil {
@@ -212,7 +213,8 @@ func (r *DeployTargetReconciler) checkInterval() time.Duration {
 }
 
 // SetupWithManager sets up the controller with the Manager. A status write
-// starts no reconcile; a spec change does, and each poll reads the Secret.
+// starts no reconcile; a spec change does, and each poll reads the Secret,
+// when the target names one.
 func (r *DeployTargetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.DeployTarget{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

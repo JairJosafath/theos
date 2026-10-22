@@ -179,6 +179,19 @@ describe('deploys (#1163)', () => {
     expect(html).not.toMatch(/sekrit|c2Vrcml0/)
   })
 
+  it('renders an argoCD target, which names no Secret, instead of throwing (#1675)', () => {
+    const argo: DeployTarget = {
+      metadata: { name: 'kind-cluster', namespace: 'webshop' },
+      spec: { argoCD: { destination: { namespace: 'webshop-apps' } }, tier: 'development' },
+    }
+    const html = renderToStaticMarkup(createElement(DeployTargetPage, { target: argo, containers: [] }))
+    const t = text(html)
+    expect(t).toContain('Tool Argo CD (argoCD)')
+    expect(t).toContain('Where webshop-apps')
+    expect(t).toContain('Credentials none')
+    expect(t).not.toContain('Credentials Secret')
+  })
+
   it('lists the Project’s deploy targets with their member, tier, approval and Ready', () => {
     const html = page('Project', 'webshop')
     expect(html).toContain('href="/?ns=webshop&amp;kind=DeployTarget&amp;name=staging"')

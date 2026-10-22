@@ -123,8 +123,14 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
           </dd>
           <dt>Credentials</dt>
           <dd>
-            Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
-            <span className="muted small"> · its name only: the UI never reads Secrets</span>
+            {target.spec.credentialsSecretRef ? (
+              <>
+                Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
+                <span className="muted small"> · its name only: the UI never reads Secrets</span>
+              </>
+            ) : (
+              <span className="muted">none: the operator’s own ServiceAccount, in its cluster</span>
+            )}
           </dd>
           <dt>Parameters</dt>
           <dd>

@@ -271,7 +271,15 @@ export interface DeployTarget extends K8sObject {
   spec: {
     /** Ships each release as a GitHub release of a repository. */
     github?: { repository: string }
-    credentialsSecretRef: LocalRef
+    /**
+     * Ships each release as one Argo CD Application, in the operator's
+     * cluster: namespace (default argocd) and project (default default) are
+     * Argo CD's; destination is where the apps run (server defaults to the
+     * cluster Argo CD runs in).
+     */
+    argoCD?: { namespace?: string; project?: string; destination: { namespace: string; server?: string } }
+    /** Optional only for argoCD, which uses the operator's own ServiceAccount. */
+    credentialsSecretRef?: LocalRef
     /** development (the default) or production. */
     tier?: 'development' | 'production'
     /** Required or None; empty is the tier's default. */
@@ -280,7 +288,7 @@ export interface DeployTarget extends K8sObject {
     parameters?: Record<string, string>
   }
   status?: {
-    /** Ready: whether its Secret holds the member's keys and the target accepts them. */
+    /** Ready: whether the target accepts the credential (for argoCD, whether Argo CD and its project are there). */
     conditions?: Condition[]
     /** When the operator last asked the target whether it accepts the credential. */
     checkedTime?: string
