@@ -490,7 +490,17 @@ func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, e
 		}
 		return false, nil
 	}
+	if _, ok := errors.AsType[*ports.Error](err); !ok && err != nil && isSourceStep(step) {
+		// The source Gitea streamed isn't the one the Crew read (#1598): Gitea's
+		// side too; the next poll reads it again.
+		p.log.Error(err, "Failed to read the release's source from Gitea")
+		return false, nil
+	}
 	return true, err
+}
+
+func isSourceStep(step model.PublishStep) bool {
+	return step.Action == model.PublishSourceCommit || step.Action == model.PublishSourceTag
 }
 
 // releaseSource streams the files of the Git host's tag for the Deployer,

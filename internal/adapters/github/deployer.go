@@ -316,7 +316,8 @@ func uploadBlobs(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipme
 	case readErr != nil:
 		return &SourceError{Err: readErr}
 	case len(want) > 0:
-		return fmt.Errorf("the source of %s changed while it was published: %d files are gone", s.Version, len(want))
+		return &SourceError{Err: fmt.Errorf("the source of %s changed while it was published: %d files are gone",
+			s.Version, len(want))}
 	}
 	return nil
 }
