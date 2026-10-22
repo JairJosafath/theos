@@ -327,6 +327,21 @@ secrets, and deletes them when it returns to it
 workflow reads them with the host's own as the fallback.
 [plans/done/app-packages.md](plans/done/app-packages.md), decision 5, has why.
 
+The Crew publishes a release's packages to the same registries
+(`internal/controller/crew_packages.go`, `publishPackages`): once the
+release runs succeed, it reads the release's npm tarballs, wheels and sdists
+and uploads each to the npm registry or the PyPI index, by default the
+host's own under the owner, with the GitProvider's credentials
+(`gitprovider.Provider.PublishReleasePackages`, `gitea_packages.go`; the
+registries come from `packagesOf` in `gitprovider_packages.go`). A file is
+published only at the tag's version and only under the scope; one outside
+either, or a version the registry already has, is an outcome the decision
+names, not an error (`model.DecidePackages`, `internal/model/packages.go`).
+The decision lands in `status.lastRelease.packages` and the condition
+`PackagesPublished` (`reportPackages`), an upload is a Normal Event
+`PackagePublished` and an invalid file a Warning `InvalidPackage`, once per
+release.
+
 ## Go build caches
 
 A Go Task runs `make check` three or four times a round: the agent while it

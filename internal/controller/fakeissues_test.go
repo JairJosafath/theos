@@ -226,7 +226,10 @@ func (p *fakeProvider) ListIssues(_ context.Context, repo gitprovider.Repository
 	var out []gitprovider.Issue
 	for _, i := range p.git.issueState().issues[repo.Owner+"/"+repo.Name] {
 		if i.State == "open" && (label == "" || slices.Contains(i.Labels, label)) {
+			// A copy of the labels: AddIssueLabel changes them in place
+			// while the caller reads them (#1820).
 			issue := i.Issue
+			issue.Labels = slices.Clone(i.Labels)
 			if i.milestone != "" {
 				issue.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name],
 					i.milestone) + 1)
@@ -246,6 +249,7 @@ func (p *fakeProvider) GetIssue(_ context.Context, repo gitprovider.Repository, 
 		return gitprovider.Issue{}, err
 	}
 	out := i.Issue
+	out.Labels = slices.Clone(i.Labels)
 	if i.milestone != "" {
 		out.Milestone = int64(slices.Index(p.git.issueState().milestones[repo.Owner+"/"+repo.Name], i.milestone) + 1)
 		out.MilestoneTitle = i.milestone

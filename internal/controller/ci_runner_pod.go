@@ -33,11 +33,16 @@ const (
 	ciRunnerValue = "true"
 	// CIRunnerRecordFinalizer keeps an ended pod, with its final status, until
 	// the pool has read how it ended: a pod deleted mid-job stays readable by
-	// the Task that asks who cancelled its job (model.Canceller).
+	// the Task that asks who cancelled its job (model.Canceller). Only the
+	// pool drops it, at the record's expiry or with the Project (#1697).
 	CIRunnerRecordFinalizer = "c4.factory.io/ci-runner-record"
 	// AnnotationRunnerFate is the pool's verdict on an ended pod: RunnerFateEnded
 	// or RunnerFateLost.
 	AnnotationRunnerFate = "c4.factory.io/runner-fate"
+	// AnnotationRunnerSpec names the spec a pool pod was built from
+	// (runnerSpecHash); a pod of another spec than its pool's is replaced
+	// once idle (#1700).
+	AnnotationRunnerSpec = "c4.factory.io/runner-spec"
 	// RunnerFateEnded is a pod whose runner ran its one job and exited on its
 	// own; RunnerFateLost one deleted, evicted or killed before its job ended.
 	// The Task reads them as model.CIJob.PodFate.

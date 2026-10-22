@@ -213,7 +213,10 @@ and warns when a template no longer matches its tag. `hack/seed_test.sh`
 covers the file mode against a stand-in Gitea.
 
 The Tests workflow runs `make test-gitea` on pull requests to main and on
-main; run it yourself while you change `internal/gitprovider` or the seed.
+main, with node and uv set up in its job, so the tests that install the
+packages they publish run there in full; run it yourself while you change
+`internal/gitprovider` or the seed. Without `npm` or `uv` on PATH only the
+install subtests skip, and say so; the publish still runs (#1702).
 
 ## Deployment Workflow
 
@@ -510,6 +513,12 @@ time and red streak, and files `Flaky: <spec>`, a ready `kind/bug` with
 with a pass of the workflow between them; failures in a row (a cancelled run
 between them counts as neither) are main being red, which `main is red`
 tracks, and count once (#1398). While it is open, a third failure files nothing.
+Once it is closed, the runs it listed are its fixed flake: before filing, the
+watch asks GitHub for the newest closed `Flaky: <spec>` bug and counts only
+the runs after it closed, so a watch that starts fresh (an empty
+`.relay/flakes-runs`) and reads the window's failed runs again refiles no
+fixed flake, and a spec that fails twice again after its fix is filed anew
+(#1824).
 `hack/lib/github.sh flakes --count` lists the specs that failed on main this
 week, from GitHub, on any device.
 A queued run never fails, so `red` can't see that every self-hosted runner is

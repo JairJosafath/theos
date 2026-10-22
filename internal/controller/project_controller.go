@@ -89,10 +89,10 @@ type ProjectReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;delete
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;bundles;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.
@@ -102,6 +102,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var project c4v1alpha1.Project
 	err := r.Get(ctx, req.NamespacedName, &project)
 	if apierrors.IsNotFound(err) && req.Name == req.Namespace {
+		// The pool goes with the Project: its pods and their kept records,
+		// which garbage collection cannot let go (#1697).
+		if err := r.dropPool(ctx, req.Namespace); err != nil {
+			return ctrl.Result{}, err
+		}
 		// A Brief gets its Project from its first round, whose planner needs
 		// the shared pull Secret, so an opted-in namespace is shared into before.
 		recheck, err := r.shareBeforeProject(ctx, req.Namespace)
