@@ -98,7 +98,7 @@ func TestDockerContextHasEmbeddedFiles(t *testing.T) {
 	if embedded == 0 {
 		t.Fatal("go list found no embedded files; the test no longer sees the //go:embed directives")
 	}
-	for _, want := range []string{"Dockerfile", "hack/agent/Dockerfile", "hack/session/Dockerfile"} {
+	for _, want := range []string{"Dockerfile", "ui/Dockerfile", "hack/agent/Dockerfile", "hack/session/Dockerfile"} {
 		if !checked[want] {
 			t.Errorf("%s was not checked; the test no longer finds its go build", want)
 		}

@@ -1,0 +1,24 @@
+# Build context for ui/Dockerfile: the Go module (c4session's sources, like the
+# operator's root .dockerignore) and the UI's own sources.
+**
+!**/*.go
+**/*_test.go
+# The files c4session embeds with //go:embed; cmd/dockerignore_test.go fails
+# when one is missing here.
+!features/src/**
+!internal/model/planner.md
+!go.mod
+!go.sum
+
+# The UI, without what a build makes or doesn't need.
+!ui/**
+ui/node_modules
+ui/dist
+ui/test-results
+ui/*.log
+ui/go.mod
+ui/Dockerfile
+ui/Dockerfile.dockerignore
+
+# Local agent worktrees (Claude Code) are not part of any image.
+.claude/

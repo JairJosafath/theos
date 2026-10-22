@@ -211,11 +211,17 @@ goProxy: https://proxy.golang.org
 
 ## Where a scaffolded devcontainer's c4session feature downloads the Session
 ## client (the operator's --session-binary-url); ${arch} becomes amd64 or
-## arm64. The default is the binaries attached to this chart's GitHub release.
+## arm64. The default is the UI, whose image carries the client and serves it
+## under /downloads/ (so a private repository's release needs no GitHub login,
+## #1151): http://localhost:<ui.service.port>/... for the port-forward, or
+## https://<ui.allowedHosts[0]>/... behind an Ingress. The devcontainer's build
+## must reach that address; a port-forward's localhost is the laptop's, not a
+## container's, so set an address it reaches when it isn't. With ui.enabled
+## false the default is the binaries attached to this chart's GitHub release.
 ## Empty sets none: a devcontainer then registers a Session only if it has Go
 ## and can go install the client.
 ##
-sessionBinaryURL: https://github.com/JairJosafath/c4factory/releases/download/v{{ .Chart.AppVersion }}/c4session-linux-${arch}
+sessionBinaryURL: '{{ include "c4-factory.sessionBinaryURL" . }}'
 
 ## Network policies for controlling traffic flow.
 ## Enable to restrict ingress to the controller manager.

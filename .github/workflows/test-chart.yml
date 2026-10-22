@@ -72,7 +72,7 @@ jobs:
       - name: Build and load the images
         run: |
           docker build -t "$IMG" .
-          docker build -t "$UI_IMG" ui
+          docker build -t "$UI_IMG" -f ui/Dockerfile .
           docker build -t "$SEED_IMG" -f hack/seed/Dockerfile .
           docker build -t c4factory/base:chart-test hack/toolchain-base
           docker build -t "$RUNNER_IMG" --build-arg BASE=c4factory/base:chart-test -f hack/runner/Dockerfile .

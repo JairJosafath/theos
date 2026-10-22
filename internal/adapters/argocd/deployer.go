@@ -103,7 +103,8 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // repository (an Application with no repoURL can never sync), is
 // ErrArtifactMissing. A name over what a label value holds, or an
 // Application there whose labels name another Container (two names can join
-// to the same, #1669), is a plain error naming it: the deploy fails, and
+// to the same, #1669), is a model.DeployNameError naming it: the deploy
+// fails NameRejected, and
 // nothing is written.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	if s.Image == "" {
@@ -139,8 +140,8 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 
 // get reads the Application name in cfg's namespace for app: the port's
 // error where the Get fails with one, NotFound as the API server's own, and
-// a plain error naming the other Container when the Application's labels
-// name one (#1669).
+// a model.DeployNameError naming the other Container when the Application's
+// labels name one (#1669).
 func (d *Deployer) get(ctx context.Context, cfg settings, name, app string) (*unstructured.Unstructured, error) {
 	var obj unstructured.Unstructured
 	obj.SetGroupVersionKind(ApplicationGVK)
@@ -195,8 +196,9 @@ func application(cfg settings, name string, s ports.Shipment) *unstructured.Unst
 // there either: a Get in a missing namespace is the same NotFound as a
 // missing Application, so State gets the Namespace to tell them apart and
 // refuses the credential as Ship would (#1668). An Application whose labels
-// name another Container is that Container's deploy, not app's: a plain
-// error naming it (#1669).
+// name another Container is that Container's deploy, not app's: a
+// model.DeployNameError naming it, which the operator reports NameRejected,
+// Failed, not a wait (#1669, #1677).
 func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
 	cfg := read(t)
 	name, err := model.ArgoCDApplicationName(app)

@@ -9,6 +9,8 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
@@ -104,6 +107,30 @@ func setArgoStatus(ns, argoNS string, s argoStatus) {
 	}, deployWait).Should(Succeed())
 }
 
+// readyCrewContainer makes Container name of a fresh factory in ns, changed
+// by change, with its Crew, and waits for it to be Ready. It has no Standard,
+// so its name is free: nothing else is named after it.
+func readyCrewContainer(ns, name string, change func(*c4v1alpha1.Container)) {
+	GinkgoHelper()
+	createFactory(ns)
+	container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
+	if change != nil {
+		change(container)
+	}
+	mustCreate(newSystem(ns, "webshop-core"), container, newCrewOf(ns, name))
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
+		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+	}).Should(Succeed())
+}
+
+// nameRejected waits for Container name's deploy to target to be Failed,
+// reason NameRejected, condition DeployFailed, and returns it (#1677).
+func nameRejected(ns, name, target string) *c4v1alpha1.ContainerDeployStatus {
+	GinkgoHelper()
+	return deployOfIs(ns, name, target, model.DeployPhaseFailed, model.DeployNameRejected, "", model.DeployFailed)
+}
+
 var _ = Describe("Container deploys to Argo CD", func() {
 	It("writes the Application with the image digest and shows what Argo CD reports (#1588)", func() {
 		ns := newProjectNamespace()
@@ -164,14 +191,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 
 	It("can't take a Container without a Deployment that writes deploy/k8s/ (#1588)", func() {
 		ns := newProjectNamespace()
-		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.DeploymentRef = nil
-		mustCreate(newSystem(ns, "webshop-core"), container, newCrew(ns))
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
-		}).Should(Succeed())
+		readyCrewContainer(ns, "orders-api", func(c *c4v1alpha1.Container) { c.Spec.DeploymentRef = nil })
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTarget(ns, "dev")
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
@@ -183,5 +203,62 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		Consistently(func() error {
 			return k8sClient.Get(ctx, argoKey(ns, argoNS), app)
 		}, 2*time.Second).ShouldNot(Succeed())
+	})
+
+	It("fails a Container whose name joins to another's Application name, naming it (#1677, #1669)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: testDigest, Platforms: []string{"linux/amd64"}})
+		shipRelease(ns, "v0.1.0", true)
+		argoNS := readyArgoTarget(ns, "dev")
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
+		first := argoApplication(ns, argoNS)
+
+		By("<ns>-orders/api joins to the same Application name as <ns>/orders-api")
+		other := newProjectNamespaceNamed(ns + "-orders")
+		readyCrewContainer(other, "api", nil)
+		crewReleaseOf(other, "api", "v0.1.0", model.RunSucceeded)
+		dt := newArgoCDTarget(other, "dev", argoNS, "apps")
+		mustCreate(dt)
+		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+		setDeployOf(other, "api", c4v1alpha1.ContainerDeploy{Target: "dev"})
+
+		By("Failed, reason NameRejected, naming the other Container: a terminal reason, not a wait")
+		d := nameRejected(other, "api", "dev")
+		Expect(d.Message).To(ContainSubstring("belongs to Container " + ns + "/orders-api, whose name joins to " +
+			"the same: rename one of them"))
+		Consistently(func(g Gomega) {
+			d, cond := deployOfContainer(g, other, "api", "dev")
+			g.Expect(d.Reason).To(Equal(model.DeployNameRejected), d.Message)
+			g.Expect(cond.Reason).To(Equal(model.DeployFailed))
+		}, 2*time.Second).Should(Succeed())
+
+		By("the first Container keeps its Application")
+		app := argoApplication(ns, argoNS)
+		Expect(app.GetLabels()).To(Equal(first.GetLabels()))
+		Expect(app.Object["spec"]).To(Equal(first.Object["spec"]))
+	})
+
+	It("fails a Container whose Application name is over 63 characters, saying so (#1677, #1669)", func() {
+		ns := newProjectNamespace()
+		name := "orders-api-" + strings.Repeat("x", 45)
+		joined := len(ns) + 1 + len(name)
+		Expect(joined).To(BeNumerically(">", model.ArgoCDApplicationNameMax))
+		readyCrewContainer(ns, name, nil)
+		crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
+		argoNS := readyArgoTarget(ns, "dev")
+		setDeployOf(ns, name, c4v1alpha1.ContainerDeploy{Target: "dev"})
+
+		d := nameRejected(ns, name, "dev")
+		Expect(d.Message).To(ContainSubstring(fmt.Sprintf("the Application name %s-%s is %d characters, over the %d "+
+			"a label value holds: shorten the Container's namespace or name", ns, name, joined,
+			model.ArgoCDApplicationNameMax)))
+		var apps unstructured.UnstructuredList
+		apps.SetGroupVersionKind(argocd.ApplicationGVK.GroupVersion().WithKind("ApplicationList"))
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.List(ctx, &apps, client.InNamespace(argoNS))).To(Succeed())
+			g.Expect(apps.Items).To(BeEmpty(), "nothing is written")
+		}, 2*time.Second).Should(Succeed())
 	})
 })
