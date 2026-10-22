@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -47,15 +48,17 @@ func hosts(t ports.Target) model.GitLabHosts {
 	return model.GitLabHostsOf(t.Settings[model.GitLabSettingURL])
 }
 
-// client is the target's project, with the Secret's token.
+// client is the target's project, with the Secret's token. A Secret without
+// the token refuses the credential; a setting the client can't take (the
+// project path, the url) is the target's own mistake, as on GitHub.
 func (d *Deployer) client(t ports.Target) (gitprovider.GitLabProject, error) {
-	c, err := d.projects.GitLab(gitprovider.GitLabConfig{URL: t.Settings[model.GitLabSettingURL],
-		Project: t.Settings[model.GitLabSettingProject],
-		Token:   strings.TrimSpace(string(t.Secret[model.GitLabSecretToken]))})
-	if err != nil {
-		return nil, &ports.Error{Kind: ports.ErrCredentialRefused, Cause: err}
+	token := strings.TrimSpace(string(t.Secret[model.GitLabSecretToken]))
+	if token == "" {
+		return nil, &ports.Error{Kind: ports.ErrCredentialRefused,
+			Cause: fmt.Errorf("gitlab: the Secret has no %s", model.GitLabSecretToken)}
 	}
-	return c, nil
+	return d.projects.GitLab(gitprovider.GitLabConfig{URL: t.Settings[model.GitLabSettingURL],
+		Project: t.Settings[model.GitLabSettingProject], Token: token})
 }
 
 // Check reads the project with the target's token and the token's scopes: a
@@ -119,12 +122,12 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		}
 	}
 	pkg, version := packageName(s.App), s.Version
-	facts, held, err := shipFacts(ctx, c, tag, pkg, version, "")
+	facts, held, err := shipFacts(ctx, c, tag, pkg, version, s.Commit)
 	if err != nil {
 		return portError(err)
 	}
 	ship := model.GitLabShip{Tag: tag, Name: model.ReleaseName(s.DisplayName, s.Version),
-		Body: model.ReleaseBody(s.Notes, marker), Marker: marker, Files: files}
+		Body: model.ReleaseBody(s.Notes, marker), Marker: marker, Commit: s.Commit, Files: files}
 	step := model.NextGitLabStep(ship, facts)
 	return portError(d.write(ctx, c, t, s, step, files, held))
 }
@@ -199,10 +202,22 @@ func (d *Deployer) write(ctx context.Context, c gitprovider.GitLabProject, t por
 			if err != nil {
 				return err
 			}
-			ref = info.DefaultBranch
+			if ref = info.DefaultBranch; ref == "" {
+				return &gitprovider.ReleaseError{Reason: gitprovider.ReasonGitLabRejected,
+					Message: fmt.Sprintf("gitlab: project %s is empty, so there is no commit to tag %s at; "+
+						"push a first commit to it", info.Path, step.Tag)}
+			}
 		}
 		rel, err := c.CreateRelease(ctx, gitprovider.GitLabRelease{Tag: step.Tag, Name: step.Name,
 			Description: step.Body, Ref: ref, Links: links})
+		if re, ok := errors.AsType[*gitprovider.ReleaseError](err); ok && re.Status == http.StatusConflict {
+			// Made since Ship read the tag, by another reconcile or by
+			// someone else: the next Ship reads it and says whose it is.
+			if got, rerr := c.Release(ctx, step.Tag); rerr == nil && got != nil {
+				log.Info("Release already there", "tag", step.Tag, "url", got.URL)
+				return nil
+			}
+		}
 		if err != nil {
 			return err
 		}

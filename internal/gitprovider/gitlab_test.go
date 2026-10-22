@@ -243,3 +243,69 @@ func TestGitLabFailures(t *testing.T) {
 		}
 	}
 }
+
+// A 404 on the token's own record is the token's (an instance or a token
+// with no PAT record): Unauthorized, so Check refuses the credential
+// (docs/plans/gitlab-deploy.md, Decision 2).
+func TestGitLabTokenNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"404 Not Found"}`))
+	}))
+	defer srv.Close()
+	gl, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: srv.URL, Project: "g/p", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = gl.TokenScopes(context.Background())
+	if re := gitlabReason(t, err, gitprovider.ReasonUnauthorized); !strings.Contains(re.Message, "no record of the token") {
+		t.Errorf("message %q", re.Message)
+	}
+}
+
+// countingCloser counts its closes: the client never closes a reader it
+// doesn't own, not even an empty one.
+type countingCloser struct {
+	strings.Reader
+	closes int
+}
+
+func (c *countingCloser) Close() error { c.closes++; return nil }
+
+func TestGitLabUploadEmptyFile(t *testing.T) {
+	ctx := context.Background()
+	srv := gitlabtest.New(t)
+	fp := srv.AddProject("shop/web", "tok")
+	gl, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: srv.URL(), Project: "shop/web", Token: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := &countingCloser{}
+	if err := gl.UploadPackageFile(ctx, "web", "1.0.0", "empty.txt", 0, empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty.closes != 0 {
+		t.Errorf("the client closed the reader %d times, want 0", empty.closes)
+	}
+	if files := fp.Files("web", "1.0.0"); files["empty.txt"] != 0 || len(files) != 1 {
+		t.Errorf("files %v, want empty.txt at 0 bytes", files)
+	}
+}
+
+// TestGitLabHosts: the API base is the model's rule, so a url with spaces or
+// a trailing slash reads the same as the links Ship writes.
+func TestGitLabHosts(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	defer srv.Close()
+	gl, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: " " + srv.URL + "/gitlab/ ", Project: "g/p", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gl.Project(context.Background()); err != nil || path != "/gitlab/api/v4/projects/g%2Fp" {
+		t.Errorf("path %s, %v", path, err)
+	}
+}

@@ -164,3 +164,101 @@ func TestShipPackagesOff(t *testing.T) {
 		t.Fatalf("Ship() = %v, want GitLabRejected, not a port error", err)
 	}
 }
+
+// A tag at another commit than the shipment's source commit, with no release,
+// is someone else's too: TagTaken, and nothing is written.
+func TestShipTagAtAnotherCommit(t *testing.T) {
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	p.SetTag("cli/v1.0.0", strings.Repeat("a", 40))
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Commit = strings.Repeat("b", 40)
+	err := New(nil).Ship(context.Background(), tg, s)
+	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	if !ok || re.Reason != model.PublishTagTaken {
+		t.Fatalf("Ship() = %v, want a ReleaseError with reason TagTaken", err)
+	}
+	if n := len(p.Files("orders-cli", "v1.0.0")); n != 0 {
+		t.Errorf("files uploaded = %d, want 0", n)
+	}
+}
+
+// racing makes the fake's release appear between Ship's read and its write,
+// as another reconcile would: CreateRelease then gets GitLab's 409.
+type racing struct {
+	gitprovider.GitLabProject
+	p *gitlabtest.Project
+}
+
+func (r racing) CreateRelease(ctx context.Context, rel gitprovider.GitLabRelease) (model.TargetRelease, error) {
+	r.p.AddRelease(rel.Tag, rel.Description)
+	return r.GitLabProject.CreateRelease(ctx, rel)
+}
+
+type racingProjects struct{ p *gitlabtest.Project }
+
+func (r racingProjects) GitLab(cfg gitprovider.GitLabConfig) (gitprovider.GitLabProject, error) {
+	c, err := gitprovider.Client{}.GitLab(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return racing{GitLabProject: c, p: r.p}, nil
+}
+
+// A release made since Ship read the tag (a second reconcile) answers 409:
+// Ship finds it there and is done, and the entry doesn't fail.
+func TestShipReleaseRace(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	d := New(racingProjects{p: p})
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	for i := 0; i < 3 && marked(p, s.App) == 0; i++ {
+		if err := d.Ship(ctx, tg, s); err != nil {
+			t.Fatalf("Ship() %d = %v, want the 409 taken as done", i, err)
+		}
+	}
+	if rels := p.Releases(); len(rels) != 1 || marked(p, s.App) != 1 {
+		t.Fatalf("releases = %+v, want the one marked release", rels)
+	}
+}
+
+// An empty project has no default branch, so there is no commit to tag: Ship
+// fails the entry saying so, not a 422 that reads as nothing.
+func TestShipEmptyProject(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	p.DefaultBranch = ""
+	d := New(nil)
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	var err error
+	for i := 0; i < 3 && err == nil; i++ {
+		err = d.Ship(ctx, tg, s)
+	}
+	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	if !ok || re.Reason != gitprovider.ReasonGitLabRejected || !strings.Contains(re.Message, "is empty") {
+		t.Fatalf("Ship() = %v, want GitLabRejected saying the project is empty", err)
+	}
+	if errors.Is(err, ports.ErrUnreachable) || errors.Is(err, ports.ErrCredentialRefused) {
+		t.Fatalf("Ship() = %v, want no port error", err)
+	}
+}
+
+// A Secret without the token refuses the credential; a project setting that
+// isn't a full path is the target's mistake, not the credential's.
+func TestCheckConfig(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, _ := newTarget(gl, "t0ken")
+	tg.Secret = map[string][]byte{}
+	if err := New(nil).Check(ctx, tg); !errors.Is(err, ports.ErrCredentialRefused) {
+		t.Fatalf("Check() without the token = %v, want ErrCredentialRefused", err)
+	}
+	tg, _ = newTarget(gl, "t0ken")
+	tg.Settings[model.GitLabSettingProject] = "orders"
+	err := New(nil).Check(ctx, tg)
+	if err == nil || errors.Is(err, ports.ErrCredentialRefused) || !strings.Contains(err.Error(), "full path") {
+		t.Fatalf("Check() with a one-segment project = %v, want a config error, not a refused credential", err)
+	}
+}

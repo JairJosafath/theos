@@ -29,10 +29,6 @@ const (
 	ReasonGitLabRejected = "GitLabRejected"
 )
 
-// gitlabComURL is gitlab.com, the instance a GitLabConfig without a URL
-// reaches.
-const gitlabComURL = "https://gitlab.com"
-
 // GitLabConfig is the GitLab project a deploy target publishes to, and how.
 type GitLabConfig struct {
 	// URL is the instance, https://host[:port] with an optional path for an
@@ -130,29 +126,18 @@ func (c Client) GitLab(cfg GitLabConfig) (GitLabProject, error) {
 	if cfg.Token == "" {
 		return nil, errors.New("gitlab: token is required")
 	}
-	api, err := gitlabAPIURL(cfg.URL)
-	if err != nil {
-		return nil, err
+	// The hosts are the model's rule (model.GitLabHostsOf), so the API
+	// base and the links Ship writes come from one place.
+	h := model.GitLabHostsOf(cfg.URL)
+	if u, err := url.Parse(h.Web); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return nil, fmt.Errorf("gitlab: invalid URL %q", cfg.URL)
 	}
 	client := c.HTTP
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &gitlabProject{api: api, token: cfg.Token, http: client, path: cfg.Project,
+	return &gitlabProject{api: h.API, token: cfg.Token, http: client, path: cfg.Project,
 		project: "/projects/" + url.PathEscape(cfg.Project)}, nil
-}
-
-// gitlabAPIURL is the API of the instance at raw, gitlab.com's when raw is "".
-func gitlabAPIURL(raw string) (string, error) {
-	if raw == "" {
-		raw = gitlabComURL
-	}
-	raw = strings.TrimRight(raw, "/")
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return "", fmt.Errorf("gitlab: invalid URL %q", raw)
-	}
-	return raw + "/api/v4", nil
 }
 
 type gitlabProject struct {
@@ -205,11 +190,17 @@ func (g *gitlabProject) Project(ctx context.Context) (GitLabProjectInfo, error) 
 		RegistryPrefix: p.RegistryImagePrefix, RegistryEnabled: p.RegistryAccessLevel != "disabled"}, nil
 }
 
+// TokenScopes reads the token's own record. A 404 there is the token's: GitLab
+// has no record of it (docs/plans/gitlab-deploy.md, Decision 2).
 func (g *gitlabProject) TokenScopes(ctx context.Context) ([]string, error) {
 	var t struct {
 		Scopes []string `json:"scopes"`
 	}
 	err := g.call(ctx, http.MethodGet, "/personal_access_tokens/self", nil, http.StatusOK, "reading the token", &t)
+	if re, ok := errors.AsType[*ReleaseError](err); ok && re.Status == http.StatusNotFound {
+		re.Reason = ReasonUnauthorized
+		re.Message = "gitlab: the instance has no record of the token: " + re.Message
+	}
 	return t.Scopes, err
 }
 
@@ -366,9 +357,7 @@ func (g *gitlabProject) UploadPackageFile(ctx context.Context, pkg, version, nam
 			Message: fmt.Sprintf("gitlab: uploading %s: its size is unknown", name)}
 	}
 	if size == 0 {
-		if c, ok := content.(io.Closer); ok {
-			_ = c.Close()
-		}
+		// The caller owns content and closes it.
 		content = http.NoBody
 	}
 	path := g.project + "/packages/generic/" + url.PathEscape(pkg) + "/" + url.PathEscape(version) + "/" +
