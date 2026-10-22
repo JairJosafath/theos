@@ -21,6 +21,8 @@ import path from 'node:path';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 
@@ -99,6 +101,8 @@ export interface ApiStackProps extends StackProps {
   readonly tier: Tier;
   /** What the Container promises whatever the tier: `OPERATIONS`. */
   readonly operations: Operations;
+  /** The data stores it connects the function to: `DATA_STORES` unless a test names others. */
+  readonly dataStores?: readonly (readonly [string, Connect])[];
 }
 
 /**
@@ -156,6 +160,10 @@ export class ApiStack extends Stack {
     });
     // Only the calls the handler makes.
     table.grant(handler, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    // The DataStores the Container's Relationships name, from their Connectors.
+    const stores = (props.dataStores ?? DATA_STORES).map(
+      ([name, connect]) => [name, connect(this, handler, rules)] as const,
+    );
 
     const accessLogs = new LogGroup(this, 'ApiAccessLogs', {
       retention: rules.logRetention,
@@ -203,21 +211,23 @@ export class ApiStack extends Stack {
         addLatencyP99Alarm: {
           Warning: { maxLatency: Duration.millis(TIMEOUT.toMilliseconds() * 0.8) },
         },
-      })
-      .monitorDynamoTable({
-        table: Table.fromTableName(this, 'MonitoredItems', table.tableName),
-        alarmFriendlyName: 'Items',
+      });
+    for (const [name, monitored] of [['Items', table], ...stores] as const) {
+      alarms.monitoring.monitorDynamoTable({
+        table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
+        alarmFriendlyName: name,
         billingMode: BillingMode.PAY_PER_REQUEST,
         addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table],
+        tables: [table, ...stores.map(([, store]) => store)],
       });
     }
 
