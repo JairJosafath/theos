@@ -249,3 +249,42 @@ func TestCopyImage(t *testing.T) {
 		}
 	})
 }
+
+// TestRestConfigRefusesWhatRunsInTheOperator: a kubeconfig in a target's
+// Secret gives everything inline; a plugin or a file path would run or read
+// in the operator's pod (#1590).
+func TestRestConfigRefusesWhatRunsInTheOperator(t *testing.T) {
+	kubeconfig := func(cluster, user string) []byte {
+		return []byte("apiVersion: v1\nkind: Config\ncurrent-context: c\n" +
+			"clusters:\n- name: c\n  cluster:\n    server: https://remote.example:6443\n" + cluster +
+			"users:\n- name: u\n  user:\n" + user +
+			"contexts:\n- name: c\n  context: {cluster: c, user: u}\n")
+	}
+	for _, tc := range []struct {
+		name, cluster, user, want string
+	}{
+		{name: "an inline token", user: "    token: abc\n"},
+		{name: "exec", user: "    exec: {apiVersion: client.authentication.k8s.io/v1, command: sh}\n",
+			want: "runs a command"},
+		{name: "an auth-provider", user: "    auth-provider: {name: oidc}\n", want: "auth-provider"},
+		{name: "tokenFile", user: "    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token\n",
+			want: "reads a file"},
+		{name: "a client key file", user: "    client-certificate: /c.pem\n    client-key: /k.pem\n",
+			want: "reads a file"},
+		{name: "a certificate-authority file", cluster: "    certificate-authority: /ca.pem\n",
+			user: "    token: abc\n", want: "certificate-authority-data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := restConfig(kubeconfig(tc.cluster, tc.user))
+			if tc.want == "" {
+				if err != nil || cfg.Host != "https://remote.example:6443" {
+					t.Fatalf("restConfig = %v, %v; want the remote's config", cfg, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("restConfig error = %v, want one saying %q", err, tc.want)
+			}
+		})
+	}
+}

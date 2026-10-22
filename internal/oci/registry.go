@@ -127,7 +127,7 @@ func Copy(ctx context.Context, from Registry, fromRepository, digest string, to 
 	if desc.MediaType.IsIndex() {
 		idx, err := desc.ImageIndex()
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: read %s@%s: %w", ErrSource, src, digest, err)
 		}
 		err = remote.WriteIndex(ref, idx, to.options(ctx)...)
 		if err != nil {
@@ -137,7 +137,7 @@ func Copy(ctx context.Context, from Registry, fromRepository, digest string, to 
 	}
 	img, err := desc.Image()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: read %s@%s: %w", ErrSource, src, digest, err)
 	}
 	if err := remote.Write(ref, img, to.options(ctx)...); err != nil {
 		return fmt.Errorf("write %s: %w", ref, err)

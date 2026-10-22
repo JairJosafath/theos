@@ -88,7 +88,7 @@ func (d *Deployer) client(t ports.Target) (client.Client, error) {
 	if c, ok := d.remotes.Load(key); ok {
 		return c.(client.Client), nil
 	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	cfg, err := restConfig(kubeconfig)
 	if err != nil {
 		return nil, refused(fmt.Errorf("the Secret's %s: %w", model.ArgoCDSecretKubeconfig, err))
 	}
@@ -98,6 +98,35 @@ func (d *Deployer) client(t ports.Target) (client.Client, error) {
 	}
 	actual, _ := d.remotes.LoadOrStore(key, c)
 	return actual.(client.Client), nil
+}
+
+// restConfig builds the client config from kubeconfig, which must carry
+// everything inline: an exec or auth-provider plugin would run in the
+// operator, and a file path (tokenFile, a certificate or key file) would
+// read the operator's own files, its ServiceAccount token among them, and
+// send them to whatever server the kubeconfig names (#1590).
+func restConfig(kubeconfig []byte) (*rest.Config, error) {
+	cfg, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	for name, a := range cfg.AuthInfos {
+		switch {
+		case a.Exec != nil:
+			return nil, fmt.Errorf("user %q runs a command (exec); give a token or client certificate inline", name)
+		case a.AuthProvider != nil:
+			return nil, fmt.Errorf("user %q uses an auth-provider; give a token or client certificate inline", name)
+		case a.TokenFile != "" || a.ClientCertificate != "" || a.ClientKey != "":
+			return nil, fmt.Errorf("user %q reads a file; give its token, client-certificate-data and "+
+				"client-key-data inline", name)
+		}
+	}
+	for name, c := range cfg.Clusters {
+		if c.CertificateAuthority != "" {
+			return nil, fmt.Errorf("cluster %q reads a file; give certificate-authority-data inline", name)
+		}
+	}
+	return clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{}).ClientConfig()
 }
 
 // settings are an argoCD target's fields, defaulted.
