@@ -165,28 +165,28 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
 
 Each step is one issue, filed `status/ready`, naming #1606.
 
-1. The GitLab adapter, releases and files: the client in
+1. (#1803) The GitLab adapter, releases and files: the client in
    `internal/gitprovider`, `gitlabtest`, `model.NextGitLabStep` and
    `model.ReleaseShipment`, and `internal/adapters/gitlab` with `Check`,
    `Ship` and `State`. *Done when* `contract.Deployer` passes for the
    adapter against `gitlabtest`, and the step rule's table covers a fresh
    project, a file to replace, `TagTaken` and a release that is out.
-2. The `gitlab` member: the API fields and CEL (decision 1), the
+2. (#1804) The `gitlab` member: the API fields and CEL (decision 1), the
    `DeployTargetSource` rename, `model.DeployMemberGitLab`'s row, the
    controllers' settings, `cmd/main.go`'s registration and a sample.
    *Done when* envtest ships a `cli` Container (the `gitea-release`
    Deployment, release files) to a `gitlab` target on `gitlabtest` and its
    entry reaches `Deployed`, every CEL rule has its failing case, and the
    sample passes `make validate-yaml`. Depends on step 1.
-3. The source on GitLab (decision 4). *Done when* envtest ships a Container
+3. (#1805) The source on GitLab (decision 4). *Done when* envtest ships a Container
    with `source` set to a `gitlab` target, it reaches `Deployed` with the
    folder and the source tag in `gitlabtest`, and a tree with a secret fails
    `SecretFound`. Depends on step 2.
-4. The image on GitLab (decision 5). *Done when* envtest ships a Container
+4. (#1806) The image on GitLab (decision 5). *Done when* envtest ships a Container
    that builds an image to a `gitlab` target, it reaches `Deployed` with
    `status.deploys[].image` in the project's registry, and a project with
    its registry off ships without one. Depends on step 2.
-5. The UI: the `gitlab` member in `ui/src/model/deploys.ts` and the
+5. (#1807) The UI: the `gitlab` member in `ui/src/model/deploys.ts` and the
    DeployTarget page (where, the source, the image, the Secret's keys).
    *Done when* `make ui-test` passes with cases for a gitlab target, with
    and without `url` and `source`. Depends on step 2.
