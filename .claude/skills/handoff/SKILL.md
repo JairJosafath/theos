@@ -185,9 +185,12 @@ Tests run on main is the first thing that sees your change.
   a fresh pull request saying `Refs #N`, and close the old one with a comment
   naming the new one (`gh pr close OLD --comment ...`). The steps of a plan
   for a decided issue (N ready or in progress) are decided design work
-  (AGENTS.md, "Designing is our job"): file each `status/ready`, never
-  `status/proposed`, with
-  `hack/lib/github.sh create TITLE FILE status/ready kind/<kind> source/dev`.
+  (AGENTS.md, "Designing is our job"): file each `status/ready`, with
+  `hack/lib/github.sh create TITLE FILE status/ready kind/<kind> source/dev`,
+  so the relay picks them without a second triage pass. A step is filed
+  `status/proposed` only when it needs a decision the plan did not make,
+  and then its body says which; the relay's triage (the `triage` skill,
+  "Ready it as design work") readies it or sends it on.
   Each step's body names N, has a checkable *Done when*, and has a
   `Depends on #S` line per earlier step it waits on, so they run in order.
   Steps never say `Depends on #N` (that is a cycle). Once the plan's pull
