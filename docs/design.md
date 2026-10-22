@@ -196,7 +196,10 @@ on a Standard change), then `Merged` or `Failed`.
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot.
+  an agent slot. The Work area charts the runs against their Agent's
+  `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
+  "Past the limit" counts use the Agent's current limit and the Task's current
+  Agent, since a run records neither, so changing either rejudges past runs.
 - **A long session hands off.** Past its Agent's `sessionTokenLimit` (default
   130000) a session writes where it stands and stops; the runner, `c4agent`,
   starts a fresh one with that note (`status.tokens.sessionHandoffs`).
