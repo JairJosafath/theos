@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 # The C4 Factory UI: the built React app plus server.mjs, which serves it and
 # proxies GET requests to the Kubernetes API, and the Session client c4session
-# for linux amd64 and arm64 under /downloads/, which scaffolded devcontainers
-# fetch from the chart's default sessionBinaryURL (#1151). Build context is the
+# for linux amd64 and arm64 with its SHA256SUMS under /downloads/, which
+# scaffolded devcontainers fetch from the chart's default sessionBinaryURL
+# (#1151, #1175). Build context is the
 # repository root (the Go module); ui/Dockerfile.dockerignore trims it:
 #   docker build -f ui/Dockerfile -t c4factory/ui:dev .
 
@@ -32,7 +33,8 @@ ENV C4_UI_VERSION=${VERSION}
 RUN npm run build
 
 # The Session client, built as release.yml attaches it to the GitHub release:
-# the same flags, one static binary per architecture.
+# the same flags, one static binary per architecture, and SHA256SUMS over
+# both, which the c4session feature checks the download against (#1175).
 FROM ${GO_IMAGE} AS session
 WORKDIR /workspace
 COPY go.mod go.sum ./
@@ -46,7 +48,8 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     for arch in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o /out/c4session-linux-$arch ./cmd/c4session; \
-    done
+    done \
+    && cd /out && sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS
 
 FROM ${NODE_IMAGE}
 ENV NODE_ENV=production \

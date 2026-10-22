@@ -4,9 +4,10 @@ name: Release
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag,
-# with the c4session binaries for a chart whose UI is off (#1079); with the UI
-# on, a scaffolded devcontainer downloads its Session client from the UI image,
-# which carries the same binaries under /downloads/ (#1151).
+# with the c4session binaries and their SHA256SUMS for a chart whose UI is off
+# (#1079, #1175); with the UI on, a scaffolded devcontainer downloads its
+# Session client from the UI image, which carries the same files under
+# /downloads/ (#1151).
 # One job builds the images in order with the local Docker daemon, so the agent
 # and runner images build on the toolchains just built. It runs no tests:
 # releases are cut from main. The release's notes are hack/release-notes.sh's
@@ -91,12 +92,16 @@ jobs:
           cache: false
 
       # The names are the chart's sessionBinaryURL with ${arch} filled in.
+      # SHA256SUMS goes with them: the c4session feature downloads it from next
+      # to the binary and refuses a binary it doesn't match (#1175).
       - name: Build the Session client
         run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "c4session-linux-$arch" ./cmd/c4session
           done
+          sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS
           ls -l c4session-linux-*
+          cat SHA256SUMS
 
       - name: Install Helm
         run: |
@@ -136,7 +141,7 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 \
+          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.

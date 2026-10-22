@@ -2,6 +2,8 @@
 # Installs c4session, the C4 Factory Session client, and c4session-start, which
 # the feature's postStartCommand runs on every start. It never fails the build:
 # without the client the devcontainer still works, it just isn't a Session.
+# A downloaded binary is checked against the SHA256SUMS served next to it, and
+# refused on a mismatch or without one (#1175).
 set -u
 
 BINARY_URL="${BINARYURL:-}"
@@ -9,7 +11,9 @@ VERSION="${VERSION:-latest}"
 ACTOR="${ACTOR:-human}"
 SUMMARY="${SUMMARY:-}"
 MODULE="github.com/JairJosafath/c4factory/cmd/c4session"
-DEST=/usr/local/bin/c4session
+# Where the client and the start script go; a test points it elsewhere.
+BIN_DIR="${C4SESSION_BIN_DIR:-/usr/local/bin}"
+DEST=$BIN_DIR/c4session
 
 warn() { echo "c4session feature: $*" >&2; }
 
@@ -32,14 +36,50 @@ download() {
     fi
 }
 
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        warn "neither sha256sum nor shasum is available to verify the download"
+        return 1
+    fi
+}
+
+# verify FILE NAME SUMS: FILE's SHA-256 is the one SUMS lists for NAME, in
+# sha256sum's format (the release's and the UI image's SHA256SUMS).
+verify() {
+    want=$(awk -v name="$2" '$2 == name { print $1; exit }' "$3")
+    if [ -z "$want" ]; then
+        warn "SHA256SUMS doesn't list $2; refusing the download"
+        return 1
+    fi
+    got=$(sha256 "$1") || return 1
+    if [ "$got" != "$want" ]; then
+        warn "checksum mismatch for $2: SHA256SUMS says $want, the download is $got; refusing it"
+        return 1
+    fi
+    echo "c4session feature: $2 matches SHA256SUMS"
+}
+
 install_client() {
     if [ -n "$BINARY_URL" ]; then
         url=$(echo "$BINARY_URL" | sed "s/\${arch}/$(arch)/g")
+        name=${url##*/}
+        sums=${url%/*}/SHA256SUMS
         echo "c4session feature: downloading $url"
-        download "$url" "$DEST.tmp" && chmod 0755 "$DEST.tmp" && mv "$DEST.tmp" "$DEST"
+        download "$url" "$DEST.tmp" || return 1
+        echo "c4session feature: verifying against $sums"
+        if ! download "$sums" "$DEST.sums"; then
+            warn "no SHA256SUMS next to the binary; refusing the download"
+            return 1
+        fi
+        verify "$DEST.tmp" "$name" "$DEST.sums" || return 1
+        chmod 0755 "$DEST.tmp" && mv "$DEST.tmp" "$DEST"
     elif command -v go >/dev/null 2>&1; then
         echo "c4session feature: go install $MODULE@$VERSION"
-        GOBIN=/usr/local/bin go install "$MODULE@$VERSION"
+        GOBIN=$BIN_DIR go install "$MODULE@$VERSION"
     else
         warn "set the binaryUrl option or add Go to install the client"
         return 1
@@ -50,10 +90,11 @@ if ! install_client; then
     rm -f "$DEST.tmp"
     warn "c4session was not installed; this devcontainer won't show up as a Session"
 fi
+rm -f "$DEST.sums"
 
 # The start script bakes in the options. Values are single-quoted for the shell.
 quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
-cat > /usr/local/bin/c4session-start <<SCRIPT
+cat > "$BIN_DIR/c4session-start" <<SCRIPT
 #!/bin/sh
 # Written by the c4session devcontainer feature; run as its postStartCommand.
 if ! command -v c4session >/dev/null 2>&1; then
@@ -62,5 +103,5 @@ if ! command -v c4session >/dev/null 2>&1; then
 fi
 exec c4session start --actor $(quote "$ACTOR") --summary $(quote "$SUMMARY")
 SCRIPT
-chmod 0755 /usr/local/bin/c4session-start
+chmod 0755 "$BIN_DIR/c4session-start"
 exit 0

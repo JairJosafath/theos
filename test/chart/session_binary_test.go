@@ -27,7 +27,8 @@ var sessionFlag = regexp.MustCompile(`(?m)^\s*- --session-binary-url=(\S+)$`)
 // (#1151): the port-forward's localhost, or behind an Ingress the first
 // ui.allowedHosts entry over https. With the UI off it is the release's files,
 // which Release attaches (#1079). A set sessionBinaryURL replaces the default;
-// an empty one sets no flag.
+// an empty one sets no flag. Both sources publish SHA256SUMS next to the
+// binaries, which the feature verifies the download against (#1175).
 func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	helm := helmBinary(t)
 	const version = "1.2.3"
@@ -79,6 +80,24 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		if !strings.Contains(string(create), " "+file) {
 			t.Errorf("release.yml's gh release create doesn't attach %s: %s", file, create)
 		}
+	}
+	// Both places the chart's default downloads from serve a SHA256SUMS over
+	// both binaries next to them, which the c4session feature checks the
+	// download against (#1175): the release's files and the UI image's
+	// /downloads/ (ui/Dockerfile; ui/server.mjs serves it, its test shows).
+	sums := "sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS"
+	if !strings.Contains(string(create), " SHA256SUMS") {
+		t.Errorf("release.yml's gh release create doesn't attach SHA256SUMS: %s", create)
+	}
+	if !strings.Contains(string(workflow), sums) {
+		t.Errorf("release.yml doesn't write SHA256SUMS over both binaries (%s)", sums)
+	}
+	dockerfile, err := os.ReadFile(filepath.Join("..", "..", "ui", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dockerfile), sums) {
+		t.Errorf("ui/Dockerfile doesn't write SHA256SUMS next to the binaries it serves (%s)", sums)
 	}
 
 	out, err := exec.Command(helm, "template", release, pkg, "--namespace", releaseNS,

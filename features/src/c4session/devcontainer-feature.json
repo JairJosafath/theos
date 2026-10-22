@@ -8,7 +8,7 @@
     "binaryUrl": {
       "type": "string",
       "default": "",
-      "description": "URL of a linux c4session binary; ${arch} becomes amd64 or arm64. Empty: go install it when Go is present."
+      "description": "URL of a linux c4session binary; ${arch} becomes amd64 or arm64. Its directory must also serve SHA256SUMS, which the download is checked against. Empty: go install it when Go is present."
     },
     "version": {
       "type": "string",

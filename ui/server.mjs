@@ -7,6 +7,8 @@
 //   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
 //   GET /downloads/c4session-linux-<amd64|arm64>
 //                         the Session client, from downloads/ (the image builds it; #1151)
+//   GET /downloads/SHA256SUMS
+//                         its checksums, which the c4session feature verifies (#1175)
 //   GET /...              files from dist/
 //
 //   GET /ui/session       whether actions are on, who makes them, who is signed in, and the writes
@@ -66,10 +68,11 @@ const MAX_WATCHES = 32
 /**
  * The files under /downloads/: the Session client the image builds for each
  * architecture (ui/Dockerfile), which a scaffolded devcontainer's c4session
- * feature fetches from the chart's default sessionBinaryURL (#1151). Any
- * other name is 404.
+ * feature fetches from the chart's default sessionBinaryURL (#1151), and the
+ * SHA256SUMS over both, which the feature checks the download against (#1175).
+ * Any other name is 404.
  */
-export const DOWNLOADS = ['c4session-linux-amd64', 'c4session-linux-arm64']
+export const DOWNLOADS = ['c4session-linux-amd64', 'c4session-linux-arm64', 'SHA256SUMS']
 
 /** Request headers passed upstream. Everything else, auth and cookies included, is dropped. */
 const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
@@ -985,7 +988,7 @@ async function serveDownload(res, dir, name, method) {
     const body = await readFile(path.join(dir, name))
     res.writeHead(200, {
       ...SECURITY_HEADERS,
-      'content-type': 'application/octet-stream',
+      'content-type': name === 'SHA256SUMS' ? 'text/plain; charset=utf-8' : 'application/octet-stream',
       'content-length': body.length,
       'content-disposition': `attachment; filename="${name}"`,
       'cache-control': 'no-cache',

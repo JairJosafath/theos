@@ -15,13 +15,14 @@ The operator writes this feature into every repository it scaffolds, as
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `binaryUrl` | empty | URL of a linux `c4session` binary; `${arch}` becomes `amd64` or `arm64`. The operator sets it from `--session-binary-url`. |
+| `binaryUrl` | empty | URL of a linux `c4session` binary; `${arch}` becomes `amd64` or `arm64`. The operator sets it from `--session-binary-url`. The same directory must serve a `SHA256SUMS` (in `sha256sum`'s format) that lists the binary: the download is checked against it and refused on a mismatch or without one. The chart's defaults, the UI's `/downloads/` and the GitHub release, both publish it. |
 | `version` | `latest` | Module version for `go install`, used when `binaryUrl` is empty and Go is present. |
 | `actor` | `human` | `human` or `agent`. |
 | `summary` | empty | One line about the work. |
 
-Installing never fails the devcontainer build: without a binary the container
-still works, it just doesn't show up as a Session.
+Installing never fails the devcontainer build: without a binary, or with one
+that doesn't match its `SHA256SUMS`, the container still works, it just doesn't
+show up as a Session; the build log says why.
 
 The client needs to reach the cluster, with a kubeconfig (`KUBECONFIG` or
 `~/.kube/config`) for the project's `c4-session` ServiceAccount, or in-cluster
