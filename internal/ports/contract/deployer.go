@@ -32,7 +32,8 @@ const maxShips = 20
 const contractApp = "contract/orders-cli"
 
 // Deployer states what every Deployer does: Ship twice is one deploy; State
-// after Ship reports the version once the tool says it is done; a refused
+// after Ship reports the version once the tool says it is done, and a
+// version shipped before reaches Deployed again when it is wanted; a refused
 // credential is ErrCredentialRefused from Check and Ship; a missing file is
 // ErrArtifactMissing.
 func Deployer(t *testing.T, env DeployerEnv) {
@@ -47,7 +48,7 @@ func Deployer(t *testing.T, env DeployerEnv) {
 	})
 
 	t.Run("reports nothing before the first deploy", func(t *testing.T) {
-		st, err := d.State(ctx, env.Target(t), contractApp)
+		st, err := d.State(ctx, env.Target(t), contractApp, "")
 		if err != nil || st.Version != "" || st.Phase != "" {
 			t.Fatalf("State() = %+v, %v; want the zero state", st, err)
 		}
@@ -64,7 +65,7 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		if n := env.Deploys(t, target, contractApp); n != 1 {
 			t.Errorf("deploys = %d after shipping v1.0.0 three times, want 1", n)
 		}
-		st, err := d.State(ctx, target, contractApp)
+		st, err := d.State(ctx, target, contractApp, "v1.0.0")
 		if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed {
 			t.Errorf("State() = %+v, %v; want v1.0.0 Deployed", st, err)
 		}
@@ -77,6 +78,17 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		if n := env.Deploys(t, target, contractApp); n != 2 {
 			t.Errorf("deploys = %d after v1.0.0 and v1.1.0, want 2", n)
 		}
+	})
+
+	t.Run("a version shipped before is Deployed again when it is wanted", func(t *testing.T) {
+		// A rollback: the entry pins v1.0.0 after v1.1.0 shipped. A tool
+		// that runs one version starts a new deploy of it; one whose
+		// versions stand side by side reports v1.0.0's. Either way State
+		// reaches Deployed at v1.0.0 (#1445).
+		target := env.Target(t)
+		shipUntilDeployed(t, d, target, shipment("v1.0.0"))
+		shipUntilDeployed(t, d, target, shipment("v1.1.0"))
+		shipUntilDeployed(t, d, target, shipment("v1.0.0"))
 	})
 
 	t.Run("a refused credential is ErrCredentialRefused", func(t *testing.T) {
@@ -110,7 +122,7 @@ func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s po
 		if err := d.Ship(ctx, target, s); err != nil {
 			t.Fatalf("Ship(%s) = %v", s.Version, err)
 		}
-		st, err := d.State(ctx, target, s.App)
+		st, err := d.State(ctx, target, s.App, s.Version)
 		if err != nil {
 			t.Fatalf("State() = %v", err)
 		}
