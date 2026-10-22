@@ -181,10 +181,12 @@ metrics:
 certManager:
   enabled: false
 
-## Webhook server configuration
+## Webhook server configuration. The operator issues its own certificate
+## into the Secret <release>-webhook-cert and patches the CA into the CRDs
+## that convert by webhook; cert-manager is not needed.
 ##
 webhook:
-  enabled: false
+  enabled: true
   # Webhook server port
   port: 9443
 

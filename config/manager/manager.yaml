@@ -89,6 +89,11 @@ spec:
           # The UI of config/ui reads the agent sandboxes' pods in each project
           # namespace; nowhere else but the factory's own (#1080).
           - --ui-service-account=c4-factory-ui/c4-factory-ui
+          # The operator issues the webhook certificate into this Secret for
+          # config/default's webhook Service (namePrefix c4-factory-) and
+          # patches its CA into the CRDs (docs/plans/api-versions.md).
+          - --webhook-service=c4-factory-webhook-service
+          - --webhook-cert-secret=c4-factory-webhook-cert
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -99,6 +104,9 @@ spec:
         ports:
         - containerPort: 8081
           name: health
+          protocol: TCP
+        - containerPort: 9443
+          name: webhook-server
           protocol: TCP
         securityContext:
           readOnlyRootFilesystem: true

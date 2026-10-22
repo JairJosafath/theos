@@ -47,6 +47,10 @@ edited '/--shared-pull-secret=/d'; run; check "no --shared-pull-secret: fails" $
 edited '/--model-proxy-url=/d'; run; check "no --model-proxy-url: fails" $? 1
 edited '/--ui-service-account=/d'; run; check "no --ui-service-account: fails" $? 1
 grep -q 'lacks the --ui-service-account flag' "$T/out"; check "names the UI flag" $? 0
+edited '/--webhook-service=/d'; run; check "no --webhook-service: fails" $? 1
+grep -q 'lacks the --webhook-service flag' "$T/out"; check "names the webhook flag" $? 0
+edited '/--webhook-cert-secret=/d'; run; check "no --webhook-cert-secret: fails" $? 1
+edited '/name: webhook-server/d'; run; check "no webhook-server port: fails" $? 1
 
 printf 'kind: ConfigMap\n' >"$T/rendered.yaml"
 run; check "a render without the manager: fails" $? 1

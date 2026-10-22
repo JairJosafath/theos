@@ -84,6 +84,13 @@ spec:
         - --metrics-bind-address=0
         {{- end }}
         - --health-probe-bind-address=:{{ .Values.manager.healthProbe.port }}
+        {{- if .Values.webhook.enabled }}
+        # The operator issues the webhook certificate into this Secret and
+        # patches its CA into the CRDs (docs/plans/api-versions.md, decision 3).
+        - --webhook-port={{ .Values.webhook.port }}
+        - --webhook-service={{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+        - --webhook-cert-secret={{ .Release.Name }}-webhook-cert
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ tpl . $ }}
         {{- end }}
@@ -137,6 +144,11 @@ spec:
         - containerPort: {{ .Values.manager.healthProbe.port }}
           name: health
           protocol: TCP
+        {{- if .Values.webhook.enabled }}
+        - containerPort: {{ .Values.webhook.port }}
+          name: webhook-server
+          protocol: TCP
+        {{- end }}
         readinessProbe:
           httpGet:
             path: /readyz
