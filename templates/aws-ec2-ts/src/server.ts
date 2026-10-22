@@ -4,6 +4,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
 import { answer } from './api';
 import type { ApiRequest, Log } from './api';
+import type { Authenticate } from './auth';
 import type { ItemStore } from './item_store';
 import { problem } from './items';
 import type { HttpResponse } from './items';
@@ -13,14 +14,15 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 /**
  * The HTTP server the instances run: reads each request, hands it to `answer`
- * and writes one JSON log line for it. It listens on nothing until the caller
+ * and writes one JSON log line for it. `authenticate` checks each request's
+ * bearer token. It listens on nothing until the caller
  * calls `listen`.
  */
-export function createApiServer(store: ItemStore, log: Log): Server {
+export function createApiServer(store: ItemStore, log: Log, authenticate: Authenticate): Server {
   const server = createServer((incoming, outgoing) => {
     // serve answers every failure itself; this catch only keeps a bug in it
     // from ending the process, which would drop every request in flight.
-    serve(incoming, outgoing, store, log).catch((error: unknown) => {
+    serve(incoming, outgoing, store, log, authenticate).catch((error: unknown) => {
       log({ level: 'ERROR', message: 'Serving a request failed.', error: String(error) });
       outgoing.destroy();
     });
@@ -37,6 +39,7 @@ async function serve(
   outgoing: ServerResponse,
   store: ItemStore,
   log: Log,
+  authenticate: Authenticate,
 ): Promise<void> {
   const started = performance.now();
   // The load balancer's trace id, so a log line can be found from its access log.
@@ -58,8 +61,14 @@ async function serve(
   } else if (body === undefined) {
     response = problem(413, `The body must be at most ${String(MAX_BODY_BYTES)} bytes.`);
   } else {
-    const request: ApiRequest = { method, path, body, requestId };
-    response = await answer(request, store, log);
+    const request: ApiRequest = {
+      method,
+      path,
+      body,
+      authorization: incoming.headers.authorization,
+      requestId,
+    };
+    response = await answer(request, store, log, authenticate);
   }
   outgoing.writeHead(response.statusCode, response.headers);
   outgoing.end(response.body);

@@ -94,15 +94,71 @@ describe('ServiceStack', () => {
     production.resourceCountIs('AWS::EC2::InternetGateway', 0);
     const endpoints = Object.values(production.findResources('AWS::EC2::VPCEndpoint'))
       .map((endpoint: unknown) =>
-        JSON.stringify(endpoint).match(/\.(s3|dynamodb|logs|cloudformation)"/g),
+        JSON.stringify(endpoint).match(/\.(s3|dynamodb|logs|cloudformation|cognito-idp)"/g),
       )
       .flat()
       .join(' ');
-    for (const service of ['s3', 'dynamodb', 'logs', 'cloudformation']) {
+    for (const service of ['s3', 'dynamodb', 'logs', 'cloudformation', 'cognito-idp']) {
       expect(endpoints).toContain(`.${service}"`);
     }
-    production.resourceCountIs('AWS::EC2::VPCEndpoint', 4);
+    production.resourceCountIs('AWS::EC2::VPCEndpoint', 5);
     production.hasResourceProperties('AWS::EC2::FlowLog', { TrafficType: 'REJECT' });
+  });
+
+  it('makes a user pool the deployer fills, kept in production, with a strong password policy', () => {
+    production.resourceCountIs('AWS::Cognito::UserPool', 1);
+    production.hasResource('AWS::Cognito::UserPool', {
+      DeletionPolicy: 'Retain',
+      Properties: Match.objectLike({
+        AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
+        UsernameAttributes: ['email'],
+        DeletionProtection: 'ACTIVE',
+        Policies: {
+          PasswordPolicy: Match.objectLike({
+            MinimumLength: 12,
+            RequireLowercase: true,
+            RequireUppercase: true,
+            RequireNumbers: true,
+            RequireSymbols: true,
+          }),
+        },
+      }),
+    });
+    development.hasResource('AWS::Cognito::UserPool', {
+      DeletionPolicy: 'Delete',
+      Properties: Match.objectLike({ DeletionProtection: 'INACTIVE' }),
+    });
+  });
+
+  it('signs callers in through one public app client, with no OAuth', () => {
+    const [, client] = onlyOf(production, 'AWS::Cognito::UserPoolClient');
+    expect(client['Properties']).toMatchObject({
+      GenerateSecret: false,
+      ExplicitAuthFlows: expect.arrayContaining([
+        'ALLOW_USER_PASSWORD_AUTH',
+        'ALLOW_USER_SRP_AUTH',
+      ]) as unknown,
+      PreventUserExistenceErrors: 'ENABLED',
+    });
+    expect(client['Properties']).not.toHaveProperty('AllowedOAuthFlows');
+  });
+
+  it('outputs the user pool, its client and the issuer', () => {
+    const outputs = Object.keys(production.findOutputs('*')).join(' ');
+    for (const name of ['UserPoolId', 'UserPoolClientId', 'Issuer']) {
+      expect(outputs).toContain(name);
+    }
+  });
+
+  it('gives the server the user pool and client it verifies tokens against', () => {
+    const [poolId] = onlyOf(production, 'AWS::Cognito::UserPool');
+    const [clientId] = onlyOf(production, 'AWS::Cognito::UserPoolClient');
+    const [, template] = onlyOf(production, 'AWS::EC2::LaunchTemplate');
+    const userData = JSON.stringify(template);
+    expect(userData).toContain('Environment=USER_POOL_ID=');
+    expect(userData).toContain(`{"Ref":"${poolId}"}`);
+    expect(userData).toContain('Environment=USER_POOL_CLIENT_ID=');
+    expect(userData).toContain(`{"Ref":"${clientId}"}`);
   });
 
   it('runs two to four Graviton instances with IMDSv2, encrypted disks and detailed monitoring', () => {
@@ -371,11 +427,16 @@ describe('copyVaultName', () => {
 });
 
 describe('bootCommands', () => {
-  const commands = bootCommands('/tmp/server.mjs', 'items', 'logs', 'eu-west-1').join('\n');
+  const commands = bootCommands('/tmp/server.mjs', 'items', 'logs', 'eu-west-1', {
+    USER_POOL_ID: 'eu-west-1_pool',
+    USER_POOL_CLIENT_ID: 'client',
+  }).join('\n');
 
-  it('runs the server under its own user, with the table and region it needs', () => {
+  it('runs the server under its own user, with the table, region and user pool it needs', () => {
     expect(commands).toContain('User=server');
     expect(commands).toContain('Environment=TABLE_NAME=items');
+    expect(commands).toContain('Environment=USER_POOL_ID=eu-west-1_pool');
+    expect(commands).toContain('Environment=USER_POOL_CLIENT_ID=client');
     expect(commands).toContain('Environment=AWS_REGION=eu-west-1');
     expect(commands).toContain(`Environment=PORT=${String(SERVER_PORT)}`);
     expect(commands).toContain('systemctl enable --now server.service');

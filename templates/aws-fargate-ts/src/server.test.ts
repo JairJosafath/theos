@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
+import type { Authenticate } from './auth';
 import type { ItemStore } from './item_store';
 import type { Item } from './items';
 import { listener, MAX_BODY_BYTES, readBody } from './server';
@@ -20,6 +21,10 @@ class MemoryStore implements ItemStore {
   }
 }
 
+// Accepts only `Bearer good`; src/auth.test.ts tests the Cognito verifier.
+const authenticate: Authenticate = (authorization) =>
+  Promise.resolve(authorization === 'Bearer good');
+
 /** What the listener wrote back, recorded instead of sent. */
 class RecordedResponse implements Outgoing {
   statusCode = 0;
@@ -38,14 +43,21 @@ class RecordedResponse implements Outgoing {
   }
 }
 
-/** A request as Node's server hands it over: a readable body with a method, URL and headers. */
+/**
+ * A request as Node's server hands it over: a readable body with a method, URL
+ * and headers, signed in unless `headers` says otherwise.
+ */
 function incoming(
   method: string,
   url: string,
   chunks: (string | Buffer)[] = [],
   headers: Record<string, string> = {},
 ): Incoming {
-  return Object.assign(Readable.from(chunks), { method, url, headers });
+  return Object.assign(Readable.from(chunks), {
+    method,
+    url,
+    headers: { authorization: 'Bearer good', ...headers },
+  });
 }
 
 async function send(
@@ -57,6 +69,7 @@ async function send(
   await listener(
     store,
     (entry) => logged.push(entry),
+    authenticate,
     () => 'made-up-id',
   )(request, response);
   return response;
@@ -76,6 +89,14 @@ describe('listener', () => {
     expect(got.statusCode).toBe(200);
     expect(got.headers).toEqual({ 'content-type': 'application/json' });
     expect(got.body).toBe('{"id":"i1","name":"Zoë","quantity":1}');
+  });
+
+  it('answers 401 for a request without the token, and the health check', async () => {
+    const refused = await send(incoming('GET', '/items/i1', [], { authorization: '' }));
+    const health = await send(incoming('GET', '/health', [], { authorization: '' }));
+
+    expect(refused.statusCode).toBe(401);
+    expect(health.statusCode).toBe(200);
   });
 
   it('refuses a body larger than the limit with 413', async () => {

@@ -22,6 +22,33 @@ a quantity a whole number, 0 or more. A body is at most 64 KiB (413 past it).
 Every error is JSON with a `message`. A `PUT` replaces the whole item, so
 repeating it is harmless.
 
+## Signing in
+
+Every route but `GET /health` wants an access token of the stack's Cognito
+user pool, sent as `Authorization: Bearer <token>`; without one, or with one
+of another pool or app client, the answer is 401. The stack outputs
+`UserPoolId`, `UserPoolClientId` and `Issuer`, and gives the server the first
+two as `USER_POOL_ID` and `USER_POOL_CLIENT_ID`. Nobody signs themselves up:
+create a user, set their password, then sign in for a token.
+
+```sh
+POOL=<UserPoolId> CLIENT=<UserPoolClientId>
+aws cognito-idp admin-create-user --user-pool-id "$POOL" \
+  --username ada@example.com --message-action SUPPRESS
+aws cognito-idp admin-set-user-password --user-pool-id "$POOL" \
+  --username ada@example.com --password '<a password>' --permanent
+TOKEN=$(aws cognito-idp initiate-auth --client-id "$CLIENT" \
+  --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters 'USERNAME=ada@example.com,PASSWORD=<a password>' \
+  --query AuthenticationResult.AccessToken --output text)
+curl -H "Authorization: Bearer $TOKEN" https://<the certificate's domain>/items/lamp
+```
+
+A password is at least 12 characters, with a lower and an upper case letter,
+a digit and a symbol. An access token lasts an hour. A user may add an
+authenticator app (`associate-software-token`); set the pool's `mfa` to
+`Mfa.REQUIRED` in `infra/user_pool.ts` to make every user use one.
+
 ## Develop
 
 Open the repository in its devcontainer, which has Node 24 and the Go toolchain.
@@ -36,8 +63,9 @@ make help        # every target
 {{- end }}
 ```
 
-`TABLE_NAME=items npm start` runs the server on port 8080 (`PORT` changes
-it); it needs AWS credentials for a real table.
+`TABLE_NAME=items USER_POOL_ID=<pool> USER_POOL_CLIENT_ID=<client> npm start`
+runs the server on port 8080 (`PORT` changes it); it needs AWS credentials
+for a real table and the pool's keys.
 
 Nothing here deploys or needs an AWS account: synth runs offline, bundles the
 server with the installed esbuild, and needs neither Docker nor credentials.
@@ -84,8 +112,8 @@ the CDK asset bucket, and runs the server under systemd as its own user; the
 agent ships the server's log to CloudWatch Logs. Once the server answers
 `GET /health`, the instance signals CloudFormation that it is ready. The
 instances sit in isolated subnets in two zones with no route to the
-internet: they reach S3, DynamoDB, CloudWatch Logs and CloudFormation
-through VPC endpoints. The group keeps two to four instances, scales on
+internet: they reach S3, DynamoDB, CloudWatch Logs, CloudFormation and
+Cognito (the user pool's signing keys) through VPC endpoints. The group keeps two to four instances, scales on
 CPU, and replaces one that fails the load balancer's `GET /health` check.
 On a change it replaces them one at a time, starting each new one before
 stopping an old one and waiting for its signal: when a new instance fails

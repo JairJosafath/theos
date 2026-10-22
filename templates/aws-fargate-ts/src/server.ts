@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 
 import { answer } from './api';
 import type { Log } from './api';
+import type { Authenticate } from './auth';
 import type { ItemStore } from './item_store';
 import { problem } from './items';
 import type { HttpResponse } from './items';
@@ -31,12 +32,14 @@ export interface Outgoing {
 
 /**
  * The server's request listener: it reads each request, hands it to `answer`
- * and writes the response. `newId` names a request the load balancer didn't
+ * and writes the response. `authenticate` checks each request's bearer
+ * token; `newId` names a request the load balancer didn't
  * trace.
  */
 export function listener(
   store: ItemStore,
   log: Log,
+  authenticate: Authenticate,
   newId: () => string = randomUUID,
 ): (request: Incoming, response: Outgoing) => Promise<void> {
   return async (request, response) => {
@@ -49,10 +52,12 @@ export function listener(
           method: request.method ?? '',
           path: new URL(request.url ?? '/', 'http://localhost').pathname,
           body,
+          authorization: request.headers.authorization,
           requestId,
         },
         store,
         log,
+        authenticate,
       );
     } catch (error: unknown) {
       const refused =

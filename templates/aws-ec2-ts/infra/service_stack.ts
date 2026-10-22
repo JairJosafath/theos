@@ -50,6 +50,7 @@ import { Backups } from './backups';
 import { serverAsset } from './server_asset';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
+import { Users } from './user_pool';
 
 /** The VPC's addresses; written out, so CDK Nag can read the rules that name them. */
 export const VPC_CIDR = '10.0.0.0/16';
@@ -92,9 +93,10 @@ export interface ServiceStackProps extends StackProps {
  * The Container's one stack: an internal Application Load Balancer serving
  * HTTPS with the certificate the deployer names, in front of an Auto Scaling
  * group of EC2 instances that run the HTTP server in `src/`, keeping items in
- * a DynamoDB table. The instances have no route to the internet: they reach
- * S3, DynamoDB, CloudWatch Logs and CloudFormation through VPC endpoints, and
- * only the load balancer reaches them. Every part has alarms, to a topic the
+ * a DynamoDB table. Every route but `/health` wants an access token of the
+ * stack's Cognito user pool. The instances have no route to the internet:
+ * they reach S3, DynamoDB, CloudWatch Logs, CloudFormation and Cognito
+ * through VPC endpoints, and only the load balancer reaches them. Every part has alarms, to a topic the
  * stack outputs with the load balancer's name; a rolling update waits for
  * each new instance to signal it is healthy, and stops when one doesn't;
  * production keeps and backs up the data.
@@ -182,6 +184,15 @@ export class ServiceStack extends Stack {
       securityGroups: [endpointSecurityGroup],
       open: false,
     });
+    // Cognito for the user pool's signing keys, which the server fetches to
+    // verify a token.
+    vpc.addInterfaceEndpoint('CognitoIdp', {
+      service: InterfaceVpcEndpointAwsService.COGNITO_IDP,
+      securityGroups: [endpointSecurityGroup],
+      open: false,
+    });
+
+    const users = new Users(this, 'Users', { keepData: rules.keepData });
 
     const serverLogs = new LogGroup(this, 'ServerLogs', {
       retention: rules.logRetention,
@@ -213,7 +224,13 @@ export class ServiceStack extends Stack {
       region: this.region,
     });
     userData.addCommands(
-      ...bootCommands(serverFile, table.tableName, serverLogs.logGroupName, this.region),
+      ...bootCommands(
+        serverFile,
+        table.tableName,
+        serverLogs.logGroupName,
+        this.region,
+        users.environment,
+      ),
     );
 
     const instanceSecurityGroup = new SecurityGroup(this, 'InstanceSecurityGroup', {
@@ -524,7 +541,8 @@ export const INSTALL_COMMAND =
 /**
  * The shell commands each instance runs at its first boot, after it has
  * installed its packages (`INSTALL_COMMAND`) and downloaded the server to
- * `serverFile`: run the server as a systemd service under its own user, ship
+ * `serverFile`: run the server as a systemd service under its own user, with
+ * `environment` (the user pool's) beside the table and region, ship
  * its log, and wait until the server answers `/health`, so the boot script
  * exits 0, and signals CloudFormation that the instance is ready, only then.
  */
@@ -533,6 +551,7 @@ export function bootCommands(
   tableName: string,
   logGroupName: string,
   region: string,
+  environment: Record<string, string>,
 ): string[] {
   const agentConfig = JSON.stringify({
     logs: {
@@ -571,6 +590,9 @@ Environment=NODE_ENV=production
 Environment=PORT=${String(SERVER_PORT)}
 Environment=AWS_REGION=${region}
 Environment=TABLE_NAME=${tableName}
+${Object.entries(environment)
+  .map(([name, value]) => `Environment=${name}=${value}`)
+  .join('\n')}
 ExecStart=$NODE /opt/server/server.mjs
 StandardOutput=append:/var/log/server/server.log
 StandardError=append:/var/log/server/server.log
