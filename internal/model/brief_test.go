@@ -113,6 +113,12 @@ func happyCurrent() CurrentModel {
 			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},
 			{Side: SideConnector, Name: "postgres", SupportedTypes: []string{TypeService}},
 		},
+		// #1622: a plan's Container may name a Bundle instead of its sides.
+		Bundles: []Bundle{
+			{Name: "react-web", Framework: "react-site", Standard: "web-standard"},
+			{Name: "go-k8s", Framework: "go-service", Standard: "go-standard", Compute: "k8s"},
+			{Name: "vue-web", Framework: "vue-site"},
+		},
 		GitProvider: "gitea",
 	}
 }
@@ -371,6 +377,38 @@ func TestCheckPlan(t *testing.T) {
 				p.Issues = append(p.Issues, PlanIssue{File: "x", N: 10 + i, Container: "web", Body: p.Issues[0].Body})
 			}
 		}, planIssuesDir, "has 11 issues"},
+		// #1622: a Container on a Bundle is checked as the operator checks it.
+		{"a Bundle that supports the type", func(p *Plan, _ *CurrentModel) {
+			web := object(p, "Container/web")
+			web.Bundle, web.Framework, web.Standard = "react-web", "", ""
+		}, "", ""},
+		{"a Bundle that doesn't support the type", func(p *Plan, _ *CurrentModel) {
+			web := object(p, "Container/web")
+			web.Bundle, web.Framework, web.Standard = "go-k8s", "", ""
+		}, "Container/web", "bundleRef: bundle go-k8s: go-service, go-standard and k8s do not support static-site"},
+		{"a Bundle whose Framework deploys itself with a Compute", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog,
+				CatalogEntry{Side: SideFramework, Name: "aws-lambda", SupportedTypes: []string{TypeFunction}, DeploysItself: true},
+				CatalogEntry{Side: SideCompute, Name: "lambda", SupportedTypes: []string{TypeFunction}})
+			c.Bundles = append(c.Bundles, Bundle{Name: "lambda-on-k8s", Framework: "aws-lambda", Compute: "lambda"})
+			web := object(p, "Container/web")
+			web.Type, web.Bundle, web.Framework, web.Standard = TypeFunction, "lambda-on-k8s", "", ""
+		}, "Container/web", "bundleRef: bundle lambda-on-k8s: aws-lambda deploys itself"},
+		{"a Bundle beside a side", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").Bundle = "react-web"
+		}, "Container/web", "bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef: name the Bundle or the sides, never both"},
+		{"a Bundle not of the namespace", func(p *Plan, _ *CurrentModel) {
+			web := object(p, "Container/web")
+			web.Bundle, web.Framework, web.Standard = "svelte-web", "", ""
+		}, "Container/web", `bundleRef names "svelte-web", which is not a Bundle of the namespace; installed: go-k8s, react-web and vue-web`},
+		{"a Bundle on an entry that isn't installed", func(p *Plan, _ *CurrentModel) {
+			web := object(p, "Container/web")
+			web.Bundle, web.Framework, web.Standard = "vue-web", "", ""
+		}, "Container/web", "bundleRef: bundle vue-web names Framework vue-site, which is not installed; fix the Bundle or name another"},
+		{"neither a Bundle nor a Framework", func(p *Plan, _ *CurrentModel) {
+			web := object(p, "Container/web")
+			web.Framework, web.Standard = "", ""
+		}, "Container/web", "names no bundleRef and no frameworkRef"},
 		{"a Framework not installed", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").Framework = "vue-site"
 		}, "Container/web", `frameworkRef names "vue-site", which is not an installed Framework; installed: go-service and react-site`},

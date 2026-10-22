@@ -40,10 +40,13 @@ func guideExampleCurrent() CurrentModel {
 			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}, ReadsOperations: true},
 			{Side: SideStandard, Name: "web-standard", SupportedTypes: []string{TypeStaticSite},
 				SupportedFrameworks: []string{"react-site"}},
+			{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{TypeService},
+				SupportedFrameworks: []string{"go-service"}},
 			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},
 			{Side: SideDeployment, Name: "helm", SupportedTypes: []string{TypeService}},
 			{Side: SideConnector, Name: "postgres", SupportedTypes: []string{TypeService}},
 		},
+		Bundles:     []Bundle{{Name: "react-web", Framework: "react-site", Standard: "web-standard"}},
 		GitProvider: "gitea",
 	}
 }

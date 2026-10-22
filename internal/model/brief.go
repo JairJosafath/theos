@@ -901,6 +901,7 @@ func checkCreatedBundle(current CurrentModel, o PlanObject, refuse func(string, 
 		for _, b := range current.Bundles {
 			names = append(names, b.Name)
 		}
+		slices.Sort(names)
 		refuse(subject, "bundleRef names %q, which is not a Bundle of the namespace; installed: %s",
 			o.Bundle, cmp.Or(joinAnd(names), "none"))
 		return

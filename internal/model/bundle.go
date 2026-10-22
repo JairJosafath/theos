@@ -12,9 +12,9 @@ type Bundle struct {
 	Name        string
 	Description string
 	Framework   string
-	Standard   string
-	Compute    string
-	Deployment string
+	Standard    string
+	Compute     string
+	Deployment  string
 }
 
 // BundleChoice is one side a bundle names: the catalog side and the entry's name.

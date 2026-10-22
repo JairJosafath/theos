@@ -488,8 +488,7 @@ spec:
   softwareSystemRef: {name: shop}
   type: static-site
   gitProviderRef: {name: gitea}
-  frameworkRef: {name: react-site}
-  standardRef: {name: web-standard}
+  bundleRef: {name: react-web} # a Bundle that supports static-site, in place of the sides (rule 2)
   checks: BeforeRelease # only when a new prompt asks (rule 16)
 ---
 apiVersion: c4.factory.io/v1alpha1
@@ -502,7 +501,8 @@ spec:
   softwareSystemRef: {name: shop}
   type: service
   gitProviderRef: {name: gitea}
-  frameworkRef: {name: go-service}
+  frameworkRef: {name: go-service} # no Bundle supports service, so the sides (rule 2)
+  standardRef: {name: go-standard}
   computeRef: {name: k8s}
   deploymentRef: {name: helm}
   operations: # only what the idea states, on a Framework that reads it (rule 17)
