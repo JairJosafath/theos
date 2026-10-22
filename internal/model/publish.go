@@ -160,6 +160,11 @@ const (
 	// PublishUploadAsset streams Gitea's Asset to the draft Release, deleting
 	// the draft's Replace first when it is set.
 	PublishUploadAsset PublishAction = "UploadAsset"
+	// PublishCreateRelease creates the release Tag, named Name, with Body, on
+	// the ref Target ("" for the default branch), in one call: GitLab has no
+	// drafts, so it is the last write of a release (docs/plans/gitlab-deploy.md,
+	// Decision 3).
+	PublishCreateRelease PublishAction = "CreateRelease"
 	// PublishDraft publishes the draft Release, as the repository's Latest
 	// when Latest is set.
 	PublishDraft PublishAction = "PublishDraft"

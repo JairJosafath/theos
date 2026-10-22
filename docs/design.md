@@ -680,7 +680,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 - **GitHub targets** (#1070, [plans/done/github-deploy.md](plans/done/github-deploy.md)):
   a `github` target is how a Container is published as open source, for
   every type. It ships three things of each release, each by its own rule
-  (`model.GitHubShipment`): the app's source at the tag, when the member's
+  (`model.ReleaseShipment`): the app's source at the tag, when the member's
   `source` is set; a GitHub release of the tag, always, with its notes and
   the files when the release has them, its image archive (`*.oci.tar`) left
   out; and the release's image on GHCR, when the Container publishes one
