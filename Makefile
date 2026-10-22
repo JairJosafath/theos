@@ -57,6 +57,9 @@ GENERATED_GO = $(shell find api cmd internal -name 'zz_generated.*.go')
 ## What make manifests and make generate write; make check says when they
 ## changed, make check-generated fails on it (CI, after make validate-yaml).
 GENERATED_PATHS = config/crd config/rbac api dist/chart/templates/crd dist/chart/templates/rbac
+# What differs from the commit under them, one line a file: a changed file
+# and an untracked one (a new kind's chart CRD), which git diff misses (#1705).
+GENERATED_DIRTY = git status --porcelain --untracked-files=all -- $(GENERATED_PATHS)
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects, and the chart's copies of the CRDs and the manager role.
@@ -65,9 +68,9 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	@hack/chart-role.sh --write
 
 .PHONY: check-generated
-check-generated: ## Fail when a generated file differs from what is committed: run make manifests generate and commit them (CI runs it after make validate-yaml, #1689).
-	@git diff --quiet -- $(GENERATED_PATHS) || \
-		{ echo "Generated files changed; run make manifests generate and commit them:"; git diff --stat -- $(GENERATED_PATHS); exit 1; }
+check-generated: ## Fail when a generated file differs from what is committed, an untracked one too: run make manifests generate and commit them (CI runs it after make validate-yaml, #1689).
+	@dirty=$$($(GENERATED_DIRTY)); [ -z "$$dirty" ] || \
+		{ echo "Generated files changed; run make manifests generate and commit them:"; echo "$$dirty"; exit 1; }
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -229,8 +232,8 @@ check-tier-%: manifests generate fmt
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
 check: manifests generate fmt vet lint $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
-	@git diff --quiet -- $(GENERATED_PATHS) || \
-		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- $(GENERATED_PATHS); }
+	@dirty=$$($(GENERATED_DIRTY)); [ -z "$$dirty" ] || \
+		{ echo "Generated files changed; commit them with your change:"; echo "$$dirty"; }
 	@hack/check-cache.sh record
 else
 check:
