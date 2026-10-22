@@ -766,3 +766,17 @@ jobs:
       - name: Delete kind cluster
         if: always() && runner.environment == 'self-hosted'
         run: kind delete cluster --name "$KIND_CLUSTER_NAME"
+
+      # hack/load-images.sh removes each agent image from Docker once Kind has
+      # it; one a failed or cancelled load left would stay on the device's
+      # Docker, whose disk never shrinks (#1636), so the end of the job removes
+      # them all; hack/check-workflows.sh keeps this step.
+      - name: Remove the pulled images
+        if: always()
+        run: |
+          for version in $FROM_VERSION $VERSION; do
+            for name in agent-base agent-go; do
+              image=$REGISTRY/$name:$version
+              ! docker image inspect "$image" >/dev/null 2>&1 || docker rmi -f "$image"
+            done
+          done
