@@ -23,7 +23,7 @@ aws-schedule-ts v1.1.1
 aws-static-site-ts v1.0.0
 aws-standard v1.18.1
 python-standard v1.5.1
-gitea-release v1.5.1
+gitea-release v1.5.2
 hello v1.0.0
 hello-standard v1.1.0
 hello-html v1.1.0

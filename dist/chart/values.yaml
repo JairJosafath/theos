@@ -730,7 +730,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.5.1
+      ref: v1.5.2
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.

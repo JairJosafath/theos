@@ -10,8 +10,12 @@ func TestWriteNetrc(t *testing.T) {
 	for _, tt := range []struct {
 		name, repoURL, want string
 	}{
+		// Go matches the entry with the port, uv, pip and requests the one
+		// without (#1710).
 		{"an in-cluster Gitea, with its port", "http://gitea.gitea.svc.cluster.local:3000/apps/image-shrink.git",
-			"machine gitea.gitea.svc.cluster.local:3000\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
+			"machine gitea.gitea.svc.cluster.local:3000\nlogin image-shrink-agent\npassword " + gitToken + "\n" +
+				"machine gitea.gitea.svc.cluster.local\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
+		// Without a port one entry serves every tool.
 		{"an external Gitea", "https://git.example.com/apps/image-shrink.git",
 			"machine git.example.com\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
 	} {
