@@ -477,6 +477,12 @@ func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Containe
 			}
 		}
 	}
+	// A gitlab target's source is wired by step 3 of
+	// docs/plans/gitlab-deploy.md (#1805): until then the setting stays
+	// unset, so a release never shows Deployed without the source it asked for.
+	if gl := dt.Spec.GitLab; gl != nil {
+		target.Settings[model.GitLabSettingTagPrefix] = model.GitHubTagPrefix(gl.TagPrefix, container.Name)
+	}
 	return target
 }
 

@@ -162,6 +162,13 @@ var deployMembers = map[string]DeployMember{
 	DeployMemberArgoCD: {Name: DeployMemberArgoCD, Tool: "Argo CD",
 		Needs: []DeployNeed{{What: "a Deployment that writes " + ArgoCDManifestsPath + "/",
 			Met: func(c DeployContainer) bool { return c.Deployment == DeploymentK8sManifests }}}},
+	// Any GitLab access token works: a project access token with the
+	// Maintainer role is the narrowest (docs/plans/gitlab-deploy.md,
+	// Decision 2). A GitLab release needs nothing of a Container but its
+	// releases.
+	DeployMemberGitLab: {Name: DeployMemberGitLab, Tool: "GitLab", SecretKeys: []string{GitLabSecretToken},
+		Holds: "a project access token with the Maintainer role and the scopes api, read_registry and " +
+			"write_registry (a group or personal access token works the same)"},
 	// sessionToken is optional, so it isn't a key the Secret must hold.
 	DeployMemberCloudFormation: {Name: DeployMemberCloudFormation, Tool: "AWS",
 		SecretKeys: []string{"accessKeyId", "secretAccessKey"},

@@ -74,6 +74,11 @@ func TestDeployMembers(t *testing.T) {
 			wantKeys: []string{"token"}},
 		{name: "github, deploying itself", member: DeployMemberGitHub, c: DeployContainer{DeploysItself: true},
 			wantKeys: []string{"token"}},
+		// A GitLab release needs nothing of a Container but its releases
+		// either (#1804).
+		{name: "gitlab, a bare Container", member: DeployMemberGitLab, wantKeys: []string{"token"}},
+		{name: "gitlab, deploying itself", member: DeployMemberGitLab, c: DeployContainer{DeploysItself: true},
+			wantKeys: []string{"token"}},
 		// An argoCD target needs no Secret and a Container that writes
 		// deploy/k8s/ (#1588).
 		{name: "argoCD, with the Deployment", member: DeployMemberArgoCD,
@@ -116,7 +121,7 @@ func TestDeployMembers(t *testing.T) {
 		})
 	}
 	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberCloudFormation,
-		DeployMemberGitHub}) {
+		DeployMemberGitHub, DeployMemberGitLab}) {
 		t.Errorf("DeployMemberNames() = %v", got)
 	}
 }

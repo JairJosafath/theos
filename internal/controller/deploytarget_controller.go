@@ -169,6 +169,15 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 		target.Settings[model.GitHubSettingURL] = gh.URL
 		return target, strings.TrimPrefix(gh.URL, "https://") + "/" + gh.Repository
 	}
+	if gl := dt.Spec.GitLab; gl != nil {
+		target.Member = model.DeployMemberGitLab
+		target.Settings = map[string]string{model.GitLabSettingProject: gl.Project}
+		if gl.URL == "" {
+			return target, gl.Project
+		}
+		target.Settings[model.GitLabSettingURL] = gl.URL
+		return target, strings.TrimPrefix(gl.URL, "https://") + "/" + gl.Project
+	}
 	if a := dt.Spec.ArgoCD; a != nil {
 		target.Member = model.DeployMemberArgoCD
 		target.Settings = map[string]string{model.ArgoCDSettingNamespace: a.Namespace,
