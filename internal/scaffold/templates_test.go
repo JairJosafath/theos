@@ -1299,7 +1299,7 @@ func TestOperatorStandardDockerBuildxUsesTheDockerfile(t *testing.T) {
 	if !strings.Contains(recipe, "-f Dockerfile .") {
 		t.Errorf("docker-buildx does not build -f Dockerfile (#1579):\n%s", recipe)
 	}
-	for _, line := range strings.Split(recipe, "\n") {
+	for line := range strings.SplitSeq(recipe, "\n") {
 		if strings.Contains(line, "buildx build") && strings.HasPrefix(strings.TrimSpace(line), "-") {
 			t.Errorf("docker-buildx ignores a failed build (#1579): %q", line)
 		}
