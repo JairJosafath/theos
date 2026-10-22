@@ -276,12 +276,19 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.4.0)
+### gitea-release (v1.4.1)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
 and attaches `dist/` to the tag's release. For an operator an `image` job
-builds the image first and the release names it by digest (#1458).
+builds the image first and the release names it by digest (#1458), on the
+Git host alone, whatever path its `ROOT_URL` has. Since v1.4.1 (#1652) the
+release job has a digest guard: it fails before `make dist` unless the
+`image` job's digest is `sha256:` plus 64 hex, so the release files never
+name an image that is not there (#1581). And a rerun rule: the operator
+pushes a tag's image once and never replaces it, so the job asks the
+registry for the tag's digest first and names the one it holds; 404 names
+the digest just built, any other answer fails the step (#1583).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli"
   and "node cli" and checks the files it attaches.
@@ -290,7 +297,11 @@ builds the image first and the release names it by digest (#1458).
   `make test-templates-operator` runs `make dist` for the operator pair,
   `make test-templates` for the CLIs;
   `TestGiteaReleaseBuildsAnOperatorsImage` renders the `image` job for an
-  operator and not for a CLI.
+  operator and not for a CLI, with the digest guard and the registry lookup
+  in order; `TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt` runs the
+  release step's shell against a stub `make` (#1581);
+  `TestGiteaReleasePinHoldsItsReleaseJobFixes` keeps the pin at v1.4.1 or
+  later (#1652).
 - Lint: `TestEveryTemplateRenders` parses the workflow.
 - README: `RELEASING.md` says how to tag a release, check one with
   `make dist` and recover from a failed run
