@@ -136,6 +136,14 @@ service stack, the only one that takes it.
   access logs, the alarms (`infra/alarms.ts`) and, in production, the
   backups (`infra/backups.ts`). The stack is named after the package.
   `infra/operations.ts` holds what the Container promises.
+- `infra/connectors.ts` lists the data stores the Container's Relationships
+  connect it to, which C4 Factory renders from their Connectors; the stack
+  connects each to the service, alarms on its table and backs it up.
+{{- if has .Connectors "dynamodb" }} The
+  `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
+  the service reads its name in `DYNAMODB_TABLE_NAME`. New data goes in that
+  table: the `Items` table (`TABLE_NAME`) is the starter's example.
+{{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
   `infra/standard.ts` says what each tier means, tags every stack and adds

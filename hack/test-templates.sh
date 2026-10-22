@@ -40,6 +40,8 @@ combos=(
 	"aws python lambda function|function|tax-fn|Tax Fn|Framework=aws-lambda-py Standard=aws-standard Deployment=gitea-release"
 	"aws ec2 service|service|search|Search|Framework=aws-ec2-ts Standard=aws-standard Deployment=gitea-release"
 	"aws fargate service|service|checkout|Checkout|Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release"
+	"aws ec2 service with dynamodb|service|catalog|Catalog|Framework=aws-ec2-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws fargate service with dynamodb|service|basket|Basket|Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
 	"aws queue consumer|worker|mailer|Mailer|Framework=aws-queue-ts Standard=aws-standard Deployment=gitea-release"
 	"aws scheduled job|job|nightly-report|Nightly Report|Framework=aws-schedule-ts Standard=aws-standard Deployment=gitea-release"
 	"aws event consumer|worker|audit|Audit|Framework=aws-event-ts Standard=aws-standard Deployment=gitea-release"

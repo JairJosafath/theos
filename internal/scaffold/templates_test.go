@@ -116,6 +116,18 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws ec2 service with dynamodb", "service", []side{
+		{model.SideFramework, "aws-ec2-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
+	{"aws fargate service with dynamodb", "service", []side{
+		{model.SideFramework, "aws-fargate-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws lambda function in go", "function", []side{
 		{model.SideFramework, "aws-lambda-go"},
 		{model.SideStandard, "aws-standard"},
