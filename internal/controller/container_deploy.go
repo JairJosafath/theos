@@ -151,7 +151,7 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		return ports.Target{}, nil
 	}
 	facts.TargetFound = true
-	target, _ := deployTarget(&dt)
+	target := containerTarget(&dt, p.container)
 	member, err := p.r.deployMember(target.Member)
 	if err != nil {
 		facts.TargetChecked, facts.TargetMessage = true, err.Error()
@@ -317,6 +317,21 @@ func (r *ContainerReconciler) deployContainer(ctx context.Context,
 func isGiteaError(err error) bool {
 	_, ok := errors.AsType[giteaError](err)
 	return ok
+}
+
+// containerTarget is dt as container's deploys read it: the target with the
+// settings that go per Container, the github member's tag prefix (the
+// Container's name unless the target sets one) and whether its releases
+// take Latest.
+func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
+	target, _ := deployTarget(dt)
+	if gh := dt.Spec.GitHub; gh != nil {
+		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
+		if !model.GitHubTakesLatest(gh.Latest) {
+			target.Settings[model.GitHubSettingLatest] = "false"
+		}
+	}
+	return target
 }
 
 // deployApp names the Container's app uniquely at any target.
