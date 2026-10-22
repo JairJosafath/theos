@@ -255,11 +255,13 @@ A project's checks run on its own pool of single-job runner pods, which the
 operator keeps in the project's namespace, one pool per label the project's
 GitProvider `ci` block names, registered `--ephemeral` to the project's Git
 organization so each pod takes one job and ends. The operator deletes an
-ended pod and starts a fresh one; the pool goes with the Project and follows
-its `ci` block: an idle pod above a lowered `size`, or built from another
-`image` than the block now says, is replaced, a busy one once its job ends,
-and a dropped block takes the pool's Secret, ConfigMap and NetworkPolicy
-with it. The pods
+ended pod and starts a fresh one; the pool goes with the Project: once the
+Project is gone, the operator deletes every pool pod and lets the kept
+records go at once, since no Task is left to read them (#1697). The pool
+follows its `ci` block: an idle pod above a lowered `size`, or built from
+another `image` than the block now says, is replaced, a busy one once its
+job ends, and a dropped block takes the pool's Secret, ConfigMap and
+NetworkPolicy with it (#1700). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
