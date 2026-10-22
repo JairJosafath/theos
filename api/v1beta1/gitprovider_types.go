@@ -175,6 +175,7 @@ type CIRunnerSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"

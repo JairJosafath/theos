@@ -99,13 +99,37 @@ with a warning naming the release that may drop it. Test output goes to
    its own groups.
 
 3. **Conversion is a webhook the operator serves, with a certificate it
-   issues itself.** `strategy: None` would do for identical shapes, but the
-   first real change would then bring the webhook, the certificate, the
-   chart wiring and the envtest wiring all at once. So every CRD gets
-   `conversion.strategy: Webhook` pointing at the manager's Service, path
-   `/convert`, served by controller-runtime's conversion handler from
-   `conversion.Hub` on each `v1beta1` type and `Convertible` on each
-   `v1alpha1` type. One generic converter in `api/v1alpha1/conversion.go`
+   issues itself, and a CRD uses it only while its kind's versions differ
+   in shape.** The webhook, the certificate, the chart wiring and the
+   envtest wiring are built and proven now, so the first real change
+   brings none of them. But a webhook in the read path costs: discovery
+   prefers `v1beta1` while storage is `v1alpha1`, so `kubectl`, dynamic
+   clients and the namespace controller read through `/convert`, and
+   while the operator is down, or after `helm uninstall` with `crd.keep`
+   left the CRDs pointing at a Service that is gone, `kubectl get` of
+   that kind fails and deleting a Project namespace hangs in Terminating
+   (#1830). So while a kind's versions are field for field the same, as
+   every kind's are after step 3, its CRD stays at `strategy: None`: the
+   API server converts by rewriting `apiVersion`, and nothing in the read
+   path depends on the operator. The change that first makes a kind's
+   shape differ (its first hook in the generic converter) also marks its
+   hub type `+kubebuilder:metadata:annotations="c4.factory.io/conversion=webhook"`;
+   the annotation lands on the base CRD, kustomize's conversion patch
+   selects on it, the chart's generator (`hack/chart-crds.sh`) reads it,
+   and a unit test in `internal/controller` fails when the mark and the
+   versions' schemas (descriptions aside) disagree, either way. Such a
+   kind's CRD gets `conversion.strategy: Webhook` pointing at the
+   manager's Service, path `/convert`, served by controller-runtime's
+   conversion handler from `conversion.Hub` on each `v1beta1` type and
+   `Convertible` on each `v1alpha1` type; its cost is the one above
+   (reads need the operator, and the chart's `crd.keep` uninstall leaves
+   it unreadable until the chart is installed again or the CRD's
+   conversion set back to `None` by hand), said in the chart's README
+   beside `crd.keep`; the chart refuses to render it with
+   `webhook.enabled: false`, since `None` would lose what differs. Why
+   not a pre-delete hook that rewrites kept CRDs: it covers uninstall, not
+   a crashed operator. Why not hold `v1beta1` back until a shape differs:
+   it is served, and the machinery is proven only by running. One generic converter in `api/v1alpha1/conversion.go`
    does the work for every kind (an unstructured round trip, since the
    shapes match) with a per-kind hook for differences, empty now, and the
    `-fields` annotation of decision 1 for a field the hook can't place.
@@ -196,8 +220,9 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    `kubebuilder create api --version v1beta1 --kind K --resource
    --controller=false`, its types copied from `v1alpha1` with the hub
    marker, `Convertible` on `v1alpha1` through the generic converter, the
-   conversion handler registered, every CRD at `strategy: Webhook`,
-   storage still `v1alpha1`. `kind/feature`. Done when
+   conversion handler registered, every CRD at `strategy: Webhook` (set
+   back to `None` by #1830: a kind converts by the webhook only once its
+   shape differs), storage still `v1alpha1`. `kind/feature`. Done when
    a round-trip test over fuzzed objects of every kind passes, envtest
    (with `WebhookInstallOptions`) creates each kind at `v1alpha1`, reads it
    at `v1beta1` and back unchanged, and `make check` passes with every

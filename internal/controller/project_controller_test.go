@@ -162,4 +162,13 @@ var _ = Describe("Project", func() {
 			}))
 		}).Should(Succeed())
 	})
+
+	It("takes a license only from the fixed set of SPDX ids (#1859)", func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "story-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		project := &c4v1alpha1.Project{ObjectMeta: objectMeta(ns.Name, ns.Name), Spec: c4v1alpha1.ProjectSpec{License: "WTFPL"}}
+		Expect(k8sClient.Create(ctx, project)).To(MatchError(ContainSubstring("license")))
+		project.Spec.License = "MIT"
+		Expect(k8sClient.Create(ctx, project)).To(Succeed())
+	})
 })

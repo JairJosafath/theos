@@ -46,7 +46,6 @@ type BundleSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Framework",type=string,JSONPath=".spec.frameworkRef.name"
 // +kubebuilder:printcolumn:name="Standard",type=string,JSONPath=".spec.standardRef.name"
 // +kubebuilder:printcolumn:name="Compute",type=string,JSONPath=".spec.computeRef.name"

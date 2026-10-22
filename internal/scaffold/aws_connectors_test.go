@@ -18,11 +18,6 @@ func renderLambda(t *testing.T, connectors ...string) Result {
 	return renderAWS(t, model.TypeFunction, "aws-lambda-ts", connectors...)
 }
 
-// renderAWSFunction renders the function Framework with aws-standard and connectors.
-func renderAWSFunction(t *testing.T, framework string, connectors ...string) Result {
-	return renderAWS(t, model.TypeFunction, framework, connectors...)
-}
-
 // renderAWS renders the Framework, as a Container of type typ, with
 // aws-standard and connectors.
 func renderAWS(t *testing.T, typ, framework string, connectors ...string) Result {
@@ -135,7 +130,7 @@ func TestAWSLambdaTSWithoutConnectorsHasNoDataStores(t *testing.T) {
 func TestDynamoDBConnectorConnectsToOtherAWSLambdas(t *testing.T) {
 	for _, framework := range []string{"aws-lambda-py", "aws-lambda-go"} {
 		t.Run(framework, func(t *testing.T) {
-			with := renderAWSFunction(t, framework, "dynamodb")
+			with := renderAWS(t, model.TypeFunction, framework, "dynamodb")
 			if _, ok := with.Files["infra/connector_dynamodb.ts"]; !ok {
 				t.Error("the dynamodb Connector writes no infra/connector_dynamodb.ts")
 			}
@@ -152,7 +147,7 @@ func TestDynamoDBConnectorConnectsToOtherAWSLambdas(t *testing.T) {
 				t.Error("README.md doesn't say new data goes in the DataStore's table")
 			}
 
-			without := renderAWSFunction(t, framework)
+			without := renderAWS(t, model.TypeFunction, framework)
 			if _, ok := without.Files["infra/connector_dynamodb.ts"]; ok {
 				t.Errorf("%s alone writes infra/connector_dynamodb.ts", framework)
 			}
@@ -165,6 +160,30 @@ func TestDynamoDBConnectorConnectsToOtherAWSLambdas(t *testing.T) {
 				t.Error("README.md names DYNAMODB_TABLE_NAME without the Connector")
 			}
 		})
+	}
+}
+
+// A service Framework that renders no infra/connectors.ts (python-fastapi, a
+// real one) fails with the Connector's own message, as a function one does
+// (#1742).
+func TestDynamoDBConnectorFailsAServiceFrameworkThatDoesNotWireIt(t *testing.T) {
+	in, layers := loadCombo(t, model.TypeService, []side{
+		{model.SideFramework, "python-fastapi"},
+		{model.SideStandard, "python-standard"},
+		{model.SideConnector, "dynamodb"},
+	}, "")
+	_, err := Build(in, layers, Options{})
+	var tmplErr *TemplateError
+	if !errors.As(err, &tmplErr) {
+		t.Fatalf("Build of a python-fastapi service with dynamodb: got %v, want a *TemplateError", err)
+	}
+	if tmplErr.Layer != "dynamodb" || tmplErr.Path != "infra/connector_dynamodb.ts.tmpl" {
+		t.Errorf("TemplateError names layer %q path %q, want dynamodb infra/connector_dynamodb.ts.tmpl", tmplErr.Layer, tmplErr.Path)
+	}
+	for _, want := range []string{"python-fastapi", "doesn't wire the dynamodb Connector", "infra/connectors.ts"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
 	}
 }
 

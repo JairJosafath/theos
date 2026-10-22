@@ -70,7 +70,8 @@ type DeployTargetSpec struct {
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
-	// registryPassword (the login to argoCD.imageRegistry for the copy).
+	// registryPassword (the login to argoCD.imageRegistry for the copy, which
+	// reads tags as well as pushes).
 	// +optional
 	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
@@ -280,7 +281,6 @@ type DeployTargetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"

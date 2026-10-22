@@ -88,7 +88,6 @@ type SoftwareSystemStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4,shortName=sys
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Location",type=string,JSONPath=".spec.location"
 // +kubebuilder:printcolumn:name="Containers",type=integer,JSONPath=".status.containers"

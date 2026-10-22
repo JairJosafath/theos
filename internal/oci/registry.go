@@ -51,6 +51,27 @@ var ErrTagTaken = errors.New("the tag names another image")
 // a failure to write the copy.
 var ErrSource = errors.New("the source registry")
 
+// ErrReadRefused wraps Copy's refusal to write a tag it may not read: the
+// destination answered the tag's HEAD with 401 or 403, as a credential that
+// pushes but doesn't read does (AWS's minimal ECR push policy, a token
+// scoped to push alone). A tag is never moved (#1770), so the copy needs
+// the read and nothing is written. The error is a refusal too (Refused),
+// never transient (#1877).
+var ErrReadRefused = errors.New("the registry credential may not read tags")
+
+// readRefused is ErrReadRefused for one tag, keeping the registry's refusal.
+type readRefused struct {
+	ref   string
+	cause *transport.Error
+}
+
+func (e *readRefused) Error() string {
+	return fmt.Sprintf("%s: %s answered %d %s to the tag's read; it must read tags as well as push, as a tag "+
+		"is never moved", ErrReadRefused, e.ref, e.cause.StatusCode, http.StatusText(e.cause.StatusCode))
+}
+
+func (e *readRefused) Unwrap() []error { return []error{ErrReadRefused, e.cause} }
+
 // Refused says whether err is a registry refusing the credential: 401 or 403.
 func Refused(err error) bool {
 	var terr *transport.Error
@@ -110,7 +131,8 @@ func notFound(err error) bool {
 // never moved: when it names digest already nothing is written, so a
 // registry whose tags are immutable takes a repeat, and when it names
 // another digest Copy writes nothing and returns an error wrapping
-// ErrTagTaken (#1770).
+// ErrTagTaken (#1770). A destination that refuses the tag's read refuses
+// the credential: an error wrapping ErrReadRefused, nothing written (#1877).
 func Copy(ctx context.Context, from Registry, fromRepository, digest string, to Registry, toRepository, tag string) error {
 	src, err := from.repository(fromRepository)
 	if err != nil {
@@ -122,7 +144,10 @@ func Copy(ctx context.Context, from Registry, fromRepository, digest string, to 
 	}
 	if tag != "" {
 		held, err := Resolve(ctx, to, toRepository, tag)
+		var terr *transport.Error
 		switch {
+		case Refused(err) && errors.As(err, &terr):
+			return &readRefused{ref: dst.Tag(tag).String(), cause: terr}
 		case err != nil:
 			return err
 		case held == digest:
