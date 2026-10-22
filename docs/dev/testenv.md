@@ -213,7 +213,10 @@ and warns when a template no longer matches its tag. `hack/seed_test.sh`
 covers the file mode against a stand-in Gitea.
 
 The Tests workflow runs `make test-gitea` on pull requests to main and on
-main; run it yourself while you change `internal/gitprovider` or the seed.
+main, with node and uv set up in its job, so the tests that install the
+packages they publish run there in full; run it yourself while you change
+`internal/gitprovider` or the seed. Without `npm` or `uv` on PATH only the
+install subtests skip, and say so; the publish still runs (#1702).
 
 ## Deployment Workflow
 
