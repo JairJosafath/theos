@@ -5,6 +5,8 @@
 //   GET /k8s/<api path>   the Kubernetes API, as-is: lists, gets, single watches
 //   GET /k8s-watch?...    several watches over one response (see watchMany)
 //   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
+//   GET /downloads/c4session-linux-<amd64|arm64>
+//                         the Session client, from downloads/ (the image builds it; #1151)
 //   GET /...              files from dist/
 //
 //   GET /ui/session       whether actions are on, who makes them, who is signed in, and the writes
@@ -60,6 +62,14 @@ const FIELD_MANAGER = 'c4-factory-ui'
 
 /** Most watches one /k8s-watch request may carry. */
 const MAX_WATCHES = 32
+
+/**
+ * The files under /downloads/: the Session client the image builds for each
+ * architecture (ui/Dockerfile), which a scaffolded devcontainer's c4session
+ * feature fetches from the chart's default sessionBinaryURL (#1151). Any
+ * other name is 404.
+ */
+export const DOWNLOADS = ['c4session-linux-amd64', 'c4session-linux-arm64']
 
 /** Request headers passed upstream. Everything else, auth and cookies included, is dropped. */
 const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
@@ -966,17 +976,51 @@ async function serveStatic(res, root, pathname, method) {
 }
 
 /**
+ * Serves one of DOWNLOADS from `dir`, or 404 for any other name (#1151). The
+ * name is matched whole, so nothing else under `dir` or outside it is served.
+ */
+async function serveDownload(res, dir, name, method) {
+  if (!DOWNLOADS.includes(name)) return send(res, 404, 'Not Found\n')
+  try {
+    const body = await readFile(path.join(dir, name))
+    res.writeHead(200, {
+      ...SECURITY_HEADERS,
+      'content-type': 'application/octet-stream',
+      'content-length': body.length,
+      'content-disposition': `attachment; filename="${name}"`,
+      'cache-control': 'no-cache',
+    })
+    res.end(method === 'HEAD' ? undefined : body)
+  } catch {
+    send(res, 404, 'Not Found\n')
+  }
+}
+
+/**
  * Creates the server without starting it.
- * @param {{ distDir?: string, upstream?: ReturnType<typeof resolveUpstream>, log?: (msg: string) => void, allowedHosts?: Set<string> }} options
+ * @param {{ distDir?: string, downloadsDir?: string, upstream?: ReturnType<typeof resolveUpstream>, log?: (msg: string) => void, allowedHosts?: Set<string> }} options
  */
 export function createServer(options = {}) {
-  const root = path.resolve(options.distDir ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist'))
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const root = path.resolve(options.distDir ?? path.join(here, 'dist'))
+  const downloads = path.resolve(options.downloadsDir ?? path.join(here, 'downloads'))
   const api = createApiHandler(options)
   const allowedHosts = options.allowedHosts ?? allowedHostsFromEnv()
 
   return http.createServer((req, res) => {
     // The kubelet probes by Pod IP; /healthz says nothing and changes nothing.
-    if ((req.url ?? '/').split('?')[0] === '/healthz') return send(res, 200, 'ok\n')
+    const pathOnly = (req.url ?? '/').split('?')[0]
+    if (pathOnly === '/healthz') return send(res, 200, 'ok\n')
+    // The Session client is a public file, and a devcontainer's feature
+    // fetches it by whatever address reaches the UI (an Ingress host, a
+    // port-forward, the Service's name in the cluster), so the Host check
+    // that keeps a rebinding page off the API doesn't apply to it.
+    if (pathOnly.startsWith('/downloads/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return send(res, 405, 'Method Not Allowed\n', { allow: 'GET, HEAD' })
+      }
+      return serveDownload(res, downloads, pathOnly.slice('/downloads/'.length), req.method)
+    }
     if (!isServedHost(req, allowedHosts)) {
       return send(res, 421, 'Misdirected Request: this server does not answer for that host (UI_ALLOWED_HOSTS)\n')
     }

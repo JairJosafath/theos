@@ -21,10 +21,13 @@ import (
 var sessionFlag = regexp.MustCompile(`(?m)^\s*- --session-binary-url=(\S+)$`)
 
 // TestReleasedChartNamesItsSessionClient packages the chart as Release does
-// and renders it: the operator tells scaffolded devcontainers to download
-// c4session from that release's files, which Release attaches, so a release
-// install's devcontainers register Sessions (#1079). An empty
-// sessionBinaryURL sets no flag.
+// and renders it: the operator tells scaffolded devcontainers where to download
+// c4session. By default that is the UI, whose image carries the client under
+// /downloads/, so a release of the private repository needs no GitHub login
+// (#1151): the port-forward's localhost, or behind an Ingress the first
+// ui.allowedHosts entry over https. With the UI off it is the release's files,
+// which Release attaches (#1079). A set sessionBinaryURL replaces the default;
+// an empty one sets no flag.
 func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	helm := helmBinary(t)
 	const version = "1.2.3"
@@ -35,16 +38,35 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	}
 	pkg := filepath.Join(dir, "c4-factory-"+version+".tgz")
 	manager := "templates/manager/manager.yaml"
+	github := "https://github.com/JairJosafath/c4factory/releases/download/v" + version + "/c4session-linux-${arch}"
 
-	out, err := exec.Command(helm, "template", release, pkg, "--namespace", releaseNS,
-		"--show-only", manager).Output()
-	if err != nil {
-		t.Fatalf("helm template: %v", err)
+	cases := []struct {
+		name string
+		set  []string
+		want string
+	}{
+		{"default: the UI over port-forward", nil, "http://localhost:8080/downloads/c4session-linux-${arch}"},
+		{"the UI's port", []string{"ui.service.port=9090"}, "http://localhost:9090/downloads/c4session-linux-${arch}"},
+		{"behind an Ingress: the first allowed host", []string{"ui.allowedHosts={factory.example.com,other.example.com}"},
+			"https://factory.example.com/downloads/c4session-linux-${arch}"},
+		{"the UI off: the release's files", []string{"ui.enabled=false"}, github},
+		{"a set value replaces the default", []string{"sessionBinaryURL=https://x.example.com/${arch}"}, "https://x.example.com/${arch}"},
 	}
-	want := "https://github.com/JairJosafath/c4factory/releases/download/v" + version + "/c4session-linux-${arch}"
-	m := sessionFlag.FindAllSubmatch(out, -1)
-	if len(m) != 1 || string(m[0][1]) != want {
-		t.Errorf("the released chart's --session-binary-url is %q; want once %s", m, want)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			args := []string{"template", release, pkg, "--namespace", releaseNS, "--show-only", manager}
+			for _, s := range c.set {
+				args = append(args, "--set", s)
+			}
+			out, err := exec.Command(helm, args...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("helm template: %v\n%s", err, out)
+			}
+			m := sessionFlag.FindAllSubmatch(out, -1)
+			if len(m) != 1 || string(m[0][1]) != c.want {
+				t.Errorf("the released chart's --session-binary-url is %q; want once %s", m, c.want)
+			}
+		})
 	}
 
 	workflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
@@ -53,13 +75,13 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	}
 	create := regexp.MustCompile(`(?m)^\s*gh release create .*$`).Find(workflow)
 	for _, arch := range []string{"amd64", "arm64"} {
-		file := strings.ReplaceAll(filepath.Base(want), "${arch}", arch)
+		file := strings.ReplaceAll(filepath.Base(github), "${arch}", arch)
 		if !strings.Contains(string(create), " "+file) {
 			t.Errorf("release.yml's gh release create doesn't attach %s: %s", file, create)
 		}
 	}
 
-	out, err = exec.Command(helm, "template", release, pkg, "--namespace", releaseNS,
+	out, err := exec.Command(helm, "template", release, pkg, "--namespace", releaseNS,
 		"--show-only", manager, "--set", "sessionBinaryURL=").Output()
 	if err != nil {
 		t.Fatalf("helm template: %v", err)

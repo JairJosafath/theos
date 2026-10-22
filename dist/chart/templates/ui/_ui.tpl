@@ -78,3 +78,22 @@ empty prefix stays empty. Takes (list $oidc key default).
 {{- $oidc := index . 0 }}{{- $key := index . 1 }}
 {{- if hasKey $oidc $key }}{{ get $oidc $key }}{{ else }}{{ index . 2 }}{{ end }}
 {{- end }}
+
+{{/*
+The default sessionBinaryURL, where a scaffolded devcontainer's c4session
+feature downloads the Session client. The UI image carries the client for
+linux amd64 and arm64 and serves it under /downloads/ (ui/Dockerfile), so a
+release of the private repository needs no GitHub login to download it
+(#1151): behind an Ingress (ui.allowedHosts) its first host over https, else
+the port-forward's localhost and the UI's port. With the UI off, the binaries
+attached to this chart's GitHub release.
+*/}}
+{{- define "c4-factory.sessionBinaryURL" -}}
+{{- if not .Values.ui.enabled -}}
+https://github.com/JairJosafath/c4factory/releases/download/v{{ .Chart.AppVersion }}/c4session-linux-${arch}
+{{- else if .Values.ui.allowedHosts -}}
+https://{{ index .Values.ui.allowedHosts 0 }}/downloads/c4session-linux-${arch}
+{{- else -}}
+http://localhost:{{ .Values.ui.service.port }}/downloads/c4session-linux-${arch}
+{{- end -}}
+{{- end }}

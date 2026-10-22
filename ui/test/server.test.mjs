@@ -123,9 +123,14 @@ describe('server.mjs', () => {
     await writeFile(path.join(dist, 'index.html'), '<!doctype html><title>C4 Factory</title>')
     await writeFile(path.join(dist, 'assets', 'app-123.js'), 'console.log(1)')
     await writeFile(path.join(path.dirname(dist), 'c4ui-secret.txt'), 'outside dist')
+    await mkdir(path.join(dist, 'downloads'))
+    await writeFile(path.join(dist, 'downloads', 'c4session-linux-amd64'), 'ELF amd64')
+    await writeFile(path.join(dist, 'downloads', 'c4session-linux-arm64'), 'ELF arm64')
+    await writeFile(path.join(dist, 'downloads', 'notes.txt'), 'not a download')
 
     server = createServer({
       distDir: dist,
+      downloadsDir: path.join(dist, 'downloads'),
       upstream: resolveUpstream({ K8S_API: upstreamUrl }),
       log: () => {},
     })
@@ -1591,6 +1596,42 @@ describe('server.mjs', () => {
     assert.equal(traversal.status, 404)
     const missing = await fetch(`${base}/nope.js`)
     assert.equal(missing.status, 404)
+  })
+
+  // The Session client a scaffolded devcontainer downloads, from the UI's own
+  // address so a private repository needs no GitHub login (#1151).
+  it('serves the Session client for each architecture under /downloads, and nothing else', async () => {
+    for (const arch of ['amd64', 'arm64']) {
+      const res = await fetch(`${base}/downloads/c4session-linux-${arch}`)
+      assert.equal(res.status, 200, arch)
+      assert.equal(await res.text(), `ELF ${arch}`)
+      assert.equal(res.headers.get('content-type'), 'application/octet-stream')
+      assert.match(res.headers.get('content-disposition'), new RegExp(`c4session-linux-${arch}`))
+    }
+    const head = await fetch(`${base}/downloads/c4session-linux-amd64`, { method: 'HEAD' })
+    assert.equal(head.status, 200)
+    assert.equal(head.headers.get('content-length'), String('ELF amd64'.length))
+    // Any address that reaches the UI serves it: the Host check is for the API.
+    const byService = await request(
+      base,
+      'GET',
+      '/downloads/c4session-linux-arm64',
+      'c4-factory-ui.c4-factory-system.svc:8080',
+    )
+    assert.equal(byService.status, 200)
+    assert.equal(byService.text, 'ELF arm64')
+
+    for (const p of [
+      '/downloads/notes.txt',
+      '/downloads/c4session-linux-386',
+      '/downloads/',
+      '/downloads/c4session-linux-amd64/',
+    ]) {
+      const res = await fetch(`${base}${p}`)
+      assert.equal(res.status, 404, p)
+    }
+    const post = await fetch(`${base}/downloads/c4session-linux-amd64`, { method: 'POST' })
+    assert.equal(post.status, 405)
   })
 
   describe('the Host it answers (DNS rebinding)', () => {

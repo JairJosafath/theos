@@ -159,12 +159,16 @@ As the design says, v1 doesn't ship, doesn't read runtime health, doesn't adopt
 existing repositories, and only supports Gitea. Things found while building:
 
 - **The devcontainer feature needs a binary to download.** The repository is
-  private, so `go install` can't fetch the client. Each release attaches
-  `c4session` for linux/amd64 and arm64, and the chart's `sessionBinaryURL` points
-  the operator's `--session-binary-url` at them; while the repository is private
-  those downloads need a GitHub login too, so set it to a place of your own that
-  serves `c4session`. Without one the devcontainer still starts, it just isn't a
-  Session.
+  private, so `go install` can't fetch the client, and the `c4session`
+  binaries each release attaches need a GitHub login too. So the UI image
+  carries the client for linux/amd64 and arm64 and serves it under
+  `/downloads/`, and the chart's `sessionBinaryURL` points the operator's
+  `--session-binary-url` there by default: the port-forward's
+  `http://localhost:8080/...`, or `https://<ui.allowedHosts[0]>/...` behind
+  an Ingress. The devcontainer's build must reach that address (a
+  port-forward's localhost is the laptop's, not a container's); set an
+  address it reaches when it doesn't. Without one the devcontainer still
+  starts, it just isn't a Session.
 - **A laptop devcontainer needs a kubeconfig** for the project's `c4-session`
   ServiceAccount to register Sessions, and a route to the API server; in-cluster pods
   get both for free.
