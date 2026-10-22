@@ -79,6 +79,14 @@ spec:
                 description: displayName is a human-friendly name.
                 maxLength: 100
                 type: string
+              readsOperations:
+                description: |-
+                  readsOperations says the template at spec.template.ref renders
+                  infra/operations.ts from a Container's spec.operations. A Container with
+                  a Framework that doesn't gets no OperationsApplied condition, and with a
+                  block set reports it False, NotReadByFramework; a Brief's planner
+                  refuses operations on such a Container.
+                type: boolean
               supportedTypes:
                 description: supportedTypes lists the Container types this entry can
                   scaffold.
