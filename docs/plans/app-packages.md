@@ -179,7 +179,11 @@ the choices under that, and where they differ from Go.
      and secrets, `PUT /orgs/{org}/actions/{variables,secrets}/{name}`)
      when `spec.packages` departs from the default, and deletes them when
      it returns to it; by default none is set and the workflows need
-     nothing. The workflows write `~/.npmrc` and `~/.netrc` from them, as
+     nothing. The owner-level secrets hold the registry Secrets' `readToken`,
+     never `token`: a workflow installs and never publishes with them, and
+     `token` reaches no code the agents wrote. A registry Secret without
+     `readToken` sets no owner secret, and the workflow installs without a
+     credential (`internal/controller/project_packages.go`). The workflows write `~/.npmrc` and `~/.netrc` from them, as
      go-standard's `check.yaml` writes its netrc:
      - the check workflows of ts-standard, python-standard and aws-standard;
      - gitea-release's release workflow, because its `make dist` installs

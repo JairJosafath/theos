@@ -306,6 +306,27 @@ project's and Container's names. go-standard's CI (v1.1.5) downloads the
 alone, then runs `make check` with `GOPRIVATE=c4factory.local`, so no proxy is
 asked for them. [plans/done/app-modules.md](plans/done/app-modules.md) has why.
 
+## npm and PyPI packages of the factory's apps
+
+The same sandboxes get `C4_NPM_SCOPE`, `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`
+(`buildSandbox`, through `gitprovider.Repository.NpmScope`, `NpmRegistry` and
+`PyPIIndex`): `GitProvider.spec.packages` where it is set, else the scope
+`@c4factory` and the host's own registries,
+`<gitea>/api/packages/<owner>/npm/` and `.../pypi/simple`. The planner's gets
+none, as with Go. The token a pod installs with is the agent bot's for the
+host's own registry, else `C4_NPM_TOKEN` or `C4_PYPI_TOKEN` from the registry
+Secret's `readToken` (`readTokenEnv`); with neither, installs send no
+credential. c4agent writes `~/.npmrc` (mode 0600, `agentrunner.WriteNpmrc`)
+with the scope's registry and the token as `_authToken` for the registry's
+host and path, and uv reads the `~/.netrc` it writes for Git. No loopback
+proxy: npm sends a scope, and uv a package, to its own registry. When
+`spec.packages` departs from the default, `ProjectReconciler` sets the three
+names as the owner's Actions variables and the read tokens as its Actions
+secrets, and deletes them when it returns to it
+(`internal/controller/project_packages.go`, `gitprovider.OwnerActions`), so a
+workflow reads them with the host's own as the fallback.
+[plans/app-packages.md](plans/app-packages.md), decision 5, has why.
+
 ## Go build caches
 
 A Go Task runs `make check` three or four times a round: the agent while it
