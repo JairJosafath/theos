@@ -145,6 +145,11 @@ func (d *Deployer) bootstrap(ctx context.Context, ses *session, a model.CDKAssem
 		case st.StackStatus == types.StackStatusRollbackComplete || strings.HasSuffix(status, "_FAILED") ||
 			strings.HasPrefix(status, "DELETE_"):
 			return false, missing("stack %s is %s (%s)", toolkitStack, status, aws.ToString(st.StackStatusReason))
+		case st.StackStatus == types.StackStatusUpdateRollbackComplete && ownUpdate(ctx, c, *st, version):
+			// The factory's own update to this version rolled back: taking
+			// it again would roll back again, on every poll.
+			return false, missing("the factory's update of stack %s to version %d rolled back (%s)", toolkitStack,
+				version, aws.ToString(st.StackStatusReason))
 		case st.StackStatus != types.StackStatusReviewInProgress:
 			in.ChangeSetType = types.ChangeSetTypeUpdate
 			declared, err := templateParameters(body)
@@ -183,7 +188,7 @@ func (d *Deployer) bootstrap(ctx context.Context, ses *session, a model.CDKAssem
 		return false, nil
 	}
 	if _, err := c.ExecuteChangeSet(ctx, &cfn.ExecuteChangeSetInput{ChangeSetName: aws.String(id),
-		StackName: aws.String(toolkitStack)}); err != nil {
+		StackName: aws.String(toolkitStack), ClientRequestToken: aws.String(bootstrapToken(version) + tokenSuffix(id))}); err != nil {
 		if err = portError(err); errors.Is(err, ports.ErrCredentialRefused) {
 			return false, missing("the credential may not bootstrap: %v", err)
 		}
@@ -192,6 +197,19 @@ func (d *Deployer) bootstrap(ctx context.Context, ses *session, a model.CDKAssem
 	logr.FromContextOrDiscard(ctx).Info("Bootstrapping CDK", "type", in.ChangeSetType, "version", version,
 		"had", have)
 	return false, nil
+}
+
+// bootstrapToken starts the ClientRequestToken the factory executes its
+// update of CDKToolkit to version with, so a rollback of it is told apart.
+func bootstrapToken(version int) string {
+	return "c4f-bootstrap-v" + strconv.Itoa(version) + "--"
+}
+
+// ownUpdate says the newest stack-level event of CDKToolkit, st, carries the
+// factory's token for version.
+func ownUpdate(ctx context.Context, c CloudFormationAPI, st types.Stack, version int) bool {
+	f, err := stackFacts(ctx, c, st)
+	return err == nil && strings.HasPrefix(f.EventToken, bootstrapToken(version))
 }
 
 // bootstrapVersion reads the bootstrap's version parameter, 0 when there is

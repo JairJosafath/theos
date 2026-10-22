@@ -527,6 +527,28 @@ func TestShipBootstrapAfterRolledBackUpdate(t *testing.T) {
 	shipUntilDeployed(t, w.d, tt, shipment("aws-lambda-ts", "v1.0.0", files))
 }
 
+// The factory's own update of CDKToolkit that rolled back is
+// ErrPrerequisiteMissing, not taken again on every poll (#1608).
+func TestShipBootstrapOwnUpdateRolledBack(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.account("AKIAUSER", "production", true)
+	w.aws.bootstrap(a, 5, map[string]string{executionPoliciesParam: "arn:aws:iam::aws:policy/AdministratorAccess"})
+	st := a.stacks[toolkitStack]
+	st.status = "UPDATE_ROLLBACK_COMPLETE"
+	_, version, err := bootstrapTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.events = append(st.events, stackEvent(st, st.status, bootstrapToken(version)+"0123abcd"))
+	err = w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", fixtureFiles(t, "aws-lambda-ts")))
+	if !errors.Is(err, ports.ErrPrerequisiteMissing) || !strings.Contains(err.Error(), "rolled back") {
+		t.Errorf("Ship() = %v, want ErrPrerequisiteMissing saying the update rolled back", err)
+	}
+	if len(a.changeSets) != 0 {
+		t.Errorf("change sets = %+v, want none", a.changeSets)
+	}
+}
+
 // A template parameter with no default that the target doesn't give is
 // ErrPrerequisiteMissing naming it, before anything is published; given, it
 // reaches the change set (#1608).
