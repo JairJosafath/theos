@@ -4,7 +4,7 @@ Connects a Container on an AWS Framework to a DynamoDB table. A Container gets
 it through a Relationship to a DataStore backed by this Connector, so the table
 is the model's, not the Framework's.
 
-- **Supports:** `function`
+- **Supports:** `function`, `worker`, `job`
 - **Writes:** `infra/connector_dynamodb.ts` and its test. `connectDynamoDB`
   makes one on-demand table keyed by `pk` and `sk` (strings, so one table holds
   every kind of item), encrypted, hands its user its name in
@@ -24,7 +24,9 @@ is the model's, not the Framework's.
   its unit reads.
 - **Frameworks:** a Framework wires it in its `infra/connectors.ts`, rendered with
   `{{ if has .Connectors "dynamodb" }}`, and alarms on the table like its own.
-  `aws-lambda-ts` does. A Framework that renders no `infra/connectors.ts`
+  `aws-lambda-ts`, `aws-lambda-py` and `aws-lambda-go` do, and `aws-queue-ts`,
+  `aws-event-ts` and `aws-schedule-ts` (`worker` and `job`, since v1.2.0,
+  #1741). A Framework that renders no `infra/connectors.ts`
   doesn't wire it, and `connector_dynamodb.ts.tmpl` refuses it with
   `{{ fail }}`: the Container fails with a `TemplateError` naming the
   Framework and the Connector, rather than getting a file nothing calls.

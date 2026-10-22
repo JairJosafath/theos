@@ -684,10 +684,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
-        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -695,10 +695,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
-        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [job]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -706,10 +706,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
-        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -812,11 +812,11 @@ catalog:
         supportedTypes: [service, worker, job]
     - kind: Connector
       name: dynamodb
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Amazon DynamoDB
-        description: "An on-demand DynamoDB table in the Container's CDK stack, kept, protected and backed up in production like the Framework's own, with its name in DYNAMODB_TABLE_NAME and grants for the item calls to whatever the Framework connects (a function's role, a task's). aws-lambda-ts wires it; a Framework that doesn't fails the Container."
-        supportedTypes: [function]
+        description: "An on-demand DynamoDB table in the Container's CDK stack, kept, protected and backed up in production like the Framework's own, with its name in DYNAMODB_TABLE_NAME and grants for the item calls to whatever the Framework connects (a function's role, a task's). aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-queue-ts, aws-event-ts and aws-schedule-ts wire it; a Framework that doesn't fails the Container."
+        supportedTypes: [function, worker, job]
 
 ## For each of gitea.projects, the four Agents a Brief's plan and its Crews use
 ## by default: Claude Code on the release's Go and Node toolchain image, reading
