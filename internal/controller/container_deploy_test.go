@@ -90,13 +90,13 @@ func readyTarget(ns, name string, tier c4v1alpha1.DeployTier) {
 // sourceTarget makes github DeployTarget name in ns, Ready, shipping the
 // source to folder path (nil: each Container's name) of its own repository,
 // which it returns.
-func sourceTarget(ns, name string, path *string) string {
+func sourceTarget(ns, name string, source c4v1alpha1.DeployTargetGitHubSource) string {
 	GinkgoHelper()
 	repository := "acme/" + ns + "-" + name
 	githubFake.addRepository(repository, "t0ken")
 	dt := newDeployTarget(ns, name, name+"-github")
 	dt.Spec.GitHub.Repository = repository
-	dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: path}
+	dt.Spec.GitHub.Source = &source
 	mustCreate(newDeploySecret(ns, name+"-github", map[string]string{"token": "t0ken"}), dt)
 	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 	return repository
@@ -364,7 +364,7 @@ var _ = Describe("Container deploys", func() {
 	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		repository := sourceTarget(ns, "open", nil)
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
 		all, app := appSource("example.com/orders")
 		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
 		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
@@ -409,30 +409,35 @@ var _ = Describe("Container deploys", func() {
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 	})
 
-	It("fails the later of two Containers whose folders of one github target overlap (#1599)", func() {
-		ns := newProjectNamespace()
-		deployingContainer(ns)
-		cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
-		cli.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
-		crew := newCrew(ns)
-		crew.Name, crew.Spec.ContainerRef.Name = "orders-cli", "orders-cli"
-		mustCreate(cli, crew)
-		sourceTarget(ns, "open", new("."))
-		all, _ := appSource("example.com/orders")
-		for _, name := range []string{"orders-api", "orders-cli"} {
-			gitFake.setSource(ns, name, "v0.1.0", all...)
-			gitFake.setGiteaRelease(ns, name, "v0.1.0", "Notes of v0.1.0")
-			crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
-			setDeployOf(ns, name, c4v1alpha1.ContainerDeploy{Target: "open"})
-		}
+	DescribeTable("fails the later of two Containers whose folders of one github target overlap (#1599)",
+		func(source c4v1alpha1.DeployTargetGitHubSource, problem string) {
+			ns := newProjectNamespace()
+			deployingContainer(ns)
+			cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
+			cli.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+			crew := newCrew(ns)
+			crew.Name, crew.Spec.ContainerRef.Name = "orders-cli", "orders-cli"
+			mustCreate(cli, crew)
+			sourceTarget(ns, "open", source)
+			all, _ := appSource("example.com/orders")
+			for _, name := range []string{"orders-api", "orders-cli"} {
+				gitFake.setSource(ns, name, "v0.1.0", all...)
+				gitFake.setGiteaRelease(ns, name, "v0.1.0", "Notes of v0.1.0")
+				crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
+				setDeployOf(ns, name, c4v1alpha1.ContainerDeploy{Target: "open"})
+			}
 
-		Eventually(func(g Gomega) {
-			d, _ := deployOfContainer(g, ns, "orders-cli", "open")
-			g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
-			g.Expect(d.Reason).To(Equal(model.DeployFolderOverlaps))
-			g.Expect(d.Message).To(And(ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
-		}, deployWait).Should(Succeed())
-	})
+			Eventually(func(g Gomega) {
+				d, _ := deployOfContainer(g, ns, "orders-cli", "open")
+				g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
+				g.Expect(d.Reason).To(Equal(model.DeployFolderOverlaps))
+				g.Expect(d.Message).To(And(ContainSubstring(problem), ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
+			}, deployWait).Should(Succeed())
+		},
+		Entry("the whole repository", c4v1alpha1.DeployTargetGitHubSource{Path: new(".")}, "folder"),
+		Entry("their own folders under the target's one source tag prefix",
+			c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("")}, "source tag prefix"),
+	)
 
 	It("scaffolds another Container while one Container's Ship is still uploading (#1446)", func() {
 		ns := newProjectNamespace()

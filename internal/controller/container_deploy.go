@@ -294,24 +294,44 @@ func (p *deployPass) folderOverlaps(ctx context.Context, target ports.Target,
 	repository := target.Settings[model.GitHubSettingRepository]
 	self := model.SourcePlace{Owner: p.container.Name, Repository: repository, Path: path}
 	var earlier []model.SourcePlace
-	folders := map[string]string{}
+	folders, prefixes := map[string]string{}, map[string]string{}
 	for i := range containers.Items {
 		c := &containers.Items[i]
 		if c.Name >= p.container.Name || !c.DeletionTimestamp.IsZero() ||
 			!slices.ContainsFunc(c.Spec.Deploy, func(d c4v1alpha1.ContainerDeploy) bool { return d.Target == dt.Name }) {
 			continue
 		}
-		folder := containerTarget(&dt, c).Settings[model.GitHubSettingSourcePath]
-		folders[c.Name] = folder
+		settings := containerTarget(&dt, c).Settings
+		folder := settings[model.GitHubSettingSourcePath]
+		folders[c.Name], prefixes[c.Name] = folder, sourceTagPrefix(settings, folder)
 		earlier = append(earlier, model.SourcePlace{Owner: c.Name, Repository: repository, Path: folder})
 	}
-	overlaps := model.SourceOverlaps(self, earlier)
-	if len(overlaps) == 0 {
-		return nil
+	if overlaps := model.SourceOverlaps(self, earlier); len(overlaps) > 0 {
+		return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps, Detail: fmt.Sprintf(
+			"its folder %q for Container %s overlaps the folder %q of Container %s, which ships there first",
+			path, p.container.Name, folders[overlaps[0]], overlaps[0])}
 	}
-	return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps, Detail: fmt.Sprintf(
-		"its folder %q for Container %s overlaps the folder %q of Container %s, which ships there first",
-		path, p.container.Name, folders[overlaps[0]], overlaps[0])}
+	// A tagPrefix the target sets goes to every Container on it: two folders
+	// under one source tag would take each other's tags.
+	prefix := sourceTagPrefix(target.Settings, path)
+	for _, o := range earlier {
+		if prefixes[o.Owner] == prefix {
+			return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps, Detail: fmt.Sprintf(
+				"its source tag prefix %q for Container %s is that of Container %s, which ships there first",
+				prefix, p.container.Name, o.Owner)}
+		}
+	}
+	return nil
+}
+
+// sourceTagPrefix is what goes before the version in the source tag of the
+// folder path, from a target's per-Container settings.
+func sourceTagPrefix(settings map[string]string, path string) string {
+	var prefix *string
+	if v, set := settings[model.GitHubSettingSourceTagPrefix]; set {
+		prefix = &v
+	}
+	return model.SourceTagPrefix(path, prefix)
 }
 
 // copyImage is a Shipment's CopyImage for image, host/repository@digest in

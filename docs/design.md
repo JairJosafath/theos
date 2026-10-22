@@ -635,8 +635,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   the folder tagged `<source.tagPrefix><version>` (`<path>/vX.Y.Z` by
   default, so `go install` finds it); never the history, whose agent
   commits and Gitea issue numbers don't belong in public. Two Containers
-  whose folders overlap on one target fail `FolderOverlaps`: the one whose
-  name sorts first keeps the folder, and the message names both. Before the
+  whose folders overlap on one target, or whose folders go out under one
+  source tag prefix (a `source.tagPrefix` the target sets), fail
+  `FolderOverlaps`: the one whose name sorts first keeps the folder, and the
+  message names both. Before the
   first write of a version the tree to publish is checked
   (`model.PublishChecks`): a license and a README at the folder's root, and
   no secret the factory recognises (a private key block, a token of a known
