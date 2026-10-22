@@ -353,7 +353,8 @@ The operator moves bytes with credentials it holds; it builds nothing.
   it. The same copy is a `github` DeployTarget's (the Deploys section), and
   the Crew's field ships through the same code path, its `Published`
   condition and reasons kept. The field stays valid and working in
-  `v1alpha1` (Compatibility); dropping it is `v1beta1`'s (#1082). To move
+  `v1alpha1` and in `v1beta1` (Compatibility); the version after `v1beta1`
+  drops it, once nothing writes it (#1082). To move
   over by hand: a DeployTarget with the same repository and the same Secret
   (key `token`, unchanged), a `spec.deploy` entry on the Container, then the
   field removed. Both may exist at once: each finds the release the other
@@ -752,14 +753,35 @@ release never:
 - changes what a default, or an unset field, means.
 
 Adding an optional field, an enum value, a condition type or reason, or a kind
-is fine. A breaking change waits for `v1beta1` (#1082), served beside
-`v1alpha1` with conversion. The status is held to it as the spec is; what the
-operator does with an object may change, as the release notes say.
+is fine. A change these rules forbid is a new version, never a change to a
+served one. The status is held to them as the spec is; what the operator does
+with an object may change, as the release notes say.
 
-`make check` guards what a schema shows: `test/compat` compares the CRDs with
-the last release's, in `test/compat/baseline/` (`hack/release.sh` copies
-them), a default's value included. CEL rules, a default added to a field that
-had none, and what the operator reads into an unset field are left to review.
+**Across versions** ([plans/api-versions.md](plans/api-versions.md), #1082):
+
+- **A served version keeps these rules** from the first release that serves
+  it, as `v1alpha1` does.
+- **Every served version converts to and from the storage version** without
+  failing and without loss. A field with no home in the target version rides
+  in the annotation `c4.factory.io/<version>-fields` as JSON, so a round trip
+  gives the object back exactly.
+- **A release deprecates a version** by saying so under *Deprecated* in its
+  notes and marking the CRD version `deprecated: true`, with a
+  `deprecationWarning` that names the successor and the earliest release
+  that may drop it.
+- **A deprecated version stays served at least 90 days** after the release
+  that deprecated it, and is dropped only once every CRD's
+  `status.storedVersions` holds the storage version alone, under *Removed*
+  in the notes, by its own issue, filed when the version is deprecated with
+  the earliest date in its body.
+
+`make check` guards what a schema shows: `test/compat` compares each served
+version of the CRDs with the last release's, in `test/compat/baseline/`
+(`hack/release.sh` copies them), a default's value included, and refuses a
+version the baseline served that is missing, unless `test/compat/dropped.txt`
+names it with the release notes' line. CEL rules, a default added to a field
+that had none, and what the operator reads into an unset field are left to
+review.
 
 ## Test tiers
 
