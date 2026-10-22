@@ -29,6 +29,11 @@
 # there names such a job. Release (release.yml) has a step that
 # dispatches verify-release.yml for a minor tag only, `if:`
 # endsWith(github.ref_name, '.0'), in a job granted actions: write (#1105).
+# A self-hosted runner builds and pulls on the device's Docker, whose disk
+# never shrinks (#1636): Release has a step under if: always() that removes
+# the images (docker rmi), after the step that pushes them, and Verify
+# Release (verify-release.yml) has one too, so the images go whatever the
+# steps before did.
 # Prints each job or workflow that doesn't and exits 1.
 # hack/check-workflows_test.sh runs it in make check.
 #
@@ -218,6 +223,42 @@ if [ -e "$rel" ]; then
     fail=1
   elif [ "$actions" != yes ]; then
     echo "$rel: the job that dispatches verify-release.yml has no permission actions: write" >&2
+    fail=1
+  fi
+fi
+
+# removal FILE: "yes" when a step of FILE under if: always() runs docker rmi,
+# then "yes" when it comes after the last step that runs docker push (or
+# there is none), for the workflows that leave images on the device (#1636).
+removal() {
+  awk '
+    function flush() {
+      n++
+      if (run ~ /docker push /) push = n
+      if (run ~ /docker rmi / && cond ~ /always\(\)/) rmi = n
+      cond = ""; run = ""
+    }
+    /^      - / { flush() }
+    /^      (- |  )if:/ { cond = $0 }
+    { run = run "\n" $0 }
+    END { flush(); print (rmi ? "yes" : "-") "\t" (rmi && rmi > push ? "yes" : "-") }
+  ' "$1"
+}
+if [ -e "$rel" ]; then
+  IFS=$'\t' read -r found after < <(removal "$rel")
+  if [ "$found" != yes ]; then
+    echo "$rel: no step under if: always() removes the images it built (docker rmi), so a release leaves them on the device (#1636)" >&2
+    fail=1
+  elif [ "$after" != yes ]; then
+    echo "$rel: the step that removes the images (docker rmi) comes before the one that pushes them" >&2
+    fail=1
+  fi
+fi
+ver=$DIR/verify-release.yml
+if [ -e "$ver" ]; then
+  IFS=$'\t' read -r found _ < <(removal "$ver")
+  if [ "$found" != yes ]; then
+    echo "$ver: no step under if: always() removes the images it pulled (docker rmi), so a check leaves them on the device (#1636)" >&2
     fail=1
   fi
 fi
