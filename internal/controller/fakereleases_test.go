@@ -511,17 +511,21 @@ func (p *fakeProvider) ImageDigest(_ context.Context, repo gitprovider.Repositor
 	return p.git.releaseState().registry[repo.Owner+"/"+repo.Name+"@"+tag], nil
 }
 
-// CopyImage records the copy of digest to toRepository at to under tag.
-func (p *fakeProvider) CopyImage(_ context.Context, _ gitprovider.Repository, digest string, to oci.Registry,
+// CopyImage records the copy of digest to toRepository at to under tag;
+// to the fake GHCR it copies for real, from owner/name in registryFake.
+func (p *fakeProvider) CopyImage(ctx context.Context, repo gitprovider.Repository, digest string, to oci.Registry,
 	toRepository, tag string) error {
 	p.git.mu.Lock()
-	defer p.git.mu.Unlock()
 	state := p.git.releaseState()
 	if state.imageCopies == nil {
 		state.imageCopies = map[string]string{}
 	}
 	state.imageCopies[to.Host+"/"+toRepository+":"+tag] = digest
-	return nil
+	p.git.mu.Unlock()
+	if ghcrFake == nil || to.Host != ghcrFake.host {
+		return nil
+	}
+	return oci.Copy(ctx, oci.Registry{Host: registryFake.host}, repo.Owner+"/"+repo.Name, digest, to, toRepository, tag)
 }
 
 // imageCopy is the digest CopyImage copied to ref, host/repository:tag.
