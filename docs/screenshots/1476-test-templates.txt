@@ -1,0 +1,1020 @@
+$ make test-templates   # on chore/1476 (main a0dd090c + #1476), 2026-10-22
+make[1]: '/home/josaf/c4factory/.dev/make/bin/golangci-lint-v2.13.1' is up to date.
+KUSTOMIZE="/home/josaf/c4factory/.dev/make/bin/kustomize-v5.8.1" GOLANGCI_LINT="/home/josaf/c4factory/.dev/make/bin/golangci-lint-v2.13.1" hack/test-templates.sh
+
+=== fastapi service with postgres (Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres)
+Rendered 39 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/orders
+
+$ make check
+uv sync --locked
+Using CPython 3.12.15
+Creating virtual environment at: .venv
+Resolved 45 packages in 31ms
+   Building orders @ file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/orders
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.4
+      Built orders @ file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/orders
+Prepared 1 package in 37ms
+Installed 42 packages in 116ms
+ + annotated-doc==0.0.5
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + ast-serialize==0.12.1
+ + cffi==2.1.1
+ + click==8.5.0
+ + cryptography==50.0.2
+ + fastapi==0.142.2
+ + h11==0.16.0
+ + httpcore2==2.13.1
+ + httptools==0.8.0
+ + httpx2==2.13.1
+ + idna==3.20
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + opentelemetry-api==1.45.1
+ + orders==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/orders)
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + psycopg==3.3.6
+ + psycopg-binary==3.3.6
+ + psycopg-pool==3.3.3
+ + pycparser==3.11
+ + pydantic==2.13.5
+ + pydantic-core==2.46.5
+ + pygments==2.21.0
+ + pyjwt==2.15.1
+ + pytest==9.1.1
+ + python-dotenv==1.2.4
+ + pyyaml==6.0.3
+ + ruff==0.16.10
+ + starlette==1.7.0
+ + truststore==0.10.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + uvicorn==0.54.0
+ + uvloop==0.23.0
+ + watchfiles==1.3.0
+ + websockets==17.2
+uv run --no-sync ruff format --diff .
+16 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 6 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/orders
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collected 32 items
+
+tests/test_main.py ...............................s                      [100%]
+
+======================== 31 passed, 1 skipped in 2.89s =========================
+
+$ kustomize build deploy/k8s
+deploy/k8s builds 6 objects
+
+=== python cli (Framework=python-cli Standard=python-standard Deployment=gitea-release)
+Rendered 29 files from python-cli@local, python-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-admin
+
+$ make check
+uv sync --locked
+Using CPython 3.12.15
+Creating virtual environment at: .venv
+Resolved 14 packages in 0.85ms
+   Building shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-admin
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.4
+      Built shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-admin
+Prepared 1 package in 5ms
+Installed 13 packages in 39ms
+ + ast-serialize==0.12.1
+ + iniconfig==2.3.1
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + ruff==0.16.10
+ + shop-admin==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-admin)
+ + typing-extensions==4.16.0
+uv run --no-sync ruff format --diff .
+17 files already formatted
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+uv run --no-sync mypy .
+Success: no issues found in 6 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-admin
+configfile: pyproject.toml
+testpaths: tests
+collected 10 items
+
+tests/test_cli.py .....                                                  [ 50%]
+tests/test_greeting.py .....                                             [100%]
+
+============================== 10 passed in 0.03s ==============================
+
+$ make dist VERSION=v0.1.0
+uv sync --locked
+Resolved 14 packages in 0.80ms
+Checked 13 packages in 1ms
+rm -rf dist
+uv build --out-dir dist
+Building source distribution...
+warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.4
+Building wheel from source distribution...
+Successfully built dist/shop_admin-0.1.0.tar.gz
+Successfully built dist/shop_admin-0.1.0-py3-none-any.whl
+
+$ ls dist
+shop_admin-0.1.0-py3-none-any.whl
+shop_admin-0.1.0.tar.gz
+
+=== react web app on kubernetes (Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests)
+Rendered 39 files from react-vite@local, ts-standard@local, small@local, k8s-manifests@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/storefront
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 175 packages in 4s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/storefront
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  11:28:08
+   Duration  158ms (transform 57%, import 26%, tests 9%, worker 8%)
+
+vite v8.3.3 building client environment for production...
+transforming...
+✓ 17 modules transformed.
+rendering chunks...
+computing gzip size...
+../../tmp.z7352Mv64o/index.html                   0.46 kB │ gzip:  0.29 kB
+../../tmp.z7352Mv64o/assets/index-CG9Gp7u3.css    0.35 kB │ gzip:  0.23 kB
+../../tmp.z7352Mv64o/assets/index-BSiccNDf.js   220.03 kB │ gzip: 68.77 kB
+
+✓ built in 499ms
+
+$ kustomize build deploy/k8s
+deploy/k8s builds 2 objects
+
+=== node cli (Framework=node-cli Standard=ts-standard Deployment=gitea-release)
+Rendered 32 files from node-cli@local, ts-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-tool
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 132 packages in 2s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-tool
+
+
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+   Start at  11:28:16
+   Duration  213ms (transform 62%, import 22%, tests 10%, worker 6%)
+
+
+  out/cli.js  1.6kb
+
+⚡ Done in 5ms
+@c4factory/shop-tool 0.0.1
+
+$ make dist VERSION=v0.0.1
+npm ci --no-audit --no-fund
+
+added 132 packages in 2s
+rm -rf dist
+mkdir -p dist
+npm pack --pack-destination dist
+
+> @c4factory/shop-tool@0.0.1 prepack
+> node esbuild.mjs
+
+
+  out/cli.js  1.6kb
+
+⚡ Done in 2ms
+npm notice
+npm notice 📦  @c4factory/shop-tool@0.0.1
+npm notice Tarball Contents
+npm notice 324B CHANGELOG.md
+npm notice 1.7kB README.md
+npm notice 1.7kB out/cli.js
+npm notice 883B package.json
+npm notice Tarball Details
+npm notice name: @c4factory/shop-tool
+npm notice version: 0.0.1
+npm notice filename: c4factory-shop-tool-0.0.1.tgz
+npm notice package size: 2.2 kB
+npm notice unpacked size: 4.5 kB
+npm notice shasum: 52cd0607864e8b710dbe01eca83fb3e91bf3a590
+npm notice integrity: sha512-9mJL80HDsOjVK[...]nZBUU7RxZqPKw==
+npm notice total files: 4
+npm notice
+c4factory-shop-tool-0.0.1.tgz
+
+$ ls dist
+c4factory-shop-tool-0.0.1.tgz
+
+=== go cli (Framework=go-cli Standard=go-standard Deployment=gitea-release)
+Rendered 22 files from go-cli@local, go-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-ctl
+
+$ make check
+go mod download
+go: no module dependencies to download
+go mod tidy -diff
+golangci-lint fmt --diff
+go vet ./...
+golangci-lint run
+0 issues.
+go test -race -count=1 ./...
+ok  	c4factory.local/webshop/shop-ctl	1.010s
+?   	c4factory.local/webshop/shop-ctl/internal	[no test files]
+
+$ make dist VERSION=v0.1.0
+rm -rf dist
+mkdir -p dist
+go build dist/shop-ctl_linux_amd64 (v0.1.0)
+go build dist/shop-ctl_linux_arm64 (v0.1.0)
+go build dist/shop-ctl_darwin_amd64 (v0.1.0)
+go build dist/shop-ctl_darwin_arm64 (v0.1.0)
+go build dist/shop-ctl_windows_amd64.exe (v0.1.0)
+go build dist/shop-ctl_windows_arm64.exe (v0.1.0)
+cd dist && sha256sum shop-ctl_* > SHA256SUMS
+
+$ ls dist
+SHA256SUMS
+shop-ctl_darwin_amd64
+shop-ctl_darwin_arm64
+shop-ctl_linux_amd64
+shop-ctl_linux_arm64
+shop-ctl_windows_amd64.exe
+shop-ctl_windows_arm64.exe
+
+=== vscode extension (Framework=vscode-extension Standard=ts-standard Deployment=gitea-release)
+Rendered 33 files from vscode-extension@local, ts-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-helper
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 238 packages in 7s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/shop-helper
+
+
+ Test Files  2 passed (2)
+      Tests  7 passed (7)
+   Start at  11:28:58
+   Duration  208ms (transform 66%, import 23%, tests 6%, worker 6%)
+
+Executing prepublish script 'npm run vscode:prepublish'...
+
+> shop-helper@0.0.1 vscode:prepublish
+> node esbuild.mjs --production
+
+
+  out/extension.js  955b 
+
+⚡ Done in 3ms
+ INFO  Files included in the VSIX:
+shop-helper.vsix
+├─ [Content_Types].xml 
+├─ extension.vsixmanifest 
+└─ extension/
+   ├─ changelog.md 
+   ├─ package.json [1.21 KB]
+   ├─ readme.md 
+   └─ out/
+      └─ extension.js [0.93 KB]
+
+ DONE  Packaged: /home/josaf/.cache/c4factory/tmp/relay-1/tmp.qzOlUOgidS/shop-helper.vsix (6 files, 3.55 KB)
+
+$ make dist VERSION=v0.0.1
+npm ci --no-audit --no-fund
+
+added 238 packages in 6s
+rm -rf dist
+mkdir -p dist
+node_modules/.bin/vsce package --no-dependencies --skip-license --allow-missing-repository --out dist/shop-helper-0.0.1.vsix
+Executing prepublish script 'npm run vscode:prepublish'...
+
+> shop-helper@0.0.1 vscode:prepublish
+> node esbuild.mjs --production
+
+
+  out/extension.js  955b 
+
+⚡ Done in 3ms
+ INFO  Files included in the VSIX:
+shop-helper-0.0.1.vsix
+├─ [Content_Types].xml 
+├─ extension.vsixmanifest 
+└─ extension/
+   ├─ changelog.md 
+   ├─ package.json [1.21 KB]
+   ├─ readme.md 
+   └─ out/
+      └─ extension.js [0.93 KB]
+
+ DONE  Packaged: dist/shop-helper-0.0.1.vsix (6 files, 3.55 KB)
+
+$ ls dist
+shop-helper-0.0.1.vsix
+
+=== aws lambda function (Framework=aws-lambda-ts Standard=aws-standard)
+Rendered 46 files from aws-lambda-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/price-fn
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 178 packages in 12s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/price-fn
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset price-fn/Handler/Code/Stage...
+
+  ...65a483019db9a73e72027868f4b3b0e34eb58a803f9541-building/index.js  596.4kb
+  ...83019db9a73e72027868f4b3b0e34eb58a803f9541-building/index.js.map    2.4mb
+
+⚡ Done in 96ms
+
+  ...26c1c6156c336bfe88681a5bcf177f5909b1e0592d0668-building/index.js  596.4kb
+  ...c6156c336bfe88681a5bcf177f5909b1e0592d0668-building/index.js.map    2.4mb
+
+⚡ Done in 110ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset price-fn-development/Handler/Code/Stage...
+
+  ...02f804576d340704b5c04121461e692477f30cc95468f2-building/index.js  596.4kb
+  ...04576d340704b5c04121461e692477f30cc95468f2-building/index.js.map    2.4mb
+
+⚡ Done in 315ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...f353e4bba464e0eae7bf704fa02f7dcbb616f360365df7-building/index.js  596.4kb
+  ...e4bba464e0eae7bf704fa02f7dcbb616f360365df7-building/index.js.map    2.4mb
+
+⚡ Done in 221ms
+
+  ...6bfe1ae96cd0863b83404c6aa7524b5848ec49b5ae196d-building/index.js  596.4kb
+  ...1ae96cd0863b83404c6aa7524b5848ec49b5ae196d-building/index.js.map    2.4mb
+
+⚡ Done in 173ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...73629c5048e51404025464717d926d2a7d31077dd868b0-building/index.js  596.4kb
+  ...9c5048e51404025464717d926d2a7d31077dd868b0-building/index.js.map    2.4mb
+
+⚡ Done in 82ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...5b27386fbec4181ccfc41c35be1326e5cfe5185602f344-building/index.js  596.4kb
+  ...386fbec4181ccfc41c35be1326e5cfe5185602f344-building/index.js.map    2.4mb
+
+⚡ Done in 101ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...645f05bc7d6c2392f9b31c4c47b0b8fe51ff11485f4750-building/index.js  596.4kb
+  ...05bc7d6c2392f9b31c4c47b0b8fe51ff11485f4750-building/index.js.map    2.4mb
+
+⚡ Done in 119ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...1a3c2362ede6a7b60807a43e41eae69539907ca4784bca-building/index.js  596.4kb
+  ...2362ede6a7b60807a43e41eae69539907ca4784bca-building/index.js.map    2.4mb
+
+⚡ Done in 114ms
+
+ Test Files  6 passed (6)
+      Tests  136 passed (136)
+   Start at  11:29:40
+   Duration  7.49s (tests 73%, import 14%, transform 12%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset price-fn/Handler/Code/Stage...
+
+  ...9bba38360c4f1a8a5740742812d2120b4c30b9e274e627-building/index.js  596.4kb
+  ...38360c4f1a8a5740742812d2120b4c30b9e274e627-building/index.js.map    2.4mb
+
+⚡ Done in 125ms
+AI agent detected
+Bundling asset price-fn-development/Handler/Code/Stage...
+
+  ...2b12cb1a36512bfe7024b1921f1009db8fbc7091a68040-building/index.js  596.4kb
+  ...cb1a36512bfe7024b1921f1009db8fbc7091a68040-building/index.js.map    2.4mb
+
+⚡ Done in 86ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws lambda function with dynamodb (Framework=aws-lambda-ts Standard=aws-standard Connector=dynamodb)
+Rendered 48 files from aws-lambda-ts@local, aws-standard@local, dynamodb@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/cart-fn
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 178 packages in 9s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/cart-fn
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset cart-fn/Handler/Code/Stage...
+
+  ...5456c05fd4b4bce8bfc07cd1b47912f8ac3df165a26254-building/index.js  596.4kb
+  ...c05fd4b4bce8bfc07cd1b47912f8ac3df165a26254-building/index.js.map    2.4mb
+
+⚡ Done in 173ms
+
+  ...5b21c663faa495d02e6356641b6f1552da67e59a7772b9-building/index.js  596.4kb
+  ...c663faa495d02e6356641b6f1552da67e59a7772b9-building/index.js.map    2.4mb
+
+⚡ Done in 130ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...34c2d1ba76eca70a105bd0fe14389d5f642b08277ab06a-building/index.js  596.4kb
+  ...d1ba76eca70a105bd0fe14389d5f642b08277ab06a-building/index.js.map    2.4mb
+
+⚡ Done in 179ms
+Bundling asset cart-fn-development/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+
+  ...dd41e0fe8e30cb01d5df16b64e3edd025f4cd83b2e621a-building/index.js  596.4kb
+  ...e0fe8e30cb01d5df16b64e3edd025f4cd83b2e621a-building/index.js.map    2.4mb
+
+⚡ Done in 204ms
+
+  ...e9e873f98c30aecddbc9ca5bcbbdc44e352a954fb3ab59-building/index.js  596.4kb
+  ...73f98c30aecddbc9ca5bcbbdc44e352a954fb3ab59-building/index.js.map    2.4mb
+
+⚡ Done in 207ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...3b96d5b4d3323d8400cc88d0cd68fea1cbdcf04da4bb0a-building/index.js  596.4kb
+  ...d5b4d3323d8400cc88d0cd68fea1cbdcf04da4bb0a-building/index.js.map    2.4mb
+
+⚡ Done in 142ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...ff13f8ad180c4bd69232afd8bb92216822aeea5a0dc5bc-building/index.js  596.4kb
+  ...f8ad180c4bd69232afd8bb92216822aeea5a0dc5bc-building/index.js.map    2.4mb
+
+⚡ Done in 102ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...edabbbde8253b4a0462fe975b0096c116dfde2f0ee75ee-building/index.js  596.4kb
+  ...bbde8253b4a0462fe975b0096c116dfde2f0ee75ee-building/index.js.map    2.4mb
+
+⚡ Done in 111ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...9d6e902bd34a8be83b18da5000efe997569bec4100dd05-building/index.js  596.4kb
+  ...902bd34a8be83b18da5000efe997569bec4100dd05-building/index.js.map    2.4mb
+
+⚡ Done in 85ms
+
+ Test Files  7 passed (7)
+      Tests  139 passed (139)
+   Start at  11:30:26
+   Duration  7.71s (tests 63%, transform 20%, import 17%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset cart-fn/Handler/Code/Stage...
+
+  ...35d9901684d18e6ad5b396b038f1c66affd903b3e1d465-building/index.js  596.4kb
+  ...901684d18e6ad5b396b038f1c66affd903b3e1d465-building/index.js.map    2.4mb
+
+⚡ Done in 84ms
+AI agent detected
+Bundling asset cart-fn-development/Handler/Code/Stage...
+
+  ...a31947eda1ebdc043e16bff98948433997ac3aae348cd4-building/index.js  596.4kb
+  ...47eda1ebdc043e16bff98948433997ac3aae348cd4-building/index.js.map    2.4mb
+
+⚡ Done in 103ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws lambda function in go (Framework=aws-lambda-go Standard=aws-standard)
+Rendered 47 files from aws-lambda-go@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/stock-fn
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 141 packages in 9s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/stock-fn	1.020s
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/stock-fn
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset stock-fn/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset stock-fn-development/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+
+ Test Files  2 passed (2)
+      Tests  91 passed (91)
+   Start at  11:31:18
+   Duration  9.95s (tests 90%, import 9%, transform 1%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset stock-fn/Handler/Code/Stage...
+AI agent detected
+Bundling asset stock-fn-development/Handler/Code/Stage...
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws python lambda function (Framework=aws-lambda-py Standard=aws-standard)
+Rendered 52 files from aws-lambda-py@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/tax-fn
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 141 packages in 8s
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 26 packages in 1ms
+Installed 24 packages in 209ms
+ + ast-serialize==0.13.0
+ + aws-lambda-powertools==3.36.0
+ + boto3==1.43.112
+ + botocore==1.43.112
+ + botocore-stubs==1.43.112
+ + iniconfig==2.3.1
+ + jmespath==1.1.0
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + python-dateutil==2.9.0.post0
+ + ruff==0.16.10
+ + s3transfer==0.19.2
+ + six==1.17.0
+ + types-boto3==1.43.112
+ + types-boto3-dynamodb==1.43.106
+ + types-s3transfer==0.19.2
+ + typing-extensions==4.16.0
+ + urllib3==2.8.0
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/tax-fn
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+
+============================== 63 passed in 0.65s ==============================
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/tax-fn
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset tax-fn/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset tax-fn-development/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+
+ Test Files  2 passed (2)
+      Tests  90 passed (90)
+   Start at  11:32:10
+   Duration  14.00s (tests 92%, import 6%, transform 3%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset tax-fn/Handler/Code/Stage...
+AI agent detected
+Bundling asset tax-fn-development/Handler/Code/Stage...
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws ec2 service (Framework=aws-ec2-ts Standard=aws-standard)
+Rendered 47 files from aws-ec2-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/search
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 172 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/search
+
+Bundling asset test/Server/Stage...
+Bundling asset search/Server/Stage...
+Bundling asset test/Server/Stage...
+Bundling asset test/Server/Stage...
+Bundling asset test/Server/Stage...
+Bundling asset test/Server/Stage...
+Bundling asset search-development/Server/Stage...
+
+ Test Files  6 passed (6)
+      Tests  146 passed (146)
+   Start at  11:33:03
+   Duration  7.80s (tests 62%, transform 23%, import 15%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset search/Server/Stage...
+AI agent detected
+Bundling asset search-development/Server/Stage...
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws fargate service (Framework=aws-fargate-ts Standard=aws-standard)
+Rendered 50 files from aws-fargate-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/checkout
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 194 packages in 12s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/checkout
+
+
+ Test Files  7 passed (7)
+      Tests  155 passed (155)
+   Start at  11:34:03
+   Duration  11.11s (import 47%, tests 44%, transform 9%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+AI agent detected
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws queue consumer (Framework=aws-queue-ts Standard=aws-standard)
+Rendered 45 files from aws-queue-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/mailer
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 180 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/mailer
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset mailer/Handler/Code/Stage...
+
+  ...1241ed34f169f1dc3b05545dd5823906b68bd47da0f367-building/index.js  600.6kb
+  ...ed34f169f1dc3b05545dd5823906b68bd47da0f367-building/index.js.map    2.5mb
+
+⚡ Done in 161ms
+
+  ...15fa2ff176a2c134d82286f67bd5ebb4d9bb0d1819676e-building/index.js  600.6kb
+  ...2ff176a2c134d82286f67bd5ebb4d9bb0d1819676e-building/index.js.map    2.5mb
+
+⚡ Done in 178ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset mailer-development/Handler/Code/Stage...
+
+  ...0a0e7c0ec1077181b7ac38f6ad32c0b78b84737b606126-building/index.js  600.6kb
+  ...7c0ec1077181b7ac38f6ad32c0b78b84737b606126-building/index.js.map    2.5mb
+
+⚡ Done in 135ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...8ec18c7bf816f05752bfcee3dd1e6b5f0485f5de99c93d-building/index.js  600.6kb
+  ...8c7bf816f05752bfcee3dd1e6b5f0485f5de99c93d-building/index.js.map    2.5mb
+
+⚡ Done in 108ms
+
+  ...7585cbed839c61e6e2ce97052724df02d8115dc1e04297-building/index.js  600.6kb
+  ...cbed839c61e6e2ce97052724df02d8115dc1e04297-building/index.js.map    2.5mb
+
+⚡ Done in 165ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...abcd273945b4228f275eaec3e5e9c034dc56fe5a54345a-building/index.js  600.6kb
+  ...273945b4228f275eaec3e5e9c034dc56fe5a54345a-building/index.js.map    2.5mb
+
+⚡ Done in 122ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...4864654f4b7bf6c4331447cb8835cc9e97dca63f6a98bb-building/index.js  600.6kb
+  ...654f4b7bf6c4331447cb8835cc9e97dca63f6a98bb-building/index.js.map    2.5mb
+
+⚡ Done in 90ms
+
+ Test Files  6 passed (6)
+      Tests  131 passed (131)
+   Start at  11:35:10
+   Duration  10.33s (tests 81%, import 13%, transform 6%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset mailer/Handler/Code/Stage...
+
+  ...58c1b6d0cd5f464b38d4cb19ac567663c819dff08015d9-building/index.js  600.6kb
+  ...b6d0cd5f464b38d4cb19ac567663c819dff08015d9-building/index.js.map    2.4mb
+
+⚡ Done in 79ms
+AI agent detected
+Bundling asset mailer-development/Handler/Code/Stage...
+
+  ...754bdaaaa020b08f29042b4d837918b1d59bd7bfecf372-building/index.js  600.6kb
+  ...daaaa020b08f29042b4d837918b1d59bd7bfecf372-building/index.js.map    2.4mb
+
+⚡ Done in 85ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws scheduled job (Framework=aws-schedule-ts Standard=aws-standard)
+Rendered 43 files from aws-schedule-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/nightly-report
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 178 packages in 9s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/nightly-report
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset nightly-report/Handler/Code/Stage...
+
+  ...19e55bfeeedb399381382e5b652467e58103f819fa3ceb-building/index.js  595.3kb
+  ...5bfeeedb399381382e5b652467e58103f819fa3ceb-building/index.js.map    2.4mb
+
+⚡ Done in 107ms
+
+  ...1f851ad10bdbde786831b5362d48b056a913954f2aa8ce-building/index.js  595.3kb
+  ...1ad10bdbde786831b5362d48b056a913954f2aa8ce-building/index.js.map    2.4mb
+
+⚡ Done in 98ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...6eb6cfd1ec2da75709ce6ae921eeeccce27f0bc3a7a73b-building/index.js  595.3kb
+  ...cfd1ec2da75709ce6ae921eeeccce27f0bc3a7a73b-building/index.js.map    2.4mb
+
+⚡ Done in 127ms
+Bundling asset nightly-report-development/Handler/Code/Stage...
+Bundling asset test/Handler/Code/Stage...
+
+  ...efdd5eb7fda49ce2e5229ca77af553ce61b8d9e61a2c77-building/index.js  595.3kb
+  ...5eb7fda49ce2e5229ca77af553ce61b8d9e61a2c77-building/index.js.map    2.4mb
+
+⚡ Done in 135ms
+
+  ...cdefb947285508c68753a1cd99596d341f93b4430fd1c6-building/index.js  595.3kb
+  ...b947285508c68753a1cd99596d341f93b4430fd1c6-building/index.js.map    2.4mb
+
+⚡ Done in 121ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...1fd08d7f96e8c6a797ab239c12e6547c90e904e5d90a93-building/index.js  595.3kb
+  ...8d7f96e8c6a797ab239c12e6547c90e904e5d90a93-building/index.js.map    2.4mb
+
+⚡ Done in 103ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...d31743ea1cfcd11106d90b7cbe5499acdde8de5f901c16-building/index.js  595.3kb
+  ...43ea1cfcd11106d90b7cbe5499acdde8de5f901c16-building/index.js.map    2.4mb
+
+⚡ Done in 92ms
+
+ Test Files  5 passed (5)
+      Tests  123 passed (123)
+   Start at  11:35:55
+   Duration  5.27s (tests 76%, import 17%, transform 7%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset nightly-report/Handler/Code/Stage...
+
+  ...f19f5c25fbaa78348cd3110be548fb33bef488f4f20e76-building/index.js  595.3kb
+  ...5c25fbaa78348cd3110be548fb33bef488f4f20e76-building/index.js.map    2.4mb
+
+⚡ Done in 411ms
+AI agent detected
+Bundling asset nightly-report-development/Handler/Code/Stage...
+
+  ...24a17264c83d7b1590ade0001dbef0b810dae816fd5efd-building/index.js  595.3kb
+  ...7264c83d7b1590ade0001dbef0b810dae816fd5efd-building/index.js.map    2.4mb
+
+⚡ Done in 120ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws event consumer (Framework=aws-event-ts Standard=aws-standard)
+Rendered 43 files from aws-event-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/audit
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 178 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/audit
+
+Bundling asset test/Handler/Code/Stage...
+Bundling asset audit/Handler/Code/Stage...
+
+  ...ff8eafebaf198d27927136238a7351b84a94f3376b516a-building/index.js  595.9kb
+  ...afebaf198d27927136238a7351b84a94f3376b516a-building/index.js.map    2.4mb
+
+⚡ Done in 921ms
+
+  ...2bebbb9e6744d30372f8e43b8b5d37ac61f4de3d3e5537-building/index.js  595.9kb
+  ...bb9e6744d30372f8e43b8b5d37ac61f4de3d3e5537-building/index.js.map    2.4mb
+
+⚡ Done in 134ms
+Bundling asset test/Handler/Code/Stage...
+Bundling asset audit-development/Handler/Code/Stage...
+
+  ...ce2c874ad4d4503936ab7ea3db98a2da88aeca05e14e0f-building/index.js  595.9kb
+  ...874ad4d4503936ab7ea3db98a2da88aeca05e14e0f-building/index.js.map    2.4mb
+
+⚡ Done in 203ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...80b39e0869e7c67d32ae4f6a9af48ac444f97b8b57e313-building/index.js  595.9kb
+  ...9e0869e7c67d32ae4f6a9af48ac444f97b8b57e313-building/index.js.map    2.4mb
+
+⚡ Done in 205ms
+
+  ...059582e89f17cf35c6572a8a3c01b1c9d84d09382d76b9-building/index.js  595.9kb
+  ...82e89f17cf35c6572a8a3c01b1c9d84d09382d76b9-building/index.js.map    2.4mb
+
+⚡ Done in 166ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...aa37750fa93bb3c4665a60e6ec76d7a449b6634f522f31-building/index.js  595.9kb
+  ...750fa93bb3c4665a60e6ec76d7a449b6634f522f31-building/index.js.map    2.4mb
+
+⚡ Done in 103ms
+Bundling asset test/Handler/Code/Stage...
+
+  ...b47702d1d312118f512cff0c3b229372978582c796a196-building/index.js  595.9kb
+  ...02d1d312118f512cff0c3b229372978582c796a196-building/index.js.map    2.4mb
+
+⚡ Done in 137ms
+
+ Test Files  5 passed (5)
+      Tests  142 passed (142)
+   Start at  11:36:35
+   Duration  8.34s (tests 80%, import 12%, transform 8%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset audit/Handler/Code/Stage...
+
+  ...e05448b64c7ea18f3d761d400164c839e1f980a301063f-building/index.js  595.9kb
+  ...48b64c7ea18f3d761d400164c839e1f980a301063f-building/index.js.map    2.4mb
+
+⚡ Done in 97ms
+AI agent detected
+Bundling asset audit-development/Handler/Code/Stage...
+
+  ...2ead1f51993a8bb948caa264f4a9fe4babac00b942ef85-building/index.js  595.9kb
+  ...1f51993a8bb948caa264f4a9fe4babac00b942ef85-building/index.js.map    2.4mb
+
+⚡ Done in 109ms
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+=== aws static site (Framework=aws-static-site-ts Standard=aws-standard)
+Rendered 41 files from aws-static-site-ts@local, aws-standard@local into /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/landing
+
+$ make check
+npm ci --no-audit --no-fund
+
+added 141 packages in 10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-1/tmp.NSkAXjoy2V/landing
+
+Bundling asset landing/Deploy/Asset1/Stage...
+Bundling asset test/Deploy/Asset1/Stage...
+Bundling asset test/Deploy/Asset1/Stage...
+Bundling asset landing-development/Deploy/Asset1/Stage...
+Bundling asset test/Deploy/Asset1/Stage...
+
+ Test Files  3 passed (3)
+      Tests  94 passed (94)
+   Start at  11:37:35
+   Duration  8.55s (tests 70%, import 16%, transform 14%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+Bundling asset landing/Deploy/Asset1/Stage...
+AI agent detected
+Bundling asset landing-development/Deploy/Asset1/Stage...
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+
+test-templates: 16 combos pass their make check and their Deployment's build

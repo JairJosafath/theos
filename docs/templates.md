@@ -47,31 +47,32 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
 | k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | yes | yes | n/a | n/a |
-| go-cli | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
+| go-cli | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | yes | yes | yes | yes |
-| vscode-extension | Framework | | #1476 | yes | yes | yes | yes | yes | n/a |
-| go-standard | Standard | | #1476 | yes | yes | n/a | n/a | yes | n/a |
+| vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
+| go-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | go-operator-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
-| aws-lambda-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes, #1420 | yes |
-| aws-lambda-go | Framework | | #1476 | yes | yes | yes | #1071 | yes, #1420 | yes |
-| aws-lambda-py | Framework | | #1476 | yes | yes | yes | #1071 | yes, #1420 | yes |
-| aws-ec2-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | #1479 |
-| aws-fargate-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | #1479 |
-| aws-queue-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | n/a |
-| aws-schedule-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | n/a |
-| aws-event-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | n/a |
-| aws-static-site-ts | Framework | | #1476 | yes | yes | yes | #1071 | yes | n/a |
-| aws-standard | Standard | | #1476 | yes | yes | n/a | n/a | yes | yes |
-| dynamodb | Connector | | #1476 | yes | yes | n/a | yes, #1393 | n/a | yes |
+| aws-lambda-ts | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
+| aws-lambda-go | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
+| aws-lambda-py | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
+| aws-ec2-ts | Framework | | yes | yes | yes | yes | #1071 | yes | #1479 |
+| aws-fargate-ts | Framework | | yes | yes | yes | yes | #1071 | yes | #1479 |
+| aws-queue-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
+| aws-schedule-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
+| aws-event-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
+| aws-static-site-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
+| aws-standard | Standard | | yes | yes | yes | n/a | n/a | yes | yes |
+| dynamodb | Connector | | yes | yes | yes | n/a | yes, #1393 | n/a | yes |
 | hello | Framework | | n/a | n/a | n/a | yes | n/a | n/a | n/a |
 | hello-standard | Standard | | n/a | yes | n/a | n/a | n/a | n/a | n/a |
 | hello-html | Framework | | n/a | n/a | n/a | yes | n/a | n/a | n/a |
 | hello-html-standard | Standard | | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
-The CI column is the widest gap: only the operator pair and the webshop's
-combinations are built and checked as scaffolded repositories
-(`make test-templates-operator` and `make test-templates`, run by hand when
-one of their templates changes); #1476 does the same for the rest.
+Every template with a CI cell is built and checked as a scaffolded
+repository: the operator pair by `make test-templates-operator`, the rest by
+`make test-templates` (the webshop's combinations, the go cli, the vscode
+extension and every AWS combination), each run by hand when one of its
+templates changes.
 
 ## The webshop's templates
 
@@ -204,7 +205,7 @@ names the index's host without its port, which `uv` matches on, and its
 login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
-  kubernetes" and "node cli".
+  kubernetes", "node cli" and "vscode extension".
 - Tests: `Makefile.tmpl`, target `test` (vitest), part of `check`; its
   `check.yaml.tmpl` runs `make check`.
 - Lint: `Makefile.tmpl`: `fmt-check` (Prettier), `lint` (ESLint, no warnings,
@@ -319,8 +320,9 @@ renders its lists loose, a blank line before the step that watches the run
 and before each item of "When a run fails", so ts-standard's Prettier check
 passes it (#1707).
 
-- CI: `make test-templates` runs `make dist` in the combos "python cli"
-  and "node cli" and checks the files it attaches.
+- CI: `make test-templates` runs `make dist` in the combos "python cli",
+  "node cli", "go cli" and "vscode extension" and checks the files it
+  attaches.
 - Tests: `TestTemplatesRenderTheirCIFilesForGiteaActions`
   (`internal/scaffold/ci_test.go`) renders the workflow;
   `make test-templates-operator` runs `make dist` for the operator pair,
@@ -345,9 +347,10 @@ passes it (#1707).
 
 A Go command-line program.
 
-- CI: `.github/workflows/verify-release.yml`'s "Getting started" step releases
-  a go-cli Container on Kind for each minor release; no test runs its
-  `make check` before a merge (#1476).
+- CI: `make test-templates`, combo "go cli": its `make check`, then
+  `make dist VERSION=v0.1.0`, checking the six binaries and `SHA256SUMS` in
+  `dist/`. `.github/workflows/verify-release.yml`'s "Getting started" step
+  also releases a go-cli Container on Kind for each minor release.
 - Tests: `main_test.go.tmpl` (the whole program through `run()`), run by
   go-standard's `make test`.
 - Lint: go-standard's golangci-lint, gofumpt, goimports and `go vet`.
@@ -384,6 +387,8 @@ A kubebuilder v4 operator, regenerated by `hack/template-go-kubebuilder`.
 A VS Code extension in TypeScript, with a stand-in `vscode` module so its tests
 run in Node.
 
+- CI: `make test-templates`, combo "vscode extension": its `make check`, then
+  `make dist` at its version, checking `dist/<container>-<version>.vsix`.
 - Tests: `src/greeting.test.ts` and `src/extension.test.ts`; `package-check`
   runs `vsce package`.
 - Lint: ts-standard's.
@@ -399,7 +404,8 @@ The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
-  go-kubebuilder. go-standard: #1476.
+  go-kubebuilder. go-standard: its `make check` in `make test-templates`'
+  combo "go cli".
 - Tests: `Makefile.tmpl`, target `test` (`go test -race`; envtest for the
   operator), part of `check`; their `check.yaml.tmpl` runs `make check`.
 - Lint: `.golangci.yml` (golangci-lint), `fmt-check`, `vet`, `tidy-check`; the
@@ -419,8 +425,11 @@ Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
 aws-standard.
 
-- CI: their combos are rendered and string-checked (`TestEveryTemplateRenders`,
-  `internal/scaffold/aws_standard_test.go`), never built (#1476).
+- CI: `make test-templates` runs each one's combo's `make check` (combos
+  "aws lambda function", "aws lambda function in go", "aws python lambda
+  function", "aws ec2 service", "aws fargate service", "aws queue consumer",
+  "aws scheduled job", "aws event consumer", "aws static site"): its tests,
+  a synth with CDK Nag and cfn-lint; nothing calls AWS.
 - Tests: the handler's tests (`src/*.test.ts`, `src/*_test.go.tmpl`,
   `tests/test_*.py`) and the stack's CDK assertions (`infra/*_stack.test.ts`),
   run by aws-standard's `make test`.
@@ -448,7 +457,7 @@ writes `~/.npmrc` and `~/.netrc` as ts-standard's does, so `npm ci` and `uv`
 fetch factory packages (#1231); since v1.18.1 `~/.netrc` names the index's
 host without its port, as ts-standard v1.6.2's does (#1696).
 
-- CI: #1476.
+- CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
   language), and its own `infra/standard.test.ts` (every log group has a
   retention).
@@ -466,7 +475,8 @@ host without its port, as ts-standard v1.6.2's does (#1696).
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
 on-demand, encrypted table for a function Container.
 
-- CI: #1476.
+- CI: `make test-templates`, combo "aws lambda function with dynamodb": its
+  `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
   include; `TestDynamoDBConnectorConnectsToAWSLambdaTS`
   (`internal/scaffold/aws_connectors_test.go`).
