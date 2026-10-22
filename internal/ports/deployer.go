@@ -84,6 +84,19 @@ type Shipment struct {
 	Files []File
 	// Image is the app's image by digest, "" until CI builds one (#1069).
 	Image string
+	// CopyImage copies Image, with its digest, to repository at a registry
+	// a target's nodes pull from, tagged tag; nil when there is no Image.
+	// The owner's registry's credential stays with the caller.
+	CopyImage func(ctx context.Context, to Registry, repository, tag string) error
+}
+
+// Registry is an OCI registry a target names and the credential from its
+// Secret that writes there.
+type Registry struct {
+	// Host is host[:port], without a scheme.
+	Host string
+	// Username and Password log in; both empty is anonymous.
+	Username, Password string
 }
 
 // File is a release file, opened only when the adapter sends it.

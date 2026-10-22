@@ -8,9 +8,11 @@ package argocd
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +21,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -47,9 +53,15 @@ var (
 )
 
 // Deployer ships releases as Argo CD Applications through a Kubernetes
-// client. Argo CD runs the deploy, so Ship starts it in one call.
+// client: the operator's, or one built from the kubeconfig in the target's
+// Secret. Argo CD runs the deploy, so Ship starts it in one call.
 type Deployer struct {
 	c client.Client
+	// remotes are the clients built from kubeconfigs, by the sha256 of
+	// the kubeconfig's bytes.
+	remotes sync.Map
+	// newClient builds a client from a kubeconfig's config; a test wraps it.
+	newClient func(*rest.Config) (client.Client, error)
 }
 
 var _ ports.Deployer = (*Deployer)(nil)
@@ -59,12 +71,39 @@ var _ ports.Deployer = (*Deployer)(nil)
 // uncached, else the manager's cache would start an informer on a kind the
 // cluster doesn't have.
 func New(c client.Client) *Deployer {
-	return &Deployer{c: c}
+	return &Deployer{c: c, newClient: func(cfg *rest.Config) (client.Client, error) {
+		return client.New(cfg, client.Options{Scheme: clientgoscheme.Scheme})
+	}}
+}
+
+// client is the client to t's cluster: one built from the kubeconfig in
+// t's Secret, or the operator's when there is none. A kubeconfig that
+// builds no client refuses the credential.
+func (d *Deployer) client(t ports.Target) (client.Client, error) {
+	kubeconfig := t.Secret[model.ArgoCDSecretKubeconfig]
+	if len(kubeconfig) == 0 {
+		return d.c, nil
+	}
+	key := sha256.Sum256(kubeconfig)
+	if c, ok := d.remotes.Load(key); ok {
+		return c.(client.Client), nil
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil, refused(fmt.Errorf("the Secret's %s: %w", model.ArgoCDSecretKubeconfig, err))
+	}
+	c, err := d.newClient(cfg)
+	if err != nil {
+		return nil, refused(fmt.Errorf("the Secret's %s: %w", model.ArgoCDSecretKubeconfig, err))
+	}
+	actual, _ := d.remotes.LoadOrStore(key, c)
+	return actual.(client.Client), nil
 }
 
 // settings are an argoCD target's fields, defaulted.
 type settings struct {
 	Namespace, Project, DestinationNamespace, DestinationServer string
+	ImageRegistry, GitURL                                       string
 }
 
 func read(t ports.Target) settings {
@@ -79,6 +118,8 @@ func read(t ports.Target) settings {
 		Project:              or(model.ArgoCDSettingProject, model.ArgoCDDefaultProject),
 		DestinationNamespace: t.Settings[model.ArgoCDSettingDestinationNamespace],
 		DestinationServer:    or(model.ArgoCDSettingDestinationServer, model.ArgoCDDefaultServer),
+		ImageRegistry:        t.Settings[model.ArgoCDSettingImageRegistry],
+		GitURL:               t.Settings[model.ArgoCDSettingGitURL],
 	}
 }
 
@@ -86,9 +127,13 @@ func read(t ports.Target) settings {
 // there and the credential may read it.
 func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 	cfg := read(t)
+	c, err := d.client(t)
+	if err != nil {
+		return err
+	}
 	var project unstructured.Unstructured
 	project.SetGroupVersionKind(AppProjectGVK)
-	err := d.c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Project}, &project)
+	err = c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.Project}, &project)
 	if apierrors.IsNotFound(err) {
 		return refused(fmt.Errorf("project %s doesn't exist in namespace %s", cfg.Project, cfg.Namespace))
 	}
@@ -104,8 +149,10 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // ErrArtifactMissing. A name over what a label value holds, or an
 // Application there whose labels name another Container (two names can join
 // to the same, #1669), is a model.DeployNameError naming it: the deploy
-// fails NameRejected, and
-// nothing is written.
+// fails NameRejected, and nothing is written. At a target with an
+// imageRegistry, the image is copied there first, tagged the version, and
+// the Application names the copy; with a gitURL, its repoURL is the
+// repository at that host (#1590).
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	if s.Image == "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release has no image")}
@@ -118,12 +165,24 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	if err != nil {
 		return err
 	}
-	existing, err := d.get(ctx, cfg, name, s.App)
+	if s.Repository, err = model.ArgoCDRepoURL(s.Repository, cfg.GitURL); err != nil {
+		return err
+	}
+	c, err := d.client(t)
+	if err != nil {
+		return err
+	}
+	existing, err := d.get(ctx, c, cfg, name, s.App)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
+	if cfg.ImageRegistry != "" {
+		if s.Image, err = copyImage(ctx, t, cfg, s); err != nil {
+			return err
+		}
+	}
 	app := application(cfg, name, s)
-	if err := d.c.Apply(ctx, client.ApplyConfigurationFromUnstructured(app), client.FieldOwner(FieldManager),
+	if err := c.Apply(ctx, client.ApplyConfigurationFromUnstructured(app), client.FieldOwner(FieldManager),
 		client.ForceOwnership); err != nil {
 		return portError(err, "patch", "applications", cfg.Namespace)
 	}
@@ -138,14 +197,44 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	return nil
 }
 
-// get reads the Application name in cfg's namespace for app: the port's
-// error where the Get fails with one, NotFound as the API server's own, and
-// a model.DeployNameError naming the other Container when the Application's
-// labels name one (#1669).
-func (d *Deployer) get(ctx context.Context, cfg settings, name, app string) (*unstructured.Unstructured, error) {
+// copyImage copies s's image to cfg's imageRegistry, tagged s's version,
+// with t's registry login, and returns the copy's reference. No CopyImage is
+// ErrArtifactMissing; the registry refusing the login refuses the
+// credential, and any other failure to write the copy is unreachable. A
+// failure to read the image keeps the caller's error.
+func copyImage(ctx context.Context, t ports.Target, cfg settings, s ports.Shipment) (string, error) {
+	cp, err := model.ArgoCDImageCopyOf(s.Image, cfg.ImageRegistry)
+	if err != nil {
+		return "", err
+	}
+	if s.CopyImage == nil {
+		return "", &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release's image can't be copied")}
+	}
+	to := ports.Registry{Host: cp.ToHost, Username: string(t.Secret[model.ArgoCDSecretRegistryUsername]),
+		Password: string(t.Secret[model.ArgoCDSecretRegistryPassword])}
+	err = s.CopyImage(ctx, to, cp.ToRepository, s.Version)
+	switch {
+	case err == nil:
+		logr.FromContextOrDiscard(ctx).V(1).Info("Copied the image", "image", s.Image, "copy", cp.Image)
+		return cp.Image, nil
+	case errors.Is(err, oci.ErrSource):
+		return "", err
+	case oci.Refused(err):
+		return "", refused(fmt.Errorf("copy the image to %s: %w", cfg.ImageRegistry, err))
+	}
+	return "", &ports.Error{Kind: ports.ErrUnreachable, Cause: fmt.Errorf("copy the image to %s: %w",
+		cfg.ImageRegistry, err)}
+}
+
+// get reads the Application name in cfg's namespace for app with c: the
+// port's error where the Get fails with one, NotFound as the API server's
+// own, and a model.DeployNameError naming the other Container when the
+// Application's labels name one (#1669).
+func (d *Deployer) get(ctx context.Context, c client.Client, cfg settings, name, app string) (
+	*unstructured.Unstructured, error) {
 	var obj unstructured.Unstructured
 	obj.SetGroupVersionKind(ApplicationGVK)
-	err := d.c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: name}, &obj)
+	err := c.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: name}, &obj)
 	if apierrors.IsNotFound(err) {
 		return nil, err
 	}
@@ -205,10 +294,14 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (po
 	if err != nil {
 		return ports.DeployState{}, err
 	}
-	obj, err := d.get(ctx, cfg, name, app)
+	c, err := d.client(t)
+	if err != nil {
+		return ports.DeployState{}, err
+	}
+	obj, err := d.get(ctx, c, cfg, name, app)
 	if apierrors.IsNotFound(err) {
 		var ns corev1.Namespace
-		err := d.c.Get(ctx, types.NamespacedName{Name: cfg.Namespace}, &ns)
+		err := c.Get(ctx, types.NamespacedName{Name: cfg.Namespace}, &ns)
 		return ports.DeployState{}, portError(err, "get", "namespaces", cfg.Namespace)
 	}
 	if err != nil {

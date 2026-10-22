@@ -13,6 +13,7 @@ import (
 	"golang.org/x/mod/module"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/oci"
 )
 
 // The fake host's releases. A milestone's due date is the one its issues were
@@ -68,6 +69,9 @@ type fakeReleaseState struct {
 	imagePushes   map[string]int
 	registry      map[string]string
 	imageHolds    map[string]chan struct{}
+	// imageCopies is the digest CopyImage copied to each
+	// host/repository:tag.
+	imageCopies map[string]string
 	// packages is the package each file of a release holds, by
 	// owner/name@tag, as setReleasePackages read them; packageFailures how
 	// many PublishReleasePackages calls fail before one gets through, by
@@ -505,6 +509,26 @@ func (p *fakeProvider) ImageDigest(_ context.Context, repo gitprovider.Repositor
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	return p.git.releaseState().registry[repo.Owner+"/"+repo.Name+"@"+tag], nil
+}
+
+// CopyImage records the copy of digest to toRepository at to under tag.
+func (p *fakeProvider) CopyImage(_ context.Context, _ gitprovider.Repository, digest string, to oci.Registry,
+	toRepository, tag string) error {
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	state := p.git.releaseState()
+	if state.imageCopies == nil {
+		state.imageCopies = map[string]string{}
+	}
+	state.imageCopies[to.Host+"/"+toRepository+":"+tag] = digest
+	return nil
+}
+
+// imageCopy is the digest CopyImage copied to ref, host/repository:tag.
+func (g *fakeGit) imageCopy(ref string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().imageCopies[ref]
 }
 
 // setImage makes PublishImage of owner/name's release of tag give img.

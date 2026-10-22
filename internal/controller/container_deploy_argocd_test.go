@@ -53,9 +53,19 @@ func argoProject(argoNS string) {
 // returns the Argo CD namespace.
 func readyArgoTarget(ns string) string {
 	GinkgoHelper()
+	return readyArgoTargetWith(ns, nil)
+}
+
+// readyArgoTargetWith is readyArgoTarget with the target changed by change
+// before it is made.
+func readyArgoTargetWith(ns string, change func(*c4v1alpha1.DeployTarget)) string {
+	GinkgoHelper()
 	argoNS := newArgoNamespace()
 	argoProject(argoNS)
 	dt := newArgoCDTarget(ns, "dev", argoNS, "apps")
+	if change != nil {
+		change(dt)
+	}
 	mustCreate(dt)
 	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 	return argoNS
@@ -177,6 +187,26 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		d = deployIs(ns, "dev", model.DeployPhaseFailed, model.DeployReasonSyncFailed, "v0.1.0", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("Argo CD reports deploying v0.1.0 to dev failed: " +
 			"one or more objects failed to apply"))
+	})
+
+	It("copies the image to the target's imageRegistry and names the copy and its gitURL (#1590)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: testDigest, Platforms: []string{"linux/amd64"}})
+		shipRelease(ns, "v0.1.0", true)
+		argoNS := readyArgoTargetWith(ns, func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.ArgoCD.ImageRegistry = "nodes.example:5000/mirror"
+			dt.Spec.ArgoCD.GitURL = "https://git.example"
+		})
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "dev"})
+
+		app := argoApplication(ns, argoNS)
+		repoURL, _, _ := unstructured.NestedString(app.Object, "spec", "source", "repoURL")
+		Expect(repoURL).To(Equal("https://git.example/" + ns + "/orders-api.git"))
+		images, _, _ := unstructured.NestedStringSlice(app.Object, "spec", "source", "kustomize", "images")
+		Expect(images).To(ConsistOf("orders-api=nodes.example:5000/mirror/" + ns + "/orders-api@" + testDigest))
+		Expect(gitFake.imageCopy("nodes.example:5000/mirror/" + ns + "/orders-api:v0.1.0")).To(Equal(testDigest))
 	})
 
 	It("is ArtifactMissing when the release has no image (#1588)", func() {
