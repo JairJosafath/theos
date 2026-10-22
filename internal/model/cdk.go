@@ -13,10 +13,13 @@ import (
 // member reads it to ship each stack with a change set (decision 7).
 
 // Tags the cloudFormation member sets on each stack it ships, beside the
-// assembly's own: the app, namespace/name, and the version shipped.
+// assembly's own: the app, namespace/name, the version shipped and the
+// tier, so one account can run an app's development and production stacks
+// and State tells them apart.
 const (
 	CloudFormationTagApp     = "c4factory.io/app"
 	CloudFormationTagVersion = "c4factory.io/version"
+	CloudFormationTagTier    = "c4factory.io/tier"
 )
 
 // CDK artifact types of a manifest.json.
