@@ -604,7 +604,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   Deployment or Framework rendered at scaffold; a Container without them is
   `Incompatible` there.
 - **Reports:** `status.deploys[]` per target (version running and wanted,
-  phase, the tool's health, URL), summed by `Deployed`.
+  phase, the tool's health, URL, the image a `github` target copied),
+  summed by `Deployed`.
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
   Container's choice builds one (`model.BuildsImage`: `k8s-manifests`, and
@@ -641,8 +642,12 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
   and line and never the value, until another version is wanted. The image
   goes by digest to `ghcr.io/<owner>/<repository>/<name>` (the repository
-  alone when `tagPrefix` is `""`), tagged with the version, and
-  `status.deploys[].image` reports it. The Secret holds `token`, a
+  alone when `tagPrefix` is `""`), tagged with the version, before the
+  release is published; `status.deploys[].image` reports
+  `<repository>@<digest>` and the release notes name it. The same digest
+  already under the tag copies nothing; another fails the entry `TagTaken`,
+  naming the image. Without `packagesToken` no image is copied and the
+  release ships without one. The Secret holds `token`, a
   fine-grained token for the one repository, or a GitHub App's `appId`,
   `installationId` and `privateKey`, from which the operator mints
   installation tokens; `packagesToken` is a classic token with
