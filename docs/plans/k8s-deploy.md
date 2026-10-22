@@ -136,12 +136,19 @@ the rollout itself is the one tier only Kind shows.
 6. **`job` gets a `k8s-manifests` row.** The template renders `job.yaml`
    for type `job`: a Kubernetes `Job` from the image, `restartPolicy:
    Never`, `backoffLimit: 3`, and the annotation
-   `argocd.argoproj.io/sync-options: Replace=true`, so each release runs the
-   job again (a `Job`'s template is immutable, and the annotation is inert
-   outside Argo CD). No `ttlSecondsAfterFinished` (#1587): decision 2 syncs
-   with `selfHeal`, which reads a Job the TTL deleted as missing, recreates
-   it and so reruns the job every TTL. `Replace=true` alone runs it once per
-   release, and the finished Job and its pod stay, with their logs, until the
+   `argocd.argoproj.io/sync-options: Force=true,Replace=true`, so each
+   release runs the job again (a `Job`'s template is immutable, and the
+   annotation is inert outside Argo CD). `Force=true` is needed (#1628):
+   `Replace=true` alone makes Argo CD run `kubectl replace`, an update of
+   the existing Job, which the immutable template refuses with `field is
+   immutable` at the second release; with `Force=true` it runs `kubectl
+   replace --force`, a delete and a create, which is what rerunning a Job
+   takes. The README's hand-run rerun does the same for the Job alone, a
+   `kubectl delete job` then `kubectl apply -k`, so it recreates nothing
+   else in the kustomization (the postgres StatefulSet, say). No
+   `ttlSecondsAfterFinished` (#1587): decision 2 syncs with `selfHeal`, which
+   reads a Job the TTL deleted as missing, recreates it and so reruns the job
+   every TTL. The annotation runs it once per release, and the finished Job and its pod stay, with their logs, until the
    next release replaces them; Argo CD reads a completed Job as Healthy and
    a failed one as Degraded, so `status.deploys[]` shows the outcome. The
    `small` Compute's `compute.yaml` patch targets the workload, Deployment or
@@ -188,7 +195,7 @@ check`, and leaves main working.
 | 1. This plan and the design change | #1072 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
 | 2. The Argo CD adapter | #1586 | #1445 | `internal/adapters/argocd` on the port, `Shipment.Repository`, `model.ArgoCDDeployState` table-tested on each sync, health and operation state; `test/crds/argocd` holds the `Application` and `AppProject` CRDs; the adapter's tests start envtest with them and run `contract.Deployer`, and show the Application `Ship` writes (source, tag, path, image, sync policy, finalizer, labels), a repeat applying nothing, no image as `ErrArtifactMissing`, and `Check`'s three answers |
 | 3. The `argoCD` member and the loop | #1588 | step 2 | the member on `DeployTargetSpec` with its CEL rules (one member; the Secret optional for `argoCD` only), the row in `deployMembers`, `deployTarget`'s conversion, the RBAC markers, the wiring in `cmd/main.go`; `make validate-yaml` on a sample; envtest: a Ready `k8s-manifests` Container whose release has an image gets its Application with the digest, faked Application status makes `status.deploys[]` `Deployed`/`Healthy`, `Degraded`, and `Failed` with `SyncFailed`; a Container without the Deployment is `Incompatible`; a target without a Secret is `Ready`; the reconciler runs under the generated role |
-| 4. `job` in `k8s-manifests` | #1587 | | `job.yaml` rendered for type `job` with `Replace=true` and no TTL (decision 6), `compute.yaml` patching a Job, the README and comments, the version bump; the scaffold's table tests and `make validate-yaml` on the rendered files |
+| 4. `job` in `k8s-manifests` | #1587 | | `job.yaml` rendered for type `job` with `Force=true,Replace=true` (#1628) and no TTL (decision 6), `compute.yaml` patching a Job, the README and comments, the version bump; the scaffold's table tests and `make validate-yaml` on the rendered files |
 | 5. The Kind environment and the webshop | #1589 | steps 3, 4 | `config/argocd` and `make argocd` in `make e2e`; Gitea's fixed ClusterIP and containerd's `hosts.toml` in `hack/kind.yaml`, tested in `hack/kind_test.sh`; the seed's organization public; the webshop's `kind-cluster` DeployTarget and `spec.deploy` entries pass `make validate-yaml` and `make seed-local`; the getting-started's deploy section |
 | 6. Another cluster | #1590 | step 3 | the `kubeconfig` key, `argoCD.imageRegistry` and the copy; the adapter's tests on a second envtest as the remote cluster; priority/4 |
 

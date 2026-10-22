@@ -91,10 +91,12 @@ kubectl logs job/{{ .Container }}
 ```
 
 Add `-n <namespace>` to each, or set `namespace:` in `kustomization.yaml`. A
-Job's template is immutable, so to run it again (a new image, say) replace it:
+Job's template is immutable, so to run it again (a new image, say) delete it
+and apply again; the other objects are unchanged, so apply leaves them alone:
 
 ```sh
-kubectl replace --force -k deploy/k8s
+kubectl delete job/{{ .Container }}
+kubectl apply -k deploy/k8s
 ```
 {{- else }}
 
@@ -112,9 +114,10 @@ Add `-n <namespace>` to both, or set `namespace:` in `kustomization.yaml`.
 {{- if $job }}
 - `job.yaml`: a Job that runs container `app` once to completion
   (`restartPolicy: Never`), as a non-root user with no privilege escalation.
-  Its annotation `argocd.argoproj.io/sync-options: Replace=true` makes Argo CD
-  replace the Job at each release instead of patching it, so each release
-  runs it again; the finished Job and its pod stay, with their logs, until the
+  Its annotation `argocd.argoproj.io/sync-options: Force=true,Replace=true`
+  makes Argo CD delete and recreate the Job at each release instead of
+  patching it (`Replace=true` alone is an update, which the immutable
+  template refuses), so each release runs it again; the finished Job and its pod stay, with their logs, until the
   next release.
 {{- else }}
 - `deployment.yaml`: one replica of container `app`, as a non-root user with

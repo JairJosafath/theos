@@ -360,7 +360,9 @@ func TestK8sManifestsRunsAJob(t *testing.T) {
 		t.Fatal("deploy/k8s/job.yaml not written for a job")
 	}
 	assertContains(t, "deploy/k8s/job.yaml", string(job.Data), []string{
-		"apiVersion: batch/v1\nkind: Job\n", "name: sample-app\n", "argocd.argoproj.io/sync-options: Replace=true",
+		"apiVersion: batch/v1\nkind: Job\n", "name: sample-app\n",
+		// #1628: Replace=true alone is an update, which the immutable template refuses; Force=true recreates.
+		"argocd.argoproj.io/sync-options: Force=true,Replace=true",
 		"backoffLimit: 3", "restartPolicy: Never", "image: sample-app:dev", "runAsNonRoot: true",
 		"envFrom:\n            # Connection settings, one ConfigMap per Connector.\n            - configMapRef:\n                name: sample-app-postgres",
 		"- name: PGPASSWORD\n              valueFrom:\n                secretKeyRef:\n                  name: sample-app-postgres\n                  key: password",
@@ -507,14 +509,15 @@ func TestK8sManifestsWritesItsREADME(t *testing.T) {
 				"`job.yaml` runs the placeholder image `sample-app:dev`",
 				"kubectl wait --for=condition=complete job/sample-app",
 				"kubectl logs job/sample-app",
-				"kubectl replace --force -k deploy/k8s",
+				// #1628: the rerun recreates only the Job, not the whole kustomization.
+				"kubectl delete job/sample-app\nkubectl apply -k deploy/k8s",
 				"`job.yaml`: a Job that runs container `app` once to completion",
-				"`argocd.argoproj.io/sync-options: Replace=true`",
+				"`argocd.argoproj.io/sync-options: Force=true,Replace=true`",
 				"`connector-postgres.yaml`",
 				"which the Job loads through `envFrom`",
 				"runs to completion, so it has no port and no probes",
 			},
-			never: []string{"deployment.yaml", "rollout status", "service.yaml", "GET ", "the Deployment"},
+			never: []string{"deployment.yaml", "rollout status", "service.yaml", "GET ", "the Deployment", "replace --force"},
 		},
 	}
 	for _, c := range templateCombos {
