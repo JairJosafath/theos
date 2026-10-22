@@ -100,7 +100,13 @@ func newFakeArgoCD(c client.WithWatch) *fakeArgoCD {
 // client is the client the Deployer under test gets: every Apply in a
 // watched namespace is followed by the fake's sync of the Application.
 func (f *fakeArgoCD) client() client.Client {
-	return interceptor.NewClient(f.c, interceptor.Funcs{
+	return f.intercept(f.c)
+}
+
+// intercept is c, on the fake's cluster, with each Apply followed by the
+// fake's sync.
+func (f *fakeArgoCD) intercept(c client.WithWatch) client.Client {
+	return interceptor.NewClient(c, interceptor.Funcs{
 		Apply: func(ctx context.Context, c client.WithWatch, obj runtime.ApplyConfiguration,
 			opts ...client.ApplyOption) error {
 			if err := c.Apply(ctx, obj, opts...); err != nil {
