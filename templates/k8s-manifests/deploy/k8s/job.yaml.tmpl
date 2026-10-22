@@ -1,7 +1,9 @@
 {{- /* A job runs the image to completion, once per release: no port, no
-probes, restartPolicy Never. Argo CD replaces the Job on each sync instead of
-patching it (a Job's template is immutable), so a release with a new image
-runs it again; the annotation is inert outside Argo CD. No
+probes, restartPolicy Never. Argo CD deletes and recreates the Job on each sync
+instead of patching it (a Job's template is immutable, so Replace=true alone,
+a kubectl replace, fails the second release with "field is immutable"; Force=true
+makes it kubectl replace --force, #1628), so a release with a new image runs it
+again; the annotation is inert outside Argo CD. No
 ttlSecondsAfterFinished: the argoCD target syncs with selfHeal, which would
 recreate a Job the TTL deleted and run it again every TTL (#1587); the
 finished Job and its pod stay, with their logs, until the next release
@@ -16,9 +18,10 @@ metadata:
     app.kubernetes.io/name: {{ .Container }}
     app.kubernetes.io/part-of: {{ .SoftwareSystem }}
   annotations:
-    # A Job's template is immutable: Argo CD replaces the Job instead of
+    # A Job's template is immutable: Argo CD deletes and recreates the Job
+    # (Force=true; Replace=true alone is an update, which fails) instead of
     # patching it, so each release runs it again. Inert outside Argo CD.
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
 spec:
   backoffLimit: 3
   template:
