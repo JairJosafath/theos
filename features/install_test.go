@@ -35,7 +35,8 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 	}{
 		{"a matching SHA256SUMS installs", sum + "  c4session-linux-amd64\n" + other + "  c4session-linux-arm64\n", true, ""},
 		{"a mismatch is refused", other + "  c4session-linux-amd64\n", false, "checksum mismatch for c4session-linux-amd64"},
-		{"a SHA256SUMS without the binary is refused", other + "  c4session-linux-arm64\n", false, "SHA256SUMS doesn't list c4session-linux-amd64"},
+		{"a SHA256SUMS without the binary is refused", other + "  c4session-linux-arm64\n", false,
+			"SHA256SUMS doesn't list c4session-linux-amd64"},
 		{"no SHA256SUMS is refused", "", false, "no SHA256SUMS next to the binary"},
 	}
 	for _, c := range cases {
@@ -43,13 +44,13 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/downloads/c4session-linux-amd64":
-					fmt.Fprint(w, binary)
+					_, _ = fmt.Fprint(w, binary)
 				case "/downloads/SHA256SUMS":
 					if c.sums == "" {
 						http.NotFound(w, r)
 						return
 					}
-					fmt.Fprint(w, c.sums)
+					_, _ = fmt.Fprint(w, c.sums)
 				default:
 					http.NotFound(w, r)
 				}
