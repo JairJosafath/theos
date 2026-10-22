@@ -544,11 +544,15 @@ describe('server.mjs', () => {
       ],
       ["a Container's checks", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', 'BeforeRelease')]],
       [
-        "a Container's approval of a version at one deploy target (#1163)",
+        "a Container's first approval at one deploy target, after a test of the whole entry as read (#1163, #1461)",
         'PATCH',
         '/containers/orders-api',
         JP,
-        [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 'v1.3.0')],
+        [
+          { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+          { op: 'test', path: '/spec/deploy/1', value: { target: 'prod', after: 'staging', version: 'v1.3.0' } },
+          add('/spec/deploy/1/approved', 'v1.3.0'),
+        ],
       ],
       [
         "a Container's approval after a test of the approval it replaces (#1163)",
@@ -820,9 +824,54 @@ describe('server.mjs', () => {
         403,
       ],
       ["a Container's Standard", 'PATCH', '/containers/orders-api', JP, [add('/spec/standardRef', { name: 'x' })], 403],
-      // The approval of a deploy: one entry's approved, after a test of that entry's target, and nothing else (#1163).
+      // The approval of a deploy: one entry's approved, after a test of that entry's target and of the approval the page showed, and nothing else (#1163, #1461).
       ...[
         ['an approval without the test of its target', [add('/spec/deploy/1/approved', 'v1')]],
+        [
+          // A stale page that showed no approval would overwrite a newer first one (#1461).
+          'a first approval tested by its target alone',
+          [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/1/approved', 'v1')],
+        ],
+        [
+          'a first approval after a test of an entry with an approval',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/1', value: { target: 'prod', approved: 'v0' } },
+            add('/spec/deploy/1/approved', 'v1'),
+          ],
+        ],
+        [
+          'a first approval after a test of an entry without a target',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/1', value: { version: 'v1' } },
+            add('/spec/deploy/1/approved', 'v1'),
+          ],
+        ],
+        [
+          'a first approval after a test of an entry with a field not a string',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/1', value: { target: 'prod', after: 1 } },
+            add('/spec/deploy/1/approved', 'v1'),
+          ],
+        ],
+        [
+          'a first approval after a test of another entry',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy/0', value: { target: 'prod' } },
+            add('/spec/deploy/1/approved', 'v1'),
+          ],
+        ],
+        [
+          'a test of the whole deploy list',
+          [
+            { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+            { op: 'test', path: '/spec/deploy', value: [{ target: 'prod' }] },
+            add('/spec/deploy/1/approved', 'v1'),
+          ],
+        ],
         [
           'an approval at another entry than the one tested',
           [{ op: 'test', path: '/spec/deploy/1/target', value: 'prod' }, add('/spec/deploy/0/approved', 'v1')],

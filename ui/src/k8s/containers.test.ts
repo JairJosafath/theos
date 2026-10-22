@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LiveContainerWriter, checksPatch, retryPatch, standardAnswerPatch, taskManifest } from './containers'
+import {
+  LiveContainerWriter,
+  STALE_APPROVAL,
+  checksPatch,
+  retryPatch,
+  standardAnswerPatch,
+  taskManifest,
+} from './containers'
 import type { Crew } from './types'
 
 function respond(status: number, body: unknown): Response {
@@ -78,15 +85,14 @@ describe('LiveContainerWriter', () => {
     expect(checksPatch('EveryChange')).toEqual([{ op: 'add', path: '/spec/checks', value: 'EveryChange' }])
   })
 
-  it('approves a deploy with a JSON patch of one entry’s approved, after a test of its target (#1163)', async () => {
+  it('approves a deploy with a JSON patch of one entry’s approved, after tests of the entry as read (#1163)', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).approveDeploy(
       'webshop',
       'orders-api',
       1,
-      'prod',
+      { target: 'prod', approved: 'v1.2.0' },
       'v1.3.0',
-      'v1.2.0',
     )
     expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
       method: 'PATCH',
@@ -97,6 +103,43 @@ describe('LiveContainerWriter', () => {
         { op: 'add', path: '/spec/deploy/1/approved', value: 'v1.3.0' },
       ]),
     })
+  })
+
+  it('says the page is out of date when a first approval landed since it read the entry (#1461)', async () => {
+    // The API server's answer to a JSON patch whose test fails.
+    const refused = {
+      kind: 'Status',
+      code: 422,
+      reason: 'Invalid',
+      message: 'the server rejected our request due to an error in our request',
+    }
+    const fetchImpl = vi.fn(async () => respond(422, refused))
+    const writer = new LiveContainerWriter('k8s', fetchImpl)
+    await expect(writer.approveDeploy('webshop', 'orders-api', 1, { target: 'prod' }, 'v1.3.0')).rejects.toThrow(
+      STALE_APPROVAL,
+    )
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api',
+      expect.objectContaining({
+        body: JSON.stringify([
+          { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+          { op: 'test', path: '/spec/deploy/1', value: { target: 'prod' } },
+          { op: 'add', path: '/spec/deploy/1/approved', value: 'v1.3.0' },
+        ]),
+      }),
+    )
+    // The same for a page that showed an approval.
+    await expect(
+      writer.approveDeploy('webshop', 'orders-api', 1, { target: 'prod', approved: 'v1.2.0' }, 'v1.3.0'),
+    ).rejects.toThrow(STALE_APPROVAL)
+  })
+
+  it('passes on the API server’s refusal of the approval itself', async () => {
+    const message = 'Container.c4.factory.io "orders-api" is invalid: spec.deploy[1].approved: Invalid value'
+    const fetchImpl = vi.fn(async () => respond(422, { kind: 'Status', code: 422, message }))
+    await expect(
+      new LiveContainerWriter('k8s', fetchImpl).approveDeploy('webshop', 'orders-api', 1, { target: 'prod' }, '!'),
+    ).rejects.toThrow(message)
   })
 
   it('creates the Task and resolves to the name the API server gave it', async () => {
