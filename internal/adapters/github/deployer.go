@@ -451,13 +451,11 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 	state := ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
 		Reason: run.Reason, Message: run.Message}
 	if packages, ok := d.packages(t); ok && run.Phase == model.DeployPhaseDeployed {
-		// The image is reported where the registry holds the version's tag.
+		// The image is reported where the registry holds the version's tag;
+		// a registry that can't say leaves it out, as the release still runs.
 		repository := imageRepository(t, app)
 		digest, err := oci.Resolve(ctx, packages, repository, run.Version)
-		if err != nil {
-			return ports.DeployState{}, registryError(packages.Host+"/"+repository, err)
-		}
-		if digest != "" {
+		if err == nil && digest != "" {
 			state.Image = packages.Host + "/" + repository + "@" + digest
 		}
 	}

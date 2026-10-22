@@ -74,6 +74,12 @@ func TestGitHubDeployerImage(t *testing.T) {
 		if err != nil || st.Image != want {
 			t.Fatalf("State() = %+v, %v; want image %s", st, err, want)
 		}
+		down := newFakeRegistry()
+		down.server.Close()
+		st, err = githubdeploy.New(gh, githubdeploy.WithImageRegistry(down.host)).State(ctx, tg, s.App, "v1.0.0")
+		if err != nil || st.Phase != model.DeployPhaseDeployed || st.Image != "" {
+			t.Fatalf("State() with GHCR down = %+v, %v; want Deployed, no image", st, err)
+		}
 		puts := ghcr.puts.Load()
 		if err := d.Ship(ctx, tg, s); err != nil {
 			t.Fatalf("Ship() again = %v", err)
