@@ -13,10 +13,8 @@ import (
 	"net/url"
 	"slices"
 
-	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -28,9 +26,8 @@ import (
 const AgentNetworkPolicyName = "c4-agent-sandbox"
 
 // ensureAgentNetwork fences agent sandboxes in the project: no traffic in, and
-// out only DNS, the in-cluster Git hosts of the project's GitProviders, and HTTPS
-// to public addresses (the model API, package registries). The Kubernetes API and
-// every other in-cluster service stay out of reach.
+// out only what fenceEgress allows, the in-cluster Git hosts being those of the
+// project's GitProviders.
 func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v1alpha1.Project) error {
 	var providers c4v1alpha1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
@@ -48,38 +45,11 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	}
 	slices.Sort(gitNamespaces)
 
-	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
-	dns, https := intstr.FromInt32(53), intstr.FromInt32(443)
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			To: []networkingv1.NetworkPolicyPeer{{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-					corev1.LabelMetadataName: metav1.NamespaceSystem}},
-				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
-		},
-		{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{
-				CIDR: "0.0.0.0/0", Except: model.PrivateRanges()}}},
-			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &https}},
-		},
-	}
-	for _, ns := range gitNamespaces {
-		egress = append(egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{
-			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{corev1.LabelMetadataName: ns}},
-		}}})
-	}
-
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
 		Name: AgentNetworkPolicyName, Namespace: project.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
-		policy.Spec = networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelAgentSandbox: agentSandboxValue}},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
-			Egress:      egress,
-		}
+		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, gitNamespaces)
 		return controllerutil.SetControllerReference(project, policy, r.Scheme)
 	})
 	return err
