@@ -9,18 +9,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.22.0
   name: connectors.c4.factory.io
 spec:
-  {{- if .Values.webhook.enabled }}
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: {{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-          namespace: {{ .Release.Namespace }}
-          path: /convert
-      conversionReviewVersions:
-      - v1
-  {{- end }}
+    strategy: None
   group: c4.factory.io
   names:
     categories:

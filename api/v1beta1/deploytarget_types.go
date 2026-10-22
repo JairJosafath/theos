@@ -185,6 +185,8 @@ type DeployTargetCloudFormation struct {
 // DeployTargetArgoCD is an Argo CD whose Applications are the deploys, one
 // per Container: in the operator's cluster, or in the one the Secret's
 // kubeconfig names.
+// +kubebuilder:validation:XValidation:rule="!(has(self.imageRegistryInsecure) && self.imageRegistryInsecure) || has(self.imageRegistry)",message="imageRegistryInsecure needs imageRegistry"
+// +kubebuilder:validation:XValidation:rule="!has(self.imageRepositoryLayout) || has(self.imageRegistry)",message="imageRepositoryLayout needs imageRegistry"
 type DeployTargetArgoCD struct {
 	// namespace is where Argo CD runs and its Applications live.
 	// +kubebuilder:validation:MaxLength=63
@@ -214,6 +216,20 @@ type DeployTargetArgoCD struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*$`
 	// +optional
 	ImageRegistry string `json:"imageRegistry,omitempty"`
+
+	// imageRegistryInsecure speaks plain HTTP to imageRegistry, for a lab
+	// registry without a certificate; unset, the copy uses TLS (#1770).
+	// +optional
+	ImageRegistryInsecure bool `json:"imageRegistryInsecure,omitempty"`
+
+	// imageRepositoryLayout is where the copy goes below imageRegistry's
+	// path: nested, the default, keeps the image's own repository,
+	// <owner>/<name>, as the in-cluster Gitea registry takes it; flat keeps
+	// only <name>, for a registry that refuses a third path segment, such
+	// as Docker Hub (#1770).
+	// +kubebuilder:validation:Enum=nested;flat
+	// +optional
+	ImageRepositoryLayout string `json:"imageRepositoryLayout,omitempty"`
 
 	// gitURL is the Git host's address, scheme://host[:port], as Argo CD
 	// sees it. Set, it replaces the scheme and host of the repository's
