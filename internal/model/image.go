@@ -8,6 +8,8 @@ permission. See the LICENSE file.
 
 package model
 
+import "golang.org/x/mod/semver"
+
 // The states of a release's image, Container.status.image.state
 // (docs/plans/images.md, decision 8).
 const (
@@ -49,24 +51,41 @@ const DeploymentGiteaRelease = "gitea-release"
 // takes by digest (docs/plans/aws-deploy.md, decision 8).
 const FrameworkAWSFargate = "aws-fargate-ts"
 
+// FargateImageMinRef is the first aws-fargate-ts tag whose release workflow
+// builds the image (#1610, with gitea-release v1.7.0). A Container
+// scaffolded from an earlier tag never builds one: scaffold once means its
+// workflow stays as it was rendered (#1797).
+const FargateImageMinRef = "v2.0.0"
+
 // imageBuilders are the catalog choices whose release builds an image: a
 // Deployment, and the Framework and Container type it does so for, "" for
-// any.
-var imageBuilders = []struct{ deployment, framework, typ string }{
-	{DeploymentK8sManifests, "", ""},
-	{DeploymentGiteaRelease, "", TypeOperator},
-	{DeploymentGiteaRelease, FrameworkAWSFargate, ""},
+// any; and, for a Framework that only came to build one at a tag, that
+// tag, which the Container's scaffolded ref must reach.
+var imageBuilders = []struct{ deployment, framework, typ, minRef string }{
+	{DeploymentK8sManifests, "", "", ""},
+	{DeploymentGiteaRelease, "", TypeOperator, ""},
+	{DeploymentGiteaRelease, FrameworkAWSFargate, "", FargateImageMinRef},
 }
 
 // BuildsImage reports whether a release of a Container with Deployment
 // deployment, Framework framework and type typ builds an image the operator
-// pushes.
-func BuildsImage(deployment, framework, typ string) bool {
+// pushes. scaffoldedFrom is the Container's status.scaffoldedFrom, name@ref
+// per template: the scaffolded ref decides, not the catalog's current pin,
+// as scaffold once leaves the repository's release workflow as it was
+// rendered (#1797). A Framework ref that is not a semver tag (a commit), or
+// none, counts as current.
+func BuildsImage(deployment, framework, typ string, scaffoldedFrom []string) bool {
 	for _, b := range imageBuilders {
-		if b.deployment == deployment && (b.framework == "" || b.framework == framework) &&
-			(b.typ == "" || b.typ == typ) {
-			return true
+		if b.deployment != deployment || (b.framework != "" && b.framework != framework) ||
+			(b.typ != "" && b.typ != typ) {
+			continue
 		}
+		if b.minRef != "" {
+			if ref := ScaffoldedRef(scaffoldedFrom, b.framework); semver.IsValid(ref) && semver.Compare(ref, b.minRef) < 0 {
+				continue
+			}
+		}
+		return true
 	}
 	return false
 }

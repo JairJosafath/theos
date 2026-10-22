@@ -191,6 +191,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
+		r.reportBundleCurrent(ctx, &container, status)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
 		// were: the pass would act on a newest release it couldn't read (#1570).
@@ -355,6 +356,22 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
+	// A Bundle changing, or going, is reported on the Ready Containers naming
+	// it, never applied (#1621).
+	bundleContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var containers c4v1alpha1.ContainerList
+		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, c := range containers.Items {
+			if c.Status.Phase != c4v1alpha1.ContainerReady ||
+				(c.Spec.BundleRef != nil && c.Spec.BundleRef.Name == obj.GetName()) {
+				reqs = append(reqs, requestFor(c.Namespace, c.Name))
+			}
+		}
+		return reqs
+	})
 	sourceContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		rel, ok := obj.(*c4v1alpha1.Relationship)
 		if !ok || rel.Spec.Source.Kind != c4v1alpha1.ElementContainer {
@@ -402,7 +419,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Bundle{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1alpha1.DataStore{}, waitingContainers, specChanged()).
 		Named("container").
 		Complete(r)

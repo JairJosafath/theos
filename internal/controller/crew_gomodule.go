@@ -213,7 +213,7 @@ func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1alpha1.Crew,
 		return
 	}
 	log := logf.FromContext(ctx)
-	token, err := r.publishToken(ctx, crew.Namespace, spec.GitHub.TokenSecretRef.Name)
+	token, err := r.publishToken(ctx, crew.Namespace, spec.GitHub.TokenSecretRef.Name, spec.GitHub.Repository)
 	if err != nil || token == "" {
 		return
 	}

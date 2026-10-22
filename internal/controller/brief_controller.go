@@ -145,7 +145,7 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;agents,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects;people;softwaresystems;containers;datastores;relationships,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;tasks,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors;bundles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch

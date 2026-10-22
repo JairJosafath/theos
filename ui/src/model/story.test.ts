@@ -202,7 +202,7 @@ describe('buildContainerDiagram', () => {
       'person:shop-manager',
     ])
     const phases = d.nodes.filter((n): n is ContainerNode => n.role === 'container').map((c) => c.phase)
-    expect(phases.sort()).toEqual(['Failed', 'Pending', 'Ready', 'Scaffolding'])
+    expect(phases.sort()).toEqual(['Failed', 'Pending', 'Ready', 'Ready', 'Scaffolding'])
     // Both sit outside; only the one the factory doesn't build says so.
     const external = Object.fromEntries(
       d.nodes.filter((n): n is SystemNode => n.kind === 'SoftwareSystem').map((n) => [n.name, n.external]),
@@ -267,7 +267,19 @@ describe('sessions', () => {
     expect(sessions.map((s) => s.status?.phase)).toEqual(['Active', 'Stale'])
     const api = containerNodes(data, 'webshop-core').find((c) => c.name === 'orders-api')!
     expect(api.activeSessions).toBe(1)
-    expect(containerNodes(data).map((c) => c.name)).toEqual(['catalog-api', 'order-worker', 'orders-api', 'storefront'])
+    expect(containerNodes(data).map((c) => c.name)).toEqual([
+      'catalog-api',
+      'inventory-api',
+      'order-worker',
+      'orders-api',
+      'storefront',
+    ])
+  })
+
+  it('titles a bundled Container’s framework from status.bundle (#1624)', () => {
+    const data = demoStory(NOW)
+    const api = containerNodes(data, 'webshop-core').find((c) => c.name === 'inventory-api')!
+    expect(api.framework).toBe('Python, FastAPI (uv)')
   })
 })
 

@@ -225,6 +225,9 @@ type GitHubShipmentFacts struct {
 	// Type, Deployment and Framework are the Container's type, Deployment
 	// and Framework.
 	Type, Deployment, Framework string
+	// ScaffoldedFrom is the Container's status.scaffoldedFrom, name@ref per
+	// template, which says whether its release builds an image (#1797).
+	ScaffoldedFrom []string
 	// Files are the names of the release's files on the Git host.
 	Files []string
 	// Source says the target publishes the source and the release has one.
@@ -258,7 +261,7 @@ func GitHubShipment(f GitHubShipmentFacts) (plan GitHubShipmentPlan, problem str
 			plan.Files = append(plan.Files, name)
 		}
 	}
-	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Framework, f.Type)
+	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Framework, f.Type, f.ScaffoldedFrom)
 	if !plan.Source && len(plan.Files) == 0 && !plan.Image {
 		return plan, GitHubNothingToPublish
 	}

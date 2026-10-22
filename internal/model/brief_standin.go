@@ -24,8 +24,9 @@ var (
 // round that plans the idea adds one Container named after the Brief, on the
 // catalog's first Framework and type a Deployment ships and a Standard fits,
 // with both, else on its first Framework and that Framework's first type, with
-// the first Standard that fits both, in the first Internal SoftwareSystem, and
-// files one issue for it; a Container with a Deployment is released
+// the first Standard that fits both (on the first Bundle that supports that
+// type instead, when there is one, #1622), in the first Internal
+// SoftwareSystem, and files one issue for it; a Container with a Deployment is released
 // (plan/releases.yaml), so its Crew prepares, tags and ships a release once
 // the issue is merged; each new prompt is one issue for the Brief's Container, else the model's first, and so is each
 // request of model/requests.yaml, taken in plan/requests.yaml (a request it
@@ -97,21 +98,24 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 				system))
 		}
 		container = standInName(objects, base)
-		objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
+		added := PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
 			SoftwareSystem: system, Type: kind, GitProvider: provider[1], Framework: framework, Standard: standard,
-			Deployment: deployment})
+			Deployment: deployment}
+		bundle, onBundle := standInBundle(catalog, kind)
+		if onBundle {
+			// #1622: a Bundle that supports the type comes before the sides, as
+			// the guide tells the planner (rule 2).
+			added.Bundle, added.Framework, added.Standard, added.Deployment = bundle.Name, "", "", ""
+			deployment = bundle.Deployment
+		}
+		objects = append(objects, added)
 		with := ""
 		if standard != "" {
 			with = " with the Standard " + standard
 		}
-		if deployment == "" {
-			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s: "+
-				"no Deployment ships a Framework of the catalog, so it takes the first and reads nothing else.",
-				container, kind, framework, with))
-		} else {
-			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s and the "+
-				"Deployment %s: it takes the catalog's first Framework a Deployment ships and reads nothing else.",
-				container, kind, framework, with, deployment),
+		choices = append(choices, standInContainerChoice(container, kind, framework+with, deployment, bundle.Name))
+		if deployment != "" {
+			choices = append(choices,
 				fmt.Sprintf("The stand-in planner releases %s: once its issue is merged, its Crew prepares and tags "+
 					"the release, and %s ships it.", container, deployment))
 			files[PlanReleasesFile] = fmt.Sprintf("containers: [%s]\n", container)
@@ -221,6 +225,35 @@ func standInCatalog(catalog catalogOut) (framework, kind, standard, deployment s
 		}
 	}
 	return "", "", "", ""
+}
+
+// standInContainerChoice says why the stand-in put container, a kind, on
+// bundle when that is set, else on framework and its Deployment.
+func standInContainerChoice(container, kind, framework, deployment, bundle string) string {
+	switch {
+	case bundle != "":
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on the Bundle %s: "+
+			"it takes the first Bundle that supports the type and reads nothing else.", container, kind, bundle)
+	case deployment == "":
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s: "+
+			"no Deployment ships a Framework of the catalog, so it takes the first and reads nothing else.",
+			container, kind, framework)
+	default:
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s and the "+
+			"Deployment %s: it takes the catalog's first Framework a Deployment ships and reads nothing else.",
+			container, kind, framework, deployment)
+	}
+}
+
+// standInBundle is the catalog's first Bundle that supports kind, if any: the
+// stand-in names it in place of the sides (#1622).
+func standInBundle(catalog catalogOut, kind string) (bundleOut, bool) {
+	for _, b := range catalog.Bundles {
+		if slices.Contains(b.SupportedTypes, kind) {
+			return b, true
+		}
+	}
+	return bundleOut{}, false
 }
 
 // standInStandard is the catalog's first Standard that fits framework and

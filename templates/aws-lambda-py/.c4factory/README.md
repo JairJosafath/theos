@@ -72,11 +72,22 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   `AlarmTopicArn`. `infra/api_stack.test.ts` asserts it with
   `Template.fromStack` for both tiers. `infra/stacks.ts`, `infra/alarms.ts`,
   `infra/backups.ts` and `infra/operations.ts` are aws-lambda-ts's.
+- **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
+  `DATA_STORES`: one entry per Connector of a DataStore the Container's
+  Relationships name that this Framework knows (`dynamodb`, whose
+  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  stack calls each entry with the function and the tier's `TIER_RULES`, so the
+  Connector makes its table, grants the function its calls and hands it the
+  table's name; the stack alarms on the table like its own and backs it up
+  by ARN. The `Items` table stays beside it as the starter's example; the
+  README says new data goes in the DataStore's table. `infra/connectors.ts`
+  is aws-lambda-ts's.
 - **Writes:** `pyproject.toml`, `uv.lock`, `.python-version`, `app/`,
   `tests/`, `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `infra/stacks.ts`, `infra/api_stack.ts`,
   `infra/api_stack.test.ts`, `infra/alarms.ts`, `infra/backups.ts`,
-  `infra/operations.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
+  `infra/operations.ts`, `infra/connectors.ts`, `README.md`, `CHANGELOG.md`,
+  `.gitignore`
 - **Python project:** `name` is the Container, version `0.0.1`,
   `requires-python >=3.14` (`.python-version` 3.14, which uv installs on
   first use), `[tool.uv] package = false`: nothing builds a wheel.
@@ -123,6 +134,8 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   v1.3.0 writes the HTTP API stage's access log as a JSON object per
   request (`ACCESS_LOG_FIELDS` in `infra/api_stack.ts`), where it wrote the
   Common Log Format, so Logs Insights queries it by field (#1420).
+  v1.4.0 renders `infra/connectors.ts` and connects the function to each
+  `dynamodb` DataStore's table, alarming on it and backing it up (#1740).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`,
   the Go, Node and uv toolchain CI and agents use, with ruff, Python, ESLint
   and Prettier set up.

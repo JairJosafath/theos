@@ -125,12 +125,12 @@ func TestAWSLambdaTSWithoutConnectorsHasNoDataStores(t *testing.T) {
 	}
 }
 
-// aws-fargate-ts and aws-ec2-ts (service) wire the Connector as aws-lambda-ts
-// does (#1742): infra/connectors.ts lists it with it, and nothing without it.
-func TestDynamoDBConnectorConnectsToAWSServices(t *testing.T) {
-	for _, framework := range []string{"aws-fargate-ts", "aws-ec2-ts"} {
+// aws-lambda-py and aws-lambda-go wire the Connector as aws-lambda-ts does
+// (#1740): infra/connectors.ts lists it with it, and nothing without it.
+func TestDynamoDBConnectorConnectsToOtherAWSLambdas(t *testing.T) {
+	for _, framework := range []string{"aws-lambda-py", "aws-lambda-go"} {
 		t.Run(framework, func(t *testing.T) {
-			with := renderAWS(t, model.TypeService, framework, "dynamodb")
+			with := renderAWS(t, model.TypeFunction, framework, "dynamodb")
 			if _, ok := with.Files["infra/connector_dynamodb.ts"]; !ok {
 				t.Error("the dynamodb Connector writes no infra/connector_dynamodb.ts")
 			}
@@ -147,7 +147,7 @@ func TestDynamoDBConnectorConnectsToAWSServices(t *testing.T) {
 				t.Error("README.md doesn't say new data goes in the DataStore's table")
 			}
 
-			without := renderAWS(t, model.TypeService, framework)
+			without := renderAWS(t, model.TypeFunction, framework)
 			if _, ok := without.Files["infra/connector_dynamodb.ts"]; ok {
 				t.Errorf("%s alone writes infra/connector_dynamodb.ts", framework)
 			}
