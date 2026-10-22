@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,11 +23,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
 )
 
 var webhookCertStart = time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
@@ -226,6 +229,78 @@ func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
 	if got.Spec.Conversion.Webhook != nil {
 		t.Error("a webhook stanza was written beside strategy None")
 	}
+}
+
+// #1830: a CRD converts by the operator's webhook only while its kind's
+// versions differ in shape; the mark is the annotation
+// c4.factory.io/conversion: webhook on the base, from a +kubebuilder:metadata
+// marker on the kind's hub type. A kind whose versions' schemas match carries
+// no mark, and one whose schemas differ carries it: the change that first
+// makes a shape differ switches the kind to the webhook.
+func TestConversionMarkFollowsTheShapes(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var crd apiextensionsv1.CustomResourceDefinition
+		if err := yaml.Unmarshal(raw, &crd); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if len(crd.Spec.Versions) < 2 {
+			t.Errorf("%s: serves %d version(s), want v1alpha1 and v1beta1", crd.Name, len(crd.Spec.Versions))
+			continue
+		}
+		differs := false
+		for _, v := range crd.Spec.Versions[1:] {
+			if !equality.Semantic.DeepEqual(shapeOf(t, v.Schema), shapeOf(t, crd.Spec.Versions[0].Schema)) {
+				differs = true
+			}
+		}
+		marked := crd.Annotations["c4.factory.io/conversion"] == "webhook"
+		switch {
+		case differs && !marked:
+			t.Errorf("%s: its versions differ in shape but its hub type lacks the marker "+
+				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+		case marked && !differs:
+			t.Errorf("%s: marked c4.factory.io/conversion: webhook, but its versions share a shape: "+
+				"drop the marker, strategy None serves them (#1830)", crd.Name)
+		}
+	}
+}
+
+// shapeOf is a version's schema with every description dropped: a doc
+// comment that differs between the versions is no difference in shape.
+func shapeOf(t *testing.T, s *apiextensionsv1.CustomResourceValidation) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	var strip func(v any)
+	strip = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			delete(v, "description")
+			for _, c := range v {
+				strip(c)
+			}
+		case []any:
+			for _, c := range v {
+				strip(c)
+			}
+		}
+	}
+	strip(m)
+	return m
 }
 
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them

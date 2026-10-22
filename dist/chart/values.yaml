@@ -183,7 +183,10 @@ certManager:
 
 ## Webhook server configuration. The operator issues its own certificate
 ## into the Secret <release>-webhook-cert and patches the CA into the CRDs
-## that convert by webhook; cert-manager is not needed.
+## that convert by webhook; cert-manager is not needed. A CRD converts by
+## webhook only while its kind's versions differ in shape (none today); the
+## rest convert by the API server, and a kind that needs the webhook refuses
+## to render without it.
 ##
 webhook:
   enabled: true

@@ -39,7 +39,11 @@ const FieldsAnnotation = "c4.factory.io/%s-fields"
 type conversionHook func(obj map[string]any) error
 
 // toHubHooks and fromHubHooks hold a kind's hooks, by kind. None yet:
-// v1beta1 changes no shape.
+// v1beta1 changes no shape. The change that adds a kind's first hook also
+// marks its hub type +kubebuilder:metadata:annotations="c4.factory.io/conversion=webhook",
+// which switches that CRD alone from strategy None to the webhook (#1830,
+// docs/plans/api-versions.md, decision 3); a test in internal/controller
+// keeps the mark and the schemas in step.
 var toHubHooks, fromHubHooks = map[string]conversionHook{}, map[string]conversionHook{}
 
 func convertToHub(src runtime.Object, dst conversion.Hub) error {
