@@ -429,11 +429,32 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		"DIGEST: ${{ needs.image.outputs.digest }}", "buildctl-daemonless.sh build",
 		"platform=linux/amd64,linux/arm64", `${REPOSITORY##*/}-$TAG.oci.tar`,
 		"an operator's release needs one", `host=${SERVER_URL#*://}`,
-		`tr A-Z a-z)@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
+		`repository=$(printf '%s' "$REPOSITORY" | tr A-Z a-z)`,
+		`image="${host%%/*}/$repository@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
 		// #1581: the registry is at the host's root, whatever path ROOT_URL
 		// has, and a digest that is not sha256: plus 64 hex fails the step.
-		`image="${host%%/*}/`, `grep -Eq '^sha256:[0-9a-f]{64}$' ||`,
+		`grep -Eq '^sha256:[0-9a-f]{64}$' ||`,
+		// #1583: the operator pushes a tag once, so a rerun asks the registry
+		// for the tag's digest first (HEAD on the manifest, the job's token)
+		// and names it when it holds one; 404 names the digest just built,
+		// anything else fails the step.
+		`curl -sS -I -o /dev/null -D "$headers" -w '%{http_code}' -u "x:$TOKEN"`,
+		`"${SERVER_URL%%://*}://${host%%/*}/v2/$repository/manifests/$TAG"`,
+		`held=$(tr -d '\r' < "$headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }')`,
+		"DIGEST=$held ;;", "404) echo \"The registry does not hold $TAG yet",
+		"*) echo \"Asking the registry for $TAG failed with HTTP $code", "exit 1 ;;",
 	})
+	// #1583: the lookup comes after the digest guard and before make dist,
+	// so make dist runs with the digest the registry holds.
+	for _, pair := range [][2]string{
+		{`grep -Eq '^sha256:[0-9a-f]{64}$' ||`, `/v2/$repository/manifests/$TAG`},
+		{`/v2/$repository/manifests/$TAG`, `DIGEST=$held ;;`},
+		{`DIGEST=$held ;;`, `make dist VERSION="$TAG" IMG="$image"`},
+	} {
+		if strings.Index(string(f.Data), pair[0]) > strings.Index(string(f.Data), pair[1]) {
+			t.Errorf("operator %s runs %q after %q (#1583)", workflow, pair[0], pair[1])
+		}
+	}
 	if strings.Contains(string(f.Data), `image="${host%/}/`) {
 		t.Errorf("operator %s keeps ROOT_URL's path in the image host (#1581)", workflow)
 	}
@@ -452,7 +473,7 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		t.Fatalf("%s not written for a CLI; files: %v", workflow, result.Files.Paths())
 	}
 	assertContains(t, "cli "+workflow, string(f.Data), []string{`make dist VERSION="$TAG"`})
-	for _, never := range []string{"runs-on: image", "needs:", "IMG=", "DIGEST", "buildctl"} {
+	for _, never := range []string{"runs-on: image", "needs:", "IMG=", "DIGEST", "buildctl", "/v2/"} {
 		if strings.Contains(string(f.Data), never) {
 			t.Errorf("cli %s contains %q, an operator's image job:\n%s", workflow, never, f.Data)
 		}
@@ -672,7 +693,21 @@ func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
 		},
 		"go cli": {
 			want:  []string{"`SHA256SUMS`", "make dist VERSION=v0.0.0-test\n"},
-			never: []string{"pyproject.toml", "package.json"},
+			never: []string{"pyproject.toml", "package.json", "`image` job", "re-push the image"},
+		},
+		// #1583: an operator's guide says what the image job failing means,
+		// that make dist failing leaves the image archive attached, and
+		// that moving the tag does not re-push an image the registry holds.
+		"kubebuilder operator": {
+			want: []string{"`install.yaml` naming that image by digest",
+				"runner labelled `image`", "a tag's image is never replaced",
+				"- **The `image` job failed** (no `Dockerfile` at the root",
+				"nothing was attached and no image was\n  pushed",
+				"nothing was attached but the\n  image archive, which the factory pushes to the registry",
+				"Moving the tag does not re-push the image",
+				"`install.yaml` names the digest the registry holds",
+				"make dist VERSION=v0.0.0-test\n"},
+			never: []string{"pyproject.toml", "package.json", "nothing was attached."},
 		},
 	}
 	for _, c := range templateCombos {
