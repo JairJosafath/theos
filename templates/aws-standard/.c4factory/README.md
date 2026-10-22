@@ -7,7 +7,9 @@ Prettier), go-standard's Go rules for a Go function, CDK Nag's AWS Solutions
 and Serverless checks on the CDK app, cfn-lint on what it synthesizes, the Standard's own
 assertions on every stack, the agent guide and role guides, offline style and
 Well-Architected digests, issue and pull request templates, and the
-`make check` contract CI runs. Nothing deploys, bootstraps or calls AWS.
+`make check` contract CI runs. Nothing in the repository deploys, bootstraps
+or calls AWS: the factory's operator ships each release to a `cloudFormation`
+DeployTarget (see *Deploying*).
 
 Copied from: ts-standard v1.5.0, the TypeScript rules and `principles.md`. A
 drift test in C4 Factory's `internal/scaffold` keeps the shared files equal:
@@ -496,6 +498,88 @@ byte for byte.
   Framework's `tsconfig.json`, `vitest.config.mts` and `cdk.json`, which
   decide what the type check and tests cover and which CDK behaviour the app
   gets; `.gitea/` is always protected.
+
+## Deploying
+
+A Container on this Standard ships to an AWS account through a
+`cloudFormation` DeployTarget: `region`, and as a guard an optional
+twelve-digit `account` the credential must belong to, with a Secret of
+`accessKeyId`, `secretAccessKey` and an optional `sessionToken`. CI
+synthesizes the CDK app and the release carries the cloud assembly; the
+operator publishes its assets and deploys each stack as one CloudFormation
+change set, through the CDK bootstrap's roles. Its Framework must deploy
+itself and the Container must name the `gitea-release` Deployment; else the
+Container is `Incompatible` on that target.
+
+**What the factory needs in the account:**
+
+- The CDK bootstrap (`CDKToolkit`, qualifier `hnb659fds`) at the version the
+  release's assembly requires (`requiresBootstrapStackVersion` in its
+  `manifest.json`); the operator embeds bootstrap template v32. When the
+  bootstrap is missing or older and the credential may create it, the
+  operator does, with `AdministratorAccess` as the execution policy, as
+  `cdk bootstrap` does. When it may not, the deploy stops with
+  `PrerequisiteMissing` under *Needs you* and the command to run:
+  `cdk bootstrap aws://<account>/<region>`. A production account's owner
+  bootstraps it themselves, with a scoped
+  `--cloudformation-execution-policies`, and gives the factory only the
+  policy below.
+- A credential with only this policy (replace `<account>` and `<region>`):
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AssumeTheBootstrapRoles",
+        "Effect": "Allow",
+        "Action": "sts:AssumeRole",
+        "Resource": "arn:aws:iam::<account>:role/cdk-hnb659fds-*-role-<account>-<region>"
+      },
+      {
+        "Sid": "ReadTheStacks",
+        "Effect": "Allow",
+        "Action": ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents"],
+        "Resource": "*"
+      },
+      {
+        "Sid": "ReadTheBootstrapVersion",
+        "Effect": "Allow",
+        "Action": "ssm:GetParameter",
+        "Resource": "arn:aws:ssm:<region>:<account>:parameter/cdk-bootstrap/*"
+      }
+    ]
+  }
+  ```
+
+  The roles it assumes are the bootstrap's: the deploy role for
+  CloudFormation, the file- and image-publishing roles for S3 and ECR, and
+  the cfn-exec role each stack runs as. Their sessions are named
+  `c4factory-<namespace>-<target>`, so CloudTrail shows which target acted.
+- For a service Framework (`aws-fargate-ts`, `aws-static-site-ts`), the ACM
+  certificate behind the stack's `CertificateArn` parameter, set in the
+  target's `parameters`, and the DNS record pointing its domain at
+  `EntryPoint`.
+
+**What the factory recommends and never creates:** an account per tier
+(development and production apart); CloudTrail to a bucket kept apart;
+GuardDuty; Security Hub; AWS Config; AWS Budgets with an alert; and the
+`STANDARD_TAGS` (`c4factory:project`, `c4factory:system`,
+`c4factory:container`) activated as cost allocation tags in Billing. Each
+Container's runbook lists them under *What the account provides*.
+
+**How a person checks the first deploy:**
+
+1. The bootstrap roles trust the account (or the account the credential
+   lives in, given with `cdk bootstrap --trust`):
+   `aws iam get-role --role-name cdk-hnb659fds-deploy-role-<account>-<region>`
+   and read its `AssumeRolePolicyDocument`.
+2. The template was published where the change set read it: the stack's
+   newest change set (`aws cloudformation list-change-sets --stack-name
+   <stack>`, then `describe-change-set`) is `c4factory-` and the version, and the
+   template and assets are objects in `cdk-hnb659fds-assets-<account>-<region>`.
+3. The app answers at the stack's `EntryPoint` output, which the
+   Container's `status.deploys[]` shows as the URL.
 
 ## How a template works
 
