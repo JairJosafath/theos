@@ -761,7 +761,7 @@ catalog:
         supportedTypes: [function, service, static-site, worker, job]
         supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts, aws-queue-ts, aws-schedule-ts, aws-event-ts]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
-        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, infra/standard.test.ts, tsconfig.json, vitest.config.mts, cdk.json]
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, infra/standard.test.ts, infra/dist.ts, infra/dist.test.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
@@ -793,7 +793,7 @@ catalog:
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
-        supportedTypes: [cli, extension, operator]
+        supportedTypes: [cli, extension, operator, function, service, static-site]
     - kind: Connector
       name: postgres
       ref: v1.2.0

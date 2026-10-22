@@ -97,27 +97,33 @@ var templateCombos = []struct {
 	{"aws lambda function", "function", []side{
 		{model.SideFramework, "aws-lambda-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws lambda function with dynamodb", "function", []side{
 		{model.SideFramework, "aws-lambda-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 		{model.SideConnector, "dynamodb"},
 	}},
 	{"aws ec2 service", "service", []side{
 		{model.SideFramework, "aws-ec2-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws fargate service", "service", []side{
 		{model.SideFramework, "aws-fargate-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws lambda function in go", "function", []side{
 		{model.SideFramework, "aws-lambda-go"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws python lambda function", "function", []side{
 		{model.SideFramework, "aws-lambda-py"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws queue consumer", "worker", []side{
 		{model.SideFramework, "aws-queue-ts"},
@@ -134,6 +140,7 @@ var templateCombos = []struct {
 	{"aws static site", "static-site", []side{
 		{model.SideFramework, "aws-static-site-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"hello", "cli", []side{
 		{model.SideFramework, "hello"},

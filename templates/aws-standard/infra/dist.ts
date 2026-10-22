@@ -8,7 +8,15 @@
 // Docker image asset stays in its assets.json and is not shipped. dist/ holds
 // a .gitignore of its own, so git never sees it. Nothing here
 // deploys or calls AWS. Changing this file is the Standard's job, not a task's.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateRawSync } from 'node:zlib';
@@ -78,14 +86,18 @@ export function writeDist(tiers: readonly TierAssembly[], out: string): void {
       }
       const type = stringAt(artifact, 'type', `${where}: artifact ${id}`);
       if (type === 'cdk:cloud-assembly') {
-        throw new Error(`${where}: artifact ${id} is a nested assembly (a Stage), which a release can't ship.`);
+        throw new Error(
+          `${where}: artifact ${id} is a nested assembly (a Stage), which a release can't ship.`,
+        );
       }
       if (type === 'cdk:tree') {
         // The construct tree is for tools, not for a deploy.
         Reflect.deleteProperty(artifacts, id);
         continue;
       }
-      const key = { 'aws:cloudformation:stack': 'templateFile', 'cdk:asset-manifest': 'file' }[type];
+      const key = { 'aws:cloudformation:stack': 'templateFile', 'cdk:asset-manifest': 'file' }[
+        type
+      ];
       if (key === undefined) {
         continue;
       }
@@ -113,9 +125,14 @@ export function writeDist(tiers: readonly TierAssembly[], out: string): void {
  * The asset manifest at `file` with each file asset's source path rewritten
  * to its flat name in `out`, where each asset is written once per hash.
  */
-function flattenAssets(file: string, dir: string, out: string, renamed: ReadonlyMap<string, string>): Json {
+function flattenAssets(
+  file: string,
+  dir: string,
+  out: string,
+  renamed: ReadonlyMap<string, string>,
+): Json {
   const assets = readJson(file);
-  const files = assets.files ?? {};
+  const files = assets['files'] ?? {};
   if (!isRecord(files)) {
     throw new Error(`${file}: files is not an object.`);
   }
@@ -125,13 +142,13 @@ function flattenAssets(file: string, dir: string, out: string, renamed: Readonly
       throw new Error(`${where} is not an object.`);
     }
     const source = recordAt(asset, 'source', where);
-    if (source.executable !== undefined) {
+    if (source['executable'] !== undefined) {
       throw new Error(`${where} is built by a command, which a release can't run.`);
     }
     const from = stringAt(source, 'path', where);
     const template = renamed.get(from);
     if (template !== undefined) {
-      source.path = template;
+      source['path'] = template;
       continue;
     }
     const full = path.join(dir, from);
@@ -142,14 +159,14 @@ function flattenAssets(file: string, dir: string, out: string, renamed: Readonly
       if (!existsSync(path.join(out, flat))) {
         writeFileSync(path.join(out, flat), zipDirectory(full));
       }
-      source.path = flat;
-      source.packaging = 'file';
+      source['path'] = flat;
+      source['packaging'] = 'file';
     } else {
       const flat = `asset.${hash}${path.extname(from)}`;
       if (!existsSync(path.join(out, flat))) {
         copyFileSync(full, path.join(out, flat));
       }
-      source.path = flat;
+      source['path'] = flat;
     }
   }
   return assets;
