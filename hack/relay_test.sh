@@ -40,7 +40,7 @@ said() { local _; for _ in $(seq 600); do grep -qs -- "$1" "$2" && return 0; sle
 # session its idle watch when claude ends at once, leave $T.
 { for _ in $(seq 100); do (sleep 9) & kill $!; wait $!; done; } 2>/dev/null
 check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" kept
-# The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
+# The defaults, from today's measurements (docs/dev/devices.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 15"
 check "defaults: RELAY_MODEL is opus (#1727)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" opus
@@ -149,7 +149,7 @@ echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
 rm -f "$DIR"/disk-low-*
 : >"$LOG"
 MEM_WAIT=1 disk admit
-check "disk: under WSL it says the .vhdx never shrinks (#1635)" "$(grep -c '.vhdx files never shrink.*docs/dev/testenv.md' "$LOG")" 1
+check "disk: under WSL it says the .vhdx never shrinks (#1635)" "$(grep -c '.vhdx files never shrink.*docs/dev/devices.md' "$LOG")" 1
 MIN_FREE_GB=10 disk admit; check "disk: RELAY_MIN_FREE_GB lowers the minimum" $? 0
 rm -f "$DIR/admitted" "$DIR"/disk-low-*
 printf '/mnt/c/wsl /mnt/c 12\n/mnt/c/docker /mnt/c 12\n' >"$DF"

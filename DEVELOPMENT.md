@@ -82,7 +82,7 @@ runner itself) is not tested before release.
 | `.dev/kube/config` | Contexts of the Kind clusters created from this folder |
 | `.dev/zsh/` | oh-my-zsh, plugins and shell history |
 | `.dev/claude/` | Claude Code login, settings and history for this project |
-| `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, where the model proxy reads it ([docs/dev/testenv.md](docs/dev/testenv.md)) |
+| `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, where the model proxy reads it ([docs/dev/devices.md](docs/dev/devices.md#the-agents-claude-token)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
 | `bin/` | What `make build` writes (`bin/manager`) |
 
@@ -133,7 +133,7 @@ What lives outside the folder belongs to the machine, not the project:
 - **`./dev: Permission denied`.** Run `chmod +x dev` once (or `bash dev setup`).
 - **Runners offline: CI runs wait in the queue.** While the repository variable
   `RUNS_ON` is `self-hosted`, every job runs on the runners in containers on
-  the device's Docker (`make gh-runner`, [docs/dev/testenv.md](docs/dev/testenv.md)).
+  the device's Docker (`make gh-runner`, [docs/dev/devices.md](docs/dev/devices.md#github-actions-on-self-hosted-runners)).
   On WSL that Docker is Docker Desktop, so the runners need it running, with
   WSL integration on for this distro (Settings > Resources > WSL integration).
   They stop when it stops and come back when it starts, and GitHub has no other

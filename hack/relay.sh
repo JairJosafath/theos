@@ -643,7 +643,7 @@ trim_caches() { "$CODE/hack/prune-caches.sh" 2>&1 | while read -r l; do log "$l"
 disk_wait() {
   local p free low= mark now said= hint=
   grep -qi microsoft "$OSRELEASE" 2>/dev/null &&
-    hint="; under WSL the .vhdx files never shrink, and we no longer compact them: docs/dev/testenv.md, \"Disk space on WSL\""
+    hint="; under WSL the .vhdx files never shrink, and we no longer compact them: docs/dev/devices.md, \"Disk space on WSL\""
   now=$(date +%s)
   while IFS=$'\t' read -r p free; do
     low=1

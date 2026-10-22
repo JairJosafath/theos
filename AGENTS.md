@@ -17,6 +17,7 @@ task. Read the rest when the task needs it:
 | set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | run, pause or change the relay (workers, triage, the maintainer) | [docs/dev/testenv.md](docs/dev/testenv.md) |
+| tune a device (memory, disk, CPU, the cluster pool, the self-hosted runners) | [docs/dev/devices.md](docs/dev/devices.md) |
 | watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
 | act as the maintainer, decide who decides, or review and clean up what the relay's agents did | [GOVERNANCE.md](GOVERNANCE.md) and the `maintainer` skill |
 | triage a `status/proposed` issue | the `triage` skill |
@@ -266,7 +267,7 @@ when.
   heavy jobs (`make check`, `test`, `lint`, `vulncheck`, `docker-build`, `deploy`, `e2e`) are
   not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
   that waits for one prints who holds them, and that wait is not a hang;
-  [docs/dev/testenv.md](docs/dev/testenv.md) has the numbers.
+  [docs/dev/devices.md](docs/dev/devices.md) has the numbers.
 - **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
   device shares; one session's copies and caches filled it and failed every
   `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the

@@ -461,7 +461,7 @@ gitea:
     storageClassName: ""
     size: 1Gi
   ## Its share of a busy node: at less CPU a CI build left it too little to
-  ## answer its probes (docs/dev/testenv.md, "CPU on the cluster device").
+  ## answer its probes (docs/dev/devices.md, "CPU on the cluster device").
   ##
   resources:
     requests:

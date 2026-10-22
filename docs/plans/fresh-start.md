@@ -250,10 +250,13 @@ and every empty cell has an issue number.
 version headings; the old text to `docs/design-history.md`; every anchor
 link still resolves; a review pass before `land` (over 400 lines).
 
-### Step 8: the test environment doc (#1432, relay, after #1431)
+### Step 8: the test environment doc (done)
 
 The device tuning moves to `docs/dev/devices.md`; testenv.md under 700
-lines.
+lines (#1432). The tuning alone left it over 1,000, so what else lives on
+one device went with it: the shared caches, the Claude token file, the Kind
+cluster pool, the relay watch's install and the self-hosted runners.
+testenv.md keeps a pointer where each was.
 
 ### Step 9: plans off the path (done)
 
