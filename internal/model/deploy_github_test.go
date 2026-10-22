@@ -139,6 +139,28 @@ func TestGitHubImage(t *testing.T) {
 	}
 }
 
+// #1605: a github target's url moves its API, uploads, site and registry to
+// the GitHub Enterprise Server; unset, they are github.com's and GHCR.
+func TestGitHubHostsOf(t *testing.T) {
+	tests := []struct {
+		url  string
+		want GitHubHosts
+	}{
+		{"", GitHubHosts{Web: "https://github.com", Registry: "ghcr.io"}},
+		{"https://ghe.example.com", GitHubHosts{API: "https://ghe.example.com/api/v3",
+			Upload: "https://ghe.example.com/api/uploads", Web: "https://ghe.example.com",
+			Registry: "containers.ghe.example.com"}},
+		{"https://ghe.example.com:8443/", GitHubHosts{API: "https://ghe.example.com:8443/api/v3",
+			Upload: "https://ghe.example.com:8443/api/uploads", Web: "https://ghe.example.com:8443",
+			Registry: "containers.ghe.example.com:8443"}},
+	}
+	for _, tt := range tests {
+		if got := GitHubHostsOf(tt.url); got != tt.want {
+			t.Errorf("GitHubHostsOf(%q) = %+v, want %+v", tt.url, got, tt.want)
+		}
+	}
+}
+
 func TestGitHubImageNotes(t *testing.T) {
 	const image = "ghcr.io/acme/shop/orders-api@sha256:abc"
 	tests := []struct {

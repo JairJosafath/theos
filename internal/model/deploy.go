@@ -77,6 +77,9 @@ const DeployMemberGitHub = "github"
 const (
 	// GitHubSettingRepository is the repository, owner/name.
 	GitHubSettingRepository = "repository"
+	// GitHubSettingURL is a GitHub Enterprise Server's https://host, unset
+	// for github.com (GitHubHostsOf).
+	GitHubSettingURL = "url"
 	// GitHubSettingTagPrefix goes before the version in the GitHub tag.
 	GitHubSettingTagPrefix = "tagPrefix"
 	// GitHubSettingLatest "false" leaves the repository's Latest where it is;

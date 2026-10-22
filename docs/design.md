@@ -664,8 +664,13 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   fine-grained token for the one repository, or a GitHub App's `appId`,
   `installationId` and `privateKey`, from which the operator mints
   installation tokens; `packagesToken` is a classic token with
-  `write:packages`, since GHCR takes neither. GitHub Enterprise (a `url` on
-  the member) and GitLab (its own member) come later.
+  `write:packages`, since GHCR takes neither. A GitHub Enterprise Server
+  target sets the member's `url` (#1605): the server's address alone,
+  `https://host[:port]`, with no path, and never github.com; the operator
+  calls its API at `/api/v3` and uploads at `/api/uploads`, and copies the
+  image to `containers.<host>` (the server's container registry, which
+  needs subdomain isolation) in place of `ghcr.io`. The credentials and
+  calls are the same. GitLab (its own member) comes later.
 - **Kubernetes targets** (#1072, [plans/k8s-deploy.md](plans/k8s-deploy.md)):
   an `argoCD` target names Argo CD's namespace and project and the
   destination; the operator writes one Argo CD `Application` per Container

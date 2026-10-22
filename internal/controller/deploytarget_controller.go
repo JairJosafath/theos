@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,7 +162,11 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 	if gh := dt.Spec.GitHub; gh != nil {
 		target.Member = model.DeployMemberGitHub
 		target.Settings = map[string]string{model.GitHubSettingRepository: gh.Repository}
-		return target, gh.Repository
+		if gh.URL == "" {
+			return target, gh.Repository
+		}
+		target.Settings[model.GitHubSettingURL] = gh.URL
+		return target, strings.TrimPrefix(gh.URL, "https://") + "/" + gh.Repository
 	}
 	if a := dt.Spec.ArgoCD; a != nil {
 		target.Member = model.DeployMemberArgoCD

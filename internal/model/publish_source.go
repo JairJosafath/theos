@@ -266,9 +266,13 @@ func SourceTag(s PublishSource, tag string) string {
 	return SourceTagPrefix(s.Path, s.TagPrefix) + tag
 }
 
-// SourceURL is the source folder at its tag on GitHub.
-func SourceURL(repository, path, tag string) string {
-	url := "https://github.com/" + repository + "/tree/" + tag
+// SourceURL is the source folder at its tag on GitHub, web its site
+// (github.com when "").
+func SourceURL(web, repository, path, tag string) string {
+	if web == "" {
+		web = GitHubWeb
+	}
+	url := strings.TrimRight(web, "/") + "/" + repository + "/tree/" + tag
 	if path != "." {
 		url += "/" + path
 	}
@@ -365,10 +369,12 @@ func sourceStep(f PublishFacts, tag string) (step PublishStep, done *PublishedSo
 // SourceShip is a release's source shipped to a GitHub repository: where it
 // goes, the files read from the release's tag, and the release it is the
 // source of (its version tag and its tag on GitHub, for the commit message).
-// Owner is the Container the release is of, as namespace/name.
+// Owner is the Container the release is of, as namespace/name. Web is the
+// GitHub site the repository is on, github.com when "".
 type SourceShip struct {
 	Source     PublishSource
 	Files      *ReleaseSource
+	Web        string
 	Repository string
 	App        string
 	Owner      string
@@ -402,7 +408,7 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 			s.Repository, s.Tag), nil
 	case gh.TagCommit != "" && gh.TagTree == s.Files.Tree:
 		return PublishStep{}, &PublishedSource{Commit: gh.TagCommit, Tag: sourceTag,
-			URL: SourceURL(s.Repository, src.Path, sourceTag)}
+			URL: SourceURL(s.Web, s.Repository, src.Path, sourceTag)}
 	case len(s.Files.Problems) > 0:
 		// Before any write: a release the agents made doesn't go out by
 		// itself with a secret in it (#1602).
