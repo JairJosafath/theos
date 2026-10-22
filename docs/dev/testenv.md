@@ -1166,7 +1166,12 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   per-runner cluster names would still put two clusters in one device's
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
-  without the label.
+  without the label. Every job sets `timeout-minutes`, a few times its
+  normal duration (Lint 30, Tests 60, Release 180, the Kind jobs 60):
+  without one GitHub lets a hung job run 6 hours, and a hung Lint job on
+  main held its concurrency group, so every later run on main waited behind
+  it and nothing said whether main was green (#1655); the check fails a job
+  without one.
 - **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
   the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and
