@@ -146,8 +146,10 @@
 #                                        lockfiles and docs/screenshots/ don't count); over GH_REVIEW_LINES it
 #                                        needs a comment that starts with Review:, by the owner's account (an
 #                                        owner, member or collaborator) with an Agent: NAME line, whose every
-#                                        top-level list item (a finding) starts with Fixed or Dismissed. Exit 1: it
-#                                        needs one and has none, saying why
+#                                        top-level list item (a finding) starts with Fixed or Dismissed; the newest
+#                                        such comment decides, so a review is settled by posting it again with the
+#                                        verdicts, never by editing it (#1615). Exit 1: it needs one and has none,
+#                                        saying why
 #   hack/lib/github.sh duplicate N M     close N as a duplicate of M, saying so in a comment on N; drops N's status labels
 #   hack/lib/github.sh closed N          drop closed issue N's status/* labels (open N is left alone); the
 #                                        Issue closed workflow runs it, for issues a pull request's Closes #N closes
@@ -2553,6 +2555,9 @@ gh_land_body() {
 # account (every agent posts as the owner, so an outsider's comment never
 # counts) and naming its agent on an Agent: line, each finding a top-level
 # list item that starts with Fixed or Dismissed (the handoff skill has the format).
+# The newest Review: comment that counts decides, so a session settles a review
+# by posting it again, each finding with its verdict: auto mode refuses the
+# edit of an existing comment (#1615), and nothing here needs one.
 GH_REVIEW_LINES=${GH_REVIEW_LINES:-400}
 GH_REVIEW_SKIP='(^|/)zz_generated\.[^/]*$|^config/crd/bases/|^config/rbac/role\.yaml$|^docs/screenshots/|(^|/)(go\.sum|go\.work\.sum|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|uv\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|Chart\.lock)$'
 
@@ -2610,7 +2615,7 @@ gh_review_check() {
     open)
       local rest=${verdict#*$'\t'} url item n
       IFS=$'\t' read -r url item n <<<"$rest"
-      echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); $n finding(s) of its review ($url) start with neither Fixed nor Dismissed, the first: \"$item\"; fix or dismiss each and say so in the comment" >&2 ;;
+      echo "github: #$pr changes $lines lines in hand-written files (over $GH_REVIEW_LINES); $n finding(s) of its review ($url) start with neither Fixed nor Dismissed, the first: \"$item\"; fix or dismiss each, then post the review again as a new Review: comment with each finding's verdict (the handoff skill, \"Review before landing\")" >&2 ;;
   esac
   return 1
 }
