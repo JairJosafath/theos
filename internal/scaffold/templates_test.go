@@ -844,7 +844,10 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 // TestNodeCLINamesItsPackageUnderTheScope: node-cli names its package
 // <scope>/<container> in package.json and its lock, with the default scope
 // and with the GitProvider's own (#1231). It stays private: that only stops
-// npm publish to npmjs.org.
+// npm publish to npmjs.org. npm packs a scoped package as
+// <scope sans @>-<container>-<version>.tgz, and the README's install line
+// and ts-standard's `make dist` help name that file, never the unscoped
+// <container>-<version>.tgz (#1695).
 func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
 	for _, scope := range []string{"@c4factory", "@acme"} {
 		t.Run(scope, func(t *testing.T) {
@@ -882,6 +885,19 @@ func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
 			}
 			if lock.Name != name || lock.Packages[""].Name != name {
 				t.Errorf("package-lock.json names %q and %q; want %q twice", lock.Name, lock.Packages[""].Name, name)
+			}
+			tarball := strings.TrimPrefix(scope, "@") + "-sample-app-<version>.tgz"
+			for file, want := range map[string]string{
+				"README.md": "npm install --global ./" + tarball,
+				"Makefile":  "dist: release-version deps ## Pack dist/" + tarball,
+			} {
+				text := string(result.Files[file].Data)
+				if !strings.Contains(text, want) {
+					t.Errorf("%s lacks %q", file, want)
+				}
+				if strings.Contains(text, "/sample-app-<version>.tgz") {
+					t.Errorf("%s names the unscoped sample-app-<version>.tgz; npm packs %s", file, tarball)
+				}
 			}
 		})
 	}

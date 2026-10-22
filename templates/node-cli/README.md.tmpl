@@ -11,8 +11,10 @@ a command in TypeScript for Node 22 or later, scaffolded by C4 Factory.
 {{ .Container }} --help
 ```
 
-A release is one file, `{{ .Container }}-<version>.tgz`, with the whole program
-bundled inside. Install it with `npm install --global ./{{ .Container }}-<version>.tgz`,
+A release is one file, `{{ trimPrefix "@" .NpmScope }}-{{ .Container }}-<version>.tgz`
+(`npm pack` names a scoped package `<scope>-<name>-<version>.tgz`), with the
+whole program bundled inside. Install it with
+`npm install --global ./{{ trimPrefix "@" .NpmScope }}-{{ .Container }}-<version>.tgz`,
 which puts `{{ .Container }}` on your `PATH`.
 
 ## Develop

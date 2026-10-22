@@ -80,7 +80,7 @@ pack-check: ## Fail when the package does not pack or its program does not run.
 		tar -xzf "$$tmp"/*.tgz -C "$$tmp" && \
 		node "$$tmp/package/out/cli.js" --version
 
-dist: release-version deps ## Pack dist/{{ .Container }}-<version>.tgz for a release.
+dist: release-version deps ## Pack dist/{{ trimPrefix "@" .NpmScope }}-{{ .Container }}-<version>.tgz for a release.
 	rm -rf dist
 	mkdir -p dist
 	npm pack --pack-destination dist
