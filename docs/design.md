@@ -255,7 +255,9 @@ A project's checks run on its own pool of single-job runner pods, which the
 operator keeps in the project's namespace, one pool per label the project's
 GitProvider `ci` block names, registered `--ephemeral` to the project's Git
 organization so each pod takes one job and ends. The operator deletes an
-ended pod and starts a fresh one; the pool goes with the Project. A pod
+ended pod and starts a fresh one; the pool goes with the Project: once the
+Project is gone, the operator deletes every pool pod and lets the kept
+records go at once, since no Task is left to read them (#1697). A pod
 that failed on its own (its registration or its runner ended non-zero) is
 replaced only after a backoff, 10s doubling per failure in a row up to 5
 minutes, until a pod runs its job; a GitProvider whose host gives no

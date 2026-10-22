@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -181,6 +182,29 @@ var _ = Describe("CI runner pool", func() {
 			g.Expect(condition(project.Status.Conditions, ConditionCIRunners)).To(BeNil())
 		}).Should(Succeed())
 		Eventually(func() []corev1.Pod { return poolPods(ns) }, 3*testRunnerRecordKept).Should(BeEmpty())
+	})
+
+	It("takes the pool down with its Project, kept records included (#1697)", func() {
+		ns := newProjectNamespace()
+		var project c4v1alpha1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+		newCIProvider(ns)
+		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
+
+		By("keeping an ended pod's record under its finalizer")
+		ended := livePoolPods(ns)[0]
+		setPodPhase(&ended, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			record := poolPod(ns, ended.Name)
+			g.Expect(record).NotTo(BeNil())
+			g.Expect(record.DeletionTimestamp).NotTo(BeNil())
+			g.Expect(record.Finalizers).To(ConsistOf(CIRunnerRecordFinalizer))
+		}).Should(Succeed())
+
+		By("deleting the Project: the record and the live pods go with it")
+		Expect(k8sClient.Delete(ctx, &project)).To(Succeed())
+		Eventually(func() []corev1.Pod { return poolPods(ns) }).Should(BeEmpty())
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 	})
 
 	It("reports a provider whose credentials it cannot read instead of a pool", func() {

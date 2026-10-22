@@ -105,6 +105,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var project c4v1alpha1.Project
 	err := r.Get(ctx, req.NamespacedName, &project)
 	if apierrors.IsNotFound(err) && req.Name == req.Namespace {
+		// The pool goes with the Project: its pods and their kept records,
+		// which garbage collection cannot let go (#1697).
+		if err := r.dropPool(ctx, req.Namespace); err != nil {
+			return ctrl.Result{}, err
+		}
 		// A Brief gets its Project from its first round, whose planner needs
 		// the shared pull Secret, so an opted-in namespace is shared into before.
 		recheck, err := r.shareBeforeProject(ctx, req.Namespace)
