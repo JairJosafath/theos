@@ -584,6 +584,10 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it
 		--set 'gitea.projects={apps},clusterDNS={169.254.20.10/32,openshift-dns/dns.operator.openshift.io/daemonset-dns=default}' >"$(YAML_OUT)/chart-gitea-dns.yaml"
 	@if $(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --set 'gitea.projects={apps},agents.reviewer.model=claude-fable-5-1' >/dev/null 2>&1; then \
 		echo "helm template renders an Agent on a Fable model; the chart must refuse it"; exit 1; fi
+	@for set in 'clusterDNS=null' 'clusterDNS={8.8.8.8}' 'clusterDNS={10.0.0.0/7}' 'clusterDNS={1.2.3}' \
+		'clusterDNS={kube-system/k8s-app==kube-dns}' 'clusterDNS={kube-system/a=b=c}' 'clusterDNS={Kube_System/k8s-app=kube-dns}'; do \
+		if $(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --set "gitea.projects={apps},$$set" >/dev/null 2>&1; then \
+			echo "helm template renders the CI fence with $$set; the chart must refuse it (#1257)"; exit 1; fi; done
 	@set -o pipefail; for set in '$(HELM_ALL_ON)' 'gitea.projects={apps}'; do \
 	out=$$($(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) --set "$$set") || exit 1; \
 	secrets=$$(echo "$$out" | awk '/^---/ { s = 0; n = ""; ns = "" } /^kind: Secret$$/ { s = 1 } \

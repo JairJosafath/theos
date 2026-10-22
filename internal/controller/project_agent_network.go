@@ -64,8 +64,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 		Name: AgentNetworkPolicyName, Namespace: project.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
-		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, r.ClusterDNS, gitNamespaces)
-		policy.Spec.Egress = egress
+		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, egress)
 		return controllerutil.SetControllerReference(project, policy, r.Scheme)
 	})
 	return err

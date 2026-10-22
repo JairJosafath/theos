@@ -46,6 +46,13 @@ func TestParseClusterDNS(t *testing.T) {
 		{entry: "kube-system/k8s-app!=kube-dns", err: "pod labels"},
 		{entry: "kube-system/k8s-app in (a)", err: "key=value pairs, at least one"},
 		{entry: "kube-system/=kube-dns", err: "pod labels"},
+		{entry: "kube-system/k8s-app==kube-dns", err: "key=value pairs"}, // the chart's grammar, not a selector's
+		{entry: "kube-system/a=b=c", err: "key=value pairs"},
+		{entry: "kube-system/a=b,", err: "key=value pairs"},
+		{entry: "kube-system/ a=b", err: "key=value pairs"},
+		{entry: "kube-system/a=b c", err: "key=value pairs"},
+		{entry: "kube-system/a=-b", err: "pod labels: value"},
+		{entry: "fd00:10:96::a/128", err: "want namespace/key=value"},
 	}
 	for _, tc := range tests {
 		got, err := ParseClusterDNS(tc.entry)

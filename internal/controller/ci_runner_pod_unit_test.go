@@ -9,10 +9,12 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -153,8 +155,25 @@ func TestFenceEgress(t *testing.T) {
 		egress[3].To[0].NamespaceSelector.MatchLabels[corev1.LabelMetadataName] != "gitlab" {
 		t.Errorf("Git rules %+v, want gitea then gitlab", egress[2:])
 	}
-	if spec := fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, nil, nil); len(spec.PolicyTypes) != 2 ||
+	if spec := fencePolicySpec(map[string]string{LabelCIRunner: ciRunnerValue}, fenceEgress(nil, nil)); len(spec.PolicyTypes) != 2 ||
 		len(spec.Egress) != 2 || spec.PodSelector.MatchLabels[LabelCIRunner] != ciRunnerValue {
 		t.Errorf("fencePolicySpec() = %+v, want ingress and egress types, two rules, the CI selector", spec)
+	}
+}
+
+// TestFenceEgressDNSPeers: no DNS peer means the default, never every address,
+// and the rule holds copies of the peers, so a policy edited in place leaves
+// the reconciler's --cluster-dns alone (#1257, review).
+func TestFenceEgressDNSPeers(t *testing.T) {
+	want, _ := ClusterDNSPeers(nil)
+	for _, dns := range [][]networkingv1.NetworkPolicyPeer{nil, {}} {
+		if got := fenceEgress(dns, nil)[0].To; !reflect.DeepEqual(got, want) {
+			t.Errorf("fenceEgress(%v).To = %+v, want the default %+v", dns, got, want)
+		}
+	}
+	peers, _ := ClusterDNSPeers([]string{"dns/app=coredns"})
+	fenceEgress(peers, nil)[0].To[0].PodSelector.MatchLabels["app"] = "changed"
+	if peers[0].PodSelector.MatchLabels["app"] != "coredns" {
+		t.Errorf("fenceEgress() shares the peers with its caller: %+v", peers[0].PodSelector.MatchLabels)
 	}
 }
