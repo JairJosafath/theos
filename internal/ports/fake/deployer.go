@@ -162,8 +162,9 @@ func (d *Deployer) Ship(_ context.Context, t ports.Target, s ports.Shipment) err
 	return nil
 }
 
-// State reports what was set or shipped last.
-func (d *Deployer) State(_ context.Context, t ports.Target, app string) (ports.DeployState, error) {
+// State reports what was set or shipped last: the fake runs one version at
+// a time, so it ignores the wanted version.
+func (d *Deployer) State(_ context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.failure(t.Name); err != nil {

@@ -180,7 +180,7 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		return ports.Target{}, nil
 	}
 	target.Secret = secret.Data
-	run, err := deployer.State(ctx, target, deployApp(p.container))
+	run, err := deployer.State(ctx, target, deployApp(p.container), model.DeployWanted(facts.Version, facts.Newest))
 	if err != nil {
 		facts.StateFailure = err.Error()
 		return ports.Target{}, nil

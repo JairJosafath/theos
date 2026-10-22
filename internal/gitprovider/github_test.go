@@ -38,6 +38,10 @@ type fakeGitHub struct {
 	uploads []string
 	// makeLatest records each PATCH's make_latest.
 	makeLatest []string
+	// latest is the id of the Latest release, 0 when there is none: set as
+	// make_latest says, "legacy" or absent on publishing a draft counting as
+	// true, as GitHub picks the newest.
+	latest int64
 	// git is the repository's objects and refs.
 	git *fakeGit
 }
@@ -135,6 +139,12 @@ func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, rest 
 			TargetCommitish: in.TargetCommitish, HTMLURL: "https://github.com/" + fakeGitHubRepo + "/releases/tag/untagged-" + strconv.FormatInt(f.nextID, 10)}
 		f.releases = append([]*githubRelease{rel}, f.releases...)
 		f.json(w, http.StatusCreated, rel)
+	case len(rest) == 1 && rest[0] == "latest" && r.Method == http.MethodGet:
+		if rel := f.release(strconv.FormatInt(f.latest, 10)); rel != nil && !rel.Draft {
+			f.json(w, http.StatusOK, rel)
+			return
+		}
+		f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
 	case len(rest) == 1 && r.Method == http.MethodPatch:
 		rel := f.release(rest[0])
 		if rel == nil {
@@ -151,9 +161,13 @@ func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, rest 
 			rel.TargetCommitish = in.TargetCommitish
 		}
 		if in.Draft != nil {
+			wasDraft := rel.Draft
 			rel.Draft = *in.Draft
 			f.makeLatest = append(f.makeLatest, in.MakeLatest)
 			rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
+			if in.MakeLatest == "true" || wasDraft && !rel.Draft && (in.MakeLatest == "" || in.MakeLatest == "legacy") {
+				f.latest = rel.ID
+			}
 		}
 		f.json(w, http.StatusOK, rel)
 	case len(rest) == 2 && rest[0] == "assets" && r.Method == http.MethodDelete:
@@ -301,12 +315,37 @@ func TestGitHubReleasesPublish(t *testing.T) {
 		t.Fatalf("FindRelease() = %+v, %v; want the draft %d", found, err, draft.ID)
 	}
 	listReleases(t, g, draft.ID)
+	if latest, err := g.LatestRelease(ctx); err != nil || latest != nil {
+		t.Errorf("LatestRelease() before any publish = %+v, %v; want nil", latest, err)
+	}
 	published, err := g.PublishRelease(ctx, draft.ID, false)
 	if err != nil || published.Draft || published.URL != "https://github.com/acme/cel-lens/releases/tag/v0.2.0" {
 		t.Errorf("PublishRelease() = %+v, %v", published, err)
 	}
 	if !reflect.DeepEqual(f.makeLatest, []string{"false"}) {
 		t.Errorf("make_latest sent = %q, want [false]: a string, as GitHub takes it", f.makeLatest)
+	}
+	if latest, err := g.LatestRelease(ctx); err != nil || latest != nil {
+		t.Errorf("LatestRelease() after a publish that leaves Latest = %+v, %v; want nil", latest, err)
+	}
+	// Making a published release Latest is the same PATCH; a later one
+	// published without Latest leaves it there.
+	if _, err := g.PublishRelease(ctx, draft.ID, true); err != nil {
+		t.Fatalf("PublishRelease(latest) = %v", err)
+	}
+	if latest, err := g.LatestRelease(ctx); err != nil || latest == nil || latest.ID != draft.ID {
+		t.Errorf("LatestRelease() = %+v, %v; want release %d", latest, err, draft.ID)
+	}
+	later, err := g.CreateDraft(ctx, "v0.3.0", "v0.3.0", "later", "")
+	if err != nil {
+		t.Fatalf("CreateDraft(v0.3.0) = %v", err)
+	}
+	if _, err := g.PublishRelease(ctx, later.ID, false); err != nil {
+		t.Fatalf("PublishRelease(v0.3.0) = %v", err)
+	}
+	if latest, err := g.LatestRelease(ctx); err != nil || latest == nil || latest.ID != draft.ID {
+		t.Errorf("LatestRelease() after publishing v0.3.0 without Latest = %+v, %v; want release %d still",
+			latest, err, draft.ID)
 	}
 	if _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "again", ""); ReleaseReason(err) != ReasonTagTaken {
 		t.Errorf("CreateDraft() of a published tag error = %v, reason %s; want %s", err, ReleaseReason(err), ReasonTagTaken)
@@ -327,6 +366,7 @@ func TestGitHubReleasesPublish(t *testing.T) {
 		"POST " + prefix + "/{id}/assets":   true, // UploadAsset
 		"DELETE " + prefix + "/assets/{id}": true, // DeleteAsset
 		"PATCH " + prefix + "/{id}":         true, // PublishRelease
+		"GET " + prefix + "/latest":         true, // LatestRelease
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Errorf("requests = %v, want %v", calls, wantCalls)

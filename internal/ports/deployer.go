@@ -28,9 +28,13 @@ type Deployer interface {
 	// takes one write per call, so the caller ships again on each poll while
 	// State says PhaseDeploying.
 	Ship(ctx context.Context, target Target, s Shipment) error
-	// State reads back the newest deploy of app at target, the zero
-	// DeployState when there is none.
-	State(ctx context.Context, target Target, app string) (DeployState, error)
+	// State reads back the deploy of app at target: version is the version
+	// the entry wants, its pin, else the newest release. An adapter whose
+	// target runs one version at a time (CloudFormation, Argo CD) ignores it
+	// and reports what runs; one whose versions stand side by side (GitHub
+	// releases) reports version's, else the newest. The zero DeployState when
+	// there is none.
+	State(ctx context.Context, target Target, app, version string) (DeployState, error)
 }
 
 // Deployers are the Deployers by member name, as cmd/main.go builds them.
