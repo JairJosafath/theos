@@ -337,7 +337,10 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		return err
 	}
 	deployers := ports.Deployers{model.DeployMemberGitHub: routedDeployer{},
-		model.DeployMemberArgoCD: argocd.New(argoClient)}
+		model.DeployMemberArgoCD: argocd.New(argoClient),
+		// The cloudFormation member's adapter is tested on its fake AWS in
+		// internal/adapters/cloudformation; the suite stands deployFake in.
+		model.DeployMemberCloudFormation: deployFake}
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},

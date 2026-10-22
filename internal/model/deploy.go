@@ -222,8 +222,9 @@ func DeployCheckMessage(reason string, c DeployCheck) string {
 	keys := strings.Join(c.Member.SecretKeys, ", ")
 	switch reason {
 	case DeployTargetSecretMissing:
-		return fmt.Sprintf("Secret %s, with the key %s, is missing; whoever owns DeployTarget %s creates it "+
-			"holding %s for %s", c.Secret, keys, c.Target, c.Member.Holds, c.Where)
+		return fmt.Sprintf("Secret %s, with the %s %s, is missing; whoever owns DeployTarget %s creates it "+
+			"holding %s for %s", c.Secret, plural(len(c.Member.SecretKeys), "key", "keys"), keys, c.Target,
+			c.Member.Holds, c.Where)
 	case DeployTargetSecretIncomplete:
 		return fmt.Sprintf("Secret %s of DeployTarget %s has no %s %s; whoever owns the target sets it to %s for %s",
 			c.Secret, c.Target, plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "),

@@ -170,6 +170,7 @@ func TestDeployCheckMessage(t *testing.T) {
 	github, _ := DeployMemberByName(DeployMemberGitHub)
 	c := DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop", Member: github}
 	argo, _ := DeployMemberByName(DeployMemberArgoCD)
+	cloudFormation, _ := DeployMemberByName(DeployMemberCloudFormation)
 	inCluster := DeployCheck{Target: "dev", Where: "project default in namespace argocd (destination apps)",
 		Member: argo}
 	tests := []struct {
@@ -193,6 +194,10 @@ func TestDeployCheckMessage(t *testing.T) {
 		{reason: DeployTargetUnreachable, c: DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop",
 			Member: github, Detail: "HTTP 502"}, want: []string{"GitHub could not be reached", "DeployTarget prod",
 			"HTTP 502"}},
+		// A member with two keys names them as keys (#1609).
+		{reason: DeployTargetSecretMissing, c: DeployCheck{Target: "prod", Secret: "prod-aws",
+			Where: "region eu-west-1", Member: cloudFormation},
+			want: []string{"Secret prod-aws, with the keys accessKeyId, secretAccessKey, is missing", "region eu-west-1"}},
 		// A target without a Secret, argoCD, names no Secret (#1588).
 		{reason: DeployTargetReady, c: inCluster, want: []string{"Argo CD is there for project default in namespace argocd"},
 			not: "Secret"},

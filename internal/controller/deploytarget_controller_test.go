@@ -41,6 +41,19 @@ func newArgoCDTarget(ns, name, argoNS, destNS string) *c4v1alpha1.DeployTarget {
 			Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: destNS}}}}
 }
 
+// newCloudFormationTarget is a cloudFormation target in eu-west-1, its
+// Secret named secret, guarded to account when account isn't empty.
+func newCloudFormationTarget(ns, name, secret, account string) *c4v1alpha1.DeployTarget {
+	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
+		CloudFormation:       &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1", Account: account},
+		CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: secret}}}
+}
+
+// awsKeys is a cloudFormation target's Secret data.
+func awsKeys() map[string]string {
+	return map[string]string{"accessKeyId": "AKIAEXAMPLE", "secretAccessKey": "s3cret"}
+}
+
 func newDeploySecret(ns, name string, data map[string]string) *corev1.Secret {
 	s := &corev1.Secret{ObjectMeta: objectMeta(ns, name), Data: map[string][]byte{}}
 	for k, v := range data {
@@ -129,6 +142,31 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}
 		}, "spec.argoCD.destination.namespace"),
+		// The cloudFormation member (#1609).
+		Entry("github and cloudFormation", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1"}
+		}, "set exactly one target member: github, argoCD or cloudFormation"),
+		Entry("a cloudFormation target with no region", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{}
+		}, "region must be an AWS region"),
+		Entry("a region that isn't an AWS region", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "Ireland"}
+		}, "region must be an AWS region"),
+		Entry("an account that isn't twelve digits", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1", Account: "12345"}
+		}, "account must be a twelve-digit AWS account id"),
+		Entry("an account with letters", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1",
+				Account: "12345678901a"}
+		}, "account must be a twelve-digit AWS account id"),
+		Entry("a cloudFormation target with no Secret", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1"}
+		}, "set credentialsSecretRef unless the member is argoCD"),
 		// An argoCD target on another cluster (#1590).
 		Entry("a gitURL with a path", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
@@ -257,6 +295,49 @@ var _ = Describe("DeployTarget", func() {
 		Expect(cond.Message).To(ContainSubstring("Argo CD is there for project default in namespace " + argoNS +
 			" (destination apps)"))
 		Expect(dt.Status.CheckedTime).NotTo(BeNil())
+	})
+
+	It("is SecretIncomplete, then Ready, on AWS's keys when the member is cloudFormation (#1609)", func() {
+		ns := newProjectNamespace()
+		secret := newDeploySecret(ns, "prod-aws", map[string]string{"accessKeyId": "AKIAEXAMPLE"})
+		dt := newCloudFormationTarget(ns, "prod", "prod-aws", "")
+		mustCreate(dt)
+		cond := deployReady(dt, metav1.ConditionFalse, "SecretMissing")
+		Expect(cond.Message).To(ContainSubstring("Secret prod-aws, with the keys accessKeyId, secretAccessKey, is missing"))
+
+		mustCreate(secret)
+		cond = deployReady(dt, metav1.ConditionFalse, "SecretIncomplete")
+		Expect(cond.Message).To(ContainSubstring("Secret prod-aws of DeployTarget prod has no key secretAccessKey"))
+
+		Expect(patch(secret, func() { secret.Data["secretAccessKey"] = []byte("s3cret") })).To(Succeed())
+		cond = deployReady(dt, metav1.ConditionTrue, "Ready")
+		Expect(cond.Message).To(ContainSubstring("AWS accepts the credential in Secret prod-aws for region eu-west-1"))
+		Expect(deployFake.Checks(ns + "/prod")).To(BeNumerically(">=", 1))
+	})
+
+	It("names the account when AWS refuses the credential of a cloudFormation target (#1609)", func() {
+		ns := newProjectNamespace()
+		// The account guard is the adapter's (internal/adapters/cloudformation);
+		// here a refusal of it reaches the condition.
+		deployFake.Refuse(ns + "/prod")
+		dt := newCloudFormationTarget(ns, "prod", "prod-aws", "123456789012")
+		mustCreate(newDeploySecret(ns, "prod-aws", awsKeys()), dt)
+		cond := deployReady(dt, metav1.ConditionFalse, "CredentialRefused")
+		Expect(cond.Message).To(ContainSubstring("AWS refused the credential in Secret prod-aws of " +
+			"DeployTarget prod for account 123456789012 in region eu-west-1"))
+		Expect(cond.Message).To(ContainSubstring("Whoever owns DeployTarget prod sets Secret prod-aws"))
+	})
+
+	It("is Unreachable when AWS can't be reached for a cloudFormation target (#1609)", func() {
+		ns := newProjectNamespace()
+		deployFake.Fail(ns+"/prod", &ports.Error{Kind: ports.ErrUnreachable, Cause: errors.New("dial tcp: timeout")})
+		dt := newCloudFormationTarget(ns, "prod", "prod-aws", "")
+		mustCreate(newDeploySecret(ns, "prod-aws", awsKeys()), dt)
+		cond := deployReady(dt, metav1.ConditionFalse, "Unreachable")
+		Expect(cond.Message).To(ContainSubstring("AWS could not be reached to check DeployTarget prod"))
+
+		deployFake.Fail(ns+"/prod", nil)
+		deployReady(dt, metav1.ConditionTrue, "Ready")
 	})
 
 	It("checks again when its Secret or spec changes, and not on every poll", func() {
