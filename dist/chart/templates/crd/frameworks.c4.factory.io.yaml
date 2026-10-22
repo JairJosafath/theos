@@ -9,6 +9,18 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.22.0
   name: frameworks.c4.factory.io
 spec:
+  {{- if .Values.webhook.enabled }}
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: {{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+          namespace: {{ .Release.Namespace }}
+          path: /convert
+      conversionReviewVersions:
+      - v1
+  {{- end }}
   group: c4.factory.io
   names:
     categories:
@@ -133,5 +145,119 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: Display Name
+      type: string
+    - jsonPath: .spec.supportedTypes
+      name: Types
+      type: string
+    - jsonPath: .spec.template.ref
+      name: Ref
+      type: string
+    - jsonPath: .spec.deploysItself
+      name: Deploys Itself
+      priority: 1
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Framework is a catalog entry: the language, framework and tooling of a Container.
+          It is owned by the Project.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the template and the Container types it supports
+            properties:
+              deploysItself:
+                description: |-
+                  deploysItself says the template carries its own deployment, such as a
+                  CDK app that builds and runs the Container on AWS. A Container with this
+                  Framework takes no Compute and no Deployment but gitea-release, which
+                  ships its cloud assembly; the operator fails one that names another.
+                type: boolean
+              description:
+                description: description says what this entry adds to a Container.
+                maxLength: 1000
+                type: string
+              displayName:
+                description: displayName is a human-friendly name.
+                maxLength: 100
+                type: string
+              readsOperations:
+                description: |-
+                  readsOperations says the template at spec.template.ref renders
+                  infra/operations.ts from a Container's spec.operations. A Container with
+                  a Framework that doesn't gets no OperationsApplied condition, and with a
+                  block set reports it False, NotReadByFramework; a Brief's planner
+                  refuses operations on such a Container.
+                type: boolean
+              supportedTypes:
+                description: supportedTypes lists the Container types this entry can
+                  scaffold.
+                items:
+                  description: ContainerType is the fixed list of application shapes
+                    a Container can take.
+                  enum:
+                  - static-site
+                  - service
+                  - job
+                  - worker
+                  - mobile-app
+                  - cli
+                  - extension
+                  - operator
+                  - function
+                  type: string
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+              template:
+                description: template is the repository and pinned ref to scaffold
+                  from.
+                properties:
+                  ref:
+                    description: ref is a tag or a full commit SHA, never a branch.
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  url:
+                    description: url of the template's Git repository.
+                    pattern: ^https?://
+                    type: string
+                required:
+                - ref
+                - url
+                type: object
+            required:
+            - supportedTypes
+            - template
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
     subresources: {}
 {{- end }}

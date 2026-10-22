@@ -16,7 +16,10 @@ BASES=${1:-config/crd/bases}
 CHART=${2:-dist/chart/templates/crd}
 
 # The chart's copy of a base CRD: kubebuilder's helm plugin wraps it in
-# crd.enabled and adds the crd.keep annotation.
+# crd.enabled and adds the crd.keep annotation. With webhook.enabled it
+# converts by the operator's webhook, which patches its CA in
+# (docs/plans/api-versions.md, decision 3); without, by strategy None, which
+# serves while the versions' shapes match.
 guarded() {
 	awk 'NR == 1 && $0 == "---" { print "{{- if .Values.crd.enabled }}"; next }
 		{ print }
@@ -25,6 +28,20 @@ guarded() {
 			print "    \"helm.sh/resource-policy\": keep"
 			print "    {{- end }}"
 			done = 1
+		}
+		$0 == "spec:" {
+			print "  {{- if .Values.webhook.enabled }}"
+			print "  conversion:"
+			print "    strategy: Webhook"
+			print "    webhook:"
+			print "      clientConfig:"
+			print "        service:"
+			print "          name: {{ include \"c4-factory.resourceName\" (dict \"suffix\" \"webhook-service\" \"context\" $) }}"
+			print "          namespace: {{ .Release.Namespace }}"
+			print "          path: /convert"
+			print "      conversionReviewVersions:"
+			print "      - v1"
+			print "  {{- end }}"
 		}
 		END { print "{{- end }}" }' "$1"
 }

@@ -40,8 +40,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/features"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
@@ -258,6 +261,10 @@ var _ = BeforeSuite(func() {
 	var err error
 	err = c4v1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	// With v1beta1 every kind is convertible, so envtest points every CRD's
+	// conversion at the manager's webhook server (#1615).
+	err = c4v1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 	// The webhook certificate patches the CRDs (#1614).
 	err = apiextensionsv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -302,11 +309,17 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: operatorNamespace}})).To(Succeed())
 
 	By("starting the manager with every reconciler, as that ServiceAccount")
+	webhookOptions := &testEnv.WebhookInstallOptions
 	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
 		Metrics: metricsserver.Options{BindAddress: "0"},
+		WebhookServer: webhook.NewServer(webhook.Options{Host: webhookOptions.LocalServingHost,
+			Port: webhookOptions.LocalServingPort, CertDir: webhookOptions.LocalServingCertDir}),
 	})
 	Expect(err).NotTo(HaveOccurred())
+	// As cmd/main.go does when the webhook server runs.
+	mgr.GetWebhookServer().Register("/convert",
+		conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	managerClient = mgr.GetClient()
 	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
