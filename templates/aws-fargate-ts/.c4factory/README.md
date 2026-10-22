@@ -14,12 +14,17 @@ container asset that synth only stages.
   exporter to `<endpoint>/v1/traces`, and the HTTP instrumentation (health
   checks on `/health` ignored), which patches `node:http` and `node:https`
   as they load: they stay outside esbuild's bundle, so the import order is
-  what makes it work; unset, nothing starts. Then `src/main.ts` reads `TABLE_NAME` and `PORT` (8080 by default),
-  creates the DynamoDB document client once, starts Node's HTTP server with
+  what makes it work; unset, nothing starts. Then `src/main.ts` reads `TABLE_NAME`, `PORT` (8080 by default),
+  `USER_POOL_ID` and `USER_POOL_CLIENT_ID` (it stops when a pool variable is
+  missing), creates the DynamoDB document client and the token verifier once, starts Node's HTTP server with
   keep-alive longer than the load balancer's idle timeout, and closes it on
   `SIGTERM`, shutting tracing down (sending the spans left) once the last request is answered; `src/server.ts` reads each request (at most 64 KiB; 413 above, closing the connection)
   through narrow `Incoming` and `Outgoing` interfaces and hands it to
-  `answer` in `src/api.ts`, which routes `GET /health`, `PUT` and
+  `answer` in `src/api.ts`; every route but `GET /health` needs
+  `Authorization: Bearer <token>`, an access token of the stack's user pool
+  issued to its app client, which `src/auth.ts` verifies with
+  `aws-jwt-verify` (signature against the pool's keys, issuer, expiry,
+  `token_use`, `client_id`), and is answered 401 without one; `answer` routes `GET /health`, `PUT` and
   `GET /items/{id}`, validates input and answers with status codes;
   `src/items.ts` holds the rules and imports neither the SDK nor Node's HTTP
   types; `src/item_store.ts` wraps DynamoDB behind the `ItemStore` interface
@@ -100,21 +105,30 @@ container asset that synth only stages.
   0, `infra/backups.ts`'s `Backups` adds the AWS Backup vault, plan and
   selection: aws-lambda-ts's, naming the `Items` table by ARN, so the
   access-log bucket, which is logs, is not in it, nor a
-  `<name>-development` stack's table, which carries the same tag (#1267). The stack outputs
+  `<name>-development` stack's table, which carries the same tag (#1267).
+  `infra/user_pool.ts`'s `Users` makes the Cognito user pool (no self
+  sign-up, email sign-in, a 12-character password policy, optional TOTP MFA;
+  in production deletion protection and `RETAIN`) and a public app client
+  (password and SRP sign-in, no secret, no OAuth, one-hour access tokens),
+  outputs `UserPoolId`, `UserPoolClientId` and `Issuer`, and hands the
+  container `USER_POOL_ID` and `USER_POOL_CLIENT_ID`. The stack outputs
   `EntryPoint` (the load balancer's DNS name) and `AlarmTopicArn`. It passes
   CDK Nag's `AwsSolutions` checks with four acknowledgements of its own,
   each with its reason: `ECS2` (the variables are the table's name and the
-  collector's address and service name), `IAM5[Resource::*]` on the
+  collector's address and service name, and the user pool's and client's
+  ids), `IAM5[Resource::*]` on the
   execution role (`ecr:GetAuthorizationToken`), `S1` on the log bucket and
   `EC23` on the load balancer's security group (a public service), and
-  `IAM4` on AWS Backup's role in `infra/backups.ts`.
+  `IAM4` on AWS Backup's role in `infra/backups.ts`, and `COG2` (MFA
+  optional) and `COG8` (no Plus tier) on the user pool in
+  `infra/user_pool.ts`.
   `infra/service_stack.test.ts` asserts it with `Template.fromStack` for
   both tiers.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `Dockerfile`, `.dockerignore`, `src/`,
   `infra/stacks.ts`, `infra/service_stack.ts`, `infra/service_stack.test.ts`,
   `infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
-  `README.md`, `CHANGELOG.md`, `.gitignore`
+  `infra/user_pool.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Deployment:** none. The CDK app is the deployment, so a Container on this
   Framework takes no Compute and no Deployment layer; `k8s-manifests` would
   add Kubernetes manifests for an image it doesn't build.
@@ -153,7 +167,9 @@ container asset that synth only stages.
   which reached a `<name>-development` stack's tables too (#1267). v1.2.1's
   README deploys with `--all` and names the service stack in
   `--parameters <name>:CertificateArn=<arn>`, as a `copyToRegion` makes a
-  second stack, which takes no certificate (#1305).
+  second stack, which takes no certificate (#1305). v1.3.0 verifies a
+  Cognito bearer token on every route but `/health`, with the stack's own
+  user pool and app client (#1479).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

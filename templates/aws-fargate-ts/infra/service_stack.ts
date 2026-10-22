@@ -219,7 +219,7 @@ export class ServiceStack extends Stack {
     Validations.of(taskDefinition).acknowledge({
       id: 'AwsSolutions-ECS2',
       reason:
-        'The variables name the stack’s own table and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
+        'The variables name the stack’s own table and user pool and app client and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');
