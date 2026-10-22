@@ -17,6 +17,22 @@ const (
 	// as the cluster's Argo CD sees it; set, it replaces the scheme and host
 	// of the repository's clone URL in the Application.
 	ArgoCDSettingGitURL = "gitURL"
+	// ArgoCDSettingImageRegistryInsecure, "true", speaks plain HTTP to
+	// imageRegistry; anything else is TLS (#1770).
+	ArgoCDSettingImageRegistryInsecure = "imageRegistryInsecure"
+	// ArgoCDSettingImageRepositoryLayout is where the copy goes below
+	// imageRegistry's path: ArgoCDLayoutNested or ArgoCDLayoutFlat (#1770).
+	ArgoCDSettingImageRepositoryLayout = "imageRepositoryLayout"
+)
+
+// Layouts of the copy's repository below imageRegistry's path (#1770).
+const (
+	// ArgoCDLayoutNested, the default, keeps the image's own repository,
+	// <owner>/<name>, as the in-cluster Gitea registry takes it.
+	ArgoCDLayoutNested = "nested"
+	// ArgoCDLayoutFlat keeps only <name>, for a registry that refuses a
+	// third path segment, such as Docker Hub.
+	ArgoCDLayoutFlat = "flat"
 )
 
 // Keys of an argoCD target's Secret, each optional: a target without a
@@ -59,15 +75,18 @@ type ArgoCDImageCopy struct {
 	// in the owner's registry; Digest is its digest, the copy's too.
 	FromHost, FromRepository, Digest string
 	// ToHost and ToRepository are the copy's registry and repository: the
-	// imageRegistry's path, then the image's own repository.
+	// imageRegistry's path, then the image's own repository, or only its
+	// name under the flat layout.
 	ToHost, ToRepository string
 	// Image is the copy's reference by digest, as the nodes pull it.
 	Image string
 }
 
 // ArgoCDImageCopyOf is where image, host/repository@digest as the operator
-// pushed it (#1069), goes at registry, host[:port][/path].
-func ArgoCDImageCopyOf(image, registry string) (ArgoCDImageCopy, error) {
+// pushed it (#1069), goes at registry, host[:port][/path], laid out as
+// layout says: ArgoCDLayoutNested or "" keeps the image's repository,
+// ArgoCDLayoutFlat its last segment only (#1770).
+func ArgoCDImageCopyOf(image, registry, layout string) (ArgoCDImageCopy, error) {
 	ref, digest, ok := strings.Cut(image, "@")
 	fromHost, fromRepo, ok2 := strings.Cut(ref, "/")
 	if !ok || !ok2 || digest == "" || fromHost == "" || fromRepo == "" {
@@ -78,8 +97,16 @@ func ArgoCDImageCopyOf(image, registry string) (ArgoCDImageCopy, error) {
 		return ArgoCDImageCopy{}, fmt.Errorf("imageRegistry %q is not host[:port][/path]", registry)
 	}
 	toRepo := fromRepo
+	switch layout {
+	case "", ArgoCDLayoutNested:
+	case ArgoCDLayoutFlat:
+		toRepo = fromRepo[strings.LastIndex(fromRepo, "/")+1:]
+	default:
+		return ArgoCDImageCopy{}, fmt.Errorf("imageRepositoryLayout %q is not %s or %s", layout,
+			ArgoCDLayoutNested, ArgoCDLayoutFlat)
+	}
 	if prefix != "" {
-		toRepo = prefix + "/" + fromRepo
+		toRepo = prefix + "/" + toRepo
 	}
 	return ArgoCDImageCopy{FromHost: fromHost, FromRepository: fromRepo, Digest: digest, ToHost: toHost,
 		ToRepository: toRepo, Image: toHost + "/" + toRepo + "@" + digest}, nil

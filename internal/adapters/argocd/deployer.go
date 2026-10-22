@@ -132,7 +132,8 @@ func restConfig(kubeconfig []byte) (*rest.Config, error) {
 // settings are an argoCD target's fields, defaulted.
 type settings struct {
 	Namespace, Project, DestinationNamespace, DestinationServer string
-	ImageRegistry, GitURL                                       string
+	ImageRegistry, ImageRepositoryLayout, GitURL                string
+	ImageRegistryInsecure                                       bool
 }
 
 func read(t ports.Target) settings {
@@ -143,12 +144,14 @@ func read(t ports.Target) settings {
 		return def
 	}
 	return settings{
-		Namespace:            or(model.ArgoCDSettingNamespace, model.ArgoCDDefaultNamespace),
-		Project:              or(model.ArgoCDSettingProject, model.ArgoCDDefaultProject),
-		DestinationNamespace: t.Settings[model.ArgoCDSettingDestinationNamespace],
-		DestinationServer:    or(model.ArgoCDSettingDestinationServer, model.ArgoCDDefaultServer),
-		ImageRegistry:        t.Settings[model.ArgoCDSettingImageRegistry],
-		GitURL:               t.Settings[model.ArgoCDSettingGitURL],
+		Namespace:             or(model.ArgoCDSettingNamespace, model.ArgoCDDefaultNamespace),
+		Project:               or(model.ArgoCDSettingProject, model.ArgoCDDefaultProject),
+		DestinationNamespace:  t.Settings[model.ArgoCDSettingDestinationNamespace],
+		DestinationServer:     or(model.ArgoCDSettingDestinationServer, model.ArgoCDDefaultServer),
+		ImageRegistry:         t.Settings[model.ArgoCDSettingImageRegistry],
+		ImageRepositoryLayout: t.Settings[model.ArgoCDSettingImageRepositoryLayout],
+		ImageRegistryInsecure: t.Settings[model.ArgoCDSettingImageRegistryInsecure] == "true",
+		GitURL:                t.Settings[model.ArgoCDSettingGitURL],
 	}
 }
 
@@ -226,13 +229,15 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	return nil
 }
 
-// copyImage copies s's image to cfg's imageRegistry, tagged s's version,
-// with t's registry login, and returns the copy's reference. No CopyImage is
+// copyImage copies s's image to cfg's imageRegistry, laid out as cfg says
+// and over plain HTTP when cfg says so, tagged s's version, with t's
+// registry login, and returns the copy's reference. No CopyImage is
 // ErrArtifactMissing; the registry refusing the login refuses the
-// credential, and any other failure to write the copy is unreachable. A
-// failure to read the image keeps the caller's error.
+// credential; the tag naming another image already fails the deploy for
+// good, as no retry would move it (#1770); any other failure to write the
+// copy is unreachable. A failure to read the image keeps the caller's error.
 func copyImage(ctx context.Context, t ports.Target, cfg settings, s ports.Shipment) (string, error) {
-	cp, err := model.ArgoCDImageCopyOf(s.Image, cfg.ImageRegistry)
+	cp, err := model.ArgoCDImageCopyOf(s.Image, cfg.ImageRegistry, cfg.ImageRepositoryLayout)
 	if err != nil {
 		return "", err
 	}
@@ -240,7 +245,7 @@ func copyImage(ctx context.Context, t ports.Target, cfg settings, s ports.Shipme
 		return "", &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release's image can't be copied")}
 	}
 	to := ports.Registry{Host: cp.ToHost, Username: string(t.Secret[model.ArgoCDSecretRegistryUsername]),
-		Password: string(t.Secret[model.ArgoCDSecretRegistryPassword])}
+		Password: string(t.Secret[model.ArgoCDSecretRegistryPassword]), Insecure: cfg.ImageRegistryInsecure}
 	err = s.CopyImage(ctx, to, cp.ToRepository, s.Version)
 	switch {
 	case err == nil:
@@ -248,6 +253,8 @@ func copyImage(ctx context.Context, t ports.Target, cfg settings, s ports.Shipme
 		return cp.Image, nil
 	case errors.Is(err, oci.ErrSource):
 		return "", err
+	case errors.Is(err, oci.ErrTagTaken):
+		return "", fmt.Errorf("copy the image to %s: %w", cfg.ImageRegistry, err)
 	case oci.Refused(err):
 		return "", refused(fmt.Errorf("copy the image to %s: %w", cfg.ImageRegistry, err))
 	}

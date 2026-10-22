@@ -359,7 +359,8 @@ func (p *deployPass) copyImage(image string) func(context.Context, ports.Registr
 	return func(ctx context.Context, to ports.Registry, repository, tag string) error {
 		_, digest, _ := strings.Cut(image, "@")
 		err := p.provider.CopyImage(ctx, p.repo, digest,
-			oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password}, repository, tag)
+			oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password, Insecure: to.Insecure},
+			repository, tag)
 		if errors.Is(err, oci.ErrSource) {
 			return giteaError{err}
 		}
