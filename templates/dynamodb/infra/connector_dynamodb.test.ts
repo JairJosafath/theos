@@ -1,9 +1,12 @@
 import { App, Stack } from 'aws-cdk-lib';
+import type { CfnElement } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { Code, Function as LambdaFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { describe, expect, it } from 'vitest';
 
 import { DYNAMODB_ACTIONS, DYNAMODB_TABLE_NAME, connectDynamoDB } from './connector_dynamodb';
+import type { DataStoreUser } from './connector_dynamodb';
 import { TIER_RULES } from './standard';
 import type { Tier } from './standard';
 
@@ -54,15 +57,41 @@ describe('connectDynamoDB', () => {
     template.hasResourceProperties('AWS::Lambda::Function', {
       Environment: { Variables: { [DYNAMODB_TABLE_NAME]: { Ref: Match.anyValue() } } },
     });
-    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
-      (policy) =>
-        (policy as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } })
-          .Properties.PolicyDocument.Statement,
-    );
-    const actions = statements
-      .flatMap((s) => [s.Action].flat())
-      .map(String)
-      .sort((a, b) => a.localeCompare(b));
-    expect(actions).toEqual([...DYNAMODB_ACTIONS]);
+    expect(grantedActions(template)).toEqual([...DYNAMODB_ACTIONS]);
+  });
+
+  it('takes any grantee with an environment, not only a Lambda: a task role and its container', () => {
+    const stack = new Stack(new App(), 'test');
+    const role = new Role(stack, 'TaskRole', {
+      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+    const environment: Record<string, string> = {};
+    const user: DataStoreUser = {
+      grantPrincipal: role,
+      addEnvironment: (key, value) => {
+        environment[key] = value;
+      },
+    };
+    const table = connectDynamoDB(stack, user, TIER_RULES.production);
+    expect(environment).toEqual({ [DYNAMODB_TABLE_NAME]: table.tableName });
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::Lambda::Function', 0);
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: [{ Ref: stack.getLogicalId(role.node.defaultChild as CfnElement) }],
+    });
+    expect(grantedActions(template)).toEqual([...DYNAMODB_ACTIONS]);
   });
 });
+
+/** Every action the stack's policies grant, sorted. */
+function grantedActions(template: Template): string[] {
+  const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+    (policy) =>
+      (policy as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } })
+        .Properties.PolicyDocument.Statement,
+  );
+  return statements
+    .flatMap((s) => [s.Action].flat())
+    .map(String)
+    .sort((a, b) => a.localeCompare(b));
+}
