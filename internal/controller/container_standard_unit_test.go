@@ -59,6 +59,7 @@ func TestScaffoldInput(t *testing.T) {
 		Spec: c4v1alpha1.ContainerSpec{
 			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: "webshop-core"},
 			DisplayName:       "Orders API",
+			Description:       "Takes and lists the shop's orders.",
 			Type:              c4v1alpha1.ContainerTypeService,
 			FrameworkRef:      c4v1alpha1.LocalRef{Name: "python-fastapi"},
 			StandardRef:       &c4v1alpha1.LocalRef{Name: "python-strict"},
@@ -76,7 +77,8 @@ func TestScaffoldInput(t *testing.T) {
 	want := scaffold.Input{
 		CI:      ci,
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
-		Type: "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
+		Description: "Takes and lists the shop's orders.",
+		Type:        "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
 		Connectors: []string{"postgres"}, Checks: "BeforeRelease",
 		Operations: model.Operations{
 			Backups:  model.OperationsBackups{RetentionDays: model.DefaultRetentionDays},

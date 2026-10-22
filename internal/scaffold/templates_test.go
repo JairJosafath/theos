@@ -1143,6 +1143,7 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		SoftwareSystem: "shop",
 		Container:      "sample-app",
 		DisplayName:    "Sample App",
+		Description:    "Shows what a template renders.",
 		Type:           typ,
 		Checks:         checks,
 		// The operator always renders the resolved block: the defaults when
