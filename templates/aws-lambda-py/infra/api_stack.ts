@@ -24,6 +24,8 @@ import path from 'node:path';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 
@@ -101,6 +103,8 @@ export interface ApiStackProps extends StackProps {
   readonly tier: Tier;
   /** What the Container promises whatever the tier: `OPERATIONS`. */
   readonly operations: Operations;
+  /** The data stores it connects the function to: `DATA_STORES` unless a test names others. */
+  readonly dataStores?: readonly (readonly [string, Connect])[];
 }
 
 /**
@@ -185,6 +189,10 @@ export class ApiStack extends Stack {
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
     );
+    // The DataStores the Container's Relationships name, from their Connectors.
+    const stores = (props.dataStores ?? DATA_STORES).map(
+      ([name, connect]) => [name, connect(this, handler, rules)] as const,
+    );
 
     const accessLogs = new LogGroup(this, 'ApiAccessLogs', {
       retention: rules.logRetention,
@@ -236,6 +244,7 @@ export class ApiStack extends Stack {
     for (const [name, monitored] of [
       ['Items', table],
       ['Idempotency', idempotency],
+      ...stores,
     ] as const) {
       alarms.monitoring.monitorDynamoTable({
         table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
@@ -252,7 +261,7 @@ export class ApiStack extends Stack {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
         // The data tables, by ARN; the idempotency records expire and need no restore.
-        tables: [table],
+        tables: [table, ...stores.map(([, store]) => store)],
       });
     }
 

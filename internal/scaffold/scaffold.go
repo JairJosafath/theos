@@ -72,6 +72,10 @@ type Input struct {
 	Standard   string
 	Compute    string
 	Deployment string
+	// Bundle is the name of the Bundle the four were expanded from, or empty
+	// when the Container named its sides. The commit records the expansion so
+	// a recovered scaffold reports a Bundle changed since.
+	Bundle string
 	// Connectors are the unique Connector names, sorted.
 	Connectors []string
 	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
@@ -403,8 +407,11 @@ var funcs = template.FuncMap{
 	"dart":       dartString,
 	"ts":         tsString,
 	// buildsImage says a release of the Container builds an image the
-	// operator pushes: {{ buildsImage .Deployment .Framework .Type }}.
-	"buildsImage": model.BuildsImage,
+	// operator pushes: {{ buildsImage .Deployment .Framework .Type }}. The
+	// templates rendering are the ones scaffolded, so they count as current.
+	"buildsImage": func(deployment, framework, typ string) bool {
+		return model.BuildsImage(deployment, framework, typ, nil)
+	},
 }
 
 // tsString quotes s as a TypeScript string literal the way Prettier, with

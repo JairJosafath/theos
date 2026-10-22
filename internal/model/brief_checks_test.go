@@ -7,7 +7,7 @@ import (
 
 // withChecks is happyFiles with checks set on a Container of model.yaml;
 // api exists in happyCurrent, web is new.
-func withChecks(t *testing.T, container, checks string) Plan {
+func withChecks(t *testing.T, container, checks string, onBundle ...bool) Plan {
 	t.Helper()
 	files := happyFiles()
 	if checks != "" {
@@ -16,6 +16,9 @@ func withChecks(t *testing.T, container, checks string) Plan {
 			anchor = "  standardRef: {name: web-standard}\n"
 		}
 		files[PlanModelFile] = strings.Replace(files[PlanModelFile], anchor, anchor+"  checks: "+checks+"\n", 1)
+	}
+	if len(onBundle) > 0 && onBundle[0] {
+		files[PlanModelFile] = webOnBundle(files[PlanModelFile])
 	}
 	plan, err := ParsePlan(files)
 	if err != nil {
@@ -105,6 +108,7 @@ func TestChecksNotes(t *testing.T) {
 		container string
 		checks    string
 		can       bool // web-standard has checksBeforeRelease
+		bundle    bool // web names the Bundle react-web (react-site, web-standard) instead of the sides
 		want      string
 	}{
 		{name: "left out"},
@@ -115,20 +119,25 @@ func TestChecksNotes(t *testing.T) {
 				"only before a release, so its CI runs it on every change."},
 		{name: "no Standard", container: "api", checks: "BeforeRelease",
 			want: "api asks for checks BeforeRelease, but has no Standard, so its CI runs no full check to move."},
+		// #1622: a Container on a Bundle has the Bundle's Standard.
+		{name: "the Bundle's Standard can", container: "web", checks: "BeforeRelease", can: true, bundle: true},
+		{name: "the Bundle's Standard can't", container: "web", checks: "BeforeRelease", bundle: true,
+			want: "web asks for checks BeforeRelease, but its Standard web-standard can't run the full check " +
+				"only before a release, so its CI runs it on every change."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			plan := withChecks(t, tc.container, tc.checks)
+			plan := withChecks(t, tc.container, tc.checks, tc.bundle)
 			entries := append([]CatalogEntry(nil), catalog...)
 			for i := range entries {
 				if entries[i].Name == "web-standard" {
 					entries[i].ChecksBeforeRelease = tc.can
 				}
 			}
-			got := strings.Join(ChecksNotes(plan, entries), " ")
+			got := strings.Join(ChecksNotes(plan, entries, happyCurrent().Bundles), " ")
 			if got != tc.want {
 				t.Errorf("ChecksNotes = %q, want %q", got, tc.want)
 			}
-			summary := AppliedRoundSummary(plan, entries)
+			summary := AppliedRoundSummary(plan, entries, happyCurrent().Bundles)
 			if want := strings.TrimSpace(RoundSummary(plan) + " " + tc.want); summary != want {
 				t.Errorf("AppliedRoundSummary = %q, want %q", summary, want)
 			}
@@ -140,7 +149,7 @@ func TestChecksNotes(t *testing.T) {
 func TestAppliedRoundSummaryKeepsTheNotes(t *testing.T) {
 	plan := withChecks(t, "web", "BeforeRelease")
 	plan.Summary = strings.Repeat("The shop grows a lot. ", 100)
-	got := AppliedRoundSummary(plan, happyCurrent().Catalog)
+	got := AppliedRoundSummary(plan, happyCurrent().Catalog, nil)
 	if len(got) > maxRoundSummary {
 		t.Errorf("summary is %d bytes, more than %d", len(got), maxRoundSummary)
 	}

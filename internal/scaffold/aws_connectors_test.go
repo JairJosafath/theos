@@ -18,6 +18,11 @@ func renderLambda(t *testing.T, connectors ...string) Result {
 	return renderAWS(t, model.TypeFunction, "aws-lambda-ts", connectors...)
 }
 
+// renderAWSFunction renders the function Framework with aws-standard and connectors.
+func renderAWSFunction(t *testing.T, framework string, connectors ...string) Result {
+	return renderAWS(t, model.TypeFunction, framework, connectors...)
+}
+
 // renderAWS renders the Framework, as a Container of type typ, with
 // aws-standard and connectors.
 func renderAWS(t *testing.T, typ, framework string, connectors ...string) Result {
@@ -122,6 +127,44 @@ func TestAWSLambdaTSWithoutConnectorsHasNoDataStores(t *testing.T) {
 	}
 	if !strings.Contains(connectors, "readonly (readonly [string, Connect])[] = [];") {
 		t.Errorf("infra/connectors.ts has data stores without a Connector:\n%s", connectors)
+	}
+}
+
+// aws-lambda-py and aws-lambda-go wire the Connector as aws-lambda-ts does
+// (#1740): infra/connectors.ts lists it with it, and nothing without it.
+func TestDynamoDBConnectorConnectsToOtherAWSLambdas(t *testing.T) {
+	for _, framework := range []string{"aws-lambda-py", "aws-lambda-go"} {
+		t.Run(framework, func(t *testing.T) {
+			with := renderAWSFunction(t, framework, "dynamodb")
+			if _, ok := with.Files["infra/connector_dynamodb.ts"]; !ok {
+				t.Error("the dynamodb Connector writes no infra/connector_dynamodb.ts")
+			}
+			connectors := string(with.Files["infra/connectors.ts"].Data)
+			for _, want := range []string{
+				"import { connectDynamoDB } from './connector_dynamodb';",
+				"= [['DynamoDB', connectDynamoDB]];",
+			} {
+				if !strings.Contains(connectors, want) {
+					t.Errorf("infra/connectors.ts lacks %q:\n%s", want, connectors)
+				}
+			}
+			if readme := string(with.Files["README.md"].Data); !strings.Contains(readme, "DYNAMODB_TABLE_NAME") {
+				t.Error("README.md doesn't say new data goes in the DataStore's table")
+			}
+
+			without := renderAWSFunction(t, framework)
+			if _, ok := without.Files["infra/connector_dynamodb.ts"]; ok {
+				t.Errorf("%s alone writes infra/connector_dynamodb.ts", framework)
+			}
+			connectors = string(without.Files["infra/connectors.ts"].Data)
+			if strings.Contains(connectors, "connector_dynamodb") ||
+				!strings.Contains(connectors, "readonly (readonly [string, Connect])[] = [];") {
+				t.Errorf("infra/connectors.ts has data stores without a Connector:\n%s", connectors)
+			}
+			if readme := string(without.Files["README.md"].Data); strings.Contains(readme, "DYNAMODB_TABLE_NAME") {
+				t.Error("README.md names DYNAMODB_TABLE_NAME without the Connector")
+			}
+		})
 	}
 }
 

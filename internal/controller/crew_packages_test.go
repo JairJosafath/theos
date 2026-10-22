@@ -9,10 +9,12 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"encoding/json"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -54,10 +56,14 @@ func packagedReleaseOf(ns, status, conclusion string, files []fakeFile, packages
 // which the Crew reads through the Repository its provider builds.
 func setNpmScope(ns, scope string) {
 	GinkgoHelper()
-	provider := &c4v1alpha1.GitProvider{}
-	Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
-	provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
-	Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+	// The GitProvider's reconciler may write its status meanwhile: a
+	// conflict reads it again.
+	Eventually(func(g Gomega) {
+		provider := &c4v1alpha1.GitProvider{}
+		g.Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
+		provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
+		g.Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+	}).Should(Succeed())
 }
 
 // releasePackages is the Crew's last release's packages once the state is
@@ -220,5 +226,37 @@ var _ = Describe("Crew release packages", func() {
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(BeEmpty())
 			g.Expect(moduleEvents(g, ns, "InvalidPackage")).To(BeEmpty())
 		}, 3*time.Second).Should(Succeed())
+	})
+	It("publishes to a registry of its own with its Secret's token, and with none without the key (#1729)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		const npmToken = "npm-publish-token-1729"
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: objectMeta(ns, "acme-npm"),
+			Data: map[string][]byte{"token": []byte(npmToken), "readToken": []byte("npm-read")}})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: objectMeta(ns, "acme-pypi"),
+			Data: map[string][]byte{"readToken": []byte("pypi-read")}})).To(Succeed())
+		provider := &c4v1alpha1.GitProvider{}
+		Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
+		provider.Spec.Packages = &c4v1alpha1.PackagesSpec{
+			NPM: &c4v1alpha1.NpmPackagesSpec{Scope: "@c4factory", Registry: "https://npm.example.com/",
+				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-npm"}},
+			PyPI: &c4v1alpha1.PyPIPackagesSpec{Index: "https://pypi.example.com/simple",
+				Upload: "https://pypi.example.com/legacy/", CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-pypi"}}}
+		Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+		packagedReleaseOf(ns, "completed", "success", []fakeFile{ordersTarball, ordersWheel}, ordersNpm, ordersPyPI)
+
+		Eventually(func(g Gomega) {
+			releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
+		}).Should(Succeed())
+		Expect(gitFake.packageUploadToken(ns, "npm", "@c4factory/orders-api", "0.1.0")).To(Equal(npmToken))
+		Expect(gitFake.packageUploadToken(ns, "PyPI", "orders-api", "0.1.0")).To(BeEmpty(),
+			"a Secret without the token key publishes with none")
+		crew := getCrew(Default, ns)
+		status, err := json.Marshal(crew.Status)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(status)).NotTo(ContainSubstring(npmToken))
+		for _, e := range moduleEvents(Default, ns, "PackagePublished") {
+			Expect(e.Note).NotTo(ContainSubstring(npmToken))
+		}
 	})
 })

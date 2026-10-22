@@ -58,25 +58,30 @@ func checkChecks(plan Plan, current CurrentModel, refuse func(string, string, ..
 // ChecksNotes are the sentences a round's summary adds for each of the plan's
 // Containers that asks for checks: BeforeRelease the Standard can't give it,
 // so the person reads that it doesn't take effect (ChecksApplied says so on
-// the Container).
-func ChecksNotes(plan Plan, catalog []CatalogEntry) []string {
+// the Container). A Container on a Bundle has the Bundle's Standard (#1622).
+func ChecksNotes(plan Plan, catalog []CatalogEntry, bundles []Bundle) []string {
 	var notes []string
 	for _, o := range plan.Objects {
 		if o.Kind != KindContainer || o.Checks != ChecksBeforeRelease {
 			continue
 		}
-		if o.Standard == "" {
+		standard := o.Standard
+		if o.Bundle != "" {
+			b, _ := findBundle(bundles, o.Bundle)
+			standard = b.Standard
+		}
+		if standard == "" {
 			notes = append(notes, fmt.Sprintf("%s asks for checks %s, but has no Standard, so its CI runs no "+
 				"full check to move.", o.Name, ChecksBeforeRelease))
 			continue
 		}
 		i := slices.IndexFunc(catalog, func(e CatalogEntry) bool {
-			return e.Side == SideStandard && e.Name == o.Standard
+			return e.Side == SideStandard && e.Name == standard
 		})
 		if i >= 0 && !catalog[i].ChecksBeforeRelease {
 			notes = append(notes, fmt.Sprintf("%s asks for checks %s, but its Standard %s can't run the full "+
 				"check only before a release, so its CI runs it on every change.", o.Name, ChecksBeforeRelease,
-				o.Standard))
+				standard))
 		}
 	}
 	return notes
@@ -84,8 +89,8 @@ func ChecksNotes(plan Plan, catalog []CatalogEntry) []string {
 
 // AppliedRoundSummary is RoundSummary for a round the operator applied, with
 // ChecksNotes after the planner's words, still within the history's limit.
-func AppliedRoundSummary(plan Plan, catalog []CatalogEntry) string {
-	notes := strings.Join(ChecksNotes(plan, catalog), " ")
+func AppliedRoundSummary(plan Plan, catalog []CatalogEntry, bundles []Bundle) string {
+	notes := strings.Join(ChecksNotes(plan, catalog, bundles), " ")
 	if notes == "" {
 		return RoundSummary(plan)
 	}

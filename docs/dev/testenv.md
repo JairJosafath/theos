@@ -154,7 +154,10 @@ It also fails when a CRD in `dist/chart/templates/crd` differs from
 `config/crd/bases` beyond the chart's `crd.enabled` and `crd.keep` guard
 (`hack/chart-crds.sh`), or when the chart's manager role's rules differ from
 `config/rbac/role.yaml` (`hack/chart-role.sh`): `make manifests` writes both
-copies, and an API change commits them. In CI, *Lint* runs `make check-generated`
+copies, and an API change commits them. The chart's `catalog.bundles` are
+checked too (`hack/chart-bundles.sh`): each Bundle names entries the chart
+installs in its namespace that share a Container type, with a Standard that
+supports the Framework. In CI, *Lint* runs `make check-generated`
 after it: a generated file that differs from what is committed fails the job (#1689).
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
@@ -194,7 +197,10 @@ Docker, so the Gitea tests run on any device, lite ones included:
 fixtures`: `hack/seed/seed.sh` with no projects, so no Secrets, plus the
 `webshop` organization) and runs the `Integration` tests in
 `internal/gitprovider`. A first run takes about three minutes, mostly
-pushing the templates; later runs take about half a minute. With
+pushing the templates; later runs take about half a minute. The packages
+test (`TestGiteaPackagesIntegration`) installs what it publishes with the
+real tools, so it wants `npm` and `uv` on PATH, and skips, saying which one
+is missing, when either isn't. With
 `C4_GITEA_URL` set (and `C4_GITEA_USERNAME`, `C4_GITEA_TOKEN`) it tests that
 Gitea instead, for example the Kind one behind `make gitea-forward`;
 `make test-gitea-kind` does that forward and reads the token from the cluster.

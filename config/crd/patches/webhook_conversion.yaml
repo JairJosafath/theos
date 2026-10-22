@@ -1,0 +1,15 @@
+# Every c4.factory.io CRD converts by the operator's webhook, at path
+# /convert of config/default's webhook Service; the operator patches its CA
+# in (docs/plans/api-versions.md, decision 3).
+- op: add
+  path: /spec/conversion
+  value:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          namespace: system
+          name: webhook-service
+          path: /convert
+      conversionReviewVersions:
+      - v1

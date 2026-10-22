@@ -10,7 +10,7 @@ import { RESOURCES, type K8sObject } from '../../k8s/types'
 import { problemsOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { BriefPage } from './BriefPage'
-import { CatalogPage, GitProviderPage } from './CatalogPages'
+import { BundlePage, CatalogPage, GitProviderPage } from './CatalogPages'
 import { ContainerPage } from './ContainerPage'
 import { DeployTargetPage } from './DeployPages'
 import { CrewPage } from './CrewPage'
@@ -33,6 +33,7 @@ const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resour
   Standard: { list: (d) => d.standards, resource: RESOURCES.standards },
   Compute: { list: (d) => d.computes, resource: RESOURCES.computes },
   Deployment: { list: (d) => d.deployments, resource: RESOURCES.deployments },
+  Bundle: { list: (d) => d.bundles, resource: RESOURCES.bundles },
   GitProvider: { list: (d) => d.gitProviders, resource: RESOURCES.gitProviders },
   DeployTarget: { list: (d) => d.deployTargets, resource: RESOURCES.deployTargets },
 }
@@ -172,6 +173,12 @@ function pageFor(
     case 'Deployment': {
       const deployment = named(data.deployments)
       return deployment && <CatalogPage kind="Deployment" entry={deployment} containers={data.containers} />
+    }
+    case 'Bundle': {
+      const bundle = named(data.bundles)
+      return (
+        bundle && <BundlePage bundle={bundle} catalog={data} containers={data.containers} connection={connection} />
+      )
     }
     case 'GitProvider': {
       const provider = named(data.gitProviders)
