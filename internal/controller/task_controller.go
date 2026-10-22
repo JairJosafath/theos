@@ -264,7 +264,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		Round:          int(status.Round),
 		MaxRounds:      int(agent.Spec.MaxRounds),
 		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady,
-		Protected:      model.Protected(container.Spec.StandardRef != nil),
+		Protected:      model.Protected(container.Choices().Standard != ""),
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
 		Reruns:         int(status.Reruns),

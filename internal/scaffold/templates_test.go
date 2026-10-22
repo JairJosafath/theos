@@ -129,14 +129,17 @@ var templateCombos = []struct {
 	{"aws queue consumer", "worker", []side{
 		{model.SideFramework, "aws-queue-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws scheduled job", "job", []side{
 		{model.SideFramework, "aws-schedule-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws event consumer", "worker", []side{
 		{model.SideFramework, "aws-event-ts"},
 		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
 	}},
 	{"aws static site", "static-site", []side{
 		{model.SideFramework, "aws-static-site-ts"},

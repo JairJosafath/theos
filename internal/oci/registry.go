@@ -43,8 +43,8 @@ type Image struct {
 // registry that can't be reached or refuses the push.
 var ErrInvalid = errors.New("invalid image archive")
 
-// ErrTagTaken is Push's error for a tag that names another digest: a tag,
-// once pushed, names one image for good.
+// ErrTagTaken is Push's and Copy's error for a tag that names another
+// digest: a tag, once pushed, names one image for good.
 var ErrTagTaken = errors.New("the tag names another image")
 
 // ErrSource wraps Copy's failure to read the image it copies, as opposed to
@@ -106,7 +106,11 @@ func notFound(err error) bool {
 
 // Copy copies the index or manifest at digest from one registry to another,
 // with every manifest it names, attestations included, so the copy has the
-// same digest. A tag also names the copy; "" leaves it untagged.
+// same digest. A tag also names the copy; "" leaves it untagged. A tag is
+// never moved: when it names digest already nothing is written, so a
+// registry whose tags are immutable takes a repeat, and when it names
+// another digest Copy writes nothing and returns an error wrapping
+// ErrTagTaken (#1770).
 func Copy(ctx context.Context, from Registry, fromRepository, digest string, to Registry, toRepository, tag string) error {
 	src, err := from.repository(fromRepository)
 	if err != nil {
@@ -115,6 +119,17 @@ func Copy(ctx context.Context, from Registry, fromRepository, digest string, to 
 	dst, err := to.repository(toRepository)
 	if err != nil {
 		return err
+	}
+	if tag != "" {
+		held, err := Resolve(ctx, to, toRepository, tag)
+		switch {
+		case err != nil:
+			return err
+		case held == digest:
+			return nil
+		case held != "":
+			return fmt.Errorf("%w: %s:%s names %s, not %s", ErrTagTaken, dst, tag, held, digest)
+		}
 	}
 	desc, err := remote.Get(src.Digest(digest), from.options(ctx)...)
 	if err != nil {

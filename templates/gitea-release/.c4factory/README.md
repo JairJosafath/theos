@@ -7,9 +7,10 @@ sdist for a Python CLI, a `.vsix` for an extension, the manager binaries and
 for an AWS Container. No registry, no store: download them from the release
 page, or, for AWS, let a `cloudFormation` deploy target ship them.
 
-- **Supports:** `cli`, `extension`, `operator`, and `function`, `service` and
-  `static-site` for the AWS Frameworks, the one Deployment a Framework that
-  deploys itself takes (#1607)
+- **Supports:** `cli`, `extension`, `operator`, and `function`, `service`,
+  `static-site`, `worker` and `job` for the AWS Frameworks, the one Deployment
+  a Framework that deploys itself takes (#1607; `worker` and `job` since
+  v1.8.0, #1773)
 - **Writes:** `.gitea/workflows/release.yaml`, and `RELEASING.md`: how to
   cut a release, check one locally and recover from a failed run.
 - **Contract:** the repository's `Makefile` has a `dist` target that takes
