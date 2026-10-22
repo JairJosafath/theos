@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -160,10 +161,7 @@ func TestShipTwoAppsOfOneName(t *testing.T) {
 	gl := gitlabtest.New(t)
 	a, p := newTarget(gl, "t0ken")
 	b := a
-	b.Settings = map[string]string{}
-	for k, v := range a.Settings {
-		b.Settings[k] = v
-	}
+	b.Settings = maps.Clone(a.Settings)
 	b.Settings[model.GitLabSettingTagPrefix] = "b-"
 	d := New(nil)
 	sa := shipment(file("web_linux.tar.gz", "the first app"), file("SHA256SUMS", "s"))
