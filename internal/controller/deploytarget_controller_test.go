@@ -124,7 +124,7 @@ var _ = Describe("DeployTarget", func() {
 		Entry("github and argoCD", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{
 				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
-		}, "set exactly one target member: github or argoCD"),
+		}, "set exactly one target member: github, argoCD or cloudFormation"),
 		Entry("an argoCD target with no destination", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}

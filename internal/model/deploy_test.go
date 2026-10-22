@@ -82,8 +82,20 @@ func TestDeployMembers(t *testing.T) {
 			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
 		{name: "argoCD, deploying itself", member: DeployMemberArgoCD, c: DeployContainer{DeploysItself: true},
 			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
+		// A cloudFormation target ships the CDK assembly of a Framework that
+		// deploys itself, carried by a gitea-release release (#1609).
+		{name: "cloudFormation, an AWS Container", member: DeployMemberCloudFormation,
+			c:        DeployContainer{Deployment: DeploymentGiteaRelease, DeploysItself: true},
+			wantKeys: []string{"accessKeyId", "secretAccessKey"}},
+		{name: "cloudFormation, without the Deployment", member: DeployMemberCloudFormation,
+			c: DeployContainer{DeploysItself: true}, wantKeys: []string{"accessKeyId", "secretAccessKey"},
+			wantLacks: []string{"the gitea-release Deployment, whose release carries the CDK assembly"}},
+		{name: "cloudFormation, a bare Container", member: DeployMemberCloudFormation,
+			wantKeys: []string{"accessKeyId", "secretAccessKey"},
+			wantLacks: []string{"a Framework that deploys itself",
+				"the gitea-release Deployment, whose release carries the CDK assembly"}},
 		// A member is added with its adapter, never before.
-		{name: "cloudFormation not yet", member: "cloudFormation", wantErr: true},
+		{name: "an unknown member", member: "terraform", wantErr: true},
 		{name: "no member", member: "", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -103,7 +115,8 @@ func TestDeployMembers(t *testing.T) {
 			}
 		})
 	}
-	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberGitHub}) {
+	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberCloudFormation,
+		DeployMemberGitHub}) {
 		t.Errorf("DeployMemberNames() = %v", got)
 	}
 }
