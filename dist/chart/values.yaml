@@ -740,7 +740,7 @@ agents:
     ## Defaults to Chart.appVersion
     tag: ""
   credentialsSecret: claude-credentials
-  ## The model proxy (docs/plans/model-proxy.md): a Deployment of the operator
+  ## The model proxy (docs/plans/done/model-proxy.md): a Deployment of the operator
   ## image running /model-proxy in the release namespace, Service c4-model-proxy
   ## on 8080, the one place the Secret above is used. It mounts the Secret as a
   ## volume and admits only agent sandboxes. Two replicas and a

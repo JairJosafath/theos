@@ -1,5 +1,5 @@
 {{- if .Values.agents.enabled }}
-# The proxy takes traffic only from agent sandboxes (docs/plans/model-proxy.md,
+# The proxy takes traffic only from agent sandboxes (docs/plans/done/model-proxy.md,
 # decision 7): pods the operator labels c4.factory.io/agent-sandbox=true, in
 # the namespaces labelled c4.factory.io/shared-secrets=true, the label that
 # decides who may use the shared token and that a namespace's own users can't

@@ -2,7 +2,10 @@
 
 Parent issue: #1075. Written 2026-10-15 by otter-1075. ROADMAP.md's 1.0
 needs "the agent fence closes its known gap": today the Claude token is
-readable inside the agent sandbox ([docs/design.md](../design.md#the-fence)).
+readable inside the agent sandbox ([docs/design.md](../../design.md#the-fence)).
+
+Done 2026-10-22: every step landed (#1134 to #1137); the token never enters
+a sandbox or a project namespace, and the docs say so.
 
 ## Where we stand
 
@@ -25,7 +28,7 @@ readable inside the agent sandbox ([docs/design.md](../design.md#the-fence)).
 
 1. **Our own small proxy, not Agent Substrate.** The 2026-09-30 spike found
    Substrate too young to install as a dependency
-   ([plan](done/2026-09-30-agent-factory-design.md)). What we need is one
+   ([plan](2026-09-30-agent-factory-design.md)). What we need is one
    reverse proxy to one upstream that swaps one header, about a hundred lines
    of Go on `net/http/httputil`. It lives in `internal/modelproxy`, its
    binary in `cmd/model-proxy`, and ships in the operator image as a second
