@@ -17,7 +17,9 @@
 # <repository>-<tag>.oci.tar, attached to the release; the operator pushes it
 # from there to the Git host's container registry. Nothing emulates the other
 # platform: the Dockerfile RUNs only in stages FROM --platform=$BUILDPLATFORM.
-# The release files name that image by digest, where the push puts it.
+# The release files name that image by digest, where the push puts it. The
+# operator pushes a tag once, so a rerun names the digest the registry
+# already holds for the tag, not the one it rebuilt.
 {{- end }}
 name: release
 
@@ -117,9 +119,36 @@ jobs:
           export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python"
 {{- if $operator }}
           # The image as the operator pushes it: <host>/<owner>/<repository>,
-          # lowercase, on the Git host's registry, by the digest just built.
+          # lowercase, on the Git host's registry, by digest. The registry is
+          # at the host's root, whatever path ROOT_URL has, and the digest is
+          # checked: without it the release files would name an image that is
+          # not there (#1581).
+          printf '%s\n' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+            { echo "The image job gave no digest (got '$DIGEST'); the release files need one." >&2; exit 1; }
           host=${SERVER_URL#*://}
-          image="${host%/}/$(printf '%s' "$REPOSITORY" | tr A-Z a-z)@$DIGEST"
+          repository=$(printf '%s' "$REPOSITORY" | tr A-Z a-z)
+          # The operator pushes a tag once and never replaces it, so when the
+          # registry already holds this tag (a rerun, or a tag moved after a
+          # failed run) the release files name that digest, not the one just
+          # built: a rebuild's digest differs and nothing would pull it (#1583).
+          # 404 is the first run; anything but 200 or 404 fails the step.
+          headers=$(mktemp)
+          code=$(curl -sS -I -o /dev/null -D "$headers" -w '%{http_code}' -u "x:$TOKEN" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json' \
+            "${SERVER_URL%%://*}://${host%%/*}/v2/$repository/manifests/$TAG")
+          case "$code" in
+            200)
+              held=$(tr -d '\r' < "$headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }')
+              printf '%s\n' "$held" | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+                { echo "The registry holds $TAG but gave no digest for it (got '$held')." >&2; exit 1; }
+              if [ "$held" != "$DIGEST" ]; then
+                echo "The registry holds $TAG as $held; the release files name it, not the $DIGEST just built, which is not pushed."
+              fi
+              DIGEST=$held ;;
+            404) echo "The registry does not hold $TAG yet; the release files name the $DIGEST just built." ;;
+            *) echo "Asking the registry for $TAG failed with HTTP $code; the release files need the digest it holds." >&2; exit 1 ;;
+          esac
+          image="${host%%/*}/$repository@$DIGEST"
           make dist VERSION="$TAG" IMG="$image"
 {{- else }}
           make dist VERSION="$TAG"

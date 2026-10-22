@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -428,8 +429,35 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		"DIGEST: ${{ needs.image.outputs.digest }}", "buildctl-daemonless.sh build",
 		"platform=linux/amd64,linux/arm64", `${REPOSITORY##*/}-$TAG.oci.tar`,
 		"an operator's release needs one", `host=${SERVER_URL#*://}`,
-		`tr A-Z a-z)@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
+		`repository=$(printf '%s' "$REPOSITORY" | tr A-Z a-z)`,
+		`image="${host%%/*}/$repository@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
+		// #1581: the registry is at the host's root, whatever path ROOT_URL
+		// has, and a digest that is not sha256: plus 64 hex fails the step.
+		`grep -Eq '^sha256:[0-9a-f]{64}$' ||`,
+		// #1583: the operator pushes a tag once, so a rerun asks the registry
+		// for the tag's digest first (HEAD on the manifest, the job's token)
+		// and names it when it holds one; 404 names the digest just built,
+		// anything else fails the step.
+		`curl -sS -I -o /dev/null -D "$headers" -w '%{http_code}' -u "x:$TOKEN"`,
+		`"${SERVER_URL%%://*}://${host%%/*}/v2/$repository/manifests/$TAG"`,
+		`held=$(tr -d '\r' < "$headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }')`,
+		"DIGEST=$held ;;", "404) echo \"The registry does not hold $TAG yet",
+		"*) echo \"Asking the registry for $TAG failed with HTTP $code", "exit 1 ;;",
 	})
+	// #1583: the lookup comes after the digest guard and before make dist,
+	// so make dist runs with the digest the registry holds.
+	for _, pair := range [][2]string{
+		{`grep -Eq '^sha256:[0-9a-f]{64}$' ||`, `/v2/$repository/manifests/$TAG`},
+		{`/v2/$repository/manifests/$TAG`, `DIGEST=$held ;;`},
+		{`DIGEST=$held ;;`, `make dist VERSION="$TAG" IMG="$image"`},
+	} {
+		if strings.Index(string(f.Data), pair[0]) > strings.Index(string(f.Data), pair[1]) {
+			t.Errorf("operator %s runs %q after %q (#1583)", workflow, pair[0], pair[1])
+		}
+	}
+	if strings.Contains(string(f.Data), `image="${host%/}/`) {
+		t.Errorf("operator %s keeps ROOT_URL's path in the image host (#1581)", workflow)
+	}
 	// Gitea's ${{ }} expressions stay; a Go template action would not parse.
 	if strings.Contains(strings.ReplaceAll(string(f.Data), "${{", ""), "{{") {
 		t.Errorf("operator %s keeps a template action:\n%s", workflow, f.Data)
@@ -445,10 +473,147 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		t.Fatalf("%s not written for a CLI; files: %v", workflow, result.Files.Paths())
 	}
 	assertContains(t, "cli "+workflow, string(f.Data), []string{`make dist VERSION="$TAG"`})
-	for _, never := range []string{"runs-on: image", "needs:", "IMG=", "DIGEST", "buildctl"} {
+	for _, never := range []string{"runs-on: image", "needs:", "IMG=", "DIGEST", "buildctl", "/v2/"} {
 		if strings.Contains(string(f.Data), never) {
 			t.Errorf("cli %s contains %q, an operator's image job:\n%s", workflow, never, f.Data)
 		}
+	}
+}
+
+// TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt runs the make dist step
+// of an operator's release, extracted from the rendered workflow, against a
+// stub make that records the IMG it receives (#1581): a sub-path in the Git
+// host's ROOT_URL stays out of the image host, the repository is lowercased,
+// and a digest that is not sha256: plus 64 hex fails the step before make.
+func TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	_, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "go-operator-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	var w workflow
+	if err := yaml.Unmarshal(result.Files[".gitea/workflows/release.yaml"].Data, &w); err != nil {
+		t.Fatal(err)
+	}
+	var script string
+	for _, step := range w.Jobs["release"].Steps {
+		if step.Name == "make dist" {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatalf("no make dist step in the release job: %+v", w.Jobs["release"].Steps)
+	}
+	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const held = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	cases := []struct {
+		name, serverURL, digest string
+		// code is the registry's answer to HEAD on the tag's manifest, 404
+		// by default; held the Docker-Content-Digest header it sends.
+		code, held string
+		wantIMG    string // "" when the step must fail before make dist
+		wantSays   string // in the step's output when it fails
+		wantAsks   string // the manifest URL the step asks the registry; "" for never
+	}{
+		{name: "a host alone", serverURL: "https://git.example.com", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a host with a port", serverURL: "http://gitea.local:3000", digest: digest,
+			wantIMG:  "gitea.local:3000/owner/repo@" + digest,
+			wantAsks: "http://gitea.local:3000/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a ROOT_URL with a sub-path", serverURL: "https://git.example.com/gitea", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a ROOT_URL with a trailing slash", serverURL: "https://git.example.com/", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "an empty digest", serverURL: "https://git.example.com", wantSays: "gave no digest"},
+		{name: "a null digest", serverURL: "https://git.example.com", digest: "null", wantSays: "gave no digest"},
+		{name: "a digest without its algorithm", serverURL: "https://git.example.com",
+			digest: digest[len("sha256:"):], wantSays: "gave no digest"},
+		{name: "a short digest", serverURL: "https://git.example.com", digest: "sha256:0123456789abcdef",
+			wantSays: "gave no digest"},
+		{name: "a digest that is not hex", serverURL: "https://git.example.com",
+			digest: "sha256:" + strings.Repeat("xy", 32), wantSays: "gave no digest"},
+		// #1583: the operator pushes a tag once, so the release files name
+		// the digest the registry holds for the tag when it holds one, and
+		// the one just built only on a first run.
+		{name: "a tag the registry holds", serverURL: "https://git.example.com", digest: digest,
+			code: "200", held: held, wantIMG: "git.example.com/owner/repo@" + held,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a tag the registry holds as the digest just built", serverURL: "https://git.example.com",
+			digest: digest, code: "200", held: digest, wantIMG: "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a tag the registry holds without a digest", serverURL: "https://git.example.com",
+			digest: digest, code: "200", wantSays: "gave no digest for it",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a registry that fails", serverURL: "https://git.example.com", digest: digest,
+			code: "500", wantSays: "HTTP 500",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a registry that refuses the token", serverURL: "https://git.example.com", digest: digest,
+			code: "401", wantSays: "HTTP 401",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			bin := filepath.Join(dir, "bin")
+			got := filepath.Join(dir, "make.args")
+			asked := filepath.Join(dir, "curl.url")
+			write(t, bin, "make", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+got+"\"\n")
+			// The registry: records the URL asked (curl's last argument),
+			// writes the headers to -D's file and prints the status code.
+			code := c.code
+			if code == "" {
+				code = "404"
+			}
+			write(t, bin, "curl", "#!/bin/sh\n"+
+				"for a; do url=$a; done\nprintf '%s\\n' \"$url\" > \""+asked+"\"\n"+
+				"while [ $# -gt 0 ]; do if [ \"$1\" = -D ]; then headers=$2; fi; shift; done\n"+
+				"printf 'HTTP/1.1 "+code+"\\r\\n' > \"$headers\"\n"+
+				"[ -n '"+c.held+"' ] && printf 'Docker-Content-Digest: "+c.held+"\\r\\n' >> \"$headers\"\n"+
+				"printf '"+code+"'\n")
+			for _, f := range []string{"make", "curl"} {
+				if err := os.Chmod(filepath.Join(bin, f), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command("sh", "-e", "-c", script)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TAG=v1.2.3", "TOKEN=t0k3n",
+				"SERVER_URL="+c.serverURL, "REPOSITORY=Owner/Repo", "DIGEST="+c.digest)
+			out, err := cmd.CombinedOutput()
+			url, _ := os.ReadFile(asked)
+			if strings.TrimSpace(string(url)) != c.wantAsks {
+				t.Errorf("the step asked the registry %q; want %q:\n%s", strings.TrimSpace(string(url)), c.wantAsks, out)
+			}
+			if c.wantIMG == "" {
+				if err == nil {
+					t.Fatalf("the step passed with digest %q; want it to fail before make dist:\n%s", c.digest, out)
+				}
+				if _, statErr := os.Stat(got); statErr == nil {
+					t.Errorf("make dist ran with digest %q:\n%s", c.digest, out)
+				}
+				if !strings.Contains(string(out), c.wantSays) {
+					t.Errorf("the step's failure doesn't say %q:\n%s", c.wantSays, out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the step failed: %v\n%s", err, out)
+			}
+			args, readErr := os.ReadFile(got)
+			if readErr != nil {
+				t.Fatalf("make dist didn't run:\n%s", out)
+			}
+			want := "dist\nVERSION=v1.2.3\nIMG=" + c.wantIMG + "\n"
+			if string(args) != want {
+				t.Errorf("make received:\n%s\nwant:\n%s", args, want)
+			}
+		})
 	}
 }
 
@@ -578,7 +743,21 @@ func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
 		},
 		"go cli": {
 			want:  []string{"`SHA256SUMS`", "make dist VERSION=v0.0.0-test\n"},
-			never: []string{"pyproject.toml", "package.json"},
+			never: []string{"pyproject.toml", "package.json", "`image` job", "re-push the image"},
+		},
+		// #1583: an operator's guide says what the image job failing means,
+		// that make dist failing leaves the image archive attached, and
+		// that moving the tag does not re-push an image the registry holds.
+		"kubebuilder operator": {
+			want: []string{"`install.yaml` naming that image by digest",
+				"runner labelled `image`", "a tag's image is never replaced",
+				"- **The `image` job failed** (no `Dockerfile` at the root",
+				"nothing was attached and no image was\n  pushed",
+				"nothing was attached but the\n  image archive, which the factory pushes to the registry",
+				"Moving the tag does not re-push the image",
+				"`install.yaml` names the digest the registry holds",
+				"make dist VERSION=v0.0.0-test\n"},
+			never: []string{"pyproject.toml", "package.json", "nothing was attached."},
 		},
 	}
 	for _, c := range templateCombos {

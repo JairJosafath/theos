@@ -111,7 +111,7 @@ type sandboxRun struct {
 const (
 	envAnthropicBaseURL   = "ANTHROPIC_BASE_URL"
 	envAnthropicAuthToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec // an environment variable's name
-	modelProxyToken       = "c4-model-proxy"
+	modelProxyToken       = "c4-model-proxy"       //nolint:gosec // a placeholder the proxy drops, not a credential
 )
 
 // onSharedToken reports whether the Agent is on the factory's shared token:

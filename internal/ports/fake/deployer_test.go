@@ -41,8 +41,8 @@ func TestDeployerContract(t *testing.T) {
 // finishing is a held fake whose deploys finish once State reads them.
 type finishing struct{ *fake.Deployer }
 
-func (f finishing) State(ctx context.Context, t ports.Target, app string) (ports.DeployState, error) {
-	st, err := f.Deployer.State(ctx, t, app)
+func (f finishing) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
+	st, err := f.Deployer.State(ctx, t, app, version)
 	if err == nil && st.Phase == ports.PhaseDeploying {
 		st.Phase, st.Health = ports.PhaseDeployed, ports.HealthHealthy
 		f.SetState(t.Name, app, st)

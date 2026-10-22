@@ -108,6 +108,9 @@ type ReleaseTarget interface {
 	// PublishRelease turns draft id into a published release, the repository's
 	// Latest when latest is set, else leaving Latest where it is.
 	PublishRelease(ctx context.Context, id int64, latest bool) (TargetRelease, error)
+	// LatestRelease returns the repository's Latest release, nil when it has
+	// none.
+	LatestRelease(ctx context.Context) (*TargetRelease, error)
 }
 
 // GitHub's hosts on github.com.
@@ -363,6 +366,21 @@ func (g *githubReleases) PublishRelease(ctx context.Context, id int64, latest bo
 	err := g.call(ctx, http.MethodPatch, g.api, g.releasePath(id), payload, http.StatusOK,
 		"publishing release "+strconv.FormatInt(id, 10), &r)
 	return r.release(), err
+}
+
+func (g *githubReleases) LatestRelease(ctx context.Context) (*TargetRelease, error) {
+	var r githubRelease
+	err := g.call(ctx, http.MethodGet, g.api, g.releases+"/latest", nil, http.StatusOK, "reading the Latest release", &r)
+	if re, ok := errors.AsType[*ReleaseError](err); ok && re.Status == http.StatusNotFound {
+		// No published release yet. A repository that is gone fails the next
+		// call instead.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rel := r.release()
+	return &rel, nil
 }
 
 func (g *githubReleases) releasePath(id int64) string {
