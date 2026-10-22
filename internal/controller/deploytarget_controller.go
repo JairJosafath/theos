@@ -168,7 +168,7 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 		target.Settings = map[string]string{model.ArgoCDSettingNamespace: a.Namespace,
 			model.ArgoCDSettingProject: a.Project, model.ArgoCDSettingDestinationNamespace: a.Destination.Namespace,
 			model.ArgoCDSettingDestinationServer: a.Destination.Server,
-			model.ArgoCDSettingImageRegistry: a.ImageRegistry, model.ArgoCDSettingGitURL: a.GitURL}
+			model.ArgoCDSettingImageRegistry:     a.ImageRegistry, model.ArgoCDSettingGitURL: a.GitURL}
 		return target, fmt.Sprintf("project %s in namespace %s (destination %s)", a.Project, a.Namespace,
 			a.Destination.Namespace)
 	}
