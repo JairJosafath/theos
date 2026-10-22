@@ -288,6 +288,20 @@ describe('deploys (#1163)', () => {
     expect(t).not.toContain('Credentials Secret')
   })
 
+  it('shows a cloudFormation target’s region and account (#1609)', () => {
+    const aws: DeployTarget = {
+      metadata: { name: 'aws-dev', namespace: 'webshop' },
+      spec: {
+        cloudFormation: { region: 'eu-west-1', account: '123456789012' },
+        credentialsSecretRef: { name: 'aws-dev-keys' },
+      },
+    }
+    const t = text(renderToStaticMarkup(createElement(DeployTargetPage, { target: aws, containers: [] })))
+    expect(t).toContain('Tool AWS CloudFormation (cloudFormation)')
+    expect(t).toContain('Where eu-west-1, account 123456789012')
+    expect(t).toContain('aws-dev-keys')
+  })
+
   it('lists the Project’s deploy targets with their member, tier, approval and Ready', () => {
     const html = page('Project', 'webshop')
     expect(html).toContain('href="/?ns=webshop&amp;kind=DeployTarget&amp;name=staging"')

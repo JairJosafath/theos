@@ -15,6 +15,14 @@ export function memberOf(target: DeployTarget): { member: string; label: string;
     const where = server && server !== 'https://kubernetes.default.svc' ? `${namespace} on ${server}` : namespace
     return { member: 'argoCD', label: 'Argo CD', where }
   }
+  if (target.spec.cloudFormation) {
+    const { region, account } = target.spec.cloudFormation
+    return {
+      member: 'cloudFormation',
+      label: 'AWS CloudFormation',
+      where: account ? `${region}, account ${account}` : region,
+    }
+  }
   // A member this UI doesn't know yet: name it from the spec, show nothing of it.
   const known = ['credentialsSecretRef', 'tier', 'approval', 'parameters']
   const member =

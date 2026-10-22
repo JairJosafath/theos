@@ -82,8 +82,20 @@ func TestDeployMembers(t *testing.T) {
 			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
 		{name: "argoCD, deploying itself", member: DeployMemberArgoCD, c: DeployContainer{DeploysItself: true},
 			wantLacks: []string{"a Deployment that writes deploy/k8s/"}},
+		// A cloudFormation target ships the CDK assembly of a Framework that
+		// deploys itself, carried by a gitea-release release (#1609).
+		{name: "cloudFormation, an AWS Container", member: DeployMemberCloudFormation,
+			c:        DeployContainer{Deployment: DeploymentGiteaRelease, DeploysItself: true},
+			wantKeys: []string{"accessKeyId", "secretAccessKey"}},
+		{name: "cloudFormation, without the Deployment", member: DeployMemberCloudFormation,
+			c: DeployContainer{DeploysItself: true}, wantKeys: []string{"accessKeyId", "secretAccessKey"},
+			wantLacks: []string{"the gitea-release Deployment, whose release carries the CDK assembly"}},
+		{name: "cloudFormation, a bare Container", member: DeployMemberCloudFormation,
+			wantKeys: []string{"accessKeyId", "secretAccessKey"},
+			wantLacks: []string{"a Framework that deploys itself",
+				"the gitea-release Deployment, whose release carries the CDK assembly"}},
 		// A member is added with its adapter, never before.
-		{name: "cloudFormation not yet", member: "cloudFormation", wantErr: true},
+		{name: "an unknown member", member: "terraform", wantErr: true},
 		{name: "no member", member: "", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -103,7 +115,8 @@ func TestDeployMembers(t *testing.T) {
 			}
 		})
 	}
-	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberGitHub}) {
+	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberCloudFormation,
+		DeployMemberGitHub}) {
 		t.Errorf("DeployMemberNames() = %v", got)
 	}
 }
@@ -157,6 +170,7 @@ func TestDeployCheckMessage(t *testing.T) {
 	github, _ := DeployMemberByName(DeployMemberGitHub)
 	c := DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop", Member: github}
 	argo, _ := DeployMemberByName(DeployMemberArgoCD)
+	cloudFormation, _ := DeployMemberByName(DeployMemberCloudFormation)
 	inCluster := DeployCheck{Target: "dev", Where: "project default in namespace argocd (destination apps)",
 		Member: argo}
 	tests := []struct {
@@ -180,6 +194,10 @@ func TestDeployCheckMessage(t *testing.T) {
 		{reason: DeployTargetUnreachable, c: DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop",
 			Member: github, Detail: "HTTP 502"}, want: []string{"GitHub could not be reached", "DeployTarget prod",
 			"HTTP 502"}},
+		// A member with two keys names them as keys (#1609).
+		{reason: DeployTargetSecretMissing, c: DeployCheck{Target: "prod", Secret: "prod-aws",
+			Where: "region eu-west-1", Member: cloudFormation},
+			want: []string{"Secret prod-aws, with the keys accessKeyId, secretAccessKey, is missing", "region eu-west-1"}},
 		// A target without a Secret, argoCD, names no Secret (#1588).
 		{reason: DeployTargetReady, c: inCluster, want: []string{"Argo CD is there for project default in namespace argocd"},
 			not: "Secret"},

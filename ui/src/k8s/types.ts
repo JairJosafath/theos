@@ -291,6 +291,12 @@ export interface DeployTarget extends K8sObject {
      * cluster Argo CD runs in).
      */
     argoCD?: { namespace?: string; project?: string; destination: { namespace: string; server?: string } }
+    /**
+     * Ships each release as CloudFormation stacks, through the CDK bootstrap's
+     * roles, in an AWS region; account, when set, is the twelve-digit account
+     * the credential must belong to.
+     */
+    cloudFormation?: { region: string; account?: string }
     /** Optional only for argoCD, which uses the operator's own ServiceAccount. */
     credentialsSecretRef?: LocalRef
     /** development (the default) or production. */

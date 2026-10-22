@@ -1,0 +1,30 @@
+# An AWS account and region to ship a Container that deploys itself to
+# (docs/plans/aws-deploy.md): each release's CDK assembly, which the
+# gitea-release Deployment attaches to the release, runs as CloudFormation
+# stacks there, through the roles of the account's CDK bootstrap. Only a
+# Container whose Framework deploys itself and whose Deployment is
+# gitea-release can name it in spec.deploy; any other is Incompatible.
+#
+# Not in kustomization.yaml: it needs a real account, bootstrapped as the
+# aws-standard template's README says under "Deploying", and Secret
+# prod-aws, which its owner creates:
+#
+#   kubectl -n webshop create secret generic prod-aws \
+#     --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+#
+# (and sessionToken for a temporary credential). Ready says whether AWS
+# accepts the credential, and in which account.
+apiVersion: c4.factory.io/v1alpha1
+kind: DeployTarget
+metadata:
+  name: aws-prod
+spec:
+  cloudFormation:
+    region: eu-west-1
+    # The account the credential must be in: a key of another account is
+    # refused before anything ships. Leave it out to take any.
+    account: "123456789012"
+  credentialsSecretRef:
+    name: prod-aws
+  # production waits for a person's approval of each release.
+  tier: production

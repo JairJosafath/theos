@@ -99,6 +99,12 @@ const GitHubSecretPackagesToken = "packagesToken" //nolint:gosec // a key name, 
 // GHCRHost is GitHub's container registry, where a github target's images go.
 const GHCRHost = "ghcr.io"
 
+// DeployMemberCloudFormation ships each release's CDK assembly as
+// CloudFormation stacks in an AWS account and region (docs/plans/aws-deploy.md).
+// A Container needs a Framework that deploys itself, whose synth is the
+// assembly, and the gitea-release Deployment, whose release carries it.
+const DeployMemberCloudFormation = "cloudFormation"
+
 // Settings of a cloudFormation target, as its adapter reads them.
 const (
 	// CloudFormationSettingRegion is the AWS region the stacks ship to.
@@ -136,6 +142,14 @@ var deployMembers = map[string]DeployMember{
 	DeployMemberArgoCD: {Name: DeployMemberArgoCD, Tool: "Argo CD",
 		Needs: []DeployNeed{{What: "a Deployment that writes " + ArgoCDManifestsPath + "/",
 			Met: func(c DeployContainer) bool { return c.Deployment == DeploymentK8sManifests }}}},
+	// sessionToken is optional, so it isn't a key the Secret must hold.
+	DeployMemberCloudFormation: {Name: DeployMemberCloudFormation, Tool: "AWS",
+		SecretKeys: []string{"accessKeyId", "secretAccessKey"},
+		Holds:      "the access key of an identity that may assume the account's CDK bootstrap roles",
+		Needs: []DeployNeed{
+			{What: "a Framework that deploys itself", Met: func(c DeployContainer) bool { return c.DeploysItself }},
+			{What: "the " + DeploymentGiteaRelease + " Deployment, whose release carries the CDK assembly",
+				Met: func(c DeployContainer) bool { return c.Deployment == DeploymentGiteaRelease }}}},
 }
 
 // DeployMemberByName returns the member name names.
@@ -234,8 +248,9 @@ func DeployCheckMessage(reason string, c DeployCheck) string {
 	}
 	switch reason {
 	case DeployTargetSecretMissing:
-		return fmt.Sprintf("Secret %s, with the key %s%s, is missing; whoever owns DeployTarget %s creates it "+
-			"holding %s for %s", c.Secret, keys, or, c.Target, c.Member.Holds, c.Where)
+		return fmt.Sprintf("Secret %s, with the %s %s%s, is missing; whoever owns DeployTarget %s creates it "+
+			"holding %s for %s", c.Secret, plural(len(c.Member.SecretKeys), "key", "keys"), keys, or, c.Target,
+			c.Member.Holds, c.Where)
 	case DeployTargetSecretIncomplete:
 		missing := fmt.Sprintf("%s %s", plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "))
 		if or != "" && slices.Equal(c.Missing, c.Member.SecretKeys) {
