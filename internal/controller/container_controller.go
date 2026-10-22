@@ -93,7 +93,7 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -186,7 +186,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		result := r.refreshChecks(ctx, &container, status)
 		live := r.liveContainer(ctx, &container)
 		answered := false
-		if container.Spec.StandardRef != nil {
+		if container.Choices().Standard != "" {
 			answered = r.updateStandard(ctx, &container, status, live)
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
@@ -228,6 +228,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	// Until the scaffold the expansion follows the Bundle; the scaffold keeps
+	// the last one, and from then on the Container reads it.
+	status.Bundle = res.bundle
 	if len(missing) > 0 {
 		status.Phase = c4v1alpha1.ContainerPending
 		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
@@ -242,14 +245,16 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
 		metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
 
+	choices := res.choices
 	err = model.CheckChoices(string(container.Spec.Type), res.entries)
 	if err == nil {
-		err = model.CheckStandard(container.Spec.FrameworkRef.Name, res.standard)
+		err = model.CheckStandard(choices.Framework, res.standard)
 	}
 	if err == nil {
 		// Resolved, so entries start with the Framework.
-		err = model.CheckDeploysItself(res.entries[0], string(container.Spec.Type), refName(container.Spec.ComputeRef), refName(container.Spec.DeploymentRef))
+		err = model.CheckDeploysItself(res.entries[0], string(container.Spec.Type), choices.Compute, choices.Deployment)
 	}
+	err = model.InBundle(choices.Bundle, err)
 	if err != nil {
 		reason := c4v1alpha1.ReasonUnsupportedType
 		if _, ok := errors.AsType[*model.FitError](err); ok {
@@ -344,7 +349,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		var reqs []reconcile.Request
 		for _, c := range containers.Items {
 			if c.Status.Phase != c4v1alpha1.ContainerReady ||
-				c.Spec.StandardRef != nil && c.Spec.StandardRef.Name == obj.GetName() {
+				c.Choices().Standard == obj.GetName() {
 				reqs = append(reqs, requestFor(c.Namespace, c.Name))
 			}
 		}
@@ -397,6 +402,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Bundle{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.DataStore{}, waitingContainers, specChanged()).
 		Named("container").
 		Complete(r)
