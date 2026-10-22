@@ -179,8 +179,10 @@ func main() {
 		setupLog.Error(nil, "--shared-secret and --shared-pull-secret need POD_NAMESPACE, the operator's namespace")
 		os.Exit(1)
 	}
-	if webhookService != "" && (podNamespace == "" || webhookCertSecret == "" || webhookCertPath != "") {
-		setupLog.Error(nil, "--webhook-service needs POD_NAMESPACE and --webhook-cert-secret, and no --webhook-cert-path")
+	if (webhookService != "" || webhookCertSecret != "") &&
+		(podNamespace == "" || webhookService == "" || webhookCertSecret == "" || webhookCertPath != "") {
+		setupLog.Error(nil, "--webhook-service and --webhook-cert-secret go together, need POD_NAMESPACE "+
+			"and exclude --webhook-cert-path")
 		os.Exit(1)
 	}
 	if podNamespace == "" && modelProxyURL != "" {

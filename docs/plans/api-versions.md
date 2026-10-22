@@ -181,7 +181,8 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    Built (#1614) with two choices the decision left open: the CA lasts ten
    years and a re-issue keeps it, renewing only the serving certificate, so
    a replica that hasn't re-read the Secret stays trusted by the
-   `caBundle`; and the CA goes only into CRDs at `strategy: Webhook`, since
+   `caBundle` (only the CA's own renewal, once a decade, leaves another
+   replica untrusted until its daily recheck); and the CA goes only into CRDs at `strategy: Webhook`, since
    the API server refuses a webhook stanza beside `None` (step 3 flips
    them). The generated role is cluster-wide, so its `secrets` rule already
    covers the namespace; no namespaced Role was added. With
