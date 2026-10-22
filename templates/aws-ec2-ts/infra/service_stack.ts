@@ -47,6 +47,8 @@ import type { Construct } from 'constructs';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import { serverAsset } from './server_asset';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
@@ -87,6 +89,8 @@ export interface ServiceStackProps extends StackProps {
   readonly tier: Tier;
   /** What the Container promises whatever the tier: `OPERATIONS`. */
   readonly operations: Operations;
+  /** The data stores it connects the service to: `DATA_STORES` unless a test names others. */
+  readonly dataStores?: readonly (readonly [string, Connect])[];
 }
 
 /**
@@ -205,6 +209,19 @@ export class ServiceStack extends Stack {
       assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
     });
     table.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem');
+    // The DataStores the Container's Relationships name, from their Connectors:
+    // each grants the instance role its calls and puts the table's name in
+    // the environment the server's unit is rendered with.
+    const environment: Record<string, string> = { ...users.environment };
+    const user = {
+      grantPrincipal: role,
+      addEnvironment: (key: string, value: string) => {
+        environment[key] = value;
+      },
+    };
+    const stores = (props.dataStores ?? DATA_STORES).map(
+      ([name, connect]) => [name, connect(this, user, rules)] as const,
+    );
     serverLogs.grantWrite(role);
     const server = serverAsset(this, 'Server');
     role.addToPrincipalPolicy(
@@ -229,7 +246,7 @@ export class ServiceStack extends Stack {
         table.tableName,
         serverLogs.logGroupName,
         this.region,
-        users.environment,
+        environment,
       ),
     );
 
@@ -513,12 +530,22 @@ export class ServiceStack extends Stack {
         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
+    for (const [name, store] of stores) {
+      alarms.monitoring.monitorDynamoTable({
+        table: store,
+        alarmFriendlyName: name,
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        addSystemErrorCountAlarm: { Critical: { maxErrorCount: 0 } },
+        addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+        addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
+      });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table],
+        tables: [table, ...stores.map(([, store]) => store)],
       });
     }
 
