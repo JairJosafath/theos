@@ -56,11 +56,11 @@ metadata:
   name: python-cli
 spec:
   displayName: Command-line program (Python, uv)
-  description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases; or, as a worker, a long-running process that stops cleanly on SIGTERM.
-  supportedTypes: [cli, worker]
+  description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases; or, as a worker, a long-running process that stops cleanly on SIGTERM; or, as a job, a run that does its work once and exits.
+  supportedTypes: [cli, worker, job]
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-cli
-    ref: v1.1.0
+    ref: v1.2.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Standard
@@ -85,13 +85,13 @@ metadata:
 spec:
   displayName: Python quality standard
   description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
-  supportedTypes: [service, cli, worker]
+  supportedTypes: [service, cli, worker, job]
   supportedFrameworks: [python-fastapi, python-cli]
   protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
   checksBeforeRelease: true
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
-    ref: v1.5.1
+    ref: v1.6.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Compute

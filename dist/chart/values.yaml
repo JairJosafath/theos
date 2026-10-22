@@ -708,11 +708,11 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: python-cli
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Command-line program (Python, uv)
-        description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases; or, as a worker, a long-running process that stops cleanly on SIGTERM.
-        supportedTypes: [cli, worker]
+        description: A command-line program in Python managed with uv, with flags parsed by argparse, a version flag, unit tests and a wheel and sdist for releases; or, as a worker, a long-running process that stops cleanly on SIGTERM; or, as a job, a run that does its work once and exits.
+        supportedTypes: [cli, worker, job]
     - kind: Framework
       name: go-kubebuilder
       ref: v1.2.0
@@ -754,7 +754,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.18.2
+      ref: v1.18.3
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -765,11 +765,11 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.5.1
+      ref: v1.6.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
-        supportedTypes: [service, cli, worker]
+        supportedTypes: [service, cli, worker, job]
         supportedFrameworks: [python-fastapi, python-cli]
         protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true

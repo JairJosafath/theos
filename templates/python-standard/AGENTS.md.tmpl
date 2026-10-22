@@ -122,6 +122,17 @@ and a review. Never commit red.
 12. **Entry point:** the `[project.scripts]` function only sets up logging and
     the signal handlers and calls `run`; logs go to stderr, one line per event,
     and the exit code is 0 after a clean stop.
+{{- else if eq .Type "job" }}
+11. **The job:** it does its work once and returns: exit 0 when done, non-zero
+    when it failed, with the traceback in the log. It never loops, polls or
+    waits for a signal the way a worker does; work that goes on is a worker.
+    A failed run is retried
+{{- if eq .Deployment "k8s-manifests" }} (up to the Job's `backoffLimit`, 3){{ end }},
+    so a run must be safe to redo: mark what it handled in the same step that
+    handles it, never after.
+12. **Entry point:** the `[project.scripts]` function only sets up logging and
+    calls `run`, which maps the work's outcome to the exit code; logs go to
+    stderr, one line per event.
 {{- else }}
 11. **The command line:** results to stdout, diagnostics to stderr; exit 0 on
     success, 1 on failure, 2 on bad usage; `--help` and `--version` work; never
@@ -142,7 +153,7 @@ Offline digests (read the one for what you are touching):
 - `docs/style/python.md`: PEP 8, PEP 257, Google's Python style, typing and
   pytest practice, each rule marked [lint] or [review]; its FastAPI and
   command-line sections apply to services and CLIs
-{{- if and (eq .Type "worker") (ne .Framework "python-fastapi") }}, not to this worker, which
+{{- if and (or (eq .Type "worker") (eq .Type "job")) (ne .Framework "python-fastapi") }}, not to this {{ .Type }}, which
   follows rules 11 and 12 above
 {{- end }}
 - `docs/style/principles.md`: cross-language principles, with sources
@@ -155,6 +166,6 @@ https://mypy.readthedocs.io/en/stable/ · https://docs.pytest.org/en/stable/expl
 https://fastapi.tiangolo.com/tutorial/
 {{- else if eq .Type "worker" }} ·
 https://docs.python.org/3/library/signal.html
-{{- else if eq .Framework "python-cli" }} ·
+{{- else if and (eq .Framework "python-cli") (eq .Type "cli") }} ·
 https://docs.python.org/3/library/argparse.html
 {{- end }}
