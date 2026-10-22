@@ -32,8 +32,9 @@ type Deployer interface {
 	Ship(ctx context.Context, target Target, s Shipment) error
 	// State reads back the deploy of app at target: version is the version
 	// the entry wants, its pin, else the newest release. An adapter whose
-	// target runs one version at a time (CloudFormation, Argo CD) ignores it
-	// and reports what runs; one whose versions stand side by side (GitHub
+	// target runs one version at a time (CloudFormation, Argo CD) reports
+	// what runs, and CloudFormation reads version only to report Deployed a
+	// stack a failed update rolled back to it; one whose versions stand side by side (GitHub
 	// releases) reports version's, else the newest. The zero DeployState when
 	// there is none.
 	State(ctx context.Context, target Target, app, version string) (DeployState, error)
