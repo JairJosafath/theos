@@ -213,11 +213,13 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# The Dockerfile's builder stage runs on $BUILDPLATFORM and cross-compiles,
-	# so it builds every platform as it is (#1579). A failed build fails the target.
+	# so it builds every platform as it is (#1579). A failed build fails the target,
+	# and the builder is removed either way (#1779).
 	- $(CONTAINER_TOOL) buildx create --name {{ .Container }}-builder
 	$(CONTAINER_TOOL) buildx use {{ .Container }}-builder
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) --tag ${IMG} -f Dockerfile . ; \
-		status=$$?; $(CONTAINER_TOOL) buildx rm {{ .Container }}-builder; exit $$status
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) --tag ${IMG} -f Dockerfile . || \
+		{ status=$$?; $(CONTAINER_TOOL) buildx rm {{ .Container }}-builder; exit $$status; }
+	$(CONTAINER_TOOL) buildx rm {{ .Container }}-builder
 
 # kustomize-build DIR: `kustomize build DIR` with the manager image set to
 # $(IMG). kubebuilder runs `kustomize edit set image` in config/manager, which
