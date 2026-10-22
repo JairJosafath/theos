@@ -41,9 +41,11 @@ const (
 const OAuthBeta = "oauth-2025-04-20"
 
 // Proxy is the model proxy's http.Handler. It answers /healthz (always 200)
-// and /readyz (200 once it has a credential and until Drain, else 503)
-// itself, and forwards every other path to its upstream, or answers 503
-// while it has no credential.
+// and /readyz (200 until Drain, else 503) itself, and forwards every other
+// path to its upstream, or answers 503 while it has no credential. Readiness
+// doesn't wait for the credential: the Secret arrives after the chart (the
+// guide's step 2), and a pod that takes connections and answers 503 says
+// more to a sandbox than one with no endpoints (#1627).
 type Proxy struct {
 	upstream *url.URL
 	dir      string
@@ -93,17 +95,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
-	if r.URL.Path == "/readyz" && p.draining.Load() {
-		http.Error(w, "The model proxy is stopping.", http.StatusServiceUnavailable)
+	if r.URL.Path == "/readyz" {
+		if p.draining.Load() {
+			http.Error(w, "The model proxy is stopping.", http.StatusServiceUnavailable)
+			return
+		}
+		// Ready with or without a credential; the read is for the log, so it
+		// says within a probe period that the token arrived, not only on the
+		// first request a sandbox sends (#1627).
+		p.credential()
+		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
 	name, value := p.credential()
-	switch {
-	case name == "":
+	if name == "" {
 		http.Error(w, "The model proxy has no credential yet.", http.StatusServiceUnavailable)
-		return
-	case r.URL.Path == "/readyz":
-		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
 	ctx := context.WithValue(r.Context(), credentialKey{}, keyValue{key: name, value: value})

@@ -48,7 +48,9 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
-        # /readyz fails until the Secret holds a token and while a stop drains.
+        # /readyz fails only while a stop drains. Without a token the pod is
+        # ready and answers 503 to every request, so the install needn't wait
+        # for the Secret (#1627).
         readinessProbe:
           httpGet:
             path: /readyz
@@ -81,4 +83,7 @@ spec:
       - name: credentials
         secret:
           secretName: {{ .Values.agents.credentialsSecret }}
+          # The Secret is made after the install (the guide's step 2); the
+          # kubelet fills the directory when it appears (#1627).
+          optional: true
 {{- end }}

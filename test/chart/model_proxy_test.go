@@ -102,14 +102,20 @@ func checkModelProxy(t *testing.T, where string, manifests []byte, name, secret 
 	}
 }
 
-// checkModelProxyPod requires the Secret as a volume with no subPath and no
-// Secret in any container's env or envFrom.
+// checkModelProxyPod requires the Secret as an optional volume with no
+// subPath and no Secret in any container's env or envFrom.
 func checkModelProxyPod(t *testing.T, where string, pod corev1.PodSpec, secret string) {
 	t.Helper()
 	var volume string
 	for _, v := range pod.Volumes {
 		if v.Secret != nil && v.Secret.SecretName == secret {
 			volume = v.Name
+			// The guide makes the Secret after `helm install --wait`; a required
+			// volume keeps the pod ContainerCreating and the install times out (#1627).
+			if v.Secret.Optional == nil || !*v.Secret.Optional {
+				t.Errorf("%s: volume %s of Secret %s is not optional, so the pod waits for the Secret (#1627)",
+					where, v.Name, secret)
+			}
 		}
 	}
 	if volume == "" {
