@@ -168,7 +168,7 @@ func TestDeployCheckMessage(t *testing.T) {
 	}{
 		{reason: DeployTargetReady, c: c, want: []string{"GitHub accepts", "prod-github", "acme/shop"}},
 		{reason: DeployTargetSecretMissing, c: c,
-			want: []string{"Secret prod-github, with the key token, is missing", "DeployTarget prod", "acme/shop"}},
+			want: []string{"Secret prod-github, with the key token (or a GitHub App's appId, installationId, privateKey), is missing", "DeployTarget prod", "acme/shop"}},
 		{reason: DeployTargetSecretIncomplete, c: DeployCheck{Target: "prod", Secret: "prod-github", Where: "acme/shop",
 			Member: github, Missing: []string{"token"}}, want: []string{"has no key token", "DeployTarget prod"}},
 		// Names the target and who sets the Secret, as the release copy does.
@@ -262,4 +262,61 @@ func TestNextReleaseStep(t *testing.T) {
 func withDetail(c DeployCheck, detail string) DeployCheck {
 	c.Detail = detail
 	return c
+}
+
+// A github Secret holds a token or a GitHub App's three keys whole (#1601).
+func TestGitHubMissingKeysAndMessage(t *testing.T) {
+	github, _ := DeployMemberByName(DeployMemberGitHub)
+	app := map[string][]byte{"appId": []byte("1"), "installationId": []byte("2"), "privateKey": []byte("pem")}
+	tests := []struct {
+		name    string
+		data    map[string][]byte
+		missing []string
+		message string
+	}{
+		{name: "token", data: map[string][]byte{"token": []byte("t")}},
+		{name: "app", data: app},
+		{name: "both", data: map[string][]byte{"token": []byte("t"), "appId": []byte("1")}},
+		{name: "none", missing: []string{"token"},
+			message: "has no key token (or a GitHub App's appId, installationId, privateKey);"},
+		{name: "packagesToken alone", data: map[string][]byte{"packagesToken": []byte("p")}, missing: []string{"token"},
+			message: "has no key token (or a GitHub App's appId, installationId, privateKey);"},
+		{name: "app without its key", data: map[string][]byte{"appId": []byte("1"), "installationId": []byte("2")},
+			missing: []string{"privateKey"}, message: "has no key privateKey of the GitHub App it names;"},
+		{name: "app id alone", data: map[string][]byte{"appId": []byte("1"), "privateKey": []byte(" ")},
+			missing: []string{"installationId", "privateKey"},
+			message: "has no keys installationId, privateKey of the GitHub App it names;"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := github.MissingKeys(tt.data)
+			if !slices.Equal(got, tt.missing) {
+				t.Fatalf("MissingKeys = %v, want %v", got, tt.missing)
+			}
+			if _, _, ok := GitHubCredential(tt.data); ok != (len(got) == 0) {
+				t.Errorf("GitHubCredential ok = %v with %v missing", ok, got)
+			}
+			if tt.message == "" {
+				return
+			}
+			msg := DeployCheckMessage(DeployTargetSecretIncomplete, DeployCheck{Target: "prod", Secret: "gh",
+				Where: "acme/shop", Member: github, Missing: got})
+			if !strings.Contains(msg, tt.message) {
+				t.Errorf("message %q lacks %q", msg, tt.message)
+			}
+		})
+	}
+}
+
+func TestGitHubCredential(t *testing.T) {
+	token, app, ok := GitHubCredential(map[string][]byte{"token": []byte(" t\n"), "appId": []byte("1"),
+		"installationId": []byte("2"), "privateKey": []byte("pem")})
+	if !ok || token != "t" || app != nil {
+		t.Errorf("token wins: got %q %v %v", token, app, ok)
+	}
+	token, app, ok = GitHubCredential(map[string][]byte{"appId": []byte(" 1"), "installationId": []byte("2\n"),
+		"privateKey": []byte("pem")})
+	if !ok || token != "" || app == nil || app.AppID != "1" || app.InstallationID != "2" || string(app.PrivateKey) != "pem" {
+		t.Errorf("app: got %q %+v %v", token, app, ok)
+	}
 }

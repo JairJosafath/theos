@@ -56,8 +56,12 @@ type DeployMember struct {
 	Name string
 	// Tool names who owns the place in a message, such as GitHub.
 	Tool string
-	// SecretKeys are the keys the target's credentialsSecretRef holds.
+	// SecretKeys are the keys the target's credentialsSecretRef holds, and
+	// OrKeys another set it may hold whole instead, such as a GitHub App's.
 	SecretKeys []string
+	OrKeys     []string
+	// OrHolds names what OrKeys are of, for a message, such as GitHub App.
+	OrHolds string
 	// Holds says what the Secret holds, for a message.
 	Holds string
 	// Needs are what a Container must have to be shipped there; none for a
@@ -114,8 +118,10 @@ func GitHubTakesLatest(latest *bool) bool {
 
 // deployMembers are the members the factory ships to, by name.
 var deployMembers = map[string]DeployMember{
-	DeployMemberGitHub: {Name: DeployMemberGitHub, Tool: "GitHub", SecretKeys: []string{"token"},
-		Holds: "a fine-grained token for the repository alone, with Contents read and write"},
+	DeployMemberGitHub: {Name: DeployMemberGitHub, Tool: "GitHub", SecretKeys: []string{GitHubSecretToken},
+		OrKeys: GitHubAppKeys, OrHolds: "GitHub App",
+		Holds: "a fine-grained token for the repository alone, with Contents read and write, or the IDs and " +
+			"private key of a GitHub App installed on it with Contents read and write"},
 	// An argoCD target has no Secret: the operator's own ServiceAccount
 	// writes the Applications (docs/plans/k8s-deploy.md, decision 2).
 	DeployMemberArgoCD: {Name: DeployMemberArgoCD, Tool: "Argo CD",
@@ -155,10 +161,26 @@ func (m DeployMember) Lacks(c DeployContainer) []string {
 }
 
 // MissingKeys returns the keys of m's Secret that data lacks or holds empty,
-// in the table's order.
+// in the table's order: none when it holds SecretKeys or OrKeys whole; OrKeys'
+// missing ones when it holds some of them, since that is the set its owner
+// began; else SecretKeys' missing ones.
 func (m DeployMember) MissingKeys(data map[string][]byte) []string {
+	missing := missingKeys(m.SecretKeys, data)
+	if len(missing) == 0 || len(m.OrKeys) == 0 {
+		return missing
+	}
+	switch or := missingKeys(m.OrKeys, data); {
+	case len(or) == 0:
+		return nil
+	case len(or) < len(m.OrKeys):
+		return or
+	}
+	return missing
+}
+
+func missingKeys(keys []string, data map[string][]byte) []string {
 	var out []string
-	for _, k := range m.SecretKeys {
+	for _, k := range keys {
 		if strings.TrimSpace(string(data[k])) == "" {
 			out = append(out, k)
 		}
@@ -197,14 +219,23 @@ func DeployCheckMessage(reason string, c DeployCheck) string {
 		detail = ": " + c.Detail
 	}
 	keys := strings.Join(c.Member.SecretKeys, ", ")
+	or := ""
+	if len(c.Member.OrKeys) > 0 {
+		or = fmt.Sprintf(" (or a %s's %s)", c.Member.OrHolds, strings.Join(c.Member.OrKeys, ", "))
+	}
 	switch reason {
 	case DeployTargetSecretMissing:
-		return fmt.Sprintf("Secret %s, with the key %s, is missing; whoever owns DeployTarget %s creates it "+
-			"holding %s for %s", c.Secret, keys, c.Target, c.Member.Holds, c.Where)
+		return fmt.Sprintf("Secret %s, with the key %s%s, is missing; whoever owns DeployTarget %s creates it "+
+			"holding %s for %s", c.Secret, keys, or, c.Target, c.Member.Holds, c.Where)
 	case DeployTargetSecretIncomplete:
-		return fmt.Sprintf("Secret %s of DeployTarget %s has no %s %s; whoever owns the target sets it to %s for %s",
-			c.Secret, c.Target, plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "),
-			c.Member.Holds, c.Where)
+		missing := fmt.Sprintf("%s %s", plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "))
+		if or != "" && slices.Equal(c.Missing, c.Member.SecretKeys) {
+			missing += or
+		} else if or != "" {
+			missing += fmt.Sprintf(" of the %s it names", c.Member.OrHolds)
+		}
+		return fmt.Sprintf("Secret %s of DeployTarget %s has no %s; whoever owns the target sets it to %s for %s",
+			c.Secret, c.Target, missing, c.Member.Holds, c.Where)
 	case DeployTargetCredentialRefused:
 		if c.Secret == "" {
 			return fmt.Sprintf("%s refused the operator's ServiceAccount for DeployTarget %s for %s%s. Whoever owns "+

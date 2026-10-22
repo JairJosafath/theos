@@ -188,7 +188,7 @@ var _ = Describe("DeployTarget", func() {
 		dt := newDeployTarget(ns, "staging", "staging-github")
 		mustCreate(dt)
 		cond := deployReady(dt, metav1.ConditionFalse, "SecretMissing")
-		Expect(cond.Message).To(ContainSubstring("Secret staging-github, with the key token, is missing"))
+		Expect(cond.Message).To(ContainSubstring("Secret staging-github, with the key token (or a GitHub App's appId, installationId, privateKey), is missing"))
 		Expect(cond.Message).To(ContainSubstring("DeployTarget staging"))
 		Expect(dt.Status.CheckedTime).To(BeNil())
 

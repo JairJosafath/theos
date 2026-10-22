@@ -125,6 +125,41 @@ func GitHubDeployState(f GitHubDeployFacts) GitHubDeployReport {
 	return GitHubDeployReport{}
 }
 
+// The keys of a github target's Secret, or of the Crew's
+// publishReleases.github.tokenSecretRef, holding its credential: a token, or a
+// GitHub App's id, the id of its installation on the repository and its
+// private key in PEM (docs/plans/github-deploy.md, decision 6).
+const (
+	GitHubSecretToken          = "token"
+	GitHubSecretAppID          = "appId"
+	GitHubSecretInstallationID = "installationId"
+	GitHubSecretPrivateKey     = "privateKey"
+)
+
+// GitHubAppKeys are a GitHub App's keys, in a message's order.
+var GitHubAppKeys = []string{GitHubSecretAppID, GitHubSecretInstallationID, GitHubSecretPrivateKey}
+
+// GitHubApp is a GitHub App's installation, as a Secret names it.
+type GitHubApp struct {
+	AppID, InstallationID string
+	PrivateKey            []byte
+}
+
+// GitHubCredential reads the credential of a GitHub Secret's data: its
+// token when set, which wins, else the App when its three keys are set; ok
+// is false when it holds neither whole.
+func GitHubCredential(data map[string][]byte) (token string, app *GitHubApp, ok bool) {
+	if token = strings.TrimSpace(string(data[GitHubSecretToken])); token != "" {
+		return token, nil, true
+	}
+	if len(missingKeys(GitHubAppKeys, data)) > 0 {
+		return "", nil, false
+	}
+	return "", &GitHubApp{AppID: strings.TrimSpace(string(data[GitHubSecretAppID])),
+		InstallationID: strings.TrimSpace(string(data[GitHubSecretInstallationID])),
+		PrivateKey:     data[GitHubSecretPrivateKey]}, true
+}
+
 // GitHubSecretPackagesToken is the key of a github target's Secret holding
 // the token that writes its image to GitHub's container registry.
 const GitHubSecretPackagesToken = "packagesToken"
