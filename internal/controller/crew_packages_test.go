@@ -87,7 +87,7 @@ var _ = Describe("Crew release packages", func() {
 				"Release runs of v0.1.0 are Running; its packages are read from the release once they succeed"))
 			g.Expect(packages.Published).To(BeEmpty())
 		}).Should(Succeed())
-		Expect(gitFake.packagePublishes(ns, "orders-api", "v0.1.0")).To(BeZero(), "nothing is read before the runs succeed")
+		Expect(gitFake.packagePublishes(ns+"/orders-api@v0.1.0")).To(BeZero(), "nothing is read before the runs succeed")
 
 		releaseRun(ns, "completed", "success")
 		Eventually(func(g Gomega) {
@@ -108,7 +108,7 @@ var _ = Describe("Crew release packages", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.packageUploads(ns, "npm", "@c4factory/orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(gitFake.packageUploads(ns, "PyPI", "orders-api", "0.1.0")).To(Equal(1))
-			g.Expect(gitFake.packagePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.packagePublishes(ns + "/orders-api@v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "PackagePublished")
 			g.Expect(events).To(HaveLen(2))
 			for _, e := range events {
@@ -130,7 +130,7 @@ var _ = Describe("Crew release packages", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(BeEmpty())
 			g.Expect(moduleEvents(g, ns, "InvalidPackage")).To(BeEmpty())
-			g.Expect(gitFake.packagePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.packagePublishes(ns + "/orders-api@v0.1.0")).To(BeNumerically("<=", 2))
 		}, 3*time.Second).Should(Succeed())
 	})
 
@@ -174,7 +174,7 @@ var _ = Describe("Crew release packages", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.packageUploads(ns, "npm", "@c4factory/orders-api", "0.2.0")).To(BeZero())
 			g.Expect(gitFake.packageUploads(ns, "PyPI", "orders-api", "0.1.0")).To(Equal(1))
-			g.Expect(gitFake.packagePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.packagePublishes(ns + "/orders-api@v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "InvalidPackage")
 			g.Expect(events).To(HaveLen(1))
 			g.Expect(events[0].Series).To(BeNil())

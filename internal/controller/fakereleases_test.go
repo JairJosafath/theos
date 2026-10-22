@@ -443,12 +443,12 @@ func (g *fakeGit) failPackagePublishes(owner, name string, n int) {
 	g.releaseState().packageFailures[owner+"/"+name] = n
 }
 
-// packagePublishes is how many times the Crew asked to publish owner/name's
-// packages at tag.
-func (g *fakeGit) packagePublishes(owner, name, tag string) int {
+// packagePublishes is how many times the Crew asked to publish the packages
+// of release, owner/name@tag, as imagePushes counts the image's pushes.
+func (g *fakeGit) packagePublishes(release string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.releaseState().packagePublishes[owner+"/"+name+"@"+tag]
+	return g.releaseState().packagePublishes[release]
 }
 
 // packageUploads is how many times ecosystem package name@version was uploaded
