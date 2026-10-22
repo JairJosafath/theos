@@ -216,7 +216,13 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 			p.facts.SourceFiles = last.(sourceRead).source
 			break
 		}
-		if p.facts.SourceFiles, err = readSource(ctx, p.r.Client, p.container, p.provider, p.repo, p.tag); err != nil {
+		var known []string
+		if known, err = knownCredentials(ctx, p.r.Client, p.r.APIReader, p.container, p.token); err != nil {
+			p.log.Error(err, "Failed to read the credentials the source is checked against")
+			return false
+		}
+		if p.facts.SourceFiles, err = readSource(ctx, p.r.Client, p.container, p.provider, p.repo, p.tag,
+			known); err != nil {
 			p.log.Error(err, "Failed to read the release's source from Gitea")
 			return false
 		}
@@ -648,9 +654,16 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
 	step model.PublishStep, private *bool) *c4v1alpha1.CrewReleaseSource {
 	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
-	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url)
-	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease",
-		fmt.Sprintf("The source of %s is published at %s", facts.Tag, url))
+	allowed := 0
+	if facts.SourceFiles != nil {
+		allowed = facts.SourceFiles.Allowed
+	}
+	log.Info("Published source", "tag", step.Tag, "commit", step.Commit, "url", url, "allowedSecretLines", allowed)
+	message := fmt.Sprintf("The source of %s is published at %s", facts.Tag, url)
+	if allowed > 0 {
+		message += fmt.Sprintf("; %d lines marked %s were not checked for secrets", allowed, model.AllowSecretMark)
+	}
+	r.event(crew, corev1.EventTypeNormal, reasonSourcePublished, "PublishRelease", message)
 	if step.Warning != "" {
 		log.Info("Published source go install can't fetch from GitHub", "tag", step.Tag, "problem", step.Warning)
 		r.event(crew, corev1.EventTypeWarning, reasonSourceNotGoInstallable, "PublishRelease",

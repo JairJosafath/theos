@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -105,14 +106,16 @@ type SecretScan struct {
 // ScanSecrets reads the file at path line by line from content, to its end,
 // and reports each line holding a secret: a private key block, a token of a
 // shape secretRules know, or one of known, the values of credentials the
-// operator holds (shorter than minKnown are left out). A line is reported
-// once, for the first rule that hits; one marked AllowSecretMark is counted
-// as allowed instead. A file with a NUL byte is binary: it is read to its end
-// and reports nothing.
+// operator holds (shorter than minKnown, or a number, are left out). A line
+// is reported once, for the first rule that hits; one marked AllowSecretMark
+// is counted as allowed instead. A file with a NUL byte is binary: it is read
+// to its end and reports nothing.
 func ScanSecrets(path string, content io.Reader, known []string) (SecretScan, error) {
 	var values [][]byte
 	for _, k := range known {
-		if len(k) >= minKnown {
+		// A number (a GitHub App's installationId) is no secret, and text
+		// holds numbers.
+		if len(k) >= minKnown && strings.Trim(k, "0123456789") != "" {
 			values = append(values, []byte(k))
 		}
 	}
@@ -236,4 +239,27 @@ func (s *ReleaseSource) Check(files []CheckedFile) {
 	}
 	kept := slices.DeleteFunc(slices.Clone(files), func(f CheckedFile) bool { return !published[f.Path] })
 	s.Problems, s.Allowed = PublishChecks(kept), AllowedSecrets(kept)
+}
+
+// ScanBlob reads the size bytes of the file at path from r once, as a
+// stream, into its git blob SHA-1 (HashBlob) and what ScanSecrets finds in it.
+func ScanBlob(path string, r io.Reader, size int64, known []string) (string, SecretScan, error) {
+	h := blobHasher(size)
+	n := new(byteCount)
+	scan, err := ScanSecrets(path, io.TeeReader(r, io.MultiWriter(h, n)), known)
+	switch {
+	case err != nil:
+		return "", SecretScan{}, err
+	case int64(*n) != size:
+		return "", SecretScan{}, fmt.Errorf("read %d bytes of a %d byte file", *n, size)
+	}
+	return hex.EncodeToString(h.Sum(nil)), scan, nil
+}
+
+// byteCount counts the bytes written to it.
+type byteCount int64
+
+func (c *byteCount) Write(p []byte) (int, error) {
+	*c += byteCount(len(p))
+	return len(p), nil
 }

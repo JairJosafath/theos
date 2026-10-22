@@ -80,10 +80,10 @@ func TestScanSecrets(t *testing.T) {
 	}
 }
 
-func TestScanSecretsAllowMarkAndShortKnown(t *testing.T) {
+func TestScanSecretsAllowMarkAndPlainKnown(t *testing.T) {
 	ghp := token("gh"+"p_", 36, alnum)
 	content := ghp + " # " + AllowSecretMark + "\n" + "short and plain\n" + ghp + "\n"
-	scan, err := ScanSecrets("a.txt", strings.NewReader(content), []string{"short"})
+	scan, err := ScanSecrets("a.txt", strings.NewReader(content+"id 123456789\n"), []string{"short", "123456789"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,5 +196,17 @@ func TestNextSourceStepProblems(t *testing.T) {
 	if done != nil || step.Action != PublishFail || step.Reason != PublishSecretFound ||
 		!strings.Contains(step.Message, "a line 3: a private key; no license") {
 		t.Fatalf("got %+v", step)
+	}
+}
+
+// ScanBlob hashes what it scans, as HashBlob does.
+func TestScanBlob(t *testing.T) {
+	content := "package engine\n"
+	blob, scan, err := ScanBlob("engine.go", strings.NewReader(content), int64(len(content)), nil)
+	if err != nil || blob != engineGo || len(scan.Found) != 0 {
+		t.Fatalf("got %s, %+v, %v", blob, scan, err)
+	}
+	if _, _, err := ScanBlob("engine.go", strings.NewReader(content), 99, nil); err == nil {
+		t.Fatal("a short read passed")
 	}
 }

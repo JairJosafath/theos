@@ -9,12 +9,17 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"golang.org/x/mod/modfile"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -62,17 +67,21 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1alpha1.Cr
 
 // readSource reads the Container's files at tag from Gitea and hashes them
 // into the release's source, the factory's own on its CI system left out; it
-// reads the module path from the root go.mod.
+// reads the module path from the root go.mod. Each file is scanned for
+// secrets as it streams, known among them, and the files kept are checked
+// (model.PublishChecks) into the source's Problems.
 func readSource(ctx context.Context, c client.Reader, container *c4v1alpha1.Container,
-	provider gitprovider.Provider, repo gitprovider.Repository, tag string) (*model.ReleaseSource, error) {
+	provider gitprovider.Provider, repo gitprovider.Repository, tag string, known []string) (*model.ReleaseSource, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
 		return nil, err
 	}
 	var files []model.SourceFile
+	var checked []model.CheckedFile
 	module := ""
 	err = provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
 		file := model.SourceFile{Path: f.Path, Mode: model.FileMode(f.Mode), Size: f.Size}
+		var scan model.SecretScan
 		var err error
 		if f.Path == "go.mod" && f.Mode != gitprovider.SourceSymlink && f.Size <= maxGoMod {
 			var data []byte
@@ -81,16 +90,90 @@ func readSource(ctx context.Context, c client.Reader, container *c4v1alpha1.Cont
 			}
 			module = modfile.ModulePath(data)
 			file.Blob = model.BlobSHA(data)
-		} else if file.Blob, err = model.HashBlob(content, f.Size); err != nil {
+			if scan, err = model.ScanSecrets(f.Path, bytes.NewReader(data), known); err != nil {
+				return err
+			}
+		} else if file.Blob, scan, err = model.ScanBlob(f.Path, content, f.Size, known); err != nil {
 			return fmt.Errorf("reading %s: %w", f.Path, err)
 		}
 		files = append(files, file)
+		checked = append(checked, model.CheckedFile{Path: f.Path, Size: f.Size, Secrets: scan})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return model.NewSource(ci, files, module)
+	source, err := model.NewSource(ci, files, module)
+	if err != nil {
+		return nil, err
+	}
+	source.Check(checked)
+	return source, nil
+}
+
+// knownCredentials are the values of the credentials the operator holds for
+// the Container's project, which its published source must not hold: the
+// GitProvider's token, the Container's agent Git token, the Agents' token
+// Secrets in its namespace, and extra, the publish target's own. They are
+// compared, never stored or logged. A Secret not there holds nothing.
+func knownCredentials(ctx context.Context, c client.Reader, apiReader client.Reader,
+	container *c4v1alpha1.Container, extra ...string) ([]string, error) {
+	known := slices.Clone(extra)
+	ns := container.Namespace
+	var gp c4v1alpha1.GitProvider
+	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: container.Spec.GitProviderRef.Name}, &gp); err != nil {
+		return nil, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
+	}
+	creds, _, err := readCredentials(ctx, apiReader, &gp)
+	if err != nil {
+		return nil, err
+	}
+	known = append(known, creds.Token)
+	// The agent Git Secret's other keys, its user and scopes, are no secret.
+	agentGit, err := secretData(ctx, apiReader, ns, agentGitSecret(container.Name))
+	if err != nil {
+		return nil, err
+	}
+	known = append(known, string(agentGit["token"]))
+	var agents c4v1alpha1.AgentList
+	if err := c.List(ctx, &agents, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	var read []string
+	for _, a := range agents.Items {
+		ref := a.Spec.CredentialsSecretRef
+		if ref == nil || slices.Contains(read, ref.Name) {
+			continue
+		}
+		read = append(read, ref.Name)
+		data, err := secretData(ctx, apiReader, ns, ref.Name)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range data {
+			// Every key is an environment variable: a base URL is no secret.
+			if !strings.Contains(string(v), "://") {
+				known = append(known, string(v))
+			}
+		}
+	}
+	for i := range known {
+		known[i] = strings.TrimSpace(known[i])
+	}
+	return known, nil
+}
+
+// secretData is the data of Secret name in ns, nil when it isn't there.
+func secretData(ctx context.Context, apiReader client.Reader, ns, name string) (map[string][]byte, error) {
+	var secret corev1.Secret
+	err := apiReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading Secret %s: %w", name, err)
+	}
+	return secret.Data, nil
 }
 
 // sourceRead is a release's source as read from Gitea at its tag.
