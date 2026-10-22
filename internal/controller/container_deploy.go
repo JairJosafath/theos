@@ -184,7 +184,13 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 	}
 	run, err := deployer.State(ctx, target, deployApp(p.container), model.DeployWanted(facts.Version, facts.Newest))
 	if err != nil {
-		facts.StateFailure = err.Error()
+		// A name the tool can't take is a mistake to report, not a read to
+		// try again (#1677).
+		if _, ok := errors.AsType[*model.DeployNameError](err); ok {
+			facts.Rejected = err.Error()
+		} else {
+			facts.StateFailure = err.Error()
+		}
 		return ports.Target{}, nil
 	}
 	facts.Run = &model.DeployRun{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,

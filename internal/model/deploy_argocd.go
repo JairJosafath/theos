@@ -49,12 +49,12 @@ const ArgoCDApplicationNameMax = 63
 // Argo CD namespace: the Container's namespace and name, joined with a dash,
 // since Applications of every namespace share that one namespace. An error
 // when the joined name is over ArgoCDApplicationNameMax, though each part
-// fits on its own.
+// fits on its own; the error is a DeployNameError.
 func ArgoCDApplicationName(app string) (string, error) {
 	name := strings.Replace(app, "/", "-", 1)
 	if len(name) > ArgoCDApplicationNameMax {
-		return "", fmt.Errorf("the Application name %s is %d characters, over the %d a label value holds: "+
-			"shorten the Container's namespace or name", name, len(name), ArgoCDApplicationNameMax)
+		return "", &DeployNameError{Message: fmt.Sprintf("the Application name %s is %d characters, over the %d a "+
+			"label value holds: shorten the Container's namespace or name", name, len(name), ArgoCDApplicationNameMax)}
 	}
 	return name, nil
 }
@@ -62,7 +62,7 @@ func ArgoCDApplicationName(app string) (string, error) {
 // ArgoCDApplicationConflict says whether app may ship to, or read, the
 // Application whose c4.factory.io/namespace and c4.factory.io/container
 // labels are namespace and container: nil when they name app, or name
-// nothing; else the error names the Container they do name. Two Containers'
+// nothing; else a DeployNameError naming the Container they do name. Two Containers'
 // names can join to the same (a-b/c and a/b-c), and the second must not
 // repoint the first's Application or report its deploy (#1669).
 func ArgoCDApplicationConflict(app, namespace, container string) error {
@@ -70,7 +70,8 @@ func ArgoCDApplicationConflict(app, namespace, container string) error {
 		return nil
 	}
 	if owner := namespace + "/" + container; owner != app {
-		return fmt.Errorf("belongs to Container %s, whose name joins to the same: rename one of them", owner)
+		return &DeployNameError{Message: fmt.Sprintf("belongs to Container %s, whose name joins to the same: "+
+			"rename one of them", owner)}
 	}
 	return nil
 }
