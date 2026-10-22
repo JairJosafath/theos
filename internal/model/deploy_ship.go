@@ -54,6 +54,10 @@ const (
 	// DeployReleaseNotFound: the Git host has no release of the wanted
 	// version; looked for again on the next poll.
 	DeployReleaseNotFound = "ReleaseNotFound"
+	// DeployNameRejected: the target's tool can't take the Container as
+	// named (an Application name another Container's joins to, or one over
+	// what a label holds, #1669); shipped once a rename clears it (#1677).
+	DeployNameRejected = "NameRejected"
 	// DeployGitHostUnreachable: the Git host failed to give the release;
 	// tried again on the next poll.
 	DeployGitHostUnreachable = "GitHostUnreachable"
@@ -86,6 +90,17 @@ type DeployShipFailure struct {
 	Detail string
 }
 
+// DeployNameError says the target's tool can't take the app as named: the
+// member's name for it is over what the tool holds, or another Container's
+// deploy already has it (#1669). A member's name rule returns it, an adapter
+// may wrap it, and the operator's read step reports it DeployNameRejected,
+// Failed, not a wait: it stays until a rename clears it (#1677).
+type DeployNameError struct {
+	Message string
+}
+
+func (e *DeployNameError) Error() string { return e.Message }
+
 // DeployFacts are what the operator read for one entry of a Container's
 // spec.deploy.
 type DeployFacts struct {
@@ -114,6 +129,9 @@ type DeployFacts struct {
 	// why it couldn't be.
 	Run          *DeployRun
 	StateFailure string
+	// Rejected says why the target's tool can't take the Container as named
+	// (a DeployNameError from reading its state), "" when it can.
+	Rejected string
 	// Prev is the entry's last report, nil for a new entry.
 	Prev *DeployReport
 	// Previous is this pass's report of the entry After names, nil when After
@@ -258,6 +276,13 @@ func deployHeldBefore(f DeployFacts, r DeployReport, wanted string) (DeployStep,
 	case wanted == "":
 		return wait(DeployNoRelease, fmt.Sprintf(
 			"No release of %s has succeeded its runs yet; nothing ships to %s", f.Container, f.Target))
+	case f.Rejected != "":
+		// A naming mistake, not a transient: Failed until a rename clears it,
+		// and read again each poll so the rename is seen (#1677).
+		r.Phase, r.Reason, r.Message = DeployPhaseFailed, DeployNameRejected, fmt.Sprintf(
+			"%s can't take %s as named, so %s doesn't ship to %s: %s", f.Tool, f.Container, wanted, f.Target,
+			f.Rejected)
+		return DeployStep{Report: r, Cause: DeployFailed}, true
 	case f.Run == nil:
 		if p := f.Prev; p != nil && p.WantedVersion == wanted {
 			r.Phase = p.Phase
@@ -310,7 +335,7 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 // deployRetried says a Failed entry with reason is shipped again on the next
 // poll: the tool never had the deploy.
 func deployRetried(reason string) bool {
-	return reason == DeployCredentialRefused || reason == DeployReleaseNotFound
+	return reason == DeployCredentialRefused || reason == DeployReleaseNotFound || reason == DeployNameRejected
 }
 
 // deployRuns says the entry r reports runs version, healthy where its target

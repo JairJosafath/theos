@@ -23,7 +23,20 @@ import (
 // newProjectNamespace creates a fresh namespace with a Project named after it, so
 // every test has its own story.
 func newProjectNamespace() string {
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "story-"}}
+	GinkgoHelper()
+	return projectIn(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "story-"}})
+}
+
+// newProjectNamespaceNamed is newProjectNamespace with the namespace named
+// name, for a spec whose Container's name must join with it to a given one.
+func newProjectNamespaceNamed(name string) string {
+	GinkgoHelper()
+	return projectIn(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+}
+
+// projectIn creates ns and a Project in it, and returns the namespace's name.
+func projectIn(ns *corev1.Namespace) string {
+	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 	Expect(k8sClient.Create(ctx, &c4v1alpha1.Project{
 		ObjectMeta: metav1.ObjectMeta{Name: ns.Name, Namespace: ns.Name},

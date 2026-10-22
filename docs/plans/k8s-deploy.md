@@ -106,8 +106,10 @@ the rollout itself is the one tier only Kind shows.
      name another Container, with that Container in the message
      ("belongs to Container a/b-c, whose name joins to the same: rename
      one of them"); `Ship` writes nothing, and `State` reports nothing.
-     The error is a plain one, not one of the port's: the deploy is
-     `DeployFailed` with the message, until the owner renames one, and
+     The error is a `model.DeployNameError`, not one of the port's: the
+     read step reports it `Failed`, reason `NameRejected`, condition
+     `DeployFailed`, with the message, and reads it again each poll, so a
+     rename of either Container clears it without a new release (#1677);
      the other Container keeps its Application. No hash suffix: a
      collision is a naming mistake the owner should see, and a suffix
      makes every Argo CD listing opaque. `Ship` and `State` also refuse a

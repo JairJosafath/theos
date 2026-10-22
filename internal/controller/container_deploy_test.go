@@ -129,10 +129,16 @@ func deployOfContainer(g Gomega, ns, name, target string) (*c4v1alpha1.Container
 // running, and the Deployed condition reason deployed.
 func deployIs(ns, target, phase, reason, version, deployed string) *c4v1alpha1.ContainerDeployStatus {
 	GinkgoHelper()
+	return deployOfIs(ns, "orders-api", target, phase, reason, version, deployed)
+}
+
+// deployOfIs is deployIs for Container name.
+func deployOfIs(ns, name, target, phase, reason, version, deployed string) *c4v1alpha1.ContainerDeployStatus {
+	GinkgoHelper()
 	var d *c4v1alpha1.ContainerDeployStatus
 	Eventually(func(g Gomega) {
 		var cond *metav1.Condition
-		d, cond = deployOf(g, ns, target)
+		d, cond = deployOfContainer(g, ns, name, target)
 		g.Expect(d.Phase).To(Equal(phase), d.Message)
 		g.Expect(d.Reason).To(Equal(reason), d.Message)
 		g.Expect(d.Version).To(Equal(version))

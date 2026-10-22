@@ -63,6 +63,21 @@ func TestNextDeploy(t *testing.T) {
 			},
 			phase: DeployPhaseDeploying, reason: DeployTargetNotReady, cause: DeployTargetNotReady,
 			message: "GitHub could not say what runs at DeployTarget staging: timeout", version: "v1.0.0"},
+		{name: "a name the tool can't take is Failed, not a wait, naming the other Container (#1677, #1669)",
+			change: func(f *DeployFacts) {
+				f.Run, f.Rejected = nil, "Application a-b-c in namespace argocd belongs to Container a/b-c, whose "+
+					"name joins to the same: rename one of them"
+			},
+			phase: DeployPhaseFailed, reason: DeployNameRejected, cause: DeployFailed,
+			message: "GitHub can't take orders-cli as named, so v1.1.0 doesn't ship to staging: Application a-b-c in " +
+				"namespace argocd belongs to Container a/b-c, whose name joins to the same: rename one of them"},
+		{name: "a name no longer rejected ships again on the next poll (#1677)",
+			change: func(f *DeployFacts) {
+				f.Prev = &DeployReport{Target: "staging", WantedVersion: "v1.1.0", Phase: DeployPhaseFailed,
+					Reason: DeployNameRejected}
+			},
+			phase: DeployPhaseDeploying, reason: DeployDeploying, cause: DeployDeploying, ship: "v1.1.0",
+			message: "Deploying v1.1.0 to staging"},
 		{name: "waits for the entry it comes after",
 			change: func(f *DeployFacts) { f.After, f.Previous = "dev", deployed("dev", "v1.0.0") },
 			phase:  DeployPhaseWaiting, reason: DeployWaitingForPrevious, cause: DeployWaitingForPrevious,
