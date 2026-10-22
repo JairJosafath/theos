@@ -144,7 +144,7 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Auth: n/a: a public page with no API client; the API it calls
   verifies a bearer JWT (#1474).
 
-### node-cli (v1.1.0)
+### node-cli (v1.1.1)
 
 A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 `npm pack`.
@@ -157,11 +157,14 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Lint: ts-standard's ESLint, Prettier and `tsc`.
 - README: `README.md.tmpl`: use, install the tarball, develop, `make dist`,
   layout.
-- Deploy: gitea-release in "node cli" attaches `dist/<container>-<version>.tgz`
-  to the tag's release, and the Crew publishes the tarball to the owner's npm
-  registry (#1229). Since v1.1.0 `package.json` names the package
-  `<scope>/<container>`, the scope from the GitProvider's `spec.packages`
-  (`@c4factory` by default), set at scaffold time and never again (#1231).
+- Deploy: gitea-release in "node cli" attaches
+  `dist/<scope sans @>-<container>-<version>.tgz` (`c4factory-<container>-<version>.tgz`
+  by default, how `npm pack` names a scoped package) to the tag's release, and
+  the Crew publishes the tarball to the owner's npm registry (#1229). Since
+  v1.1.0 `package.json` names the package `<scope>/<container>`, the scope
+  from the GitProvider's `spec.packages` (`@c4factory` by default), set at
+  scaffold time and never again (#1231); since v1.1.1 the README names the
+  scoped tarball, as ts-standard's `make dist` help does since v1.6.1 (#1695).
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
@@ -187,7 +190,7 @@ package is declared (#1231).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.6.0)
+### ts-standard (v1.6.1)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's

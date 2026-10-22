@@ -386,12 +386,14 @@ func checkPath(p string) error {
 }
 
 var funcs = template.FuncMap{
-	"has":   slices.Contains[[]string],
-	"snake": func(s string) string { return strings.ReplaceAll(s, "-", "_") },
-	"upper": strings.ToUpper,
-	"lower": strings.ToLower,
-	"dart":  dartString,
-	"ts":    tsString,
+	"has": slices.Contains[[]string],
+	// trimPrefix takes the prefix first, as Sprig does: {{ trimPrefix "@" .NpmScope }}.
+	"trimPrefix": func(prefix, s string) string { return strings.TrimPrefix(s, prefix) },
+	"snake":      func(s string) string { return strings.ReplaceAll(s, "-", "_") },
+	"upper":      strings.ToUpper,
+	"lower":      strings.ToLower,
+	"dart":       dartString,
+	"ts":         tsString,
 }
 
 // tsString quotes s as a TypeScript string literal the way Prettier, with

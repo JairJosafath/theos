@@ -549,7 +549,7 @@ catalog:
         supportedTypes: [static-site]
     - kind: Framework
       name: node-cli
-      ref: v1.1.0
+      ref: v1.1.1
       spec:
         displayName: Command-line program (TypeScript, Node)
         description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
@@ -673,7 +673,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: ts-standard
-      ref: v1.6.0
+      ref: v1.6.1
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.

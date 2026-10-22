@@ -60,7 +60,9 @@ dist_files() {
 	local version=${1#v} want=()
 	case $framework in
 	python-cli) want=("dist/${container//-/_}-$version-py3-none-any.whl" "dist/${container//-/_}-$version.tar.gz") ;;
-	node-cli) want=("dist/$container-$version.tgz") ;;
+	# npm packs the scoped package @c4factory/<container> (hack/render's default
+	# scope) as c4factory-<container>-<version>.tgz (#1695).
+	node-cli) want=("dist/c4factory-$container-$version.tgz") ;;
 	*) echo "no release files known for $framework" >&2; return 1 ;;
 	esac
 	for f in "${want[@]}"; do
