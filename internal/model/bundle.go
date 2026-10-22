@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 // Bundle is a catalog bundle: the names of a Framework and, optionally, a
 // Standard, a Compute and a Deployment a team picked together
@@ -53,4 +56,15 @@ func BundleSupportedTypes(entries []CatalogEntry) []string {
 		}
 	}
 	return out
+}
+
+// InBundle names the bundle a Container's choices came from at the start of a
+// choice check's error, as "bundle web-service: ...", so the message says the
+// fix is to the Bundle. The error stays what it was underneath; without a
+// bundle, or without an error, it is returned as is.
+func InBundle(bundle string, err error) error {
+	if bundle == "" || err == nil {
+		return err
+	}
+	return fmt.Errorf("bundle %s: %w", bundle, err)
 }
