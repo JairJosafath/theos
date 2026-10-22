@@ -16,6 +16,7 @@ rules:
   - configmaps
   verbs:
   - create
+  - delete
   - get
   - update
 - apiGroups:
@@ -215,6 +216,7 @@ rules:
   - networkpolicies
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
