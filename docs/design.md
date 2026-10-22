@@ -650,7 +650,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
   and line and never the value, until another version is wanted. The
   values compared are the GitProvider's token, the Container's agent Git
-  token, its namespace's Agents' token Secrets and the target's own Secret.
+  token, its namespace's Agents' token Secrets (their keys naming a token, key, secret, password or credential) and the target's own Secret.
   A line marked `c4factory:allow-secret` is skipped, and the message says
   how many when nothing else is found; release files and images are not
   scanned. The image
