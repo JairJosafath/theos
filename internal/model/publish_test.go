@@ -86,7 +86,7 @@ func TestNextPublishStep(t *testing.T) {
 		{name: "a missing Secret fails",
 			facts:   readyBut(func(f *PublishFacts) { f.SecretFound = false }),
 			want:    PublishStep{Action: PublishFail, Reason: PublishSecretMissing},
-			message: "Secret cel-lens-github with the key token is missing"},
+			message: "Secret cel-lens-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing"},
 		{name: "a Secret that can't be read fails with why",
 			facts: readyBut(func(f *PublishFacts) {
 				f.SecretFound, f.SecretError = false, `secrets "cel-lens-github" is forbidden`

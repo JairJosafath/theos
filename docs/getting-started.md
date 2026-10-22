@@ -467,6 +467,27 @@ another file.
    unset GH_TOKEN
    ```
 
+   **Or a GitHub App,** for a credential that belongs to an organisation,
+   expires every hour and is revoked by uninstalling it. On GitHub, *Settings
+   → Developer settings → GitHub Apps → New GitHub App* (an organisation's
+   own settings for one it owns): no webhook; *Repository permissions:
+   Contents: Read and write*, plus *Issues: Read and write* if a Brief takes
+   requests from the repository (*Take requests from its GitHub issues*).
+   Generate a private key, then *Install App* on the one repository. The App's
+   page shows its *App ID*; the installation's URL ends in its *installation
+   ID*. The Secret holds the three instead of `token`:
+
+   ```bash
+   kubectl -n webshop create secret generic orders-cli-github \
+     --from-literal=appId=123456 --from-literal=installationId=7890123 \
+     --from-file=privateKey=orders-cli.private-key.pem
+   ```
+
+   The operator mints an installation token from them and renews it before
+   it expires; a Secret with both `token` and the App's keys uses `token`.
+   Copying the image to GHCR (`packagesToken` on a DeployTarget) still needs a
+   classic token: GHCR takes no installation token.
+
 3. **The Crew field.** [config/samples/first-app/crew-publish.yaml](../config/samples/first-app/crew-publish.yaml)
    is the Crew of step 3 with it; set your repository and apply it:
 
@@ -545,9 +566,9 @@ says what to fix:
 | Reason | What to do |
 | --- | --- |
 | `Waiting` | The release runs haven't succeeded yet; a failed run is published once a re-run succeeds. |
-| `SecretMissing` | Create the Secret of step 2, in the Crew's namespace, with the key `token`. |
+| `SecretMissing` | Create the Secret of step 2, in the Crew's namespace, with the key `token`, or the App's `appId`, `installationId` and `privateKey`; the message names a key that is missing. |
 | `SecretUnreadable` | The operator couldn't read the Secret (Forbidden, a timeout); the message says why. Check the operator's role can read Secrets in the Crew's namespace. |
-| `Unauthorized` | GitHub refused the token: expired, revoked, or without *Contents: Read and write*. Make a new one and replace the Secret. |
+| `Unauthorized` | GitHub refused the token: expired, revoked, or without *Contents: Read and write*. Make a new one and replace the Secret. For an App, GitHub refused to mint its installation token (the message says why): check `appId`, `installationId`, that the private key is the App's current one and that the App is still installed. |
 | `RepositoryNotFound` | No such repository, or the token can't see it: check `repository` and the token's *Repository access*. |
 | `EmptyRepository` | The repository has no commit to tag; push one. |
 | `NoReleaseFiles` | The Gitea release of the tag is missing or has no files: check the tag's release run. |
@@ -565,12 +586,13 @@ order; each is a DeployTarget, a place with its own credential and tier.
 `orders-cli` in [story.yaml](../config/samples/first-app/story.yaml) names
 `orders-cli-releases`, a GitHub repository whose releases are the deploys:
 
-1. **The token and Secret,** as in steps 1 and 2 above, in a Secret named
-   `orders-cli-deploy`.
+1. **The token and Secret,** as in steps 1 and 2 above (a token or a GitHub
+   App), in a Secret named `orders-cli-deploy`.
 2. **The target.** Set your repository in
    [deploytarget.yaml](../config/samples/first-app/deploytarget.yaml) and
    apply it with `kubectl apply -n webshop -f deploytarget.yaml`. Its `Ready`
-   condition says whether GitHub takes the token.
+   condition says whether GitHub takes the token: `SecretIncomplete` names
+   the keys missing, and `CredentialRefused` carries GitHub's message.
 
 Once a release's runs succeed, the operator ships it to each entry: the
 entry's pinned `version`, else the newest release. An entry with `after`
@@ -741,7 +763,9 @@ reaches an agent.
    (*Settings → Developer settings → Fine-grained tokens*) and tick, beside
    *Contents: Read and write*: *Repository permissions → Issues: Read and
    write*, and only if you name `teams`, *Organization permissions → Members:
-   Read*. No new Secret: the entry's is used.
+   Read*. No new Secret: the entry's is used. For a GitHub App, give the App
+   *Issues: Read and write* (and *Members: Read* for `teams`) and accept the
+   new permissions on its installation.
 2. **Turn it on** in the entry:
 
    ```yaml

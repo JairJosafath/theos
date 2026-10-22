@@ -133,6 +133,30 @@ var _ = Describe("Brief requests", func() {
 		Expect(comments).To(BeEmpty())
 	})
 
+	It("reads the issues with a GitHub App's installation token (#1601)", func() {
+		repository := "gray-lenovo/" + ns
+		installation := newInstallation()
+		key, pemKey := newGitHubAppKey()
+		githubFake.addRepository(repository, rand.Text())
+		githubFake.addApp("88", installation, repository, &key.PublicKey)
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "cel-lens-github"),
+			Data: map[string][]byte{"appId": []byte("88"), "installationId": []byte(installation),
+				"privateKey": pemKey}})
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		entry := linterRelease(repository)
+		entry.Requests = &c4v1alpha1.BriefRequests{Mode: model.RequestsOn, Authors: []string{"gray-lenovo"}}
+		brief.Spec.Releases = []c4v1alpha1.BriefRelease{entry}
+		mustCreate(brief)
+		mine := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please add a dark theme.")
+
+		Eventually(func(g Gomega) {
+			g.Expect(requestNumbers(g, ns)).To(HaveKeyWithValue(int32(mine), letThrough))
+		}).Should(Succeed())
+		Expect(githubFake.appMints(installation)).To(Equal(1), "the token is kept, not minted per read")
+	})
+
 	It("Ask: lists a request in needsYou without its body until a person accepts it", func() {
 		repository, _ := requestsBrief(ns, c4v1alpha1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"gray-lenovo"}})

@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -36,6 +37,9 @@ import (
 // requests from.
 type IssueTrackers interface {
 	GitHubIssues(cfg gitprovider.GitHubConfig) (gitprovider.IssueTracker, error)
+	// GitHubToken is a GitHub Secret's token, or its GitHub App's
+	// installation token, as gitprovider.Client.GitHubToken mints it.
+	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
 }
 
 const (
@@ -139,13 +143,17 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
 	secret := entry.GitHub.TokenSecretRef.Name
 	token, err := r.requestsToken(ctx, brief.Namespace, secret)
+	var mint *gitprovider.ReleaseError
 	switch {
+	case errors.As(err, &mint):
+		return same, &requestsFailure{mint.Reason, mint.Error()}
 	case err != nil:
 		return same, &requestsFailure{model.PublishSecretUnreadable,
 			fmt.Sprintf("Secret %s can't be read: %s", secret, err.Error())}
 	case token == "":
 		return same, &requestsFailure{model.PublishSecretMissing,
-			fmt.Sprintf("Secret %s with the key token is missing", secret)}
+			fmt.Sprintf("Secret %s with the key token (or a GitHub App's %s) is missing", secret,
+				strings.Join(model.GitHubAppKeys, ", "))}
 	}
 	tracker, err := r.issueTrackers().GitHubIssues(gitprovider.GitHubConfig{Repository: repository, Token: token})
 	if err != nil {
@@ -378,7 +386,8 @@ func requestsKey(brief *c4v1alpha1.Brief, repository string) string {
 }
 
 // requestsToken reads the token from the Secret named name, live, so a
-// Secret created later is used on the next read; "" when there is none.
+// Secret created later is used on the next read, or mints its GitHub App's;
+// "" when there is none or it holds neither whole.
 func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name string) (string, error) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
@@ -388,7 +397,10 @@ func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name string) (s
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(secret.Data[publishTokenKey])), nil
+	if _, _, ok := model.GitHubCredential(secret.Data); !ok {
+		return "", nil
+	}
+	return r.issueTrackers().GitHubToken(ctx, "", secret.Data)
 }
 
 // recordRequests sets status.requests to all, oldest first, keeping what a

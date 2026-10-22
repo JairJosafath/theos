@@ -176,7 +176,10 @@ type CrewPublishGitHub struct {
 
 	// tokenSecretRef names a Secret in the Crew's namespace whose key token is
 	// a fine-grained token for that repository alone, with Contents read and
-	// write. The user creates it; the token never leaves the operator.
+	// write, or whose keys appId, installationId and privateKey (its PEM) are
+	// a GitHub App's installed on that repository with the same permission;
+	// token wins when both are set. The user creates it; the credential never
+	// leaves the operator.
 	// +required
 	TokenSecretRef LocalRef `json:"tokenSecretRef"`
 }

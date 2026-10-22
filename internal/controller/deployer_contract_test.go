@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,19 +28,26 @@ import (
 // TestGitHubDeployerContract runs the Deployer's contract on the github
 // member's adapter, against the fake GitHub the publish tests use: once with
 // the release alone, once with its source committed to a folder first, each
-// release then of its source tag's commit (#1598).
+// release then of its source tag's commit (#1598), and once with a GitHub
+// App's Secret, whose installation token is minted once per target and kept
+// (#1601).
 func TestGitHubDeployerContract(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		settings map[string]string
+		app      bool
 	}{
 		{name: "release", settings: map[string]string{}},
 		{name: "release and source", settings: map[string]string{model.GitHubSettingSourcePath: "cli"}},
+		{name: "release with a GitHub App", settings: map[string]string{}, app: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			gh := newFakeGitHub()
 			t.Cleanup(gh.server.Close)
+			appKey, appPEM := newGitHubAppKey()
+			_, otherPEM := newGitHubAppKey()
 			repos := 0
+			var installations []string
 			target := func(token string) ports.Target {
 				repos++
 				repository := fmt.Sprintf("contract/repo-%d", repos)
@@ -48,9 +56,29 @@ func TestGitHubDeployerContract(t *testing.T) {
 				gh.addRepository(repository, "t0ken")
 				settings := maps.Clone(tt.settings)
 				settings[model.GitHubSettingRepository] = repository
+				secret := map[string][]byte{"token": []byte(token)}
+				if tt.app {
+					installation := strconv.Itoa(1000 + repos)
+					gh.addApp("42", installation, repository, &appKey.PublicKey)
+					key := appPEM
+					if token == "t0ken" {
+						installations = append(installations, installation)
+					} else {
+						key = otherPEM
+					}
+					secret = map[string][]byte{"appId": []byte("42"), "installationId": []byte(installation),
+						"privateKey": key}
+				}
 				return ports.Target{Name: "contract/" + repository, Member: model.DeployMemberGitHub,
-					Settings: settings, Secret: map[string][]byte{"token": []byte(token)}}
+					Settings: settings, Secret: secret}
 			}
+			t.Cleanup(func() {
+				for _, installation := range installations {
+					if n := gh.appMints(installation); n > 1 {
+						t.Errorf("installation %s minted %d tokens, want at most 1, kept for every call", installation, n)
+					}
+				}
+			})
 			contract.Deployer(t, contract.DeployerEnv{
 				Deployer: githubdeploy.New(gh),
 				Target:   func(*testing.T) ports.Target { return target("t0ken") },
