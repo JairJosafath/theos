@@ -118,7 +118,10 @@ and from it are story only.
    names of the project, system, container, type and chosen entries, the
    Connectors, the CI system and, after the Framework, the paths it rendered
    (`{{ if has .FrameworkFiles "infra/operations.ts" }}`), so a layer tests a
-   file, not a name or ref. Each CI system's files sit under
+   file, not a name or ref. A template refuses a combination its layer can't
+   serve with `{{ fail "why" }}`: the render stops and the Container is
+   `Failed` with that message, as a Connector no Framework file calls does.
+   Each CI system's files sit under
    `.c4factory/ci/<system>/` and render at the root only for the Container's;
    a template with CI files but none for it fails, `UnsupportedCI`.
 5. **Assemble the devcontainer:** the Framework's settings plus a compose
@@ -269,7 +272,11 @@ GitProvider `ci` block names, registered `--ephemeral` to the project's Git
 organization so each pod takes one job and ends. The operator deletes an
 ended pod and starts a fresh one; the pool goes with the Project: once the
 Project is gone, the operator deletes every pool pod and lets the kept
-records go at once, since no Task is left to read them (#1697). The pods
+records go at once, since no Task is left to read them (#1697). The pool
+follows its `ci` block: an idle pod above a lowered `size`, or built from
+another `image` than the block now says, is replaced, a busy one once its
+job ends, and a dropped block takes the pool's Secret, ConfigMap and
+NetworkPolicy with it (#1700). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
