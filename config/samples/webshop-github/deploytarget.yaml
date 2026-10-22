@@ -4,7 +4,8 @@
 # commits the app's own files at the release's tag into a folder named after
 # the Container (orders-api/), tagged orders-api/v0.1.0, and the release is
 # made of that commit. With packagesToken, the release's image (a
-# k8s-manifests Container's, or an operator's with gitea-release) is copied to ghcr.io/your-name/webshop/orders-api and
+# k8s-manifests Container's, or an operator's with gitea-release) is copied
+# to ghcr.io/your-name/webshop/orders-api and
 # status.deploys[].image names the copy.
 #
 # It needs Secret webshop-github, which you create yourself; only the
