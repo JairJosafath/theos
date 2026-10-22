@@ -197,6 +197,34 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 	return next, nil
 }
 
+// dropPool takes a namespace's pool down once its Project is gone: every pool
+// pod is let go and deleted, the kept records too, since no Task of the
+// project is left to read how one ended. Garbage collection deletes the pods
+// with their owner on a real cluster but cannot drop the record finalizer,
+// which held every pod Terminating and the namespace deleting (#1697).
+func (r *ProjectReconciler) dropPool(ctx context.Context, ns string) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(ns), client.MatchingLabels{LabelCIRunner: ciRunnerValue}); err != nil {
+		return err
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if err := r.dropRunnerRecord(ctx, pod); err != nil {
+			return err
+		}
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if err := client.IgnoreNotFound(r.Delete(ctx, pod)); err != nil {
+			return err
+		}
+	}
+	if len(pods.Items) > 0 {
+		logf.FromContext(ctx).Info("Took the CI runner pool down with its Project", "namespace", ns, "pods", len(pods.Items))
+	}
+	return nil
+}
+
 // fillPools creates the pods each pool is short of, pools in name order.
 func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.Project, pools map[poolKey]*ciPool) error {
 	log := logf.FromContext(ctx)
