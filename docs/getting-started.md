@@ -450,6 +450,11 @@ the Container's Deployment, `gitea-release` for `orders-cli`; a Container
 scaffolded without one gets no run on a tag, and the Crew never publishes its
 releases. Those live in the cluster's Gitea. To have every release also show up on a GitHub repository, with the
 same tag, notes and files, give the Crew that repository and a token for it.
+
+> The Crew's `publishReleases` is deprecated: a `github` DeployTarget does the
+> same and more (*Publish a service on GitHub* below). It keeps working in
+> `v1alpha1`; [docs/design.md](design.md#publishing-a-release) says how to
+> move over, and the Crew's page in the UI links it.
 The factory only adds releases there, and, when you ask for the app's source
 too, one commit per release inside the folder you name: it never touches
 another file.
@@ -629,6 +634,67 @@ True once every entry runs its wanted version, else False with the first of
 `WaitingForPrevious`, `Deploying` and `NoRelease`. Events: `Deployed` when an
 entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
 `DeployFailed` once per version and reason.
+
+## Publish a service on GitHub
+
+A `github` DeployTarget does more than copy the release. With `source` it
+commits the app's own files at the release's tag into a folder of the
+repository, tagged, and makes the GitHub release of that commit; with a
+`packagesToken` it copies a `k8s-manifests` Container's image to GHCR. The
+overlay [config/samples/webshop-github](../config/samples/webshop-github/)
+publishes the webshop's `orders-api` that way, after it ships to the Argo
+CD in the cluster:
+
+1. **The repository and Secret.** Make the repository on GitHub, then the
+   Secret `webshop-github` with the key `token` (a fine-grained token for
+   that repository alone, *Contents: Read and write*) or the App's `appId`,
+   `installationId` and `privateKey`, as in *Publish releases to GitHub*;
+   and, for the image, `packagesToken`, a classic token with
+   `write:packages` and `read:packages`:
+
+   ```bash
+   read -rsp 'GitHub token: ' GH_TOKEN; echo
+   read -rsp 'GHCR token: ' GHCR_TOKEN; echo
+   kubectl -n webshop create secret generic webshop-github \
+     --from-literal=token="$GH_TOKEN" --from-literal=packagesToken="$GHCR_TOKEN"
+   unset GH_TOKEN GHCR_TOKEN
+   ```
+
+2. **The target and the entry.** Set your repository in
+   [deploytarget.yaml](../config/samples/webshop-github/deploytarget.yaml)
+   and apply the overlay, which adds `webshop-oss` to `orders-api`'s
+   `spec.deploy`, after `kind-cluster`:
+
+   ```bash
+   kubectl apply -k config/samples/webshop-github
+   ```
+
+   ```yaml
+   spec:
+     github:
+       repository: your-name/webshop
+       source: {}                 # folder orders-api/, tags orders-api/v0.1.0
+       # source: {path: ., tagPrefix: v}  # the whole repository, for one app
+     credentialsSecretRef: {name: webshop-github}
+   ```
+
+   Unset, the folder is the Container's name and its tag prefix the folder
+   and `/`, so any number of Containers share the target; a `cli` Container
+   publishes its files to the release as well, and a service with no
+   `packagesToken` publishes its source alone.
+
+3. **Watch it.** Once a release's runs succeed, the entry turns `Deployed`,
+   and `status.deploys[].image` names the copy on GHCR
+   (`ghcr.io/your-name/webshop/orders-api@sha256:...`):
+
+   ```bash
+   kubectl -n webshop get container orders-api -o jsonpath='{.status.deploys}{"\n"}'
+   ```
+
+In the UI, the DeployTarget's page shows the repository, the tags, the
+source's folder and tag prefix, the image's name and the keys the Secret
+takes (never a value: the UI never reads it); the Container's page shows
+each entry's image.
 
 ## Deploy to a cluster with Argo CD
 

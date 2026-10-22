@@ -623,7 +623,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   Container's reconcile (#1572); a ship waits while it runs. Each
   ship's `Shipment.Image` is `<repository>@<digest>` of the version shipped,
   a pin's resolved in the registry.
-- **GitHub targets** (#1070, [plans/github-deploy.md](plans/github-deploy.md)):
+- **GitHub targets** (#1070, [plans/done/github-deploy.md](plans/done/github-deploy.md)):
   a `github` target is how a Container is published as open source, for
   every type. It ships three things of each release, each by its own rule
   (`model.GitHubShipment`): the app's source at the tag, when the member's

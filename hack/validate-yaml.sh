@@ -20,6 +20,8 @@ rm -f "$OUT"/kustomize-*.yaml
 for o in "${OVERLAYS[@]}"; do
 	"$KUSTOMIZE" build "config/$o" >"$OUT/kustomize-$o.yaml"
 done
+# The webshop with orders-api also published on GitHub (#1603).
+"$KUSTOMIZE" build config/samples/webshop-github >"$OUT/kustomize-webshop-github.yaml"
 
 # The webshop sample's orders-api repository, as the operator scaffolds it.
 rm -rf "$OUT/orders-api"

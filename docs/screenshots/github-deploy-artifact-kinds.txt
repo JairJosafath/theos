@@ -1,0 +1,53 @@
+# A Container of each artifact kind Deployed to a github target (#1603, plan docs/plans/done/github-deploy.md)
+
+2026-10-22, branch feat/1603-github-deploy-step-7-samples-the-ui-and, heron-1603.
+
+## envtest: the operator ships each kind
+
+Against the fake GitHub (internal/controller/fakegithub_test.go) through the
+real github adapter. A cli's release files: #1486 (two Containers, one of
+them orders-cli, under their names) and #1601 (a GitHub App's Secret). A
+k8s-manifests service's image copied to GHCR: #1600. A service's source
+alone, in its folder: #1599.
+
+    $ go test ./internal/controller/ -run TestControllers -count=1 -v \
+        -ginkgo.focus='#1486|#1599|#1600|#1601' -ginkgo.v
+
+    Container deploys copies the published image to GHCR by digest and reports it, and copies nothing without a packagesToken (#1600)
+    Container deploys fails the later of two Containers whose folders of one github target overlap (#1599) the whole repository
+    Container deploys fails the later of two Containers whose folders of one github target overlap (#1599) their own folders under the target's one source tag prefix
+    Container deploys has nothing to ship to a github target of a release with no files, no source and no image (#1599)
+    Container deploys is Ready and ships a release to a github target whose Secret is a GitHub App's (#1601)
+    Container deploys ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)
+    Container deploys ships two Containers to one github target under their names, and bare tags when tagPrefix is empty (#1486)
+    Crew publishing releases fails Unauthorized when GitHub refuses to mint the App's token (#1601)
+    Crew publishing releases publishes with a GitHub App's installation token (#1601)
+    DeployTarget refuses a spec its CEL rules or schema reject a source folder going up (#1599)
+    DeployTarget refuses a spec its CEL rules or schema reject a source folder in .git (#1599)
+    DeployTarget refuses a spec its CEL rules or schema reject a source folder that isn't a path (#1599)
+    DeployTarget refuses a spec its CEL rules or schema reject a source tagPrefix with '..' (#1599)
+    DeployTarget refuses a spec its CEL rules or schema reject a source tagPrefix with a leading '/' (#1599)
+    DeployTarget refuses a spec its CEL rules or schema reject a source tagPrefix with a space (#1599)
+    DeployTarget takes an empty tagPrefix, one with a folder, and latest false (#1486)
+
+    Ran 17 of 492 Specs in 35.940 seconds
+    ok  	github.com/JairJosafath/c4factory/internal/controller	35.995s
+
+## UI: what the pages show
+
+The DeployTarget page's source, tags, image and Secret key names; the
+Container page's deploy entry with its image, for a cli, a k8s-manifests
+service with an image and a source-only service, each Deployed; the Crew
+page's publishReleases deprecation.
+
+    $ cd ui && npx vitest run --reporter=verbose -t 1603
+
+    ✓ src/components/objects/CrewPage.test.ts > the Crew page’s published release > says publishReleases is deprecated and links the migration (#1603)
+    ✓ src/components/objects/pages.test.ts > github targets (#1603) > shows the source, the tags, the image name and the Secret’s key names, unset parts as the operator fills them
+    ✓ src/components/objects/pages.test.ts > github targets (#1603) > shows a set source path and tagPrefix, the bare tags and image of a repository of one app, and no Latest
+    ✓ src/components/objects/pages.test.ts > github targets (#1603) > says a target without source publishes the release only
+    ✓ src/components/objects/pages.test.ts > github targets (#1603) > shows a Container of each artifact kind Deployed to a github target, with the image a k8s-manifests one copied
+    ✓ src/model/deploys.test.ts > githubSource and githubImage (#1603) > fills the source as the operator does: the Container’s name, the folder and /, nothing for the whole repository
+    ✓ src/model/deploys.test.ts > githubSource and githubImage (#1603) > names the GHCR image as model.GitHubImage does: lower-cased, the Container’s name unless tagPrefix is ""
+    Test Files  3 passed | 47 skipped (50)
+    Tests  7 passed | 727 skipped (734)

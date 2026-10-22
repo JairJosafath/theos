@@ -88,7 +88,7 @@ with a warning naming the release that may drop it. Test output goes to
    serves the deprecated field costs a user nothing. So the field stays in
    `v1beta1`, deprecated as it is in `v1alpha1`, and the version after
    `v1beta1` drops it once nothing writes it; step 1 rewords the two lines
-   in `docs/design.md` and [github-deploy.md](github-deploy.md) that said
+   in `docs/design.md` and [github-deploy.md](done/github-deploy.md) that said
    `v1beta1` would. A shape change found while building `v1beta1` is filed
    `status/proposed` for the next version, never slipped into this one.
    Why cut a version that changes nothing: the machinery a breaking
