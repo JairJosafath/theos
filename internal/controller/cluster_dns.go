@@ -51,24 +51,34 @@ func ParseClusterDNS(entry string) (networkingv1.NetworkPolicyPeer, error) {
 		return networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}}, nil
 	}
 	namespace, selector, ok := strings.Cut(entry, "/")
-	if !ok || selector == "" {
+	if !ok || selector == "" || strings.Contains(entry, ":") { // the fence is IPv4: no IPv6 block
 		return networkingv1.NetworkPolicyPeer{}, fmt.Errorf(
-			"cluster DNS %q: want namespace/key=value[,key=value] or an address block", entry)
+			"cluster DNS %q: want namespace/key=value[,key=value] or an IPv4 address block", entry)
 	}
 	if errs := validation.IsDNS1123Label(namespace); len(errs) > 0 {
 		return networkingv1.NetworkPolicyPeer{}, fmt.Errorf("cluster DNS %q: namespace %q: %s", entry, namespace, errs[0])
 	}
-	pods, err := metav1.ParseToLabelSelector(selector)
-	if err != nil {
-		return networkingv1.NetworkPolicyPeer{}, fmt.Errorf("cluster DNS %q: pod labels: %w", entry, err)
-	}
-	if len(pods.MatchLabels) == 0 || len(pods.MatchExpressions) > 0 {
-		return networkingv1.NetworkPolicyPeer{}, fmt.Errorf(
-			"cluster DNS %q: pod labels must be key=value pairs, at least one", entry)
+	// The pod labels are exactly key=value pairs, the grammar the chart's
+	// c4-factory.clusterDNSPeers helper accepts, so one value renders the same
+	// peer for both fences: no ==, no !=, no set expression, no spaces.
+	pods := map[string]string{}
+	for _, pair := range strings.Split(selector, ",") {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || key == "" || strings.ContainsAny(pair, " \t") || strings.Contains(value, "=") {
+			return networkingv1.NetworkPolicyPeer{}, fmt.Errorf(
+				"cluster DNS %q: pod labels must be key=value pairs, at least one", entry)
+		}
+		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+			return networkingv1.NetworkPolicyPeer{}, fmt.Errorf("cluster DNS %q: pod labels: key %q: %s", entry, key, errs[0])
+		}
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			return networkingv1.NetworkPolicyPeer{}, fmt.Errorf("cluster DNS %q: pod labels: value %q: %s", entry, value, errs[0])
+		}
+		pods[key] = value
 	}
 	return networkingv1.NetworkPolicyPeer{
 		NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{corev1.LabelMetadataName: namespace}},
-		PodSelector:       &metav1.LabelSelector{MatchLabels: pods.MatchLabels},
+		PodSelector:       &metav1.LabelSelector{MatchLabels: pods},
 	}, nil
 }
 
