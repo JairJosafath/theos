@@ -61,6 +61,7 @@ type DeployTargetReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;create;patch
 // +kubebuilder:rbac:groups=argoproj.io,resources=appprojects,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 
 // Reconcile reads the target's Secret (an argoCD target may have none) and,
 // when it holds the member's keys, asks the member's Deployer whether the
