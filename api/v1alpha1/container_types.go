@@ -138,11 +138,12 @@ type ContainerImageStatus struct {
 	// +optional
 	Platforms []string `json:"platforms,omitempty"`
 
-	// state is Published once the registry has the image under the tag,
-	// NoImage when the release has no image archive, Invalid when its archive
-	// can't be pushed, TagTaken when the tag names another digest, and Failed
-	// while the Git host can't be reached, tried again each poll.
-	// +kubebuilder:validation:Enum=Published;NoImage;Invalid;TagTaken;Failed
+	// state is Pushing while the operator pushes the archive, Published once
+	// the registry has the image under the tag, NoImage when the release has
+	// no image archive, Invalid when its archive can't be pushed, TagTaken
+	// when the tag names another digest, and Failed while the Git host can't
+	// be reached, tried again each poll.
+	// +kubebuilder:validation:Enum=Pushing;Published;NoImage;Invalid;TagTaken;Failed
 	// +required
 	State string `json:"state"`
 

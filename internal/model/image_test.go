@@ -32,7 +32,7 @@ func TestBuildsImage(t *testing.T) {
 func TestImageSettled(t *testing.T) {
 	for state, want := range map[string]bool{
 		ImageStatePublished: true, ImageStateNoImage: true, ImageStateInvalid: true, ImageStateTagTaken: true,
-		ImageStateFailed: false,
+		ImageStatePushing: false, ImageStateFailed: false,
 	} {
 		if got := ImageSettled(state); got != want {
 			t.Errorf("ImageSettled(%q) = %v, want %v", state, got, want)
@@ -50,6 +50,9 @@ func TestImageEvent(t *testing.T) {
 		{"first publish", "", "", "v1.0.0", ImageStatePublished, ImageEventPublished, false},
 		{"published after a failure", "v1.0.0", ImageStateFailed, "v1.0.0", ImageStatePublished,
 			ImageEventPublished, false},
+		{"published after its push", "v1.0.0", ImageStatePushing, "v1.0.0", ImageStatePublished,
+			ImageEventPublished, false},
+		{"pushing", "v0.9.0", ImageStatePublished, "v1.0.0", ImageStatePushing, "", false},
 		{"the same release again", "v1.0.0", ImageStatePublished, "v1.0.0", ImageStatePublished, "", false},
 		{"the next release", "v1.0.0", ImageStatePublished, "v1.1.0", ImageStatePublished, ImageEventPublished,
 			false},

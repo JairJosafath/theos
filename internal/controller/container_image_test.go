@@ -145,7 +145,7 @@ var _ = Describe("Container images", func() {
 	})
 
 	// shippedImages are the images of the deploys started at ns's target.
-	shippedImages := func(ns, target string) []string {
+	shippedImages := func(ns, target string) []string { //nolint:unparam // the helper names the target, as its callers read
 		var images []string
 		for _, s := range deployFake.Shipments() {
 			if s.Target == targetName(ns, target) {
@@ -154,6 +154,36 @@ var _ = Describe("Container images", func() {
 		}
 		return images
 	}
+
+	It("writes Pushing and goes on while a push is held, then the image once it ends (#1572)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: testDigest, Platforms: []string{"linux/amd64"}})
+		release := gitFake.holdImagePushes(ns, "orders-api")
+		DeferCleanup(release)
+		shipRelease(ns, "v0.1.0", true)
+
+		By("writing the Container's status while its push waits")
+		img := imageIs(ns, "v0.1.0", model.ImageStatePushing)
+		Expect(img.Message).To(Equal("Pushing the image of release v0.1.0."))
+		d := deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployGitHostUnreachable, "", model.DeployDeploying)
+		Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: Pushing"))
+		Expect(shippedImages(ns, "staging")).To(BeEmpty())
+		Consistently(func() int { return gitFake.imagePushes(ns + "/orders-api@v0.1.0") },
+			2*time.Second).Should(Equal(1))
+
+		By("writing the image and shipping it once the push ends")
+		release()
+		img = imageIs(ns, "v0.1.0", model.ImageStatePublished)
+		Expect(img.Digest).To(Equal(testDigest))
+		deployIs(ns, "staging", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		Expect(shippedImages(ns, "staging")).To(Equal([]string{imageRegistry + ns + "/orders-api@" + testDigest}))
+		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(Equal(1))
+		saidOnce(ns, model.ImageEventPublished, testDigest)
+	})
 
 	It("holds the ship while the newest release's push fails, then ships by digest (#1570)", func() {
 		ns := newProjectNamespace()
