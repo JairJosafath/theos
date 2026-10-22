@@ -20,6 +20,7 @@ import {
 } from '../k8s/types'
 import { describeContainerType, plural, titleOf } from './describe'
 import { activeCrewTasks, crewSummary, type CrewSummary } from './crews'
+import { choicesOf } from './choices'
 
 export type NodeRole = 'person' | 'system' | 'external-system' | 'container' | 'datastore'
 
@@ -206,7 +207,8 @@ class StoryIndex {
     return this.data.containers
       .filter((c) => c.spec.softwareSystemRef?.name === system)
       .map((c) => {
-        const framework = this.data.frameworks.find((f) => f.metadata.name === c.spec.frameworkRef?.name)
+        const choices = choicesOf(c)
+        const framework = this.data.frameworks.find((f) => f.metadata.name === choices.framework)
         const sessions = sessionsOf(this.data.sessions, c.metadata.name)
         const crew = crewOf(this.data.crews, c.metadata.name)
         return {
@@ -218,7 +220,7 @@ class StoryIndex {
           role: 'container',
           type: c.spec.type,
           typeLabel: describeContainerType(c.spec.type),
-          framework: framework ? titleOf(framework) : c.spec.frameworkRef?.name,
+          framework: framework ? titleOf(framework) : choices.framework,
           phase: c.status?.phase,
           repositoryURL: c.status?.repositoryURL,
           scaffoldedFrom: c.status?.scaffoldedFrom ?? [],

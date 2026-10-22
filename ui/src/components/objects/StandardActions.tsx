@@ -9,6 +9,7 @@
 import { useContext, useId, useRef, useState, type FormEvent } from 'react'
 import type { StandardWriter } from '../../k8s/standards'
 import type { Container, Standard } from '../../k8s/types'
+import { choicesOf } from '../../model/choices'
 import { SessionContext } from '../../lib/hooks'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
@@ -20,7 +21,7 @@ import { FormError } from '../briefs/PromptForm'
  * rest don't.
  */
 export function standardUpdates(name: string, containers: Container[]): { ready: string[]; notReady: string[] } {
-  const on = containers.filter((c) => c.spec.standardRef?.name === name)
+  const on = containers.filter((c) => choicesOf(c).standard === name)
   return {
     ready: on.filter((c) => c.status?.phase === 'Ready').map((c) => c.metadata.name),
     notReady: on.filter((c) => c.status?.phase !== 'Ready').map((c) => c.metadata.name),

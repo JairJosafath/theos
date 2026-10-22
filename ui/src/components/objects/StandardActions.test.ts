@@ -26,6 +26,20 @@ const container = (name: string, phase: ContainerPhase | undefined, standardRef 
   },
   status: phase ? { phase } : undefined,
 })
+/** Named a Bundle instead of its sides; the Standard comes from status.bundle (#1624). */
+const bundled: Container = {
+  metadata: { name: 'inventory', namespace: 'webshop' },
+  spec: {
+    softwareSystemRef: { name: 'webshop-core' },
+    type: 'service',
+    gitProviderRef: { name: 'gitea' },
+    bundleRef: { name: 'python-service' },
+  },
+  status: {
+    phase: 'Ready',
+    bundle: { name: 'python-service', framework: 'python-fastapi', standard: 'python-standard' },
+  },
+}
 const containers = [
   container('orders-api', 'Ready'),
   container('payments', 'Ready'),
@@ -54,6 +68,12 @@ describe('standardUpdates', () => {
       notReady: ['search', 'inventory'],
     })
     expect(standardUpdates('none', containers)).toEqual({ ready: [], notReady: [] })
+  })
+
+  it('counts a Ready Container whose Bundle expanded to the Standard, and not one not expanded yet', () => {
+    expect(standardUpdates('python-standard', [bundled]).ready).toEqual(['inventory'])
+    const pending = { ...bundled, status: { phase: 'Pending' as const } }
+    expect(standardUpdates('python-standard', [pending])).toEqual({ ready: [], notReady: [] })
   })
 })
 
