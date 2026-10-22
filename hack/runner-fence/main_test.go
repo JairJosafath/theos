@@ -339,7 +339,9 @@ func TestCheck(t *testing.T) {
 		}, ""},
 		{"DNS in another namespace (#1257)", func(o *objects) {
 			fence(o).Egress[0].To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] = "openshift-dns"
-			fence(o).Egress[0].To[0].PodSelector.MatchLabels = map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}
+			fence(o).Egress[0].To[0].PodSelector.MatchLabels = map[string]string{
+				"dns.operator.openshift.io/daemonset-dns": "default",
+			}
 		}, ""},
 		{"DNS through NodeLocal DNSCache and kube-dns (#1257)", func(o *objects) {
 			fence(o).Egress[0].To = append(fence(o).Egress[0].To,
