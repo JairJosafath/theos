@@ -21,19 +21,13 @@ import (
 // sdist to the local Gitea's registries and installs each with the real
 // tools, as decision 7 of docs/plans/done/app-packages.md has an app do: npm with
 // the scope routed to the owner's registry, uv with the owner's index declared
-// explicit and the package pinned to it. A repeat publishes nothing.
+// explicit and the package pinned to it. A repeat publishes nothing. The
+// publish runs with or without the tools; only an install subtest skips when
+// its tool is not on PATH, and says so (#1702).
 func TestGiteaPackagesIntegration(t *testing.T) {
 	base := os.Getenv("C4_GITEA_URL")
 	if base == "" {
 		t.Skip("C4_GITEA_URL not set")
-	}
-	npmBin, err := exec.LookPath("npm")
-	if err != nil {
-		t.Skip("npm is not on PATH; the install check needs it")
-	}
-	uvBin, err := exec.LookPath("uv")
-	if err != nil {
-		t.Skip("uv is not on PATH; the install check needs it")
 	}
 	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
@@ -102,6 +96,10 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 	checkPackages(t, got, want)
 
 	t.Run("npm installs it", func(t *testing.T) {
+		npmBin, err := exec.LookPath("npm")
+		if err != nil {
+			t.Skip("npm is not on PATH; the install check needs it (#1702)")
+		}
 		project := t.TempDir()
 		u, _ := url.Parse(base)
 		npmrc := fmt.Sprintf("@c4factory:registry=%s\n//%s/api/packages/webshop/npm/:_authToken=%s\n",
@@ -139,6 +137,10 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 	})
 
 	t.Run("uv installs it", func(t *testing.T) {
+		uvBin, err := exec.LookPath("uv")
+		if err != nil {
+			t.Skip("uv is not on PATH; the install check needs it (#1702)")
+		}
 		project := t.TempDir()
 		pyproject := fmt.Sprintf("[project]\nname = \"app\"\nversion = \"0.0.0\"\nrequires-python = \">=3.12\"\n"+
 			"dependencies = []\n\n[[tool.uv.index]]\nname = \"c4factory\"\nurl = %q\nexplicit = true\n\n"+

@@ -89,10 +89,10 @@ type ProjectReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;delete
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;domains;bundles;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.

@@ -171,6 +171,97 @@ var _ = Describe("CI runner pool", func() {
 		Eventually(func() []corev1.Pod { return poolPods(ns) }, 3*testRunnerRecordKept).Should(BeEmpty())
 	})
 
+	It("follows the ci block: a lowered size trims idle pods, a new image rolls them, a dropped block removes the pool's objects (#1700)", func() {
+		ns := newProjectNamespace()
+		var project c4v1alpha1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+		provider := newCIProvider(ns)
+		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
+		// busyPod registers the pod's runner to the project's organization and
+		// gives it a job, as its init container and the host would.
+		busyPod := func(pod corev1.Pod) {
+			GinkgoHelper()
+			_, err := gitFake.registerRunner(runnerTokenPrefix+ns, pod.Name, "go:host")
+			Expect(err).NotTo(HaveOccurred())
+			gitFake.setRunnerOnline(ns, pod.Name, true, true)
+		}
+		names := func(pods []corev1.Pod) []string {
+			out := make([]string, 0, len(pods))
+			for _, pod := range pods {
+				out = append(out, pod.Name)
+			}
+			return out
+		}
+
+		By("growing the pool to a raised size")
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Size = 3 })).To(Succeed())
+		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(3))
+		before := livePoolPods(ns)
+		busy := before[0]
+		busyPod(busy)
+
+		By("trimming idle pods above a lowered size, the busy one kept")
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Size = 1 })).To(Succeed())
+		Eventually(func() []string { return names(livePoolPods(ns)) }).Should(ConsistOf(busy.Name))
+		for _, pod := range poolPods(ns) {
+			if pod.Name != busy.Name {
+				Expect(pod.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+				Expect(pod.DeletionTimestamp).NotTo(BeNil())
+			}
+		}
+		Consistently(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(1))
+
+		By("not replacing the busy pod once it ends, the pool being at size")
+		setPodPhase(&busy, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			g.Expect(livePoolPods(ns)).To(HaveLen(1))
+			g.Expect(names(livePoolPods(ns))).NotTo(ContainElement(busy.Name))
+			g.Expect(poolPod(ns, busy.Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateEnded))
+		}).Should(Succeed())
+
+		By("rolling the idle pods to a new image, the busy one only once it ends")
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Size = 2 })).To(Succeed())
+		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
+		old := livePoolPods(ns)
+		busy = old[0]
+		busyPod(busy)
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "c4factory/gitea-runner-go:next" })).To(Succeed())
+		Eventually(func(g Gomega) {
+			live := livePoolPods(ns)
+			g.Expect(live).To(HaveLen(2))
+			g.Expect(names(live)).To(ContainElement(busy.Name))
+			g.Expect(names(live)).NotTo(ContainElement(old[1].Name))
+			for _, pod := range live {
+				if pod.Name != busy.Name {
+					g.Expect(pod.Spec.Containers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
+					g.Expect(pod.Spec.InitContainers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
+				}
+			}
+		}).Should(Succeed())
+		Expect(poolPod(ns, old[1].Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+		Consistently(func() []string { return names(livePoolPods(ns)) }).Should(ContainElement(busy.Name))
+		setPodPhase(&busy, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			live := livePoolPods(ns)
+			g.Expect(live).To(HaveLen(2))
+			for _, pod := range live {
+				g.Expect(pod.Spec.Containers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
+				g.Expect(pod.Annotations).To(HaveKey(AnnotationRunnerSpec))
+			}
+		}).Should(Succeed())
+
+		By("removing the pool's objects and condition with the ci block")
+		Expect(patch(provider, func() { provider.Spec.CI = nil })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(livePoolPods(ns)).To(BeEmpty())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "c4-ci-runner-gitea"), &corev1.Secret{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, CIJobEnvConfigMap), &corev1.ConfigMap{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, CINetworkPolicyName), &networkingv1.NetworkPolicy{}))).To(BeTrue())
+			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+			g.Expect(condition(project.Status.Conditions, ConditionCIRunners)).To(BeNil())
+		}).Should(Succeed())
+	})
+
 	It("takes the pool down with its Project, kept records included (#1697)", func() {
 		ns := newProjectNamespace()
 		var project c4v1alpha1.Project
