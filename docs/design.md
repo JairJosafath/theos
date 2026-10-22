@@ -123,7 +123,10 @@ guides, the webshop Domain and the planner are its later steps.
    names of the project, system, container, type and chosen entries, the
    Connectors, the CI system and, after the Framework, the paths it rendered
    (`{{ if has .FrameworkFiles "infra/operations.ts" }}`), so a layer tests a
-   file, not a name or ref. Each CI system's files sit under
+   file, not a name or ref. A template refuses a combination its layer can't
+   serve with `{{ fail "why" }}`: the render stops and the Container is
+   `Failed` with that message, as a Connector no Framework file calls does.
+   Each CI system's files sit under
    `.c4factory/ci/<system>/` and render at the root only for the Container's;
    a template with CI files but none for it fails, `UnsupportedCI`.
 5. **Assemble the devcontainer:** the Framework's settings plus a compose
