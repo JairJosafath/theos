@@ -105,8 +105,9 @@ spec:
 ---
 # A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
 # SIGTERM, in the image k8s-manifests builds, with no Service. No Container
-# names spec.deploy: a DeployTarget ships only to GitHub so far, and the
-# deploy to a cluster is #1072.
+# names spec.deploy yet: an argoCD DeployTarget (deploytarget-argocd.yaml) can
+# take a k8s-manifests Container, and the deploy to a cluster end to end is
+# #1072.
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
 metadata:

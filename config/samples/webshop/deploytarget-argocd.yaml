@@ -1,0 +1,23 @@
+# Where the webshop's services deploy: the Argo CD in the cluster the factory
+# runs on (docs/plans/k8s-deploy.md). The operator writes one Argo CD
+# Application per Container in namespace argocd, project default, that points
+# at the Container's repository at the release tag and sets the image; Argo CD
+# rolls it into namespace webshop-apps. It needs no Secret: the operator uses
+# its own ServiceAccount, and Ready says whether Argo CD and the project are
+# there. Only a Container whose Deployment is k8s-manifests (story.yaml) can
+# name it in spec.deploy; a cli or an operator is Incompatible. Not in
+# kustomization.yaml: apply it with
+# kubectl apply -n webshop -f config/samples/webshop/deploytarget-argocd.yaml.
+apiVersion: c4.factory.io/v1alpha1
+kind: DeployTarget
+metadata:
+  name: webshop-cluster
+spec:
+  argoCD:
+    # namespace (default argocd) and project (default default) are Argo CD's;
+    # destination.server defaults to the cluster Argo CD runs in.
+    destination:
+      namespace: webshop-apps
+  # development ships each release by itself; production waits for a
+  # person's approval unless approval says None.
+  tier: development
