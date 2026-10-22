@@ -610,7 +610,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   registry once and reports it in `status.image` (`tag`, `repository`,
   `digest`, `platforms`, `state`, `message`, `publishedTime`) and
   `ImagePublished` (True when `Published`, else False with the state:
-  `NoImage`, `Invalid`, `TagTaken`, or `Failed`, retried each poll). Each
+  `Pushing`, `NoImage`, `Invalid`, `TagTaken`, or `Failed`, retried each
+  poll). The push runs beside the reconciler, one per Container, and the
+  reconcile its end wakes writes the result, so a slow registry holds no
+  Container's reconcile (#1572); a ship waits while it runs. Each
   ship's `Shipment.Image` is `<repository>@<digest>` of the version shipped,
   a pin's resolved in the registry.
 - **GitHub targets** (#1070, [plans/github-deploy.md](plans/github-deploy.md)):

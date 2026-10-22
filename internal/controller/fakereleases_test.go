@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/mod/module"
@@ -60,11 +61,13 @@ type fakeReleaseState struct {
 	// owner/name@tag, none when unset; imageFailures how many PublishImage
 	// calls fail before one gets through, by owner/name; imagePushes counts
 	// the calls, by owner/name@tag; and registry is the digest each tag
-	// names in the owner's registry, by owner/name@tag.
+	// names in the owner's registry, by owner/name@tag; imageHolds holds
+	// each PublishImage call of owner/name open until its channel closes.
 	images        map[string]gitprovider.Image
 	imageFailures map[string]int
 	imagePushes   map[string]int
 	registry      map[string]string
+	imageHolds    map[string]chan struct{}
 	// packages is the package each file of a release holds, by
 	// owner/name@tag, as setReleasePackages read them; packageFailures how
 	// many PublishReleasePackages calls fail before one gets through, by
@@ -105,7 +108,8 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			sources: map[string][]fakeSourceFile{}, runJobs: map[string][]gitprovider.WorkflowJob{},
 			onlineRunners: map[int64]bool{}, images: map[string]gitprovider.Image{},
 			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{},
-			packages: map[string][]fakePackage{}, packageFailures: map[string]int{}, packagePublishes: map[string]int{},
+			imageHolds: map[string]chan struct{}{},
+			packages:   map[string][]fakePackage{}, packageFailures: map[string]int{}, packagePublishes: map[string]int{},
 			packageUploads: map[string]int{}}
 	}
 	return g.releases
@@ -460,15 +464,25 @@ func (g *fakeGit) packageUploads(owner, ecosystem, name, version string) int {
 }
 
 // PublishImage gives the outcome setImage gave the release, after the
-// failures failImagePushes asked for; a Published image's digest lands in
-// the registry.
-func (p *fakeProvider) PublishImage(_ context.Context, repo gitprovider.Repository, tag string) (
+// failures failImagePushes asked for and the hold holdImagePushes put on it;
+// a Published image's digest lands in the registry.
+func (p *fakeProvider) PublishImage(ctx context.Context, repo gitprovider.Repository, tag string) (
 	gitprovider.Image, error) {
+	key := repo.Owner + "/" + repo.Name
+	p.git.mu.Lock()
+	p.git.releaseState().imagePushes[key+"@"+tag]++
+	hold := p.git.releaseState().imageHolds[key]
+	p.git.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return gitprovider.Image{}, ctx.Err()
+		}
+	}
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.releaseState()
-	key := repo.Owner + "/" + repo.Name
-	s.imagePushes[key+"@"+tag]++
 	out := gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag,
 		Repository: repo.ImageRegistry + "/" + strings.ToLower(repo.Name)}
 	if s.imageFailures[key] > 0 {
@@ -512,6 +526,16 @@ func (g *fakeGit) failImagePushes(owner, name string, n int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.releaseState().imageFailures[owner+"/"+name] = n
+}
+
+// holdImagePushes holds every PublishImage call of owner/name open until
+// the returned func releases them.
+func (g *fakeGit) holdImagePushes(owner, name string) (release func()) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	hold := make(chan struct{})
+	g.releaseState().imageHolds[owner+"/"+name] = hold
+	return sync.OnceFunc(func() { close(hold) })
 }
 
 // imagePushes is how many times the Container asked to push the image

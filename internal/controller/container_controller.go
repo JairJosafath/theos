@@ -26,9 +26,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -76,6 +78,10 @@ type ContainerReconciler struct {
 	// imagePushed remembers each Container's last image push, by UID: the
 	// cache can lag a status write by a reconcile, which must not push again.
 	imagePushed sync.Map
+	// imagePushing holds each Container's image push in flight, an
+	// *imagePush by UID, and imagePushEnded wakes the Container when one ends.
+	imagePushing   sync.Map
+	imagePushEnded chan event.GenericEvent
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -106,9 +112,12 @@ func (r *ContainerReconciler) secretRecheck() time.Duration {
 }
 
 // forget drops what the per-UID maps remember of a Container that is being
-// deleted (#1571): deploySaid's keys are the UID and a target, the others the
-// UID alone.
+// deleted (#1571), and stops its image push: deploySaid's keys are the UID
+// and a target, the others the UID alone.
 func (r *ContainerReconciler) forget(uid types.UID) {
+	if push, ok := r.imagePushing.LoadAndDelete(uid); ok {
+		push.(*imagePush).cancel()
+	}
 	r.imageSaid.Delete(uid)
 	r.imagePushed.Delete(uid)
 	prefix := string(uid) + "/"
@@ -365,9 +374,11 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
+	r.imagePushEnded = make(chan event.GenericEvent, containerWorkers)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}, specOrAsked()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: containerWorkers}).
+		WatchesRawSource(source.Channel(r.imagePushEnded, &handler.EnqueueRequestForObject{})).
 		Watches(&c4v1alpha1.Crew{}, crewContainer, lastReleaseChanges()).
 		Watches(&c4v1alpha1.DeployTarget{}, targetContainers, deployTargetReadyChanges()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).

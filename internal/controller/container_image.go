@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -25,7 +26,7 @@ import (
 )
 
 // imageTimeout bounds one image push: it streams the release's whole archive
-// to the registry.
+// to the registry, beside the Container's reconciles.
 const imageTimeout = 30 * time.Minute
 
 // buildsImage reports whether the Container's catalog choice builds an image
@@ -64,12 +65,24 @@ func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1a
 	return 0
 }
 
+// imagePush is a Container's image push in flight: the release it pushes
+// and how to stop it.
+type imagePush struct {
+	tag    string
+	cancel context.CancelFunc
+}
+
 // pushedImage is release tag's image for a Container whose status.image,
-// prev, does not report it: the push this Reconciler last made when status
-// has not caught up with it (the cache can lag a status write by a
-// reconcile), else a new push, reported.
+// prev, does not report it: Pushing while this Reconciler pushes one, the
+// push it last made when status has not caught up with it (the cache can lag
+// a status write by a reconcile), else Pushing as it starts a new push. The
+// push runs beside the reconcile, so a slow registry holds no Container's
+// reconcile (#1572), and its end wakes the Container.
 func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1alpha1.Container,
 	prev *c4v1alpha1.ContainerImageStatus, tag string) *c4v1alpha1.ContainerImageStatus {
+	if push, ok := r.imagePushing.Load(container.UID); ok {
+		return pushingImage(tag, push.(*imagePush).tag)
+	}
 	if last, ok := r.imagePushed.Load(container.UID); ok {
 		img := last.(*c4v1alpha1.ContainerImageStatus)
 		behind := prev == nil || prev.Tag != tag || prev.State != img.State || prev.Message != img.Message
@@ -77,10 +90,45 @@ func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1al
 			return img.DeepCopy()
 		}
 	}
-	img := r.pushImage(ctx, container, tag)
-	r.imagePushed.Store(container.UID, img.DeepCopy())
-	r.reportImage(ctx, container, prev, img)
+	r.startPush(ctx, container.DeepCopy(), prev.DeepCopy(), tag)
+	return pushingImage(tag, tag)
+}
+
+// pushingImage is release tag's image while the push of release pushing
+// runs.
+func pushingImage(tag, pushing string) *c4v1alpha1.ContainerImageStatus {
+	img := &c4v1alpha1.ContainerImageStatus{Tag: tag, State: model.ImageStatePushing,
+		Message: fmt.Sprintf("Pushing the image of release %s.", tag)}
+	if pushing != tag {
+		img.Message = fmt.Sprintf("Waiting for the push of release %s's image to end.", pushing)
+	}
 	return img
+}
+
+// startPush pushes release tag's image in a goroutine of its own, bounded by
+// imageTimeout and stopped when the Container is forgotten. Its end remembers
+// the image, reports it and wakes the Container, whose reconcile writes it.
+func (r *ContainerReconciler) startPush(ctx context.Context, container *c4v1alpha1.Container,
+	prev *c4v1alpha1.ContainerImageStatus, tag string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageTimeout)
+	push := &imagePush{tag: tag, cancel: cancel}
+	r.imagePushing.Store(container.UID, push)
+	go func() {
+		defer cancel()
+		img := r.pushImage(ctx, container, tag)
+		if cur, ok := r.imagePushing.Load(container.UID); !ok || cur != push {
+			return
+		}
+		r.imagePushed.Store(container.UID, img.DeepCopy())
+		r.imagePushing.CompareAndDelete(container.UID, push)
+		r.reportImage(ctx, container, prev, img)
+		if r.imagePushEnded != nil {
+			select {
+			case r.imagePushEnded <- event.GenericEvent{Object: container}:
+			default:
+			}
+		}
+	}()
 }
 
 // pushImage pushes release tag's image archive and says how it went.
@@ -93,8 +141,6 @@ func (r *ContainerReconciler) pushImage(ctx context.Context, container *c4v1alph
 		img.Message = err.Error()
 		return img
 	}
-	ctx, cancel := context.WithTimeout(ctx, imageTimeout)
-	defer cancel()
 	out, err := provider.PublishImage(ctx, provider.Repository(container.Name), tag)
 	img.Repository, img.Digest, img.Platforms = out.Repository, out.Digest, out.Platforms
 	switch {
@@ -155,13 +201,13 @@ func (r *ContainerReconciler) reportImage(ctx context.Context, container *c4v1al
 // state other than Published ships "": its ImagePublished condition says why,
 // and the registry is not asked, as the tag may name another image
 // (TagTaken) or an older release's. A Failed push fails the ship, retried at
-// the next poll like the push (#1570).
+// the next poll like the push (#1570), and so does one still Pushing.
 func (p *deployPass) shippedImage(ctx context.Context, version string) (string, error) {
 	if img := p.image; img != nil && img.Tag == version {
 		switch img.State {
 		case model.ImageStatePublished:
 			return img.Repository + "@" + img.Digest, nil
-		case model.ImageStateFailed:
+		case model.ImageStatePushing, model.ImageStateFailed:
 			return "", fmt.Errorf("the image of %s is not published yet: %s", version, img.Message)
 		}
 		return "", nil

@@ -20,6 +20,9 @@ const (
 	ImageStateInvalid = "Invalid"
 	// ImageStateTagTaken means the tag names another digest in the registry.
 	ImageStateTagTaken = "TagTaken"
+	// ImageStatePushing means the operator is pushing the archive; the push
+	// runs beside the Container's reconciles, which it never holds (#1572).
+	ImageStatePushing = "Pushing"
 	// ImageStateFailed means the Git host couldn't be reached; it is tried
 	// again each poll.
 	ImageStateFailed = "Failed"
@@ -55,8 +58,8 @@ func BuildsImage(deployment, typ string) bool {
 }
 
 // ImageSettled reports whether a release's image state stays as it is: every
-// state but Failed, which is tried again.
-func ImageSettled(state string) bool { return state != ImageStateFailed }
+// state but Pushing, which ends, and Failed, which is tried again.
+func ImageSettled(state string) bool { return state != ImageStatePushing && state != ImageStateFailed }
 
 // ImageEvent is the Event a release's image says when its state turns state,
 // from prevState of the same release, or of none when prevTag is another
