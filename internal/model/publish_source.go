@@ -100,10 +100,10 @@ type PublishedSource struct {
 	Commit, Tag, URL string
 }
 
-// SourcePlace is where a Crew publishes its source: its namespace/name, the
-// repository and the folder.
+// SourcePlace is where a Crew, or a Container through a github DeployTarget,
+// publishes its source: its namespace/name, the repository and the folder.
 type SourcePlace struct {
-	Crew, Repository, Path string
+	Owner, Repository, Path string
 }
 
 // NewSource keeps the files of a Container's repository at a tag that are the
@@ -286,14 +286,14 @@ func FoldersOverlap(a, b string) bool {
 	return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
-// SourceOverlaps names the other Crews, sorted, that publish source to the
+// SourceOverlaps names the other owners, sorted, that publish source to the
 // same repository as self, owner/name in any case, in a folder overlapping
 // self's.
 func SourceOverlaps(self SourcePlace, others []SourcePlace) []string {
 	var out []string
 	for _, o := range others {
-		if o.Crew != self.Crew && strings.EqualFold(o.Repository, self.Repository) && FoldersOverlap(o.Path, self.Path) {
-			out = append(out, o.Crew)
+		if o.Owner != self.Owner && strings.EqualFold(o.Repository, self.Repository) && FoldersOverlap(o.Path, self.Path) {
+			out = append(out, o.Owner)
 		}
 	}
 	slices.Sort(out)

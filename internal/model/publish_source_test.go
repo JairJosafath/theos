@@ -196,13 +196,13 @@ func TestFoldersOverlap(t *testing.T) {
 		}
 	}
 
-	self := SourcePlace{Crew: "cel-lens/engine", Repository: "JairJosafath/cel-lens", Path: "engine"}
+	self := SourcePlace{Owner: "cel-lens/engine", Repository: "JairJosafath/cel-lens", Path: "engine"}
 	others := []SourcePlace{
 		self,
-		{Crew: "cel-lens/vscode", Repository: "JairJosafath/cel-lens", Path: "vscode"},
-		{Crew: "other/all", Repository: "jairjosafath/CEL-LENS", Path: "."},
-		{Crew: "cel-lens/core", Repository: "JairJosafath/cel-lens", Path: "engine/core"},
-		{Crew: "elsewhere/engine", Repository: "JairJosafath/other", Path: "engine"},
+		{Owner: "cel-lens/vscode", Repository: "JairJosafath/cel-lens", Path: "vscode"},
+		{Owner: "other/all", Repository: "jairjosafath/CEL-LENS", Path: "."},
+		{Owner: "cel-lens/core", Repository: "JairJosafath/cel-lens", Path: "engine/core"},
+		{Owner: "elsewhere/engine", Repository: "JairJosafath/other", Path: "engine"},
 	}
 	if got, want := SourceOverlaps(self, others), []string{"cel-lens/core", "other/all"}; !slices.Equal(got, want) {
 		t.Errorf("SourceOverlaps = %q, want %q", got, want)

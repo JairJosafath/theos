@@ -61,6 +61,10 @@ const (
 	// DeployGitHostUnreachable: the Git host failed to give the release;
 	// tried again on the next poll.
 	DeployGitHostUnreachable = "GitHostUnreachable"
+	// DeployFolderOverlaps: the folder a github target publishes the
+	// Container's source to overlaps another Container's there; shipped once
+	// they are apart.
+	DeployFolderOverlaps = "FolderOverlaps"
 )
 
 // DeployRun is a deploy as the target's tool reports it.
@@ -84,7 +88,7 @@ type DeployReport struct {
 type DeployShipFailure struct {
 	// Reason is DeployUnreachable, DeployCredentialRefused,
 	// DeployArtifactMissing, DeployReleaseNotFound, DeployGitHostUnreachable,
-	// or DeployFailed for any other failure.
+	// DeployFolderOverlaps, or DeployFailed for any other failure.
 	Reason string
 	// Detail is what the tool or the Git host said.
 	Detail string
@@ -321,6 +325,9 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 		case DeployReleaseNotFound:
 			r.Message = fmt.Sprintf("The Git host has no release %s to ship to %s; looked for again on the "+
 				"next poll", version, f.Target)
+		case DeployFolderOverlaps:
+			r.Message = fmt.Sprintf("DeployTarget %s can't take the source of %s: %s; shipped once the "+
+				"folders are apart", f.Target, version, fail.Detail)
 		default:
 			r.Message = fmt.Sprintf("Shipping %s to %s failed: %s; it isn't tried again until another version "+
 				"is wanted", version, f.Target, fail.Detail)
@@ -335,7 +342,8 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 // deployRetried says a Failed entry with reason is shipped again on the next
 // poll: the tool never had the deploy.
 func deployRetried(reason string) bool {
-	return reason == DeployCredentialRefused || reason == DeployReleaseNotFound || reason == DeployNameRejected
+	return reason == DeployCredentialRefused || reason == DeployReleaseNotFound || reason == DeployNameRejected ||
+		reason == DeployFolderOverlaps
 }
 
 // deployRuns says the entry r reports runs version, healthy where its target

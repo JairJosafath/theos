@@ -71,6 +71,9 @@ type Shipment struct {
 	// App names the app uniquely at any target, namespace/name of its
 	// Container; DisplayName is the name a person reads.
 	App, DisplayName string
+	// Type and Deployment are the Container's type and Deployment, which say
+	// whether a release builds an image.
+	Type, Deployment string
 	// Version is the release's tag.
 	Version string
 	// Commit is the commit the version is tagged at where the target holds the

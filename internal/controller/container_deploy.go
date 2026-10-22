@@ -11,6 +11,8 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -204,6 +206,12 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 // Git host's release; nil when the deploy is under way, else how it failed.
 func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer ports.Deployer,
 	version string) *model.DeployShipFailure {
+	sourcePath := target.Settings[model.GitHubSettingSourcePath]
+	if sourcePath != "" {
+		if fail := p.folderOverlaps(ctx, target, sourcePath); fail != nil {
+			return fail
+		}
+	}
 	if p.provider == nil {
 		provider, err := providerFor(ctx, p.r.Client, p.r.APIReader, p.r.Git, p.container.Namespace,
 			p.container.Spec.GitProviderRef.Name)
@@ -220,7 +228,14 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployReleaseNotFound}
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
+		Type: string(p.container.Spec.Type), Deployment: refName(p.container.Spec.DeploymentRef),
 		Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
+	if sourcePath != "" {
+		if shipment.Source, err = p.source(ctx, version); err != nil {
+			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
+		}
+		shipment.ReadSource = releaseSource(p.provider, p.repo, version)
+	}
 	if buildsImage(p.container) {
 		if shipment.Image, err = p.shippedImage(ctx, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
@@ -245,6 +260,57 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployArtifactMissing, Detail: err.Error()}
 	}
 	return &model.DeployShipFailure{Reason: model.DeployFailed, Detail: err.Error()}
+}
+
+// source is the release's source at version, read from the Git host once
+// per release.
+func (p *deployPass) source(ctx context.Context, version string) (*model.ReleaseSource, error) {
+	if last, ok := p.r.deploySources.Load(p.container.UID); ok && last.(sourceRead).tag == version {
+		return last.(sourceRead).source, nil
+	}
+	source, err := readSource(ctx, p.r.Client, p.container, p.provider, p.repo, version)
+	if err != nil {
+		return nil, err
+	}
+	p.r.deploySources.Store(p.container.UID, sourceRead{tag: version, source: source})
+	return source, nil
+}
+
+// folderOverlaps fails the ship when path, the folder target publishes the
+// Container's source to, overlaps the folder of a Container whose name sorts
+// before it and that ships to the same target: the first keeps the folder.
+func (p *deployPass) folderOverlaps(ctx context.Context, target ports.Target,
+	path string) *model.DeployShipFailure {
+	var dt c4v1alpha1.DeployTarget
+	if found, err := p.r.lookup(ctx, p.container.Namespace, target.Name, &dt); err != nil || !found {
+		return nil
+	}
+	var containers c4v1alpha1.ContainerList
+	if err := p.r.List(ctx, &containers, client.InNamespace(p.container.Namespace)); err != nil {
+		return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps,
+			Detail: "listing the Containers that ship there: " + err.Error()}
+	}
+	repository := target.Settings[model.GitHubSettingRepository]
+	self := model.SourcePlace{Owner: p.container.Name, Repository: repository, Path: path}
+	var earlier []model.SourcePlace
+	folders := map[string]string{}
+	for i := range containers.Items {
+		c := &containers.Items[i]
+		if c.Name >= p.container.Name || !c.DeletionTimestamp.IsZero() ||
+			!slices.ContainsFunc(c.Spec.Deploy, func(d c4v1alpha1.ContainerDeploy) bool { return d.Target == dt.Name }) {
+			continue
+		}
+		folder := containerTarget(&dt, c).Settings[model.GitHubSettingSourcePath]
+		folders[c.Name] = folder
+		earlier = append(earlier, model.SourcePlace{Owner: c.Name, Repository: repository, Path: folder})
+	}
+	overlaps := model.SourceOverlaps(self, earlier)
+	if len(overlaps) == 0 {
+		return nil
+	}
+	return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps, Detail: fmt.Sprintf(
+		"its folder %q for Container %s overlaps the folder %q of Container %s, which ships there first",
+		path, p.container.Name, folders[overlaps[0]], overlaps[0])}
 }
 
 // copyImage is a Shipment's CopyImage for image, host/repository@digest in
@@ -349,14 +415,25 @@ func isGiteaError(err error) bool {
 
 // containerTarget is dt as container's deploys read it: the target with the
 // settings that go per Container, the github member's tag prefix (the
-// Container's name unless the target sets one) and whether its releases
-// take Latest.
+// Container's name unless the target sets one), whether its releases take
+// Latest, and with source set the folder of its source (the Container's name
+// unless the target sets one) and its source tag prefix when the target sets
+// one.
 func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
 	target, _ := deployTarget(dt)
 	if gh := dt.Spec.GitHub; gh != nil {
 		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
 		if !model.GitHubTakesLatest(gh.Latest) {
 			target.Settings[model.GitHubSettingLatest] = "false"
+		}
+		if src := gh.Source; src != nil {
+			target.Settings[model.GitHubSettingSourcePath] = container.Name
+			if src.Path != nil {
+				target.Settings[model.GitHubSettingSourcePath] = *src.Path
+			}
+			if src.TagPrefix != nil {
+				target.Settings[model.GitHubSettingSourceTagPrefix] = *src.TagPrefix
+			}
 		}
 	}
 	return target
