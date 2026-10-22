@@ -434,11 +434,13 @@ func checkFence(name string, d appsv1.Deployment, objs objects) []string {
 	return problems
 }
 
+// more is the problem with a rule that allows anything but the three.
+const more = "reaches more than DNS, Gitea on port 3000 and HTTPS to public addresses"
+
 // egress says which of the three a rule allows, or what else it allows. The
 // DNS rule, the one on port 53 alone, may name several peers (NodeLocal
 // DNSCache's address beside kube-dns); the others name one.
 func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (reach, problem string) {
-	const more = "reaches more than DNS, Gitea on port 3000 and HTTPS to public addresses"
 	if ports(rule.Ports, port{corev1.ProtocolUDP, 53}, port{corev1.ProtocolTCP, 53}) {
 		if len(rule.To) == 0 {
 			return "", more // no peer means every address
@@ -485,7 +487,6 @@ func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (re
 // --cluster-dns (#1257); every namespace, every pod of one, or a public
 // address on port 53 is more than DNS.
 func dnsPeer(to networkingv1.NetworkPolicyPeer) string {
-	const more = "reaches more than DNS, Gitea on port 3000 and HTTPS to public addresses"
 	switch {
 	case to.IPBlock != nil && to.PodSelector == nil && to.NamespaceSelector == nil:
 		if len(to.IPBlock.Except) > 0 || !model.PrivateBlock(to.IPBlock.CIDR) {

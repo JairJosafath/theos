@@ -152,13 +152,14 @@ func main() {
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
 	clusterDNSPeers, err := controller.ClusterDNSPeers(clusterDNS)
 	if err != nil {
 		setupLog.Error(err, "Invalid --cluster-dns")
 		os.Exit(1)
 	}
-
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" && len(sharedSecrets)+len(sharedPullSecrets) > 0 {
