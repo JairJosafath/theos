@@ -9,7 +9,10 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"cmp"
 	"path"
+	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -43,6 +46,10 @@ const (
 	// The Task reads them as model.CIJob.PodFate.
 	RunnerFateEnded = model.PodFateEnded
 	RunnerFateLost  = model.PodFateLost
+	// AnnotationRunnerFailure is on a lost pod that failed on its own, nobody
+	// deleting it: the container that ended non-zero (register, runner) or
+	// the pod's status reason. The pool backs off from such failures (#1699).
+	AnnotationRunnerFailure = "c4.factory.io/runner-failure"
 	// CINetworkPolicyName is the NetworkPolicy that fences the pool's pods.
 	CINetworkPolicyName = "c4-ci-runner"
 	// CIJobEnvConfigMap holds the variables the runner gives every job
@@ -145,6 +152,49 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 			Volumes: volumes,
 		},
 	}
+}
+
+// DefaultRunnerBackoff is how long a pool waits to start a pod after one
+// failed on its own, doubled per failure since the pool's last ended job up
+// to MaxRunnerBackoff, so a broken registration (a bad token, a Git host
+// down) costs a pod and a token call every few minutes, not every few
+// seconds (#1699).
+const (
+	DefaultRunnerBackoff = 10 * time.Second
+	MaxRunnerBackoff     = 5 * time.Minute
+)
+
+// runnerBackoff is the wait after the n-th failure in a row: base doubled
+// n-1 times, at most MaxRunnerBackoff; zero for no failure.
+func runnerBackoff(base time.Duration, n int) time.Duration {
+	if n <= 0 {
+		return 0
+	}
+	wait := base
+	for i := 1; i < n && wait < MaxRunnerBackoff; i++ {
+		wait *= 2
+	}
+	return min(wait, MaxRunnerBackoff)
+}
+
+// runnerPodFailure tells how a pool pod failed on its own: the init container
+// that registers it or the runner container ended non-zero, by name, or the
+// pod is Failed or disrupted, by its status reason. Empty for a pod still
+// running, one that ended its job, and one somebody is deleting, which is no
+// failure of the pool's.
+func runnerPodFailure(pod *corev1.Pod) string {
+	if pod.DeletionTimestamp != nil {
+		return ""
+	}
+	for _, cs := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
+		if term := cs.State.Terminated; term != nil && term.ExitCode != 0 {
+			return cs.Name
+		}
+	}
+	if pod.Status.Phase == corev1.PodFailed || podDisrupted(pod) {
+		return cmp.Or(pod.Status.Reason, string(corev1.PodFailed))
+	}
+	return ""
 }
 
 // runnerPodFate tells how a pool pod ended: RunnerFateEnded when its runner ran
