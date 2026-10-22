@@ -64,6 +64,7 @@ jobs:
       contents: read
     name: Find the previous release
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       checks: ${{ steps.plan.outputs.checks }}
@@ -117,6 +118,7 @@ jobs:
     # On self-hosted runners (make gh-runner) only runner 1 of a device carries
     # c4factory-kind, so a device makes one Kind cluster at a time.
     runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       # A self-hosted runner (make gh-runner) shares the device's Docker and
@@ -787,3 +789,17 @@ jobs:
       - name: Delete kind cluster
         if: always() && runner.environment == 'self-hosted'
         run: kind delete cluster --name "$KIND_CLUSTER_NAME"
+
+      # hack/load-images.sh removes each agent image from Docker once Kind has
+      # it; one a failed or cancelled load left would stay on the device's
+      # Docker, whose disk never shrinks (#1636), so the end of the job removes
+      # them all; hack/check-workflows.sh keeps this step.
+      - name: Remove the pulled images
+        if: always()
+        run: |
+          for version in $FROM_VERSION $VERSION; do
+            for name in agent-base agent-go; do
+              image=$REGISTRY/$name:$version
+              ! docker image inspect "$image" >/dev/null 2>&1 || docker rmi -f "$image"
+            done
+          done

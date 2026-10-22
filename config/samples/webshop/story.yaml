@@ -55,6 +55,10 @@ spec:
     name: small
   deploymentRef:
     name: k8s-manifests
+  # Each release ships to the Argo CD in the cluster the factory runs on
+  # (deploytarget-argocd.yaml); status.deploys[] says how far it got.
+  deploy:
+    - target: kind-cluster
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -76,6 +80,10 @@ spec:
     name: small
   deploymentRef:
     name: k8s-manifests
+  # Each release ships to the Argo CD in the cluster the factory runs on
+  # (deploytarget-argocd.yaml); status.deploys[] says how far it got.
+  deploy:
+    - target: kind-cluster
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
@@ -97,6 +105,10 @@ spec:
     name: small
   deploymentRef:
     name: k8s-manifests
+  # Each release ships to the Argo CD in the cluster the factory runs on
+  # (deploytarget-argocd.yaml); status.deploys[] says how far it got.
+  deploy:
+    - target: kind-cluster
   operations:
     recovery:
       rpo: 15m
@@ -104,9 +116,7 @@ spec:
       email: ops@webshop.example
 ---
 # A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
-# SIGTERM, in the image k8s-manifests builds, with no Service. No Container
-# names spec.deploy: a DeployTarget ships only to GitHub so far, and the
-# deploy to a cluster is #1072.
+# SIGTERM, in the image k8s-manifests builds, with no Service.
 apiVersion: c4.factory.io/v1alpha1
 kind: Container
 metadata:
@@ -127,6 +137,10 @@ spec:
     name: small
   deploymentRef:
     name: k8s-manifests
+  # Each release ships to the Argo CD in the cluster the factory runs on
+  # (deploytarget-argocd.yaml); status.deploys[] says how far it got.
+  deploy:
+    - target: kind-cluster
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: DataStore

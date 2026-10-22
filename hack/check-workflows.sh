@@ -29,6 +29,15 @@
 # there names such a job. Release (release.yml) has a step that
 # dispatches verify-release.yml for a minor tag only, `if:`
 # endsWith(github.ref_name, '.0'), in a job granted actions: write (#1105).
+# A self-hosted runner builds and pulls on the device's Docker, whose disk
+# never shrinks (#1636): Release has a step under if: always() that removes
+# the images (docker rmi), after the step that pushes them, and Verify
+# Release (verify-release.yml) has one too, so the images go whatever the
+# steps before did. Every job that runs on a runner (not one that calls a
+# reusable workflow, uses:) sets timeout-minutes, a few times its normal
+# duration: without one GitHub lets a hung job run 6 hours, and a hung Lint
+# job on main held its concurrency group, so every later run on main waited
+# behind it and nothing said whether main was green (#1655).
 # Prints each job or workflow that doesn't and exits 1.
 # hack/check-workflows_test.sh runs it in make check.
 #
@@ -73,9 +82,9 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
   [ -e "$f" ] || continue
   pr=$(trigger "$f" pull_request)
   # One line per job: its id, its runs-on (or -), kind when it makes a Kind
-  # cluster, and its name: (or -). A job that calls a reusable workflow
-  # (uses:) has no runs-on.
-  while IFS=$'\t' read -r job runs_on kind name; do
+  # cluster, its name: (or -) and its timeout-minutes (or -). A job that
+  # calls a reusable workflow (uses:) has no runs-on and no timeout.
+  while IFS=$'\t' read -r job runs_on kind name timeout; do
     if [ "$pr" != none ]; then
       pr_jobs+="${f##*/}"$'\t'"$name"$'\n'
       if [ "$name" = - ]; then
@@ -96,12 +105,17 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       echo "$f: job $job makes a Kind cluster but doesn't ask for the label c4factory-kind" >&2
       fail=1
     fi
+    if [ "$runs_on" != uses ] && [ "$timeout" = - ]; then
+      echo "$f: job $job has no timeout-minutes, so a hung job runs 6 hours and holds the concurrency group (#1655)" >&2
+      fail=1
+    fi
   done < <(awk '
-    function flush() { if (job != "") print job "\t" (runs ? runs : "-") "\t" (kind ? "kind" : "-") "\t" (name != "" ? name : "-"); job = ""; runs = ""; kind = 0; name = "" }
+    function flush() { if (job != "") print job "\t" (runs ? runs : "-") "\t" (kind ? "kind" : "-") "\t" (name != "" ? name : "-") "\t" (timeout != "" ? timeout : "-"); job = ""; runs = ""; kind = 0; name = ""; timeout = "" }
     /^[^ #]/ { flush(); injobs = ($0 ~ /^jobs:/); next }
     injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); next }
     job != "" && /^    runs-on:/ { runs = $0; sub(/^    runs-on:[[:space:]]*/, "", runs) }
     job != "" && /^    uses:/ { runs = "uses" }
+    job != "" && /^    timeout-minutes:/ { timeout = $0; sub(/^    timeout-minutes:[[:space:]]*/, "", timeout) }
     job != "" && /^    name:/ { name = $0; sub(/^    name:[[:space:]]*/, "", name); gsub(/^["\x27]|["\x27]$/, "", name) }
     job != "" && /kind create cluster|make e2e/ { kind = 1 }
     END { flush() }
@@ -218,6 +232,42 @@ if [ -e "$rel" ]; then
     fail=1
   elif [ "$actions" != yes ]; then
     echo "$rel: the job that dispatches verify-release.yml has no permission actions: write" >&2
+    fail=1
+  fi
+fi
+
+# removal FILE: "yes" when a step of FILE under if: always() runs docker rmi,
+# then "yes" when it comes after the last step that runs docker push (or
+# there is none), for the workflows that leave images on the device (#1636).
+removal() {
+  awk '
+    function flush() {
+      n++
+      if (run ~ /docker push /) push = n
+      if (run ~ /docker rmi / && cond ~ /always\(\)/) rmi = n
+      cond = ""; run = ""
+    }
+    /^      - / { flush() }
+    /^      (- |  )if:/ { cond = $0 }
+    { run = run "\n" $0 }
+    END { flush(); print (rmi ? "yes" : "-") "\t" (rmi && rmi > push ? "yes" : "-") }
+  ' "$1"
+}
+if [ -e "$rel" ]; then
+  IFS=$'\t' read -r found after < <(removal "$rel")
+  if [ "$found" != yes ]; then
+    echo "$rel: no step under if: always() removes the images it built (docker rmi), so a release leaves them on the device (#1636)" >&2
+    fail=1
+  elif [ "$after" != yes ]; then
+    echo "$rel: the step that removes the images (docker rmi) comes before the one that pushes them" >&2
+    fail=1
+  fi
+fi
+ver=$DIR/verify-release.yml
+if [ -e "$ver" ]; then
+  IFS=$'\t' read -r found _ < <(removal "$ver")
+  if [ "$found" != yes ]; then
+    echo "$ver: no step under if: always() removes the images it pulled (docker rmi), so a check leaves them on the device (#1636)" >&2
     fail=1
   fi
 fi

@@ -42,7 +42,7 @@ said() { local _; for _ in $(seq 600); do grep -qs -- "$1" "$2" && return 0; sle
 check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" kept
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
-check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 30"
+check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 15"
 check "defaults: RELAY_MODEL is fable (#1534)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" fable
 check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
 check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
@@ -149,7 +149,7 @@ echo 6.18.54.1-microsoft-standard-WSL2 >"$OSRELEASE"
 rm -f "$DIR"/disk-low-*
 : >"$LOG"
 MEM_WAIT=1 disk admit
-check "disk: under WSL it says only compacting the .vhdx helps" "$(grep -c 'only compacting the .vhdx.*docs/dev/testenv.md' "$LOG")" 1
+check "disk: under WSL it says the .vhdx never shrinks (#1635)" "$(grep -c '.vhdx files never shrink.*docs/dev/testenv.md' "$LOG")" 1
 MIN_FREE_GB=10 disk admit; check "disk: RELAY_MIN_FREE_GB lowers the minimum" $? 0
 rm -f "$DIR/admitted" "$DIR"/disk-low-*
 printf '/mnt/c/wsl /mnt/c 12\n/mnt/c/docker /mnt/c 12\n' >"$DF"
@@ -319,6 +319,9 @@ check "triage skill: needs-maintainer is the maintainer's" "$(grep -c "needs-mai
 check "triage skill: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$skill")" 1
 check "triage skill: a design issue's plan says Refs, not Closes (#491)" "$(grep -c 'request says `Refs #N`, never `Closes #N`' <<<"$skill")" 1
 check "triage skill: a design issue waits on its steps (#491)" "$(grep -c 'a "Depends on #S" line per step' <<<"$skill")" 1
+handoff_skill=$(cat "$(dirname "$0")/../.claude/skills/handoff/SKILL.md")
+check "triage skill: a decided plan's steps are filed ready, proposed only for a decision the plan left (#1630)" "$(grep -c 'files the steps as$' <<<"$skill") $(grep -c '^  `status/ready` issues, each with its own "Done when"' <<<"$skill") $(grep -c 'status/proposed` only when it needs a decision the plan did not make' <<<"$skill") $(grep -c 'files the steps as status/proposed' <<<"$skill")" "1 1 1 0"
+check "handoff skill: says the same of a plan's steps (#1630)" "$(grep -c 'file each `status/ready`, with' <<<"$handoff_skill") $(grep -c 'status/proposed` only when it needs a decision the plan did not make' <<<"$handoff_skill")" "1 1"
 check "triage skill: the plan is not the issue's Done when (#491)" "$(grep -c 'that is its "Done when"' <<<"$skill")" 0
 check "triage skill: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$skill")" 1
 check "triage skill: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$skill")" 1

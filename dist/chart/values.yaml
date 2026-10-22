@@ -703,14 +703,14 @@ catalog:
         supportedTypes: [service, worker, job, static-site, operator]
     - kind: Deployment
       name: k8s-manifests
-      ref: v1.9.0
+      ref: v1.9.1
       spec:
         displayName: Kubernetes manifests
         description: A Dockerfile for the Framework (python-fastapi, python-cli or react-vite) and plain Kubernetes manifests, built with kustomize; a Job for a job.
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
@@ -746,6 +746,20 @@ agents:
     ## Defaults to Chart.appVersion
     tag: ""
   credentialsSecret: claude-credentials
+  ## The model proxy (docs/plans/done/model-proxy.md): a Deployment of the operator
+  ## image running /model-proxy in the release namespace, Service c4-model-proxy
+  ## on 8080, the one place the Secret above is used. It mounts the Secret as a
+  ## volume and admits only agent sandboxes. Two replicas and a
+  ## PodDisruptionBudget keep one serving through a rollout; a stopping replica
+  ## fails its readiness probe for drainSeconds before it closes.
+  modelProxy:
+    replicas: 2
+    ## The one URL every request is forwarded to.
+    upstream: https://api.anthropic.com
+    drainSeconds: 5
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {cpu: 500m, memory: 128Mi}
   planner:
     description: "Plans a Brief: the model and the first issues, from its idea and prompts."
     model: claude-opus-5-5

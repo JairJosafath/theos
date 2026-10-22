@@ -749,3 +749,80 @@ func TestBuildSandboxSharedPullSecrets(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildSandboxModelProxy checks what a sandbox gets of its Agent's
+// credentials: on the shared token, no Secret at all, only the model proxy's
+// address and the placeholder; on a Secret of its own, the Secret as env; a
+// stand-in, nothing (#1136).
+func TestBuildSandboxModelProxy(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	const proxy = "http://c4-model-proxy.c4-factory-system.svc:8080"
+	withSecret := func(name string) *c4v1alpha1.Agent {
+		return &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude"), Spec: c4v1alpha1.AgentSpec{
+			CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: name}}}
+	}
+	r := &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system",
+		ModelProxyURL: proxy}
+	for _, tt := range []struct {
+		name      string
+		agent     *c4v1alpha1.Agent
+		r         *TaskReconciler
+		wantProxy bool
+		wantFrom  string
+	}{
+		{name: "the shared token goes through the proxy", agent: withSecret("claude-credentials"), r: r,
+			wantProxy: true},
+		{name: "another Secret comes in as env", agent: withSecret("my-token"), r: r, wantFrom: "my-token"},
+		{name: "a stand-in has neither", agent: &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "stand-in")}, r: r},
+		{name: "the shared token without a proxy comes in as env", agent: withSecret("claude-credentials"),
+			r:        &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system"},
+			wantFrom: "claude-credentials"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox, err := buildSandbox(sandboxRun{
+				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1alpha1.TaskStatus{Round: 1},
+				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     tt.agent, name: "add-crop-r1-implement", role: model.RoleImplementer,
+				gitSecret: "image-shrink-agent-git", modelProxyURL: tt.r.sandboxModelProxy(tt.agent),
+			}, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			pod := podOf(t, sandbox)
+			env := map[string]string{}
+			for _, e := range pod.Containers[0].Env {
+				env[e.Name] = e.Value
+				// The Git credentials come from the Container's Git Secret, and only they.
+				if ref := e.ValueFrom; ref != nil && ref.SecretKeyRef != nil && ref.SecretKeyRef.Name != "image-shrink-agent-git" {
+					t.Errorf("env %s reads a key of Secret %s", e.Name, ref.SecretKeyRef.Name)
+				}
+			}
+			for _, v := range pod.Volumes {
+				if v.Secret != nil {
+					t.Errorf("volume %s mounts Secret %s", v.Name, v.Secret.SecretName)
+				}
+			}
+			var from []string
+			for _, f := range pod.Containers[0].EnvFrom {
+				if f.SecretRef != nil {
+					from = append(from, f.SecretRef.Name)
+				}
+			}
+			if tt.wantFrom == "" && len(from) > 0 || tt.wantFrom != "" && !reflect.DeepEqual(from, []string{tt.wantFrom}) {
+				t.Errorf("envFrom Secrets %v, want %q", from, tt.wantFrom)
+			}
+			wantURL, wantToken := "", ""
+			if tt.wantProxy {
+				wantURL, wantToken = proxy, "c4-model-proxy"
+			}
+			if env["ANTHROPIC_BASE_URL"] != wantURL || env["ANTHROPIC_AUTH_TOKEN"] != wantToken {
+				t.Errorf("proxy env %q %q, want %q %q", env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"],
+					wantURL, wantToken)
+			}
+		})
+	}
+}

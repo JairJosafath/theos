@@ -151,7 +151,7 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		return ports.Target{}, nil
 	}
 	facts.TargetFound = true
-	target, _ := deployTarget(&dt)
+	target := containerTarget(&dt, p.container)
 	member, err := p.r.deployMember(target.Member)
 	if err != nil {
 		facts.TargetChecked, facts.TargetMessage = true, err.Error()
@@ -173,14 +173,16 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		facts.StateFailure = err.Error()
 		return ports.Target{}, nil
 	}
-	var secret corev1.Secret
-	if err := p.r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace,
-		Name: dt.Spec.CredentialsSecretRef.Name}, &secret); err != nil {
-		facts.StateFailure = "reading Secret " + dt.Spec.CredentialsSecretRef.Name + ": " + err.Error()
-		return ports.Target{}, nil
+	if ref := dt.Spec.CredentialsSecretRef; ref != nil {
+		var secret corev1.Secret
+		if err := p.r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace, Name: ref.Name},
+			&secret); err != nil {
+			facts.StateFailure = "reading Secret " + ref.Name + ": " + err.Error()
+			return ports.Target{}, nil
+		}
+		target.Secret = secret.Data
 	}
-	target.Secret = secret.Data
-	run, err := deployer.State(ctx, target, deployApp(p.container))
+	run, err := deployer.State(ctx, target, deployApp(p.container), model.DeployWanted(facts.Version, facts.Newest))
 	if err != nil {
 		facts.StateFailure = err.Error()
 		return ports.Target{}, nil
@@ -210,7 +212,7 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployReleaseNotFound}
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
-		Version: version, Notes: release.Body}
+		Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
 	if buildsImage(p.container) {
 		if shipment.Image, err = p.shippedImage(ctx, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
@@ -317,6 +319,21 @@ func (r *ContainerReconciler) deployContainer(ctx context.Context,
 func isGiteaError(err error) bool {
 	_, ok := errors.AsType[giteaError](err)
 	return ok
+}
+
+// containerTarget is dt as container's deploys read it: the target with the
+// settings that go per Container, the github member's tag prefix (the
+// Container's name unless the target sets one) and whether its releases
+// take Latest.
+func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
+	target, _ := deployTarget(dt)
+	if gh := dt.Spec.GitHub; gh != nil {
+		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
+		if !model.GitHubTakesLatest(gh.Latest) {
+			target.Settings[model.GitHubSettingLatest] = "false"
+		}
+	}
+	return target
 }
 
 // deployApp names the Container's app uniquely at any target.

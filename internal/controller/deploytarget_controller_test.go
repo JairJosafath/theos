@@ -11,6 +11,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -29,7 +31,14 @@ const deployWait = 10 * time.Second
 func newDeployTarget(ns, name, secret string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		GitHub:               &c4v1alpha1.DeployTargetGitHub{Repository: "acme/orders-cli"},
-		CredentialsSecretRef: c4v1alpha1.LocalRef{Name: secret}}}
+		CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: secret}}}
+}
+
+// newArgoCDTarget is an argoCD target with no Secret, its Argo CD in argoNS.
+func newArgoCDTarget(ns, name, argoNS, destNS string) *c4v1alpha1.DeployTarget {
+	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
+		ArgoCD: &c4v1alpha1.DeployTargetArgoCD{Namespace: argoNS,
+			Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: destNS}}}}
 }
 
 func newDeploySecret(ns, name string, data map[string]string) *corev1.Secret {
@@ -87,9 +96,47 @@ var _ = Describe("DeployTarget", func() {
 			`spec.tier: Unsupported value: "staging"`),
 		Entry("another approval", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.Approval = "Sometimes" },
 			`spec.approval: Unsupported value: "Sometimes"`),
-		Entry("no Secret", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.CredentialsSecretRef.Name = "" },
+		Entry("an empty Secret name", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.CredentialsSecretRef.Name = "" },
 			"spec.credentialsSecretRef.name"),
+		// The argoCD member (#1588): a github target keeps its Secret, and a
+		// target names one member.
+		Entry("a github target with no Secret", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.CredentialsSecretRef = nil
+		}, "set credentialsSecretRef unless the member is argoCD"),
+		Entry("github and argoCD", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{
+				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "set exactly one target member: github or argoCD"),
+		Entry("an argoCD target with no destination", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}
+		}, "spec.argoCD.destination.namespace"),
+		// The github member's tagPrefix (#1486).
+		Entry("a tagPrefix with a space", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.TagPrefix = new("orders cli-")
+		}, "spec.github.tagPrefix"),
+		Entry("a tagPrefix over 40 characters", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.TagPrefix = new(strings.Repeat("a", 41))
+		}, "spec.github.tagPrefix"),
+		Entry("a tagPrefix that starts with -", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.TagPrefix = new("-cli-")
+		}, "tagPrefix must make a git tag name"),
+		Entry("a tagPrefix with ..", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.TagPrefix = new("cli..")
+		}, "tagPrefix must make a git tag name"),
 	)
+
+	It("takes an empty tagPrefix, one with a folder, and latest false (#1486)", func() {
+		ns := newProjectNamespace()
+		dt := newDeployTarget(ns, "bare", "bare-github")
+		dt.Spec.GitHub.TagPrefix = new("")
+		dt.Spec.GitHub.Latest = new(false)
+		folder := newDeployTarget(ns, "folder", "folder-github")
+		folder.Spec.GitHub.TagPrefix = new("tools/cli-")
+		mustCreate(dt, folder)
+		Expect(dt.Spec.GitHub.TagPrefix).To(HaveValue(Equal("")))
+		Expect(dt.Spec.GitHub.Latest).To(HaveValue(BeFalse()))
+	})
 
 	It("takes 50 parameters and a production tier that needs approval", func() {
 		dt := newDeployTarget(newProjectNamespace(), "prod", "prod-github")
@@ -154,6 +201,28 @@ var _ = Describe("DeployTarget", func() {
 		// Asked again on the next poll, not 10 minutes later.
 		deployFake.Fail(ns+"/staging", nil)
 		deployReady(dt, metav1.ConditionTrue, "Ready")
+	})
+
+	It("is Ready without a Secret when the member is argoCD and its project is there (#1588)", func() {
+		ns := newProjectNamespace()
+		argoNS := newArgoNamespace()
+		dt := newArgoCDTarget(ns, "dev", argoNS, "apps")
+		mustCreate(dt)
+		Expect(dt.Spec.ArgoCD.Project).To(Equal(model.ArgoCDDefaultProject))
+		Expect(dt.Spec.ArgoCD.Destination.Server).To(Equal(model.ArgoCDDefaultServer))
+		cond := deployReady(dt, metav1.ConditionFalse, "CredentialRefused")
+		Expect(cond.Message).To(ContainSubstring("Argo CD refused the operator's ServiceAccount for DeployTarget dev " +
+			"for project default in namespace " + argoNS + " (destination apps): project default doesn't exist"))
+		Expect(cond.Message).To(ContainSubstring("Whoever owns DeployTarget dev makes project default in namespace " +
+			argoNS))
+
+		// Checked again on a change of the spec, with the project there.
+		argoProject(argoNS)
+		Expect(patch(dt, func() { dt.Spec.Tier = c4v1alpha1.DeployTierProduction })).To(Succeed())
+		cond = deployReady(dt, metav1.ConditionTrue, "Ready")
+		Expect(cond.Message).To(ContainSubstring("Argo CD is there for project default in namespace " + argoNS +
+			" (destination apps)"))
+		Expect(dt.Status.CheckedTime).NotTo(BeNil())
 	})
 
 	It("checks again when its Secret or spec changes, and not on every poll", func() {

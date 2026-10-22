@@ -31,6 +31,7 @@ jobs:
       contents: read
     name: UI
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ui

@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-proxy
+  namespace: system
+  labels:
+    app.kubernetes.io/name: c4-model-proxy
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: c4-model-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: c4-model-proxy
+    spec:
+      # The proxy talks to no API server: no ServiceAccount token.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: model-proxy
+        image: controller:latest
+        command:
+        - /model-proxy
+        args:
+        - --listen=:8080
+        - --upstream=https://api.anthropic.com
+        - --credentials-dir=/etc/model-proxy/credentials
+        # A stop fails /readyz and keeps serving this long before the listener
+        # closes, so the Service's endpoints drop the pod first.
+        - --drain=5s
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        # /readyz fails only while a stop drains; without a token the pod is
+        # ready and answers 503 (#1627).
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 20
+          timeoutSeconds: 5
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+          limits: {cpu: 500m, memory: 128Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        # The token enters as a file, never as env; no subPath, so the kubelet
+        # refreshes it when the Secret changes.
+        - name: credentials
+          mountPath: /etc/model-proxy/credentials
+          readOnly: true
+      volumes:
+      - name: credentials
+        secret:
+          secretName: claude-credentials
+          # The Secret may come after the deploy; the kubelet fills the
+          # directory when it appears (#1627).
+          optional: true

@@ -3,7 +3,7 @@
 GitHub issue #1070, filed by the owner (`source/dev`, priority/4). Agents:
 otter-1070 (the plan), heron-1070 (the design change and the steps). It builds on the deploy model of [deploy.md](done/deploy.md)
 (#1068), the release images of [images.md](images.md) (#1069) and the two
-rules of [github-deploy-state.md](github-deploy-state.md) (#1445: `State`
+rules of [github-deploy-state.md](done/github-deploy-state.md) (#1445: `State`
 takes the wanted version; the `github` member's `tagPrefix` and `latest`).
 It plans what `docs/plans/done/deploy.md` decision 7 left to #1070: the
 source, the checks before publishing, images on GHCR, a GitHub App

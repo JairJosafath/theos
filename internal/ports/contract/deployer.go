@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 
@@ -32,8 +33,10 @@ const maxShips = 20
 const contractApp = "contract/orders-cli"
 
 // Deployer states what every Deployer does: Ship twice is one deploy; State
-// after Ship reports the version once the tool says it is done; a refused
-// credential is ErrCredentialRefused from Check and Ship; a missing file is
+// after Ship reports the version once the tool says it is done, and a
+// version shipped before reaches Deployed again when it is wanted; a refused
+// credential is ErrCredentialRefused from Check and Ship; a release without
+// the artifact the member ships (its files, or its image) is
 // ErrArtifactMissing.
 func Deployer(t *testing.T, env DeployerEnv) {
 	t.Helper()
@@ -47,7 +50,7 @@ func Deployer(t *testing.T, env DeployerEnv) {
 	})
 
 	t.Run("reports nothing before the first deploy", func(t *testing.T) {
-		st, err := d.State(ctx, env.Target(t), contractApp)
+		st, err := d.State(ctx, env.Target(t), contractApp, "")
 		if err != nil || st.Version != "" || st.Phase != "" {
 			t.Fatalf("State() = %+v, %v; want the zero state", st, err)
 		}
@@ -64,7 +67,7 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		if n := env.Deploys(t, target, contractApp); n != 1 {
 			t.Errorf("deploys = %d after shipping v1.0.0 three times, want 1", n)
 		}
-		st, err := d.State(ctx, target, contractApp)
+		st, err := d.State(ctx, target, contractApp, "v1.0.0")
 		if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed {
 			t.Errorf("State() = %+v, %v; want v1.0.0 Deployed", st, err)
 		}
@@ -79,6 +82,17 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		}
 	})
 
+	t.Run("a version shipped before is Deployed again when it is wanted", func(t *testing.T) {
+		// A rollback: the entry pins v1.0.0 after v1.1.0 shipped. A tool
+		// that runs one version starts a new deploy of it; one whose
+		// versions stand side by side reports v1.0.0's. Either way State
+		// reaches Deployed at v1.0.0 (#1445).
+		target := env.Target(t)
+		shipUntilDeployed(t, d, target, shipment("v1.0.0"))
+		shipUntilDeployed(t, d, target, shipment("v1.1.0"))
+		shipUntilDeployed(t, d, target, shipment("v1.0.0"))
+	})
+
 	t.Run("a refused credential is ErrCredentialRefused", func(t *testing.T) {
 		target := env.Refused(t)
 		if err := d.Check(ctx, target); !errors.Is(err, ports.ErrCredentialRefused) {
@@ -89,12 +103,15 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		}
 	})
 
-	t.Run("a missing file is ErrArtifactMissing", func(t *testing.T) {
+	t.Run("a missing artifact is ErrArtifactMissing", func(t *testing.T) {
+		// A release with no files and no image lacks what any member ships:
+		// GitHub its files, Argo CD its image.
 		target := env.Target(t)
 		s := shipment("v1.0.0")
 		s.Files = nil
+		s.Image = ""
 		if err := d.Ship(ctx, target, s); !errors.Is(err, ports.ErrArtifactMissing) {
-			t.Errorf("Ship() of a release without files = %v, want ErrArtifactMissing", err)
+			t.Errorf("Ship() of a release without files or image = %v, want ErrArtifactMissing", err)
 		}
 		if n := env.Deploys(t, target, contractApp); n != 0 {
 			t.Errorf("deploys = %d, want 0", n)
@@ -110,7 +127,7 @@ func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s po
 		if err := d.Ship(ctx, target, s); err != nil {
 			t.Fatalf("Ship(%s) = %v", s.Version, err)
 		}
-		st, err := d.State(ctx, target, s.App)
+		st, err := d.State(ctx, target, s.App, s.Version)
 		if err != nil {
 			t.Fatalf("State() = %v", err)
 		}
@@ -121,7 +138,8 @@ func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s po
 	t.Fatalf("%s isn't Deployed after %d Ship calls", s.Version, maxShips)
 }
 
-// shipment is version of the suite's app, with two files.
+// shipment is version of the suite's app, with two files, its image by
+// digest and its repository.
 func shipment(version string) ports.Shipment {
 	file := func(name, content string) ports.File {
 		return ports.File{Name: name, Size: int64(len(content)),
@@ -129,7 +147,9 @@ func shipment(version string) ports.Shipment {
 				return io.NopCloser(bytes.NewReader([]byte(content))), int64(len(content)), nil
 			}}
 	}
+	digest := fmt.Sprintf("%064x", []byte(version))
 	return ports.Shipment{App: contractApp, DisplayName: "Orders CLI", Version: version,
-		Notes: "- Orders can be listed", Files: []ports.File{file("orders-cli_linux.tar.gz", "binary "+version),
-			file("SHA256SUMS", "sums "+version)}}
+		Repository: "https://git.example/contract/orders-cli.git", Notes: "- Orders can be listed",
+		Files: []ports.File{file("orders-cli_linux.tar.gz", "binary "+version), file("SHA256SUMS", "sums "+version)},
+		Image: "git.example/contract/orders-cli@sha256:" + digest[:64]}
 }

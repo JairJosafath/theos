@@ -38,6 +38,10 @@ type fakeGitHub struct {
 	uploads []string
 	// makeLatest records each PATCH's make_latest.
 	makeLatest []string
+	// latest is the id of the Latest release, 0 when there is none: set as
+	// make_latest says, "legacy" or absent on publishing a draft counting as
+	// true, as GitHub picks the newest.
+	latest int64
 	// git is the repository's objects and refs.
 	git *fakeGit
 }
@@ -118,44 +122,15 @@ func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, rest 
 		}
 		f.page(w, r, out)
 	case len(rest) == 0 && r.Method == http.MethodPost:
-		var in githubRelease
-		_ = json.NewDecoder(r.Body).Decode(&in)
-		for _, rel := range f.releases {
-			if rel.TagName == in.TagName && !rel.Draft {
-				f.reply(w, http.StatusUnprocessableEntity, `{"message":"Validation Failed",
-					"errors":[{"resource":"Release","code":"already_exists","field":"tag_name"}]}`)
-				return
-			}
-		}
-		f.nextID++
-		if in.TargetCommitish == "" {
-			in.TargetCommitish = "main"
-		}
-		rel := &githubRelease{ID: f.nextID, TagName: in.TagName, Name: in.Name, Body: in.Body, Draft: in.Draft,
-			TargetCommitish: in.TargetCommitish, HTMLURL: "https://github.com/" + fakeGitHubRepo + "/releases/tag/untagged-" + strconv.FormatInt(f.nextID, 10)}
-		f.releases = append([]*githubRelease{rel}, f.releases...)
-		f.json(w, http.StatusCreated, rel)
-	case len(rest) == 1 && r.Method == http.MethodPatch:
-		rel := f.release(rest[0])
-		if rel == nil {
-			f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+		f.createRelease(w, r)
+	case len(rest) == 1 && rest[0] == "latest" && r.Method == http.MethodGet:
+		if rel := f.release(strconv.FormatInt(f.latest, 10)); rel != nil && !rel.Draft {
+			f.json(w, http.StatusOK, rel)
 			return
 		}
-		var in struct {
-			Draft           *bool
-			MakeLatest      string `json:"make_latest"`
-			TargetCommitish string `json:"target_commitish"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&in)
-		if in.TargetCommitish != "" {
-			rel.TargetCommitish = in.TargetCommitish
-		}
-		if in.Draft != nil {
-			rel.Draft = *in.Draft
-			f.makeLatest = append(f.makeLatest, in.MakeLatest)
-			rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
-		}
-		f.json(w, http.StatusOK, rel)
+		f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+	case len(rest) == 1 && r.Method == http.MethodPatch:
+		f.patchRelease(w, r, rest[0])
 	case len(rest) == 2 && rest[0] == "assets" && r.Method == http.MethodDelete:
 		for relID, list := range f.assets {
 			for i, a := range list {
@@ -188,6 +163,56 @@ func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, rest 
 		f.errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
 	}
+}
+
+// createRelease answers POST /releases: a draft, or 422 over a published tag.
+func (f *fakeGitHub) createRelease(w http.ResponseWriter, r *http.Request) {
+	var in githubRelease
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	for _, rel := range f.releases {
+		if rel.TagName == in.TagName && !rel.Draft {
+			f.reply(w, http.StatusUnprocessableEntity, `{"message":"Validation Failed",
+				"errors":[{"resource":"Release","code":"already_exists","field":"tag_name"}]}`)
+			return
+		}
+	}
+	f.nextID++
+	if in.TargetCommitish == "" {
+		in.TargetCommitish = "main"
+	}
+	rel := &githubRelease{ID: f.nextID, TagName: in.TagName, Name: in.Name, Body: in.Body, Draft: in.Draft,
+		TargetCommitish: in.TargetCommitish, HTMLURL: "https://github.com/" + fakeGitHubRepo + "/releases/tag/untagged-" + strconv.FormatInt(f.nextID, 10)}
+	f.releases = append([]*githubRelease{rel}, f.releases...)
+	f.json(w, http.StatusCreated, rel)
+}
+
+// patchRelease answers PATCH /releases/{id}: retarget, publish, and Latest as
+// make_latest says (true takes it; a draft published with none or legacy too).
+func (f *fakeGitHub) patchRelease(w http.ResponseWriter, r *http.Request, id string) {
+	rel := f.release(id)
+	if rel == nil {
+		f.reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+		return
+	}
+	var in struct {
+		Draft           *bool
+		MakeLatest      string `json:"make_latest"`
+		TargetCommitish string `json:"target_commitish"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	if in.TargetCommitish != "" {
+		rel.TargetCommitish = in.TargetCommitish
+	}
+	if in.Draft != nil {
+		wasDraft := rel.Draft
+		rel.Draft = *in.Draft
+		f.makeLatest = append(f.makeLatest, in.MakeLatest)
+		rel.HTMLURL = "https://github.com/" + fakeGitHubRepo + "/releases/tag/" + rel.TagName
+		if in.MakeLatest == "true" || wasDraft && !rel.Draft && (in.MakeLatest == "" || in.MakeLatest == "legacy") {
+			f.latest = rel.ID
+		}
+	}
+	f.json(w, http.StatusOK, rel)
 }
 
 // setAssets replaces a release's assets under the lock: a handler the client
@@ -301,6 +326,7 @@ func TestGitHubReleasesPublish(t *testing.T) {
 		t.Fatalf("FindRelease() = %+v, %v; want the draft %d", found, err, draft.ID)
 	}
 	listReleases(t, g, draft.ID)
+	wantLatest(t, g, 0, "before any publish")
 	published, err := g.PublishRelease(ctx, draft.ID, false)
 	if err != nil || published.Draft || published.URL != "https://github.com/acme/cel-lens/releases/tag/v0.2.0" {
 		t.Errorf("PublishRelease() = %+v, %v", published, err)
@@ -308,6 +334,8 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	if !reflect.DeepEqual(f.makeLatest, []string{"false"}) {
 		t.Errorf("make_latest sent = %q, want [false]: a string, as GitHub takes it", f.makeLatest)
 	}
+	wantLatest(t, g, 0, "after a publish that leaves Latest")
+	latestWalk(t, g, draft.ID)
 	if _, err := g.CreateDraft(ctx, "v0.2.0", "v0.2.0", "again", ""); ReleaseReason(err) != ReasonTagTaken {
 		t.Errorf("CreateDraft() of a published tag error = %v, reason %s; want %s", err, ReleaseReason(err), ReasonTagTaken)
 	}
@@ -327,6 +355,7 @@ func TestGitHubReleasesPublish(t *testing.T) {
 		"POST " + prefix + "/{id}/assets":   true, // UploadAsset
 		"DELETE " + prefix + "/assets/{id}": true, // DeleteAsset
 		"PATCH " + prefix + "/{id}":         true, // PublishRelease
+		"GET " + prefix + "/latest":         true, // LatestRelease
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Errorf("requests = %v, want %v", calls, wantCalls)
@@ -336,6 +365,34 @@ func TestGitHubReleasesPublish(t *testing.T) {
 	release := reflect.TypeFor[ReleaseTarget]().NumMethod() - reflect.TypeFor[SourceTarget]().NumMethod()
 	if n := release - 2; n != len(wantCalls) {
 		t.Errorf("ReleaseTarget has %d methods; walk the new ones in this test and add their requests above", n)
+	}
+}
+
+// latestWalk makes the published release id Latest, the same PATCH as
+// publishing, and publishes a later one without Latest, which leaves it there.
+func latestWalk(t *testing.T, g ReleaseTarget, id int64) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := g.PublishRelease(ctx, id, true); err != nil {
+		t.Fatalf("PublishRelease(latest) = %v", err)
+	}
+	wantLatest(t, g, id, "after making it Latest")
+	later, err := g.CreateDraft(ctx, "v0.3.0", "v0.3.0", "later", "")
+	if err != nil {
+		t.Fatalf("CreateDraft(v0.3.0) = %v", err)
+	}
+	if _, err := g.PublishRelease(ctx, later.ID, false); err != nil {
+		t.Fatalf("PublishRelease(v0.3.0) = %v", err)
+	}
+	wantLatest(t, g, id, "after publishing v0.3.0 without Latest")
+}
+
+// wantLatest checks LatestRelease is release id, or nil when id is 0.
+func wantLatest(t *testing.T, g ReleaseTarget, id int64, when string) {
+	t.Helper()
+	latest, err := g.LatestRelease(context.Background())
+	if err != nil || (id == 0) != (latest == nil) || latest != nil && latest.ID != id {
+		t.Errorf("LatestRelease() %s = %+v, %v; want release %d (0: none)", when, latest, err, id)
 	}
 }
 

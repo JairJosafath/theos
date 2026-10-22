@@ -5,6 +5,10 @@ metadata:
   labels:
     app.kubernetes.io/name: gitea
 spec:
+  # Fixed so hack/kind.sh registry-hosts can point the node's containerd at it
+  # without cluster DNS (Kind's service range is 10.96.0.0/16). The chart's
+  # Gitea has no such shortcut: a real cluster pulls from a real registry.
+  clusterIP: 10.96.0.30
   selector:
     app.kubernetes.io/name: gitea
   ports:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/check-workflows.sh: the repository's workflows pass, and a job
-# off vars.RUNS_ON, without runs-on, or making a Kind cluster without the
-# c4factory-kind label fails, and so does a workflow on pushes to a branch
+# off vars.RUNS_ON, without runs-on, without timeout-minutes (#1655), or
+# making a Kind cluster without the c4factory-kind label fails, and so does a workflow on pushes to a branch
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
 # test-hack job (#1101), and Tests off pull requests or off pushes to main
@@ -24,8 +24,11 @@ check "the repository's workflows pass" "$?" 0
 
 # wf NAME BODY: a workflow with BODY as its jobs, alone in a directory.
 wf() { rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  push:\n\njobs:\n%s\n' "$2" >"$T/wf/$1.yml"; }
-good="    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}"
-kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"c4factory-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}"
+timeout="    timeout-minutes: 10"
+good="    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}
+$timeout"
+kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"c4factory-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+$timeout"
 
 wf ok "  a:
 $good
@@ -45,10 +48,21 @@ check "hosted runs-on fails" "$?" 1
 check "hosted runs-on names the job" "$(grep -c 'job b runs on ubuntu-latest' <<<"$out")" 1
 
 wf none "  a:
+$timeout
     steps:
       - run: true"
 "$CHECK" "$T/wf" 2>/dev/null
 check "no runs-on fails" "$?" 1
+
+# #1655: a hung Lint job without a timeout held main's concurrency group for
+# hours, and GitHub would have let it run 6.
+wf no-timeout "  a:
+    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - run: make lint"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "no timeout-minutes fails (#1655)" "$?" 1
+check "no timeout-minutes names the job" "$(grep -c 'job a has no timeout-minutes' <<<"$out")" 1
 
 wf kind "  a:
 $good
@@ -216,12 +230,13 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "a pull-request job without a name fails" "$?" 1
 check "a pull-request job without a name says so" "$(grep -c 'job test-hack runs on pull requests without a name' <<<"$out")" 1
 
-# relwf PERMS IF: release.yml whose job grants PERMS and whose last step, under
-# IF, dispatches Verify Release.
+# relwf PERMS IF [RM]: release.yml whose job grants PERMS, pushes the images
+# and, under IF, dispatches Verify Release, then removes the images under RM
+# (default if: always(), #1636).
 relwf() {
   rm -rf "$T/wf" && mkdir "$T/wf"
-  printf 'name: Release\non:\n  push:\n    tags: [v1]\n\njobs:\n  release:\n    permissions:\n%s\n%s\n    steps:\n      - run: true\n      - name: Dispatch\n%s\n        run: gh workflow run verify-release.yml -f tag=x\n' \
-    "$1" "$good" "$2" >"$T/wf/release.yml"
+  printf 'name: Release\non:\n  push:\n    tags: [v1]\n\njobs:\n  release:\n    permissions:\n%s\n%s\n    steps:\n      - run: true\n      - name: Push\n        run: docker push x\n      - name: Dispatch\n%s\n        run: gh workflow run verify-release.yml -f tag=x\n      - name: Remove\n%s\n        run: docker rmi -f x\n' \
+    "$1" "$good" "$2" "${3:-        if: always()}" >"$T/wf/release.yml"
 }
 minor="        if: env.PUBLISH == 'true' && endsWith(github.ref_name, '.0')"
 
@@ -245,5 +260,39 @@ sed -i 's/gh workflow run verify-release.yml -f tag=x/true/' "$T/wf/release.yml"
 out=$("$CHECK" "$T/wf" 2>&1)
 check "release without the dispatch fails" "$?" 1
 check "release without the dispatch says so" "$(grep -c 'no step dispatches verify-release.yml' <<<"$out")" 1
+
+# #1636: the images a release built stayed on the device, 13 GB a release.
+perms="      actions: write"
+relwf "$perms" "$minor" "        if: success()"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "release removing the images only on success fails (#1636)" "$?" 1
+check "release removing the images only on success says so" "$(grep -c 'release.yml: no step under if: always() removes the images it built' <<<"$out")" 1
+
+relwf "$perms" "$minor"
+sed -i 's/docker rmi -f x/true/' "$T/wf/release.yml"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "release without the removal fails (#1636)" "$?" 1
+check "release without the removal says so" "$(grep -c 'release.yml: no step under if: always() removes the images it built' <<<"$out")" 1
+
+relwf "$perms" "$minor"
+printf 'name: Release\non:\n  push:\n    tags: [v1]\n\njobs:\n  release:\n    permissions:\n%s\n%s\n    steps:\n      - name: Remove\n        if: always()\n        run: docker rmi -f x\n      - name: Push\n        run: docker push x\n      - name: Dispatch\n%s\n        run: gh workflow run verify-release.yml -f tag=x\n' \
+  "$perms" "$good" "$minor" >"$T/wf/release.yml"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "release removing the images before the push fails (#1636)" "$?" 1
+check "release removing the images before the push says so" "$(grep -c 'release.yml: the step that removes the images (docker rmi) comes before the one that pushes them' <<<"$out")" 1
+
+# verwf RM: verify-release.yml whose last step, under RM, removes the images.
+verwf() {
+  rm -rf "$T/wf" && mkdir "$T/wf"
+  printf 'name: Verify Release\non:\n  workflow_dispatch:\n\njobs:\n  verify-release:\n%s\n    steps:\n      - run: docker pull x\n      - name: Remove\n%s\n        run: docker rmi -f x\n' \
+    "$good" "$1" >"$T/wf/verify-release.yml"
+}
+verwf "        if: always()"
+"$CHECK" "$T/wf" 2>/dev/null
+check "verify-release removing the images always passes (#1636)" "$?" 0
+verwf "        if: failure()"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "verify-release removing the images only on failure fails (#1636)" "$?" 1
+check "verify-release removing the images only on failure says so" "$(grep -c 'verify-release.yml: no step under if: always() removes the images it pulled' <<<"$out")" 1
 
 exit $fail

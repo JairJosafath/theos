@@ -60,6 +60,7 @@ make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind'
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
+make argocd              # Argo CD core (config/argocd), where the webshop's Containers deploy to
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node, uv and kubebuilder toolchain, CI runner (label go) and agent image
 make runner-image        # CI runner (label image): rootless BuildKit, which builds release images
@@ -155,8 +156,8 @@ It also fails when a CRD in `dist/chart/templates/crd` differs from
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
-`config/agent-sandbox` and `config/metrics-server` fetch remote URLs and are
-skipped. What it rendered is in `bin/yaml/`.
+`config/agent-sandbox`, `config/argocd` and `config/metrics-server` fetch remote
+URLs and are skipped. What it rendered is in `bin/yaml/`.
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
 `build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's
@@ -208,14 +209,22 @@ After `make deploy`, `make claude-secret` stores it as Secret
 operator's namespace) of the leased cluster, without the token in its argv or
 transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
-and the operator copies the Secret into every namespace with
-the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
-with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
-the e2e fixture label theirs, so one Secret serves every project; a rotated
-token reaches them all within five minutes. Another namespace opts in with
+and with `--model-proxy-url` naming the model proxy's Service, so a sandbox on
+the shared token gets `ANTHROPIC_BASE_URL` pointing at the proxy instead of the
+token (the chart passes both when `agents.enabled`). The operator copies no
+token: the proxy reads it in the operator's namespace, and a rotated token
+reaches it within the kubelet's sync period, about a minute. The label
+`c4.factory.io/shared-secrets: "true"` still gates the proxy's NetworkPolicy
+and the pull secrets the operator copies (`--shared-pull-secret`): `make seed`
+labels `webshop` and `apps`, and the webshop sample and the e2e fixture label
+theirs, so one Secret serves every project. Another namespace opts in with
 `kubectl label namespace NAME c4.factory.io/shared-secrets=true`. A project
-with a token of its own runs `make claude-secret CLAUDE_NAMESPACE=NAME`: the
-operator leaves a Secret it didn't make alone. `make claude-secret` fails,
+with a token of its own needs a Secret of another name in its namespace and
+Agents naming it (its keys become the sandbox's environment); a
+`claude-credentials` that `make claude-secret CLAUDE_NAMESPACE=NAME` writes
+there is unused, since an Agent naming the shared name goes through the
+proxy. The operator leaves a Secret it didn't make alone. `make claude-secret`
+fails,
 naming the path, when the file is missing, empty, or readable by group or
 others; it never prints the token. `CLAUDE_TOKEN=...` on the command line or in
 the environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
@@ -532,7 +541,18 @@ around the steps that touch it:
    use-context`): every checkout shares `.dev/kube/config` of the main
    checkout, and plain kubectl in another session would follow it. The
    `cluster` target and `hack/up.sh` put it back after kind sets it
-   (`hack/kind.sh keep-context`). Images built for a deploy (`make deploy`,
+   (`hack/kind.sh keep-context`). After the create, `make cluster` writes
+   containerd's `hosts.toml` into every node (`hack/kind.sh registry-hosts`),
+   mapping `gitea.gitea.svc.cluster.local:3000` to the fixed ClusterIP of
+   `config/gitea/service.yaml` (`10.96.0.30`), so a node pulls a Container's
+   image from the in-cluster Gitea by the name the Deployment carries; the
+   test environment's shortcut, not the chart's. It can't live in
+   `hack/kind.yaml`: `extraMounts` needs an absolute host path, and the
+   `registry.mirrors` patch is ignored once containerd reads `certs.d`.
+   That `clusterIP` is immutable, so `make gitea` deletes a Gitea Service
+   from before the pin, one whose IP differs (`hack/kind.sh gitea-service`),
+   before it applies `config/gitea`; the apply recreates it (#1679).
+   Images built for a deploy (`make deploy`,
    the agent, runner, seed, session and UI images) are tagged per checkout
    (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
    so two checkouts building at once never share a tag; `hack/kind.sh load`
@@ -593,7 +613,9 @@ Docker Desktop's disk images never shrink (#1343). It prunes:
   its cache; skipped without the volume or the image,
   `C4_PRUNE_RUNNER_CACHE=0` turns it off;
 - Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
-  builds stay warm) and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
+  builds stay warm), then what is over `C4_PRUNE_DOCKER_MAX_GB` (10, oldest
+  first; 0 for no cap: a release's builds grew it past 20 GB within 72h,
+  #1636), and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
 
 Without `docker` it skips the last two.
 
@@ -767,7 +789,9 @@ published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
 checks it twice, each on a Kind cluster of its own, building nothing.
 *Release* dispatches it on main, with `from` empty, for every minor it
 publishes (`vX.Y.0`, #1105); `hack/check-workflows.sh` keeps that step and its
-condition. A patch isn't checked: it ships a fix within the hour on the
+condition, and the last step of each workflow, under `if: always()`, that
+removes the images it built or pulled from the device's Docker ("Disk space
+on WSL"). A patch isn't checked: it ships a fix within the hour on the
 upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
@@ -1003,34 +1027,42 @@ drive of each distro's `BasePath` (Docker Desktop's included), read from
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` with `reg.exe` and
 mapped with `wslpath`, or `/mnt/c` when that fails. `RELAY_DISK_PATHS`
 (space-separated) overrides the list. While one has less than
-`RELAY_MIN_FREE_GB` (default 30) free, the worker starts no session, logs the
+`RELAY_MIN_FREE_GB` (default 15) free, the worker starts no session, logs the
 path, its free space and the minimum (at most once per path an hour, across
 workers: `.relay/disk-low-<path>`), and prunes the caches at once
 (`hack/prune-caches.sh`). The wait counts toward `RELAY_MEM_WAIT` like the
 wait for memory. Sessions already running go on.
 
-Deleting files inside WSL frees space in the distro, not on C:. Only
-compacting the `.vhdx` returns it to Windows:
+Docker's disk grew most. `docker_data.vhdx` went from 22.5 GB on 2026-10-16
+to 102 GB on 2026-10-22, about 13 GB for each of six releases (#1636): the
+self-hosted runners (`hack/gh-runner`) use the device's Docker through
+`docker.sock`, *Release* built ten images a release, three of them about
+5 GB, and kept them, *Verify Release* pulled them again, and the build cache
+reached 20 GB within the 72h the prune kept. What keeps it under the peak
+it reached, all tested without Docker (`hack/check-workflows_test.sh`,
+`hack/prune-caches_test.sh`):
 
-1. Quit Docker Desktop, then in PowerShell `wsl --shutdown`.
-2. In an administrator `diskpart`, for WSL's disk (its folder is the
-   distro's `BasePath`, `%LOCALAPPDATA%\wsl\{<guid>}\ext4.vhdx` on a
-   recent WSL):
+- *Release*'s last step, under `if: always()`, removes every image the build
+  tagged once they are pushed, whatever the steps before did: they are on
+  GHCR. *Verify Release*'s last step removes the agent images it pulled
+  (`hack/load-images.sh` removes each once Kind has it; the step catches what
+  a failed or cancelled load left). `hack/check-workflows.sh` (in `make
+  check`) fails either workflow without that step, and *Release* with it
+  before the push. The base images the Dockerfiles pin stay: local builds
+  share them, and only a bump leaves an old one behind.
+- `hack/prune-caches.sh` caps Docker's build cache at `C4_PRUNE_DOCKER_MAX_GB`
+  (10 GB, oldest first) on top of the 72h rule, and drops the dangling images,
+  every 30 minutes from `hack/relay-watch.sh` and when a worker finds a
+  watched filesystem low.
 
-   ```
-   select vdisk file="C:\Users\<you>\AppData\Local\wsl\{<guid>}\ext4.vhdx"
-   attach vdisk readonly
-   compact vdisk
-   detach vdisk
-   ```
-
-3. The same for Docker Desktop's disk,
-   `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`, with Docker Desktop
-   still quit.
-
-WSL's own `wsl --manage <distro> --set-sparse true` would shrink the disk as
-it goes, but WSL marks sparse VHDs unsafe (they can corrupt the disk), so
-compact by hand instead.
+Deleting files inside WSL frees space in the distro, not on C:: the `.vhdx`
+files never shrink. We no longer compact them (`diskpart`'s `compact vdisk`)
+or purge Docker Desktop's data: compacting proved too buggy (the owner,
+2026-10-22, #1635). WSL's own `wsl --manage <distro> --set-sparse true` would
+shrink the disk as it goes, but WSL marks sparse VHDs unsafe (they can corrupt
+the disk). So what the disks hold has to stay under the peak they already
+reached: the release images are deleted once pushed (#1636), and the floor is
+15 GB, down from 30 once C: no longer got back there (#1635).
 
 `hack/relay_test.sh` tests the guard with a stub `df`: no session below the
 minimum on any watched path and the path in the log, sessions above it, the
@@ -1150,7 +1182,12 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   per-runner cluster names would still put two clusters in one device's
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
-  without the label.
+  without the label. Every job sets `timeout-minutes`, a few times its
+  normal duration (Lint 30, Tests 60, Release 180, the Kind jobs 60):
+  without one GitHub lets a hung job run 6 hours, and a hung Lint job on
+  main held its concurrency group, so every later run on main waited behind
+  it and nothing said whether main was green (#1655); the check fails a job
+  without one.
 - **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
   the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and

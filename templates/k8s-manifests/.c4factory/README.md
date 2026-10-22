@@ -15,9 +15,10 @@ says how to ship them yourself, with Argo CD, Flux, a pipeline or by hand.
 - **A `job` runs once per release** (since v1.9.0, #1587): `job.yaml` is a
   `batch/v1` Job from the image, `restartPolicy: Never`, `backoffLimit: 3`,
   no port and no probes, annotated `argocd.argoproj.io/sync-options:
-  Replace=true` so Argo CD replaces the Job at each release instead of
-  patching it (a Job's template is immutable); the annotation is inert
-  outside Argo CD. No `ttlSecondsAfterFinished`: the `argoCD` target syncs
+  Force=true,Replace=true` (since v1.9.1, #1628; v1.9.0's `Replace=true`
+  alone was an update, which a Job's immutable template refuses at the
+  second release) so Argo CD deletes and recreates the Job at each release
+  instead of patching it; the annotation is inert outside Argo CD. No `ttlSecondsAfterFinished`: the `argoCD` target syncs
   with `selfHeal`, which would recreate a Job the TTL deleted and run it
   again every TTL; the finished Job and its pod stay, with their logs, until
   the next release replaces them. Argo CD reads a completed Job as Healthy

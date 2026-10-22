@@ -77,7 +77,7 @@ func TestGitHubDeployer(t *testing.T) {
 	if err := d.Ship(ctx, target("acme/orders-cli"), s); err != nil {
 		t.Fatalf("Ship() = %v", err)
 	}
-	st, err := d.State(ctx, target("acme/orders-cli"), s.App)
+	st, err := d.State(ctx, target("acme/orders-cli"), s.App, "v1.0.0")
 	if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeploying {
 		t.Errorf("State() of a draft = %+v, %v; want v1.0.0 Deploying", st, err)
 	}
@@ -92,7 +92,7 @@ func TestGitHubDeployer(t *testing.T) {
 		len(rels[0].assets) != 1 {
 		t.Fatalf("releases = %+v, want cli/v1.0.0 published with its one file", rels)
 	}
-	st, err = d.State(ctx, target("acme/orders-cli"), s.App)
+	st, err = d.State(ctx, target("acme/orders-cli"), s.App, "v1.0.0")
 	if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed || st.Health != ports.HealthHealthy ||
 		st.URL == "" {
 		t.Errorf("State() = %+v, %v; want v1.0.0 Deployed and Healthy at its page", st, err)
@@ -104,4 +104,137 @@ func TestGitHubDeployer(t *testing.T) {
 	if err := d.Ship(ctx, target("acme/orders-cli"), other); gitprovider.ReleaseReason(err) != gitprovider.ReasonTagTaken {
 		t.Errorf("Ship() over another app's tag = %v, want TagTaken", err)
 	}
+}
+
+// shipUntilDeployed ships s to target until State, asked for s's version,
+// says Deployed.
+func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s ports.Shipment) {
+	t.Helper()
+	ctx := context.Background()
+	for range 10 {
+		if err := d.Ship(ctx, target, s); err != nil {
+			t.Fatalf("Ship(%s) = %v", s.Version, err)
+		}
+		st, err := d.State(ctx, target, s.App, s.Version)
+		if err != nil {
+			t.Fatalf("State() = %v", err)
+		}
+		if st.Version == s.Version && st.Phase == ports.PhaseDeployed {
+			return
+		}
+	}
+	t.Fatalf("%s isn't Deployed after 10 Ship calls", s.Version)
+}
+
+// publishedReleaseID is the id of repository's published release of tag.
+func publishedReleaseID(t *testing.T, gh *fakeGitHub, repository, tag string) int64 {
+	t.Helper()
+	for _, r := range gh.releases(repository) {
+		if r.TagName == tag && !r.Draft {
+			return r.ID
+		}
+	}
+	t.Fatalf("no published release %s in %s", tag, repository)
+	return 0
+}
+
+// TestGitHubDeployerRollback: an entry pinned to an older published release
+// reaches Deployed, as State is told the version it wants (#1445). On a
+// target that takes Latest, Ship moves Latest back to it first; on one that
+// never does, nothing is written.
+func TestGitHubDeployerRollback(t *testing.T) {
+	gh := newFakeGitHub()
+	t.Cleanup(gh.server.Close)
+	d := githubdeploy.New(gh)
+	ctx := context.Background()
+	file := ports.File{Name: "orders-cli.tar.gz", Size: 3, Open: func(context.Context) (io.ReadCloser, int64, error) {
+		return io.NopCloser(strings.NewReader("bin")), 3, nil
+	}}
+	shipment := func(version string) ports.Shipment {
+		return ports.Shipment{App: "ns/orders-cli", DisplayName: "Orders CLI", Version: version,
+			Files: []ports.File{file}}
+	}
+	shipped := func(t *testing.T, target ports.Target, version string) {
+		t.Helper()
+		shipUntilDeployed(t, d, target, shipment(version))
+	}
+	releaseID := func(t *testing.T, repository, tag string) int64 {
+		t.Helper()
+		return publishedReleaseID(t, gh, repository, tag)
+	}
+
+	t.Run("a pin to an older release on a target that takes Latest moves Latest back (#1445)", func(t *testing.T) {
+		gh.addRepository("acme/orders-cli", "t0ken")
+		target := ports.Target{Name: "ns/prod", Member: model.DeployMemberGitHub,
+			Settings: map[string]string{model.GitHubSettingRepository: "acme/orders-cli",
+				model.GitHubSettingTagPrefix: "cli/"},
+			Secret: map[string][]byte{"token": []byte("t0ken")}}
+		shipped(t, target, "v1.0.0")
+		shipped(t, target, "v1.1.0")
+		older, newer := releaseID(t, "acme/orders-cli", "cli/v1.0.0"), releaseID(t, "acme/orders-cli", "cli/v1.1.0")
+		if got := gh.latestRelease("acme/orders-cli"); got != newer {
+			t.Fatalf("Latest = %d after shipping v1.1.0, want %d", got, newer)
+		}
+		st, err := d.State(ctx, target, "ns/orders-cli", "v1.0.0")
+		if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeploying {
+			t.Errorf("State(v1.0.0) while v1.1.0 is Latest = %+v, %v; want v1.0.0 Deploying", st, err)
+		}
+		writes := gh.writes("acme/orders-cli")
+		if err := d.Ship(ctx, target, shipment("v1.0.0")); err != nil {
+			t.Fatalf("Ship(v1.0.0) = %v", err)
+		}
+		if got := gh.latestRelease("acme/orders-cli"); got != older {
+			t.Errorf("Latest = %d after shipping v1.0.0 again, want %d: the pinned release", got, older)
+		}
+		if n := gh.writes("acme/orders-cli"); n != writes+1 {
+			t.Errorf("writes = %d, want %d: the one that makes v1.0.0 Latest", n, writes+1)
+		}
+		st, err = d.State(ctx, target, "ns/orders-cli", "v1.0.0")
+		if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed || st.Health != ports.HealthHealthy ||
+			st.URL != "https://github.com/acme/orders-cli/releases/tag/cli/v1.0.0" {
+			t.Errorf("State(v1.0.0) = %+v, %v; want v1.0.0 Deployed and Healthy at its page", st, err)
+		}
+		// Shipping it again writes nothing more.
+		if err := d.Ship(ctx, target, shipment("v1.0.0")); err != nil {
+			t.Fatalf("Ship(v1.0.0) again = %v", err)
+		}
+		if n := gh.writes("acme/orders-cli"); n != writes+1 {
+			t.Errorf("writes = %d after shipping the Latest release again, want %d", n, writes+1)
+		}
+		// Unpinned, the entry wants the newest: v1.1.0 is out, so it is
+		// Deployed there, and Ship moves Latest to it.
+		st, err = d.State(ctx, target, "ns/orders-cli", "v1.1.0")
+		if err != nil || st.Version != "v1.1.0" || st.Phase != ports.PhaseDeploying {
+			t.Errorf("State(v1.1.0) while v1.0.0 is Latest = %+v, %v; want v1.1.0 Deploying", st, err)
+		}
+	})
+
+	t.Run("a pin to an older release on a target that never takes Latest is Deployed at once (#1445)",
+		func(t *testing.T) {
+			gh.addRepository("acme/orders-lib", "t0ken")
+			target := ports.Target{Name: "ns/lib", Member: model.DeployMemberGitHub,
+				Settings: map[string]string{model.GitHubSettingRepository: "acme/orders-lib",
+					model.GitHubSettingLatest: "false"},
+				Secret: map[string][]byte{"token": []byte("t0ken")}}
+			shipped(t, target, "v1.0.0")
+			shipped(t, target, "v1.1.0")
+			if got := gh.latestRelease("acme/orders-lib"); got != 0 {
+				t.Fatalf("Latest = %d on a target that never takes it, want none", got)
+			}
+			st, err := d.State(ctx, target, "ns/orders-cli", "v1.0.0")
+			if err != nil || st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed ||
+				st.URL != "https://github.com/acme/orders-lib/releases/tag/v1.0.0" {
+				t.Errorf("State(v1.0.0) = %+v, %v; want v1.0.0 Deployed at its page", st, err)
+			}
+			writes := gh.writes("acme/orders-lib")
+			if err := d.Ship(ctx, target, shipment("v1.0.0")); err != nil {
+				t.Fatalf("Ship(v1.0.0) = %v", err)
+			}
+			if n := gh.writes("acme/orders-lib"); n != writes {
+				t.Errorf("writes = %d after shipping a release that is out, want %d: nothing to write", n, writes)
+			}
+			if got := gh.latestRelease("acme/orders-lib"); got != 0 {
+				t.Errorf("Latest = %d after the Ship, want none still", got)
+			}
+		})
 }

@@ -106,6 +106,15 @@ type TaskReconciler struct {
 	// project namespaces; every sandbox pod lists them, so pulling a private image
 	// needs no patched default ServiceAccount.
 	SharedPullSecrets []string
+	// SharedSecrets name the Secrets the Project reconciler shares from
+	// SourceNamespace, the operator's own. An Agent whose credentialsSecretRef
+	// names one is on the factory's shared token: its pre-flight reads the
+	// Secret there, and with ModelProxyURL set its sandbox holds no token and
+	// reaches Claude through the model proxy at that URL. An Agent naming any
+	// other Secret gets it as env, as before.
+	SharedSecrets   []string
+	SourceNamespace string
+	ModelProxyURL   string
 	// Recorder posts the Task's Events; nil posts none.
 	Recorder events.EventRecorder
 }

@@ -1,7 +1,7 @@
 # What runs at a GitHub target, and whose tags are whose
 
 Parent issue: #1445, found while building #1162. Agent: otter-1445. It
-settles two rules [plans/done/deploy.md](done/deploy.md) left as known
+settles two rules [deploy.md](deploy.md) left as known
 limits of the DeployTarget's `github` member; #1070 builds the rest of the
 member (source, history, GHCR, a GitHub App) on them.
 
@@ -41,10 +41,11 @@ member (source, history, GHCR, a GitHub App) on them.
      (`PublishRelease(id, true)`, GitHub's `make_latest`, one write). A
      rollback on a target people install from moves the Latest badge back
      with it.
-   - Latest held by a release of another app, or by one the factory didn't
-     make, is left alone and doesn't keep the entry `Deploying`: two apps
-     taking Latest on one repository would otherwise take it from each
-     other each poll.
+   - Latest held by a release of another app, by the app's own release
+     under another target's tag prefix, or by one the factory didn't make,
+     is left alone and doesn't keep the entry `Deploying`: two apps, or two
+     targets of one app, taking Latest on one repository would otherwise
+     take it from each other each poll.
    - no marked release of `version`: the app's newest marked release by id,
      as today (`Deploying` for a draft, `Deployed` for a published one), so
      the status shows what is out while the reconciler ships the new one;

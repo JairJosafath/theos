@@ -33,8 +33,11 @@ jobs:
       packages: write
     name: Build and publish
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 180
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
+      # What the build tags, pushed and then removed in that order.
+      IMAGES: operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -116,7 +119,7 @@ jobs:
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           echo "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          for name in operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image; do
+          for name in $IMAGES; do
             docker push "$REGISTRY/$name:$VERSION"
           done
           helm push "c4-factory-$VERSION.tgz" "oci://$REGISTRY/charts"
@@ -145,3 +148,19 @@ jobs:
         run: |
           gh workflow run verify-release.yml --repo "$GITHUB_REPOSITORY" --ref "$MAIN" -f tag="$GITHUB_REF_NAME"
           echo "Verify Release checks $GITHUB_REF_NAME: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/verify-release.yml" >>"$GITHUB_STEP_SUMMARY"
+
+      # The images are on GHCR once pushed. A self-hosted runner built them on
+      # the device's Docker, whose disk never shrinks and grew 13 GB a release
+      # while they stayed (#1636), so every one the build tagged goes, whatever
+      # the steps before did; hack/check-workflows.sh keeps this step. The base
+      # images the Dockerfiles pin stay: local builds share them, and a bump
+      # of one is rare.
+      - name: Remove the images
+        if: always()
+        run: |
+          for name in $IMAGES; do
+            image=$REGISTRY/$name:$VERSION
+            ! docker image inspect "$image" >/dev/null 2>&1 || docker rmi -f "$image"
+          done
+          docker image prune -f
+          df -h /

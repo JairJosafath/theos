@@ -22,8 +22,10 @@ type fakeGitHub struct {
 	// repos holds each repository's releases by owner/name, git its git
 	// objects and refs, tokens the token each accepts, ids GitHub's id of
 	// each, renamed the name GitHub follows each to, and written the
-	// requests that weren't reads each took.
+	// requests that weren't reads each took, and latest the id of each
+	// one's Latest release as make_latest set it, 0 when it has none.
 	written map[string]int
+	latest  map[string]int64
 	repos   map[string][]*fakeGitHubRelease
 	git     map[string]*fakeGitStore
 	tokens  map[string]string
@@ -58,7 +60,7 @@ type fakeGitHubAsset struct {
 func newFakeGitHub() *fakeGitHub {
 	f := &fakeGitHub{repos: map[string][]*fakeGitHubRelease{}, git: map[string]*fakeGitStore{},
 		tokens: map[string]string{}, ids: map[string]int64{}, renamed: map[string]string{},
-		written: map[string]int{}}
+		written: map[string]int{}, latest: map[string]int64{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -81,11 +83,26 @@ func (f *fakeGitHub) addRepository(repository, token string) {
 	f.ids[repository] = f.nextID
 }
 
+// hasRepository says whether repository was added.
+func (f *fakeGitHub) hasRepository(repository string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.repos[repository]
+	return ok
+}
+
 // repositoryID is GitHub's id of repository.
 func (f *fakeGitHub) repositoryID(repository string) int64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ids[repository]
+}
+
+// latestRelease is the id of repository's Latest release, 0 when it has none.
+func (f *fakeGitHub) latestRelease(repository string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.latest[repository]
 }
 
 // writes is the number of requests other than reads repository took.
@@ -159,7 +176,7 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	repository := parts[0] + "/" + parts[1]
-	releases, ok := f.repos[repository]
+	_, ok := f.repos[repository]
 	if !ok {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
@@ -183,6 +200,13 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		f.serveIssues(w, req, repository, rest)
 		return
 	}
+	f.serveReleases(w, req, repository, rest)
+}
+
+// serveReleases answers a request under repository's /releases, rest its
+// path below it.
+func (f *fakeGitHub) serveReleases(w http.ResponseWriter, req *http.Request, repository string, rest []string) {
+	releases := f.repos[repository]
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodGet:
 		if req.URL.Query().Get("page") != "1" {
@@ -210,6 +234,14 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+	case len(rest) == 1 && rest[0] == "latest" && req.Method == http.MethodGet:
+		for _, r := range releases {
+			if r.ID == f.latest[repository] && !r.Draft {
+				reply(w, http.StatusOK, r)
+				return
+			}
+		}
+		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 	default:
 		id, _ := strconv.ParseInt(rest[0], 10, 64)
 		var rel *fakeGitHubRelease
@@ -222,12 +254,13 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 			reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 			return
 		}
-		f.serveRelease(w, req, f.git[repository], rel, rest[1:])
+		f.serveRelease(w, req, repository, rel, rest[1:])
 	}
 }
 
-func (f *fakeGitHub) serveRelease(w http.ResponseWriter, req *http.Request, git *fakeGitStore,
+func (f *fakeGitHub) serveRelease(w http.ResponseWriter, req *http.Request, repository string,
 	rel *fakeGitHubRelease, rest []string) {
+	git := f.git[repository]
 	switch {
 	case len(rest) == 0 && req.Method == http.MethodPatch:
 		var patch struct {
@@ -242,12 +275,21 @@ func (f *fakeGitHub) serveRelease(w http.ResponseWriter, req *http.Request, git 
 		if patch.MakeLatest != nil {
 			rel.makeLatest = *patch.MakeLatest
 		}
+		published := false
 		if patch.Draft != nil {
 			if rel.Draft && !*patch.Draft {
 				// Publishing a draft creates its tag.
 				git.tagRelease(rel.TagName, rel.Target)
+				published = true
 			}
 			rel.Draft = *patch.Draft
+		}
+		// Latest moves as make_latest says: "true" takes it, "false" leaves
+		// it, and "legacy" or none on a publish takes it, as GitHub picks
+		// the newest.
+		if patch.MakeLatest != nil && *patch.MakeLatest == "true" ||
+			published && (patch.MakeLatest == nil || *patch.MakeLatest == "legacy") {
+			f.latest[repository] = rel.ID
 		}
 		reply(w, http.StatusOK, rel)
 	case len(rest) == 1 && rest[0] == "assets" && req.Method == http.MethodGet:

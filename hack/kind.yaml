@@ -2,6 +2,10 @@
 # One node runs everything (Gitea, the operator, the sample and a test Session),
 # which keeps the footprint small on a laptop. Gitea is reached with
 # `make gitea-forward`, so no host ports are mapped here.
+# The node pulls a Container's image from the in-cluster Gitea through a
+# containerd hosts.toml that `hack/kind.sh registry-hosts` writes after the
+# create; it can't live here (extraMounts needs an absolute host path, and the
+# registry.mirrors patch is ignored once containerd reads certs.d).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 # make cluster passes --name, so every cluster of the pool (c4factory,

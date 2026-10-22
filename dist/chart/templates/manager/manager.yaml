@@ -95,6 +95,7 @@ spec:
         {{- end }}
         {{- if .Values.agents.enabled }}
         - --shared-secret={{ .Values.agents.credentialsSecret }}
+        - --model-proxy-url=http://{{ include "c4-factory.modelProxyName" . }}.{{ .Release.Namespace }}.svc:8080
         {{- end }}
         {{- range .Values.global.imagePullSecrets }}
         - --shared-pull-secret={{ .name }}

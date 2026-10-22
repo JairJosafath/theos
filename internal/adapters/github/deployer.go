@@ -80,10 +80,34 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	if err != nil {
 		return portError(err)
 	}
+	takesLatest := t.Settings[model.GitHubSettingLatest] != "false"
+	if ours != nil && !ours.Draft && takesLatest {
+		// The release is out; what is left is Latest, when another of the
+		// app's releases took it (a rollback, docs/plans/github-deploy-state.md).
+		latest, err := c.LatestRelease(ctx)
+		if err != nil {
+			return portError(err)
+		}
+		if model.GitHubLatestHeld(s.App, t.Settings[model.GitHubSettingTagPrefix], ours, release(latest)) {
+			if _, err := c.PublishRelease(ctx, ours.ID, true); err != nil {
+				return portError(err)
+			}
+			logr.FromContextOrDiscard(ctx).Info("Made release Latest", "release", ours.ID, "tag", tag)
+			return nil
+		}
+	}
 	step := model.NextReleaseStep(model.ReleaseShip{Tag: tag, Name: model.ReleaseName(s.DisplayName, s.Version),
-		Body: model.ReleaseBody(s.Notes, marker), Commit: s.Commit, Files: files,
-		Latest: t.Settings[model.GitHubSettingLatest] != "false"}, ours)
+		Body: model.ReleaseBody(s.Notes, marker), Commit: s.Commit, Files: files, Latest: takesLatest}, ours)
 	return portError(d.write(ctx, c, s, step))
+}
+
+// release is r as the model sees it, nil for nil.
+func release(r *gitprovider.TargetRelease) *model.TargetRelease {
+	if r == nil {
+		return nil
+	}
+	return &model.TargetRelease{ID: r.ID, TagName: r.TagName, Target: r.Commit, Draft: r.Draft, Body: r.Body,
+		URL: r.URL}
 }
 
 // marked returns the release of tag whose body holds marker, with its files
@@ -99,8 +123,7 @@ func marked(ctx context.Context, c gitprovider.ReleaseTarget, tag, marker string
 		return nil, &gitprovider.ReleaseError{Reason: gitprovider.ReasonTagTaken,
 			Message: fmt.Sprintf("github: a release %s the factory didn't make is there; it is left alone", tag)}
 	}
-	rel := &model.TargetRelease{ID: found.ID, TagName: found.TagName, Target: found.Commit, Draft: found.Draft,
-		Body: found.Body, URL: found.URL}
+	rel := release(found)
 	if !found.Draft {
 		return rel, nil
 	}
@@ -172,44 +195,46 @@ func (e *FileError) Error() string { return fmt.Sprintf("opening release file %s
 
 func (e *FileError) Unwrap() error { return e.Err }
 
-// State reads the newest of app's releases: a draft newer than its newest
-// published release is Deploying, a published one Deployed and healthy, as
-// a GitHub release is once it is there.
-func (d *Deployer) State(ctx context.Context, t ports.Target, app string) (ports.DeployState, error) {
+// State reports version's release of app, as model.GitHubDeployState says:
+// a draft is Deploying; a published one Deployed and healthy at its page, as
+// a GitHub release is once it is there, unless the target takes Latest and
+// another of the app's releases holds it, which Ship moves back; with no
+// release of version, the app's newest.
+func (d *Deployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
 	c, err := d.client(t)
 	if err != nil {
 		return ports.DeployState{}, err
 	}
-	all, err := c.ListReleases(ctx)
+	facts, err := deployFacts(ctx, c, t, app, version)
 	if err != nil {
 		return ports.DeployState{}, portError(err)
 	}
-	prefix := model.ShipMarkerPrefix(app)
-	var published, draft *gitprovider.TargetRelease
-	for i, r := range all {
-		if !strings.Contains(r.Body, prefix) {
-			continue
+	run := model.GitHubDeployState(facts).DeployRun
+	return ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
+		Reason: run.Reason, Message: run.Message}, nil
+}
+
+// deployFacts reads what GitHubDeployState decides on: every release, and
+// GitHub's Latest only when GitHubReadsLatest says it matters.
+func deployFacts(ctx context.Context, c gitprovider.ReleaseTarget, t ports.Target, app,
+	version string) (model.GitHubDeployFacts, error) {
+	all, err := c.ListReleases(ctx)
+	if err != nil {
+		return model.GitHubDeployFacts{}, err
+	}
+	facts := model.GitHubDeployFacts{App: app, Version: version, TagPrefix: t.Settings[model.GitHubSettingTagPrefix],
+		TakesLatest: t.Settings[model.GitHubSettingLatest] != "false", Releases: make([]model.TargetRelease, len(all))}
+	for i := range all {
+		facts.Releases[i] = *release(&all[i])
+	}
+	if model.GitHubReadsLatest(facts) {
+		latest, err := c.LatestRelease(ctx)
+		if err != nil {
+			return model.GitHubDeployFacts{}, err
 		}
-		// GitHub's ids grow with time, so the highest is the newest.
-		switch {
-		case r.Draft && (draft == nil || r.ID > draft.ID):
-			draft = &all[i]
-		case !r.Draft && (published == nil || r.ID > published.ID):
-			published = &all[i]
-		}
+		facts.Latest = release(latest)
 	}
-	version := func(r *gitprovider.TargetRelease) string {
-		return strings.TrimPrefix(r.TagName, t.Settings[model.GitHubSettingTagPrefix])
-	}
-	switch {
-	case draft != nil && (published == nil || draft.ID > published.ID):
-		return ports.DeployState{Version: version(draft), Phase: ports.PhaseDeploying,
-			Health: ports.HealthProgressing}, nil
-	case published != nil:
-		return ports.DeployState{Version: version(published), Phase: ports.PhaseDeployed,
-			Health: ports.HealthHealthy, URL: published.URL}, nil
-	}
-	return ports.DeployState{}, nil
+	return facts, nil
 }
 
 // portError makes a GitHub failure one of the port's errors where it is one,

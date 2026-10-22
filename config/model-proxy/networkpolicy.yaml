@@ -1,0 +1,28 @@
+# The proxy takes traffic only from agent sandboxes: pods labelled
+# c4.factory.io/agent-sandbox=true in namespaces labelled
+# c4.factory.io/shared-secrets=true (docs/plans/done/model-proxy.md, decision 7).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-proxy
+  namespace: system
+  labels:
+    app.kubernetes.io/name: c4-model-proxy
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: c4-model-proxy
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          c4.factory.io/shared-secrets: "true"
+      podSelector:
+        matchLabels:
+          c4.factory.io/agent-sandbox: "true"
+    ports:
+    - port: http
+      protocol: TCP

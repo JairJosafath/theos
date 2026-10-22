@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -35,6 +36,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
@@ -76,6 +78,7 @@ func main() {
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
 	var uiServiceAccount string
+	var modelProxyURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -129,10 +132,16 @@ func main() {
 	flag.StringVar(&sessionBinaryURL, "session-binary-url", "",
 		"URL of a linux c4session binary for the feature to download; ${arch} becomes amd64 or arm64.")
 	flag.Var(&sharedSecrets, "shared-secret",
-		"A Secret in the operator's namespace (POD_NAMESPACE) to copy into every project namespace labeled "+
-			"c4.factory.io/shared-secrets=true, such as claude-credentials; repeatable. None: nothing is shared.")
+		"The Agents' token Secret in the operator's namespace (POD_NAMESPACE), such as claude-credentials, read "+
+			"by the model proxy and never copied: an Agent in a project namespace labeled "+
+			"c4.factory.io/shared-secrets=true whose credentialsSecretRef names it is on the factory's shared "+
+			"token; repeatable, needs --model-proxy-url. None: every Agent's Secret is its project's own.")
 	flag.Var(&sharedPullSecrets, "shared-pull-secret",
-		"An image pull Secret in the operator's namespace to share like --shared-secret; repeatable.")
+		"An image pull Secret in the operator's namespace to copy into every project namespace labeled "+
+			"c4.factory.io/shared-secrets=true; repeatable. None: no pull Secret is shared.")
+	flag.StringVar(&modelProxyURL, "model-proxy-url", "",
+		"The model proxy's URL, such as http://c4-model-proxy.<namespace>.svc:8080: an agent sandbox whose Agent "+
+			"names a --shared-secret Secret holds no token and reaches Claude through it. None: no shared token.")
 	flag.StringVar(&uiServiceAccount, "ui-service-account", "",
 		"The UI's ServiceAccount, as namespace/name, let read the pods and their metrics in every project "+
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
@@ -144,6 +153,15 @@ func main() {
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" && len(sharedSecrets)+len(sharedPullSecrets) > 0 {
 		setupLog.Error(nil, "--shared-secret and --shared-pull-secret need POD_NAMESPACE, the operator's namespace")
+		os.Exit(1)
+	}
+	if podNamespace == "" && modelProxyURL != "" {
+		setupLog.Error(nil, "--model-proxy-url needs POD_NAMESPACE, the operator's namespace")
+		os.Exit(1)
+	}
+	if len(sharedSecrets) > 0 && modelProxyURL == "" {
+		setupLog.Error(nil, "--shared-secret needs --model-proxy-url: the token is never copied into a project "+
+			"namespace, so a sandbox reaches it only through the model proxy")
 		os.Exit(1)
 	}
 
@@ -275,6 +293,7 @@ func main() {
 		SharedSecrets:     sharedSecrets,
 		SharedPullSecrets: sharedPullSecrets,
 		SourceNamespace:   podNamespace,
+		ModelProxyURL:     modelProxyURL,
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
@@ -296,8 +315,17 @@ func main() {
 		setupLog.Error(err, "Failed to load the Session feature")
 		os.Exit(1)
 	}
-	// Each DeployTarget member's adapter, by the member's name.
-	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
+	// Each DeployTarget member's adapter, by the member's name. The Argo CD
+	// adapter reads uncached, so a check on a cluster without Argo CD starts
+	// no informer on a CRD that isn't there.
+	argoClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme(),
+		Mapper: mgr.GetRESTMapper(), HTTPClient: mgr.GetHTTPClient()})
+	if err != nil {
+		setupLog.Error(err, "Failed to make the Argo CD adapter's client")
+		os.Exit(1)
+	}
+	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{}),
+		model.DeployMemberArgoCD: argocd.New(argoClient)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -341,6 +369,9 @@ func main() {
 		WorkspaceMemory:   workspaceQuantity,
 		SandboxGoCache:    sandboxGoCache,
 		SharedPullSecrets: sharedPullSecrets,
+		SharedSecrets:     sharedSecrets,
+		SourceNamespace:   podNamespace,
+		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
@@ -366,6 +397,7 @@ func main() {
 		Recorder:        mgr.GetEventRecorder("brief"),
 		SharedSecrets:   sharedSecrets,
 		SourceNamespace: podNamespace,
+		ModelProxyURL:   modelProxyURL,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
 		os.Exit(1)

@@ -175,6 +175,7 @@ const REASON_WORDING: Record<string, string> = {
   Scaffolding: 'Being scaffolded right now',
   ForeignCommits: 'The repository already had commits the factory did not make, so it stopped',
   LayerConflict: 'Two templates wanted to write the same file',
+  UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',
   GitError: 'Talking to Git failed',
 }

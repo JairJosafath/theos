@@ -59,10 +59,14 @@ type DeployTargetReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=deploytargets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=deploytargets/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups=argoproj.io,resources=appprojects,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 
-// Reconcile reads the target's Secret and, when it holds the member's keys,
-// asks the member's Deployer whether the target accepts it: on a change of
-// the spec or the Secret, and at most every CheckInterval otherwise.
+// Reconcile reads the target's Secret (an argoCD target may have none) and,
+// when it holds the member's keys, asks the member's Deployer whether the
+// target accepts it: on a change of the spec or the Secret, and at most every
+// CheckInterval otherwise.
 func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var dt c4v1alpha1.DeployTarget
 	if err := r.Get(ctx, req.NamespacedName, &dt); err != nil {
@@ -79,23 +83,27 @@ func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		log.Error(err, "DeployTarget names no member the operator knows")
 		return ctrl.Result{}, nil
 	}
-	check := model.DeployCheck{Target: dt.Name, Secret: dt.Spec.CredentialsSecretRef.Name, Where: where,
-		Member: member}
+	check := model.DeployCheck{Target: dt.Name, Where: where, Member: member}
 	status := dt.Status.DeepCopy()
 	poll := ctrl.Result{RequeueAfter: r.pollInterval()}
 
+	// A target without a Secret (argoCD) is checked with the operator's own
+	// ServiceAccount.
 	var secret corev1.Secret
-	err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace, Name: check.Secret}, &secret)
-	switch {
-	case apierrors.IsNotFound(err):
-		r.setReady(status, dt.Generation, model.DeployTargetSecretMissing, check)
-		return poll, r.writeStatus(ctx, &dt, status)
-	case err != nil:
-		return ctrl.Result{}, err
-	}
-	if check.Missing = member.MissingKeys(secret.Data); len(check.Missing) > 0 {
-		r.setReady(status, dt.Generation, model.DeployTargetSecretIncomplete, check)
-		return poll, r.writeStatus(ctx, &dt, status)
+	if ref := dt.Spec.CredentialsSecretRef; ref != nil {
+		check.Secret = ref.Name
+		err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: dt.Namespace, Name: check.Secret}, &secret)
+		switch {
+		case apierrors.IsNotFound(err):
+			r.setReady(status, dt.Generation, model.DeployTargetSecretMissing, check)
+			return poll, r.writeStatus(ctx, &dt, status)
+		case err != nil:
+			return ctrl.Result{}, err
+		}
+		if check.Missing = member.MissingKeys(secret.Data); len(check.Missing) > 0 {
+			r.setReady(status, dt.Generation, model.DeployTargetSecretIncomplete, check)
+			return poll, r.writeStatus(ctx, &dt, status)
+		}
 	}
 
 	seen := deployChecked{uid: dt.UID, generation: dt.Generation, secret: secret.ResourceVersion}
@@ -155,6 +163,14 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 		target.Settings = map[string]string{model.GitHubSettingRepository: gh.Repository}
 		return target, gh.Repository
 	}
+	if a := dt.Spec.ArgoCD; a != nil {
+		target.Member = model.DeployMemberArgoCD
+		target.Settings = map[string]string{model.ArgoCDSettingNamespace: a.Namespace,
+			model.ArgoCDSettingProject: a.Project, model.ArgoCDSettingDestinationNamespace: a.Destination.Namespace,
+			model.ArgoCDSettingDestinationServer: a.Destination.Server}
+		return target, fmt.Sprintf("project %s in namespace %s (destination %s)", a.Project, a.Namespace,
+			a.Destination.Namespace)
+	}
 	return target, ""
 }
 
@@ -198,7 +214,8 @@ func (r *DeployTargetReconciler) checkInterval() time.Duration {
 }
 
 // SetupWithManager sets up the controller with the Manager. A status write
-// starts no reconcile; a spec change does, and each poll reads the Secret.
+// starts no reconcile; a spec change does, and each poll reads the Secret,
+// when the target names one.
 func (r *DeployTargetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.DeployTarget{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

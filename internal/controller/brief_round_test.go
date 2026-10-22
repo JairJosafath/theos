@@ -559,9 +559,12 @@ spec:
 		}).Should(Succeed())
 	})
 
-	It("says where to give a token the operator shares, and gets the copy with no Project yet", func() {
-		// The source starts missing; the suite's other specs share it, so it is
-		// put back as it was.
+	It("says where to give a token the operator shares, and gets no copy of it (#1137)", func() {
+		// Agents on the shared token reach Claude through the model proxy
+		// (#1136): the Brief asks for the label, then for the source Secret in the
+		// operator's namespace, and waits for no copy; the token never leaves the
+		// operator's namespace (#1137). The source starts missing; the suite's
+		// other specs use it, so it is put back as it was.
 		source := &corev1.Secret{}
 		if err := k8sClient.Get(ctx, key(operatorNamespace, sharedToken), source); err == nil {
 			Expect(k8sClient.Delete(ctx, source)).To(Succeed())
@@ -589,9 +592,8 @@ spec:
 			b := getBrief(g, shared)
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
-				Equal("Secret "+sharedToken+" of Agent planner is missing: label namespace "+shared+" "+
-					c4v1alpha1.LabelSharedSecrets+"=true, so the factory shares it from namespace "+operatorNamespace+
-					", or make it in "+shared+" for this project only")))
+				Equal("Agent planner is on the factory's shared Secret "+sharedToken+": label namespace "+shared+" "+
+					c4v1alpha1.LabelSharedSecrets+"=true, so its agents reach the factory's model proxy")))
 		}).Should(Succeed())
 
 		By("naming the operator's namespace once it has opted in, while the source is missing")
@@ -604,35 +606,24 @@ spec:
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
 				Equal("Secret "+sharedToken+" of Agent planner is missing: make it in namespace "+operatorNamespace+
-					", which the factory shares with every project, or in "+shared+" for this project only")))
+					" with the Agents' token, which the factory's model proxy uses for every project")))
 			g.Expect(b.Status.Round).To(BeZero())
 		}).Should(Succeed())
 
-		By("copying the source in, with no Project, and starting round 1")
+		By("starting round 1 once the source is there, copying nothing in")
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, shared), &c4v1alpha1.Project{}))).To(BeTrue())
 		mine := &corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
 			Data: map[string][]byte{"token": []byte("first")}}
 		Expect(k8sClient.Create(ctx, mine)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, mine))).To(Succeed()) })
 		Eventually(func(g Gomega) {
-			var copied corev1.Secret
-			g.Expect(k8sClient.Get(ctx, key(shared, sharedToken), &copied)).To(Succeed())
-			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSharedFrom, sharedToken))
-			g.Expect(copied.Data).To(HaveKeyWithValue("token", []byte("first")))
-			g.Expect(copied.OwnerReferences).To(BeEmpty())
-		}).Should(Succeed())
-		Eventually(func(g Gomega) {
 			b := getBrief(g, shared)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
 		}).Should(Succeed())
-
-		By("deleting the copy when the namespace opts out")
-		Expect(k8sClient.Get(ctx, key("", shared), namespace)).To(Succeed())
-		Expect(patch(namespace, func() { namespace.Labels = nil })).To(Succeed())
-		Eventually(func(g Gomega) {
+		Consistently(func(g Gomega) {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, sharedToken), &corev1.Secret{}))).To(BeTrue())
-		}).Should(Succeed())
+		}, "2s").Should(Succeed())
 	})
 
 	It("waits for a missing Agent or catalog entry, applying nothing, and resumes once it is there", func() {

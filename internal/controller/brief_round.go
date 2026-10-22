@@ -192,6 +192,14 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 			continue
 		}
 		secret := agent.Spec.CredentialsSecretRef.Name
+		if onSharedToken(&agent, r.SharedSecrets, r.ModelProxyURL) {
+			// The model proxy reads it in the operator's namespace; the
+			// project's needs only the label that lets its sandboxes in.
+			if err := r.missingAgentSecret(ctx, brief.Namespace, secret, name, role); err != nil {
+				return err
+			}
+			continue
+		}
 		err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: secret}, &corev1.Secret{})
 		if apierrors.IsNotFound(err) {
 			return r.missingAgentSecret(ctx, brief.Namespace, secret, name, role)
@@ -204,33 +212,48 @@ func (r *BriefReconciler) needAgents(ctx context.Context, brief *c4v1alpha1.Brie
 }
 
 // missingAgentSecret returns errNeedsInput saying where to give Agent name's
-// missing token Secret: in the project namespace, or, when the operator shares
-// a Secret of that name, once in its own namespace for every project, naming
-// the label the project namespace needs when it hasn't opted in. When the
-// source is there, it says the copy is on its way.
+// token Secret, when the project namespace lacks it: in the project namespace,
+// or, when the operator shares a Secret of that name, once in its own
+// namespace for every project, naming the label the project namespace needs
+// when it hasn't opted in. When the source is there, it says the copy is on
+// its way; with the model proxy, the source alone is enough, and it returns
+// nil: the sandbox holds no token, and the label lets it reach the proxy.
 func (r *BriefReconciler) missingAgentSecret(ctx context.Context, namespace, secret, name, role string) error {
 	if r.SourceNamespace == "" || !slices.Contains(r.SharedSecrets, secret) {
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
 			"Agents' token, so the Brief's %s can start", secret, name, namespace, role)}
 	}
+	proxied := r.ModelProxyURL != ""
 	var ns corev1.Namespace
 	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
 		return err
 	}
 	if ns.Labels[c4v1alpha1.LabelSharedSecrets] != sharedSecretsOptIn {
+		if proxied {
+			return errNeedsInput{fmt.Sprintf("Agent %s is on the factory's shared Secret %s: label namespace %s "+
+				"%s=%s, so its agents reach the factory's model proxy", name, secret, namespace,
+				c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn)}
+		}
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: label namespace %s %s=%s, so the "+
 			"factory shares it from namespace %s, or make it in %s for this project only",
 			secret, name, namespace, c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn, r.SourceNamespace, namespace)}
 	}
-	// The Project reconciler copies it in, Project or not; a source that is
-	// there is a copy on its way.
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: r.SourceNamespace, Name: secret}, &corev1.Secret{})
 	if err == nil {
+		if proxied {
+			return nil
+		}
+		// The Project reconciler copies it in, Project or not; a source that
+		// is there is a copy on its way.
 		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is not in namespace %s yet: the factory is "+
 			"copying it from namespace %s, so the Brief's %s can start", secret, name, namespace, r.SourceNamespace, role)}
 	}
 	if !apierrors.IsNotFound(err) {
 		return err
+	}
+	if proxied {
+		return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s with the "+
+			"Agents' token, which the factory's model proxy uses for every project", secret, name, r.SourceNamespace)}
 	}
 	return errNeedsInput{fmt.Sprintf("Secret %s of Agent %s is missing: make it in namespace %s, which the "+
 		"factory shares with every project, or in %s for this project only", secret, name, r.SourceNamespace, namespace)}

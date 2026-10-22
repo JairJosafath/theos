@@ -42,6 +42,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -81,7 +82,8 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
-	// deployFake is the Deployer of every DeployTarget's member.
+	// deployFake is the Deployer of every DeployTarget's member, but for a
+	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
@@ -103,6 +105,9 @@ const (
 	operatorNamespace = "c4-factory-system"
 	sharedToken       = "shared-token"
 	sharedPullSecret  = "shared-pull"
+	// testModelProxyURL is the chart's real configuration: the model proxy's
+	// Service in the release namespace (dist/chart/templates/model-proxy).
+	testModelProxyURL = "http://c4-model-proxy.c4-factory-system.svc:8080"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -256,6 +261,7 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
 			filepath.Join("..", "..", "test", "crds", "agent-sandbox"),
+			filepath.Join("..", "..", "test", "crds", "argocd"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -316,34 +322,46 @@ func setupReconcilers(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+	// The Argo CD adapter's client, uncached as in cmd/main.go, under the
+	// generated role too.
+	argoClient, err := client.New(managerCfg, client.Options{Scheme: s, Mapper: mgr.GetRESTMapper(),
+		HTTPClient: mgr.GetHTTPClient()})
+	if err != nil {
+		return err
+	}
+	deployers := ports.Deployers{model.DeployMemberGitHub: routedDeployer{},
+		model.DeployMemberArgoCD: argocd.New(argoClient)}
 	for _, r := range []interface{ SetupWithManager(ctrl.Manager) error }{
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
 			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second,
+			ModelProxyURL:   testModelProxyURL,
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount},
 			Git:              gitFake, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
-			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}, DeployMembers: testDeployMember,
+			Deployers: deployers, DeployMembers: testDeployMember,
 			DeployPoll: time.Second},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
+			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
 			Now: taskNow},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
-			Issues: githubFake, Now: briefNow},
+			ModelProxyURL: testModelProxyURL,
+			Issues:        githubFake, Now: briefNow},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,
 			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}},
+			Deployers: deployers},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
@@ -406,4 +424,29 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// routedDeployer is the github member's Deployer in the suite: the github
+// adapter against the fake GitHub for a target whose repository the fake
+// has, so a spec can watch what a deploy makes there, else deployFake,
+// whose state a spec sets by hand.
+type routedDeployer struct{}
+
+func (routedDeployer) of(t ports.Target) ports.Deployer {
+	if githubFake.hasRepository(t.Settings[model.GitHubSettingRepository]) {
+		return githubdeploy.New(githubFake)
+	}
+	return deployFake
+}
+
+func (r routedDeployer) Check(ctx context.Context, t ports.Target) error {
+	return r.of(t).Check(ctx, t)
+}
+
+func (r routedDeployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
+	return r.of(t).Ship(ctx, t, s)
+}
+
+func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
+	return r.of(t).State(ctx, t, app, version)
 }

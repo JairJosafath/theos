@@ -307,7 +307,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
 		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
-		pullSecrets: r.SharedPullSecrets,
+		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -355,18 +355,40 @@ func firstReviewAtStart(status *c4v1alpha1.TaskStatus, role string) bool {
 }
 
 // agentCredentials reports whether the Agent's credentials Secret, if it names
-// one, exists; when it doesn't, the Task says so and waits for it.
+// one, exists; when it doesn't, the Task says so and waits for it. An Agent on
+// the shared token (onSharedToken) needs the Secret in the operator's
+// namespace, where the model proxy reads it, and its own namespace opted in
+// to the shared Secrets: the proxy admits only those, so a sandbox of another
+// would start and time out.
 func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
 	agent *c4v1alpha1.Agent) (bool, error) {
 	ref := agent.Spec.CredentialsSecretRef
 	if ref == nil {
 		return true, nil
 	}
+	namespace := task.Namespace
+	if onSharedToken(agent, r.SharedSecrets, r.ModelProxyURL) {
+		namespace = r.SourceNamespace
+		var ns corev1.Namespace
+		if err := r.APIReader.Get(ctx, client.ObjectKey{Name: task.Namespace}, &ns); err != nil {
+			return false, err
+		}
+		if ns.Labels[c4v1alpha1.LabelSharedSecrets] != sharedSecretsOptIn {
+			r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
+				fmt.Sprintf("Agent %s is on the factory's shared Secret %s: label namespace %s %s=%s, so its "+
+					"agents reach the factory's model proxy", agent.Name, ref.Name, task.Namespace,
+					c4v1alpha1.LabelSharedSecrets, sharedSecretsOptIn))
+			return false, nil
+		}
+	}
 	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, &secret)
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ref.Name}, &secret)
 	if apierrors.IsNotFound(err) {
-		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
-			fmt.Sprintf("Secret %s of Agent %s not found", ref.Name, agent.Name))
+		msg := fmt.Sprintf("Secret %s of Agent %s not found", ref.Name, agent.Name)
+		if namespace != task.Namespace {
+			msg += " in namespace " + namespace
+		}
+		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound", msg)
 		return false, nil
 	}
 	return err == nil, err

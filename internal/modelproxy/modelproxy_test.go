@@ -410,8 +410,9 @@ func TestAnswers503WithoutACredential(t *testing.T) {
 			if n := len(up.requests()); n != 0 {
 				t.Errorf("the upstream was sent %d requests without a credential; want none", n)
 			}
-			if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusServiceUnavailable {
-				t.Errorf("/readyz without a credential = %d; want 503", status)
+			// Ready without the credential: the Secret comes after the chart (#1627).
+			if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusOK {
+				t.Errorf("/readyz without a credential = %d; want 200", status)
 			}
 			if status, _ := send(t, proxy, "/healthz", nil); status != http.StatusOK {
 				t.Errorf("/healthz without a credential = %d; want 200", status)
@@ -521,6 +522,39 @@ func TestLogsNoCredential(t *testing.T) {
 	}
 }
 
+// TestReadyWithoutACredentialSaysSo checks that a proxy with no credential
+// is ready and says so in its log, and logs the credential's arrival on the
+// next readiness probe, before any request is proxied (#1627).
+func TestReadyWithoutACredentialSaysSo(t *testing.T) {
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	dir := t.TempDir()
+	proxy := newProxy(t, newUpstream(t).URL, dir, log)
+
+	if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusOK {
+		t.Fatalf("/readyz without a credential = %d; want 200", status)
+	}
+	if out := logs.String(); !strings.Contains(out, "No credential") {
+		t.Errorf("the log doesn't say the proxy has no credential:\n%s", out)
+	}
+	if out := logs.String(); strings.Contains(out, "Using the credential") {
+		t.Errorf("the log says the proxy uses a credential before it has one:\n%s", out)
+	}
+
+	token := rand.Text()
+	writeKey(t, dir, OAuthTokenKey, token, then)
+	if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusOK {
+		t.Fatalf("/readyz with a credential = %d; want 200", status)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "Using the credential") || !strings.Contains(out, OAuthTokenKey) {
+		t.Errorf("the log doesn't say the proxy picked up %s on the probe:\n%s", OAuthTokenKey, out)
+	}
+	if strings.Contains(out, token) {
+		t.Errorf("the log holds the token:\n%s", out)
+	}
+}
+
 // A client's Connection header names the headers a hop drops; naming the
 // credential's must not strip the one the proxy adds.
 func TestConnectionHeaderKeepsTheCredential(t *testing.T) {
@@ -553,5 +587,35 @@ func TestConnectionHeaderKeepsTheCredential(t *testing.T) {
 				t.Errorf("upstream got anthropic-beta %q; want %q", beta, tt.wantBeta)
 			}
 		})
+	}
+}
+
+// TestDrainFailsReadinessOnly checks that Drain turns /readyz to 503 while
+// /healthz and the forwarded paths go on being served, so a stopping pod
+// leaves the Service's endpoints before its listener closes (#1135).
+func TestDrainFailsReadinessOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeKey(t, dir, OAuthTokenKey, rand.Text(), then)
+	up := newUpstream(t)
+	p := New(mustURL(t, up.URL), dir, nil)
+	proxy := httptest.NewServer(p)
+	t.Cleanup(proxy.Close)
+
+	if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusOK {
+		t.Fatalf("/readyz before Drain = %d; want 200", status)
+	}
+	p.Drain()
+	if status, body := send(t, proxy, "/readyz", nil); status != http.StatusServiceUnavailable ||
+		!strings.Contains(body, "stopping") {
+		t.Errorf("/readyz after Drain = %d %q; want 503 saying it is stopping", status, body)
+	}
+	if status, _ := send(t, proxy, "/healthz", nil); status != http.StatusOK {
+		t.Errorf("/healthz after Drain = %d; want 200", status)
+	}
+	if status, _ := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusOK {
+		t.Errorf("/v1/messages after Drain = %d; want 200: open and new requests are still served", status)
+	}
+	if n := len(up.requests()); n != 1 {
+		t.Errorf("the upstream was sent %d requests after Drain; want 1", n)
 	}
 }

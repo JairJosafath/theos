@@ -11,7 +11,7 @@ permission. See the LICENSE file.
 // default, with the client's credential swapped for the one in a mounted
 // Secret directory, and answers /healthz and /readyz itself.
 //
-//	model-proxy [--listen :8080] [--upstream https://api.anthropic.com] [--credentials-dir DIR]
+//	model-proxy [--listen :8080] [--upstream https://api.anthropic.com] [--credentials-dir DIR] [--drain 5s]
 package main
 
 import (
@@ -31,8 +31,8 @@ import (
 	"github.com/JairJosafath/c4factory/internal/modelproxy"
 )
 
-// shutdownGrace is how long a stop waits for open requests, under the
-// kubelet's default grace period of 30 seconds.
+// shutdownGrace is how long a stop waits for open requests, the drain
+// included, under the kubelet's default grace period of 30 seconds.
 const shutdownGrace = 25 * time.Second
 
 func main() {
@@ -40,6 +40,9 @@ func main() {
 	upstream := flag.String("upstream", "https://api.anthropic.com", "The one URL every request is forwarded to")
 	dir := flag.String("credentials-dir", "/etc/model-proxy/credentials",
 		"The mounted Secret directory holding "+modelproxy.OAuthTokenKey+" or "+modelproxy.APIKeyKey)
+	drain := flag.Duration("drain", 5*time.Second,
+		"How long a stop keeps serving with /readyz failing before the listener closes, "+
+			"so the Service's endpoints drop the pod first")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -52,14 +55,15 @@ func main() {
 	defer stop()
 
 	log.Info("Starting model proxy", "listen", *listen, "upstream", target.Redacted(), "credentialsDir", *dir,
-		"version", buildinfo.Version)
+		"drain", *drain, "version", buildinfo.Version)
+	proxy := modelproxy.New(target, *dir, log)
 	server := &http.Server{
 		Addr:    *listen,
-		Handler: modelproxy.New(target, *dir, log),
+		Handler: proxy,
 		// No WriteTimeout: a streamed response lasts as long as the model writes.
 		ReadHeaderTimeout: 30 * time.Second,
 	}
-	if err := serve(ctx, stop, server); err != nil {
+	if err := serve(ctx, stop, server, proxy.Drain, *drain); err != nil {
 		log.Error("Model proxy stopped", "error", err)
 		os.Exit(1)
 	}
@@ -67,9 +71,13 @@ func main() {
 }
 
 // serve runs server until ctx is done, then stops the signals ctx was
-// waiting for and shuts the server down, letting open requests finish for up
-// to shutdownGrace.
-func serve(ctx context.Context, stop context.CancelFunc, server *http.Server) error {
+// waiting for, calls drain and keeps serving for drainFor, so a failing
+// /readyz takes the pod out of the Service's endpoints before the listener
+// closes (#1135), and shuts the server down, letting open requests finish for
+// up to shutdownGrace in all.
+func serve(
+	ctx context.Context, stop context.CancelFunc, server *http.Server, drain func(), drainFor time.Duration,
+) error {
 	errs := make(chan error, 1)
 	go func() { errs <- server.ListenAndServe() }()
 	select {
@@ -81,6 +89,12 @@ func serve(ctx context.Context, stop context.CancelFunc, server *http.Server) er
 	stop()
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
+	drain()
+	select {
+	case <-time.After(drainFor):
+	case err := <-errs:
+		return err
+	}
 	err := server.Shutdown(shutdown)
 	if errors.Is(err, context.DeadlineExceeded) {
 		// A stream outlasted the grace period: cut it, as the kubelet would.

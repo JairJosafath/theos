@@ -71,11 +71,56 @@ spec:
                 - Required
                 - None
                 type: string
+              argoCD:
+                description: |-
+                  argoCD ships each release of a Container with the k8s-manifests
+                  Deployment as one Argo CD Application in the cluster the operator runs
+                  in: the Container's repository at the release tag, its deploy/k8s path
+                  and the release's image; Argo CD rolls it out.
+                properties:
+                  destination:
+                    description: destination is where the apps run.
+                    properties:
+                      namespace:
+                        description: namespace is the namespace the apps' manifests
+                          go in.
+                        maxLength: 63
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      server:
+                        default: https://kubernetes.default.svc
+                        description: |-
+                          server is the cluster, as Argo CD names it; the default is the
+                          cluster Argo CD runs in.
+                        maxLength: 253
+                        type: string
+                    required:
+                    - namespace
+                    type: object
+                  namespace:
+                    default: argocd
+                    description: namespace is where Argo CD runs and its Applications
+                      live.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  project:
+                    default: default
+                    description: |-
+                      project is the Argo CD project the Applications belong to; it exists
+                      before the target is Ready.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                required:
+                - destination
+                type: object
               credentialsSecretRef:
                 description: |-
                   credentialsSecretRef names a Secret in the DeployTarget's namespace that
                   the user creates; its keys are the member's (token for github). Only the
                   operator reads it: it is never mounted in a sandbox or passed to a CI job.
+                  An argoCD target needs none: the operator uses its own ServiceAccount.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -90,6 +135,13 @@ spec:
                   github ships each release as a GitHub release of a repository: its tag,
                   notes and files.
                 properties:
+                  latest:
+                    description: |-
+                      latest says whether each release shipped becomes the repository's
+                      Latest release on GitHub. It defaults to true; set it to false on a
+                      target for every app but the one people install, when several ship to
+                      one repository, so a library's release doesn't take Latest from it.
+                    type: boolean
                   repository:
                     description: repository is owner/name on github.com.
                     maxLength: 140
@@ -97,6 +149,21 @@ spec:
                     x-kubernetes-validations:
                     - message: repository must be owner/name
                       rule: self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')
+                  tagPrefix:
+                    description: |-
+                      tagPrefix goes before the version in each release's tag. Unset, it is
+                      the Container's name and "-" (orders-cli-v0.1.0), so any number of
+                      Containers share the target; set, it is used as it is for every
+                      Container shipping there, "" giving bare tags (v0.1.0) on a
+                      repository of one app.
+                    maxLength: 40
+                    pattern: ^[A-Za-z0-9._/-]*$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: 'tagPrefix must make a git tag name: no leading ''.'',
+                        ''/'' or ''-'', no ''..'', ''//'' or ''/.'', and no folder
+                        ending in .lock'
+                      rule: '!self.matches(''^[./-]|//|/[.]|[.][.]|[.]lock(/|$)'')'
                 required:
                 - repository
                 type: object
@@ -116,12 +183,12 @@ spec:
                 - development
                 - production
                 type: string
-            required:
-            - credentialsSecretRef
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one target member: github'
-              rule: '[has(self.github)].exists_one(x, x)'
+            - message: 'set exactly one target member: github or argoCD'
+              rule: '[has(self.github), has(self.argoCD)].exists_one(x, x)'
+            - message: set credentialsSecretRef unless the member is argoCD
+              rule: has(self.credentialsSecretRef) || has(self.argoCD)
           status:
             description: status defines the observed state of DeployTarget
             properties:
