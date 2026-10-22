@@ -100,6 +100,11 @@ the spec that makes it, with `forbidden` in the reconciler's log.
 - **Watch secondary resources**: Use `.Owns()` or `.Watches()`, not just `RequeueAfter`
 - **Thin reconcilers**: Decisions about types, layers and files belong in
   `internal/model` and `internal/scaffold`, not in the controller
+- **Read a Container's catalog choices through `Container.Choices()`**, never
+  `Spec.FrameworkRef` and its siblings: a Container may name a Bundle
+  (`spec.bundleRef`), and `Choices()` gives the spec's refs, else the
+  expansion in `status.bundle`. Only `resolve` reads the Bundle itself, and
+  only until the Container is scaffolded.
 
 ## Logging
 

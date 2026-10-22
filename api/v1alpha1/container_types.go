@@ -13,6 +13,9 @@ import (
 )
 
 // ContainerSpec defines the desired state of Container.
+// +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef)",message="name a bundleRef or a frameworkRef"
+// +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
+// +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
 type ContainerSpec struct {
 	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
@@ -37,9 +40,19 @@ type ContainerSpec struct {
 	// +required
 	GitProviderRef LocalRef `json:"gitProviderRef"`
 
-	// frameworkRef names the Framework catalog entry: language, framework and tooling.
-	// +required
-	FrameworkRef LocalRef `json:"frameworkRef"`
+	// bundleRef names the Bundle catalog entry that picks the Framework,
+	// Standard, Compute and Deployment together. It replaces the four refs
+	// below: a Container names a bundle or its sides, never both. The operator
+	// expands it until the scaffold and records the expansion in
+	// status.bundle; from the scaffold on it reads status.bundle and never the
+	// Bundle again. It can't change.
+	// +optional
+	BundleRef *LocalRef `json:"bundleRef,omitempty"`
+
+	// frameworkRef names the Framework catalog entry: language, framework and
+	// tooling. Set it, or bundleRef.
+	// +optional
+	FrameworkRef LocalRef `json:"frameworkRef,omitzero"`
 
 	// standardRef names the Standard catalog entry: coding rules, checks and CI. It
 	// must list the Framework.
@@ -509,6 +522,30 @@ type OperationsUpdateStatus struct {
 	MergeCommit string `json:"mergeCommit,omitempty"`
 }
 
+// ContainerBundleStatus names the Bundle a Container named and the catalog
+// entries it expanded to. The pinned refs are in scaffoldedFrom.
+type ContainerBundleStatus struct {
+	// name is the Bundle's name.
+	// +required
+	Name string `json:"name"`
+
+	// framework names the Framework the bundle picked.
+	// +required
+	Framework string `json:"framework"`
+
+	// standard names the Standard the bundle picked, if any.
+	// +optional
+	Standard string `json:"standard,omitempty"`
+
+	// compute names the Compute the bundle picked, if any.
+	// +optional
+	Compute string `json:"compute,omitempty"`
+
+	// deployment names the Deployment the bundle picked, if any.
+	// +optional
+	Deployment string `json:"deployment,omitempty"`
+}
+
 // ContainerStatus defines the observed state of Container.
 type ContainerStatus struct {
 	// phase is Pending, Scaffolding, then Ready or Failed.
@@ -518,6 +555,12 @@ type ContainerStatus struct {
 	// repositoryURL is the web address of the scaffolded repository.
 	// +optional
 	RepositoryURL string `json:"repositoryURL,omitempty"`
+
+	// bundle is what spec.bundleRef expanded to, by entry name: afresh at each
+	// reconcile until the scaffold, then kept as the scaffold used it. Only a
+	// Container that names a bundle has it.
+	// +optional
+	Bundle *ContainerBundleStatus `json:"bundle,omitempty"`
 
 	// scaffoldedFrom lists the templates used, as name@ref, in layer order.
 	// +listType=atomic
@@ -634,6 +677,42 @@ type ContainerList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []Container `json:"items"`
+}
+
+// ContainerChoices are the catalog entries a Container picked, by name, ""
+// for a side it picks none of. Bundle names the Bundle they came from, if any.
+type ContainerChoices struct {
+	Bundle     string
+	Framework  string
+	Standard   string
+	Compute    string
+	Deployment string
+}
+
+// Choices gives the Container's effective catalog choices: its spec's refs,
+// or, when it names a Bundle, what status.bundle says the bundle expanded to.
+// Before the operator first expands the bundle only Bundle is set.
+func (c *Container) Choices() ContainerChoices {
+	if c.Spec.BundleRef == nil {
+		return ContainerChoices{
+			Framework:  c.Spec.FrameworkRef.Name,
+			Standard:   refName(c.Spec.StandardRef),
+			Compute:    refName(c.Spec.ComputeRef),
+			Deployment: refName(c.Spec.DeploymentRef),
+		}
+	}
+	out := ContainerChoices{Bundle: c.Spec.BundleRef.Name}
+	if b := c.Status.Bundle; b != nil {
+		out.Framework, out.Standard, out.Compute, out.Deployment = b.Framework, b.Standard, b.Compute, b.Deployment
+	}
+	return out
+}
+
+func refName(ref *LocalRef) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
 }
 
 func init() {

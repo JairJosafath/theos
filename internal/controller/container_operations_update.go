@@ -214,7 +214,7 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 // infra/operations.ts, and nothing else, when main's differs.
 func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	log := logf.FromContext(ctx)
-	name := u.container.Spec.FrameworkRef.Name
+	name := u.container.Choices().Framework
 	from, to := scaffoldedOperations(u.container, u.status), specOperations(u.container)
 	stopped := func(reason, message string) {
 		u.status.OperationsUpdate = &c4v1alpha1.OperationsUpdateStatus{Operations: operationsStatus(to),
