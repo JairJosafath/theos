@@ -197,7 +197,7 @@ for line in "${table[@]}"; do
   done
   case "$path" in hack/*) continue ;; esac
   for d in $(reads "$path"); do
-    check "$d's tests read $path: the table lists it" "$(listed "$path" "$d" && echo yes)" yes
+    check "$d's tests read $path: the table lists it (#1716)" "$(listed "$path" "$d" && echo yes)" yes
   done
 done
 check "internal/scaffold's tests climb to templates/" "$(reads templates | grep -c '^internal/scaffold$')" 1
