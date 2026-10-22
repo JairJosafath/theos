@@ -109,13 +109,15 @@ func TestCheckDeploysItself(t *testing.T) {
 		compute, deployment string
 		want                string
 	}{
-		"its own deployment":     {fargate, "", "", ""},
-		"a Framework that needs": {fastapi, "small", "k8s-manifests", ""},
-		"a Compute":              {fargate, "small", "", "remove computeRef small"},
-		"a Deployment":           {fargate, "", "k8s-manifests", "remove deploymentRef k8s-manifests"},
+		"its own deployment":          {fargate, "", "", ""},
+		"a Framework that needs":      {fastapi, "small", "k8s-manifests", ""},
+		"a Compute":                   {fargate, "small", "", "remove computeRef small"},
+		"a Deployment":                {fargate, "", "k8s-manifests", "remove deploymentRef k8s-manifests"},
+		"gitea-release (#1607)":       {fargate, "", "gitea-release", ""},
+		"a Compute and gitea-release": {fargate, "small", "gitea-release", "remove computeRef small"},
 		"both": {fargate, "small", "k8s-manifests",
 			"aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, " +
-				"so it takes no Compute and no Deployment; remove computeRef small and deploymentRef k8s-manifests"},
+				"so it takes no Compute and no Deployment but gitea-release, which ships its cloud assembly; remove computeRef small and deploymentRef k8s-manifests"},
 	} {
 		err := CheckDeploysItself(c.framework, c.compute, c.deployment)
 		switch {

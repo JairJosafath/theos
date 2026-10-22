@@ -391,7 +391,7 @@ type catalogEntryOut struct {
 	// a release, so a Container's checks: BeforeRelease takes effect.
 	ChecksBeforeRelease bool `yaml:"checksBeforeRelease,omitempty"`
 	// DeploysItself says a Framework is its Container's deployment, so the
-	// Container names no Compute and no Deployment.
+	// Container names no Compute and no Deployment but gitea-release.
 	DeploysItself bool `yaml:"deploysItself,omitempty"`
 	// ReadsOperations says a Framework renders infra/operations.ts from a
 	// Container's operations; a plan sets operations only on such a Container.

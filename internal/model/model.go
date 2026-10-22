@@ -119,8 +119,8 @@ func CheckStandard(framework string, standard *CatalogEntry) error {
 	return &FitError{Standard: standard.Name, Framework: framework}
 }
 
-// SelfDeployError says a Container names a Compute or Deployment while its
-// Framework deploys itself.
+// SelfDeployError says a Container names a Compute, or a Deployment other
+// than DeploymentGiteaRelease, while its Framework deploys itself.
 type SelfDeployError struct {
 	Framework string
 	// Refs lists the Container's computeRef and deploymentRef that are set, as
@@ -130,11 +130,13 @@ type SelfDeployError struct {
 
 func (e *SelfDeployError) Error() string {
 	return fmt.Sprintf("%s deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, "+
-		"so it takes no Compute and no Deployment; remove %s", e.Framework, joinAnd(e.Refs))
+		"so it takes no Compute and no Deployment but %s, which ships its cloud assembly; remove %s",
+		e.Framework, DeploymentGiteaRelease, joinAnd(e.Refs))
 }
 
 // CheckDeploysItself returns a *SelfDeployError when the Framework deploys
-// itself and the Container names a Compute or a Deployment, each "" when unset.
+// itself and the Container names a Compute, or a Deployment other than
+// DeploymentGiteaRelease, each "" when unset.
 func CheckDeploysItself(framework CatalogEntry, compute, deployment string) error {
 	if !framework.DeploysItself {
 		return nil
@@ -143,7 +145,7 @@ func CheckDeploysItself(framework CatalogEntry, compute, deployment string) erro
 	if compute != "" {
 		refs = append(refs, "computeRef "+compute)
 	}
-	if deployment != "" {
+	if deployment != "" && deployment != DeploymentGiteaRelease {
 		refs = append(refs, "deploymentRef "+deployment)
 	}
 	if len(refs) == 0 {

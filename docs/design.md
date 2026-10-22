@@ -94,8 +94,9 @@ and from it are story only.
 2. **Check choices.** Every entry used, the Connectors reached through
    Relationships included, must list the Container's type, else `Failed`,
    `ChoicesValid=False` ("python-fastapi does not support static-site"). A
-   Framework with `deploysItself: true` (the AWS ones) takes no Compute or
-   Deployment, else reason `DeploysItself`.
+   Framework with `deploysItself: true` (the AWS ones) takes no Compute and
+   no Deployment but `gitea-release`, whose release carries its synthesized
+   cloud assembly, else reason `DeploysItself`.
 3. **Create the repository** in the GitProvider's organization.
 4. **Render the layers** in order: Framework, Standard, Compute, Deployment,
    then each Connector. Templates are Go `text/template` files given the
