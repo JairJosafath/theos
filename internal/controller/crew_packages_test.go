@@ -54,10 +54,14 @@ func packagedReleaseOf(ns, status, conclusion string, files []fakeFile, packages
 // which the Crew reads through the Repository its provider builds.
 func setNpmScope(ns, scope string) {
 	GinkgoHelper()
-	provider := &c4v1alpha1.GitProvider{}
-	Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
-	provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
-	Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+	// The GitProvider's reconciler may write its status meanwhile: a
+	// conflict reads it again.
+	Eventually(func(g Gomega) {
+		provider := &c4v1alpha1.GitProvider{}
+		g.Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
+		provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
+		g.Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+	}).Should(Succeed())
 }
 
 // releasePackages is the Crew's last release's packages once the state is
