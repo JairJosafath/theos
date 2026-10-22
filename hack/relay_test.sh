@@ -43,7 +43,7 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 # The defaults, from today's measurements (docs/dev/testenv.md): nine workers,
 # 2 GiB free and 120s between session starts.
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 15"
-check "defaults: RELAY_MODEL is fable (#1534)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" fable
+check "defaults: RELAY_MODEL is opus (#1727)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" opus
 check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
 check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
 # With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
@@ -241,12 +241,14 @@ check "prompt: a decided follow-up is filed --next" "$(grep -c 'hack/lib/github.
 check "prompt: the rest is filed proposed" "$(grep -c 'FILE status/proposed kind/<kind>' <<<"$out")" 1
 check "prompt, next: the last session filed it" "$(prompt 1 t u next n b | grep -c 'filed it with create --next: the issue body is the goal')" 1
 
-# The relay runs on RELAY_MODEL, fable by default (#1534): no prompt forbids
-# Fable any more, and each sends subagents to that model.
+# The relay runs on RELAY_MODEL, opus by default (#1727): no prompt forbids
+# Fable (#1534), none names it either, and each tells the session to name a
+# subagent's model by the task's weight, sonnet or opus.
 out=$(prompt 1 t u ready n b; prompt 1 t u in-progress n b)
 check "prompt: never forbids Fable (#1534)" "$(grep -c 'Never use the Fable model' <<<"$out")" 0
-check "prompt: subagents run on the relay's model (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out")" 2
-check "prompt: RELAY_MODEL names the model (#1534)" "$(RELAY_MODEL=opus prompt 1 t u ready n b | grep -c 'Run subagents on the opus model: name it when dispatching')" 1
+check "prompt: never names fable (#1727)" "$(grep -ci fable <<<"$out")" 0
+check "prompt: subagents by the task's weight (#1727)" "$(grep -c "Name a subagent's model by the task's weight when dispatching: sonnet for a" <<<"$out")" 2
+check "prompt: RELAY_MODEL does not reach the prompt (#1727)" "$(RELAY_MODEL=fable prompt 1 t u ready n b | grep -ci fable)" 0
 
 # No headless session ends its turn while a background command it started
 # still runs (#1327): a session ends with its turn, so the notification never
@@ -306,7 +308,7 @@ skill=$(cat "$(dirname "$0")/../.claude/skills/triage/SKILL.md")
 check "triage: names the issues" "$(grep -c 'status/proposed: #40 #41\.' <<<"$out")" 1
 check "triage: loads the skill" "$(grep -c 'Load the `triage` skill and follow it' <<<"$out")" 1
 check "triage: escalates to the maintainer, never the owner" "$(grep -c 'send what needs a decision to the maintainer' <<<"$out") $(grep -c 'sent to the user' <<<"$out")" "1 0"
-check "triage: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
+check "triage: subagents by the task's weight, fable not named (#1727)" "$(grep -c "Name a subagent's model by the task's weight when dispatching, sonnet for a" <<<"$out") $(grep -ci fable <<<"$out")" "1 0"
 check "triage: no cluster steps" "$(grep -cE 'cluster acquire|make deploy|needs/cluster' <<<"$out$skill")" 0
 check "triage: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 check "triage skill: readies by status" "$(grep -c 'hack/lib/github.sh status N ready' <<<"$skill")" 1
@@ -400,7 +402,7 @@ check "maintain: the owner's word wins" "$(grep -c "The owner's word wins" <<<"$
 check "maintain: first sweep" "$(grep -c 'No sweep ran before this one' <<<"$out")" 1
 check "maintain: decides the escalations first" "$(grep -c 'hack/lib/github.sh escalated' <<<"$out")" 1
 check "maintain: only it sets needs-human" "$(grep -c 'Only you set status/needs-human' <<<"$out")" 1
-check "maintain: subagents on the relay's model, Fable not forbidden (#1534)" "$(grep -c 'Run subagents on the fable model: name it when dispatching' <<<"$out") $(grep -c 'Never use the Fable model' <<<"$out")" "1 0"
+check "maintain: subagents by the task's weight, fable not named (#1727)" "$(grep -c "Name a subagent's model by the task's weight when dispatching, sonnet for a" <<<"$out") $(grep -ci fable <<<"$out")" "1 0"
 check "maintain: never end the turn on a background command (#1327)" "$(grep -c 'end your turn while a background command you started' <<<"$out")" 1
 echo "86400 x y" >"$DIR/maintained"
 rm -f "$DIR/admitted"
@@ -813,13 +815,13 @@ check "tmp #1269: removed after the session, read-only dirs too" "$(test -e "$SC
 check "tmp #1269: nothing logged" "$(grep -c 'could not remove' "$LOG")" 0
 no_strikes
 
-# The session runs on RELAY_MODEL, fable by default (#1534): the dry run names
+# The session runs on RELAY_MODEL, opus by default (#1727): the dry run names
 # it. Before each session the yolo round runs (gh_yolo merge) and what it says
 # is logged; a dry run skips it.
 echo handoff >"$FAKE"
 out=$(DRY_RUN=1 work 2>&1)
-check "dry run #1534: the session runs on fable" "$(grep -c 'claude -p --permission-mode auto --model fable --session-id' <<<"$out")" 1
-check "dry run #1534: RELAY_MODEL picks the model" "$(RELAY_MODEL=opus DRY_RUN=1 work 2>&1 | grep -c -- 'auto --model opus --session-id')" 1
+check "dry run #1727: the session runs on opus" "$(grep -c 'claude -p --permission-mode auto --model opus --session-id' <<<"$out")" 1
+check "dry run #1534: RELAY_MODEL picks the model" "$(RELAY_MODEL=sonnet DRY_RUN=1 work 2>&1 | grep -c -- 'auto --model sonnet --session-id')" 1
 eval "$(declare -f gh_yolo | sed '1s/^gh_yolo/gh_yolo_real/')"
 gh_yolo() { echo "yolo called $*" >>"$T/yolo"; echo "#3 merged (yolo mode)"; echo "#4: not merged" >&2; }
 rm -f "$T/yolo"

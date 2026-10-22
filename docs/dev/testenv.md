@@ -427,8 +427,9 @@ heavy-job slot or the merge turn, with `make test-hack` only when one of them
 is `docs/dev/testenv.md` or under `.claude/skills/`; `land` says it took the
 simple path, and a move of main by such files under the turn is merged in
 unchecked the same way.
-The relay's sessions run on `RELAY_MODEL` (default `fable`), and their
-prompts send subagents to that model.
+The relay's sessions run on `RELAY_MODEL` (default `opus`, #1727), and their
+prompts tell them to name a subagent's model by the task's weight, sonnet for a
+bounded check, opus for a review or a design, as the `handoff` skill does.
 A follow-up a session decided goes to the front of its own worker's queue:
 `hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
 `status/ready` and reserves it, with a claim comment that says "reserved this

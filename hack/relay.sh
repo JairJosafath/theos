@@ -132,10 +132,11 @@
 # A device that slept doesn't count (#1500): when the clock between two looks
 # at the transcript jumps more than a minute past RELAY_IDLE_POLL, the idle
 # time starts over from the wake.
-# Every session runs on RELAY_MODEL (default fable), and its prompt sends its
-# subagents there. Before each session the worker runs the yolo round,
-# hack/lib/github.sh yolo merge (#1534): while yolo mode is on, every open
-# non-draft pull request to main merges at once, and what that says is logged.
+# Every session runs on RELAY_MODEL (default opus, #1727), and its prompt tells
+# it to name a subagent's model by the task's weight, sonnet or opus. Before
+# each session the worker runs the yolo round, hack/lib/github.sh yolo merge
+# (#1534): while yolo mode is on, every open non-draft pull request to main
+# merges at once, and what that says is logged.
 #   RELAY_DRY_RUN=1 hack/relay.sh  print the issue and prompt the next session would get; change nothing
 #   touch .relay/stop              stop every worker after its current session
 #
@@ -187,7 +188,7 @@ IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change 
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
 SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
-RELAY_MODEL=${RELAY_MODEL:-fable} # the model every session runs on (claude -p --model), and names for its subagents (#1534)
+RELAY_MODEL=${RELAY_MODEL:-opus} # the model every session runs on (claude -p --model); subagents pick theirs by the task's weight (#1534, #1727)
 
 K=${C4_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own
@@ -232,7 +233,8 @@ handoff comment and the comments after it. Follow AGENTS.md, the handoff skill
 and the memories.
 
 Rules for this headless run:
-- Run subagents on the $RELAY_MODEL model: name it when dispatching.
+- Name a subagent's model by the task's weight when dispatching: sonnet for a
+  bounded check, opus for a review or a design.
 - A headless session ends when you end your turn, and nothing wakes it: a
   notification from a subagent or a background command never arrives. Dispatch
   every subagent with run_in_background: false and never end your turn while
@@ -314,7 +316,8 @@ You take no issue, change no code, commit nothing and open no pull request;
 this worktree, relay-$K, is on origin/main for reading only.
 
 Rules for this headless run:
-- Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
+- Name a subagent's model by the task's weight when dispatching, sonnet for a
+  bounded check, opus for a review or a design. Dispatch
   every subagent with run_in_background: false and never end your turn while
   one is running. A headless session ends when you end your turn, and nothing
   wakes it: never end your turn while a background command you started still
@@ -357,7 +360,8 @@ it on. Only you set status/needs-human. End the sweep by writing the report and 
 \`hack/lib/github.sh report FILE\` (the pinned *Maintainer report* issue).
 
 Rules for this headless run:
-- Run subagents on the $RELAY_MODEL model: name it when dispatching. Dispatch
+- Name a subagent's model by the task's weight when dispatching, sonnet for a
+  bounded check, opus for a review or a design. Dispatch
   every subagent with run_in_background: false and never end your turn while
   one is running. A headless session ends when you end your turn, and nothing
   wakes it: never end your turn while a background command you started still
