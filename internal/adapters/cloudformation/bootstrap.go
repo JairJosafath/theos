@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/go-logr/logr"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -55,6 +56,31 @@ func bootstrapTemplate() (body string, version int, err error) {
 		return string(b), version, nil
 	}
 	return "", 0, fmt.Errorf("no bootstrap-template-v<N>.yaml embedded")
+}
+
+// templateParameters are the names of the parameters a CloudFormation YAML
+// template declares. A yaml.Node decode takes the template's !Ref-style
+// tags as they are.
+func templateParameters(body string) (map[string]bool, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+		return nil, fmt.Errorf("parsing the bootstrap template: %w", err)
+	}
+	out := map[string]bool{}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return out, nil
+	}
+	top := doc.Content[0].Content
+	for i := 0; i+1 < len(top); i += 2 {
+		if top[i].Value != "Parameters" || top[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		params := top[i+1].Content
+		for j := 0; j+1 < len(params); j += 2 {
+			out[params[j].Value] = true
+		}
+	}
+	return out, nil
 }
 
 // The bootstrap's stack, its default version parameter, and the parameter
@@ -113,16 +139,29 @@ func (d *Deployer) bootstrap(ctx context.Context, ses *session, a model.CDKAssem
 		switch {
 		case model.CloudFormationStackBusy(status):
 			return false, nil
-		case strings.Contains(status, "ROLLBACK") || strings.HasSuffix(status, "_FAILED"):
+		// UPDATE_ROLLBACK_COMPLETE runs the version before a failed update
+		// and takes an update; a failed first create, a failed rollback or
+		// a deleted stack takes a person.
+		case st.StackStatus == types.StackStatusRollbackComplete || strings.HasSuffix(status, "_FAILED") ||
+			strings.HasPrefix(status, "DELETE_"):
 			return false, missing("stack %s is %s (%s)", toolkitStack, status, aws.ToString(st.StackStatusReason))
 		case st.StackStatus != types.StackStatusReviewInProgress:
 			in.ChangeSetType = types.ChangeSetTypeUpdate
+			declared, err := templateParameters(body)
+			if err != nil {
+				return false, err
+			}
 			// An update keeps what the stack was given, a scoped
-			// execution policy above all.
+			// execution policy above all, of the parameters the template
+			// still declares: CloudFormation refuses one it doesn't.
 			for _, p := range st.Parameters {
+				key := aws.ToString(p.ParameterKey)
+				if !declared[key] {
+					continue
+				}
 				in.Parameters = append(in.Parameters, types.Parameter{ParameterKey: p.ParameterKey,
 					UsePreviousValue: aws.Bool(true)})
-				policies = policies && aws.ToString(p.ParameterKey) != executionPoliciesParam
+				policies = policies && key != executionPoliciesParam
 			}
 		}
 	}

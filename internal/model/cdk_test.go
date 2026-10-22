@@ -206,9 +206,9 @@ func TestCDKChangeSetParameters(t *testing.T) {
 
 func TestCloudFormationStackTags(t *testing.T) {
 	got := CloudFormationStackTags(map[string]string{"c4factory:container": "search", CloudFormationTagVersion: "old"},
-		"ns/search", "v1.0.0")
+		"ns/search", "production", "v1.0.0", 2)
 	want := map[string]string{"c4factory:container": "search", "c4factory.io/app": "ns/search",
-		"c4factory.io/version": "v1.0.0"}
+		"c4factory.io/tier": "production", "c4factory.io/version": "v1.0.0", "c4factory.io/stacks": "2"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("tags %v", got)
 	}
@@ -306,6 +306,7 @@ func TestCloudFormationDeployState(t *testing.T) {
 	tests := []struct {
 		name   string
 		stacks []CloudFormationStackFacts
+		wanted string
 		want   DeployRun
 	}{
 		{name: "no stacks is the zero state"},
@@ -370,6 +371,33 @@ func TestCloudFormationDeployState(t *testing.T) {
 		{name: "stacks that disagree on the version are Deploying, at the first stack's",
 			stacks: []CloudFormationStackFacts{stack("a", "UPDATE_COMPLETE", "v2"), stack("b", "UPDATE_COMPLETE", "v1")},
 			want:   deploying},
+		{name: "#1608: fewer stacks run the version than the assembly has, Deploying",
+			stacks: []CloudFormationStackFacts{{Name: "a", Status: "CREATE_COMPLETE", EventToken: tok("v2"),
+				VersionTag: "v2", StacksTag: "2"}},
+			want: DeployRun{Version: "v2", Phase: DeployPhaseDeploying, Health: DeployHealthProgressing,
+				Message: "1 of the assembly's 2 stacks run v2"}},
+		{name: "#1608: the second stack only a change set so far, Deploying",
+			stacks: []CloudFormationStackFacts{{Name: "a", Status: "CREATE_COMPLETE", EventToken: tok("v2"),
+				VersionTag: "v2", StacksTag: "2"}, {Name: "b", Status: "REVIEW_IN_PROGRESS"}},
+			want: DeployRun{Version: "v2", Phase: DeployPhaseDeploying, Health: DeployHealthProgressing,
+				Message: "1 of the assembly's 2 stacks run v2"}},
+		{name: "#1608: every stack of the assembly runs the version, Deployed",
+			stacks: []CloudFormationStackFacts{
+				{Name: "a", Status: "UPDATE_COMPLETE", EventToken: tok("v2"), VersionTag: "v2", StacksTag: "2"},
+				{Name: "b", Status: "CREATE_COMPLETE", EventToken: tok("v2"), VersionTag: "v2", StacksTag: "2"}},
+			want: deployed},
+		{name: "#1608: rolled back to the wanted version is Deployed at it",
+			stacks: []CloudFormationStackFacts{{Name: "s", Status: "UPDATE_ROLLBACK_COMPLETE",
+				StatusReason: "Resource Fn failed", EventToken: tok("v3"), VersionTag: "v2"}},
+			wanted: "v2", want: deployed},
+		{name: "#1608: rolled back, wanting the version that failed, is Failed",
+			stacks: []CloudFormationStackFacts{{Name: "s", Status: "UPDATE_ROLLBACK_COMPLETE",
+				EventToken: tok("v2"), VersionTag: "v1"}},
+			wanted: "v2", want: failed("v2", DeployReasonRolledBack, "stack s is UPDATE_ROLLBACK_COMPLETE")},
+		{name: "#1608: a failed first create tagged the wanted version is still Failed",
+			stacks: []CloudFormationStackFacts{{Name: "s", Status: "ROLLBACK_COMPLETE", EventToken: tok("v2"),
+				VersionTag: "v2"}},
+			wanted: "v2", want: failed("v2", DeployReasonRolledBack, "stack s is ROLLBACK_COMPLETE")},
 		{name: "an http EntryPoint is the URL as is",
 			stacks: []CloudFormationStackFacts{{Name: "s", Status: "UPDATE_COMPLETE", EventToken: tok("v2"),
 				Outputs: map[string]string{"EntryPoint": "https://abc.lambda-url.eu-west-1.on.aws/"}}},
@@ -390,7 +418,7 @@ func TestCloudFormationDeployState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := CloudFormationDeployState(tt.stacks); !reflect.DeepEqual(got, tt.want) {
+			if got := CloudFormationDeployState(tt.stacks, tt.wanted); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %+v\nwant %+v", got, tt.want)
 			}
 		})

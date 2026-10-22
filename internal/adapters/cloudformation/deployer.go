@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -28,7 +27,9 @@ const maxAssemblyFile = 16 << 20
 type Deployer struct {
 	clients NewClients
 	// polls bounds the DescribeChangeSet calls waiting for a change set to
-	// be ready, delay between them; sleep waits.
+	// be ready, delay between them; sleep waits. The wait stays a few
+	// seconds: a change set not ready by then is picked up, by its name, on
+	// the next Ship.
 	polls int
 	delay time.Duration
 	sleep func(ctx context.Context, d time.Duration) error
@@ -42,7 +43,7 @@ func New(clients NewClients) *Deployer {
 	if clients == nil {
 		clients = AWSClients
 	}
-	return &Deployer{clients: clients, polls: 15, delay: 2 * time.Second, sleep: sleep}
+	return &Deployer{clients: clients, polls: 5, delay: time.Second, sleep: sleep}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -91,14 +92,18 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		return files.read(ctx, name)
 	})
 	if err != nil {
-		if errors.Is(err, ports.ErrArtifactMissing) {
-			return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: err}
-		}
 		return fmt.Errorf("release %s of %s: %w", s.Version, s.App, err)
 	}
 	ses, err := d.session(t)
 	if err != nil {
 		return err
+	}
+	for _, stack := range assembly.Stacks {
+		if stack.Region != "" && stack.Region != ses.cfg.Region {
+			return fmt.Errorf("stack %s of release %s ships to region %s, the deploy target %s to %s: the "+
+				"factory ships an assembly to its target's region only", stack.StackName, s.Version, stack.Region,
+				t.Name, ses.cfg.Region)
+		}
 	}
 	if err := ses.whoAmI(ctx); err != nil {
 		return err
@@ -108,7 +113,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		return err
 	}
 	for _, stack := range assembly.Stacks {
-		done, err := d.shipStack(ctx, ses, files, stack, s)
+		done, err := d.shipStack(ctx, ses, files, stack, len(assembly.Stacks), s)
 		if err != nil || !done {
 			return err
 		}
@@ -137,7 +142,8 @@ func (fs files) get(name string) (ports.File, error) {
 	return f, nil
 }
 
-// read reads the release file name whole.
+// read reads the release file name whole; failing to open or read it is
+// ErrUnreachable, so the next poll tries again.
 func (fs files) read(ctx context.Context, name string) ([]byte, error) {
 	f, err := fs.get(name)
 	if err != nil {
@@ -145,12 +151,14 @@ func (fs files) read(ctx context.Context, name string) ([]byte, error) {
 	}
 	body, _, err := f.Open(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("opening release file %s: %w", name, err)
+		return nil, &ports.Error{Kind: ports.ErrUnreachable, Cause: fmt.Errorf("opening release file %s: %w", name,
+			err)}
 	}
 	defer func() { _ = body.Close() }()
 	var b bytes.Buffer
 	if _, err := io.Copy(&b, io.LimitReader(body, maxAssemblyFile+1)); err != nil {
-		return nil, fmt.Errorf("reading release file %s: %w", name, err)
+		return nil, &ports.Error{Kind: ports.ErrUnreachable, Cause: fmt.Errorf("reading release file %s: %w", name,
+			err)}
 	}
 	if b.Len() > maxAssemblyFile {
 		return nil, fmt.Errorf("release file %s is over %d bytes", name, maxAssemblyFile)
@@ -159,9 +167,9 @@ func (fs files) read(ctx context.Context, name string) ([]byte, error) {
 }
 
 // State reports the app's stacks at the target, the tier's: what
-// model.CloudFormationDeployState makes of each stack's status and newest
-// stack-level event. CloudFormation runs one version, so version is ignored.
-func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
+// model.CloudFormationDeployState makes of each stack's status, tags and
+// newest stack-level event, version the one the factory wants.
+func (d *Deployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
 	ses, err := d.session(t)
 	if err != nil {
 		return ports.DeployState{}, err
@@ -178,7 +186,7 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (po
 		}
 		facts = append(facts, f)
 	}
-	run := model.CloudFormationDeployState(facts)
+	run := model.CloudFormationDeployState(facts, version)
 	return ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
 		Reason: run.Reason, Message: run.Message}, nil
 }
@@ -238,9 +246,10 @@ const maxEventPages = 5
 // tags, outputs, parameters and the token of its newest stack-level event.
 func stackFacts(ctx context.Context, c CloudFormationAPI, st types.Stack) (model.CloudFormationStackFacts, error) {
 	name := aws.ToString(st.StackName)
+	tags := stackTags(st)
 	f := model.CloudFormationStackFacts{Name: name, Status: string(st.StackStatus),
-		StatusReason: aws.ToString(st.StackStatusReason), VersionTag: stackTags(st)[model.CloudFormationTagVersion],
-		Outputs: map[string]string{}, Parameters: map[string]string{}}
+		StatusReason: aws.ToString(st.StackStatusReason), VersionTag: tags[model.CloudFormationTagVersion],
+		StacksTag: tags[model.CloudFormationTagStacks], Outputs: map[string]string{}, Parameters: map[string]string{}}
 	for _, o := range st.Outputs {
 		f.Outputs[aws.ToString(o.OutputKey)] = aws.ToString(o.OutputValue)
 	}

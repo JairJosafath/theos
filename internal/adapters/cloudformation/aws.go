@@ -193,14 +193,12 @@ func (s *session) assume(ctx context.Context, role, region string) (Clients, err
 }
 
 // env is where an assembly's stack ships: the credential's partition and
-// account, else the stack's own, and the target's region, else the stack's.
+// account, else the stack's own, and the target's region (Ship refuses a
+// stack of another region).
 func (s *session) env(stack model.CDKStack) model.CDKEnv {
 	e := model.CDKEnv{Partition: s.id.Partition, Account: s.id.Account, Region: s.cfg.Region}
 	if stack.Account != "" {
 		e.Account = stack.Account
-	}
-	if stack.Region != "" {
-		e.Region = stack.Region
 	}
 	return e
 }

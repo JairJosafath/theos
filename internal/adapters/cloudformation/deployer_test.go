@@ -3,14 +3,17 @@ package cloudformation
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -451,7 +454,8 @@ func TestShipBootstrapOutdated(t *testing.T) {
 	w := newWorld(t)
 	a, tt := w.account("AKIAUSER", "production", true)
 	scoped := "arn:aws:iam::" + a.id + ":policy/scoped"
-	w.aws.bootstrap(a, 5, map[string]string{executionPoliciesParam: scoped, "Qualifier": "hnb659fds"})
+	w.aws.bootstrap(a, 5, map[string]string{executionPoliciesParam: scoped, "Qualifier": "hnb659fds",
+		"RetiredParameter": "x"})
 	files := fixtureFiles(t, "aws-lambda-ts")
 	if err := w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", files)); err != nil {
 		t.Fatal(err)
@@ -459,10 +463,17 @@ func TestShipBootstrapOutdated(t *testing.T) {
 	if len(a.changeSets) != 1 || a.changeSets[0].In.ChangeSetType != types.ChangeSetTypeUpdate {
 		t.Fatalf("change sets = %+v, want an UPDATE of CDKToolkit", a.changeSets)
 	}
+	kept := make([]string, 0, len(a.changeSets[0].In.Parameters))
 	for _, p := range a.changeSets[0].In.Parameters {
 		if !aws.ToBool(p.UsePreviousValue) || p.ParameterValue != nil {
 			t.Errorf("parameter %s isn't kept", aws.ToString(p.ParameterKey))
 		}
+		kept = append(kept, aws.ToString(p.ParameterKey))
+	}
+	// A parameter the embedded template no longer declares isn't passed:
+	// CloudFormation refuses the change set over it.
+	if want := []string{executionPoliciesParam, "Qualifier"}; !slices.Equal(kept, want) {
+		t.Errorf("kept parameters = %v, want %v", kept, want)
 	}
 	shipUntilDeployed(t, w.d, tt, shipment("aws-lambda-ts", "v1.0.0", files))
 	if got := a.stacks[toolkitStack].params[executionPoliciesParam]; got != scoped {
@@ -484,16 +495,36 @@ func TestShipBootstrapRefused(t *testing.T) {
 			t.Errorf("Ship() = %v, want ErrPrerequisiteMissing with the cdk bootstrap command", err)
 		}
 	})
-	t.Run("failed", func(t *testing.T) {
-		w := newWorld(t)
-		a, tt := w.account("AKIAUSER", "production", true)
-		w.aws.bootstrap(a, 5, nil)
-		a.stacks[toolkitStack].status = "UPDATE_ROLLBACK_COMPLETE"
-		err := w.d.Ship(ctx, tt, shipment("aws-lambda-ts", "v1.0.0", files))
-		if !errors.Is(err, ports.ErrPrerequisiteMissing) || !strings.Contains(err.Error(), "UPDATE_ROLLBACK_COMPLETE") {
-			t.Errorf("Ship() = %v, want ErrPrerequisiteMissing naming the status", err)
-		}
-	})
+	for _, status := range []string{"UPDATE_ROLLBACK_FAILED", "ROLLBACK_COMPLETE", "ROLLBACK_FAILED",
+		"UPDATE_FAILED", "DELETE_FAILED"} {
+		t.Run("failed "+status, func(t *testing.T) {
+			w := newWorld(t)
+			a, tt := w.account("AKIAUSER", "production", true)
+			w.aws.bootstrap(a, 5, nil)
+			a.stacks[toolkitStack].status = status
+			err := w.d.Ship(ctx, tt, shipment("aws-lambda-ts", "v1.0.0", files))
+			if !errors.Is(err, ports.ErrPrerequisiteMissing) || !strings.Contains(err.Error(), status) {
+				t.Errorf("Ship() = %v, want ErrPrerequisiteMissing naming the status", err)
+			}
+		})
+	}
+}
+
+// A CDKToolkit whose last update rolled back runs its old version and takes
+// an update, not a person (#1608).
+func TestShipBootstrapAfterRolledBackUpdate(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.account("AKIAUSER", "production", true)
+	w.aws.bootstrap(a, 5, map[string]string{executionPoliciesParam: "arn:aws:iam::aws:policy/AdministratorAccess"})
+	a.stacks[toolkitStack].status = "UPDATE_ROLLBACK_COMPLETE"
+	files := fixtureFiles(t, "aws-lambda-ts")
+	if err := w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", files)); err != nil {
+		t.Fatalf("Ship() = %v, want the bootstrap updated", err)
+	}
+	if len(a.changeSets) != 1 || a.changeSets[0].In.ChangeSetType != types.ChangeSetTypeUpdate {
+		t.Fatalf("change sets = %+v, want an UPDATE of CDKToolkit", a.changeSets)
+	}
+	shipUntilDeployed(t, w.d, tt, shipment("aws-lambda-ts", "v1.0.0", files))
 }
 
 // A template parameter with no default that the target doesn't give is
@@ -669,5 +700,182 @@ func TestTargetConfigUsesOnlyTheSecret(t *testing.T) {
 	delete(tt.Settings, model.CloudFormationSettingRegion)
 	if _, err := targetConfig(tt); err == nil || isPortError(err) {
 		t.Errorf("targetConfig() without a region = %v, want a plain error", err)
+	}
+}
+
+// editedFiles are framework's release files with its production manifest's
+// artifacts changed by edit.
+func editedFiles(t *testing.T, framework string, edit func(artifacts map[string]map[string]any)) []ports.File {
+	t.Helper()
+	files := fixtureFiles(t, framework)
+	for i, f := range files {
+		if f.Name != "production.manifest.json" {
+			continue
+		}
+		body, _, err := f.Open(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.NewDecoder(body).Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		arts := map[string]map[string]any{}
+		for k, v := range m["artifacts"].(map[string]any) {
+			arts[k] = v.(map[string]any)
+		}
+		edit(arts)
+		m["artifacts"] = arts
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[i] = ports.File{Name: f.Name, Size: int64(len(b)),
+			Open: func(context.Context) (io.ReadCloser, int64, error) {
+				return io.NopCloser(bytes.NewReader(b)), int64(len(b)), nil
+			}}
+	}
+	return files
+}
+
+// A two-stack assembly isn't Deployed while only its first stack runs the
+// version: State says Deploying until the second does too (#1608).
+func TestStateMultiStack(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	files := editedFiles(t, "aws-lambda-ts", func(arts map[string]map[string]any) {
+		second := maps.Clone(arts["price-fn"])
+		props := maps.Clone(second["properties"].(map[string]any))
+		props["stackName"] = "price-fn-api"
+		second["properties"] = props
+		second["dependencies"] = []any{"price-fn", "price-fn.assets"}
+		arts["price-fn-api"] = second
+	})
+	ctx := context.Background()
+	s := shipment("aws-lambda-ts", "v1.0.0", files)
+	if err := w.d.Ship(ctx, tt, s); err != nil {
+		t.Fatal(err)
+	}
+	st, err := w.d.State(ctx, tt, testApp, s.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Phase != ports.PhaseDeploying || a.stacks["price-fn-api"] != nil {
+		t.Errorf("State() = %+v with the second stack not created, want Deploying", st)
+	}
+	shipUntilDeployed(t, w.d, tt, s)
+	if n := a.appExecutions(testApp); n != 2 {
+		t.Errorf("executions = %d, want one per stack", n)
+	}
+	for _, name := range []string{"price-fn", "price-fn-api"} {
+		if got := a.stacks[name].tags[model.CloudFormationTagStacks]; got != "2" {
+			t.Errorf("stack %s tag %s = %q, want 2", name, model.CloudFormationTagStacks, got)
+		}
+	}
+}
+
+// After an update rolls back, wanting the version it rolled back to is
+// Deployed at once: its empty change set and State agree (#1608).
+func TestStateRolledBackToWanted(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	files := fixtureFiles(t, "aws-lambda-ts")
+	shipUntilDeployed(t, w.d, tt, shipment("aws-lambda-ts", "v1.0.0", files))
+	a.fail["price-fn"] = true
+	ctx := context.Background()
+	if err := w.d.Ship(ctx, tt, shipment("aws-lambda-ts", "v1.1.0", files)); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := w.d.State(ctx, tt, testApp, "v1.1.0"); st.Phase != ports.PhaseFailed {
+		t.Fatalf("State(v1.1.0) = %+v, want Failed", st)
+	}
+	// CloudFormation finds the old version's change set empty.
+	a.empty["price-fn"] = true
+	if err := w.d.Ship(ctx, tt, shipment("aws-lambda-ts", "v1.0.0", files)); err != nil {
+		t.Fatal(err)
+	}
+	st, err := w.d.State(ctx, tt, testApp, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Version != "v1.0.0" || st.Phase != ports.PhaseDeployed || st.Health != ports.HealthHealthy {
+		t.Errorf("State(v1.0.0) = %+v, want v1.0.0 Deployed", st)
+	}
+	if n := a.appExecutions(testApp); n != 2 {
+		t.Errorf("executions = %d, want 2: nothing ships the running version again", n)
+	}
+}
+
+// A stack whose environment names another region than the target's is
+// refused, naming both, before anything is touched (#1608).
+func TestShipOtherRegion(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	files := editedFiles(t, "aws-lambda-ts", func(arts map[string]map[string]any) {
+		arts["price-fn"]["environment"] = "aws://unknown-account/us-east-1"
+	})
+	err := w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", files))
+	if err == nil || isPortError(err) || !strings.Contains(err.Error(), "price-fn") ||
+		!strings.Contains(err.Error(), "us-east-1") || !strings.Contains(err.Error(), testRegion) {
+		t.Errorf("Ship() = %v, want a plain error naming the stack and both regions", err)
+	}
+	if len(a.changeSets) != 0 || len(a.puts) != 0 {
+		t.Errorf("Ship touched the account: %d change sets, %d puts", len(a.changeSets), len(a.puts))
+	}
+}
+
+// Ship waits a few seconds at most for a change set (#1608).
+func TestShipChangeSetWaitIsShort(t *testing.T) {
+	d := New(nil)
+	if wait := time.Duration(d.polls) * d.delay; wait > 5*time.Second {
+		t.Errorf("Ship waits up to %s for a change set, want at most 5s", wait)
+	}
+}
+
+// A change set not ready when Ship stops waiting is executed by a later
+// Ship, by its name, not made again (#1608).
+func TestShipChangeSetContinues(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	w.d.polls = 0
+	s := shipment("aws-lambda-ts", "v1.0.0", fixtureFiles(t, "aws-lambda-ts"))
+	if err := w.d.Ship(context.Background(), tt, s); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.appChangeSets()) != 1 || a.appExecutions(testApp) != 0 {
+		t.Fatalf("change sets %d, executions %d; want 1 pending and none", len(a.appChangeSets()),
+			a.appExecutions(testApp))
+	}
+	shipUntilDeployed(t, w.d, tt, s)
+	if len(a.appChangeSets()) != 1 || a.appExecutions(testApp) != 1 {
+		t.Errorf("change sets %d, executions %d; want the one change set executed", len(a.appChangeSets()),
+			a.appExecutions(testApp))
+	}
+}
+
+// A release file that fails to open or read is ErrUnreachable, retried, not
+// a failed deploy (#1608).
+func TestShipReleaseFileUnreadable(t *testing.T) {
+	broken := errors.New("connection reset by peer")
+	for name, open := range map[string]func(context.Context) (io.ReadCloser, int64, error){
+		"open": func(context.Context) (io.ReadCloser, int64, error) { return nil, 0, broken },
+		"read": func(context.Context) (io.ReadCloser, int64, error) {
+			return io.NopCloser(iotest.ErrReader(broken)), 0, nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			_, tt := w.bootstrapped()
+			files := fixtureFiles(t, "aws-lambda-ts")
+			for i := range files {
+				if files[i].Name == "production.manifest.json" {
+					files[i].Open = open
+				}
+			}
+			err := w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", files))
+			if !errors.Is(err, ports.ErrUnreachable) || !errors.Is(err, broken) {
+				t.Errorf("Ship() = %v, want ErrUnreachable", err)
+			}
+		})
 	}
 }
