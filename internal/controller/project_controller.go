@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -75,6 +76,9 @@ type ProjectReconciler struct {
 	// RunnerRecordKept is how long an ended pool pod stays readable;
 	// DefaultRunnerRecordKept when zero.
 	RunnerRecordKept time.Duration
+	// packagesApplied is, per namespace/GitProvider, the packagesActions last
+	// sent to the owner's host (ensurePackagesActions).
+	packagesApplied sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
@@ -125,8 +129,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
-	recordExpiry, err := r.ensureCIRunners(ctx, &project, status)
+	recordExpiry, providers, err := r.ensureCIRunners(ctx, &project, status)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensurePackagesActions(ctx, &project, providers); err != nil {
 		return ctrl.Result{}, err
 	}
 	recheck, err := r.shareSecrets(ctx, &project, status)

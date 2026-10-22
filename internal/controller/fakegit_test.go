@@ -44,6 +44,7 @@ type fakeGit struct {
 	issues    *fakeIssueState
 	releases  *fakeReleaseState
 	runners   *fakeRunnerState
+	actions   *fakeActionsState
 }
 
 type fakeRepo struct {
