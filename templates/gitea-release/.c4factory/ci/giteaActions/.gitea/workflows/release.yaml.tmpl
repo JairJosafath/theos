@@ -118,8 +118,13 @@ jobs:
 {{- if $operator }}
           # The image as the operator pushes it: <host>/<owner>/<repository>,
           # lowercase, on the Git host's registry, by the digest just built.
+          # The registry is at the host's root, whatever path ROOT_URL has,
+          # and the digest is checked: without it the release files would
+          # name an image that is not there (#1581).
+          printf '%s\n' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' ||
+            { echo "The image job gave no digest (got '$DIGEST'); the release files need one." >&2; exit 1; }
           host=${SERVER_URL#*://}
-          image="${host%/}/$(printf '%s' "$REPOSITORY" | tr A-Z a-z)@$DIGEST"
+          image="${host%%/*}/$(printf '%s' "$REPOSITORY" | tr A-Z a-z)@$DIGEST"
           make dist VERSION="$TAG" IMG="$image"
 {{- else }}
           make dist VERSION="$TAG"

@@ -13,7 +13,9 @@
 #    hours, so a running job keeps its cache. Skipped without docker, the
 #    volume or the image. C4_PRUNE_RUNNER_CACHE=0 turns it off.
 # 3. Docker's build cache older than C4_PRUNE_DOCKER_UNTIL (default 72h, so
-#    the latest builds stay warm) and the dangling images. Skipped without
+#    the latest builds stay warm), then what is over C4_PRUNE_DOCKER_MAX_GB
+#    (default 10, oldest first; 0 for no cap): a release's ten builds grew it
+#    past 20 GB within 72h (#1636). Then the dangling images. Skipped without
 #    docker. C4_PRUNE_DOCKER=0 turns it off.
 #
 # C4_TRIM_GO=0 turns the first off. C4_GOCACHE_MAX_GB sets the limit of the
@@ -44,8 +46,15 @@ if [ "${C4_PRUNE_DOCKER:-1}" != 0 ]; then
   # Both end with "Total reclaimed space: N"; 0B means nothing went.
   freed() { sed -n 's/^Total reclaimed space: *//p' | tail -n 1; }
   b=$(docker builder prune -f --filter "until=$until" 2>/dev/null | freed)
-  i=$(docker image prune -f 2>/dev/null | freed)
   [ -n "$b" ] && [ "$b" != 0B ] && echo "prune-caches: docker build cache unused for $until: reclaimed $b"
+  max=${C4_PRUNE_DOCKER_MAX_GB:-10}
+  if [ "$max" != 0 ]; then
+    # Docker 28 renamed --keep-storage; the help says which one this CLI has.
+    case $(docker builder prune --help 2>/dev/null) in *--max-used-space*) cap=--max-used-space ;; *) cap=--keep-storage ;; esac
+    c=$(docker builder prune -f "$cap=${max}GB" 2>/dev/null | freed)
+    [ -n "$c" ] && [ "$c" != 0B ] && echo "prune-caches: docker build cache over ${max} GB: reclaimed $c"
+  fi
+  i=$(docker image prune -f 2>/dev/null | freed)
   [ -n "$i" ] && [ "$i" != 0B ] && echo "prune-caches: dangling docker images: reclaimed $i"
 fi
 exit 0
