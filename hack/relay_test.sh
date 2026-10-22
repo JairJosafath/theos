@@ -1145,7 +1145,7 @@ gh_api() {
     prev=$a
   done
   case "$m $url" in
-    "GET issues?state=open&labels=maintainer%2Freport"*) echo 7 ;;
+    "GET issues?state=open&labels=maintainer/report"*) echo 7 ;;
     "GET issues/7/comments"*) jq -c '[.]' "$LEASES" ;;
     "POST issues/7/comments")
       id=$(($(cat "$T/next-id" 2>/dev/null || echo 10) + 1))
