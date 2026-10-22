@@ -13,3 +13,6 @@ Every user-visible change, newest first. The format follows
   behind an Application Load Balancer, with alarms, a dashboard and
   deployments that roll back on them, and in production backups, tracing
   and a NAT gateway per zone.
+- Every route but `GET /health` needs a bearer token: an access token of
+  the stack's Cognito user pool, issued to its app client. The README says
+  how to sign in for one.

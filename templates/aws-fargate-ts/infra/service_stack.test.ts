@@ -96,6 +96,48 @@ describe('ServiceStack', () => {
     });
   });
 
+  it('makes a user pool the deployer fills, kept in production, with a strong password policy', () => {
+    production.resourceCountIs('AWS::Cognito::UserPool', 1);
+    production.hasResource('AWS::Cognito::UserPool', {
+      DeletionPolicy: 'Retain',
+      Properties: Match.objectLike({
+        AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
+        UsernameAttributes: ['email'],
+        DeletionProtection: 'ACTIVE',
+        Policies: {
+          PasswordPolicy: Match.objectLike({
+            MinimumLength: 12,
+            RequireLowercase: true,
+            RequireUppercase: true,
+            RequireNumbers: true,
+            RequireSymbols: true,
+          }),
+        },
+      }),
+    });
+    development.hasResource('AWS::Cognito::UserPool', {
+      DeletionPolicy: 'Delete',
+      Properties: Match.objectLike({ DeletionProtection: 'INACTIVE' }),
+    });
+  });
+
+  it('signs callers in through one public app client, with no OAuth', () => {
+    production.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+    production.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      GenerateSecret: false,
+      ExplicitAuthFlows: Match.arrayWith(['ALLOW_USER_PASSWORD_AUTH', 'ALLOW_USER_SRP_AUTH']),
+      PreventUserExistenceErrors: 'ENABLED',
+      AllowedOAuthFlows: Match.absent(),
+    });
+  });
+
+  it('outputs the user pool, its client and the issuer', () => {
+    const outputs = Object.keys(production.findOutputs('*')).join(' ');
+    for (const name of ['UserPoolId', 'UserPoolClientId', 'Issuer']) {
+      expect(outputs).toContain(name);
+    }
+  });
+
   it('runs the image on arm64 Fargate, read-only, logging to its own group', () => {
     production.hasResourceProperties('AWS::ECS::TaskDefinition', {
       RequiresCompatibilities: ['FARGATE'],
@@ -137,6 +179,11 @@ describe('ServiceStack', () => {
           DependsOn: [{ ContainerName: 'Collector', Condition: 'START' }],
           Environment: [
             { Name: 'TABLE_NAME', Value: Match.anyValue() },
+            { Name: 'USER_POOL_ID', Value: { Ref: Match.stringLikeRegexp('^UsersPool') } },
+            {
+              Name: 'USER_POOL_CLIENT_ID',
+              Value: { Ref: Match.stringLikeRegexp('^UsersPoolClient') },
+            },
             { Name: 'OTEL_EXPORTER_OTLP_ENDPOINT', Value: 'http://localhost:4318' },
             { Name: 'OTEL_SERVICE_NAME', Value: 'test' },
           ],
@@ -160,7 +207,14 @@ describe('ServiceStack', () => {
     development.hasResourceProperties('AWS::ECS::TaskDefinition', {
       ContainerDefinitions: [
         Match.objectLike({
-          Environment: [{ Name: 'TABLE_NAME', Value: Match.anyValue() }],
+          Environment: [
+            { Name: 'TABLE_NAME', Value: Match.anyValue() },
+            { Name: 'USER_POOL_ID', Value: { Ref: Match.stringLikeRegexp('^UsersPool') } },
+            {
+              Name: 'USER_POOL_CLIENT_ID',
+              Value: { Ref: Match.stringLikeRegexp('^UsersPoolClient') },
+            },
+          ],
           DependsOn: Match.absent(),
         }),
       ],

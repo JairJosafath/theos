@@ -55,8 +55,8 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | aws-lambda-ts | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-go | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-py | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
-| aws-ec2-ts | Framework | | yes | yes | yes | yes | #1071 | yes | #1479 |
-| aws-fargate-ts | Framework | | yes | yes | yes | yes | #1071 | yes | #1479 |
+| aws-ec2-ts | Framework | | yes | yes | yes | yes | #1071 | yes | yes |
+| aws-fargate-ts | Framework | | yes | yes | yes | yes | #1071 | yes | yes |
 | aws-queue-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
 | aws-schedule-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
 | aws-event-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
@@ -418,8 +418,8 @@ envtest).
 ### The AWS Frameworks
 
 aws-lambda-ts (v1.4.0), aws-lambda-go (v1.3.0) and aws-lambda-py (v1.3.0): an
-HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.1.1) and
-aws-fargate-ts (v1.2.1): a Node service behind an HTTPS load balancer.
+HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.2.0) and
+aws-fargate-ts (v1.3.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
 Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
@@ -445,8 +445,10 @@ aws-standard.
   JSON object per request (the Lambda Frameworks' `infra/api_stack.ts`,
   since aws-lambda-ts v1.4.0 and aws-lambda-go and -py v1.3.0, #1420).
 - Auth: the Lambda APIs take SigV4-signed requests (`HttpIamAuthorizer` in
-  `infra/api_stack.ts`). aws-ec2-ts and aws-fargate-ts authenticate no one
-  (#1479). n/a for the queue, schedule and event consumers (no users) and the
+  `infra/api_stack.ts`). aws-ec2-ts (since v1.2.0) and aws-fargate-ts
+  (since v1.3.0) verify a Cognito access token of the stack's own user pool
+  and app client on every route but `/health` (`src/auth.ts`, `aws-jwt-verify`;
+  `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
 ### aws-standard (v1.18.2)

@@ -7,11 +7,17 @@ infrastructure as a CDK app. Nothing deploys: the check synthesizes the
 CloudFormation offline.
 
 - **Supports:** `service`
-- **Layout:** `src/main.ts` reads `TABLE_NAME` and `PORT`, creates the
-  DynamoDB document client once and starts the server from `src/server.ts`,
+- **Layout:** `src/main.ts` reads `TABLE_NAME`, `PORT`, `USER_POOL_ID` and
+  `USER_POOL_CLIENT_ID` (it stops when a pool variable is missing), creates the
+  DynamoDB document client and the token verifier once and starts the server from `src/server.ts`,
   which reads each request (body capped at 64 KiB, request id from the load
   balancer's `X-Amzn-Trace-Id`), hands it to `answer` in `src/api.ts` and
-  logs one JSON line per request; `answer` routes `PUT` and `GET
+  logs one JSON line per request; every route but `GET /health` needs
+  `Authorization: Bearer <token>`, an access token of the stack's user pool
+  issued to its app client, which `src/auth.ts` verifies with
+  `aws-jwt-verify` (signature against the pool's keys, issuer, expiry,
+  `token_use`, `client_id`), and is answered 401 without one (500 when
+  the pool's keys can't be fetched); `answer` routes `PUT` and `GET
   /items/{id}` and `GET /health`, validates input and answers with status
   codes. `src/items.ts` holds the rules and imports neither the SDK nor
   `node:http`; `src/item_store.ts` wraps DynamoDB behind the `ItemStore`
@@ -36,8 +42,8 @@ CloudFormation offline.
   recovery, deletion protection and `RETAIN`, in development none and
   `DESTROY`); a VPC (`10.0.0.0/16`, isolated subnets in two zones, no NAT or
   internet gateway, a flow log of rejected traffic) with gateway endpoints
-  for S3 and DynamoDB and interface endpoints for CloudWatch Logs and
-  CloudFormation; the instances' own role, granted only `GetItem` and
+  for S3 and DynamoDB and interface endpoints for CloudWatch Logs,
+  CloudFormation and Cognito (the pool's signing keys); the instances' own role, granted only `GetItem` and
   `PutItem` on the table, writes to the server's log group,
   `s3:GetObject` on the server's asset and `cloudformation:SignalResource`
   on its stack; a launch template (Amazon Linux 2023, `t4g.small`, IMDSv2
@@ -68,10 +74,18 @@ CloudFormation offline.
   stack's table, named by ARN (never by the Container's tag, which the
   instances, their volumes and the development stack's table carry too),
   for `retentionDays` in a vault with its own key, copied to `copyToRegion`.
-  No X-Ray in either tier. The stack outputs `EntryPoint` (the load
+  No X-Ray in either tier. `infra/user_pool.ts`'s `Users` makes the
+  Cognito user pool (no self sign-up, email sign-in, a 12-character password
+  policy, optional TOTP MFA; in production deletion protection and `RETAIN`)
+  and a public app client (password and SRP sign-in, no secret, no OAuth,
+  one-hour access tokens), outputs `UserPoolId`, `UserPoolClientId` and
+  `Issuer`, and hands the server `USER_POOL_ID` and `USER_POOL_CLIENT_ID`
+  through the systemd unit. The stack outputs `EntryPoint` (the load
   balancer's DNS name). It passes CDK Nag's `AwsSolutions` checks with one
   acknowledgement of its own, with its reason: `AwsSolutions-S1` (no server
-  access log) on the access log bucket; `infra/backups.ts` acknowledges AWS
+  access log) on the access log bucket; `infra/user_pool.ts` acknowledges
+  `AwsSolutions-COG2` (MFA optional) and `AwsSolutions-COG8` (no Plus tier);
+  `infra/backups.ts` acknowledges AWS
   Backup's managed policy (`AwsSolutions-IAM4`). `infra/service_stack.test.ts`
   asserts it for both tiers with `Template.fromStack`.
 - **Boot:** the user data installs `nodejs22`, `amazon-cloudwatch-agent`,
@@ -90,6 +104,7 @@ CloudFormation offline.
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
   `infra/service_stack.ts`, `infra/service_stack.test.ts`,
   `infra/server_asset.ts`, `infra/alarms.ts`, `infra/backups.ts`,
+  `infra/user_pool.ts`,
   `infra/operations.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients are
@@ -139,6 +154,8 @@ CloudFormation offline.
   `AwsSolutions-AS3`.
   v1.1.1's README deploys production with `--all`, as a `copyToRegion`
   makes a second stack, `<name>-backup-copy` (#1465).
+  v1.2.0 verifies a Cognito bearer token on every route but `/health`, with
+  the stack's own user pool and app client (#1479).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

@@ -58,6 +58,7 @@ import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
+import { Users } from './user_pool';
 
 // The repository root: the Dockerfile and the service's code are there.
 const ROOT = path.join(import.meta.dirname, '..');
@@ -121,6 +122,8 @@ export interface ServiceStackProps extends StackProps {
  * The Container's one stack: a service of Fargate tasks in private subnets,
  * behind an internet-facing Application Load Balancer that serves HTTPS
  * with the certificate the deployer names, keeping items in a DynamoDB table.
+ * Every route but `/health` wants an access token of the stack's Cognito
+ * user pool.
  * Every part has alarms, to a topic the stack outputs with the load
  * balancer's name, and a deployment that sets off a 5xx-share or
  * unhealthy-task alarm rolls back; production keeps and backs up the data
@@ -186,6 +189,8 @@ export class ServiceStack extends Stack {
       retention: rules.logRetention,
       removalPolicy: RemovalPolicy.DESTROY,
     });
+    const users = new Users(this, 'Users', { keepData: rules.keepData });
+
     const taskDefinition = new FargateTaskDefinition(this, 'Task', {
       cpu: APP_CPU + (rules.tracing ? COLLECTOR_CPU : 0),
       memoryLimitMiB: APP_MEMORY_MIB + (rules.tracing ? COLLECTOR_MEMORY_MIB : 0),
@@ -201,7 +206,7 @@ export class ServiceStack extends Stack {
       cpu: APP_CPU,
       memoryReservationMiB: APP_MEMORY_MIB,
       portMappings: [{ containerPort: PORT }],
-      environment: { TABLE_NAME: table.tableName },
+      environment: { TABLE_NAME: table.tableName, ...users.environment },
       logging: LogDrivers.awsLogs({ streamPrefix: 'app', logGroup: serviceLogs }),
       readonlyRootFilesystem: true,
       // ECS sends SIGTERM once the load balancer has drained the task, then
@@ -214,7 +219,7 @@ export class ServiceStack extends Stack {
     Validations.of(taskDefinition).acknowledge({
       id: 'AwsSolutions-ECS2',
       reason:
-        'The variables name the stack’s own table and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
+        'The variables name the stack’s own table and user pool and app client and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');

@@ -7,6 +7,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createServer } from 'node:http';
 
 import type { Log } from './api';
+import { bearerAuthenticator, cognitoVerifier } from './auth';
 import { DynamoDbItemStore } from './item_store';
 import { listener } from './server';
 import { stopTracing } from './tracing';
@@ -17,6 +18,20 @@ import { stopTracing } from './tracing';
 const tableName = process.env['TABLE_NAME'];
 if (tableName === undefined || tableName === '') {
   throw new Error('TABLE_NAME is not set; the stack sets it to the table the service uses.');
+}
+// The Cognito user pool and app client whose access tokens the service
+// accepts on every route but /health.
+const userPoolId = process.env['USER_POOL_ID'];
+const userPoolClientId = process.env['USER_POOL_CLIENT_ID'];
+if (
+  userPoolId === undefined ||
+  userPoolId === '' ||
+  userPoolClientId === undefined ||
+  userPoolClientId === ''
+) {
+  throw new Error(
+    'USER_POOL_ID and USER_POOL_CLIENT_ID must be set; the stack sets them to its user pool.',
+  );
 }
 const port = Number(process.env['PORT'] ?? '8080');
 if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
@@ -29,7 +44,8 @@ const log: Log = (entry) => {
 };
 
 const store = new DynamoDbItemStore(DynamoDBDocumentClient.from(new DynamoDBClient({})), tableName);
-const listen = listener(store, log);
+const authenticate = bearerAuthenticator(cognitoVerifier(userPoolId, userPoolClientId));
+const listen = listener(store, log, authenticate);
 const server = createServer((request, response) => {
   void listen(request, response);
 });

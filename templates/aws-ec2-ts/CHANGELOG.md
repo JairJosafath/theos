@@ -12,3 +12,6 @@ Every user-visible change, newest first. The format follows
   items (`PUT` and `GET /items/{id}`) in a DynamoDB table, on EC2 instances
   behind an internal load balancer serving HTTPS, with alarms and a
   dashboard, and in production backups.
+- Every route but `GET /health` needs a bearer token: an access token of
+  the stack's Cognito user pool, issued to its app client. The README says
+  how to sign in for one.
