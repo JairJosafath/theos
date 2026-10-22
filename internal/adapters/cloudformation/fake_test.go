@@ -147,7 +147,8 @@ func (f *fakeAWS) caller(cfg aws.Config) (*fakeAccount, string, error) {
 // bootstrapped says a's CDKToolkit stands, so its roles exist.
 func (a *fakeAccount) bootstrapped() bool {
 	st := a.stacks[toolkitStack]
-	return st != nil && (st.status == "CREATE_COMPLETE" || st.status == "UPDATE_COMPLETE")
+	return st != nil && (st.status == "CREATE_COMPLETE" || st.status == "UPDATE_COMPLETE" ||
+		st.status == "UPDATE_ROLLBACK_COMPLETE")
 }
 
 // read finishes what CloudFormation started on st.

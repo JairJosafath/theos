@@ -27,10 +27,9 @@ var capabilities = []types.Capability{types.CapabilityCapabilityIam, types.Capab
 // runs or deploys s.Version, or its change set was empty, so the next stack
 // is due.
 func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack model.CDKStack,
-	s ports.Shipment) (done bool, err error) {
+	stacks int, s ports.Shipment) (done bool, err error) {
 	env := ses.env(stack)
-	base := ses.in(env.Region)
-	st, err := describeStack(ctx, base.CloudFormation, stack.StackName)
+	st, err := describeStack(ctx, ses.clients.CloudFormation, stack.StackName)
 	if err != nil {
 		return false, err
 	}
@@ -48,11 +47,11 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 				"update: delete the stack and the factory creates it again (%s)", stack.StackName, status,
 				aws.ToString(st.StackStatusReason))
 		}
-		facts, err := stackFacts(ctx, base.CloudFormation, *st)
+		facts, err := stackFacts(ctx, ses.clients.CloudFormation, *st)
 		if err != nil {
 			return false, err
 		}
-		run := model.CloudFormationDeployState([]model.CloudFormationStackFacts{facts})
+		run := model.CloudFormationDeployState([]model.CloudFormationStackFacts{facts}, s.Version)
 		if run.Version == s.Version && (run.Phase == model.DeployPhaseDeployed ||
 			run.Phase == model.DeployPhaseDeploying) {
 			return true, d.protect(ctx, ses, env, stack, st)
@@ -71,7 +70,7 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 	if err != nil {
 		return false, err
 	}
-	in, err := changeSetInput(ses.target, stack, env, st, params, s)
+	in, err := changeSetInput(ses.target, stack, env, st, params, stacks, s)
 	if err != nil {
 		return false, err
 	}
@@ -101,9 +100,10 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 
 // changeSetInput is the change set that ships s's stack: CREATE or UPDATE
 // as the stack exists, its template from the published asset, run as the
-// cfn-exec role, with params and the assembly's tags and the factory's.
+// cfn-exec role, with params and the assembly's tags and the factory's,
+// stacks the number of stacks of the assembly.
 func changeSetInput(t ports.Target, stack model.CDKStack, env model.CDKEnv, st *types.Stack,
-	params []model.CDKParameterValue, s ports.Shipment) (*cfn.CreateChangeSetInput, error) {
+	params []model.CDKParameterValue, stacks int, s ports.Shipment) (*cfn.CreateChangeSetInput, error) {
 	name, err := model.CDKChangeSetName(s.Version)
 	if err != nil {
 		return nil, err
@@ -126,8 +126,7 @@ func changeSetInput(t ports.Target, stack model.CDKStack, env model.CDKEnv, st *
 		in.Parameters = append(in.Parameters, types.Parameter{ParameterKey: aws.String(p.Name),
 			ParameterValue: aws.String(p.Value)})
 	}
-	tags := model.CloudFormationStackTags(stack.Tags, s.App, s.Version)
-	tags[model.CloudFormationTagTier] = t.Tier
+	tags := model.CloudFormationStackTags(stack.Tags, s.App, t.Tier, s.Version, stacks)
 	for _, k := range slices.Sorted(maps.Keys(tags)) {
 		in.Tags = append(in.Tags, types.Tag{Key: aws.String(k), Value: aws.String(tags[k])})
 	}

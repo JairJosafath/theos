@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -13,13 +14,15 @@ import (
 // member reads it to ship each stack with a change set (decision 7).
 
 // Tags the cloudFormation member sets on each stack it ships, beside the
-// assembly's own: the app, namespace/name, the version shipped and the
-// tier, so one account can run an app's development and production stacks
-// and State tells them apart.
+// assembly's own: the app, namespace/name, the version shipped, the tier,
+// so one account can run an app's development and production stacks and
+// State tells them apart, and the number of stacks of the assembly, so
+// State knows a version runs only once all of them run it.
 const (
 	CloudFormationTagApp     = "c4factory.io/app"
 	CloudFormationTagVersion = "c4factory.io/version"
 	CloudFormationTagTier    = "c4factory.io/tier"
+	CloudFormationTagStacks  = "c4factory.io/stacks"
 )
 
 // CDK artifact types of a manifest.json.
@@ -372,12 +375,15 @@ func CDKChangeSetParameters(params []CDKParameter, given map[string]string) (set
 }
 
 // CloudFormationStackTags are the tags a change set gives a stack: the
-// assembly's, with the app and version the factory ships.
-func CloudFormationStackTags(assembly map[string]string, app, version string) map[string]string {
-	out := make(map[string]string, len(assembly)+2)
+// assembly's, with the app, tier and version the factory ships and the
+// number of stacks of the assembly.
+func CloudFormationStackTags(assembly map[string]string, app, tier, version string, stacks int) map[string]string {
+	out := make(map[string]string, len(assembly)+4)
 	maps.Copy(out, assembly)
 	out[CloudFormationTagApp] = app
+	out[CloudFormationTagTier] = tier
 	out[CloudFormationTagVersion] = version
+	out[CloudFormationTagStacks] = strconv.Itoa(stacks)
 	return out
 }
 
@@ -512,8 +518,9 @@ type CloudFormationStackFacts struct {
 	Status, StatusReason string
 	// EventToken is the ClientRequestToken of the newest stack-level event.
 	EventToken string
-	// VersionTag is the stack's CloudFormationTagVersion tag.
-	VersionTag string
+	// VersionTag is the stack's CloudFormationTagVersion tag, StacksTag its
+	// CloudFormationTagStacks tag.
+	VersionTag, StacksTag string
 	// Outputs and Parameters are the stack's, by key.
 	Outputs, Parameters map[string]string
 }
@@ -565,32 +572,44 @@ func cloudFormationStackRun(s CloudFormationStackFacts) DeployRun {
 }
 
 // CloudFormationDeployState is what the cloudFormation member reports for an
-// app's stacks, in the assembly's order (docs/plans/aws-deploy.md, decision
-// 7). A stack's version is the one its newest event's token carries, else
-// its version tag, so a rolled-back update reports the version that failed.
-// A complete stack is Deployed and Healthy, one in progress Deploying, a
-// rolled-back, failed or deleted one Failed and Degraded with the stack's
-// reason. Of several stacks Failed beats Deploying beats Deployed, and
-// stacks that disagree on the version are Deploying; the version is the
-// first failed stack's, else the first deploying one's, else the first's.
-// REVIEW_IN_PROGRESS stacks, only a change set so far, don't count; none at
-// all is the zero state. The URL is the EntryPoint output: as is when it
-// starts with http, else after https:// when the stack has a CertificateArn
-// parameter, else after http://.
-func CloudFormationDeployState(stacks []CloudFormationStackFacts) DeployRun {
+// app's stacks, in the assembly's order, when wanted is the version the
+// factory wants (docs/plans/aws-deploy.md, decision 7). A stack's version
+// is the one its newest event's token carries, else its version tag, so a
+// rolled-back update reports the version that failed; but a stable stack
+// (complete, or rolled back to what ran before) whose version tag is wanted
+// runs wanted, Deployed and Healthy, so wanting the version a rollback
+// returned to is done. A complete stack is Deployed and Healthy, one in
+// progress Deploying, a rolled-back, failed or deleted one Failed and
+// Degraded with the stack's reason. Of several stacks Failed beats
+// Deploying beats Deployed, and stacks that disagree on the version are
+// Deploying; the version is the first failed stack's, else the first
+// deploying one's, else the first's. Deployed stacks fewer than their
+// stacks tag says are Deploying: the assembly's later stacks don't run the
+// version yet. REVIEW_IN_PROGRESS stacks, only a change set so far, don't
+// count; none at all is the zero state. The URL is the EntryPoint output:
+// as is when it starts with http, else after https:// when the stack has a
+// CertificateArn parameter, else after http://.
+func CloudFormationDeployState(stacks []CloudFormationStackFacts, wanted string) DeployRun {
 	var runs []DeployRun
 	url := ""
+	need := 0
 	for _, s := range stacks {
 		if s.Status == "" || s.Status == "REVIEW_IN_PROGRESS" {
 			continue
 		}
 		r := cloudFormationStackRun(s)
-		if v, ok := CDKTokenVersion(s.EventToken); ok {
+		switch v, ok := CDKTokenVersion(s.EventToken); {
+		case wanted != "" && s.VersionTag == wanted && cloudFormationStackStable(s.Status):
+			r = DeployRun{Phase: DeployPhaseDeployed, Health: DeployHealthHealthy, Version: wanted}
+		case ok:
 			r.Version = v
-		} else {
+		default:
 			r.Version = s.VersionTag
 		}
 		runs = append(runs, r)
+		if n, err := strconv.Atoi(s.StacksTag); err == nil && s.VersionTag == r.Version && n > need {
+			need = n
+		}
 		if e := s.Outputs["EntryPoint"]; e != "" && url == "" {
 			url = cloudFormationURL(e, s.Parameters["CertificateArn"] != "")
 		}
@@ -616,8 +635,19 @@ func CloudFormationDeployState(stacks []CloudFormationStackFacts) DeployRun {
 			}
 		}
 	}
+	if out.Phase == DeployPhaseDeployed && len(runs) < need {
+		out.Phase, out.Health = DeployPhaseDeploying, DeployHealthProgressing
+		out.Message = fmt.Sprintf("%d of the assembly's %d stacks run %s", len(runs), need, out.Version)
+	}
 	out.URL = url
 	return out
+}
+
+// cloudFormationStackStable says a stack in status runs what its tags say:
+// complete, or rolled back to what ran before an update.
+func cloudFormationStackStable(status string) bool {
+	return cloudFormationStackRun(CloudFormationStackFacts{Status: status}).Phase == DeployPhaseDeployed ||
+		status == "UPDATE_ROLLBACK_COMPLETE"
 }
 
 func cloudFormationURL(entry string, https bool) string {
