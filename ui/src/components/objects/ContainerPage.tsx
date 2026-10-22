@@ -65,7 +65,8 @@ export function ContainerPage({
       href: update.pullRequestURL,
       label: `Standard ${update.take ? 'take' : 'update'} pull request #${update.pullRequest ?? ''}`,
     })
-  const framework = frameworks.find((f) => f.metadata.name === container.spec.frameworkRef.name)
+  const frameworkName = container.spec.frameworkRef?.name ?? container.status?.bundle?.framework
+  const framework = frameworks.find((f) => f.metadata.name === frameworkName)
   return (
     <main className="shell-page object-page">
       <ObjectHeader
@@ -118,7 +119,7 @@ export function ContainerPage({
           <dd>{describeContainerType(container.spec.type)}</dd>
           <dt>Framework</dt>
           <dd className="mono">
-            {container.spec.frameworkRef.name}
+            {frameworkName ?? ''}
             {framework ? ` @ ${framework.spec.template.ref}` : ''}
           </dd>
           {container.spec.standardRef ? (

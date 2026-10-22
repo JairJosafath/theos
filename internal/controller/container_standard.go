@@ -83,7 +83,7 @@ func (r *ContainerReconciler) liveContainer(ctx context.Context, container *c4v1
 // removes once the status is written.
 func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus, live func() bool) bool {
-	name := container.Spec.StandardRef.Name
+	name := container.Choices().Standard
 	if status.Standard == nil || status.Standard.Name != name {
 		ref := model.ScaffoldedRef(status.ScaffoldedFrom, name)
 		if ref == "" {
@@ -554,7 +554,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 	if u.frameworkRead {
 		return u.frameworkPaths, nil
 	}
-	name := u.container.Spec.FrameworkRef.Name
+	name := u.container.Choices().Framework
 	ref := model.ScaffoldedRef(u.status.ScaffoldedFrom, name)
 	if ref != "" {
 		var framework c4v1alpha1.Framework

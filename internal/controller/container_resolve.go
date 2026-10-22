@@ -34,6 +34,12 @@ type resolved struct {
 	standard *model.CatalogEntry
 	// use is what the Container picks up through its Relationships to DataStores.
 	use model.DataStoreUse
+	// choices are the entries the Container picked, by name: its spec's refs,
+	// or its Bundle's.
+	choices c4v1alpha1.ContainerChoices
+	// bundle is what the Container's Bundle expanded to, or nil when it names
+	// none or the Bundle is missing.
+	bundle *c4v1alpha1.ContainerBundleStatus
 }
 
 // resolve looks up every object the Container's scaffold needs. missing names the
@@ -64,32 +70,47 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 		missing = append(missing, "GitProvider "+spec.GitProviderRef.Name)
 	}
 
-	type sideRef struct {
-		side string
-		ref  *c4v1alpha1.LocalRef
-		obj  client.Object
-	}
-	sides := []sideRef{
-		{model.SideFramework, &spec.FrameworkRef, &c4v1alpha1.Framework{}},
-		{model.SideStandard, spec.StandardRef, &c4v1alpha1.Standard{}},
-		{model.SideCompute, spec.ComputeRef, &c4v1alpha1.Compute{}},
-		{model.SideDeployment, spec.DeploymentRef, &c4v1alpha1.Deployment{}},
-	}
-	for _, s := range sides {
-		if s.ref == nil {
-			continue
+	// A Bundle is expanded afresh at each resolve, as if the Container had
+	// named its entries; only a Container not yet scaffolded resolves.
+	res.choices = container.Choices()
+	if spec.BundleRef != nil {
+		res.choices = c4v1alpha1.ContainerChoices{Bundle: spec.BundleRef.Name}
+		var bundle c4v1alpha1.Bundle
+		found, err := r.lookup(ctx, ns, spec.BundleRef.Name, &bundle)
+		if err != nil {
+			return res, nil, err
 		}
-		found, err := r.lookup(ctx, ns, s.ref.Name, s.obj)
+		if found {
+			b := bundle.Spec
+			res.bundle = &c4v1alpha1.ContainerBundleStatus{Name: bundle.Name, Framework: b.FrameworkRef.Name,
+				Standard: refName(b.StandardRef), Compute: refName(b.ComputeRef), Deployment: refName(b.DeploymentRef)}
+			res.choices = c4v1alpha1.ContainerChoices{Bundle: bundle.Name, Framework: res.bundle.Framework,
+				Standard: res.bundle.Standard, Compute: res.bundle.Compute, Deployment: res.bundle.Deployment}
+		} else {
+			missing = append(missing, "Bundle "+spec.BundleRef.Name)
+		}
+	}
+
+	objs := map[string]client.Object{
+		model.SideFramework:  &c4v1alpha1.Framework{},
+		model.SideStandard:   &c4v1alpha1.Standard{},
+		model.SideCompute:    &c4v1alpha1.Compute{},
+		model.SideDeployment: &c4v1alpha1.Deployment{},
+	}
+	for _, c := range model.BundleChoices(model.Bundle{Framework: res.choices.Framework,
+		Standard: res.choices.Standard, Compute: res.choices.Compute, Deployment: res.choices.Deployment}) {
+		obj := objs[c.Side]
+		found, err := r.lookup(ctx, ns, c.Name, obj)
 		if err != nil {
 			return res, nil, err
 		}
 		if !found {
-			missing = append(missing, s.side+" "+s.ref.Name)
+			missing = append(missing, c.Side+" "+c.Name)
 			continue
 		}
-		entry := catalogEntry(s.side, s.obj)
+		entry := catalogEntry(c.Side, obj)
 		res.entries = append(res.entries, entry)
-		if s.side == model.SideStandard {
+		if c.Side == model.SideStandard {
 			res.standard = &entry
 		}
 	}

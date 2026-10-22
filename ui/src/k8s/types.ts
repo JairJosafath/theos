@@ -150,7 +150,9 @@ export interface Container extends K8sObject {
     description?: string
     type: ContainerType
     gitProviderRef: LocalRef
-    frameworkRef: LocalRef
+    /** Picks the four sides below instead; the API server takes one of bundleRef and frameworkRef. */
+    bundleRef?: LocalRef
+    frameworkRef?: LocalRef
     standardRef?: LocalRef
     computeRef?: LocalRef
     deploymentRef?: LocalRef
@@ -183,6 +185,8 @@ export interface Container extends K8sObject {
     }
     repositoryURL?: string
     scaffoldedFrom?: string[]
+    /** What spec.bundleRef expanded to: the entries' names. */
+    bundle?: { name: string; framework: string; standard?: string; compute?: string; deployment?: string }
     appliedRelationships?: string[]
     appliedConnectors?: { relationship: string; dataStore: string; connector: string }[]
     /** The latest CI result on the default branch; only Containers with a Standard have it. */

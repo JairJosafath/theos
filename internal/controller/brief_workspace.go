@@ -455,11 +455,11 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 		return nil, err
 	}
 	for _, o := range containers.Items {
-		s := o.Spec
+		s, picked := o.Spec, o.Choices()
 		out = append(out, model.PlanObject{Kind: model.KindContainer, Name: o.Name,
 			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
-			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: s.FrameworkRef.Name,
-			Standard: refName(s.StandardRef), Compute: refName(s.ComputeRef), Deployment: refName(s.DeploymentRef),
+			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: picked.Framework,
+			Standard: picked.Standard, Compute: picked.Compute, Deployment: picked.Deployment,
 			Checks: string(s.Checks), Operations: plannedOperations(s.Operations)})
 	}
 	var stores c4v1alpha1.DataStoreList
