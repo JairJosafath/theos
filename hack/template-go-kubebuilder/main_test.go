@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"text/template"
@@ -82,7 +83,23 @@ func TestClassifyFailsOnAnUnknownPath(t *testing.T) {
 }
 
 // data is what a template receives, enough for these files.
-var data = map[string]any{"Project": "webshop", "Container": "backup-op", "Compute": ""}
+var data = map[string]any{
+	"Project": "webshop", "SoftwareSystem": "shop", "Container": "backup-op",
+	"DisplayName": "Backup Operator", "Description": "Backs up the shop's databases nightly.",
+	"Standard": "go-operator-standard", "Compute": "",
+}
+
+// with returns data with the given keys changed.
+func with(kv ...any) map[string]any {
+	d := map[string]any{}
+	for k, v := range data {
+		d[k] = v
+	}
+	for i := 0; i < len(kv); i += 2 {
+		d[kv[i].(string)] = kv[i+1]
+	}
+	return d
+}
 
 func render(t *testing.T, name string, src []byte, d map[string]any) string {
 	t.Helper()
@@ -243,48 +260,85 @@ func TestAddCrossBuild(t *testing.T) {
 	}
 }
 
-func TestAddReleaseNote(t *testing.T) {
-	src := "## Project Distribution\n\n" + bundleHeading +
-		"\nkubectl apply -f https://raw/{{ .Container }}/dist/install.yaml\n\n" +
-		helmHeading + "\nkubebuilder edit\n"
-	p, got, err := addReleaseNote(readme+".tmpl", []byte(src))
-	if err != nil {
-		t.Fatal(err)
+func TestGoVersion(t *testing.T) {
+	got, err := goVersion([]byte("module m\n\ngo 1.26.0\n\nrequire x v1\n"))
+	if err != nil || got != "1.26.0" {
+		t.Errorf("goVersion = %q, %v; want 1.26.0", got, err)
 	}
-	if p != readme+".tmpl" {
-		t.Errorf("path = %q, want %q", p, readme+".tmpl")
+	if _, err := goVersion([]byte("module m\n")); err == nil {
+		t.Error("want an error when go.mod has no go line")
 	}
-	out := render(t, p, got, data)
-	for _, want := range []string{
-		"## Project Distribution\n\n### From a release\n",
-		"`make dist VERSION=<tag> IMG=<image>`",
-		"SHA256SUMS",
-		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\n" +
-			"make build-installer IMG=<some-registry>/backup-op:<tag>\n",
-		"by digest on the Git host's\ncontainer registry",
-		"kubectl apply -f install.yaml",
-		"\n" + helmHeading + "\nkubebuilder edit\n",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("rendered README lacks %q:\n%s", want, out)
+}
+
+// statedGo is the Go version a README says to install.
+var statedGo = regexp.MustCompile(`needs Go ([0-9][0-9.]*) or later`)
+
+// checkReadme fails on a rendered README that leaves a TODO(user), states a Go
+// version other than goVer, or misses one of want (#1477).
+func checkReadme(t *testing.T, name, out, goVer string, want []string) {
+	t.Helper()
+	if strings.Contains(out, "TODO") {
+		t.Errorf("%s leaves a TODO (#1477):\n%s", name, out)
+	}
+	if m := statedGo.FindStringSubmatch(out); m == nil || m[1] != goVer {
+		t.Errorf("%s states Go %v, want go.mod's %s (#1477):\n%s", name, m, goVer, out)
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Errorf("%s lacks %q:\n%s", name, w, out)
 		}
 	}
-	if strings.Contains(out, "raw/") {
-		t.Errorf("rendered README still applies install.yaml from a raw URL:\n%s", out)
-	}
+}
 
-	// A README with no placeholder becomes a template, its braces escaped.
-	p, got, err = addReleaseNote(readme, []byte("{{x}}\n"+bundleHeading+helmHeading))
+func TestReadme(t *testing.T) {
+	src := readmeFor("1.27.1")
+	checkReadme(t, "README with a Standard", render(t, readme+".tmpl", src, data), "1.27.1", []string{
+		"# Backup Operator\n\nBacks up the shop's databases nightly.\n\nThe `backup-op` Kubernetes operator of shop",
+		"kubebuilder create api --group <group> --version v1alpha1 --kind <Kind>\nmake manifests generate\n",
+		"`<group>.webshop.c4factory.local`",
+		"make check ", "make install run\n", "make test-e2e",
+		"## Release\n", "`make dist VERSION=<tag> IMG=<image>`", "SHA256SUMS",
+		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\n" +
+			"make build-installer IMG=<some-registry>/backup-op:<tag>\n",
+		"by digest on the Git host's\ncontainer registry", "kubectl apply -f install.yaml",
+	})
+
+	// Without a display name or description it names the Container; without
+	// a Standard there is no Makefile, so it names no make target.
+	out := render(t, readme+".tmpl", src, with("DisplayName", "", "Description", "", "Standard", ""))
+	checkReadme(t, "README without a Standard", out, "1.27.1", []string{
+		"# backup-op\n\nThe `backup-op` Kubernetes operator", "go test ./...", "go run ./cmd",
+	})
+	if strings.Contains(out, "make ") {
+		t.Errorf("README without a Standard names a make target:\n%s", out)
+	}
+}
+
+func TestFrameworkFilesWritesTheFactorysReadme(t *testing.T) {
+	dir := t.TempDir()
+	for p, s := range map[string]string{
+		"go.mod":                            "module " + placeholderRepo + "\n\ngo 1.25.3\n",
+		"README.md":                         "# " + placeholderContainer + "\n// TODO(user): Add simple overview of use/purpose\n",
+		"config/manager/kustomization.yaml": "resources:\n- manager.yaml\n",
+		".gitignore":                        "bin/\n",
+	} {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := frameworkFiles(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != readme+".tmpl" || !strings.HasPrefix(render(t, p, got, data), "{{x}}\n### From a release") {
-		t.Errorf("addReleaseNote of a plain README = %q, %q", p, got)
+	f, ok := files[readme+".tmpl"]
+	if !ok {
+		t.Fatalf("no %s.tmpl; files: %v", readme, files)
 	}
-
-	if _, _, err := addReleaseNote(readme+".tmpl", []byte(helmHeading)); err == nil {
-		t.Error("want an error when the README has no bundle section")
-	}
+	checkReadme(t, readme, render(t, readme+".tmpl", f.data, data), "1.25.3", nil)
 }
 
 // TestCommittedTemplate checks templates/go-kubebuilder as committed: only
@@ -292,8 +346,16 @@ func TestAddReleaseNote(t *testing.T) {
 // template renders.
 func TestCommittedTemplate(t *testing.T) {
 	root := filepath.Join("..", "..", "templates", "go-kubebuilder")
-	seen := 0
-	err := filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
+	gomod, err := os.ReadFile(filepath.Join(root, "go.mod.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	committedGo, err := goVersion(gomod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen, readmes := 0, 0
+	err = filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -324,7 +386,11 @@ func TestCommittedTemplate(t *testing.T) {
 			t.Errorf("%s: still says \"placeholder\"", p)
 		}
 		if p != name {
-			render(t, p, src, data)
+			out := render(t, p, src, data)
+			if name == readme {
+				readmes++
+				checkReadme(t, p, out, committedGo, nil)
+			}
 		}
 		return nil
 	})
@@ -333,5 +399,8 @@ func TestCommittedTemplate(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatalf("%s has no files; run make template-go-kubebuilder", root)
+	}
+	if readmes != 1 {
+		t.Errorf("%s has %d %s.tmpl, want 1", root, readmes, readme)
 	}
 }

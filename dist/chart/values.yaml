@@ -715,7 +715,7 @@ catalog:
         supportedTypes: [cli, worker]
     - kind: Framework
       name: go-kubebuilder
-      ref: v1.1.0
+      ref: v1.2.0
       spec:
         displayName: Kubernetes operator (Go, kubebuilder)
         description: "An operator that extends Kubernetes: watches and reconciles cluster objects. What kubebuilder init writes, in Go, ready for kubebuilder create api."

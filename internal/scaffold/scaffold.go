@@ -61,7 +61,10 @@ type Input struct {
 	SoftwareSystem string
 	Container      string
 	DisplayName    string
-	Type           string
+	// Description is the Container's spec.description: what the application
+	// does, for a README to say. Empty when the Container gives none.
+	Description string
+	Type        string
 	// Framework, Standard, Compute and Deployment name the chosen catalog entries.
 	// Standard, Compute and Deployment are empty when the Container doesn't pick one.
 	Framework  string
