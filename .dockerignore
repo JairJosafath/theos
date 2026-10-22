@@ -13,6 +13,7 @@
 # fails when one is missing here.
 !features/src/**
 !internal/model/planner.md
+!internal/adapters/cloudformation/bootstrap-template-v*.yaml
 
 # Re-include Go module files
 !go.mod
