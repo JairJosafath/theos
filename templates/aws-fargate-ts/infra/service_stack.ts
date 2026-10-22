@@ -246,7 +246,7 @@ export class ServiceStack extends Stack {
           this.formatArn({
             service: 'ecr',
             resource: 'repository',
-            resourceName: `cdk-${DefaultStackSynthesizer.DEFAULT_QUALIFIER}-container-assets-${this.account}-${this.region}`,
+            resourceName: `cdk-${this.synthesizer.bootstrapQualifier ?? DefaultStackSynthesizer.DEFAULT_QUALIFIER}-container-assets-${this.account}-${this.region}`,
           }),
         ],
       }),

@@ -376,6 +376,27 @@ describe('ServiceStack', () => {
     });
   });
 
+  it('pulls from the repository of the bootstrap qualifier the deployer copies to', () => {
+    const app = new App({ context: { '@aws-cdk/core:bootstrapQualifier': 'myq' } });
+    const template = Template.fromStack(
+      new ServiceStack(app, 'test', { tier: 'production', operations: OPERATIONS }),
+    );
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Resource: {
+              'Fn::Join': [
+                '',
+                Match.arrayWith([Match.stringLikeRegexp(':repository/cdk-myq-container-assets-')]),
+              ],
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
   it('serves HTTPS with the deployer’s certificate, and redirects HTTP to it', () => {
     production.hasParameter('CertificateArn', { Type: 'String' });
     production.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
