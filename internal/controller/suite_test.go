@@ -423,7 +423,9 @@ func (routedDeployer) of(t ports.Target) ports.Deployer {
 	return deployFake
 }
 
-func (r routedDeployer) Check(ctx context.Context, t ports.Target) error { return r.of(t).Check(ctx, t) }
+func (r routedDeployer) Check(ctx context.Context, t ports.Target) error {
+	return r.of(t).Check(ctx, t)
+}
 
 func (r routedDeployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	return r.of(t).Ship(ctx, t, s)

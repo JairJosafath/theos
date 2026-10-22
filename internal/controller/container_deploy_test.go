@@ -19,7 +19,6 @@ import (
 	. "github.com/onsi/gomega"
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -308,7 +307,7 @@ var _ = Describe("Container deploys", func() {
 			dt := newDeployTarget(ns, name, name+"-github")
 			dt.Spec.GitHub.Repository = repository
 			if name == "bare" {
-				dt.Spec.GitHub.TagPrefix = ptr.To("")
+				dt.Spec.GitHub.TagPrefix = new("")
 			}
 			mustCreate(newDeploySecret(ns, name+"-github", map[string]string{"token": "t0ken"}), dt)
 			deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)

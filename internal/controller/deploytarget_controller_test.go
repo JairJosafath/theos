@@ -18,7 +18,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -93,26 +92,26 @@ var _ = Describe("DeployTarget", func() {
 			"spec.credentialsSecretRef.name"),
 		// The github member's tagPrefix (#1486).
 		Entry("a tagPrefix with a space", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.TagPrefix = ptr.To("orders cli-")
+			dt.Spec.GitHub.TagPrefix = new("orders cli-")
 		}, "spec.github.tagPrefix"),
 		Entry("a tagPrefix over 40 characters", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.TagPrefix = ptr.To(strings.Repeat("a", 41))
+			dt.Spec.GitHub.TagPrefix = new(strings.Repeat("a", 41))
 		}, "spec.github.tagPrefix"),
 		Entry("a tagPrefix that starts with -", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.TagPrefix = ptr.To("-cli-")
+			dt.Spec.GitHub.TagPrefix = new("-cli-")
 		}, "tagPrefix must make a git tag name"),
 		Entry("a tagPrefix with ..", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.TagPrefix = ptr.To("cli..")
+			dt.Spec.GitHub.TagPrefix = new("cli..")
 		}, "tagPrefix must make a git tag name"),
 	)
 
 	It("takes an empty tagPrefix, one with a folder, and latest false (#1486)", func() {
 		ns := newProjectNamespace()
 		dt := newDeployTarget(ns, "bare", "bare-github")
-		dt.Spec.GitHub.TagPrefix = ptr.To("")
-		dt.Spec.GitHub.Latest = ptr.To(false)
+		dt.Spec.GitHub.TagPrefix = new("")
+		dt.Spec.GitHub.Latest = new(false)
 		folder := newDeployTarget(ns, "folder", "folder-github")
-		folder.Spec.GitHub.TagPrefix = ptr.To("tools/cli-")
+		folder.Spec.GitHub.TagPrefix = new("tools/cli-")
 		mustCreate(dt, folder)
 		Expect(dt.Spec.GitHub.TagPrefix).To(HaveValue(Equal("")))
 		Expect(dt.Spec.GitHub.Latest).To(HaveValue(BeFalse()))
