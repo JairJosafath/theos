@@ -210,15 +210,20 @@ transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
 and with `--model-proxy-url` naming the model proxy's Service, so a sandbox on
 the shared token gets `ANTHROPIC_BASE_URL` pointing at the proxy instead of the
-token (the chart passes both when `agents.enabled`). The operator copies the
-Secret into every namespace with the label `c4.factory.io/shared-secrets:
-"true"`, keeping each copy in step
-with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
-the e2e fixture label theirs, so one Secret serves every project; a rotated
-token reaches them all within five minutes. Another namespace opts in with
+token (the chart passes both when `agents.enabled`). The operator copies no
+token: the proxy reads it in the operator's namespace, and a rotated token
+reaches it within the kubelet's sync period, about a minute. The label
+`c4.factory.io/shared-secrets: "true"` still gates the proxy's NetworkPolicy
+and the pull secrets the operator copies (`--shared-pull-secret`): `make seed`
+labels `webshop` and `apps`, and the webshop sample and the e2e fixture label
+theirs, so one Secret serves every project. Another namespace opts in with
 `kubectl label namespace NAME c4.factory.io/shared-secrets=true`. A project
-with a token of its own runs `make claude-secret CLAUDE_NAMESPACE=NAME`: the
-operator leaves a Secret it didn't make alone. `make claude-secret` fails,
+with a token of its own needs a Secret of another name in its namespace and
+Agents naming it (its keys become the sandbox's environment); a
+`claude-credentials` that `make claude-secret CLAUDE_NAMESPACE=NAME` writes
+there is unused, since an Agent naming the shared name goes through the
+proxy. The operator leaves a Secret it didn't make alone. `make claude-secret`
+fails,
 naming the path, when the file is missing, empty, or readable by group or
 others; it never prints the token. `CLAUDE_TOKEN=...` on the command line or in
 the environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.

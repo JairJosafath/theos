@@ -38,14 +38,13 @@ gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 One install is one trust domain: run it on a device you own, for people you
 would hand the Claude token to, and never on a shared or production cluster.
 Anyone who can create a Project or a Brief in the cluster, the UI's users
-included, can have the factory run code: in an agent's sandbox, which holds
-the Claude token, and in a CI job, on a runner every project shares. Two
-gaps make that so, and two issues close them:
+included, can have the factory run code: in an agent's sandbox, and in a CI
+job, on a runner every project shares. The sandbox holds no Claude token: the
+model proxy in the release namespace adds it to the agent's requests, so the
+agent's code never sees it
+([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closed that
+gap). One gap remains, and one issue closes it:
 
-- **The Claude token is readable inside an agent's sandbox.** The agent's
-  code can read it and send it anywhere public HTTPS reaches. An egress proxy
-  that adds the token to the agent's requests, so the sandbox never holds it,
-  closes this ([#1075](https://github.com/JairJosafath/c4factory/issues/1075)).
 - **The Gitea CI runners share one environment between jobs.** A
   NetworkPolicy keeps their jobs to DNS, Gitea and public HTTPS (on a
   network plugin that enforces them, which the agents' fence needs too), and the
@@ -101,7 +100,8 @@ done
 
 **The release.** `gitea.projects` lists the projects: for each one the chart
 makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
-operator shares the pull secret and the agents' token into it, and the seed
+operator shares the pull secret into it and its agents reach the model proxy,
+and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
 and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
 pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-event-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
@@ -145,9 +145,10 @@ down.
 
 The agents run Claude Code, which signs in with a long-lived token. Make one
 with `claude setup-token` and store it once in Secret `claude-credentials` in
-the release's namespace, `c4-factory-system`; the operator copies it into
-every project namespace and keeps the copies in step, so a new token reaches
-every project. The Agents name the Secret and hold no token. Run
+the release's namespace, `c4-factory-system`; the model proxy in that
+namespace reads it and adds it to the agents' requests, so a new token reaches
+every project and never enters a sandbox. The Agents name the Secret and hold
+no token. Run
 `claude setup-token` on its own first, then the rest, and paste the token at
 the prompt (it isn't echoed, and stays out of your shell history):
 
@@ -167,12 +168,17 @@ The last line prints the stored token's length in base64, never the token;
 `0` or an error means the paste didn't reach `read` (pasting both blocks at once does that): delete the
 Secret and run the second block again.
 
-With an API key instead, name the key `ANTHROPIC_API_KEY`: every key of the
-Secret becomes an environment variable in the agent's sandbox.
+With an API key instead, name the key `ANTHROPIC_API_KEY`; the proxy reads
+`CLAUDE_CODE_OAUTH_TOKEN` first, then that key.
 
-A project on a token of its own: make `claude-credentials` in its namespace
-instead. The operator never changes or deletes a Secret it didn't copy, and
-each Project's condition `SecretsShared` says which one it uses.
+A project on a token of its own: make a Secret of another name in its
+namespace and name it in its Agents' `credentialsSecretRef`. Every key of that
+Secret becomes an environment variable in the agent's sandbox, readable
+inside it, and the proxy plays no part. A `claude-credentials` made in a
+project namespace is unused: an Agent naming the shared Secret's name goes
+through the proxy. The operator never changes or deletes a Secret it didn't
+copy, and each Project's condition `SecretsShared` says which pull secrets it
+copies.
 
 ## The short path: describe the app
 

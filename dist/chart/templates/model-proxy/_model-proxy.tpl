@@ -1,5 +1,5 @@
 {{/*
-The model proxy (docs/plans/model-proxy.md, decisions 2 and 7): the one place
+The model proxy (docs/plans/done/model-proxy.md, decisions 2 and 7): the one place
 the factory's Claude token is used. Hand-written, after templates/ui: the helm
 plugin regenerates only templates/manager; if make chart ever emits copies of
 config/model-proxy's objects elsewhere under templates/, delete them.
