@@ -363,6 +363,13 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
+// PublishReleasePackages publishes nothing: no fake release holds a package
+// file yet (#1229 gives the port, #1232 the reconciler).
+func (p *fakeProvider) PublishReleasePackages(_ context.Context, _ gitprovider.Repository, tag string) (
+	gitprovider.ReleasePackages, error) {
+	return gitprovider.ReleasePackages{Tag: tag}, nil
+}
+
 // PublishImage gives the outcome setImage gave the release, after the
 // failures failImagePushes asked for; a Published image's digest lands in
 // the registry.

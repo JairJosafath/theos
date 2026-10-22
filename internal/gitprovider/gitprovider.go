@@ -291,6 +291,13 @@ type Provider interface {
 	// published before and a module that can't be published at tag are
 	// outcomes, not errors; a repeat publishes nothing.
 	PublishGoModule(ctx context.Context, repo Repository, tag string) (GoModule, error)
+	// PublishReleasePackages publishes the package files of repo's release of
+	// tag, an npm tarball, a wheel and an sdist, to the registries repo names,
+	// at tag's version. A release with no package file, an npm name outside
+	// repo's scope, a version that isn't the tag's and a version published
+	// before are outcomes, not errors; a repeat publishes nothing. No release
+	// of tag is ErrNoRelease.
+	PublishReleasePackages(ctx context.Context, repo Repository, tag string) (ReleasePackages, error)
 	// PublishImage pushes the image archive of repo's release of tag, its
 	// *.oci.tar file, to the owner's container registry under tag and links
 	// it to repo. A tag is pushed once and never replaced: no archive, an
