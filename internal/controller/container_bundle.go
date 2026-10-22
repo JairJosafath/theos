@@ -24,7 +24,7 @@ import (
 // True while the Bundle still names the entries it scaffolded from, False with
 // reason BundleChanged listing the sides that differ, or saying the Bundle is
 // gone. It changes nothing else: a changed Bundle is reported, never applied
-// (docs/plans/catalog-bundles.md, decision 6; #1621). A Container naming its
+// (docs/plans/done/catalog-bundles.md, decision 6; #1621). A Container naming its
 // sides has no such condition.
 func (r *ContainerReconciler) reportBundleCurrent(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) {
