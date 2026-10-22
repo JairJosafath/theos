@@ -624,16 +624,19 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   every type. It ships three things of each release, each by its own rule
   (`model.GitHubShipment`): the app's source at the tag, when the member's
   `source` is set; a GitHub release of the tag, always, with its notes and
-  the files when the release has them; and the release's image on GHCR,
-  when the Container publishes one and the Secret holds `packagesToken`. A
-  release with none of the three is `ArtifactMissing`. The source is a
+  the files when the release has them, its image archive (`*.oci.tar`) left
+  out; and the release's image on GHCR, when the Container publishes one
+  and the Secret holds `packagesToken`. A release with none of the three is
+  `ArtifactMissing`, "nothing to publish: no release files, no source, no
+  image". The source is a
   snapshot, one commit per release into `source.path` (the Container's name
   by default, `"."` for the whole repository), without the factory's own
   files (`model.FactoryOwnPaths`), the release tag on the published tree and
   the folder tagged `<source.tagPrefix><version>` (`<path>/vX.Y.Z` by
   default, so `go install` finds it); never the history, whose agent
   commits and Gitea issue numbers don't belong in public. Two Containers
-  whose folders overlap on one target fail `FolderOverlaps`. Before the
+  whose folders overlap on one target fail `FolderOverlaps`: the one whose
+  name sorts first keeps the folder, and the message names both. Before the
   first write of a version the tree to publish is checked
   (`model.PublishChecks`): a license and a README at the folder's root, and
   no secret the factory recognises (a private key block, a token of a known
