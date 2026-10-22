@@ -101,6 +101,11 @@ func GitHubTakesLatest(latest *bool) bool {
 var deployMembers = map[string]DeployMember{
 	DeployMemberGitHub: {Name: DeployMemberGitHub, Tool: "GitHub", SecretKeys: []string{"token"},
 		Holds: "a fine-grained token for the repository alone, with Contents read and write"},
+	// An argoCD target has no Secret: the operator's own ServiceAccount
+	// writes the Applications (docs/plans/k8s-deploy.md, decision 2).
+	DeployMemberArgoCD: {Name: DeployMemberArgoCD, Tool: "Argo CD",
+		Needs: []DeployNeed{{What: "a Deployment that writes " + ArgoCDManifestsPath + "/",
+			Met: func(c DeployContainer) bool { return c.Deployment == DeploymentK8sManifests }}}},
 }
 
 // DeployMemberByName returns the member name names.
@@ -186,12 +191,20 @@ func DeployCheckMessage(reason string, c DeployCheck) string {
 			c.Secret, c.Target, plural(len(c.Missing), "key", "keys"), strings.Join(c.Missing, ", "),
 			c.Member.Holds, c.Where)
 	case DeployTargetCredentialRefused:
+		if c.Secret == "" {
+			return fmt.Sprintf("%s refused the operator's ServiceAccount for DeployTarget %s for %s%s. Whoever owns "+
+				"DeployTarget %s makes %s and lets the operator use it", c.Member.Tool, c.Target, c.Where, detail,
+				c.Target, c.Where)
+		}
 		return fmt.Sprintf("%s refused the credential in Secret %s of DeployTarget %s for %s%s. Whoever owns "+
 			"DeployTarget %s sets Secret %s to %s for %s", c.Member.Tool, c.Secret, c.Target, c.Where, detail,
 			c.Target, c.Secret, c.Member.Holds, c.Where)
 	case DeployTargetUnreachable:
 		return fmt.Sprintf("%s could not be reached to check DeployTarget %s for %s%s; checked again on the next poll",
 			c.Member.Tool, c.Target, c.Where, detail)
+	}
+	if c.Secret == "" {
+		return fmt.Sprintf("%s is there for %s", c.Member.Tool, c.Where)
 	}
 	return fmt.Sprintf("%s accepts the credential in Secret %s for %s", c.Member.Tool, c.Secret, c.Where)
 }

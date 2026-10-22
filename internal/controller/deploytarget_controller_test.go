@@ -30,7 +30,14 @@ const deployWait = 10 * time.Second
 func newDeployTarget(ns, name, secret string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		GitHub:               &c4v1alpha1.DeployTargetGitHub{Repository: "acme/orders-cli"},
-		CredentialsSecretRef: c4v1alpha1.LocalRef{Name: secret}}}
+		CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: secret}}}
+}
+
+// newArgoCDTarget is an argoCD target with no Secret, its Argo CD in argoNS.
+func newArgoCDTarget(ns, name, argoNS, destNS string) *c4v1alpha1.DeployTarget {
+	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
+		ArgoCD: &c4v1alpha1.DeployTargetArgoCD{Namespace: argoNS,
+			Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: destNS}}}}
 }
 
 func newDeploySecret(ns, name string, data map[string]string) *corev1.Secret {
@@ -88,8 +95,21 @@ var _ = Describe("DeployTarget", func() {
 			`spec.tier: Unsupported value: "staging"`),
 		Entry("another approval", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.Approval = "Sometimes" },
 			`spec.approval: Unsupported value: "Sometimes"`),
-		Entry("no Secret", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.CredentialsSecretRef.Name = "" },
+		Entry("an empty Secret name", func(dt *c4v1alpha1.DeployTarget) { dt.Spec.CredentialsSecretRef.Name = "" },
 			"spec.credentialsSecretRef.name"),
+		// The argoCD member (#1588): a github target keeps its Secret, and a
+		// target names one member.
+		Entry("a github target with no Secret", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.CredentialsSecretRef = nil
+		}, "set credentialsSecretRef unless the member is argoCD"),
+		Entry("github and argoCD", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{
+				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
+		}, "set exactly one target member: github or argoCD"),
+		Entry("an argoCD target with no destination", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}
+		}, "spec.argoCD.destination.namespace"),
 		// The github member's tagPrefix (#1486).
 		Entry("a tagPrefix with a space", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.TagPrefix = new("orders cli-")

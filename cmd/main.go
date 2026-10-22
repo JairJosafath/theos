@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -35,6 +36,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
@@ -306,8 +308,17 @@ func main() {
 		setupLog.Error(err, "Failed to load the Session feature")
 		os.Exit(1)
 	}
-	// Each DeployTarget member's adapter, by the member's name.
-	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
+	// Each DeployTarget member's adapter, by the member's name. The Argo CD
+	// adapter reads uncached, so a check on a cluster without Argo CD starts
+	// no informer on a CRD that isn't there.
+	argoClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme(),
+		Mapper: mgr.GetRESTMapper(), HTTPClient: mgr.GetHTTPClient()})
+	if err != nil {
+		setupLog.Error(err, "Failed to make the Argo CD adapter's client")
+		os.Exit(1)
+	}
+	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{}),
+		model.DeployMemberArgoCD: argocd.New(argoClient)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),

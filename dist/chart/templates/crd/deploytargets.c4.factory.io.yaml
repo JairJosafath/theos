@@ -71,11 +71,56 @@ spec:
                 - Required
                 - None
                 type: string
+              argoCD:
+                description: |-
+                  argoCD ships each release of a Container with the k8s-manifests
+                  Deployment as one Argo CD Application in the cluster the operator runs
+                  in: the Container's repository at the release tag, its deploy/k8s path
+                  and the release's image; Argo CD rolls it out.
+                properties:
+                  destination:
+                    description: destination is where the apps run.
+                    properties:
+                      namespace:
+                        description: namespace is the namespace the apps' manifests
+                          go in.
+                        maxLength: 63
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      server:
+                        default: https://kubernetes.default.svc
+                        description: |-
+                          server is the cluster, as Argo CD names it; the default is the
+                          cluster Argo CD runs in.
+                        maxLength: 253
+                        type: string
+                    required:
+                    - namespace
+                    type: object
+                  namespace:
+                    default: argocd
+                    description: namespace is where Argo CD runs and its Applications
+                      live.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  project:
+                    default: default
+                    description: |-
+                      project is the Argo CD project the Applications belong to; it exists
+                      before the target is Ready.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                required:
+                - destination
+                type: object
               credentialsSecretRef:
                 description: |-
                   credentialsSecretRef names a Secret in the DeployTarget's namespace that
                   the user creates; its keys are the member's (token for github). Only the
                   operator reads it: it is never mounted in a sandbox or passed to a CI job.
+                  An argoCD target needs none: the operator uses its own ServiceAccount.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -138,12 +183,12 @@ spec:
                 - development
                 - production
                 type: string
-            required:
-            - credentialsSecretRef
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one target member: github'
-              rule: '[has(self.github)].exists_one(x, x)'
+            - message: 'set exactly one target member: github or argoCD'
+              rule: '[has(self.github), has(self.argoCD)].exists_one(x, x)'
+            - message: set credentialsSecretRef unless the member is argoCD
+              rule: has(self.credentialsSecretRef) || has(self.argoCD)
           status:
             description: status defines the observed state of DeployTarget
             properties:
