@@ -186,7 +186,7 @@ var _ = Describe("CI runner pool", func() {
 			gitFake.setRunnerOnline(ns, pod.Name, true, true)
 		}
 		names := func(pods []corev1.Pod) []string {
-			var out []string
+			out := make([]string, 0, len(pods))
 			for _, pod := range pods {
 				out = append(out, pod.Name)
 			}
