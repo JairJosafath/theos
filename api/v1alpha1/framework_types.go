@@ -40,8 +40,8 @@ type FrameworkSpec struct {
 
 	// deploysItself says the template carries its own deployment, such as a
 	// CDK app that builds and runs the Container on AWS. A Container with this
-	// Framework takes no Compute and no Deployment; the operator fails one
-	// that names either.
+	// Framework takes no Compute and no Deployment but gitea-release, which
+	// ships its cloud assembly; the operator fails one that names another.
 	// +optional
 	DeploysItself bool `json:"deploysItself,omitempty"`
 

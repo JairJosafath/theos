@@ -3,10 +3,13 @@
 Ships a Container's release files on a Gitea release whenever a version tag is
 pushed: binaries for a Go CLI, an npm tarball for a Node CLI, a wheel and an
 sdist for a Python CLI, a `.vsix` for an extension, the manager binaries and
-`install.yaml` for an operator. No registry, no store: download them from the
-release page.
+`install.yaml` for an operator, the synthesized CloudFormation cloud assembly
+for an AWS Container. No registry, no store: download them from the release
+page, or, for AWS, let a `cloudFormation` deploy target ship them.
 
-- **Supports:** `cli`, `extension`, `operator`
+- **Supports:** `cli`, `extension`, `operator`, and `function`, `service` and
+  `static-site` for the AWS Frameworks, the one Deployment a Framework that
+  deploys itself takes (#1607)
 - **Writes:** `.gitea/workflows/release.yaml`, and `RELEASING.md`: how to
   cut a release, check one locally and recover from a failed run.
 - **Contract:** the repository's `Makefile` has a `dist` target that takes
@@ -17,9 +20,13 @@ release page.
   python-standard's builds the wheel and sdist with `uv build` (`python-cli`)
   and fails when the tag doesn't match `pyproject.toml`; go-operator-standard's
   cross-compiles the manager binaries and writes `install.yaml` (kubebuilder's
-  `make build-installer`, the image set to `IMG`) and a `SHA256SUMS` of both.
-  Only files directly in `dist/` are attached, so a `dist/chart/` from
-  kubebuilder's helm plugin is not.
+  `make build-installer`, the image set to `IMG`) and a `SHA256SUMS` of both;
+  aws-standard's synthesizes both tiers and writes their cloud assemblies,
+  flat (`<tier>.manifest.json`, `<tier>.<stack>.template.json`,
+  `<tier>.<stack>.assets.json`, `asset.<hash>.zip` or `asset.<hash>.<ext>`).
+  Only files directly in `dist/` are attached, and no dotfile, so neither a
+  `dist/chart/` from kubebuilder's helm plugin nor the `dist/.gitignore`
+  aws-standard writes is. `RELEASING.md` names the files per Framework.
 - **An operator's image** (#1458): for a Container of type `operator` the
   workflow has an `image` job first, as k8s-manifests' `image.yaml`: rootless
   BuildKit on the `image` runner builds the root `Dockerfile` for linux/amd64

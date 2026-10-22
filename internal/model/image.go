@@ -39,11 +39,16 @@ const (
 // image and writes deploy/k8s/, what an argoCD target ships.
 const DeploymentK8sManifests = "k8s-manifests"
 
+// DeploymentGiteaRelease is the catalog Deployment that attaches make dist's
+// files to a Gitea release; the one Deployment a Framework that deploys
+// itself takes, its release carrying the cloud assembly.
+const DeploymentGiteaRelease = "gitea-release"
+
 // imageBuilders are the catalog choices whose release builds an image: a
 // Deployment, and the Container type it does so for, "" for any.
 var imageBuilders = []struct{ deployment, typ string }{
 	{DeploymentK8sManifests, ""},
-	{"gitea-release", TypeOperator},
+	{DeploymentGiteaRelease, TypeOperator},
 }
 
 // BuildsImage reports whether a release of a Container with Deployment

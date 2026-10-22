@@ -241,7 +241,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if err == nil {
 		// Resolved, so entries start with the Framework.
-		err = model.CheckDeploysItself(res.entries[0], refName(container.Spec.ComputeRef), refName(container.Spec.DeploymentRef))
+		err = model.CheckDeploysItself(res.entries[0], string(container.Spec.Type), refName(container.Spec.ComputeRef), refName(container.Spec.DeploymentRef))
 	}
 	if err != nil {
 		reason := c4v1alpha1.ReasonUnsupportedType

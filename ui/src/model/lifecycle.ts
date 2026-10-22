@@ -381,7 +381,7 @@ export function containerNextStep(container: Container): NextStep | undefined {
         }
       case 'DeploysItself':
         return {
-          text: 'Its Framework is its own deployment: remove the Compute and the Deployment; the change retries by itself.',
+          text: 'Its Framework is its own deployment: remove the Compute, and any Deployment but gitea-release; the change retries by itself.',
           command,
         }
       default:

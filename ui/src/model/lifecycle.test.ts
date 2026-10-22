@@ -166,7 +166,7 @@ describe('containerNextStep', () => {
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
     ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
-    ['DeploysItself', 'ChoicesValid', /remove the Compute and the Deployment/],
+    ['DeploysItself', 'ChoicesValid', /remove the Compute, and any Deployment but gitea-release/],
     ['GitError', 'RepositoryCreated', /Fix what the failed condition names/],
   ])('on Failed with %s, says what to fix and gives the retry line', (reason, type, text) => {
     const c = container({

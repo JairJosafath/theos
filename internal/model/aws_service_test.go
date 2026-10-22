@@ -104,20 +104,29 @@ func TestServicePlansOnAWSFargateTS(t *testing.T) {
 func TestCheckDeploysItself(t *testing.T) {
 	fargate := CatalogEntry{Side: SideFramework, Name: "aws-fargate-ts", DeploysItself: true}
 	fastapi := CatalogEntry{Side: SideFramework, Name: "python-fastapi"}
+	reactVite := CatalogEntry{Side: SideFramework, Name: "react-vite"}
+	pythonCLI := CatalogEntry{Side: SideFramework, Name: "python-cli"}
 	for name, c := range map[string]struct {
-		framework           CatalogEntry
-		compute, deployment string
-		want                string
+		framework                CatalogEntry
+		typ, compute, deployment string
+		want                     string
 	}{
-		"its own deployment":     {fargate, "", "", ""},
-		"a Framework that needs": {fastapi, "small", "k8s-manifests", ""},
-		"a Compute":              {fargate, "small", "", "remove computeRef small"},
-		"a Deployment":           {fargate, "", "k8s-manifests", "remove deploymentRef k8s-manifests"},
-		"both": {fargate, "small", "k8s-manifests",
+		"its own deployment":          {fargate, "service", "", "", ""},
+		"a Framework that needs":      {fastapi, "service", "small", "k8s-manifests", ""},
+		"a Compute":                   {fargate, "service", "small", "", "remove computeRef small"},
+		"a Deployment":                {fargate, "service", "", "k8s-manifests", "remove deploymentRef k8s-manifests"},
+		"gitea-release (#1607)":       {fargate, "service", "", "gitea-release", ""},
+		"a Compute and gitea-release": {fargate, "service", "small", "gitea-release", "remove computeRef small"},
+		"gitea-release for a service that doesn't deploy itself (#1607)": {fastapi, "service", "small", "gitea-release",
+			"gitea-release ships a service only for a Framework that deploys itself, its cloud assembly; python-fastapi doesn't"},
+		"gitea-release for a static site that doesn't deploy itself (#1607)": {reactVite, "static-site", "", "gitea-release",
+			"gitea-release ships a static-site only for a Framework that deploys itself"},
+		"gitea-release for a CLI": {pythonCLI, "cli", "", "gitea-release", ""},
+		"both": {fargate, "service", "small", "k8s-manifests",
 			"aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, " +
-				"so it takes no Compute and no Deployment; remove computeRef small and deploymentRef k8s-manifests"},
+				"so it takes no Compute and no Deployment but gitea-release, which ships its cloud assembly; remove computeRef small and deploymentRef k8s-manifests"},
 	} {
-		err := CheckDeploysItself(c.framework, c.compute, c.deployment)
+		err := CheckDeploysItself(c.framework, c.typ, c.compute, c.deployment)
 		switch {
 		case c.want == "" && err != nil:
 			t.Errorf("%s: %v, want none", name, err)

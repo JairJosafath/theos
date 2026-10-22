@@ -243,7 +243,7 @@ func webshopChoices(c model.PlanObject, objects []model.PlanObject, catalog []mo
 	if err := model.CheckStandard(c.Framework, standard); err != nil {
 		return err
 	}
-	return model.CheckDeploysItself(entries[0], c.Compute, c.Deployment)
+	return model.CheckDeploysItself(entries[0], c.Type, c.Compute, c.Deployment)
 }
 
 // isChoiceError says err is the operator's UnsupportedType: an entry that

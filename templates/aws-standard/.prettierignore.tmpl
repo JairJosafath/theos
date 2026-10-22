@@ -8,8 +8,9 @@
 # Written by npm.
 package-lock.json
 
-# Written by cdk synth, should .gitignore ever lose it.
+# Written by cdk synth and make dist, should .gitignore ever lose them.
 cdk.out/
+dist/
 {{- if eq .Framework "aws-lambda-go" }}
 
 # go-standard's, copied byte for byte so the two can't drift.

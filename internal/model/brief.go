@@ -860,7 +860,7 @@ func checkCreatedContainer(current CurrentModel, o PlanObject, refuse func(strin
 		}
 		switch side.side {
 		case SideFramework:
-			if err := CheckDeploysItself(entry, o.Compute, o.Deployment); err != nil {
+			if err := CheckDeploysItself(entry, o.Type, o.Compute, o.Deployment); err != nil {
 				refuse(subject, "frameworkRef: %v", err)
 			}
 		case SideStandard:
