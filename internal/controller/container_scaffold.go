@@ -82,6 +82,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		URL:         res.provider.Spec.URL,
 		Owner:       res.provider.Spec.Owner,
 		Credentials: res.creds,
+		Packages:    packagesOf(res.provider),
 	})
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionRepositoryCreated, c4v1alpha1.ReasonFailed,
