@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // WriteNetrc writes home/.netrc with the job's Git credentials for the Git
@@ -30,13 +31,13 @@ func WriteNetrc(home string, job Job) error {
 	if hostname := remote.Hostname(); hostname != remote.Host {
 		machines = append(machines, hostname)
 	}
-	var netrc string
+	var netrc strings.Builder
 	for _, machine := range machines {
-		netrc += fmt.Sprintf("machine %s\nlogin %s\npassword %s\n", machine, job.Username, job.Token)
+		fmt.Fprintf(&netrc, "machine %s\nlogin %s\npassword %s\n", machine, job.Username, job.Token)
 	}
 	path := filepath.Join(home, ".netrc")
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return os.WriteFile(path, []byte(netrc), 0o600)
+	return os.WriteFile(path, []byte(netrc.String()), 0o600)
 }
