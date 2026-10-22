@@ -83,7 +83,10 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 	return nil
 }
 
-// packageName is the generic package app's files go to: the Container's name.
+// packageName is the generic package app's files go to: the Container's
+// name. Its version is the release's tag (model.GitLabPackageVersion), so
+// two Containers of one name shipping one version to one project keep
+// their files apart (#1873).
 func packageName(app string) string {
 	_, container, ok := strings.Cut(app, "/")
 	if !ok {
@@ -121,7 +124,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 			files = append(files, model.ReleaseAsset{ID: int64(i), Name: f.Name, Size: f.Size})
 		}
 	}
-	pkg, version := packageName(s.App), s.Version
+	pkg, version := packageName(s.App), model.GitLabPackageVersion(tag)
 	facts, held, err := shipFacts(ctx, c, tag, pkg, version, s.Commit)
 	if err != nil {
 		return portError(err)
@@ -168,7 +171,8 @@ func shipFacts(ctx context.Context, c gitprovider.GitLabProject, tag, pkg, versi
 func (d *Deployer) write(ctx context.Context, c gitprovider.GitLabProject, t ports.Target, s ports.Shipment,
 	step model.PublishStep, files []model.ReleaseAsset, held map[int64]int64) error {
 	log := logr.FromContextOrDiscard(ctx)
-	pkg, version := packageName(s.App), s.Version
+	tag := model.GitHubTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
+	pkg, version := packageName(s.App), model.GitLabPackageVersion(tag)
 	switch step.Action {
 	case model.PublishFail:
 		return &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
@@ -259,8 +263,9 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 	}
 	facts := model.GitLabDeployFacts{App: app, Version: version, TagPrefix: t.Settings[model.GitLabSettingTagPrefix],
 		Releases: releases}
-	if version != "" && model.GitHubMarkedRelease(app, model.GitHubTag(facts.TagPrefix, version), releases) == nil {
-		files, err := c.PackageFiles(ctx, packageName(app), version)
+	tag := model.GitHubTag(facts.TagPrefix, version)
+	if version != "" && model.GitHubMarkedRelease(app, tag, releases) == nil {
+		files, err := c.PackageFiles(ctx, packageName(app), model.GitLabPackageVersion(tag))
 		if err != nil {
 			return ports.DeployState{}, portError(err)
 		}

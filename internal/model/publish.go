@@ -241,6 +241,29 @@ func GitHubTag(prefix, tag string) string {
 	return prefix + tag
 }
 
+// GitLabPackageVersion is the version of the generic package a GitLab
+// release's files go to: the release's tag, so two Containers of one name
+// that ship one version to one project (their tag prefixes differ) keep
+// their files apart (#1873). GitLab's rule for a version allows only
+// letters, digits, '.', '_', '+' and '-', and a git tag can hold more ('/'
+// above all), so every other byte is '_' and two hex digits, and '_' itself
+// is "__": "cli/v1.0.0" is "cli_2fv1.0.0", and a tag of allowed bytes only
+// is itself.
+func GitLabPackageVersion(tag string) string {
+	var b strings.Builder
+	for i := 0; i < len(tag); i++ {
+		switch c := tag[i]; {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '.', c == '+', c == '-':
+			b.WriteByte(c)
+		case c == '_':
+			b.WriteString("__")
+		default:
+			fmt.Fprintf(&b, "_%02x", c)
+		}
+	}
+	return b.String()
+}
+
 // ReleaseName is the name a published release goes by: the app, then the
 // Crew's tag, so a repository several apps publish to says whose each is.
 func ReleaseName(app, tag string) string {
