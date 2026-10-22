@@ -101,14 +101,19 @@ func TestAgentNetworkFence(t *testing.T) {
 		provider("forgejo", "http://forgejo.forge.svc.cluster.local"),
 		provider("github", "https://github.com"),
 	).Build()
-	r := &ProjectReconciler{Client: c, Scheme: scheme}
-	if err := r.ensureAgentNetwork(context.Background(), project); err != nil {
-		t.Fatal(err)
+	fence := func(t *testing.T, r *ProjectReconciler) networkingv1.NetworkPolicy {
+		t.Helper()
+		r.Client, r.Scheme = c, scheme
+		if err := r.ensureAgentNetwork(context.Background(), project); err != nil {
+			t.Fatal(err)
+		}
+		var policy networkingv1.NetworkPolicy
+		if err := c.Get(context.Background(), client.ObjectKey{Namespace: "apps", Name: AgentNetworkPolicyName}, &policy); err != nil {
+			t.Fatal(err)
+		}
+		return policy
 	}
-	var policy networkingv1.NetworkPolicy
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "apps", Name: AgentNetworkPolicyName}, &policy); err != nil {
-		t.Fatal(err)
-	}
+	policy := fence(t, &ProjectReconciler{})
 
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	dns, https := intstr.FromInt32(53), intstr.FromInt32(443)
@@ -142,6 +147,22 @@ func TestAgentNetworkFence(t *testing.T) {
 	}
 	if len(policy.OwnerReferences) != 1 || policy.OwnerReferences[0].UID != project.UID {
 		t.Errorf("owners %v, want the Project", policy.OwnerReferences)
+	}
+
+	// With a model proxy, one more rule: its pods in the release namespace, on
+	// its port, and nothing else of that namespace (#1136).
+	proxied := fence(t, &ProjectReconciler{SourceNamespace: "c4-factory-system",
+		ModelProxyURL: "http://c4-model-proxy.c4-factory-system.svc:8080"})
+	proxyPort := intstr.FromInt32(8080)
+	want.Egress = append(want.Egress, networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{{
+			NamespaceSelector: namespace("c4-factory-system"),
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "c4-model-proxy"}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxyPort}},
+	})
+	if !reflect.DeepEqual(proxied.Spec, want) {
+		t.Errorf("fence spec with a model proxy differs (-got +want):\n%s", diff.Diff(proxied.Spec, want))
 	}
 
 	// Every sandbox pod the Task controller starts, implement or plan, is one the

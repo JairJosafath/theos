@@ -75,6 +75,7 @@ func main() {
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
 	var uiServiceAccount string
+	var modelProxyURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -128,6 +129,10 @@ func main() {
 			"c4.factory.io/shared-secrets=true, such as claude-credentials; repeatable. None: nothing is shared.")
 	flag.Var(&sharedPullSecrets, "shared-pull-secret",
 		"An image pull Secret in the operator's namespace to share like --shared-secret; repeatable.")
+	flag.StringVar(&modelProxyURL, "model-proxy-url", "",
+		"The model proxy's URL, such as http://c4-model-proxy.<namespace>.svc:8080: an agent sandbox whose Agent "+
+			"names a --shared-secret Secret holds no token and reaches Claude through it. None: the Secret goes "+
+			"into the sandbox as env.")
 	flag.StringVar(&uiServiceAccount, "ui-service-account", "",
 		"The UI's ServiceAccount, as namespace/name, let read the pods and their metrics in every project "+
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
@@ -139,6 +144,10 @@ func main() {
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	if podNamespace == "" && len(sharedSecrets)+len(sharedPullSecrets) > 0 {
 		setupLog.Error(nil, "--shared-secret and --shared-pull-secret need POD_NAMESPACE, the operator's namespace")
+		os.Exit(1)
+	}
+	if podNamespace == "" && modelProxyURL != "" {
+		setupLog.Error(nil, "--model-proxy-url needs POD_NAMESPACE, the operator's namespace")
 		os.Exit(1)
 	}
 
@@ -270,6 +279,7 @@ func main() {
 		SharedSecrets:     sharedSecrets,
 		SharedPullSecrets: sharedPullSecrets,
 		SourceNamespace:   podNamespace,
+		ModelProxyURL:     modelProxyURL,
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
@@ -334,6 +344,9 @@ func main() {
 		WorkspaceMemory:   workspaceQuantity,
 		SandboxGoCache:    sandboxGoCache,
 		SharedPullSecrets: sharedPullSecrets,
+		SharedSecrets:     sharedSecrets,
+		SourceNamespace:   podNamespace,
+		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
@@ -359,6 +372,7 @@ func main() {
 		Recorder:        mgr.GetEventRecorder("brief"),
 		SharedSecrets:   sharedSecrets,
 		SourceNamespace: podNamespace,
+		ModelProxyURL:   modelProxyURL,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "brief")
 		os.Exit(1)

@@ -227,6 +227,7 @@ func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1alpha1.Task, s
 		task: task, status: status, agent: agent, name: name, role: model.RolePlanner,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, goal: task.Spec.Goal, maxRounds: agent.Spec.MaxRounds,
 		brief: brief.Name, briefRound: round, workspaceMemory: r.WorkspaceMemory, pullSecrets: r.SharedPullSecrets,
+		modelProxyURL: r.sandboxModelProxy(agent),
 	}, r.Scheme, r.now())
 	if err != nil {
 		return ctrl.Result{}, err

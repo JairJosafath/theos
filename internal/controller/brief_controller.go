@@ -66,6 +66,9 @@ type BriefReconciler struct {
 	// there.
 	SharedSecrets   []string
 	SourceNamespace string
+	// ModelProxyURL, when set, is the model proxy's URL: an Agent on a shared
+	// Secret then needs it in SourceNamespace only, never in the project's.
+	ModelProxyURL string
 	// Issues reaches the GitHub repositories a Brief takes requests from; nil
 	// means GitHub.
 	Issues IssueTrackers
