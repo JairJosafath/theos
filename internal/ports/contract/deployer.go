@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 
@@ -34,7 +35,8 @@ const contractApp = "contract/orders-cli"
 // Deployer states what every Deployer does: Ship twice is one deploy; State
 // after Ship reports the version once the tool says it is done, and a
 // version shipped before reaches Deployed again when it is wanted; a refused
-// credential is ErrCredentialRefused from Check and Ship; a missing file is
+// credential is ErrCredentialRefused from Check and Ship; a release without
+// the artifact the member ships (its files, or its image) is
 // ErrArtifactMissing.
 func Deployer(t *testing.T, env DeployerEnv) {
 	t.Helper()
@@ -101,12 +103,15 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		}
 	})
 
-	t.Run("a missing file is ErrArtifactMissing", func(t *testing.T) {
+	t.Run("a missing artifact is ErrArtifactMissing", func(t *testing.T) {
+		// A release with no files and no image lacks what any member ships:
+		// GitHub its files, Argo CD its image.
 		target := env.Target(t)
 		s := shipment("v1.0.0")
 		s.Files = nil
+		s.Image = ""
 		if err := d.Ship(ctx, target, s); !errors.Is(err, ports.ErrArtifactMissing) {
-			t.Errorf("Ship() of a release without files = %v, want ErrArtifactMissing", err)
+			t.Errorf("Ship() of a release without files or image = %v, want ErrArtifactMissing", err)
 		}
 		if n := env.Deploys(t, target, contractApp); n != 0 {
 			t.Errorf("deploys = %d, want 0", n)
@@ -133,7 +138,8 @@ func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s po
 	t.Fatalf("%s isn't Deployed after %d Ship calls", s.Version, maxShips)
 }
 
-// shipment is version of the suite's app, with two files.
+// shipment is version of the suite's app, with two files, its image by
+// digest and its repository.
 func shipment(version string) ports.Shipment {
 	file := func(name, content string) ports.File {
 		return ports.File{Name: name, Size: int64(len(content)),
@@ -141,7 +147,9 @@ func shipment(version string) ports.Shipment {
 				return io.NopCloser(bytes.NewReader([]byte(content))), int64(len(content)), nil
 			}}
 	}
+	digest := fmt.Sprintf("%064x", []byte(version))
 	return ports.Shipment{App: contractApp, DisplayName: "Orders CLI", Version: version,
-		Notes: "- Orders can be listed", Files: []ports.File{file("orders-cli_linux.tar.gz", "binary "+version),
-			file("SHA256SUMS", "sums "+version)}}
+		Repository: "https://git.example/contract/orders-cli.git", Notes: "- Orders can be listed",
+		Files: []ports.File{file("orders-cli_linux.tar.gz", "binary "+version), file("SHA256SUMS", "sums "+version)},
+		Image: "git.example/contract/orders-cli@sha256:" + digest[:64]}
 }
