@@ -304,9 +304,10 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.5.2)
+### gitea-release (v1.6.0)
 
-A Deployment for cli, extension and operator Containers:
+A Deployment for cli, extension and operator Containers, and for the AWS
+Frameworks' function, service and static-site ones:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
 and attaches `dist/` to the tag's release. For an operator an `image` job
 builds the image first and the release names it by digest (#1458), on the
@@ -325,11 +326,13 @@ index's host without its port, which `uv` matches on, and its login is
 `__token__` when `C4_PYPI_TOKEN` is set (#1696). Since v1.5.2 `RELEASING.md`
 renders its lists loose, a blank line before the step that watches the run
 and before each item of "When a run fails", so ts-standard's Prettier check
-passes it (#1707).
+passes it (#1707). Since v1.6.0 it supports `function`, `service` and
+`static-site` for the AWS Frameworks, whose `make dist` writes the flat
+cloud assembly a `cloudFormation` DeployTarget ships (#1607).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli",
-  "node cli", "go cli" and "vscode extension" and checks the files it
-  attaches.
+  "node cli", "go cli", "vscode extension" and the AWS combos and checks
+  the files it attaches.
 - Tests: `TestTemplatesRenderTheirCIFilesForGiteaActions`
   (`internal/scaffold/ci_test.go`) renders the workflow;
   `make test-templates-operator` runs `make dist` for the operator pair,
@@ -442,8 +445,9 @@ aws-standard.
   run by aws-standard's `make test`.
 - Lint: aws-standard's `make check`.
 - README: `README.md.tmpl` in each: develop, tiers, deploy with `cdk deploy`.
-- Deploy: `cdk deploy` with the owner's credentials; the factory deploys
-  nothing to AWS (#1071).
+- Deploy: gitea-release attaches aws-standard's `make dist` assembly to
+  each release, for the operator's `cloudFormation` DeployTarget to ship
+  (#1071); or `cdk deploy` with the owner's credentials.
 - Logging: JSON lines to CloudWatch: Powertools Logger (the TypeScript and
   Python Lambdas, `src/handler.ts`, `app/handler.py`), `slog`'s JSON handler
   (`src/main.go.tmpl`), a JSON line per request (aws-ec2-ts `src/server.ts`,
@@ -458,13 +462,16 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.18.3)
+### aws-standard (v1.19.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` as ts-standard's does, so `npm ci` and `uv`
 fetch factory packages (#1231); since v1.18.1 `~/.netrc` names the index's
-host without its port, as ts-standard v1.6.2's does (#1696).
+host without its port, as ts-standard v1.6.2's does (#1696). Since v1.19.0
+`make dist VERSION=<tag>` writes both tiers' cloud assemblies, flat, into
+`dist/` (`infra/dist.ts`, tested by `infra/dist.test.ts` on a synth) for
+gitea-release to attach (#1607).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
@@ -477,7 +484,9 @@ host without its port, as ts-standard v1.6.2's does (#1696).
   request id, access and flow logs).
 - Auth: `docs/well-architected.md.tmpl` (authenticate requests; an open route
   is acknowledged with a reason) and CDK Nag's API Gateway and Cognito rules.
-- README, Deploy: n/a: a Standard; its Makefile deploys nothing on purpose.
+- README, Deploy: n/a: a Standard; its Makefile deploys nothing on purpose,
+  and `make dist` only writes the assembly the `cloudFormation` DeployTarget
+  ships.
 
 ### dynamodb (v1.0.0)
 

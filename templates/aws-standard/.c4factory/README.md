@@ -199,12 +199,15 @@ byte for byte.
   that `APIGWStructuredLogging` is acknowledged only on an older
   repository's stage, which writes the Common Log Format (#1420). v1.18.3's
   `SOURCES.md` names python-standard v1.6.0, whose job rules leave the
-  copied files as they were (#1595).
+  copied files as they were (#1595). Since v1.19.0 `make dist` writes both
+  tiers' cloud assemblies, flat, into `dist/` for gitea-release to attach
+  (#1607).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
   `docs/agents/reviewer.md`, `infra/main.ts`, `infra/standard.ts`,
-  `infra/standard.test.ts`, `.gitea/workflows/check.yaml`,
+  `infra/standard.test.ts`, `infra/dist.ts`, `infra/dist.test.ts`,
+  `.gitea/workflows/check.yaml`,
   `.gitea/ISSUE_TEMPLATE/task.md`, `.gitea/PULL_REQUEST_TEMPLATE.md`; for
   `aws-lambda-ts`, `aws-lambda-py`, `aws-lambda-go`, `aws-fargate-ts`,
   `aws-static-site-ts`, `aws-ec2-ts`, `aws-queue-ts`, `aws-schedule-ts`
@@ -381,9 +384,16 @@ byte for byte.
   `make check` on a push to a `release-check/**` branch, whatever the push
   changes (status context `check / full (push)`). With `EveryChange`, the
   default, it renders as before.
-- **Releases:** none. The CDK app is the deployment, and deploying it is for
-  the owner with their credentials; there is no `dist` or `deploy` target.
-  `make clean` removes `cdk.out/`.
+- **Releases:** `make dist VERSION=<tag>` synthesizes both tiers and writes
+  their cloud assemblies, flat, into `dist/` (`infra/dist.ts`):
+  `<tier>.manifest.json`, `<tier>.<stack>.template.json` and
+  `<tier>.<stack>.assets.json` for each tier and stack, and each asset once
+  by its hash, a directory as `asset.<hash>.zip` (zipped as cdk-assets
+  would), a file as `asset.<hash>.<ext>`; no Docker image asset is shipped.
+  The `gitea-release` Deployment attaches them to the release, and the
+  operator's `cloudFormation` DeployTarget ships them; nothing here deploys,
+  bootstraps or calls AWS, and there is no `deploy` target. `make clean`
+  removes `cdk.out/` and `dist/`.
 - **Framework contract:** the Framework owns `package.json`, which must list
   this Standard's tools with exact versions: `eslint`, `@eslint/js`,
   `typescript-eslint`, `prettier`, `typescript`, `vitest`, `aws-cdk-lib`,

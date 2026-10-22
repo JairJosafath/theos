@@ -44,7 +44,7 @@
           printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
 {{- end -}}
 # Builds the release files with `make dist` when a version tag (v1.2.3) is
-# pushed, and attaches every file in dist/ to the Gitea release of that tag,
+# pushed, and attaches every file in dist/ but dotfiles to the Gitea release of that tag,
 # creating the release when it is missing. Running it again replaces the files.
 {{- if $operator }}
 #
@@ -194,7 +194,9 @@ jobs:
       - name: Attach dist/ to the release
         run: |
           auth="Authorization: token $TOKEN"
-          files=$(find dist -maxdepth 1 -type f | sort)
+          # A dotfile, such as the .gitignore that keeps dist/ out of git, is
+          # not a release file.
+          files=$(find dist -maxdepth 1 -type f ! -name '.*' | sort)
           test -n "$files" || { echo "make dist wrote no files into dist/" >&2; exit 1; }
           release=$(curl -sf -H "$auth" "$API/releases/tags/$TAG" || true)
           if [ -z "$release" ]; then

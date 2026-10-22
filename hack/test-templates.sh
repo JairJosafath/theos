@@ -34,16 +34,16 @@ combos=(
 	"node cli|cli|shop-tool|Shop Tool|Framework=node-cli Standard=ts-standard Deployment=gitea-release"
 	"go cli|cli|shop-ctl|Shop Ctl|Framework=go-cli Standard=go-standard Deployment=gitea-release"
 	"vscode extension|extension|shop-helper|Shop Helper|Framework=vscode-extension Standard=ts-standard Deployment=gitea-release"
-	"aws lambda function|function|price-fn|Price Fn|Framework=aws-lambda-ts Standard=aws-standard"
-	"aws lambda function with dynamodb|function|cart-fn|Cart Fn|Framework=aws-lambda-ts Standard=aws-standard Connector=dynamodb"
-	"aws lambda function in go|function|stock-fn|Stock Fn|Framework=aws-lambda-go Standard=aws-standard"
-	"aws python lambda function|function|tax-fn|Tax Fn|Framework=aws-lambda-py Standard=aws-standard"
-	"aws ec2 service|service|search|Search|Framework=aws-ec2-ts Standard=aws-standard"
-	"aws fargate service|service|checkout|Checkout|Framework=aws-fargate-ts Standard=aws-standard"
+	"aws lambda function|function|price-fn|Price Fn|Framework=aws-lambda-ts Standard=aws-standard Deployment=gitea-release"
+	"aws lambda function with dynamodb|function|cart-fn|Cart Fn|Framework=aws-lambda-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws lambda function in go|function|stock-fn|Stock Fn|Framework=aws-lambda-go Standard=aws-standard Deployment=gitea-release"
+	"aws python lambda function|function|tax-fn|Tax Fn|Framework=aws-lambda-py Standard=aws-standard Deployment=gitea-release"
+	"aws ec2 service|service|search|Search|Framework=aws-ec2-ts Standard=aws-standard Deployment=gitea-release"
+	"aws fargate service|service|checkout|Checkout|Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release"
 	"aws queue consumer|worker|mailer|Mailer|Framework=aws-queue-ts Standard=aws-standard"
 	"aws scheduled job|job|nightly-report|Nightly Report|Framework=aws-schedule-ts Standard=aws-standard"
 	"aws event consumer|worker|audit|Audit|Framework=aws-event-ts Standard=aws-standard"
-	"aws static site|static-site|landing|Landing|Framework=aws-static-site-ts Standard=aws-standard"
+	"aws static site|static-site|landing|Landing|Framework=aws-static-site-ts Standard=aws-standard Deployment=gitea-release"
 )
 
 if [ -n "${COMBO:-}" ]; then
@@ -88,6 +88,8 @@ dist_files() {
 	# scope) as c4factory-<container>-<version>.tgz (#1695).
 	node-cli) want=("dist/c4factory-$container-$version.tgz") ;;
 	vscode-extension) want=("dist/$container-$version.vsix") ;;
+	# aws-standard's flat cloud assembly, both tiers (#1607).
+	aws-*) want=(dist/production.manifest.json dist/development.manifest.json) ;;
 	go-cli)
 		want=(dist/SHA256SUMS)
 		for p in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64.exe windows_arm64.exe; do
@@ -133,6 +135,8 @@ run_combo() {
 		python-cli) version=v$(uv version --short) ;;
 		# A Go module has no version of its own; the tag is the version.
 		go-cli) version=v0.1.0 ;;
+		# Nor does an AWS app's assembly; make dist accepts any (#1607).
+		aws-*) version=v0.1.0 ;;
 		*) version=v$(node -p "require('./package.json').version") ;;
 		esac
 		failed="make dist VERSION=$version"

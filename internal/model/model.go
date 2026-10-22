@@ -119,8 +119,8 @@ func CheckStandard(framework string, standard *CatalogEntry) error {
 	return &FitError{Standard: standard.Name, Framework: framework}
 }
 
-// SelfDeployError says a Container names a Compute or Deployment while its
-// Framework deploys itself.
+// SelfDeployError says a Container names a Compute, or a Deployment other
+// than DeploymentGiteaRelease, while its Framework deploys itself.
 type SelfDeployError struct {
 	Framework string
 	// Refs lists the Container's computeRef and deploymentRef that are set, as
@@ -130,20 +130,30 @@ type SelfDeployError struct {
 
 func (e *SelfDeployError) Error() string {
 	return fmt.Sprintf("%s deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, "+
-		"so it takes no Compute and no Deployment; remove %s", e.Framework, joinAnd(e.Refs))
+		"so it takes no Compute and no Deployment but %s, which ships its cloud assembly; remove %s",
+		e.Framework, DeploymentGiteaRelease, joinAnd(e.Refs))
 }
 
 // CheckDeploysItself returns a *SelfDeployError when the Framework deploys
-// itself and the Container names a Compute or a Deployment, each "" when unset.
-func CheckDeploysItself(framework CatalogEntry, compute, deployment string) error {
+// itself and the Container names a Compute, or a Deployment other than
+// DeploymentGiteaRelease, each "" when unset. And it refuses
+// DeploymentGiteaRelease for a Container of type typ that is a function,
+// service or static-site when its Framework doesn't deploy itself: only a
+// self-deploying Framework's make dist writes a release that ships one
+// (#1607).
+func CheckDeploysItself(framework CatalogEntry, typ, compute, deployment string) error {
 	if !framework.DeploysItself {
+		if deployment == DeploymentGiteaRelease && slices.Contains(releasedByCloudAssembly, typ) {
+			return fmt.Errorf("%s ships a %s only for a Framework that deploys itself, its cloud assembly; "+
+				"%s doesn't, so pick the Deployment that deploys it", DeploymentGiteaRelease, typ, framework.Name)
+		}
 		return nil
 	}
 	var refs []string
 	if compute != "" {
 		refs = append(refs, "computeRef "+compute)
 	}
-	if deployment != "" {
+	if deployment != "" && deployment != DeploymentGiteaRelease {
 		refs = append(refs, "deploymentRef "+deployment)
 	}
 	if len(refs) == 0 {
@@ -151,6 +161,10 @@ func CheckDeploysItself(framework CatalogEntry, compute, deployment string) erro
 	}
 	return &SelfDeployError{Framework: framework.Name, Refs: refs}
 }
+
+// releasedByCloudAssembly are the Container types DeploymentGiteaRelease
+// supports only for a Framework that deploys itself.
+var releasedByCloudAssembly = []string{TypeFunction, TypeService, TypeStaticSite}
 
 // Element kinds a Relationship can connect, mirroring the API.
 const (

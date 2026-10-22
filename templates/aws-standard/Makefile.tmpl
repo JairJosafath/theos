@@ -5,7 +5,8 @@
 #
 # Nothing here deploys, bootstraps or calls AWS: `synth` only writes
 # CloudFormation into cdk.out/, one folder per tier, offline, without Docker
-# or credentials.
+# or credentials, and `dist` copies it, flat, into dist/ for a release to
+# carry; a `cloudFormation` deploy target ships it.
 {{- $go := eq .Framework "aws-lambda-go" }}
 {{- $py := eq .Framework "aws-lambda-py" }}
 
@@ -28,7 +29,7 @@ PY_SOURCES := app tests
 {{- end }}
 
 .DEFAULT_GOAL := help
-.PHONY: help check check-light deps fmt fmt-check lint typecheck test synth cfn-lint clean
+.PHONY: help check check-light deps fmt fmt-check lint typecheck test synth cfn-lint dist clean
 {{- if $go }}
 .PHONY: go-deps tidy-check go-fmt-check vet go-lint go-test
 {{- end }}
@@ -135,5 +136,12 @@ synth: ## Write each tier's CloudFormation templates into cdk.out/<tier>/; fails
 cfn-lint: ## Lint the templates synth wrote, for both tiers.
 	$(CFN_LINT) --include-checks I --ignore-checks W3005 -- $(foreach tier,$(TIERS),cdk.out/$(tier)/*.template.json)
 
-clean: ## Remove what synth wrote.
-	rm -rf cdk.out
+# The release's files, what the gitea-release Deployment attaches to the tag's
+# release: both tiers' assemblies, flat (infra/dist.ts says how). VERSION is
+# accepted and unused; the tag is the version.
+dist: deps synth ## Write both tiers' cloud assemblies, flat, into dist/ for a release.
+	rm -rf dist
+	$(BIN)/tsx infra/dist.ts dist $(TIERS)
+
+clean: ## Remove what synth and dist wrote.
+	rm -rf cdk.out dist

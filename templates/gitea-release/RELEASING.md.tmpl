@@ -4,6 +4,8 @@
 {{- if eq .Framework "node-cli" }}{{ $files = "the npm tarball (`.tgz`)" }}{{ end -}}
 {{- if eq .Framework "vscode-extension" }}{{ $files = "the extension's `.vsix`" }}{{ end -}}
 {{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager image (an `.oci.tar` the factory pushes to the Git host's registry), the manager binaries, `install.yaml` naming that image by digest, and `SHA256SUMS`" }}{{ end -}}
+{{- $aws := ne (trimPrefix "aws-" .Framework) .Framework -}}
+{{- if $aws }}{{ $files = "both tiers' CloudFormation cloud assemblies, flat: each tier's `manifest.json`, each stack's template and asset manifest, and each asset (`asset.<hash>.zip` for a folder)" }}{{ end -}}
 {{- $operator := eq .Type "operator" -}}
 {{- $watch := 3 -}}
 {{- $manifest := "" -}}
@@ -15,8 +17,12 @@
 A pushed version tag releases {{ .Container }}: the workflow
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` and attaches
 every file directly in `dist/` to the Gitea release of that tag, creating the
-release when it is missing: {{ $files }}. Nothing is published anywhere else;
+release when it is missing: {{ $files }}.
+{{- if $aws }} A `cloudFormation` deploy target ships a release to AWS
+from those files; the release itself publishes nothing anywhere else.
+{{- else }} Nothing is published anywhere else;
 people download the files from the release page.
+{{- end }}
 
 ## Cut a release
 
