@@ -3,7 +3,7 @@
 # lacks what dist/chart/templates/manager/manager.yaml adds by hand: the /tmp
 # emptyDir a Go module is repacked in on the read-only root filesystem
 # (internal/gitprovider), the POD_NAMESPACE the shared Secrets are read from,
-# the --shared-secret and --shared-pull-secret flags, the --ui-service-account
+# the --shared-secret, --shared-pull-secret and --model-proxy-url flags, the --ui-service-account
 # the UI reads project namespaces' pods as (#1080), and the C4_CHART_VERSION
 # the Project status reports, the chart's version. kubebuilder's helm
 # plugin regenerates that template without them; make chart keeps the file,
@@ -35,6 +35,7 @@ need() { # need WHAT GREP_ARGS...: the manager Deployment matches, or says what 
 }
 need "the --shared-secret flag" -E '^ *- --shared-secret=[^ ]+$'
 need "the --shared-pull-secret flag" -E '^ *- --shared-pull-secret=ghcr$'
+need "the --model-proxy-url flag" -E '^ *- --model-proxy-url=http://[^ ]+\.svc:8080$'
 need "the --ui-service-account flag" -E '^ *- --ui-service-account=[^/ ]+/[^/ ]+$'
 need "the POD_NAMESPACE env from metadata.namespace" -Pzo \
 	'\n *- name: POD_NAMESPACE\n *valueFrom:\n *fieldRef:\n *fieldPath: metadata\.namespace\n'
@@ -46,4 +47,4 @@ if [ "$fail" -ne 0 ]; then
 	echo "kubebuilder's helm plugin drops these; restore them in dist/chart/$SOURCE." >&2
 	exit 1
 fi
-echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, C4_CHART_VERSION, the shared Secrets and the UI's ServiceAccount"
+echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, C4_CHART_VERSION, the shared Secrets, the model proxy URL and the UI's ServiceAccount"

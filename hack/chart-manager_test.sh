@@ -44,6 +44,7 @@ edited 's/value: {{ .Chart.Version | quote }}/value: "0.0.1"/'; run; check "C4_C
 
 edited '/--shared-secret=/d'; run; check "no --shared-secret: fails" $? 1
 edited '/--shared-pull-secret=/d'; run; check "no --shared-pull-secret: fails" $? 1
+edited '/--model-proxy-url=/d'; run; check "no --model-proxy-url: fails" $? 1
 edited '/--ui-service-account=/d'; run; check "no --ui-service-account: fails" $? 1
 grep -q 'lacks the --ui-service-account flag' "$T/out"; check "names the UI flag" $? 0
 
