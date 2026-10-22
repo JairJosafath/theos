@@ -35,6 +35,35 @@ type Config struct {
 	URL         string
 	Owner       string
 	Credentials Credentials
+	// Packages is where the owner's npm and PyPI packages are published and
+	// installed from, the GitProvider's spec.packages. A field left "" takes
+	// its default: the scope @c4factory, and the host's own registries.
+	Packages Packages
+}
+
+// DefaultNpmScope is the npm scope the factory's packages share when the
+// GitProvider names none.
+const DefaultNpmScope = "@c4factory"
+
+// Packages names the registries of the owner's npm and PyPI packages. Any
+// registry that takes npm publish's PUT document, and any index that takes
+// twine's upload form, works.
+type Packages struct {
+	// NpmScope is the scope the owner's npm packages are named under, such as
+	// "@acme"; a tarball under another scope, or none, is never published.
+	NpmScope string
+	// NpmRegistry is the npm registry's URL.
+	NpmRegistry string
+	// NpmToken publishes to NpmRegistry, as a bearer token; "" publishes with
+	// the host's own credentials, which fits the host's own registry.
+	NpmToken string
+	// PyPIIndex is the simple index packages are installed from.
+	PyPIIndex string
+	// PyPIUpload is the URL twine's upload form goes to.
+	PyPIUpload string
+	// PyPIToken publishes to PyPIUpload, as the password of the user
+	// __token__; "" publishes with the host's own credentials.
+	PyPIToken string
 }
 
 // Repository is a repository on a Git host.
@@ -50,6 +79,17 @@ type Repository struct {
 	// the images of the owner's releases are pushed; empty when the host has
 	// none.
 	ImageRegistry string
+	// NpmScope is the scope the owner's npm packages are named under, and
+	// NpmRegistry the registry they are published to and installed from, with
+	// a trailing slash: the GitProvider's settings, else "@c4factory" and the
+	// host's own registry.
+	NpmScope    string
+	NpmRegistry string
+	// PyPIIndex is the simple index the owner's Python packages are installed
+	// from, and PyPIUpload where they are published: the GitProvider's
+	// settings, else the host's own.
+	PyPIIndex  string
+	PyPIUpload string
 }
 
 // Commit is one commit on the default branch.
@@ -251,6 +291,13 @@ type Provider interface {
 	// published before and a module that can't be published at tag are
 	// outcomes, not errors; a repeat publishes nothing.
 	PublishGoModule(ctx context.Context, repo Repository, tag string) (GoModule, error)
+	// PublishReleasePackages publishes the package files of repo's release of
+	// tag, an npm tarball, a wheel and an sdist, to the registries repo names,
+	// at tag's version. A release with no package file, an npm name outside
+	// repo's scope, a version that isn't the tag's and a version published
+	// before are outcomes, not errors; a repeat publishes nothing. No release
+	// of tag is ErrNoRelease.
+	PublishReleasePackages(ctx context.Context, repo Repository, tag string) (ReleasePackages, error)
 	// PublishImage pushes the image archive of repo's release of tag, its
 	// *.oci.tar file, to the owner's container registry under tag and links
 	// it to repo. A tag is pushed once and never replaced: no archive, an

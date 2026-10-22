@@ -23,6 +23,9 @@ type gitea struct {
 	http  *http.Client
 	// basic, when set, signs requests with a username and password instead of the token.
 	basic *Credentials
+	// packages is where the owner's npm and PyPI packages go; "" fields take
+	// the host's own registries.
+	packages Packages
 }
 
 func newGitea(cfg Config, client *http.Client) (*gitea, error) {
@@ -33,7 +36,7 @@ func newGitea(cfg Config, client *http.Client) (*gitea, error) {
 	if cfg.Owner == "" {
 		return nil, errors.New("gitea: owner is required")
 	}
-	return &gitea{base: base, owner: cfg.Owner, creds: cfg.Credentials, http: client}, nil
+	return &gitea{base: base, owner: cfg.Owner, creds: cfg.Credentials, http: client, packages: cfg.Packages}, nil
 }
 
 type giteaRepo struct {
@@ -89,9 +92,24 @@ func (g *gitea) Repository(name string) Repository { return g.repository(name) }
 // the API's, which follow the Host the request came in on.
 func (g *gitea) repository(name string) Repository {
 	web := g.base.JoinPath(g.owner, name).String()
+	registry := g.base.JoinPath("api/packages", g.owner)
 	return Repository{Owner: g.owner, Name: name, WebURL: web, CloneURL: web + ".git",
-		GoProxy:       g.base.JoinPath("api/packages", g.owner, "go").String(),
-		ImageRegistry: g.base.Host + "/" + strings.ToLower(g.owner)}
+		GoProxy:       registry.JoinPath("go").String(),
+		ImageRegistry: g.base.Host + "/" + strings.ToLower(g.owner),
+		NpmScope:      orDefault(g.packages.NpmScope, DefaultNpmScope),
+		// npm joins a registry URL with a trailing slash and a package name.
+		NpmRegistry: orDefault(g.packages.NpmRegistry, registry.JoinPath("npm").String()+"/"),
+		PyPIIndex:   orDefault(g.packages.PyPIIndex, registry.JoinPath("pypi/simple").String()),
+		PyPIUpload:  orDefault(g.packages.PyPIUpload, registry.JoinPath("pypi").String()),
+	}
+}
+
+// orDefault is value, or def when value is "".
+func orDefault(value, def string) string {
+	if value == "" {
+		return def
+	}
+	return value
 }
 
 // History reads the default branch over Git, which is up to date at once; the
