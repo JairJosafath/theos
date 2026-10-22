@@ -235,7 +235,7 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want []string
+	want := make([]string, 0, len(files))
 	for _, f := range files {
 		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "c4.factory.io_"), ".yaml")
 		want = append(want, plural+".c4.factory.io")
