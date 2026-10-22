@@ -152,7 +152,10 @@ rules included, so it shows that valid YAML passes them; it holds no YAML that
 breaks a rule. Rules on `oldSelf` need an update, so envtest covers them.
 It also fails when a CRD in `dist/chart/templates/crd` differs from
 `config/crd/bases` beyond the chart's `crd.enabled` and `crd.keep` guard
-(`hack/chart-crds.sh`): an API change runs `make chart` and commits the chart.
+(`hack/chart-crds.sh`), or when the chart's manager role's rules differ from
+`config/rbac/role.yaml` (`hack/chart-role.sh`): `make manifests` writes both
+copies, and an API change commits them. In CI, *Lint* runs `make check-generated`
+after it: a generated file that differs from what is committed fails the job (#1689).
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
@@ -299,8 +302,8 @@ make gitea-forward     # then open http://localhost:3000
 The Kind test environment installs with kustomize. Devices install the Helm
 chart in `dist/chart/` instead ([its README](../../dist/chart/README.md)).
 After a change under `config/` or `api/`, `make chart` regenerates it from the kustomize
-output and `make helm-lint` checks it, offline, in `make validate-yaml` and so in `make
-check`. `make chart` keeps `templates/manager/manager.yaml`, which the plugin would
+output (`make manifests` alone keeps its CRDs and manager role in step) and `make
+helm-lint` checks it, offline, in `make validate-yaml` and so in `make check`. `make chart` keeps `templates/manager/manager.yaml`, which the plugin would
 regenerate without the `/tmp` mount, `POD_NAMESPACE` and the shared Secrets; it
 writes what the plugin would change to `bin/chart/manager.plugin.diff`, outside the
 `bin/yaml/` that `make validate-yaml` parses, to port by hand,

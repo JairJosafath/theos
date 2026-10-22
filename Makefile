@@ -54,9 +54,20 @@ CONTROLLER_GEN_PATHS ?= ./api/...;./cmd/...;./internal/...
 MANIFEST_FILES = $(wildcard config/crd/bases/*.yaml config/rbac/role.yaml)
 GENERATED_GO = $(shell find api cmd internal -name 'zz_generated.*.go')
 
+## What make manifests and make generate write; make check says when they
+## changed, make check-generated fails on it (CI, after make validate-yaml).
+GENERATED_PATHS = config/crd config/rbac api dist/chart/templates/crd dist/chart/templates/rbac
+
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects, and the chart's copies of the CRDs and the manager role.
 	hack/keep-mtime.sh $(MANIFEST_FILES) -- "$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	@hack/chart-crds.sh --write
+	@hack/chart-role.sh --write
+
+.PHONY: check-generated
+check-generated: ## Fail when a generated file differs from what is committed: run make manifests generate and commit them (CI runs it after make validate-yaml, #1689).
+	@git diff --quiet -- $(GENERATED_PATHS) || \
+		{ echo "Generated files changed; run make manifests generate and commit them:"; git diff --stat -- $(GENERATED_PATHS); exit 1; }
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -218,8 +229,8 @@ check-tier-%: manifests generate fmt
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
 check: manifests generate fmt vet lint $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
-	@git diff --quiet -- config/crd config/rbac api || \
-		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- config/crd config/rbac api; }
+	@git diff --quiet -- $(GENERATED_PATHS) || \
+		{ echo "Generated files changed; commit them with your change:"; git diff --stat -- $(GENERATED_PATHS); }
 	@hack/check-cache.sh record
 else
 check:
