@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092; the planner naming one is not built yet). |
+| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -468,7 +468,10 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
 - **The operator checks and applies the plan.** A plan writes only story
   kinds and installed entries that fit, changes only story text of what
   exists, adds nothing to an External system and deletes nothing; else the
-  next round gets the reasons. The operator makes a Crew per new Container
+  next round gets the reasons. A plan's Container may name a Bundle instead
+  of the four sides; the check expands it as the operator would, so a Bundle
+  that doesn't support the type fails the round with the message the
+  Container would show, and the Container is created on the Bundle. The operator makes a Crew per new Container
   and files the issues once it is Ready, ordered by their `after:` front
   matter as Git host dependencies. What it made carries the label
   `c4.factory.io/brief`. A failed step says where and why
