@@ -4,6 +4,7 @@
 {{- if eq .Framework "node-cli" }}{{ $files = "the npm tarball (`.tgz`)" }}{{ end -}}
 {{- if eq .Framework "vscode-extension" }}{{ $files = "the extension's `.vsix`" }}{{ end -}}
 {{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager image (an `.oci.tar` the factory pushes to the Git host's registry), the manager binaries, `install.yaml` naming that image by digest, and `SHA256SUMS`" }}{{ end -}}
+{{- $operator := eq .Type "operator" -}}
 {{- $manifest := "" -}}
 {{- if eq .Framework "python-cli" }}{{ $manifest = "pyproject.toml" }}{{ end -}}
 {{- if or (eq .Framework "node-cli") (eq .Framework "vscode-extension") }}{{ $manifest = "package.json" }}{{ end -}}
@@ -45,7 +46,9 @@ people download the files from the release page.
 {{- end }}
 
 The workflow runs on a runner labelled `go`, the one the checks use, with the
-workflow's own token: no secrets to set.
+workflow's own token: no secrets to set.{{ if $operator }} The `image` job runs on the
+runner labelled `image`; the factory pushes the image it attaches to the Git
+host's registry under the tag, once: a tag's image is never replaced.{{ end }}
 
 ## Check a release locally
 
@@ -70,12 +73,20 @@ Every file directly in `dist/` is what the release would get; folders in
 
 ## When a run fails
 
-The run's log says which step failed: `make dist`, or attaching the files{{ if eq .Type "operator" }};
-for an operator, the `image` job before them, which builds the image{{ end }}.
+The run's log says which step failed: `make dist`, or attaching the files{{ if $operator }};
+for an operator, the `image` job before them, which builds the image and
+attaches it{{ end }}.
+{{- if $operator }}
 
+- **The `image` job failed** (no `Dockerfile` at the root, a build error, or
+  the upload of the `.oci.tar` broke): nothing was attached and no image was
+  pushed. Fix it on main, then move the tag to the fixed commit and push it
+  again, as for `make dist` below.
+{{- end }}
 - **`make dist` failed** (a build error{{ if $manifest }}, or the tag doesn't
-  match `{{ $manifest }}`{{ end }}): nothing was attached. Fix it on main, then
-  move the tag to the fixed commit and push it again:
+  match `{{ $manifest }}`{{ end }}): nothing was attached{{ if $operator }} but the
+  image archive, which the factory pushes to the registry{{ end }}. Fix it on
+  main, then move the tag to the fixed commit and push it again:
 
   ```sh
   git tag -f v0.2.0 && git push -f origin v0.2.0
@@ -83,6 +94,13 @@ for an operator, the `image` job before them, which builds the image{{ end }}.
 
   Or, when the tag was already shared, leave it and tag the fix as the next
   version (`v0.2.1`).
+{{- if $operator }}
+
+  Moving the tag does not re-push the image: the registry keeps the image
+  first pushed under a tag, the new run attaches its rebuild but the factory
+  leaves it unpushed, and `install.yaml` names the digest the registry holds.
+  When the fix changes what goes into the image, tag it as the next version.
+{{- end }}
 - **Attaching failed** (Gitea was unreachable, or an upload broke halfway):
   re-run the job from the **Actions** tab, or push the tag again. A run
   replaces the files that are already on the release, so running it again

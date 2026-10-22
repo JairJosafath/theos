@@ -204,13 +204,15 @@ repository only. `main` takes no pushes: only the operator merges, the
 reviewed commit only; the Git host refuses changes to the platform's and the
 Standard's protected files (the gated merge aside) and keeps `v*` tags to the
 operator. A per-project NetworkPolicy allows only DNS, the Git host and public
-HTTPS. Each run has a deadline. A sandbox on the factory's shared token holds
-no token: it reaches Claude through the model proxy in the release namespace,
-which adds the token to the agent's requests, and the fence lets it reach the
-proxy alone ([plans/model-proxy.md](plans/model-proxy.md)). The token's one
-source is a Secret in the release namespace, copied only into namespaces with
-a label their users can't set. An Agent on a Secret of its own keeps that
-Secret as the sandbox's environment, readable inside it.
+HTTPS. Each run has a deadline. The factory's token never enters a sandbox: a
+sandbox on the shared token reaches Claude through the model proxy in the
+release namespace, which adds the token to the agent's requests, and the fence
+lets it reach the proxy alone
+([plans/done/model-proxy.md](plans/done/model-proxy.md)). The token's one
+place is that Secret in the release namespace; the operator never copies it
+into a project namespace, and deletes the copies an earlier release made. An
+Agent naming a Secret of its own gets that Secret's keys as the sandbox's
+environment, readable inside it.
 
 ### The CI fence
 
@@ -617,7 +619,7 @@ its images on GHCR. The release installs:
 | Gitea and its CI runners `base` and `go` | `gitea.namespace` | `gitea.enabled`, on by default; secrets generated in the cluster, never rendered by Helm |
 | Seed job | Gitea's namespace | after every install and upgrade: templates, a GitProvider and Project per `gitea.projects` entry, the catalog and Agents applied in place |
 | Project namespaces | each of `gitea.projects` | made when missing, labeled `c4.factory.io/shared-secrets: "true"`, kept on uninstall |
-| Shared Secrets | copied from the release namespace | the Agents' token and pull Secrets; a project's own Secret of that name wins |
+| Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
 A device installs Agent Sandbox first and gives the Agents' token once. An

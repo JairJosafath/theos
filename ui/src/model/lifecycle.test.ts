@@ -164,6 +164,7 @@ describe('containerNextStep', () => {
     ['ForeignCommits', 'Scaffolded', /Empty it, then retry/],
     ['LayerConflict', 'Scaffolded', /Two templates write the same file/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
+    ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
     ['DeploysItself', 'ChoicesValid', /remove the Compute and the Deployment/],
     ['GitError', 'RepositoryCreated', /Fix what the failed condition names/],

@@ -41,10 +41,11 @@ member (source, history, GHCR, a GitHub App) on them.
      (`PublishRelease(id, true)`, GitHub's `make_latest`, one write). A
      rollback on a target people install from moves the Latest badge back
      with it.
-   - Latest held by a release of another app, or by one the factory didn't
-     make, is left alone and doesn't keep the entry `Deploying`: two apps
-     taking Latest on one repository would otherwise take it from each
-     other each poll.
+   - Latest held by a release of another app, by the app's own release
+     under another target's tag prefix, or by one the factory didn't make,
+     is left alone and doesn't keep the entry `Deploying`: two apps, or two
+     targets of one app, taking Latest on one repository would otherwise
+     take it from each other each poll.
    - no marked release of `version`: the app's newest marked release by id,
      as today (`Deploying` for a draft, `Deployed` for a published one), so
      the status shows what is out while the reconciler ships the new one;

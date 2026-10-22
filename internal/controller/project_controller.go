@@ -45,9 +45,11 @@ type ProjectReconciler struct {
 	Scheme *runtime.Scheme
 	// APIReader reads Secrets and Namespaces without caching them.
 	APIReader client.Reader
-	// SharedSecrets and SharedPullSecrets name the Secrets in SourceNamespace,
-	// the operator's own, that it copies into every opted-in project
-	// namespace. With none, it shares nothing.
+	// SharedPullSecrets name the pull Secrets in SourceNamespace, the
+	// operator's own, that it copies into every opted-in project namespace.
+	// SharedSecrets name the token Secrets there, which the model proxy reads
+	// and the operator never copies: the copies an earlier release made are
+	// deleted (#1137). With neither, it shares nothing.
 	SharedSecrets     []string
 	SharedPullSecrets []string
 	SourceNamespace   string
@@ -82,7 +84,7 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err := r.Get(ctx, req.NamespacedName, &project)
 	if apierrors.IsNotFound(err) && req.Name == req.Namespace {
 		// A Brief gets its Project from its first round, whose planner needs
-		// the shared token, so an opted-in namespace is shared into before.
+		// the shared pull Secret, so an opted-in namespace is shared into before.
 		recheck, err := r.shareBeforeProject(ctx, req.Namespace)
 		return ctrl.Result{RequeueAfter: recheck}, err
 	}

@@ -1,7 +1,8 @@
 // A Container's operations on its page: backup retention and copy region,
-// RPO and RTO, and who the alarms tell, as the spec asks with the defaults
-// filled in, and OperationsApplied when False (a changed block whose pull
-// request hasn't merged, or can't be made). Read only.
+// RPO and RTO, and who the alarms tell, as the operator resolved them
+// (status.operations) or, before the scaffold records that, as the spec asks
+// with nothing filled in; and OperationsApplied when False (a changed block
+// whose pull request hasn't merged, or can't be made). Read only.
 
 import { Fragment } from 'react'
 import type { Container } from '../../k8s/types'
@@ -14,13 +15,18 @@ export function ContainerOperations({ container }: { container: Container }) {
       <h2 className="panel-title small-title" id="container-operations">
         Operations
       </h2>
+      <p className="panel-text muted">
+        {view.resolved
+          ? 'As the repository was last rendered with.'
+          : 'As the spec asks; the operator fills in the defaults when it scaffolds.'}
+      </p>
       <dl className="facts">
         {view.rows.map((row) => (
           <Fragment key={row.key}>
             <dt>{row.label}</dt>
             <dd>
-              {row.value}
-              {row.isDefault ? <span className="muted"> (default)</span> : null}
+              {view.resolved || !row.isDefault ? row.value : <span className="muted">{row.value}</span>}
+              {view.resolved && row.isDefault ? <span className="muted"> (default)</span> : null}
             </dd>
           </Fragment>
         ))}

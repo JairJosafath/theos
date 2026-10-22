@@ -27,9 +27,11 @@ import (
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
-// ConditionSecretsShared reports the Secrets the operator shares into the
-// Project's namespace: each one a copy, the project's own, or missing at its
-// source. Absent when the operator shares nothing.
+// ConditionSecretsShared reports the Secrets the operator copies into the
+// Project's namespace, the pull Secrets: each one a copy, the project's own,
+// or missing at its source. Absent when the operator copies nothing. The
+// shared token is never copied: the model proxy reads it in the operator's
+// namespace (#1137).
 const ConditionSecretsShared = "SecretsShared"
 
 // DefaultSharedSecretsRecheck is how often a Project in an opted-in namespace
@@ -40,20 +42,54 @@ const DefaultSharedSecretsRecheck = 5 * time.Minute
 // sharedSecretsOptIn is the value of LabelSharedSecrets that opts a namespace in.
 const sharedSecretsOptIn = "true"
 
-// sharedNames are the Secrets the operator shares, sorted and without repeats.
+// sharedNames are the Secrets the operator copies, sorted and without
+// repeats: the pull Secrets alone. The --shared-secret token is read by the
+// model proxy in SourceNamespace and never copied (#1137).
 func (r *ProjectReconciler) sharedNames() []string {
-	names := slices.Concat(r.SharedSecrets, r.SharedPullSecrets)
+	names := slices.Clone(r.SharedPullSecrets)
 	slices.Sort(names)
 	return slices.Compact(names)
 }
 
-// shareSecrets copies the shared Secrets from the operator's namespace into an
-// opted-in project namespace, keeps the copies in step with their sources, and
-// deletes them when the namespace opts out. A Secret of a shared name without
-// the shared-from label is the project's own and is never touched. It reports
-// in the SecretsShared condition, and returns when to look again.
+// retiredNames are the Secrets the operator copied before the model proxy
+// and no longer does: the --shared-secret token. A copy it made (labelled
+// LabelSharedFrom) is deleted wherever it is found; a project's own Secret
+// of that name stays.
+func (r *ProjectReconciler) retiredNames() []string {
+	var names []string
+	for _, name := range r.SharedSecrets {
+		if !slices.Contains(r.SharedPullSecrets, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+// deleteRetiredCopies deletes the token copies an earlier release made in
+// the namespace (#1137).
+func (r *ProjectReconciler) deleteRetiredCopies(ctx context.Context, namespace string) error {
+	for _, name := range r.retiredNames() {
+		if err := r.deleteSharedCopy(ctx, namespace, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// shareSecrets copies the shared pull Secrets from the operator's namespace
+// into an opted-in project namespace, keeps the copies in step with their
+// sources, and deletes them when the namespace opts out. It deletes the token
+// copies an earlier release made, opted in or not: the token stays in the
+// operator's namespace, where the model proxy reads it (#1137). A Secret of a
+// shared name without the shared-from label is the project's own and is never
+// touched. It reports what it copies in the SecretsShared condition, and
+// returns when to look again.
 func (r *ProjectReconciler) shareSecrets(ctx context.Context, project *c4v1alpha1.Project,
 	status *c4v1alpha1.ProjectStatus) (time.Duration, error) {
+	if err := r.deleteRetiredCopies(ctx, project.Namespace); err != nil {
+		return 0, err
+	}
 	names := r.sharedNames()
 	if len(names) == 0 {
 		meta.RemoveStatusCondition(&status.Conditions, ConditionSecretsShared)
@@ -85,10 +121,10 @@ func (r *ProjectReconciler) shareSecrets(ctx context.Context, project *c4v1alpha
 
 // shareBeforeProject shares into an opted-in namespace that has no Project
 // yet, as shareSecrets does but with nowhere to report: a Brief there needs
-// the shared token for the round that makes its Project. The copies have no
+// the pull Secret for the round that makes its Project. The copies have no
 // owner until the Project adopts them.
 func (r *ProjectReconciler) shareBeforeProject(ctx context.Context, namespace string) (time.Duration, error) {
-	if len(r.sharedNames()) == 0 {
+	if len(r.sharedNames())+len(r.retiredNames()) == 0 {
 		return 0, nil
 	}
 	var ns corev1.Namespace
@@ -98,6 +134,12 @@ func (r *ProjectReconciler) shareBeforeProject(ctx context.Context, namespace st
 	if !ns.DeletionTimestamp.IsZero() {
 		return 0, nil
 	}
+	if err := r.deleteRetiredCopies(ctx, namespace); err != nil {
+		return 0, err
+	}
+	if len(r.sharedNames()) == 0 {
+		return 0, nil
+	}
 	optedIn, _, _, err := r.shareInto(ctx, &ns, nil)
 	if err != nil || !optedIn {
 		return 0, err
@@ -105,7 +147,7 @@ func (r *ProjectReconciler) shareBeforeProject(ctx context.Context, namespace st
 	return r.recheck(), nil
 }
 
-// shareInto copies the shared Secrets into ns when it has opted in, and
+// shareInto copies the shared pull Secrets into ns when it has opted in, and
 // deletes the copies when it hasn't. It returns whether ns has opted in, what
 // the condition says of each Secret, and whether a source is missing. owner is
 // nil before the namespace has a Project.

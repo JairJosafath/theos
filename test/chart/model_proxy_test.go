@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 )
 
-// The model proxy (docs/plans/model-proxy.md, decisions 2 and 7, #1135) is the
+// The model proxy (docs/plans/done/model-proxy.md, decisions 2 and 7, #1135) is the
 // one place the Claude token is used. The token enters its pod as a Secret
 // volume, never as env or through a subPath, so the kubelet refreshes it, and
 // only agent sandboxes in the namespaces labelled for the shared token reach
@@ -217,7 +217,7 @@ func decodeModelProxy(t *testing.T, where string, manifests []byte, name string)
 }
 
 // managerModelProxyArg is the flag the manager gets so sandboxes on the shared
-// token reach the proxy (docs/plans/model-proxy.md decision 5, #1136).
+// token reach the proxy (docs/plans/done/model-proxy.md decision 5, #1136).
 const managerModelProxyArg = "--model-proxy-url="
 
 // TestModelProxyManagerFlag checks that the manager is told where the proxy
