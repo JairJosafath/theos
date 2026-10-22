@@ -1,3 +1,4 @@
+import type { Authenticate } from './auth';
 import type { ItemStore } from './item_store';
 import { checkId, checkItem, json, problem } from './items';
 import type { HttpResponse } from './items';
@@ -11,6 +12,8 @@ export interface ApiRequest {
   /** The path without its query string, such as `/items/i1`. */
   readonly path: string;
   readonly body: string;
+  /** The `Authorization` header; undefined when the request has none. */
+  readonly authorization: string | undefined;
   /** The id the server gives the request, which the log names. */
   readonly requestId: string;
 }
@@ -27,9 +30,10 @@ export async function answer(
   request: ApiRequest,
   store: ItemStore,
   log: Log,
+  authenticate: Authenticate,
 ): Promise<HttpResponse> {
   try {
-    return await route(request, store);
+    return await route(request, store, authenticate);
   } catch (error: unknown) {
     log({
       level: 'ERROR',
@@ -43,12 +47,20 @@ export async function answer(
   }
 }
 
-async function route(request: ApiRequest, store: ItemStore): Promise<HttpResponse> {
+async function route(
+  request: ApiRequest,
+  store: ItemStore,
+  authenticate: Authenticate,
+): Promise<HttpResponse> {
   // The load balancer's health check: the process is up and serving.
   if (request.path === '/health') {
     return request.method === 'GET'
       ? json(200, { status: 'ok' })
       : problem(405, 'Only GET /health.');
+  }
+  // Every route but the health check takes a Cognito access token.
+  if (!(await authenticate(request.authorization))) {
+    return unauthorized();
   }
   const match = ITEM_PATH.exec(request.path);
   if (match === null) {
@@ -87,4 +99,10 @@ function decodePathSegment(segment: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 401: no token, or one that doesn't verify; the header names the scheme. */
+function unauthorized(): HttpResponse {
+  const response = problem(401, 'Send a Cognito access token: Authorization: Bearer <token>.');
+  return { ...response, headers: { ...response.headers, 'www-authenticate': 'Bearer' } };
 }

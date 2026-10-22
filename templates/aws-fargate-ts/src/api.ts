@@ -1,3 +1,4 @@
+import type { Authenticate } from './auth';
 import type { ItemStore } from './item_store';
 import { checkId, checkItem, json, problem } from './items';
 import type { HttpResponse } from './items';
@@ -12,6 +13,8 @@ export interface ApiRequest {
   readonly path: string;
   /** The body, decoded as UTF-8; empty when there is none. */
   readonly body: string;
+  /** The `Authorization` header; undefined when the request has none. */
+  readonly authorization: string | undefined;
   /** The load balancer's trace id, or one the server made up. */
   readonly requestId: string;
 }
@@ -27,9 +30,10 @@ export async function answer(
   request: ApiRequest,
   store: ItemStore,
   log: Log,
+  authenticate: Authenticate,
 ): Promise<HttpResponse> {
   try {
-    return await route(request, store);
+    return await route(request, store, authenticate);
   } catch (error: unknown) {
     log({
       level: 'ERROR',
@@ -43,13 +47,21 @@ export async function answer(
   }
 }
 
-async function route(request: ApiRequest, store: ItemStore): Promise<HttpResponse> {
+async function route(
+  request: ApiRequest,
+  store: ItemStore,
+  authenticate: Authenticate,
+): Promise<HttpResponse> {
   if (request.path === '/health') {
     // The load balancer's health check: the process answers, so it is alive.
     // It reads no table, so an outage of DynamoDB doesn't stop every task.
     return request.method === 'GET'
       ? json(200, { status: 'ok' })
       : problem(405, `${request.method} is not allowed on /health.`);
+  }
+  // Every route but the health check takes a Cognito access token.
+  if (!(await authenticate(request.authorization))) {
+    return unauthorized();
   }
   const match = ITEM_PATH.exec(request.path);
   if (match === null) {
@@ -85,4 +97,10 @@ function decodeSegment(segment: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 401: no token, or one that doesn't verify; the header names the scheme. */
+function unauthorized(): HttpResponse {
+  const response = problem(401, 'Send a Cognito access token: Authorization: Bearer <token>.');
+  return { ...response, headers: { ...response.headers, 'www-authenticate': 'Bearer' } };
 }

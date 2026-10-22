@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { Authenticate } from './auth';
 import { MemoryStore } from './memory_store.fake';
 import { createApiServer, MAX_BODY_BYTES } from './server';
 
@@ -12,8 +13,13 @@ const logged: Readonly<Record<string, unknown>>[] = [];
 let server: Server;
 let base: string;
 
+// Accepts only `Bearer good`; src/auth.test.ts tests the Cognito verifier.
+const authenticate: Authenticate = (authorization) =>
+  Promise.resolve(authorization === 'Bearer good');
+const signedIn = { authorization: 'Bearer good' };
+
 beforeAll(async () => {
-  server = createApiServer(new MemoryStore(), (entry) => logged.push(entry));
+  server = createApiServer(new MemoryStore(), (entry) => logged.push(entry), authenticate);
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', resolve);
   });
@@ -66,14 +72,26 @@ describe('createApiServer', () => {
   it('puts and gets an item over HTTP', async () => {
     const put = await fetch(`${base}/items/i1`, {
       method: 'PUT',
+      headers: signedIn,
       body: '{"name":"Lamp","quantity":3}',
     });
-    const got = await fetch(`${base}/items/i1?ignored=1`);
+    const got = await fetch(`${base}/items/i1?ignored=1`, { headers: signedIn });
 
     expect(put.status).toBe(200);
     expect(got.status).toBe(200);
     expect(got.headers.get('content-type')).toBe('application/json');
     expect(await got.json()).toEqual({ id: 'i1', name: 'Lamp', quantity: 3 });
+  });
+
+  it('answers 401 without a bearer token, and the health check with none', async () => {
+    const refused = await fetch(`${base}/items/i1`);
+    const wrong = await fetch(`${base}/items/i1`, { headers: { authorization: 'Bearer bad' } });
+    const health = await fetch(`${base}/health`);
+
+    expect(refused.status).toBe(401);
+    expect(refused.headers.get('www-authenticate')).toBe('Bearer');
+    expect(wrong.status).toBe(401);
+    expect(health.status).toBe(200);
   });
 
   it('refuses a body larger than it reads', async () => {
