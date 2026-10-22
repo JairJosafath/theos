@@ -86,6 +86,15 @@ const (
 	GitHubSettingSourceTagPrefix = "source.tagPrefix"
 )
 
+// Settings of a cloudFormation target, as its adapter reads them.
+const (
+	// CloudFormationSettingRegion is the AWS region the stacks ship to.
+	CloudFormationSettingRegion = "region"
+	// CloudFormationSettingAccount is the AWS account id the credential
+	// must be in.
+	CloudFormationSettingAccount = "account"
+)
+
 // GitHubTagPrefix is the prefix a Container's tags carry at a github target:
 // the target's tagPrefix as it is when set ("" giving bare tags), else the
 // Container's name and "-", so any number of Containers share a target with

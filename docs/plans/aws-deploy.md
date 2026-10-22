@@ -144,14 +144,17 @@ with its image. No test uses an AWS account.
 
 7. **Ship is one change set; State reads the stack back.**
    - **Ship**, for the tier's assembly, in the manifest's dependency order
-     (the backup-copy stack first, in its own region): publish each asset
+     (the backup-copy stack first; a stack whose environment names another
+     region than the target's is refused with a plain error naming both,
+     until cross-region assemblies are supported): publish each asset
      the stack needs that S3 lacks (`HeadObject`, then a streamed
      `PutObject` of the release file), then `CreateChangeSet` (`CREATE` or
      `UPDATE` as the stack exists; `TemplateURL` of the template asset;
      `RoleARN` the cfn-exec role; `CAPABILITY_IAM`, `CAPABILITY_NAMED_IAM`,
      `CAPABILITY_AUTO_EXPAND`; the template's parameters filled from
      `Target.Parameters` by name, the others ignored; tags
-     `c4factory.io/app` and `c4factory.io/version`) and `ExecuteChangeSet`
+     `c4factory.io/app`, `c4factory.io/tier`, `c4factory.io/version` and
+     `c4factory.io/stacks`, the assembly's stack count) and `ExecuteChangeSet`
      with a `ClientRequestToken` carrying the version. An empty change set
      (nothing changed) is deleted and counts as deployed. A stack whose
      `c4factory.io/app` tag names another app fails `StackTaken`, as the
@@ -163,7 +166,11 @@ with its image. No test uses an AWS account.
      stack's failure reason) rather than the old version running, which
      would make the loop ship it again; `*_IN_PROGRESS` is `Deploying`,
      `CREATE_COMPLETE`/`UPDATE_COMPLETE` is `Deployed`, `ROLLBACK_*`,
-     `*_FAILED` and `UPDATE_ROLLBACK_*` are `Failed`. The table is
+     `*_FAILED` and `UPDATE_ROLLBACK_*` are `Failed`, except that a stable
+     stack (complete, or `UPDATE_ROLLBACK_COMPLETE`) tagged the version
+     `State` is asked for runs it, so wanting the version a rollback
+     returned to is `Deployed`; fewer stacks running the version than their
+     `c4factory.io/stacks` tag says are `Deploying`. The table is
      `model.CloudFormationDeployState`, pure and table-tested.
    - **Health is the stack status**: `Healthy` on a complete state,
      `Progressing` in progress, `Degraded` on a failed state. Alarms are not

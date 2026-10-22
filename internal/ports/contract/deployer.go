@@ -25,8 +25,14 @@ type DeployerEnv struct {
 	Target func(t *testing.T) ports.Target
 	// Refused returns a target that refuses its credential.
 	Refused func(t *testing.T) ports.Target
+	// Unprepared returns a target that lacks a prerequisite a person sets
+	// up there; nil for a member that has none.
+	Unprepared func(t *testing.T) ports.Target
 	// Deploys counts the deploys of app the target's tool holds.
 	Deploys func(t *testing.T, target ports.Target, app string) int
+	// Files are the release files of version a member ships, nil for the
+	// suite's own two (a CloudFormation member ships a cloud assembly).
+	Files func(version string) []ports.File
 }
 
 // maxShips bounds the Ship calls one deploy takes: a Deployer that is the
@@ -41,11 +47,19 @@ const contractApp = "contract/orders-cli"
 // version shipped before reaches Deployed again when it is wanted; a refused
 // credential is ErrCredentialRefused from Check and Ship; a release without
 // the artifact the member ships (its files, or its image) is
-// ErrArtifactMissing.
+// ErrArtifactMissing; a target that lacks a prerequisite is
+// ErrPrerequisiteMissing from Ship, which ships nothing.
 func Deployer(t *testing.T, env DeployerEnv) {
 	t.Helper()
 	ctx := context.Background()
 	d := env.Deployer
+	shipment := func(version string) ports.Shipment {
+		s := shipment(version)
+		if env.Files != nil {
+			s.Files = env.Files(version)
+		}
+		return s
+	}
 
 	t.Run("checks a credential the target accepts", func(t *testing.T) {
 		if err := d.Check(ctx, env.Target(t)); err != nil {
@@ -104,6 +118,19 @@ func Deployer(t *testing.T, env DeployerEnv) {
 		}
 		if err := d.Ship(ctx, target, shipment("v1.0.0")); !errors.Is(err, ports.ErrCredentialRefused) {
 			t.Errorf("Ship() = %v, want ErrCredentialRefused", err)
+		}
+	})
+
+	t.Run("a missing prerequisite is ErrPrerequisiteMissing", func(t *testing.T) {
+		if env.Unprepared == nil {
+			t.Skip("the member has no prerequisite")
+		}
+		target := env.Unprepared(t)
+		if err := d.Ship(ctx, target, shipment("v1.0.0")); !errors.Is(err, ports.ErrPrerequisiteMissing) {
+			t.Errorf("Ship() to a target without its prerequisite = %v, want ErrPrerequisiteMissing", err)
+		}
+		if n := env.Deploys(t, target, contractApp); n != 0 {
+			t.Errorf("deploys = %d, want 0", n)
 		}
 	})
 

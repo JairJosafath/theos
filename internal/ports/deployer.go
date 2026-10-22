@@ -32,8 +32,9 @@ type Deployer interface {
 	Ship(ctx context.Context, target Target, s Shipment) error
 	// State reads back the deploy of app at target: version is the version
 	// the entry wants, its pin, else the newest release. An adapter whose
-	// target runs one version at a time (CloudFormation, Argo CD) ignores it
-	// and reports what runs; one whose versions stand side by side (GitHub
+	// target runs one version at a time (CloudFormation, Argo CD) reports
+	// what runs, and CloudFormation reads version only to report Deployed a
+	// stack a failed update rolled back to it; one whose versions stand side by side (GitHub
 	// releases) reports version's, else the newest. The zero DeployState when
 	// there is none.
 	State(ctx context.Context, target Target, app, version string) (DeployState, error)
@@ -162,6 +163,10 @@ var (
 	ErrUnreachable = errors.New("the target can't be reached")
 	// ErrArtifactMissing: the shipment lacks a file the member needs.
 	ErrArtifactMissing = errors.New("the release lacks a file the target needs")
+	// ErrPrerequisiteMissing: something a person sets up once at the target
+	// is missing (the CDK bootstrap, a template parameter with no default
+	// the target's parameters don't give); shipped again on the next poll.
+	ErrPrerequisiteMissing = errors.New("the target lacks something a person sets up there")
 )
 
 // Error is an adapter's error that is one of the port's errors and keeps the

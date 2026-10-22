@@ -119,7 +119,8 @@ var _ = Describe("Container catalog choices", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonDeploysItself))
 			g.Expect(cond.Message).To(Equal("aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) " +
-				"is the Container's deployment, so it takes no Compute and no Deployment; " +
+				"is the Container's deployment, so it takes no Compute and no Deployment " +
+				"but gitea-release, which ships its cloud assembly; " +
 				"remove computeRef small and deploymentRef k8s-manifests"))
 
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-ecs"), own)).To(Succeed())

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -1310,5 +1311,62 @@ func TestOperatorStandardDockerBuildxUsesTheDockerfile(t *testing.T) {
 		if strings.Contains(line, "buildx build") && strings.HasPrefix(strings.TrimSpace(line), "-") {
 			t.Errorf("docker-buildx ignores a failed build (#1579): %q", line)
 		}
+	}
+}
+
+// #1779: the Makefile runs recipes with -e, so a failed buildx build exited
+// before the `buildx rm` after it and left the builder behind. Run the real
+// recipe with a stand-in container tool: the builder goes whether the build
+// fails or not, and a failed build still fails the target.
+func TestOperatorStandardDockerBuildxRemovesTheBuilder(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not on PATH")
+	}
+	_, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "go-operator-standard"},
+	})
+	f, ok := result.Files["Makefile"]
+	if !ok {
+		t.Fatalf("Makefile not written for an operator; files: %v", result.Files.Paths())
+	}
+	for _, c := range []struct {
+		name      string
+		buildExit int
+	}{
+		{"failed build", 3},
+		{"good build", 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "Makefile"), f.Data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			log := filepath.Join(dir, "calls")
+			tool := filepath.Join(dir, "tool")
+			script := fmt.Sprintf("#!/bin/sh\necho \"$*\" >> %q\nif [ \"$2\" = build ]; then exit %d; fi\n", log, c.buildExit)
+			if err := os.WriteFile(tool, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("make", "-s", "docker-buildx", "CONTAINER_TOOL="+tool, "IMG=example/op:1")
+			cmd.Dir = dir
+			out, err := cmd.CombinedOutput()
+			if c.buildExit != 0 && err == nil {
+				t.Errorf("docker-buildx exited 0 on a failed build (#1779):\n%s", out)
+			}
+			if c.buildExit == 0 && err != nil {
+				t.Errorf("docker-buildx failed on a good build: %v\n%s", err, out)
+			}
+			calls, _ := os.ReadFile(log)
+			removed := 0
+			for line := range strings.SplitSeq(string(calls), "\n") {
+				if strings.HasPrefix(line, "buildx rm ") && strings.HasSuffix(line, "-builder") {
+					removed++
+				}
+			}
+			if removed != 1 {
+				t.Errorf("docker-buildx ran buildx rm %d times, want 1 (#1779); calls:\n%s\nmake:\n%s", removed, calls, out)
+			}
+		})
 	}
 }
