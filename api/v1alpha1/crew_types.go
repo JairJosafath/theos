@@ -259,6 +259,54 @@ type CrewRelease struct {
 	// tag as its version.
 	// +optional
 	GoModule *CrewReleaseGoModule `json:"goModule,omitempty"`
+
+	// packages is how publishing the release's npm and PyPI packages, the
+	// tarballs, wheels and sdists its release run attached, to the registries
+	// the GitProvider's spec.packages names went.
+	// +optional
+	Packages *CrewReleasePackages `json:"packages,omitempty"`
+}
+
+// CrewReleasePackages is how publishing a release's npm and PyPI packages went.
+type CrewReleasePackages struct {
+	// state is Waiting until the release runs succeed, Published once every
+	// package file of the release is in its registry, NoPackage when the
+	// release attached no package file, Invalid when a file can't be published
+	// at the tag's version, and Failed while the Git host can't be reached,
+	// tried again each poll.
+	// +kubebuilder:validation:Enum=Waiting;Published;NoPackage;Invalid;Failed
+	// +required
+	State string `json:"state"`
+
+	// message says what happened last: what was published, why a file wasn't,
+	// and an npm tarball under another scope, or none, left alone, with the
+	// scope it lacks.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// published lists the packages the release has in its registries, one per
+	// package file published, now or before.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=50
+	// +optional
+	Published []CrewReleasePackage `json:"published,omitempty"`
+}
+
+// CrewReleasePackage is one package a release published.
+type CrewReleasePackage struct {
+	// ecosystem is the package's registry kind, npm or PyPI.
+	// +kubebuilder:validation:Enum=npm;PyPI
+	// +required
+	Ecosystem string `json:"ecosystem"`
+
+	// name is the package's name as its metadata declares it.
+	// +required
+	Name string `json:"name"`
+
+	// version is the package's version as its metadata declares it, the
+	// release's tag without its v.
+	// +required
+	Version string `json:"version"`
 }
 
 // CrewReleaseGoModule is how publishing a release's Go module went.
