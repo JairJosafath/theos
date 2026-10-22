@@ -13,7 +13,9 @@
 // registering label image) runs with seccomp or AppArmor Unconfined, as a
 // user other than root, with /proc masked, in a pod with no hostPath volume
 // and none of the node's process or IPC namespaces. Every NetworkPolicy that selects them lets no traffic in and
-// lets out only DNS, Gitea's pods on port 3000 and HTTPS to public addresses
+// lets out only DNS (port 53 to cluster DNS: pods under labels in one
+// namespace, or an address block inside model.PrivateRanges, the chart's
+// clusterDNS, #1257), Gitea's pods on port 3000 and HTTPS to public addresses
 // (model.PrivateRanges kept out); together they let out all three, and one of
 // them isolates the pods both ways.
 package main
@@ -432,9 +434,22 @@ func checkFence(name string, d appsv1.Deployment, objs objects) []string {
 	return problems
 }
 
-// egress says which of the three a rule allows, or what else it allows.
+// egress says which of the three a rule allows, or what else it allows. The
+// DNS rule, the one on port 53 alone, may name several peers (NodeLocal
+// DNSCache's address beside kube-dns); the others name one.
 func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (reach, problem string) {
 	const more = "reaches more than DNS, Gitea on port 3000 and HTTPS to public addresses"
+	if ports(rule.Ports, port{corev1.ProtocolUDP, 53}, port{corev1.ProtocolTCP, 53}) {
+		if len(rule.To) == 0 {
+			return "", more // no peer means every address
+		}
+		for _, to := range rule.To {
+			if problem := dnsPeer(to); problem != "" {
+				return "", problem
+			}
+		}
+		return reachDNS, ""
+	}
 	if len(rule.To) != 1 {
 		return "", more
 	}
@@ -450,13 +465,6 @@ func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (re
 			}
 		}
 		return reachHTTPS, ""
-	case to.IPBlock == nil && to.NamespaceSelector != nil && to.PodSelector != nil:
-		if !only(to.NamespaceSelector, corev1.LabelMetadataName, metav1.NamespaceSystem) ||
-			!only(to.PodSelector, "k8s-app", "kube-dns") ||
-			!ports(rule.Ports, port{corev1.ProtocolUDP, 53}, port{corev1.ProtocolTCP, 53}) {
-			return "", more
-		}
-		return reachDNS, ""
 	case to.IPBlock == nil && to.NamespaceSelector == nil && to.PodSelector != nil:
 		if to.PodSelector.MatchLabels[nameLabel] != gitea || len(to.PodSelector.MatchExpressions) > 0 ||
 			!ports(rule.Ports, port{corev1.ProtocolTCP, giteaPort}) {
@@ -470,9 +478,29 @@ func egress(rule networkingv1.NetworkPolicyEgressRule, giteaPods labels.Set) (re
 	return "", more
 }
 
-// only says whether the selector matches exactly the one label.
-func only(s *metav1.LabelSelector, key, value string) bool {
-	return len(s.MatchExpressions) == 0 && len(s.MatchLabels) == 1 && s.MatchLabels[key] == value
+// dnsPeer says what is wrong with a peer of the DNS rule, "" when nothing:
+// cluster DNS is pods under labels in one namespace (kube-dns in
+// kube-system, OpenShift's openshift-dns) or an address block inside the
+// private ranges (NodeLocal DNSCache's 169.254.20.10/32), the forms of
+// --cluster-dns (#1257); every namespace, every pod of one, or a public
+// address on port 53 is more than DNS.
+func dnsPeer(to networkingv1.NetworkPolicyPeer) string {
+	const more = "reaches more than DNS, Gitea on port 3000 and HTTPS to public addresses"
+	switch {
+	case to.IPBlock != nil && to.PodSelector == nil && to.NamespaceSelector == nil:
+		if len(to.IPBlock.Except) > 0 || !model.PrivateBlock(to.IPBlock.CIDR) {
+			return fmt.Sprintf("reaches %s on port 53, outside the private ranges", to.IPBlock.CIDR)
+		}
+		return ""
+	case to.IPBlock == nil && to.NamespaceSelector != nil && to.PodSelector != nil:
+		ns, pods := to.NamespaceSelector, to.PodSelector
+		if len(ns.MatchExpressions) > 0 || len(ns.MatchLabels) != 1 || ns.MatchLabels[corev1.LabelMetadataName] == "" ||
+			len(pods.MatchExpressions) > 0 || len(pods.MatchLabels) == 0 {
+			return more
+		}
+		return ""
+	}
+	return more
 }
 
 type port struct {

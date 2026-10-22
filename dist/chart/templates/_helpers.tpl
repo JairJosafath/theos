@@ -94,3 +94,31 @@ fromJsonArray.
 {{- end }}
 {{- $names | toJson }}
 {{- end }}
+
+{{/*
+The peers the CI fence lets DNS (port 53) out to: one per clusterDNS entry,
+namespace/key=value[,key=value] (a namespace and pod labels) or an address
+block (a bare address means /32). The operator's --cluster-dns takes the same
+entries, for the agent fence (#1257).
+*/}}
+{{- define "c4-factory.clusterDNSPeers" -}}
+{{- range .Values.clusterDNS }}
+{{- $entry := toString . }}
+{{- if regexMatch "^[0-9.]+(/[0-9]+)?$" $entry }}
+- ipBlock:
+    cidr: {{ if contains "/" $entry }}{{ $entry }}{{ else }}{{ $entry }}/32{{ end }}
+{{- else if and (contains "/" $entry) (contains "=" $entry) }}
+{{- $parts := splitn "/" 2 $entry }}
+- namespaceSelector:
+    matchLabels: {kubernetes.io/metadata.name: {{ $parts._0 | quote }}}
+  podSelector:
+    matchLabels:
+      {{- range splitList "," $parts._1 }}
+      {{- $kv := splitn "=" 2 . }}
+      {{ $kv._0 | quote }}: {{ $kv._1 | quote }}
+      {{- end }}
+{{- else }}
+{{- fail (printf "clusterDNS entry %q: want namespace/key=value[,key=value] or an address block" $entry) }}
+{{- end }}
+{{- end }}
+{{- end }}

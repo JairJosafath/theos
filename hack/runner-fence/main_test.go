@@ -326,6 +326,39 @@ func TestCheck(t *testing.T) {
 		{"DNS in every namespace", func(o *objects) {
 			fence(o).Egress[0].To[0].NamespaceSelector = &metav1.LabelSelector{}
 		}, "egress rule 1 reaches more than"},
+		{"every pod of kube-system on port 53", func(o *objects) {
+			fence(o).Egress[0].To[0].PodSelector = &metav1.LabelSelector{}
+		}, "egress rule 1 reaches more than"},
+		{"DNS to every address", func(o *objects) {
+			fence(o).Egress[0].To = nil
+		}, "egress rule 1 reaches more than"},
+		// clusterDNS names where DNS runs: NodeLocal DNSCache's address, pods
+		// in another namespace, or both (#1257).
+		{"DNS through NodeLocal DNSCache (#1257)", func(o *objects) {
+			fence(o).Egress[0].To[0] = networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "169.254.20.10/32"}}
+		}, ""},
+		{"DNS in another namespace (#1257)", func(o *objects) {
+			fence(o).Egress[0].To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] = "openshift-dns"
+			fence(o).Egress[0].To[0].PodSelector.MatchLabels = map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}
+		}, ""},
+		{"DNS through NodeLocal DNSCache and kube-dns (#1257)", func(o *objects) {
+			fence(o).Egress[0].To = append(fence(o).Egress[0].To,
+				networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "169.254.20.10/32"}})
+		}, ""},
+		{"DNS to a public address", func(o *objects) {
+			fence(o).Egress[0].To[0] = networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "8.8.8.8/32"}}
+		}, "egress rule 1 reaches 8.8.8.8/32 on port 53, outside the private ranges"},
+		{"DNS to the world beside kube-dns", func(o *objects) {
+			fence(o).Egress[0].To = append(fence(o).Egress[0].To,
+				networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0"}})
+		}, "egress rule 1 reaches 0.0.0.0/0 on port 53, outside the private ranges"},
+		{"DNS to a private range with an exception", func(o *objects) {
+			fence(o).Egress[0].To[0] = networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{
+				CIDR: "10.0.0.0/8", Except: []string{"10.96.0.0/12"}}}
+		}, "egress rule 1 reaches 10.0.0.0/8 on port 53, outside the private ranges"},
+		{"kube-dns on port 53 and 9153", func(o *objects) {
+			fence(o).Egress[0].Ports = append(fence(o).Egress[0].Ports, tcp(9153))
+		}, "egress rule 1 reaches more than"},
 		{"Gitea's SSH port too", func(o *objects) {
 			fence(o).Egress[1].Ports = append(fence(o).Egress[1].Ports, tcp(22))
 		}, "egress rule 2 reaches more than"},
