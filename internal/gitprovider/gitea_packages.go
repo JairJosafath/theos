@@ -431,11 +431,10 @@ func (g *gitea) publishNpm(ctx context.Context, repo Repository, pkg *Package, m
 			repo.NpmRegistry, status, apiMessage(data))
 	}
 
-	info, err := file.Stat()
+	size, err := rewind(file)
 	if err != nil {
 		return pkg, err
 	}
-	size := info.Size()
 	bare := pkg.Name[strings.LastIndex(pkg.Name, "/")+1:]
 	fileName := bare + "-" + pkg.Version + ".tgz"
 	version := make(map[string]json.RawMessage, len(meta.manifest)+2)
@@ -467,6 +466,19 @@ func (g *gitea) publishNpm(ctx context.Context, repo Repository, pkg *Package, m
 	total := int64(len(prefix)) + int64(base64.StdEncoding.EncodedLen(int(size))) + int64(len(suffix))
 	err = g.upload(ctx, http.MethodPut, target, g.packages.NpmToken, bearer, "application/json", body, total, pkg)
 	return pkg, err
+}
+
+// rewind puts file, which reading its metadata moved, back at its start, and
+// returns its size: the upload streams the whole file.
+func rewind(file *os.File) (int64, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 // base64Reader encodes what it reads from r, standard base64, as it goes.
@@ -533,7 +545,7 @@ func (g *gitea) publishPyPI(ctx context.Context, repo Repository, pkg *Package, 
 			repo.PyPIIndex, status, apiMessage(data))
 	}
 
-	info, err := file.Stat()
+	size, err := rewind(file)
 	if err != nil {
 		return pkg, err
 	}
@@ -564,7 +576,7 @@ func (g *gitea) publishPyPI(ctx context.Context, repo Repository, pkg *Package, 
 	all := buf.Bytes()
 	body := io.MultiReader(bytes.NewReader(all[:prefix]), file, bytes.NewReader(all[prefix:]))
 	err = g.upload(ctx, http.MethodPost, repo.PyPIUpload, token, basic, form.FormDataContentType(), body,
-		int64(len(all))+info.Size(), pkg)
+		int64(len(all))+size, pkg)
 	return pkg, err
 }
 
