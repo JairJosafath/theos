@@ -637,3 +637,26 @@ func TestNextPublishStepSourceRuns(t *testing.T) {
 		})
 	}
 }
+
+// NextSourceStep is the source rule the github adapter asks (#1598): it reads
+// GitHub first, then commits the folder, then tags the commit.
+func TestNextSourceStep(t *testing.T) {
+	files := &ReleaseSource{Files: []SourceFile{{Path: "main.go", Mode: "100644", Size: 3, Blob: "b1"}}, Tree: "t1"}
+	s := SourceShip{Source: PublishSource{Path: "."}, Files: files, Repository: "o/r", App: "shop",
+		Namespace: "ns", Container: "api", Tag: "v1.0.0", GitHubTag: "api-v1.0.0"}
+	if step, done := NextSourceStep(s, nil); step.Action != PublishReadGitHubSource || done != nil {
+		t.Errorf("unread: got %v, %v", step.Action, done)
+	}
+	if step, _ := NextSourceStep(s, &GitHubSource{Head: "h1", HeadTree: "t0"}); step.Action != PublishSourceCommit ||
+		step.SourceCommit.Parent != "h1" || len(step.SourceCommit.Upload) != 1 {
+		t.Errorf("behind: got %+v", step)
+	}
+	if step, _ := NextSourceStep(s, &GitHubSource{Head: "h2", HeadTree: "t1"}); step.Action != PublishSourceTag ||
+		step.Commit != "h2" || step.Tag != SourceTag(s.Source, s.Tag) {
+		t.Errorf("committed: got %+v", step)
+	}
+	if _, done := NextSourceStep(s, &GitHubSource{Head: "h2", HeadTree: "t1", TagCommit: "h2", TagTree: "t1"}); done == nil ||
+		done.Commit != "h2" {
+		t.Errorf("tagged: got %+v", done)
+	}
+}

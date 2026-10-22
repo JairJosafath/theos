@@ -351,49 +351,71 @@ func GoInstallProblem(repository, path, module, tag string) string {
 // sourceStep publishes the release's source, or says it is out: done is the
 // source commit and tag once both are there, and nil while step is to be taken.
 func sourceStep(f PublishFacts, tag string) (step PublishStep, done *PublishedSource) {
-	src := f.Source
-	sourceTag := SourceTag(*src, f.Tag)
 	if f.SourceFiles == nil {
 		return PublishStep{Action: PublishReadSource}, nil
 	}
-	for _, file := range f.SourceFiles.Files {
+	return NextSourceStep(SourceShip{Source: *f.Source, Files: f.SourceFiles, Repository: f.Repository,
+		App: f.App, Namespace: f.Namespace, Container: f.Container, Tag: f.Tag, GitHubTag: tag}, f.GitHubSource)
+}
+
+// SourceShip is a release's source shipped to a GitHub repository: where it
+// goes, the files read from the release's tag, and the release it is the
+// source of (its version tag and its tag on GitHub, for the commit message).
+type SourceShip struct {
+	Source     PublishSource
+	Files      *ReleaseSource
+	Repository string
+	App        string
+	Namespace  string
+	Container  string
+	Tag        string
+	GitHubTag  string
+}
+
+// NextSourceStep is the next write that publishes s's source, given gh, what
+// GitHub holds at the repository's head and source tag (nil before it is
+// read): the source commit, then its tag. done is the source commit and tag
+// once both are there, and nil while step is to be taken.
+func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *PublishedSource) {
+	src := s.Source
+	sourceTag := SourceTag(src, s.Tag)
+	for _, file := range s.Files.Files {
 		if file.Size > MaxSourceBlob {
 			return fail(PublishSourceTooLarge, "%s is %d MiB, over the 100 MiB GitHub takes; the source of %s isn't published",
-				file.Path, file.Size>>20, f.Tag), nil
+				file.Path, file.Size>>20, s.Tag), nil
 		}
 	}
-	gh := f.GitHubSource
 	switch {
-	case f.SourceFiles.Tree == emptyTreeSHA:
+	case s.Files.Tree == emptyTreeSHA:
 		// GitHub holds no empty folder, so a commit of it would be made again
 		// every poll.
 		return fail(PublishNoReleaseFiles, "the source of %s holds only the factory's own files; nothing is published",
-			f.Tag), nil
+			s.Tag), nil
 	case gh == nil:
 		return PublishStep{Action: PublishReadGitHubSource}, nil
 	case gh.Head == "":
 		return fail(PublishEmptyRepository, "%s has no default branch to put the source of %s on; push a first commit",
-			f.Repository, f.Tag), nil
-	case gh.TagCommit != "" && gh.TagTree == f.SourceFiles.Tree:
+			s.Repository, s.Tag), nil
+	case gh.TagCommit != "" && gh.TagTree == s.Files.Tree:
 		return PublishStep{}, &PublishedSource{Commit: gh.TagCommit, Tag: sourceTag,
-			URL: SourceURL(f.Repository, src.Path, sourceTag)}
+			URL: SourceURL(s.Repository, src.Path, sourceTag)}
 	case gh.TagCommit != "":
 		return fail(PublishSourceTagTaken, "%s already has a tag %s whose %s isn't the source of %s; it leaves it alone",
-			f.Repository, sourceTag, folderName(src.Path), f.Tag), nil
-	case gh.HeadTree == f.SourceFiles.Tree:
+			s.Repository, sourceTag, folderName(src.Path), s.Tag), nil
+	case gh.HeadTree == s.Files.Tree:
 		return PublishStep{Action: PublishSourceTag, Tag: sourceTag, Commit: gh.Head,
-			Warning: GoInstallProblem(f.Repository, src.Path, f.SourceFiles.GoModule, sourceTag)}, nil
+			Warning: GoInstallProblem(s.Repository, src.Path, s.Files.GoModule, sourceTag)}, nil
 	}
 	var upload []SourceFile
-	for _, file := range f.SourceFiles.Files {
+	for _, file := range s.Files.Files {
 		if !slices.Contains(gh.HeadBlobs, file.Blob) &&
 			!slices.ContainsFunc(upload, func(u SourceFile) bool { return u.Blob == file.Blob }) {
 			upload = append(upload, file)
 		}
 	}
 	return PublishStep{Action: PublishSourceCommit, SourceCommit: &SourceCommit{
-		Path: src.Path, Files: f.SourceFiles.Files, Upload: upload, Tree: f.SourceFiles.Tree, Parent: gh.Head,
-		Message: SourceMessage(f.App, f.Namespace, f.Container, f.Tag, tag),
+		Path: src.Path, Files: s.Files.Files, Upload: upload, Tree: s.Files.Tree, Parent: gh.Head,
+		Message: SourceMessage(s.App, s.Namespace, s.Container, s.Tag, s.GitHubTag),
 	}}, nil
 }
 
