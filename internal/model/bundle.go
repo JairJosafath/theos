@@ -8,7 +8,7 @@ import (
 
 // Bundle is a catalog bundle: the names of a Framework and, optionally, a
 // Standard, a Compute and a Deployment a team picked together
-// (docs/plans/catalog-bundles.md). It never names a Connector.
+// (docs/plans/done/catalog-bundles.md). It never names a Connector.
 type Bundle struct {
 	Name        string
 	Description string
@@ -108,7 +108,7 @@ func InBundle(bundle string, err error) error {
 // expansion a Container scaffolded from, in side order, each as
 // "standard: python-standard, now python-standard-2" with "none" for a side a
 // bundle doesn't name. A changed Bundle is reported, never applied
-// (docs/plans/catalog-bundles.md, decision 6).
+// (docs/plans/done/catalog-bundles.md, decision 6).
 func BundleChanges(scaffolded, now Bundle) []string {
 	var out []string
 	for _, s := range []struct{ side, was, is string }{

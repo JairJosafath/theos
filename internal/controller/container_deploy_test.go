@@ -608,7 +608,7 @@ var _ = Describe("Container deploys", func() {
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "closed"})
 
 		d := deployIs(ns, "closed", model.DeployPhaseFailed, model.DeployArtifactMissing, "", model.DeployFailed)
-		Expect(d.Message).To(ContainSubstring(model.GitHubNothingToPublish))
+		Expect(d.Message).To(ContainSubstring(model.NothingToPublish))
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 	})
 

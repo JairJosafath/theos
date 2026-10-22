@@ -2,7 +2,7 @@
 # make validate-yaml: every Bundle the chart renders (values.yaml,
 # catalog.bundles) names entries the chart installs in the same namespace, of
 # the kind its side takes, and they fit together as the operator checks them
-# for a Container (docs/plans/catalog-bundles.md, decision 8): the entries
+# for a Container (docs/plans/done/catalog-bundles.md, decision 8): the entries
 # share a Container type (the Bundle's computed supportedTypes are not empty),
 # the Standard supports the Framework, and a Framework that deploys itself
 # comes with no Compute or Deployment. A Bundle that doesn't fails with its

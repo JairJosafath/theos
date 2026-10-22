@@ -820,7 +820,7 @@ catalog:
         supportedTypes: [function, service]
   ## Bundles: a Framework, Standard, Compute and Deployment picked together, which
   ## a Container names with bundleRef instead of its four sides
-  ## (docs/plans/catalog-bundles.md). No template and no ref: each names entries
+  ## (docs/plans/done/catalog-bundles.md). No template and no ref: each names entries
   ## above, and make validate-yaml checks it names ones the chart installs that
   ## share a Container type. name and spec, as a Bundle's.
   bundles:

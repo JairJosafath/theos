@@ -376,7 +376,7 @@ export interface Standard extends K8sObject {
 
 /**
  * A Bundle: the four catalog entries a team picked together, which a Container
- * names instead of the four (docs/plans/catalog-bundles.md). It has no status:
+ * names instead of the four (docs/plans/done/catalog-bundles.md). It has no status:
  * what it supports is computed from its entries (model/choices.ts).
  */
 export interface Bundle extends K8sObject {
