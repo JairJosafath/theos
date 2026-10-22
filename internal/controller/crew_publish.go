@@ -181,7 +181,6 @@ type publishPass struct {
 	merged []int
 	target gitprovider.ReleaseTarget
 	gitea  *gitprovider.Release
-	gh     *gitprovider.SourceFolder
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1alpha1.CrewReleaseSource
 	// private is whether GitHub reports the repository private, once read.
@@ -244,7 +243,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 			var gh gitprovider.SourceFolder
 			if gh, err = gitprovider.ReadSourceFolder(ctx, p.target, p.facts.Source.Path,
 				model.SourceTag(*p.facts.Source, p.tag)); err == nil {
-				p.gh, p.facts.GitHubSource = &gh, gh.Facts
+				p.facts.GitHubSource = gh.Facts
 			}
 		}
 		if err != nil {
@@ -267,19 +266,17 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 		}
 		p.log.Info("Wrote release notes")
 	case model.PublishSourceCommit:
-		var commit string
-		var giteaErr error
-		commit, giteaErr, err = commitSource(ctx, p.provider, p.repo, p.tag, p.target, p.gh, step.SourceCommit)
-		if giteaErr != nil {
-			p.log.Error(giteaErr, "Failed to read the release's source from Gitea")
+		// The source commit is the github member's Deployer's, as the
+		// release's writes are: it takes the same step from the same reads.
+		var ok bool
+		if ok, err = p.ship(ctx, step); !ok {
 			return false, nil
 		}
-		if err == nil {
-			p.log.Info("Committed release source", "commit", commit, "path", step.SourceCommit.Path,
-				"blobs", len(step.SourceCommit.Upload))
-		}
 	case model.PublishSourceTag:
-		err = p.target.CreateRef(ctx, "tags/"+step.Tag, step.Commit)
+		var ok bool
+		if ok, err = p.ship(ctx, step); !ok {
+			return false, nil
+		}
 		if errors.Is(err, gitprovider.ErrRefExists) {
 			// Made since it was read: the next poll reads whose it is.
 			return true, nil
@@ -467,18 +464,51 @@ func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, e
 	if !p.facts.Latest {
 		settings[model.GitHubSettingLatest] = "false"
 	}
+	if src := p.facts.Source; src != nil {
+		settings[model.GitHubSettingSourcePath] = src.Path
+		if src.TagPrefix != nil {
+			settings[model.GitHubSettingSourceTagPrefix] = *src.TagPrefix
+		}
+	}
 	target := ports.Target{Name: p.crew.Namespace + "/" + p.crew.Name, Member: model.DeployMemberGitHub,
 		Settings: settings, Secret: map[string][]byte{publishTokenKey: []byte(p.token)}}
 	shipment := ports.Shipment{App: p.crew.Namespace + "/" + p.facts.Container, DisplayName: p.facts.App,
 		Version: p.tag, Commit: model.ShipCommit(*p.facts), Notes: p.gitea.Body}
 	shipment.Files = releaseFiles(p.provider, p.repo, p.gitea.Assets)
+	if p.facts.SourceFiles != nil {
+		shipment.Source = p.facts.SourceFiles
+		shipment.ReadSource = releaseSource(p.provider, p.repo, p.tag)
+	}
 	err = deployer.Ship(logr.NewContext(ctx, p.log), target, shipment)
 	if ge, ok := errors.AsType[giteaError](err); ok {
 		// Gitea's side: not a GitHub failure.
-		p.log.Error(ge.error, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+		switch step.Action {
+		case model.PublishSourceCommit, model.PublishSourceTag:
+			p.log.Error(ge.error, "Failed to read the release's source from Gitea")
+		default:
+			p.log.Error(ge.error, "Failed to download a release file from Gitea", "file", step.Asset.Name)
+		}
 		return false, nil
 	}
 	return true, err
+}
+
+// releaseSource streams the files of the Git host's tag for the Deployer,
+// each with its path and size; a failure of the Git host's own, not of each,
+// is a giteaError.
+func releaseSource(provider gitprovider.Provider, repo gitprovider.Repository,
+	tag string) func(context.Context, func(string, int64, io.Reader) error) error {
+	return func(ctx context.Context, each func(path string, size int64, content io.Reader) error) error {
+		var eachErr error
+		err := provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
+			eachErr = each(f.Path, f.Size, content)
+			return eachErr
+		})
+		if err != nil && eachErr == nil {
+			return giteaError{err}
+		}
+		return err
+	}
 }
 
 // releaseFiles are the files of a Git host's release, each streamed from it

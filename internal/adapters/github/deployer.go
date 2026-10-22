@@ -240,9 +240,9 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, 
 		if err := c.CreateRef(ctx, "tags/"+step.Tag, step.Commit); err != nil {
 			return nil, err
 		}
-		log.Info("Tagged release source", "tag", step.Tag, "commit", step.Commit)
+		log.Info("Tagged release source", "sourceTag", step.Tag, "commit", step.Commit)
 		if step.Warning != "" {
-			log.Info("Release source isn't go installable", "tag", step.Tag, "problem", step.Warning)
+			log.Info("Release source isn't go installable", "sourceTag", step.Tag, "problem", step.Warning)
 		}
 	}
 	return nil, nil
