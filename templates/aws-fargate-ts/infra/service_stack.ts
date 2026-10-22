@@ -146,7 +146,8 @@ export class ServiceStack extends Stack {
       type: 'String',
       description:
         'The image the service runs, <account>.dkr.ecr.<region>.amazonaws.com/<repository>@sha256:<digest>.',
-      allowedPattern: '^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$',
+      allowedPattern:
+        '^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$',
     });
 
     // The table holds data: kept, protected and recoverable where the tier
@@ -236,7 +237,11 @@ export class ServiceStack extends Stack {
     );
     executionRole.addToPrincipalPolicy(
       new PolicyStatement({
-        actions: ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+        actions: [
+          'ecr:BatchCheckLayerAvailability',
+          'ecr:BatchGetImage',
+          'ecr:GetDownloadUrlForLayer',
+        ],
         resources: [
           this.formatArn({
             service: 'ecr',

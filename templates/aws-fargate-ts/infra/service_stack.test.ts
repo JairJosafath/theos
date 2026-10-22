@@ -357,9 +357,18 @@ describe('ServiceStack', () => {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+            Action: [
+              'ecr:BatchCheckLayerAvailability',
+              'ecr:BatchGetImage',
+              'ecr:GetDownloadUrlForLayer',
+            ],
             Resource: {
-              'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp(':repository/cdk-hnb659fds-container-assets-')])],
+              'Fn::Join': [
+                '',
+                Match.arrayWith([
+                  Match.stringLikeRegexp(':repository/cdk-hnb659fds-container-assets-'),
+                ]),
+              ],
             },
           }),
         ]),
