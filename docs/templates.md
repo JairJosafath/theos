@@ -304,10 +304,10 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.7.0)
+### gitea-release (v1.8.0)
 
 A Deployment for cli, extension and operator Containers, and for the AWS
-Frameworks' function, service and static-site ones:
+Frameworks' function, service, static-site, worker and job ones:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
 and attaches `dist/` to the tag's release. For an operator an `image` job
 builds the image first and the release names it by digest (#1458), on the
@@ -332,7 +332,9 @@ cloud assembly a `cloudFormation` DeployTarget ships (#1607). Since
 v1.7.0 an `aws-fargate-ts` service's release has the `image` job too: the
 release job names no image, and the deployer copies the digest the
 factory pushed into the bootstrap's ECR repository and passes it as the
-stack's `ImageUri` parameter (#1610).
+stack's `ImageUri` parameter (#1610). Since v1.8.0 it supports `worker`
+and `job` too, for `aws-queue-ts`, `aws-event-ts` and `aws-schedule-ts`,
+whose `make dist` writes the same assembly (#1773).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli",
   "node cli", "go cli", "vscode extension" and the AWS combos and checks

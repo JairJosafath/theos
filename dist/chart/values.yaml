@@ -798,11 +798,11 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.7.0
+      ref: v1.8.0
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml, an AWS Framework's cloud assembly) on a Gitea release for each version tag.
-        supportedTypes: [cli, extension, operator, function, service, static-site]
+        supportedTypes: [cli, extension, operator, function, service, static-site, worker, job]
     - kind: Connector
       name: postgres
       ref: v1.2.0
