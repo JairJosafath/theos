@@ -116,6 +116,16 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   reporter only to elaborate, when what they want is unclear. When you're
   unsure which way to go, ask the user with the choice you'd make and why, so
   they can steer.
+- **What can be configured is configured.** A choice that depends on where or
+  how a user runs the factory is a setting, never a fixed pick: a registry, a
+  package scope, an index, a provider, a name the user holds somewhere. Its
+  default works on the chart's in-cluster Gitea, and a user who runs
+  elsewhere gives their own value. The design never hard-codes such a choice
+  for the user, and no plan asks the owner to hold a name or an account on a
+  user's behalf (#1234: `@c4factory` on npmjs.org was proposed as the one
+  scope; the scope is a setting, and its default is the in-cluster Gitea's
+  npm registry). The accounts and credentials the project itself needs stay
+  the owner's ([GOVERNANCE.md](GOVERNANCE.md), "Reserved to the owner").
 - **Test the rules where they live,** at the lowest tier that can see them:
   1. `internal/model` and `internal/scaffold` table tests, the Agent
      Sandbox and pod specs the controllers build, the fence included, and

@@ -94,6 +94,15 @@ it. It never passes through triage: leave it alone, as every ready issue.
   saying what is missing, when you can't fill it: unclear (ask the reporter
   to elaborate), or waiting on an open issue (name it as #M; the watch reads
   it again when #M closes). Don't repeat a triage comment nothing answered.
+- Before you send an issue up for a choice the owner would have to make (a
+  registry, a scope, an index, a provider, a name held somewhere), ask
+  whether a setting with a default that works on the chart's in-cluster
+  Gitea removes the need for it (AGENTS.md, "What can be configured is
+  configured"). When it does, ready the issue with that setting as its
+  design, in a comment: the setting, its default, and that a user running
+  elsewhere gives their own value. Only an account or credential the project
+  itself needs is the owner's (GOVERNANCE.md, "Reserved to the owner"); a
+  name a user would hold is never that.
 - Send it to the maintainer, `hack/lib/github.sh status N needs-maintainer`,
   with a comment saying what it needs, when nothing else moves it: something
   only the owner can give (access, credentials, money), or a direction you
