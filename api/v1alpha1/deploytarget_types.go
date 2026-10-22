@@ -102,7 +102,7 @@ type DeployTargetGitHub struct {
 	// isolation on.
 	// +kubebuilder:validation:MaxLength=200
 	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')",message="url must be https://host, with no path: the server's address, not its API's"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
+	// +kubebuilder:validation:XValidation:rule="!self.lowerAscii().matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
 	// +optional
 	URL string `json:"url,omitempty"`
 

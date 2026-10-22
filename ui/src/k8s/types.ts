@@ -276,13 +276,16 @@ export interface ContainerDeployStatus {
 export interface DeployTarget extends K8sObject {
   spec: {
     /**
-     * Ships each release as a GitHub release of a repository: owner/name;
+     * Ships each release as a GitHub release of a repository: owner/name, on
+     * github.com or, when url is set (https://host, a GitHub Enterprise
+     * Server), on that server, whose registry is containers.<host>;
      * tagPrefix before each tag (unset: the Container's name and "-");
      * latest (default true) whether each release becomes Latest; source, set,
      * commits the app's files at the tag into path (unset: the Container's
      * name) under its own tagPrefix (unset: the path and "/").
      */
     github?: {
+      url?: string
       repository: string
       tagPrefix?: string
       latest?: boolean

@@ -311,7 +311,7 @@ spec:
                       rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')
                     - message: url is for GitHub Enterprise Server; leave it unset
                         for github.com
-                      rule: '!self.matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
+                      rule: '!self.lowerAscii().matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
                 required:
                 - repository
                 type: object
