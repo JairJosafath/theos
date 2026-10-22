@@ -94,6 +94,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 	}
 	pools := map[poolKey]*ciPool{}
 	var failures []string
+	failedReason := "ProviderUnavailable"
 	for _, p := range providers.Items {
 		if p.Spec.CI == nil || p.Spec.CI.GiteaActions == nil {
 			continue
@@ -104,6 +105,9 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 		}
 		if reason != "" {
 			failures = append(failures, fmt.Sprintf("%s: %s", p.Name, reason))
+			if reason == reasonCannotRegister {
+				failedReason = "UnsupportedCI"
+			}
 			continue
 		}
 		if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
@@ -132,7 +136,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 	switch {
 	case len(failures) > 0:
 		setCondition(&status.Conditions, project.Generation, ConditionCIRunners, metav1.ConditionFalse,
-			"UnsupportedCI", strings.Join(failures, "; "))
+			failedReason, strings.Join(failures, "; "))
 	case len(pools) > 0:
 		setCondition(&status.Conditions, project.Generation, ConditionCIRunners, metav1.ConditionTrue,
 			"PoolKept", fmt.Sprintf("%d pools", len(pools)))
@@ -218,6 +222,10 @@ func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.P
 	return nil
 }
 
+// reasonCannotRegister is runnerToken's reason for a Git host that cannot
+// register runners: the condition's reason is then UnsupportedCI.
+const reasonCannotRegister = "its Git host cannot register runners"
+
 // runnerToken is a GitProvider's runner registration token. A provider whose
 // host cannot register runners, or whose credentials cannot be read, gives a
 // reason instead and no error: the Project's condition says it.
@@ -231,7 +239,7 @@ func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string) (t
 	}
 	runners, ok := provider.(gitprovider.OwnerRunners)
 	if !ok {
-		return "", "its Git host cannot register runners", nil
+		return "", reasonCannotRegister, nil
 	}
 	token, err = runners.RunnerRegistrationToken(ctx)
 	if err != nil {
