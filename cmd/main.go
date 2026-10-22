@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/features"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	"github.com/JairJosafath/c4factory/internal/adapters/cloudformation"
@@ -60,6 +61,7 @@ func init() {
 	utilruntime.Must(c4v1alpha1.AddToScheme(scheme))
 	// The webhook certificate's CA is patched into the CRDs.
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
+	utilruntime.Must(c4v1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
