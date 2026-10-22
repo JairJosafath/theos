@@ -74,6 +74,7 @@ rules:
   resourceNames:
   - agents.c4.factory.io
   - briefs.c4.factory.io
+  - bundles.c4.factory.io
   - computes.c4.factory.io
   - connectors.c4.factory.io
   - containers.c4.factory.io
