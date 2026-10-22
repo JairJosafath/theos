@@ -701,6 +701,26 @@ func TestBuildSandboxPackages(t *testing.T) {
 			}
 		})
 	}
+	// The planner's pod gets none, as with Go: task_plan.go passes no
+	// package field (TestBuildSandboxPlanEnv has its whole env).
+	t.Run("the planner", func(t *testing.T) {
+		sandbox, err := buildSandbox(sandboxRun{
+			task:   &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")},
+			status: &c4v1alpha1.TaskStatus{Round: 1, Branch: "plan/4"},
+			agent:  &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+			name:   "cel-lens-plan-4-r1-plan", role: model.RolePlanner,
+			repoURL: "http://gitea/apps/brief-cel-lens.git", gitSecret: "brief-cel-lens-git",
+			brief: "cel-lens", briefRound: 4,
+		}, scheme, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range podOf(t, sandbox).Containers[0].Env {
+			if strings.HasPrefix(e.Name, "C4_NPM_") || strings.HasPrefix(e.Name, "C4_PYPI_") {
+				t.Errorf("planner pod has %s=%q, want no package env", e.Name, e.Value)
+			}
+		}
+	})
 }
 
 func TestBuildSandboxPlanEnv(t *testing.T) {
