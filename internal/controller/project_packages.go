@@ -12,9 +12,7 @@ import (
 	"fmt"
 	"maps"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -119,18 +117,7 @@ func (r *ProjectReconciler) packagesActionsOf(ctx context.Context, gp *c4v1alpha
 // readToken is the readToken of the named Secret in ns, "" for no name, no
 // Secret or no key.
 func (r *ProjectReconciler) readToken(ctx context.Context, ns, name string) (string, error) {
-	if name == "" {
-		return "", nil
-	}
-	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &secret)
-	if apierrors.IsNotFound(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return string(secret.Data[packagesReadTokenKey]), nil
+	return secretKey(ctx, r.APIReader, ns, name, packagesReadTokenKey)
 }
 
 // applyPackagesActions sets want's variables and secrets on the owner and
