@@ -304,8 +304,8 @@ func NextPublishStep(f PublishFacts) PublishStep {
 		return fail(PublishSecretUnreadable, "Secret %s can't be read: %s; %s is published once it can",
 			f.Secret, f.SecretError, f.Tag)
 	case !f.SecretFound:
-		return fail(PublishSecretMissing, "Secret %s with the key token is missing; %s is published once it is there",
-			f.Secret, f.Tag)
+		return fail(PublishSecretMissing, "Secret %s with the key token (or a GitHub App's %s) is missing; %s is "+
+			"published once it is there", f.Secret, strings.Join(GitHubAppKeys, ", "), f.Tag)
 	case f.Failure != nil:
 		return failed(f, tag)
 	case f.Source != nil && len(f.Overlaps) > 0:

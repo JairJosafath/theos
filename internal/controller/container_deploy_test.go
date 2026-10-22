@@ -444,6 +444,34 @@ var _ = Describe("Container deploys", func() {
 		Expect(assets).To(ConsistOf("install.yaml"), "the image archive is the image's, not a release file")
 	})
 
+	It("is Ready and ships a release to a github target whose Secret is a GitHub App's (#1601)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		repository := "acme/" + ns + "-app"
+		installation := newInstallation()
+		key, pemKey := newGitHubAppKey()
+		githubFake.addRepository(repository, "a-token-the-target-never-holds")
+		githubFake.addApp("77", installation, repository, &key.PublicKey)
+		dt := newDeployTarget(ns, "app", "app-github")
+		dt.Spec.GitHub.Repository = repository
+		mustCreate(newDeploySecret(ns, "app-github", map[string]string{"appId": "77",
+			"installationId": installation, "privateKey": string(pemKey)}), dt)
+		cond := deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+		Expect(cond.Message).To(ContainSubstring("GitHub accepts the credential in Secret app-github"))
+		shipRelease(ns, "v0.1.0", true)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "app"})
+
+		deployIs(ns, "app", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		var published []string
+		for _, r := range githubFake.releases(repository) {
+			if !r.Draft {
+				published = append(published, r.TagName)
+			}
+		}
+		Expect(published).To(ConsistOf("orders-api-v0.1.0"))
+		Expect(githubFake.appMints(installation)).To(Equal(1), "the token is kept, not minted per call")
+	})
+
 	It("publishes no source holding a secret or lacking a license, and ships the next clean release (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)

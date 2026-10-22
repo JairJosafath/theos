@@ -79,6 +79,13 @@ func publishSecret(ns, token string) *corev1.Secret {
 		StringData: map[string]string{"token": token}}
 }
 
+// publishAppSecret is the Crew's Secret holding a GitHub App's keys.
+func publishAppSecret(ns, appID, installation string, privateKey []byte) *corev1.Secret {
+	return &corev1.Secret{ObjectMeta: objectMeta(ns, "orders-api-github"),
+		StringData: map[string]string{"appId": appID, "installationId": installation,
+			"privateKey": string(privateKey)}}
+}
+
 // publishFailedWith waits for the Crew's publish to fail with reason, with
 // one Warning Event saying message.
 func publishFailedWith(ns, reason, message string) {
@@ -214,7 +221,7 @@ var _ = Describe("Crew publishing releases", func() {
 			container.Spec.DisplayName = "Orders API"
 			g.Expect(k8sClient.Update(ctx, &container)).To(Succeed())
 		}).Should(Succeed())
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 
 		mustCreate(publishSecret(ns, token))
 		rel := publishedTo(ns, repository, files)
@@ -315,7 +322,7 @@ var _ = Describe("Crew publishing releases", func() {
 		githubFake.addRepository(repository, token)
 		files := publishingCrew(ns, repository)
 
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		mustCreate(publishSecret(ns, token))
@@ -365,7 +372,7 @@ var _ = Describe("Crew publishing releases", func() {
 		// No Secret yet: the Crew published to another repository of the
 		// name before, which is gone.
 		files := publishingCrew(ns, repository)
-		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token is missing")
+		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		crew := getCrew(Default, ns)
 		orig := crew.DeepCopy()
 		crew.Status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id + 500}
@@ -419,6 +426,35 @@ var _ = Describe("Crew publishing releases", func() {
 
 		publishFailedWith(ns, "Unauthorized", "the token can't write releases to "+repository+". Check that "+
 			repository+" is where releases should go (set by the Crew's spec.publishReleases)")
+	})
+
+	It("publishes with a GitHub App's installation token (#1601)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		key, pemKey := newGitHubAppKey()
+		installation := newInstallation()
+		githubFake.addRepository(repository, rand.Text())
+		githubFake.addApp("crew-app-"+ns, installation, repository, &key.PublicKey)
+		mustCreate(publishAppSecret(ns, "crew-app-"+ns, installation, pemKey))
+		files := publishingCrew(ns, repository)
+
+		publishedTo(ns, repository, files)
+		Expect(githubFake.appMints(installation)).To(Equal(1), "the token is kept, not minted per call")
+	})
+
+	It("fails Unauthorized when GitHub refuses to mint the App's token (#1601)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		key, _ := newGitHubAppKey()
+		_, otherPEM := newGitHubAppKey()
+		installation := newInstallation()
+		githubFake.addRepository(repository, rand.Text())
+		githubFake.addApp("crew-app-"+ns, installation, repository, &key.PublicKey)
+		mustCreate(publishAppSecret(ns, "crew-app-"+ns, installation, otherPEM))
+		publishingCrew(ns, repository)
+
+		publishFailedWith(ns, "Unauthorized", "A JSON web token could not be decoded")
+		Expect(githubFake.releases(repository)).To(BeEmpty())
 	})
 
 	It("fails on a repository GitHub doesn't show the token", func() {

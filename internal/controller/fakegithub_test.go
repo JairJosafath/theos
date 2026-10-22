@@ -1,7 +1,15 @@
 package controller
 
 import (
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
@@ -33,6 +43,18 @@ type fakeGitHub struct {
 	renamed map[string]string
 	nextID  int64
 	is      *fakeGitHubIssues
+	// apps is each GitHub App installation's App, by installation id.
+	apps map[string]fakeGitHubApp
+}
+
+// fakeGitHubApp is a GitHub App installed on one repository: a token it
+// mints becomes the token the repository accepts.
+type fakeGitHubApp struct {
+	appID      string
+	repository string
+	public     *rsa.PublicKey
+	// mints is how many tokens it minted.
+	mints int
 }
 
 type fakeGitHubRelease struct {
@@ -60,7 +82,7 @@ type fakeGitHubAsset struct {
 func newFakeGitHub() *fakeGitHub {
 	f := &fakeGitHub{repos: map[string][]*fakeGitHubRelease{}, git: map[string]*fakeGitStore{},
 		tokens: map[string]string{}, ids: map[string]int64{}, renamed: map[string]string{},
-		written: map[string]int{}, latest: map[string]int64{}}
+		written: map[string]int{}, latest: map[string]int64{}, apps: map[string]fakeGitHubApp{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -69,6 +91,85 @@ func newFakeGitHub() *fakeGitHub {
 func (f *fakeGitHub) GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error) {
 	cfg.APIURL, cfg.UploadURL = f.server.URL, f.server.URL
 	return gitprovider.Client{}.GitHubReleases(cfg)
+}
+
+// GitHubToken is the real client's, minting a GitHub App's token at the fake.
+func (f *fakeGitHub) GitHubToken(ctx context.Context, _ string, secret map[string][]byte) (string, error) {
+	return gitprovider.Client{}.GitHubToken(ctx, f.server.URL, secret)
+}
+
+// addApp installs GitHub App appID, whose key public is, on repository as
+// installation; installing it again replaces the App.
+func (f *fakeGitHub) addApp(appID, installation, repository string, public *rsa.PublicKey) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.apps[installation] = fakeGitHubApp{appID: appID, repository: repository, public: public}
+}
+
+// installations numbers the envtests' App installations, each its own.
+var installations atomic.Int64
+
+// newInstallation is the id of an App installation no other test uses.
+func newInstallation() string {
+	return strconv.FormatInt(5000+installations.Add(1), 10)
+}
+
+// appMints is how many tokens installation minted.
+func (f *fakeGitHub) appMints(installation string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.apps[installation].mints
+}
+
+// serveApp mints an installation token for a JWT its App signed, as POST
+// /app/installations/{id}/access_tokens does; the token expires in an hour.
+func (f *fakeGitHub) serveApp(w http.ResponseWriter, req *http.Request, installation string) {
+	app, ok := f.apps[installation]
+	if !ok || req.Method != http.MethodPost {
+		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+		return
+	}
+	if !app.signed(strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")) {
+		reply(w, http.StatusUnauthorized, map[string]string{"message": "A JSON web token could not be decoded"})
+		return
+	}
+	app.mints++
+	f.apps[installation] = app
+	token := "ghs_" + rand.Text()
+	f.tokens[app.repository] = token
+	reply(w, http.StatusCreated, map[string]string{"token": token,
+		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+}
+
+// newGitHubAppKey generates a GitHub App's private key, and its PEM as the
+// App's Secret holds it; no test holds a key of its own.
+func newGitHubAppKey() (*rsa.PrivateKey, []byte) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	return key, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+}
+
+// signed says whether jwt is an RS256 JWT of the App, signed by its key and
+// not expired.
+func (a fakeGitHubApp) signed(jwt string) bool {
+	parts := strings.Split(jwt, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if err != nil || rsa.VerifyPKCS1v15(a.public, crypto.SHA256, digest[:], sig) != nil {
+		return false
+	}
+	payload, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims struct {
+		ExpiresAt int64  `json:"exp"`
+		Issuer    string `json:"iss"`
+	}
+	return json.Unmarshal(payload, &claims) == nil && claims.Issuer == a.appID &&
+		claims.ExpiresAt > time.Now().Unix()
 }
 
 // addRepository makes repository owner/name, which accepts token; its default
@@ -161,6 +262,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path == "/user" && req.Method == http.MethodGet {
 		// Every repository's token is the factory's account.
 		reply(w, http.StatusOK, fakeGitHubUser{"c4factory-bot"})
+		return
+	}
+	if token, ok := strings.CutPrefix(req.URL.Path, "/app/installations/"); ok {
+		f.serveApp(w, req, strings.TrimSuffix(token, "/access_tokens"))
 		return
 	}
 	if team, ok := strings.CutPrefix(req.URL.Path, "/orgs/"); ok {

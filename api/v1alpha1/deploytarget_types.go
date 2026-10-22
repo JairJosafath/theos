@@ -54,8 +54,11 @@ type DeployTargetSpec struct {
 	ArgoCD *DeployTargetArgoCD `json:"argoCD,omitempty"`
 
 	// credentialsSecretRef names a Secret in the DeployTarget's namespace that
-	// the user creates; its keys are the member's (token for github). Only the
-	// operator reads it: it is never mounted in a sandbox or passed to a CI job.
+	// the user creates; its keys are the member's. For github: token, a
+	// fine-grained token, or a GitHub App's appId, installationId and
+	// privateKey (its PEM), token winning when both are set; packagesToken
+	// is optional. Only the operator reads it: it is never mounted in a
+	// sandbox or passed to a CI job.
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
