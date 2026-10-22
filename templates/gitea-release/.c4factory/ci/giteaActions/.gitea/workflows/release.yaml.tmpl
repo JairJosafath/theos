@@ -7,19 +7,19 @@
 */ -}}
 {{- $operator := eq .Type "operator" -}}
 {{- /* registries: the step that routes the factory's npm and PyPI packages to
-  the owner's registries; with true, only when the change touches code. */ -}}
+  the owner's registries. */ -}}
 {{- define "registries" }}
       - name: Credentials for the package registries
-{{- if . }}
-        if: steps.changes.outputs.code == 'true'
-{{- end }}
         # The factory's packages (other apps of this project) come from the
         # owner's npm registry and PyPI index, the Git host's own unless the
         # GitProvider's spec.packages names others: then the operator sets
         # these Actions variables and secrets, and empty ones mean the host.
         # npm sends the scope to the registry through ~/.npmrc; uv logs in to
-        # the index's host with ~/.netrc. A package the registry lacks fails
-        # here instead of being asked of npmjs.org or pypi.org.
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
         env:
           NPM_SCOPE: {{`${{ vars.C4_NPM_SCOPE }}`}}
           NPM_REGISTRY: {{`${{ vars.C4_NPM_REGISTRY }}`}}
@@ -35,9 +35,13 @@
           registry=${registry%/}/
           index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
           host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
           umask 077
           printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@c4factory}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
-          printf 'machine %s\nlogin %s\npassword %s\n' "${host%%/*}" "$ACTOR" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
 {{- end -}}
 # Builds the release files with `make dist` when a version tag (v1.2.3) is
 # pushed, and attaches every file in dist/ to the Gitea release of that tag,
@@ -145,7 +149,7 @@ jobs:
           git -c http.extraHeader="Authorization: token $TOKEN" \
             fetch -q --depth 1 "{{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git" "{{`${{ gitea.sha }}`}}"
           git checkout -q FETCH_HEAD
-{{- template "registries" false }}
+{{- template "registries" }}
       # uv's cache and the Python it installs, for a Python project, go in the
       # checkout, which is in memory and goes with the job, as in the checks.
       - name: make dist

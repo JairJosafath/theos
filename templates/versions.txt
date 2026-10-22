@@ -11,7 +11,7 @@ vscode-extension v1.0.0
 react-vite v1.0.0
 node-cli v1.1.1
 python-cli v1.1.0
-ts-standard v1.6.1
+ts-standard v1.6.2
 aws-lambda-ts v1.3.1
 aws-ec2-ts v1.1.1
 aws-event-ts v1.1.1
@@ -21,9 +21,9 @@ aws-lambda-py v1.2.1
 aws-queue-ts v1.1.1
 aws-schedule-ts v1.1.1
 aws-static-site-ts v1.0.0
-aws-standard v1.18.0
-python-standard v1.5.0
-gitea-release v1.5.0
+aws-standard v1.18.1
+python-standard v1.5.1
+gitea-release v1.5.1
 hello v1.0.0
 hello-standard v1.1.0
 hello-html v1.1.0

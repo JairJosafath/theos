@@ -907,7 +907,8 @@ func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
 // ts-standard, python-standard and aws-standard and gitea-release's release
 // workflow write ~/.npmrc and ~/.netrc from the owner's Actions variables
 // and secrets, falling back to the host's own registries and gitea.token,
-// before the step that installs (#1231). The step is one text in all four.
+// before the step that installs (#1231). The step is one text in all four,
+// and run under bash it names the index's host without its port (#1696).
 func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 	type workflow struct {
 		Jobs map[string]struct {
@@ -1012,14 +1013,50 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 			}
 		})
 	}
-	var first string
+	const reference = "ts-standard/check"
 	for name, run := range runs {
-		if first == "" {
-			first = run
+		if run != runs[reference] {
+			t.Errorf("%s's credentials step differs from %s's:\n%s", name, reference, run)
 		}
-		if run != first {
-			t.Errorf("%s's credentials step differs from the others:\n%s", name, run)
-		}
+	}
+	// The step under bash, as the runner runs it (#1696): ~/.netrc names the
+	// index's host without the port, which uv, pip and requests match on;
+	// the login is gitea.actor with the workflow's token and __token__ with
+	// C4_PYPI_TOKEN; ~/.npmrc keeps the port, which npm matches on.
+	const server = "http://gitea.gitea.svc.cluster.local:3000"
+	for _, c := range []struct {
+		name      string
+		pypiToken string
+		wantNetrc string
+	}{
+		{"the workflow's token", "", "machine gitea.gitea.svc.cluster.local\nlogin runner\npassword tok\n"},
+		{"C4_PYPI_TOKEN", "pypi-tok", "machine gitea.gitea.svc.cluster.local\nlogin __token__\npassword pypi-tok\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command("bash", "-euo", "pipefail", "-c", runs[reference])
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SERVER=" + server,
+				"OWNER=webshop", "ACTOR=runner", "TOKEN=tok", "PYPI_TOKEN=" + c.pypiToken}
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("the credentials step failed: %v\n%s", err, out)
+			}
+			netrc, err := os.ReadFile(filepath.Join(home, ".netrc"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(netrc) != c.wantNetrc {
+				t.Errorf("~/.netrc:\n%s\nwant:\n%s", netrc, c.wantNetrc)
+			}
+			npmrc, err := os.ReadFile(filepath.Join(home, ".npmrc"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantNpmrc := "@c4factory:registry=" + server + "/api/packages/webshop/npm/\n" +
+				"//gitea.gitea.svc.cluster.local:3000/api/packages/webshop/npm/:_authToken=tok\n"
+			if string(npmrc) != wantNpmrc {
+				t.Errorf("~/.npmrc:\n%s\nwant:\n%s", npmrc, wantNpmrc)
+			}
+		})
 	}
 }
 

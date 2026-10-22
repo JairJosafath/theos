@@ -47,7 +47,7 @@ the `make check` contract CI runs.
   (the host's own PyPI index by default,
   `<gitea>/api/packages/<owner>/pypi/simple`); the agent's pod and CI log in
   to its host through a `~/.netrc` they write (since v1.5.0). On your own
-  machine, add `machine <index host> login <you> password <token>` to
+  machine, add `machine <index hostname, no port> login <you> password <token>` to
   `~/.netrc` (mode 0600) with a token of yours that may read packages.
   `AGENTS.md` says how a package is declared in `pyproject.toml`.
 - **Framework contract:** the Framework owns `pyproject.toml`, `uv.lock` and

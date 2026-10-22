@@ -673,7 +673,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: ts-standard
-      ref: v1.6.1
+      ref: v1.6.2
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -683,7 +683,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.18.0
+      ref: v1.18.1
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -694,7 +694,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
@@ -718,7 +718,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
