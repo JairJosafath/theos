@@ -361,7 +361,7 @@ type file struct {
 // frameworkFiles reads what `kubebuilder init` wrote into dir and returns the
 // Framework's template files by path, failing on every path no rule matches.
 func frameworkFiles(dir string) (map[string]file, error) {
-	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod")) //nolint:gosec // the go.mod kubebuilder wrote
 	if err != nil {
 		return nil, err
 	}
