@@ -319,6 +319,9 @@ check "triage skill: needs-maintainer is the maintainer's" "$(grep -c "needs-mai
 check "triage skill: readies an unsettled design as design work" "$(grep -c '^- Ready it as design work' <<<"$skill")" 1
 check "triage skill: a design issue's plan says Refs, not Closes (#491)" "$(grep -c 'request says `Refs #N`, never `Closes #N`' <<<"$skill")" 1
 check "triage skill: a design issue waits on its steps (#491)" "$(grep -c 'a "Depends on #S" line per step' <<<"$skill")" 1
+handoff_skill=$(cat "$(dirname "$0")/../.claude/skills/handoff/SKILL.md")
+check "triage skill: a decided plan's steps are filed ready, proposed only for a decision the plan left (#1630)" "$(grep -c 'files the steps as$' <<<"$skill") $(grep -c '^  `status/ready` issues, each with its own "Done when"' <<<"$skill") $(grep -c 'status/proposed` only when it needs a decision the plan did not make' <<<"$skill") $(grep -c 'files the steps as status/proposed' <<<"$skill")" "1 1 1 0"
+check "handoff skill: says the same of a plan's steps (#1630)" "$(grep -c 'file each `status/ready`, with' <<<"$handoff_skill") $(grep -c 'status/proposed` only when it needs a decision the plan did not make' <<<"$handoff_skill")" "1 1"
 check "triage skill: the plan is not the issue's Done when (#491)" "$(grep -c 'that is its "Done when"' <<<"$skill")" 0
 check "triage skill: never asks how to build it" "$(grep -c 'Never ask how to' <<<"$skill")" 1
 check "triage skill: a direction comes with the choice it would make" "$(grep -c 'says the choice you would make and why' <<<"$skill")" 1

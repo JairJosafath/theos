@@ -79,10 +79,14 @@ it. It never passes through triage: leave it alone, as every ready issue.
   doesn't settle how, or it is more than one piece of work: comment that its
   session makes the design choices, writes them and why in a plan in
   docs/plans/ (and the change to docs/design.md), and files the steps as
-  status/proposed issues, each with its own "Done when". The plan's pull
-  request says `Refs #N`, never `Closes #N`; the issue stays open and
-  status/waiting, its body a "Depends on #S" line per step, and closes itself
-  when its last step closes.
+  `status/ready` issues, each with its own "Done when" (the `handoff`
+  skill, "Plan only"). The steps of a decided plan carry its decisions, so
+  the relay picks them without a second triage pass; a step is filed
+  `status/proposed` only when it needs a decision the plan did not make,
+  and then its body says which. The plan's pull request says `Refs #N`,
+  never `Closes #N`; the issue stays open and status/waiting, its body a
+  "Depends on #S" line per step, and closes itself when its last step
+  closes.
 - Fill the gap and ready it, when all that is missing is something you can
   write: a "Depends on #M" line it lacks (`gh issue edit N --body-file FILE`,
   the rest kept). Say what you wrote in a comment.
