@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CrewWriter } from '../../k8s/crews'
 import type { UiSession } from '../../k8s/session'
-import type { Crew } from '../../k8s/types'
+import type { Agent, Crew } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import { CrewPage } from './CrewPage'
 
@@ -24,12 +24,12 @@ const writer: CrewWriter = {
   rerunRelease: async () => {},
 }
 
-function render(session: UiSession | undefined, c: Crew): string {
+function render(session: UiSession | undefined, c: Crew, agents: Agent[] = []): string {
   return renderToStaticMarkup(
     createElement(
       SessionContext.Provider,
       { value: session },
-      createElement(CrewPage, { crew: c, agents: [], tasks: [], containers: [], briefs: [], writer }),
+      createElement(CrewPage, { crew: c, agents, tasks: [], containers: [], briefs: [], writer }),
     ),
   )
 }
@@ -126,5 +126,55 @@ describe('the Crew page’s published release', () => {
     const html = render(undefined, published('Failed', reason))
     expect(html).toContain(words)
     expect(html).toContain('what the operator says')
+  })
+})
+
+// #1226: the page lists spec.routes in order, with the Crew's own Agent where
+// a route leaves a role blank.
+describe('the Crew page’s routes by label', () => {
+  const agent = (name: string, displayName?: string): Agent => ({
+    metadata: { name, namespace: 'webshop' },
+    spec: { displayName, image: 'agent:1', harness: 'claude-code' },
+  })
+  const agents = [agent('i', 'Implementer'), agent('r', 'Reviewer'), agent('cheap', 'Cheap model')]
+  const routed: Crew = {
+    ...crew(),
+    spec: {
+      ...crew().spec,
+      routes: [
+        { label: 'kind/docs', implementer: { name: 'cheap' } },
+        { label: 'area/security', implementer: { name: 'cheap' }, reviewer: { name: 'strict' } },
+      ],
+    },
+  }
+
+  it('lists each route in order: the label, who implements and who reviews', () => {
+    const html = render(undefined, routed, agents)
+    expect(html).toContain('Routes by label')
+    const docs = html.indexOf('kind/docs')
+    const security = html.indexOf('area/security')
+    expect(docs).toBeGreaterThan(-1)
+    expect(security).toBeGreaterThan(docs)
+    // The second route names both roles; its reviewer isn't an Agent the page knows.
+    expect(html.slice(security)).toContain('Cheap model')
+    expect(html.slice(security)).toContain('title="Agent strict was not found">strict')
+    expect(html.slice(security)).not.toContain('the Crew’s')
+  })
+
+  it('shows the Crew’s own Agent for a role the route leaves blank', () => {
+    const html = render(undefined, routed, agents)
+    const docs = html.slice(html.indexOf('kind/docs'), html.indexOf('area/security'))
+    expect(docs).toContain('Cheap model')
+    expect(docs).toContain('Reviewer</span>')
+    expect(docs).toContain('(the Crew’s)')
+    expect(docs).not.toContain('Implementer</span>')
+  })
+
+  it('shows nothing new for a Crew with no routes', () => {
+    for (const c of [crew(), { ...crew(), spec: { ...crew().spec, routes: [] } }]) {
+      const html = render(undefined, c, agents)
+      expect(html).not.toContain('Routes by label')
+      expect(html).not.toContain('crew-routes')
+    }
   })
 })
