@@ -72,6 +72,10 @@ type Input struct {
 	Standard   string
 	Compute    string
 	Deployment string
+	// Bundle is the name of the Bundle the four were expanded from, or empty
+	// when the Container named its sides. The commit records the expansion so
+	// a recovered scaffold reports a Bundle changed since.
+	Bundle string
 	// Connectors are the unique Connector names, sorted.
 	Connectors []string
 	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
