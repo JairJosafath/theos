@@ -60,7 +60,8 @@ func TestModelProxyChart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("helm template agents.enabled=false: %v", err)
 	}
-	if got := decodeModelProxy(t, "the chart without agents", out, modelProxyName); got.deployment != nil || got.policy != nil || got.service {
+	got := decodeModelProxy(t, "the chart without agents", out, modelProxyName)
+	if got.deployment != nil || got.policy != nil || got.service {
 		t.Errorf("the chart renders the model proxy with agents.enabled=false")
 	}
 }
@@ -159,7 +160,8 @@ func checkModelProxyIngress(t *testing.T, where string, p *networkingv1.NetworkP
 	peer := p.Spec.Ingress[0].From[0]
 	if peer.NamespaceSelector == nil || peer.NamespaceSelector.MatchLabels[sharedSecretsNSLabel] != "true" ||
 		len(peer.NamespaceSelector.MatchExpressions) != 0 {
-		t.Errorf("%s: NetworkPolicy ingress namespaceSelector is %v, want only %s=true", where, peer.NamespaceSelector, sharedSecretsNSLabel)
+		t.Errorf("%s: NetworkPolicy ingress namespaceSelector is %v, want only %s=true",
+			where, peer.NamespaceSelector, sharedSecretsNSLabel)
 	}
 	if peer.PodSelector == nil || peer.PodSelector.MatchLabels[sandboxPodLabel] != "true" ||
 		len(peer.PodSelector.MatchExpressions) != 0 {

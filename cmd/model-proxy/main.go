@@ -41,7 +41,8 @@ func main() {
 	dir := flag.String("credentials-dir", "/etc/model-proxy/credentials",
 		"The mounted Secret directory holding "+modelproxy.OAuthTokenKey+" or "+modelproxy.APIKeyKey)
 	drain := flag.Duration("drain", 5*time.Second,
-		"How long a stop keeps serving with /readyz failing before the listener closes, so the Service's endpoints drop the pod first")
+		"How long a stop keeps serving with /readyz failing before the listener closes, "+
+			"so the Service's endpoints drop the pod first")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -74,7 +75,9 @@ func main() {
 // /readyz takes the pod out of the Service's endpoints before the listener
 // closes (#1135), and shuts the server down, letting open requests finish for
 // up to shutdownGrace in all.
-func serve(ctx context.Context, stop context.CancelFunc, server *http.Server, drain func(), drainFor time.Duration) error {
+func serve(
+	ctx context.Context, stop context.CancelFunc, server *http.Server, drain func(), drainFor time.Duration,
+) error {
 	errs := make(chan error, 1)
 	go func() { errs <- server.ListenAndServe() }()
 	select {
