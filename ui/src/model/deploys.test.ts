@@ -26,6 +26,20 @@ describe('memberOf', () => {
     expect(memberOf(target({}))).toEqual({ member: 'github', label: 'GitHub releases', where: 'acme/api' })
   })
 
+  it('names the argoCD member and its destination, the server only when it is another cluster (#1588)', () => {
+    const t = target({
+      github: undefined,
+      credentialsSecretRef: undefined,
+      argoCD: { destination: { namespace: 'apps' } },
+    })
+    expect(memberOf(t)).toEqual({ member: 'argoCD', label: 'Argo CD', where: 'apps' })
+    const far = target({
+      github: undefined,
+      argoCD: { destination: { namespace: 'apps', server: 'https://far.example' } },
+    })
+    expect(memberOf(far).where).toBe('apps on https://far.example')
+  })
+
   it('names a member this UI doesn’t know by its field, showing nothing of it', () => {
     const t = target({ github: undefined })
     ;(t.spec as Record<string, unknown>).cloudFormation = { region: 'eu-west-1' }

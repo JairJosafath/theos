@@ -10,6 +10,11 @@ import type { Tone } from './describe'
 /** The target's member, the tool that owns the place, and where in it. */
 export function memberOf(target: DeployTarget): { member: string; label: string; where: string } {
   if (target.spec.github) return { member: 'github', label: 'GitHub releases', where: target.spec.github.repository }
+  if (target.spec.argoCD) {
+    const { namespace, server } = target.spec.argoCD.destination
+    const where = server && server !== 'https://kubernetes.default.svc' ? `${namespace} on ${server}` : namespace
+    return { member: 'argoCD', label: 'Argo CD', where }
+  }
   // A member this UI doesn't know yet: name it from the spec, show nothing of it.
   const known = ['credentialsSecretRef', 'tier', 'approval', 'parameters']
   const member =
