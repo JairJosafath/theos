@@ -239,7 +239,7 @@ as the run's artifact); a failing release gets an issue titled
 | `agents.modelProxy` | the model proxy, with `agents.enabled`: the operator image running `/model-proxy` in the release namespace as Service `c4-model-proxy` on 8080, the one place the token is used, mounted from `agents.credentialsSecret` as an optional volume (the proxy is ready before the Secret exists and answers 503 until it does) and reached only by agent sandboxes (a NetworkPolicy); `replicas` (default 2, with a PodDisruptionBudget above 1), `upstream` (default `https://api.anthropic.com`), `drainSeconds` (default 5) and `resources` ([the plan](../../docs/plans/done/model-proxy.md)) |
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
-| `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
+| `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `pool.size` (default 1 for `base` and `go`, none for `image`) is the per-project pool of that label every GitProvider the chart renders names in its `ci` block, the runners a project's checks run on, since the shared runners serve the templates' checks only (0 turns it off); `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default) |
@@ -268,6 +268,10 @@ keys `username` and `token`, before the install:
 kubectl -n webshop create secret generic git-credentials \
   --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
 ```
+
+Each of them carries the same `ci` block as the release's own GitProviders:
+a per-project pool of a `base` and a `go` runner on the chart's runner images
+(`runners.<label>.pool.size`), which the project's checks run on.
 
 `gitProviders[].token` and `username` are gone (they put the token in your
 values file and in every revision of Helm's release record); a values file

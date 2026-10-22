@@ -45,8 +45,10 @@ type GitProviderSpec struct {
 	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
 
 	// ci picks the CI system and how its runners are kept. Without it, the
-	// Git host's own CI serves the project's repositories on the install's
-	// shared runners.
+	// Git host's own CI serves the project's repositories, but no runner takes
+	// their jobs: the install's shared runners serve the templates organization
+	// only, so a project's checks wait until a ci block gives it a pool
+	// (#1698).
 	// +optional
 	CI *CISpec `json:"ci,omitempty"`
 

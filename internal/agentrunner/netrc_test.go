@@ -10,15 +10,29 @@ func TestWriteNetrc(t *testing.T) {
 	for _, tt := range []struct {
 		name, repoURL, pypiIndex, pypiToken, want string
 	}{
+		// Go matches the entry with the port, uv, pip and requests the one
+		// without (#1710).
 		{"an in-cluster Gitea, with its port", "http://gitea.gitea.svc.cluster.local:3000/apps/image-shrink.git", "", "",
-			"machine gitea.gitea.svc.cluster.local:3000\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
+			"machine gitea.gitea.svc.cluster.local:3000\nlogin image-shrink-agent\npassword " + gitToken + "\n" +
+				"machine gitea.gitea.svc.cluster.local\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
+		// Without a port one entry serves every tool.
 		{"an external Gitea", "https://git.example.com/apps/image-shrink.git", "", "",
 			"machine git.example.com\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
 		{"a PyPI index on the Git host needs no line of its own", "https://git.example.com/apps/image-shrink.git",
 			"https://git.example.com/api/packages/apps/pypi/simple", "pypi-read",
 			"machine git.example.com\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
+		{"a PyPI index on the Git host, with its port, needs no line of its own",
+			"http://gitea.gitea.svc.cluster.local:3000/apps/image-shrink.git",
+			"http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/pypi/simple", "pypi-read",
+			"machine gitea.gitea.svc.cluster.local:3000\nlogin image-shrink-agent\npassword " + gitToken + "\n" +
+				"machine gitea.gitea.svc.cluster.local\nlogin image-shrink-agent\npassword " + gitToken + "\n"},
 		{"a PyPI index on another host gets its token", "https://git.example.com/apps/image-shrink.git",
 			"https://pypi.example.com/simple", "pypi-read",
+			"machine git.example.com\nlogin image-shrink-agent\npassword " + gitToken + "\n" +
+				"machine pypi.example.com\nlogin __token__\npassword pypi-read\n"},
+		// uv matches the hostname alone (#1696).
+		{"a PyPI index on another host with a port names the hostname alone",
+			"https://git.example.com/apps/image-shrink.git", "https://pypi.example.com:8443/simple", "pypi-read",
 			"machine git.example.com\nlogin image-shrink-agent\npassword " + gitToken + "\n" +
 				"machine pypi.example.com\nlogin __token__\npassword pypi-read\n"},
 		{"a PyPI index on another host without a token gets no line", "https://git.example.com/apps/image-shrink.git",

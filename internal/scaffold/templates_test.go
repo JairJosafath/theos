@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -787,6 +788,50 @@ func TestGiteaReleaseWritesReleasingGuide(t *testing.T) {
 	}
 }
 
+// TestGiteaReleaseGuideSeparatesLooseListItems checks that RELEASING.md's
+// lists render Prettier-clean (#1707): an item that holds a fenced block
+// makes its list loose, so ts-standard's Prettier check wants a blank line
+// before the step that watches the run and before each item of "When a run
+// fails". Every Framework's render is checked: python-cli's and go-cli's go
+// unchecked by a Standard, and the operator's adds an item.
+func TestGiteaReleaseGuideSeparatesLooseListItems(t *testing.T) {
+	watch := regexp.MustCompile("may push `v\\*` tags\\.\\n\\n[34]\\. Watch the run")
+	for _, c := range templateCombos {
+		if !slices.ContainsFunc(c.layers, func(s side) bool { return s.Name == "gitea-release" }) {
+			continue
+		}
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			f, ok := result.Files["RELEASING.md"]
+			if !ok {
+				t.Fatalf("RELEASING.md not written; files: %v", result.Files.Paths())
+			}
+			got := string(f.Data)
+			if !watch.MatchString(got) {
+				t.Errorf("RELEASING.md has no blank line before the step that watches the run (#1707):\n%s", got)
+			}
+			_, fails, ok := strings.Cut(got, "## When a run fails\n")
+			if !ok {
+				t.Fatalf("RELEASING.md has no \"When a run fails\" section:\n%s", got)
+			}
+			lines := strings.Split(fails, "\n")
+			items := 0
+			for i, l := range lines {
+				if !strings.HasPrefix(l, "- **") {
+					continue
+				}
+				items++
+				if i == 0 || lines[i-1] != "" {
+					t.Errorf("RELEASING.md has no blank line before %q (#1707):\n%s", l, fails)
+				}
+			}
+			if items < 3 {
+				t.Errorf("RELEASING.md's \"When a run fails\" lists %d items, want at least 3:\n%s", items, fails)
+			}
+		})
+	}
+}
+
 // TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
 // the factory's c4factory.local modules come from the owner's package registry
 // alone, before make check, and make check never asks a proxy for them. A
@@ -840,6 +885,225 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 	}
 }
 
+// TestNodeCLINamesItsPackageUnderTheScope: node-cli names its package
+// <scope>/<container> in package.json and its lock, with the default scope
+// and with the GitProvider's own (#1231). It stays private: that only stops
+// npm publish to npmjs.org. npm packs a scoped package as
+// <scope sans @>-<container>-<version>.tgz, and the README's install line
+// and ts-standard's `make dist` help name that file, never the unscoped
+// <container>-<version>.tgz (#1695).
+func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
+	for _, scope := range []string{"@c4factory", "@acme"} {
+		t.Run(scope, func(t *testing.T) {
+			in, layers := loadCombo(t, "cli", []side{
+				{model.SideFramework, "node-cli"},
+				{model.SideStandard, "ts-standard"},
+				{model.SideDeployment, "gitea-release"},
+			}, "")
+			in.NpmScope = scope
+			result, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := scope + "/sample-app"
+			var pkg struct {
+				Name    string            `json:"name"`
+				Private bool              `json:"private"`
+				Bin     map[string]string `json:"bin"`
+			}
+			if err := json.Unmarshal(result.Files["package.json"].Data, &pkg); err != nil {
+				t.Fatal(err)
+			}
+			if pkg.Name != name || !pkg.Private || pkg.Bin["sample-app"] != "out/cli.js" {
+				t.Errorf("package.json: name %q, private %v, bin %v; want %q, private, bin sample-app",
+					pkg.Name, pkg.Private, pkg.Bin, name)
+			}
+			var lock struct {
+				Name     string `json:"name"`
+				Packages map[string]struct {
+					Name string `json:"name"`
+				} `json:"packages"`
+			}
+			if err := json.Unmarshal(result.Files["package-lock.json"].Data, &lock); err != nil {
+				t.Fatal(err)
+			}
+			if lock.Name != name || lock.Packages[""].Name != name {
+				t.Errorf("package-lock.json names %q and %q; want %q twice", lock.Name, lock.Packages[""].Name, name)
+			}
+			tarball := strings.TrimPrefix(scope, "@") + "-sample-app-<version>.tgz"
+			for file, want := range map[string]string{
+				"README.md": "npm install --global ./" + tarball,
+				"Makefile":  "dist: release-version deps ## Pack dist/" + tarball,
+			} {
+				text := string(result.Files[file].Data)
+				if !strings.Contains(text, want) {
+					t.Errorf("%s lacks %q", file, want)
+				}
+				if strings.Contains(text, "/sample-app-<version>.tgz") {
+					t.Errorf("%s names the unscoped sample-app-<version>.tgz; npm packs %s", file, tarball)
+				}
+			}
+		})
+	}
+}
+
+// TestStandardsCIWriteTheRegistryCredentials: the check workflows of
+// ts-standard, python-standard and aws-standard and gitea-release's release
+// workflow write ~/.npmrc and ~/.netrc from the owner's Actions variables
+// and secrets, falling back to the host's own registries and gitea.token,
+// before the step that installs (#1231). The step is one text in all four,
+// and run under bash it names the index's host without its port (#1696).
+func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
+	type workflow struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Env  map[string]string `yaml:"env"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	wantEnv := map[string]string{
+		"NPM_SCOPE":    "${{ vars.C4_NPM_SCOPE }}",
+		"NPM_REGISTRY": "${{ vars.C4_NPM_REGISTRY }}",
+		"NPM_TOKEN":    "${{ secrets.C4_NPM_TOKEN }}",
+		"PYPI_INDEX":   "${{ vars.C4_PYPI_INDEX }}",
+		"PYPI_TOKEN":   "${{ secrets.C4_PYPI_TOKEN }}",
+		"SERVER":       "${{ gitea.server_url }}",
+		"OWNER":        "${{ gitea.repository_owner }}",
+		"ACTOR":        "${{ gitea.actor }}",
+		"TOKEN":        "${{ gitea.token }}",
+	}
+	wantRun := []string{
+		`${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}`,
+		`${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}`,
+		`${NPM_SCOPE:-@c4factory}`, `${NPM_TOKEN:-$TOKEN}`, `${PYPI_TOKEN:-$TOKEN}`,
+		"umask 077", `:_authToken=`, `> "$HOME/.npmrc"`, `> "$HOME/.netrc"`,
+	}
+	cases := []struct {
+		name  string
+		typ   string
+		sides []side
+		file  string
+		// jobs maps a job to the step the credentials come before, and
+		// whether the credentials step is gated on the change touching code.
+		jobs map[string]struct {
+			before string
+			gated  bool
+		}
+	}{
+		{"ts-standard", "cli", []side{{model.SideFramework, "node-cli"}, {model.SideStandard, "ts-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"python-standard", "cli", []side{{model.SideFramework, "python-cli"}, {model.SideStandard, "python-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"aws-standard", "function", []side{{model.SideFramework, "aws-lambda-ts"}, {model.SideStandard, "aws-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"gitea-release", "cli", []side{{model.SideFramework, "node-cli"}, {model.SideStandard, "ts-standard"}, {model.SideDeployment, "gitea-release"}},
+			".gitea/workflows/release.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"release": {"make dist", false}}},
+	}
+	runs := map[string]string{}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderComboChecks(t, c.typ, c.sides, "BeforeRelease")
+			var w workflow
+			if err := yaml.Unmarshal(result.Files[c.file].Data, &w); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range c.jobs {
+				job, ok := w.Jobs[name]
+				if !ok {
+					t.Fatalf("%s has no job %q", c.file, name)
+				}
+				wrote, installed := -1, -1
+				for i, step := range job.Steps {
+					if step.Name == "Credentials for the package registries" {
+						wrote = i
+						for k, v := range wantEnv {
+							if step.Env[k] != v {
+								t.Errorf("job %s: env %s=%q, want %q", name, k, step.Env[k], v)
+							}
+						}
+						assertContains(t, "job "+name+"'s credentials step", step.Run, wantRun)
+						if gated := step.If == "steps.changes.outputs.code == 'true'"; gated != want.gated {
+							t.Errorf("job %s: if %q; want gated %v", name, step.If, want.gated)
+						}
+						runs[c.name+"/"+name] = step.Run
+					}
+					if strings.Contains(step.Run, want.before) {
+						installed = i
+					}
+				}
+				if wrote < 0 || installed < wrote {
+					t.Errorf("job %s: the credentials step is #%d and %q #%d; want the credentials first",
+						name, wrote, want.before, installed)
+				}
+			}
+		})
+	}
+	const reference = "ts-standard/check"
+	for name, run := range runs {
+		if run != runs[reference] {
+			t.Errorf("%s's credentials step differs from %s's:\n%s", name, reference, run)
+		}
+	}
+	// The step under bash, as the runner runs it (#1696): ~/.netrc names the
+	// index's host without the port, which uv, pip and requests match on;
+	// the login is gitea.actor with the workflow's token and __token__ with
+	// C4_PYPI_TOKEN; ~/.npmrc keeps the port, which npm matches on.
+	const server = "http://gitea.gitea.svc.cluster.local:3000"
+	for _, c := range []struct {
+		name      string
+		pypiToken string
+		wantNetrc string
+	}{
+		{"the workflow's token", "", "machine gitea.gitea.svc.cluster.local\nlogin runner\npassword tok\n"},
+		{"C4_PYPI_TOKEN", "pypi-tok", "machine gitea.gitea.svc.cluster.local\nlogin __token__\npassword pypi-tok\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := exec.Command("bash", "-euo", "pipefail", "-c", runs[reference])
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SERVER=" + server,
+				"OWNER=webshop", "ACTOR=runner", "TOKEN=tok", "PYPI_TOKEN=" + c.pypiToken}
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("the credentials step failed: %v\n%s", err, out)
+			}
+			netrc, err := os.ReadFile(filepath.Join(home, ".netrc"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(netrc) != c.wantNetrc {
+				t.Errorf("~/.netrc:\n%s\nwant:\n%s", netrc, c.wantNetrc)
+			}
+			npmrc, err := os.ReadFile(filepath.Join(home, ".npmrc"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantNpmrc := "@c4factory:registry=" + server + "/api/packages/webshop/npm/\n" +
+				"//gitea.gitea.svc.cluster.local:3000/api/packages/webshop/npm/:_authToken=tok\n"
+			if string(npmrc) != wantNpmrc {
+				t.Errorf("~/.npmrc:\n%s\nwant:\n%s", npmrc, wantNpmrc)
+			}
+		})
+	}
+}
+
 func assertContains(t *testing.T, name, got string, want []string) {
 	t.Helper()
 	for _, w := range want {
@@ -885,6 +1149,7 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		// the Container has none.
 		Operations: model.ResolveOperations(model.OperationsChoices{}),
 		CI:         giteaActions(t),
+		NpmScope:   "@c4factory",
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {

@@ -40,6 +40,40 @@ jobs:
             ;;
           esac
           echo "code=$code" >>"$GITHUB_OUTPUT"
+      - name: Credentials for the package registries
+        if: steps.changes.outputs.code == 'true'
+        # The factory's packages (other apps of this project) come from the
+        # owner's npm registry and PyPI index, the Git host's own unless the
+        # GitProvider's spec.packages names others: then the operator sets
+        # these Actions variables and secrets, and empty ones mean the host.
+        # npm sends the scope to the registry through ~/.npmrc; uv logs in to
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
+        env:
+          NPM_SCOPE: ${{ vars.C4_NPM_SCOPE }}
+          NPM_REGISTRY: ${{ vars.C4_NPM_REGISTRY }}
+          NPM_TOKEN: ${{ secrets.C4_NPM_TOKEN }}
+          PYPI_INDEX: ${{ vars.C4_PYPI_INDEX }}
+          PYPI_TOKEN: ${{ secrets.C4_PYPI_TOKEN }}
+          SERVER: ${{ gitea.server_url }}
+          OWNER: ${{ gitea.repository_owner }}
+          ACTOR: ${{ gitea.actor }}
+          TOKEN: ${{ gitea.token }}
+        run: |
+          registry=${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}
+          registry=${registry%/}/
+          index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
+          host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
+          umask 077
+          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@c4factory}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
       # uv's cache and the Python it installs (about 250 MB) go in the
       # checkout, which is in memory and goes with the job: on the runner's
       # disk they would stall the node, and with it the whole cluster, and in

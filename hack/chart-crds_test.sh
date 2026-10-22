@@ -43,6 +43,30 @@ grep -q 'addedField' "$T/crd/people.c4.factory.io.yaml"; check "the written CRD 
 check "--write says what it wrote" "$(grep -c 'written from\|removed' "$T/wrote")" 2
 
 make -n -C "$ROOT" manifests 2>/dev/null | grep -q 'chart-crds.sh --write'; check "make manifests runs it" $? 0
-make -n -C "$ROOT" check-generated 2>/dev/null | grep -q 'git diff --quiet -- .*dist/chart/templates/crd'; check "make check-generated fails on a chart CRD left uncommitted" $? 0
+
+# make check-generated, run from the real Makefile in a scratch repository
+# (its includes resolve through -I): a chart CRD changed and not committed,
+# and one untracked, which git diff never saw (#1705).
+R=$T/repo
+git init -q -b main "$R"
+mkdir -p "$R/config/crd/bases" "$R/config/rbac" "$R/api" "$R/cmd" "$R/internal" "$R/dist/chart/templates/crd" "$R/dist/chart/templates/rbac"
+cp "$ROOT/config/crd/bases/c4.factory.io_people.yaml" "$R/config/crd/bases/"
+cp "$ROOT/dist/chart/templates/crd/people.c4.factory.io.yaml" "$R/dist/chart/templates/crd/"
+echo readme >"$R/README.md"
+git -C "$R" add -A && git -C "$R" -c user.name=t -c user.email=t@t commit -qm init
+gen() { make -I "$ROOT" -f "$ROOT/Makefile" -C "$R" check-generated >"$T/gen" 2>/dev/null; }
+gen; check "make check-generated on a clean tree: passes" $? 0
+echo changed >>"$R/README.md"
+gen; check "make check-generated with a change outside the generated paths: passes" $? 0
+echo '# edited' >>"$R/dist/chart/templates/crd/people.c4.factory.io.yaml"
+cp "$R/config/crd/bases/c4.factory.io_people.yaml" "$R/dist/chart/templates/crd/new.c4.factory.io.yaml"
+gen; check "make check-generated on a chart CRD left uncommitted and one untracked: fails" $? 2
+grep -q '^ M dist/chart/templates/crd/people.c4.factory.io.yaml$' "$T/gen"; check "names the uncommitted chart CRD" $? 0
+grep -q '^?? dist/chart/templates/crd/new.c4.factory.io.yaml$' "$T/gen"; check "names the untracked chart CRD (#1705)" $? 0
+grep -q 'run make manifests generate and commit them' "$T/gen"; check "says how to fix it" $? 0
+git -C "$R" add -A && git -C "$R" -c user.name=t -c user.email=t@t commit -qm crds
+gen; check "make check-generated once they are committed: passes" $? 0
+cp "$R/config/crd/bases/c4.factory.io_people.yaml" "$R/dist/chart/templates/crd/other.c4.factory.io.yaml"
+gen; check "make check-generated on an untracked chart CRD alone: fails (#1705)" $? 2
 
 exit $fail

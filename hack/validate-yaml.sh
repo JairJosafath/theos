@@ -127,6 +127,22 @@ if grep -q 'helm\.sh/hook' "$OUT/chart-gitproviders.yaml"; then
 	exit 1
 fi
 echo "The chart's gitProviders are in ConfigMap c4factory-gitproviders, none a hook"
+# Since the shared runners serve the templates organization only, a project's
+# checks run on the pool its GitProvider's ci block names: every GitProvider
+# the chart renders carries one with a base and a go runner, the labels the
+# templates' check workflows run on (#1698; test/chart/gitprovider_pool_test.go
+# checks the images and sizes).
+for f in chart-gitea-catalog chart-gitea-bare-catalog chart-gitproviders; do
+	providers=$(grep -c '^kind: GitProvider$' "$OUT/$f.yaml")
+	for label in base go; do
+		pools=$(grep -c "^ *- label: $label$" "$OUT/$f.yaml")
+		if [ "$pools" -ne "$providers" ]; then
+			echo "The chart ($f.yaml) renders $providers GitProviders but $pools $label runners in spec.ci.giteaActions.runners; a project's checks run on that pool (#1698)" >&2
+			exit 1
+		fi
+	done
+done
+echo "Every GitProvider the chart renders carries a base and a go runner pool"
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(

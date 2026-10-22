@@ -276,7 +276,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 	}
 
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status))
+		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
 	in.FrameworkFiles, err = u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		// Not the Standard's version's fault: the next pass plans it again.
@@ -495,7 +495,7 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 		creds = &git.creds
 	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status))
+		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
 	paths, err := u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		return nil, err
@@ -558,7 +558,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 			return nil, err
 		}
 		in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status),
-			scaffoldedOperations(u.container, u.status))
+			scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref,
 			Files: files})
 		if err != nil {
@@ -961,7 +961,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
 	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status))
+		scaffoldedOperations(u.container, u.status), "")
 	if update.Take {
 		taken := make([]model.TakenFile, 0, len(update.Paths))
 		for _, p := range update.Paths {
@@ -975,7 +975,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
 	title = model.StandardUpdateTitle(s.Name, from, to)
 	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status)), s.Name,
+		scaffoldedOperations(u.container, u.status), ""), s.Name,
 		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message

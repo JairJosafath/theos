@@ -57,7 +57,7 @@ say() { echo "make test: $*" >&2; }
 # finds; no test reads it as files. A listed directory that holds no package
 # of the module is ignored.
 declare -A readers=(
-  [templates]="hack/template-go-kubebuilder internal/controller internal/gitprovider internal/scaffold test/chart"
+  [templates]="hack/template-go-kubebuilder internal/controller internal/gitprovider internal/model internal/scaffold test/chart"
   [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
   [api]=""
   [dist]="internal/model test/chart"

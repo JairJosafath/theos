@@ -44,16 +44,9 @@ spec:
   # When CI runs the full check: EveryChange (the default) or BeforeRelease,
   # once the Standard can (its checksBeforeRelease).
   checks: EveryChange
-  # What the app promises wherever it runs; a field left out takes the
-  # factory's default (35 days, 1h, 4h, no copy, nobody told). Whether it runs
-  # as production or development is its deploy target's, never the
-  # Container's. A change after the scaffold shows on OperationsApplied.
-  operations:
-    backups:
-      retentionDays: 35
-    recovery:
-      rpo: 1h
-      rto: 4h
+  # No operations block: only a Framework that reads it (readsOperations:
+  # true, the AWS ones) renders what the app promises into its repository;
+  # on go-cli the block would only show OperationsApplied=False.
   # Where each release ships once its runs succeed, in order: DeployTarget
   # orders-cli-releases (deploytarget.yaml), a GitHub repository. Until you
   # apply it, Deployed says the target isn't found and nothing ships. The list

@@ -30,6 +30,7 @@ spec:
   packages:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- include "c4-factory.gitProviderCI" $ | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- if and .Values.gitea.enabled .Values.catalog.enabled }}
@@ -113,6 +114,38 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+The ci block of every GitProvider the chart renders: a pool of single-job
+runner pods per label of runners.* whose pool.size is above 0, on that
+runner's image and resources, kept by the operator in the project's
+namespace. Without it a project's checks have no runner: the shared runners
+serve the templates organization only (#1698). Empty when no label has a pool.
+*/}}
+{{- define "c4-factory.gitProviderCI" -}}
+{{- $pools := list }}
+{{- range $label, $r := .Values.runners }}
+{{- if $r.pool }}{{ if gt (int $r.pool.size) 0 }}{{ $pools = append $pools $label }}{{ end }}{{ end }}
+{{- end }}
+{{- if $pools -}}
+ci:
+  giteaActions:
+    runners:
+{{- range $label := $pools }}
+{{- $r := index $.Values.runners $label }}
+      - label: {{ $label }}
+        image: {{ printf "%s:%s" $r.image.repository ($r.image.tag | default $.Chart.AppVersion) | quote }}
+        size: {{ int $r.pool.size }}
+{{- if $r.goCache }}
+        goCache: true
+{{- end }}
+{{- with $r.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
 {{- end }}
 {{- end }}
 {{- end }}

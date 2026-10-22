@@ -51,6 +51,12 @@ passing and a review. Never commit red.
   maintained, well-known packages with a licence that fits. A new install
   script needs an `allowScripts` entry in `package.json`: allow it only when the
   package can't work without it.
+- A factory package (another Container of this project, published as
+  `{{ .NpmScope }}/<container>`) is added the same way, at an exact version:
+  `npm install --save-exact {{ .NpmScope }}/<container>@<version>`. The scope
+  routes to the owner's registry through `~/.npmrc`, which your pod and CI
+  write; never put the registry or a token in `package.json` or a committed
+  `.npmrc`.
 
 ## Review rules (lint can't check these)
 

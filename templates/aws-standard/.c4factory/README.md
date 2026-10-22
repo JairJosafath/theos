@@ -188,7 +188,12 @@ byte for byte.
   v1.17.4 a selection by tag, by a condition or by a resource that is none
   of the stack's tables names the fix in its fault: pass the stack's data
   tables to `infra/backups.ts` and select each with
-  `BackupResource.fromArn(table.tableArn)` (#1490).
+  `BackupResource.fromArn(table.tableArn)` (#1490). Since v1.18.0 the check
+  workflow writes `~/.npmrc` and `~/.netrc` from the owner's Actions
+  variables and secrets, falling back to the host's own registries, so
+  `npm ci` and `uv` fetch factory packages (#1231). Since v1.18.1 `~/.netrc`
+  names the index's host without its port, which `uv` matches on, and its
+  login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
