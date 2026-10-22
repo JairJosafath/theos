@@ -11,7 +11,9 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,6 +47,19 @@ type conversionHook func(obj map[string]any) error
 // docs/plans/api-versions.md, decision 3); a test in internal/controller
 // keeps the mark and the schemas in step.
 var toHubHooks, fromHubHooks = map[string]conversionHook{}, map[string]conversionHook{}
+
+// HookedKinds names the kinds with a hook, sorted: each must carry the
+// webhook mark, since strategy None runs no hook (#1830).
+func HookedKinds() []string {
+	kinds := map[string]struct{}{}
+	for k := range toHubHooks {
+		kinds[k] = struct{}{}
+	}
+	for k := range fromHubHooks {
+		kinds[k] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(kinds))
+}
 
 func convertToHub(src runtime.Object, dst conversion.Hub) error {
 	return convertObject(src, dst, GroupVersion.Version, v1beta1.GroupVersion, toHubHooks[kindOf(src)])

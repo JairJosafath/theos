@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -261,20 +262,25 @@ func TestConversionMarkFollowsTheShapes(t *testing.T) {
 				differs = true
 			}
 		}
+		hooked := slices.Contains(c4v1alpha1.HookedKinds(), crd.Spec.Names.Kind)
 		marked := crd.Annotations["c4.factory.io/conversion"] == "webhook"
 		switch {
 		case differs && !marked:
 			t.Errorf("%s: its versions differ in shape but its hub type lacks the marker "+
 				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
-		case marked && !differs:
-			t.Errorf("%s: marked c4.factory.io/conversion: webhook, but its versions share a shape: "+
+		case hooked && !marked:
+			t.Errorf("%s: has a conversion hook, which strategy None never runs, but its hub type lacks the marker "+
+				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+		case marked && !differs && !hooked:
+			t.Errorf("%s: marked c4.factory.io/conversion: webhook, but its versions share a shape and no hook: "+
 				"drop the marker, strategy None serves them (#1830)", crd.Name)
 		}
 	}
 }
 
 // shapeOf is a version's schema with every description dropped: a doc
-// comment that differs between the versions is no difference in shape.
+// comment that differs between the versions is no difference in shape. A
+// field named description (Crew's, Bundle's) is one, and stays (#1830).
 func shapeOf(t *testing.T, s *apiextensionsv1.CustomResourceValidation) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(s)
@@ -285,22 +291,48 @@ func shapeOf(t *testing.T, s *apiextensionsv1.CustomResourceValidation) map[stri
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	var strip func(v any)
-	strip = func(v any) {
+	// fields says v is a properties map, whose keys name fields, not a schema.
+	var strip func(v any, fields bool)
+	strip = func(v any, fields bool) {
 		switch v := v.(type) {
 		case map[string]any:
-			delete(v, "description")
-			for _, c := range v {
-				strip(c)
+			if !fields {
+				delete(v, "description")
+			}
+			for k, c := range v {
+				strip(c, !fields && (k == "properties" || k == "patternProperties"))
 			}
 		case []any:
 			for _, c := range v {
-				strip(c)
+				strip(c, false)
 			}
 		}
 	}
-	strip(m)
+	strip(m, false)
 	return m
+}
+
+// #1830: a field named description is part of the shape; only the doc
+// comments are not.
+func TestShapeOfKeepsAFieldNamedDescription(t *testing.T) {
+	schema := func(fieldType, doc string) *apiextensionsv1.CustomResourceValidation {
+		return &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+			Type: "object", Description: doc,
+			Properties: map[string]apiextensionsv1.JSONSchemaProps{
+				"description": {Type: fieldType, Description: doc},
+			},
+		}}
+	}
+	if !equality.Semantic.DeepEqual(shapeOf(t, schema("string", "one")), shapeOf(t, schema("string", "two"))) {
+		t.Error("schemas that differ only in their doc comments differ in shape")
+	}
+	if equality.Semantic.DeepEqual(shapeOf(t, schema("string", "one")), shapeOf(t, schema("integer", "one"))) {
+		t.Error("a field named description changed type and the shapes still compare equal")
+	}
+	fields, _ := shapeOf(t, schema("string", ""))["openAPIV3Schema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := fields["description"]; !ok {
+		t.Error("the field named description was stripped as a doc comment")
+	}
 }
 
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them

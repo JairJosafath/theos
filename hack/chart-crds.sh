@@ -52,7 +52,7 @@ guarded() {
 			print "  conversion:"
 			print "    strategy: None"
 		}
-		END { print "{{- end }}" }' crd="$(basename "$1" .yaml | sed 's/^\([^_]*\)_\(.*\)$/\2.\1/')" "$1"
+		END { print "{{- end }}" }' crd="$2" "$1"
 }
 
 fail=0
@@ -64,13 +64,13 @@ for base in "$BASES"/*.yaml; do
 	chart=$CHART/${name#*_}.$group.yaml
 	want+=("$chart")
 	if [ -n "$write" ]; then
-		if [ ! -f "$chart" ] || ! guarded "$base" | cmp -s - "$chart"; then
-			guarded "$base" >"$chart" && echo "$chart: written from $base"
+		if [ ! -f "$chart" ] || ! guarded "$base" "${name#*_}.$group" | cmp -s - "$chart"; then
+			guarded "$base" "${name#*_}.$group" >"$chart" && echo "$chart: written from $base"
 		fi
 	elif [ ! -f "$chart" ]; then
 		echo "$chart: missing, for $base" >&2
 		fail=1
-	elif ! diff -u --label "$base (guarded)" --label "$chart" <(guarded "$base") "$chart" >&2; then
+	elif ! diff -u --label "$base (guarded)" --label "$chart" <(guarded "$base" "${name#*_}.$group") "$chart" >&2; then
 		fail=1
 	fi
 done

@@ -18,18 +18,22 @@ fresh; run; st=$?; check "the committed chart matches" $st 0
 [ "$st" = 0 ] || sed 's/^/     /' "$T/out"
 
 # A CRD whose kind's versions share a shape converts by the API server,
-# strategy None, webhook.enabled or not (#1830): every kind today. One whose
-# base is marked c4.factory.io/conversion: webhook converts by the operator's
-# webhook at /convert under webhook.enabled (#1615), and the render fails
-# without it.
-n=0; for f in "$ROOT"/dist/chart/templates/crd/*.yaml; do
-	awk '$0 == "spec:" { s = 1; next }
+# strategy None, webhook.enabled or not (#1830). One whose base is marked
+# c4.factory.io/conversion: webhook converts by the operator's webhook at
+# /convert under webhook.enabled (#1615), and the render fails without it.
+# The committed chart follows the committed bases' marks, whichever they are.
+mark='^    c4.factory.io/conversion: webhook$'
+n=0; for base in "$ROOT"/config/crd/bases/*.yaml; do
+	name=$(basename "$base" .yaml)
+	want=None; grep -q "$mark" "$base" && want=Webhook
+	awk -v want="$want" '$0 == "spec:" { s = 1; next }
 		s == 1 { ok = $0 == "  conversion:"; s = 2; next }
-		s == 2 { ok = ok && $0 == "    strategy: None"; exit }
-		END { exit !ok }' "$f" || n=$((n + 1))
+		s == 2 { ok = ok && $0 == "    strategy: " want; exit }
+		END { exit !ok }' "$ROOT/dist/chart/templates/crd/${name#*_}.${name%%_*}.yaml" || n=$((n + 1))
 done
-check "every chart CRD converts by strategy None (#1830)" $n 0
-check "no chart CRD names /convert (#1830)" "$(grep -l 'path: /convert' "$ROOT"/dist/chart/templates/crd/*.yaml | wc -l)" 0
+check "every chart CRD converts by the strategy its base's mark says (#1830)" $n 0
+check "the chart CRDs naming /convert are the marked bases (#1830)" \
+	"$(grep -l 'path: /convert' "$ROOT"/dist/chart/templates/crd/*.yaml | wc -l)" "$(grep -l "$mark" "$ROOT"/config/crd/bases/*.yaml | wc -l)"
 
 HELM=${HELM:-$ROOT/bin/helm}
 if [ -x "$HELM" ]; then
@@ -49,11 +53,11 @@ if [ -x "$HELM" ]; then
 	render true; check "the chart renders it with webhook.enabled" $? 0
 	check "the rendered CRD converts at the release's webhook Service" \
 		"$(awk '/^  name: people.c4.factory.io$/ { s = 1 } s && /path: \/convert$/ { f = 1 } s && /^---$/ { exit } END { print f + 0 }' "$T/rendered.yaml")" 1
-	check "the rest stay at strategy None" "$(grep -c 'strategy: None' "$T/rendered.yaml")" "$(($(ls "$ROOT"/dist/chart/templates/crd/*.yaml | wc -l) - 1))"
+	check "the rest stay at strategy None" "$(grep -c 'strategy: None' "$T/rendered.yaml")" "$(grep -L 'path: /convert' "$T"/crd/*.yaml | wc -l)"
 	render false; check "without webhook.enabled the render fails (#1830)" $? 1
 	grep -q 'people.c4.factory.io: its versions differ in shape' "$T/render-err"; check "and names the kind" $? 0
 else
-	echo "skip the marked-kind render specs: no helm at $HELM (make install-helm)"
+	echo "FAIL the marked-kind render specs: no helm at $HELM (make install-helm; make test-hack installs it)"; fail=1
 fi
 
 fresh
