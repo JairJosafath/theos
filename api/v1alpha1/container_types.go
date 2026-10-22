@@ -342,6 +342,27 @@ type ContainerStandardStatus struct {
 	// update is the Standard update in flight, or the last one, stopped.
 	// +optional
 	Update *StandardUpdateStatus `json:"update,omitempty"`
+
+	// failureIssue is the issue the operator filed for the Crew when an
+	// update's CI failed, once per target ref: a newer ref files its own.
+	// +optional
+	FailureIssue *StandardFailureIssue `json:"failureIssue,omitempty"`
+}
+
+// StandardFailureIssue is the issue filed in the Container's repository when
+// the update to a ref of its Standard failed CI.
+type StandardFailureIssue struct {
+	// ref is the Standard's template ref the failed update targets.
+	// +required
+	Ref string `json:"ref"`
+
+	// number is the issue's number in the Container's repository.
+	// +required
+	Number int32 `json:"number"`
+
+	// url is the issue's address.
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // StandardFile is one of a Standard's files in the repository, at a ref of the

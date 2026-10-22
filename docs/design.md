@@ -385,10 +385,11 @@ An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 The fix lands on main in the Crew's own pull request; once main is no longer
 at the head the update was planned from (`status.standard.update.base`), the
 operator closes the update's pull request and plans it again from the new
-main (#1489). Decided, not built: the operator files `Standard <name> <ref>
-fails this repository's check`, `kind/bug` and `status/ready`, once per
-target ref, linking the pull request and the run (#1491). A check a Standard
-tightens says in its message what to write.
+main (#1489). The operator files `Standard <name> <ref> fails this
+repository's check`, `kind/bug` and `status/ready`, in the repository's next
+unprepared release, once per target ref (`status.standard.failureIssue`),
+linking the pull request and the run (#1491). A check a Standard tightens
+says in its message what to write.
 
 **The templates** live in `templates/`; [templates.md](templates.md) scores
 each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
