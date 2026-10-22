@@ -121,10 +121,22 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws lambda function in go with dynamodb", "function", []side{
+		{model.SideFramework, "aws-lambda-go"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws python lambda function", "function", []side{
 		{model.SideFramework, "aws-lambda-py"},
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
+	}},
+	{"aws python lambda function with dynamodb", "function", []side{
+		{model.SideFramework, "aws-lambda-py"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
 	}},
 	{"aws queue consumer", "worker", []side{
 		{model.SideFramework, "aws-queue-ts"},

@@ -19,7 +19,8 @@ is the model's, not the Framework's.
   table branch of `docs/runbook.md`.
 - **Frameworks:** a Framework wires it in its `infra/connectors.ts`, rendered with
   `{{ if has .Connectors "dynamodb" }}`, and alarms on the table like its own.
-  `aws-lambda-ts` does; the other AWS Frameworks don't yet, so the file would
+  `aws-lambda-ts`, `aws-lambda-py` and `aws-lambda-go` do; the other AWS
+  Frameworks don't yet, so the file would
   be written and not called.
 
 One table per Container: two DataStores on this Connector are one table. Like

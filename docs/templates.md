@@ -431,7 +431,7 @@ envtest).
 
 ### The AWS Frameworks
 
-aws-lambda-ts (v1.4.0), aws-lambda-go (v1.3.0) and aws-lambda-py (v1.3.0): an
+aws-lambda-ts (v1.4.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.2.0) and
 aws-fargate-ts (v2.0.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
@@ -498,14 +498,16 @@ gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
 on-demand, encrypted table for a function Container.
 
-- CI: `make test-templates`, combo "aws lambda function with dynamodb": its
-  `make check`.
+- CI: `make test-templates`, combos "aws lambda function with dynamodb",
+  "aws lambda function in go with dynamodb" and "aws python lambda function
+  with dynamodb": their `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
   include; `TestDynamoDBConnectorConnectsToAWSLambdaTS`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
-  production. Only aws-lambda-ts wires it in (#1393).
+  production. aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it in
+  (#1393, #1740).
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 
