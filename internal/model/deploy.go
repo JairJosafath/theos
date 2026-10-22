@@ -78,6 +78,12 @@ const (
 	// GitHubSettingLatest "false" leaves the repository's Latest where it is;
 	// any other value makes each release Latest.
 	GitHubSettingLatest = "latest"
+	// GitHubSettingSourcePath is the folder of the repository the release's
+	// source goes in, "." for its root; unset publishes no source.
+	GitHubSettingSourcePath = "source.path"
+	// GitHubSettingSourceTagPrefix goes before the version in the source's
+	// tag: unset is the default (SourceTag), "" gives bare tags.
+	GitHubSettingSourceTagPrefix = "source.tagPrefix"
 )
 
 // GitHubTagPrefix is the prefix a Container's tags carry at a github target:

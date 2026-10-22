@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Deployer ships a built release to a place a DeployTarget names and reads
@@ -88,6 +90,13 @@ type Shipment struct {
 	// a target's nodes pull from, tagged tag; nil when there is no Image.
 	// The owner's registry's credential stays with the caller.
 	CopyImage func(ctx context.Context, to Registry, repository, tag string) error
+	// Source is the release's source as the Git host holds it at Version,
+	// read and hashed by the caller with the factory's own files left out;
+	// nil where the target holds no source.
+	Source *model.ReleaseSource
+	// ReadSource streams Source's files again, each with its path and size,
+	// for an adapter that sends the ones the target lacks; nil with no Source.
+	ReadSource func(ctx context.Context, each func(path string, size int64, content io.Reader) error) error
 }
 
 // Registry is an OCI registry a target names and the credential from its
@@ -134,6 +143,9 @@ type DeployState struct {
 	URL string
 	// Reason and Message say why a deploy failed, or what it waits on.
 	Reason, Message string
+	// Source is the release's source as the target published it, nil until
+	// its tag is there or where the target holds no source.
+	Source *model.PublishedSource
 }
 
 // Errors a Deployer's calls fail with that the operator tells apart; test with

@@ -199,6 +199,57 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
    on the same port, with its own release, source and registry calls. Both
    are filed `status/proposed` when this plan's steps land, not built here.
 
+### How step 2 builds decision 3 (#1598)
+
+Settled by otter-1598 when it took the step. The publish tests' messages
+and reasons stay byte for byte, so the rules that word them move, not
+change.
+
+- **What the Crew keeps.** `model.NextPublishStep` keeps the Crew's own
+  facts: the runs, the Secret, `FolderOverlaps` (across Crews), the Gitea
+  release and its files, the repository's identity (`RepositoryRenamed`,
+  `RepositoryReplaced`, `private`: a read, not a write) and the notes
+  written to Gitea. Where it now says `ReadGitHub`, `ReadGitHubSource`, a
+  source write or a release write, it says one action, `PublishShip`. On
+  it the Crew calls `State` for the release: `Deployed` is `PublishDone` at
+  its URL; else one `Ship`, and a failed one goes back in as
+  `facts.Failure`, as today.
+- **The ports.** `Shipment.Source` is the release's source
+  (`*model.ReleaseSource`, read and hashed by the caller from the Git host
+  port's `ReadSource`, `FactoryOwnPaths` left out by `model.NewSource`), and
+  `Shipment.ReadSource` streams its files again for the blobs GitHub lacks.
+  `DeployState.Source` is the published source (`*model.PublishedSource`),
+  set once the source tag is there. `model.GitHubSettingSourcePath` and
+  `GitHubSettingSourceTagPrefix` (`source.path`, `source.tagPrefix`; a
+  `tagPrefix` key set to `""` is `""`, unset is the default) name the
+  folder; no `source.path` publishes no source.
+- **The adapter's sequence.** The source goes out first, then the draft on
+  its commit, as the Crew does today (decision 2's order, draft first, ships
+  the same end state; keeping the Crew's keeps its tests unchanged). Each
+  `Ship` reads the release and the folder (`readGitHubSource` moves into the
+  adapter), asks the model for the next step and takes one: the source
+  commit (its blobs, trees, commit and the branch's fast-forward, one step
+  as today: blobs are content-addressed, so a repeat after a failure finds
+  or remakes them harmlessly), the source tag, then `NextReleaseStep`.
+  `sourceStep` becomes `model.NextSourceStep(model.SourceShip, *GitHubSource)`
+  so the adapter and nothing else calls it.
+- **Failures keep their words.** A refusal the model words
+  (`SourceTagTaken`, `SourceTooLarge`, the source's `EmptyRepository` and
+  `NoReleaseFiles`) comes back from `Ship` as a `gitprovider.ReleaseError`
+  with that reason and message; `model.PublishFailure` gains `Message`, and
+  `failed` reports a failure with one verbatim. `portError` leaves those
+  reasons alone, as it does `TagTaken`.
+- **Events.** `SourcePublished` and `SourceNotGoInstallable` stay the
+  Crew's: after a `Ship` it reads `State`, and the first pass that sees
+  `Source` set where `status.lastRelease.publish.source` is not records it
+  and raises them; the go install problem is `model.GoInstallProblem` of the
+  module the Crew read.
+- **Credentials.** The Crew passes its Secret's data as `Target.Secret`;
+  `docs/architecture.md`'s two "until" clauses go when the Crew no longer
+  builds a `ReleaseTarget` for anything but the repository read. That read
+  moves behind the adapter too, as `Check` reporting the repository's
+  identity, if it fits in the step; else it stays and the row says so.
+
 ## Steps
 
 Each step is a GitHub issue that names #1070, lands on its own with `make
