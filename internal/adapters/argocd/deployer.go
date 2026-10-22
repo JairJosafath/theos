@@ -99,8 +99,9 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // Applying the same version again changes nothing, so Argo CD starts
 // nothing new. A release without an image is ErrArtifactMissing. A name over
 // what a label value holds, or an Application there whose labels name
-// another Container (two names can join to the same, #1669), is a plain
-// error naming it: the deploy fails, and nothing is written.
+// another Container (two names can join to the same, #1669), is a
+// model.DeployNameError naming it: the deploy fails NameRejected, and
+// nothing is written.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	if s.Image == "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release has no image")}
@@ -125,8 +126,8 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 
 // get reads the Application name in cfg's namespace for app: the port's
 // error where the Get fails with one, NotFound as the API server's own, and
-// a plain error naming the other Container when the Application's labels
-// name one (#1669).
+// a model.DeployNameError naming the other Container when the Application's
+// labels name one (#1669).
 func (d *Deployer) get(ctx context.Context, cfg settings, name, app string) (*unstructured.Unstructured, error) {
 	var obj unstructured.Unstructured
 	obj.SetGroupVersionKind(ApplicationGVK)
@@ -178,7 +179,8 @@ func application(cfg settings, name string, s ports.Shipment) *unstructured.Unst
 // State reads app's Application back, as model.ArgoCDDeployState says. One
 // version runs at a time and the Application names it, so version is
 // ignored. An Application whose labels name another Container is that
-// Container's deploy, not app's: a plain error naming it (#1669).
+// Container's deploy, not app's: a model.DeployNameError naming it, which
+// the operator reports NameRejected, Failed, not a wait (#1669, #1677).
 func (d *Deployer) State(ctx context.Context, t ports.Target, app, _ string) (ports.DeployState, error) {
 	cfg := read(t)
 	name, err := model.ArgoCDApplicationName(app)

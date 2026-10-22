@@ -428,7 +428,8 @@ func TestDeployer(t *testing.T) {
 // refusals are the adapter's answers of #1669, on the Application Ship
 // wrote for s at tt: a Container whose name joins to the same is refused by
 // Ship, with nothing written, and by State, both naming s's Container; a
-// name over 63 characters is refused before anything is written.
+// name over 63 characters is refused before anything is written. Each is a
+// model.DeployNameError, which the operator reports NameRejected (#1677).
 func refusals(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s ports.Shipment) {
 	t.Helper()
 	ctx := context.Background()
@@ -444,9 +445,8 @@ func refusals(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s por
 		if err == nil || !strings.Contains(err.Error(), other) {
 			t.Errorf("Ship() = %v, want an error with %q", err, other)
 		}
-		if errors.Is(err, ports.ErrCredentialRefused) || errors.Is(err, ports.ErrUnreachable) ||
-			errors.Is(err, ports.ErrArtifactMissing) {
-			t.Errorf("Ship() = %v, want a plain error, not one of the port's", err)
+		if _, ok := errors.AsType[*model.DeployNameError](err); !ok {
+			t.Errorf("Ship() = %T, want a *model.DeployNameError (#1677)", err)
 		}
 		after := getApplication(t, c)
 		if after.GetResourceVersion() != before.GetResourceVersion() {
@@ -461,6 +461,9 @@ func refusals(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s por
 		if err == nil || !strings.Contains(err.Error(), other) || st != (ports.DeployState{}) {
 			t.Errorf("State() = %+v, %v; want the zero state and an error with %q", st, err, other)
 		}
+		if _, ok := errors.AsType[*model.DeployNameError](err); !ok {
+			t.Errorf("State() = %T, want a *model.DeployNameError (#1677)", err)
+		}
 	})
 
 	t.Run("Ship refuses a name over 63 characters (#1669)", func(t *testing.T) {
@@ -470,6 +473,9 @@ func refusals(t *testing.T, c client.Client, d *Deployer, tt ports.Target, s por
 		want := "is 64 characters, over the 63 a label value holds"
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Ship() = %v, want an error with %q", err, want)
+		}
+		if _, ok := errors.AsType[*model.DeployNameError](err); !ok {
+			t.Errorf("Ship() = %T, want a *model.DeployNameError (#1677)", err)
 		}
 		var apps unstructured.UnstructuredList
 		apps.SetGroupVersionKind(ApplicationGVK.GroupVersion().WithKind("ApplicationList"))
