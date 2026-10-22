@@ -2016,6 +2016,15 @@ status/ready kind/docs source/dev"
   comment OWNER $'Review:\nAgent: otter-9\n\n- the cache is not fixed after restart\r' | comments
   out=$(gh_review_check 50 2>&1)
   check "review-check: a finding that only mentions fixed is open" "$? $(grep -c 'the first: "- the cache is not fixed after restart "' <<<"$out")" "1 1"
+  # #1615: auto mode refuses the edit of a comment, so a review is settled by a
+  # newer Review: comment that carries the verdicts; the open one stays as it was.
+  check "review-check: an open finding says to post the review again, not edit it (#1615)" "$(grep -c "fix or dismiss each, then post the review again as a new Review: comment with each finding's verdict (the handoff skill, \"Review before landing\")" <<<"$out")" 1
+  { comment OWNER $'Review: /code-review (opus subagent) of abc\nAgent: otter-9\n\n- the cache is not fixed after restart'; comment OWNER $'Review: verdicts on the review above\nAgent: otter-9\n\n- Fixed in def456: the cache is not fixed after restart'; } | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a newer Review: comment settles an open finding (#1615)" "$? $out" "0 github: #50 changes 500 lines in hand-written files; reviewed by otter-9 (u)"
+  { comment OWNER $'Review: /code-review (opus subagent) of abc\nAgent: otter-9\n\n- the cache is not fixed after restart'; comment OWNER $'Fixed in def456, landing.'; } | comments
+  out=$(gh_review_check 50 2>&1)
+  check "review-check: a newer comment that is no Review: settles nothing (#1615)" "$? $(grep -c '1 finding(s) of its review (u) start with neither Fixed nor Dismissed' <<<"$out")" "1 1"
   comment NONE $'Review: LGTM\nAgent: otter-9' | comments
   out=$(gh_review_check 50 2>&1)
   check "review-check: an outsider's review doesn't count" "$? $(grep -c "its Review: comment by x (NONE) doesn't count" <<<"$out")" "1 1"
