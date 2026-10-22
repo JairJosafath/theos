@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"slices"
 	"testing"
 )
@@ -59,5 +60,49 @@ func TestBundleSupportedTypes(t *testing.T) {
 				t.Errorf("BundleSupportedTypes() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestInBundle(t *testing.T) {
+	typeErr := CheckChoices("web-app", []CatalogEntry{{Side: SideFramework, Name: "go-cli", SupportedTypes: []string{"cli"}}})
+	fitErr := CheckStandard("go-cli", &CatalogEntry{Side: SideStandard, Name: "python-standard",
+		SupportedFrameworks: []string{"python-fastapi"}})
+	selfErr := CheckDeploysItself(CatalogEntry{Side: SideFramework, Name: "aws-cdk", DeploysItself: true},
+		"web-app", "small", "")
+	for _, err := range []error{typeErr, fitErr, selfErr} {
+		if err == nil {
+			t.Fatal("a check passed that should fail")
+		}
+	}
+	tests := []struct {
+		name   string
+		bundle string
+		err    error
+		want   string
+	}{
+		{"unsupported type", "go-tool", typeErr, "bundle go-tool: " + typeErr.Error()},
+		{"standard doesn't fit", "mixed", fitErr, "bundle mixed: " + fitErr.Error()},
+		{"deploys itself", "cdk-app", selfErr, "bundle cdk-app: " + selfErr.Error()},
+		{"no bundle", "", fitErr, fitErr.Error()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := InBundle(tt.bundle, tt.err)
+			if got.Error() != tt.want {
+				t.Errorf("InBundle() = %q, want %q", got, tt.want)
+			}
+			if !errors.Is(got, tt.err) {
+				t.Errorf("InBundle() lost the error underneath")
+			}
+		})
+	}
+	if _, ok := errors.AsType[*FitError](InBundle("mixed", fitErr)); !ok {
+		t.Error("InBundle() hides the FitError the reason is read from")
+	}
+	if _, ok := errors.AsType[*SelfDeployError](InBundle("cdk-app", selfErr)); !ok {
+		t.Error("InBundle() hides the SelfDeployError the reason is read from")
+	}
+	if InBundle("go-tool", nil) != nil {
+		t.Error("InBundle(nil) is not nil")
 	}
 }
