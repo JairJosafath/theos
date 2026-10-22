@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,7 +25,109 @@ func briefScheme(t *testing.T) *runtime.Scheme {
 	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	return scheme
+}
+
+// missingAgentSecret says where to give a shared-token Agent's Secret. With
+// the model proxy (#1136) the source in the operator's namespace is enough
+// and the project namespace needs only the label; without it, the project
+// namespace needs a copy, and the message says the copy is on its way.
+func TestMissingAgentSecretSaysWhereTheTokenGoes(t *testing.T) {
+	const (
+		ns     = "shop"
+		source = "c4-factory-system"
+		secret = "claude-credentials"
+		proxy  = "http://c4-model-proxy.c4-factory-system.svc:8080"
+	)
+	tests := []struct {
+		name          string
+		proxied       bool
+		shared        bool
+		labeled       bool
+		sourcePresent bool
+		want          string // "" wants nil
+	}{
+		{
+			name: "a Secret the operator doesn't share is made in the project namespace",
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace shop with the " +
+				"Agents' token, so the Brief's planner can start",
+		},
+		{
+			name: "a Secret the operator doesn't share, with the proxy set", proxied: true,
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace shop with the " +
+				"Agents' token, so the Brief's planner can start",
+		},
+		{
+			name: "no label: label the namespace or make the Secret", shared: true,
+			want: "Secret claude-credentials of Agent coder is missing: label namespace shop " +
+				"c4.factory.io/shared-secrets=true, so the factory shares it from namespace c4-factory-system, " +
+				"or make it in shop for this project only",
+		},
+		{
+			name: "no label with the proxy: label the namespace", shared: true, proxied: true,
+			want: "Agent coder is on the factory's shared Secret claude-credentials: label namespace shop " +
+				"c4.factory.io/shared-secrets=true, so its agents reach the factory's model proxy",
+		},
+		{
+			name: "label and no source: make the Secret in the operator's namespace", shared: true, labeled: true,
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace c4-factory-system, " +
+				"which the factory shares with every project, or in shop for this project only",
+		},
+		{
+			name: "label and no source with the proxy: make the Secret the proxy uses", shared: true, labeled: true,
+			proxied: true,
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace c4-factory-system " +
+				"with the Agents' token, which the factory's model proxy uses for every project",
+		},
+		{
+			name: "label and source: the copy is on its way", shared: true, labeled: true, sourcePresent: true,
+			want: "Secret claude-credentials of Agent coder is not in namespace shop yet: the factory is " +
+				"copying it from namespace c4-factory-system, so the Brief's planner can start",
+		},
+		{
+			name: "label and source with the proxy: nothing is missing", shared: true, labeled: true,
+			sourcePresent: true, proxied: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}
+			if tt.labeled {
+				namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: sharedSecretsOptIn}
+			}
+			objs := []client.Object{namespace}
+			if tt.sourcePresent {
+				objs = append(objs, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: source, Name: secret}})
+			}
+			r := &BriefReconciler{
+				APIReader: fake.NewClientBuilder().WithScheme(briefScheme(t)).WithObjects(objs...).Build(),
+			}
+			if tt.shared {
+				r.SharedSecrets = []string{secret}
+				r.SourceNamespace = source
+			}
+			if tt.proxied {
+				r.ModelProxyURL = proxy
+			}
+			err := r.missingAgentSecret(context.Background(), ns, secret, "coder", "planner")
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("missingAgentSecret = %v, want nil", err)
+				}
+				return
+			}
+			var needs errNeedsInput
+			if !errors.As(err, &needs) {
+				t.Fatalf("missingAgentSecret = %v, want errNeedsInput", err)
+			}
+			if needs.Error() != tt.want {
+				t.Errorf("missingAgentSecret said\n  %s\nwant\n  %s", needs.Error(), tt.want)
+			}
+		})
+	}
 }
 
 // A reconcile on a stale copy of the Brief must not start a round, nor write
