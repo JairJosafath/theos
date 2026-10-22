@@ -74,6 +74,10 @@ type Shipment struct {
 	// Commit is the commit the version is tagged at where the target holds the
 	// app's source, "" where it doesn't.
 	Commit string
+	// Repository is the clone URL of the app's repository where the target
+	// holds the app's source, "" where it doesn't; a tool that pulls the
+	// source itself (Argo CD) clones it at Version.
+	Repository string
 	// Notes are the release's notes.
 	Notes string
 	// Files are the release's files, streamed from the Git host.
