@@ -73,6 +73,10 @@ type ProjectReconciler struct {
 	// CIGoCache is the node directory under which each project's CI Go cache
 	// lives (--ci-go-cache); empty, the pool pods mount no cache.
 	CIGoCache string
+	// ClusterDNS is where cluster DNS runs, the peers the agent and CI fences
+	// let port 53 out to (--cluster-dns, ClusterDNSPeers); nil means
+	// DefaultClusterDNS, kube-dns in kube-system (#1257).
+	ClusterDNS []networkingv1.NetworkPolicyPeer
 	// RunnerRecordKept is how long an ended pool pod stays readable;
 	// DefaultRunnerRecordKept when zero.
 	RunnerRecordKept time.Duration

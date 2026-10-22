@@ -40,7 +40,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 		return err
 	}
 	gitNamespaces := gitNamespacesOf(providers.Items)
-	egress := fenceEgress(gitNamespaces)
+	egress := fenceEgress(r.ClusterDNS, gitNamespaces)
 	if r.ModelProxyURL != "" {
 		// A sandbox on the shared token holds no token: the proxy's pods in the
 		// release namespace are its only way to Claude with one (decision 6 of
@@ -64,7 +64,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 		Name: AgentNetworkPolicyName, Namespace: project.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
-		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, gitNamespaces)
+		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, r.ClusterDNS, gitNamespaces)
 		policy.Spec.Egress = egress
 		return controllerutil.SetControllerReference(project, policy, r.Scheme)
 	})

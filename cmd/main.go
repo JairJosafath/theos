@@ -75,6 +75,7 @@ func main() {
 	var sandboxGoCache string
 	var ciGoCache string
 	var goProxy string
+	var clusterDNS stringList
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
 	var uiServiceAccount string
@@ -117,6 +118,10 @@ func main() {
 		"When set, a directory on the node, such as /var/cache/c4factory/go/ci, under which each project's "+
 			"CI runner pods get their own Go and golangci-lint build cache, <dir>/<project namespace>; a job "+
 			"compiles only what changed. Never shared with the agent sandboxes' cache.")
+	flag.Var(&clusterDNS, "cluster-dns",
+		"Where cluster DNS runs, which the agent and CI fences let port 53 out to: namespace/key=value[,key=value] "+
+			"(a namespace and pod labels) or an address block inside the private ranges (169.254.20.10/32 for "+
+			"NodeLocal DNSCache; a bare address means /32). Repeatable. Default "+controller.DefaultClusterDNS+".")
 	flag.StringVar(&goProxy, "go-proxy", controller.DefaultGoProxy,
 		"The Go proxy asked whether go get finds a released Go module whose path is outside c4factory.local/; "+
 			"off asks none, and the Crew's own GitHub source tag is the answer.")
@@ -147,6 +152,11 @@ func main() {
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+	clusterDNSPeers, err := controller.ClusterDNSPeers(clusterDNS)
+	if err != nil {
+		setupLog.Error(err, "Invalid --cluster-dns")
+		os.Exit(1)
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -299,6 +309,7 @@ func main() {
 		UIServiceAccount:  uiAccount,
 		Git:               gitprovider.Client{},
 		CIGoCache:         ciGoCache,
+		ClusterDNS:        clusterDNSPeers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)
