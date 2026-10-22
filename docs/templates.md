@@ -502,7 +502,8 @@ on-demand, encrypted table for a function Container.
   "aws lambda function in go with dynamodb" and "aws python lambda function
   with dynamodb": their `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
-  include; `TestDynamoDBConnectorConnectsToAWSLambdaTS`
+  include; `TestDynamoDBConnectorConnectsToAWSLambdaTS` and
+  `TestDynamoDBConnectorConnectsToOtherAWSLambdas`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
