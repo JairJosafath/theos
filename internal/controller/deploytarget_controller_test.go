@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -200,6 +201,28 @@ var _ = Describe("DeployTarget", func() {
 		// Asked again on the next poll, not 10 minutes later.
 		deployFake.Fail(ns+"/staging", nil)
 		deployReady(dt, metav1.ConditionTrue, "Ready")
+	})
+
+	It("is Ready without a Secret when the member is argoCD and its project is there (#1588)", func() {
+		ns := newProjectNamespace()
+		argoNS := newArgoNamespace()
+		dt := newArgoCDTarget(ns, "dev", argoNS, "apps")
+		mustCreate(dt)
+		Expect(dt.Spec.ArgoCD.Project).To(Equal(model.ArgoCDDefaultProject))
+		Expect(dt.Spec.ArgoCD.Destination.Server).To(Equal(model.ArgoCDDefaultServer))
+		cond := deployReady(dt, metav1.ConditionFalse, "CredentialRefused")
+		Expect(cond.Message).To(ContainSubstring("Argo CD refused the operator's ServiceAccount for DeployTarget dev " +
+			"for project default in namespace " + argoNS + " (destination apps): project default doesn't exist"))
+		Expect(cond.Message).To(ContainSubstring("Whoever owns DeployTarget dev makes project default in namespace " +
+			argoNS))
+
+		// Checked again on a change of the spec, with the project there.
+		argoProject(argoNS)
+		Expect(patch(dt, func() { dt.Spec.Tier = c4v1alpha1.DeployTierProduction })).To(Succeed())
+		cond = deployReady(dt, metav1.ConditionTrue, "Ready")
+		Expect(cond.Message).To(ContainSubstring("Argo CD is there for project default in namespace " + argoNS +
+			" (destination apps)"))
+		Expect(dt.Status.CheckedTime).NotTo(BeNil())
 	})
 
 	It("checks again when its Secret or spec changes, and not on every poll", func() {
