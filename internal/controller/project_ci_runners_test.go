@@ -388,7 +388,7 @@ var _ = Describe("CI runner pool", func() {
 		kept := livePoolPods(ns)[0]
 		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "c4factory/gitea-runner-go:next" })).To(Succeed())
 		Consistently(func() []string {
-			var names []string
+			names := make([]string, 0, 1)
 			for _, pod := range livePoolPods(ns) {
 				names = append(names, pod.Name)
 			}
