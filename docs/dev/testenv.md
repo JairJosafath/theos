@@ -596,7 +596,9 @@ Docker Desktop's disk images never shrink (#1343). It prunes:
   its cache; skipped without the volume or the image,
   `C4_PRUNE_RUNNER_CACHE=0` turns it off;
 - Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
-  builds stay warm) and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
+  builds stay warm), then what is over `C4_PRUNE_DOCKER_MAX_GB` (10, oldest
+  first; 0 for no cap: a release's builds grew it past 20 GB within 72h,
+  #1636), and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
 
 Without `docker` it skips the last two.
 
@@ -770,7 +772,9 @@ published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
 checks it twice, each on a Kind cluster of its own, building nothing.
 *Release* dispatches it on main, with `from` empty, for every minor it
 publishes (`vX.Y.0`, #1105); `hack/check-workflows.sh` keeps that step and its
-condition. A patch isn't checked: it ships a fix within the hour on the
+condition, and the last step of each workflow, under `if: always()`, that
+removes the images it built or pulled from the device's Docker ("Disk space
+on WSL"). A patch isn't checked: it ships a fix within the hour on the
 upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
@@ -1007,6 +1011,28 @@ path, its free space and the minimum (at most once per path an hour, across
 workers: `.relay/disk-low-<path>`), and prunes the caches at once
 (`hack/prune-caches.sh`). The wait counts toward `RELAY_MEM_WAIT` like the
 wait for memory. Sessions already running go on.
+
+Docker's disk grew most. `docker_data.vhdx` went from 22.5 GB on 2026-10-16
+to 102 GB on 2026-10-22, about 13 GB for each of six releases (#1636): the
+self-hosted runners (`hack/gh-runner`) use the device's Docker through
+`docker.sock`, *Release* built ten images a release, three of them about
+5 GB, and kept them, *Verify Release* pulled them again, and the build cache
+reached 20 GB within the 72h the prune kept. What keeps it under the peak
+it reached, all tested without Docker (`hack/check-workflows_test.sh`,
+`hack/prune-caches_test.sh`):
+
+- *Release*'s last step, under `if: always()`, removes every image the build
+  tagged once they are pushed, whatever the steps before did: they are on
+  GHCR. *Verify Release*'s last step removes the agent images it pulled
+  (`hack/load-images.sh` removes each once Kind has it; the step catches what
+  a failed or cancelled load left). `hack/check-workflows.sh` (in `make
+  check`) fails either workflow without that step, and *Release* with it
+  before the push. The base images the Dockerfiles pin stay: local builds
+  share them, and only a bump leaves an old one behind.
+- `hack/prune-caches.sh` caps Docker's build cache at `C4_PRUNE_DOCKER_MAX_GB`
+  (10 GB, oldest first) on top of the 72h rule, and drops the dangling images,
+  every 30 minutes from `hack/relay-watch.sh` and when a worker finds a
+  watched filesystem low.
 
 Deleting files inside WSL frees space in the distro, not on C:: the `.vhdx`
 files never shrink. We no longer compact them (`diskpart`'s `compact vdisk`)

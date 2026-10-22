@@ -18,12 +18,17 @@ case "$1 $2" in
   "volume inspect") [ "$STUB_VOLUME" = 1 ] ;;
   "image inspect") [ "$STUB_IMAGE" = 1 ] ;;
   "run "*) cat >"$STUB_STDIN"; echo "trim-go-cache: /cache/go-build was 9 MB, limit 4 MB; dropped 6 MB of entries unused for 2+ hours, now 3 MB" ;;
-  "builder prune") echo "Total reclaimed space: ${BUILDER_FREED:-1.5GB}" ;;
+  "builder prune")
+    case "$*" in
+      *--help*) echo "      ${STUB_CAP_FLAG:---max-used-space} bytes" ;;
+      *--filter*) echo "Total reclaimed space: ${BUILDER_FREED:-1.5GB}" ;;
+      *) echo "Total reclaimed space: ${CAP_FREED:-0B}" ;;
+    esac ;;
   "image prune") echo "Total reclaimed space: ${IMAGES_FREED:-0B}" ;;
 esac
 EOF
 chmod +x "$T/bin/docker"
-for tool in bash dirname sed tail cat du cut find awk; do
+for tool in bash dirname sed tail cat du cut find awk grep; do
   p=$(command -v "$tool") && ln -sf "$p" "$T/nodocker/$tool"
 done
 # A stub go names GOCACHE, so no test touches the device's cache.
@@ -42,6 +47,9 @@ check "runner cache: trim-go-cache.sh on stdin" "$(cmp -s "$T/stdin" "$HERE/trim
 check "runner cache: logs what it dropped, naming the volume" "$(echo "$out" | grep -c '^trim-go-cache: c4factory-gh-runner-cache/go-build was 9 MB')" 1
 check "build cache: pruned with the until filter, 72h by default" "$(called '^builder prune -f --filter until=72h$')" 1
 check "build cache: logs what it reclaimed" "$(echo "$out" | grep -c '^prune-caches: docker build cache unused for 72h: reclaimed 1.5GB$')" 1
+check "build cache: capped at 10 GB by default, after the until prune (#1636)" "$(called '^builder prune -f --max-used-space=10GB$')" 1
+check "build cache: the cap prune comes after the until prune" "$(grep -n 'builder prune -f' "$T/log" | sed -n '2s/:.*//p')" "$(grep -n -- '--max-used-space=10GB' "$T/log" | cut -d: -f1)"
+check "build cache: nothing over the cap, nothing logged" "$(echo "$out" | grep -c 'over 10 GB')" 0
 check "images: dangling ones pruned" "$(called '^image prune -f$')" 1
 check "images: nothing reclaimed, nothing logged" "$(echo "$out" | grep -c 'dangling')" 0
 check "one line for each prune" "$(echo "$out" | wc -l | tr -d ' ')" 2
@@ -50,19 +58,29 @@ out=$(prune IMAGES_FREED=300MB BUILDER_FREED=0B)
 check "images: logs what they reclaimed" "$(echo "$out" | grep -c '^prune-caches: dangling docker images: reclaimed 300MB$')" 1
 check "build cache: nothing reclaimed, nothing logged" "$(echo "$out" | grep -c 'build cache')" 0
 
+out=$(prune CAP_FREED=4.2GB BUILDER_FREED=0B)
+check "build cache: logs what the cap reclaimed" "$(echo "$out" | grep -c '^prune-caches: docker build cache over 10 GB: reclaimed 4.2GB$')" 1
+prune C4_PRUNE_DOCKER_MAX_GB=6 >/dev/null
+check "build cache: C4_PRUNE_DOCKER_MAX_GB sets the cap" "$(called '^builder prune -f --max-used-space=6GB$')" 1
+prune C4_PRUNE_DOCKER_MAX_GB=0 >/dev/null
+check "build cache: C4_PRUNE_DOCKER_MAX_GB=0 turns the cap off" "$(called 'max-used-space=\|keep-storage=')" 0
+check "build cache: still pruned by age without the cap" "$(called '^builder prune -f --filter until=72h$')" 1
+prune STUB_CAP_FLAG=--keep-storage >/dev/null
+check "build cache: an older CLI gets --keep-storage" "$(called '^builder prune -f --keep-storage=10GB$')" 1
+
 prune C4_GOCACHE_MAX_GB=2 C4_GOCACHE_MAX_MB=5 C4_PRUNE_DOCKER_UNTIL=24h >/dev/null
 check "runner cache: the limit passes in" "$(called '-e C4_GOCACHE_MAX_GB=2 -e C4_GOCACHE_MAX_MB=5 ')" 1
 check "build cache: C4_PRUNE_DOCKER_UNTIL sets the age" "$(called '^builder prune -f --filter until=24h$')" 1
 
 prune STUB_VOLUME=0 >/dev/null
 check "no volume: no container" "$(called '^run ')" 0
-check "no volume: docker still pruned" "$(called '^builder prune')" 1
+check "no volume: docker still pruned" "$(called '^builder prune -f --filter')" 1
 prune STUB_IMAGE=0 >/dev/null
 check "no runner image: no container" "$(called '^run ')" 0
 
 prune C4_PRUNE_RUNNER_CACHE=0 >/dev/null
 check "C4_PRUNE_RUNNER_CACHE=0: no container" "$(called '^run ')" 0
-check "C4_PRUNE_RUNNER_CACHE=0: docker still pruned" "$(called ' prune ')" 2
+check "C4_PRUNE_RUNNER_CACHE=0: docker still pruned" "$(called ' prune -f')" 3
 prune C4_PRUNE_DOCKER=0 >/dev/null
 check "C4_PRUNE_DOCKER=0: no docker prune" "$(called ' prune ')" 0
 check "C4_PRUNE_DOCKER=0: runner cache still trimmed" "$(called '^run ')" 1
