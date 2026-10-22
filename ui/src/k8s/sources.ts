@@ -7,6 +7,7 @@ import {
   resourcePath,
   type Agent,
   type Brief,
+  type Bundle,
   type CatalogEntry,
   type Container,
   type Crew,
@@ -42,6 +43,8 @@ export interface StoryData {
   standards: Standard[]
   computes: CatalogEntry[]
   deployments: CatalogEntry[]
+  /** The entries teams picked together; a Container names one instead of the four. Optional: may stay empty. */
+  bundles: Bundle[]
   gitProviders: GitProvider[]
   /** Where Containers ship to, for their pages and the Container's deploys. Optional: may stay empty. */
   deployTargets: DeployTarget[]
@@ -120,6 +123,7 @@ export function emptyStory(namespace: string): StoryData {
     standards: [],
     computes: [],
     deployments: [],
+    bundles: [],
     gitProviders: [],
     deployTargets: [],
     crews: [],
@@ -259,6 +263,7 @@ const READ_NAMES = {
   standards: 'standards',
   computes: 'computes',
   deployments: 'deployments',
+  bundles: 'bundles',
   gitProviders: 'Git providers',
   deployTargets: 'deploy targets',
 } as const
@@ -313,7 +318,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
           resource: RESOURCES.briefs,
         },
         // Only their pages read them; a refused read shows there.
-        ...(['standards', 'computes', 'deployments', 'gitProviders', 'deployTargets'] as const).map((k) => ({
+        ...(['standards', 'computes', 'deployments', 'gitProviders', 'deployTargets', 'bundles'] as const).map((k) => ({
           what: READ_NAMES[k],
           watcher: watcher(api, RESOURCES[k], namespace),
           optional: true,
@@ -348,6 +353,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       deployments: this.items<CatalogEntry>(15),
       gitProviders: this.items<GitProvider>(16),
       deployTargets: this.items<DeployTarget>(17),
+      bundles: this.items<Bundle>(18),
     }
   }
 }

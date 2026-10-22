@@ -11,6 +11,7 @@ import type { StoryData } from '../k8s/sources'
 import type {
   Agent,
   Brief,
+  Bundle,
   CatalogEntry,
   Condition,
   Container,
@@ -77,8 +78,8 @@ export function demoStory(now: number): StoryData {
     spec: { displayName: 'Webshop', description: 'An online shop where customers browse, order and reorder.' },
     status: {
       softwareSystems: 3,
-      containers: 4,
-      readyContainers: 1,
+      containers: 5,
+      readyContainers: 2,
       activeSessions: 2,
       summary: '1 of 4 containers Ready, 2 active sessions',
     },
@@ -108,11 +109,11 @@ export function demoStory(now: number): StoryData {
         kpis: ['Checkout conversion', 'Time to first order'],
       },
       status: {
-        containers: 4,
-        readyContainers: 1,
+        containers: 5,
+        readyContainers: 2,
         dataStores: 3,
         activeSessions: 2,
-        summary: '1 of 4 containers Ready, 2 active sessions',
+        summary: '2 of 5 containers Ready, 2 active sessions',
       },
     },
     {
@@ -136,7 +137,7 @@ export function demoStory(now: number): StoryData {
 
   const container = (
     name: string,
-    spec: Partial<Container['spec']> & Pick<Container['spec'], 'type' | 'frameworkRef'>,
+    spec: Partial<Container['spec']> & Pick<Container['spec'], 'type'>,
     status: Container['status'],
   ): Container => ({
     kind: 'Container',
@@ -221,6 +222,36 @@ export function demoStory(now: number): StoryData {
             "v0.2.0 waits for a person's approval to ship to prod: set approved to v0.2.0 in its spec.deploy entry",
             ago(2 * 3600),
           ),
+        ],
+      },
+    ),
+    // Named its Bundle instead of the four sides; the operator expanded it into status.bundle.
+    container(
+      'inventory-api',
+      {
+        displayName: 'Inventory API',
+        description: 'Counts stock and reserves it for orders.',
+        type: 'service',
+        bundleRef: { name: 'python-service' },
+      },
+      {
+        phase: 'Ready',
+        repositoryURL: `${GITEA}/webshop/inventory-api`,
+        scaffoldedFrom: ['python-fastapi@v1.3.0', 'python-standard@v1.2.0', 'small@v1.0.0', 'k8s-manifests@v1.1.0'],
+        bundle: {
+          name: 'python-service',
+          framework: 'python-fastapi',
+          standard: 'python-standard',
+          compute: 'small',
+          deployment: 'k8s-manifests',
+        },
+        standard: { name: 'python-standard', ref: 'v1.2.0' },
+        conditions: [
+          cond('ReferencesResolved', 'True', 'Resolved', 'All references exist', ago(8000)),
+          cond('ChoicesValid', 'True', 'Valid', 'Every catalog entry supports service', ago(8000)),
+          cond('RepositoryCreated', 'True', 'Created', `Created ${GITEA}/webshop/inventory-api`, ago(7990)),
+          cond('Scaffolded', 'True', 'Scaffolded', 'Pushed the initial commit', ago(7980)),
+          cond('BundleCurrent', 'True', 'Current', 'Bundle python-service names what it was scaffolded from', ago(600)),
         ],
       },
     ),
@@ -920,6 +951,22 @@ export function demoStory(now: number): StoryData {
   const deployments = [
     catalog('Deployment', 'k8s-manifests', 'Kubernetes manifests', ['service', 'worker', 'job'], 'v1.1.0', created),
   ]
+  // The entries a team picked together, as config/samples/webshop/bundle.yaml.
+  const bundles: Bundle[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'Bundle',
+      metadata: meta('python-service', created),
+      spec: {
+        displayName: 'Python service',
+        description: 'A FastAPI service with the Python Standard, small sizing and plain Kubernetes manifests.',
+        frameworkRef: { name: 'python-fastapi' },
+        standardRef: { name: 'python-standard' },
+        computeRef: { name: 'small' },
+        deploymentRef: { name: 'k8s-manifests' },
+      },
+    },
+  ]
   const gitProviders: GitProvider[] = [
     {
       apiVersion: API_VERSION,
@@ -1246,6 +1293,7 @@ export function demoStory(now: number): StoryData {
     standards,
     computes,
     deployments,
+    bundles,
     gitProviders,
     deployTargets,
     crews,

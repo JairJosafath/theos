@@ -74,6 +74,7 @@ describe('the read-only object pages', () => {
     ['Standard', 'python-standard', 'Frameworks it checks'],
     ['Compute', 'small', 'Its template'],
     ['Deployment', 'k8s-manifests', 'Its template'],
+    ['Bundle', 'python-service', 'Its entries'],
     ['GitProvider', 'gitea', 'Where repositories go'],
     ['DeployTarget', 'prod', 'Where it ships'],
   ] as const)('opens a %s page', (kind, name, section) => {
@@ -86,7 +87,7 @@ describe('the read-only object pages', () => {
     const data = demoStory(NOW)
     data.project!.status!.factory = { operatorVersion: '0.14.0' }
     const t = text(page('Project', 'webshop', data))
-    expect(t).toContain('Containers 4, 1 Ready')
+    expect(t).toContain('Containers 5, 2 Ready')
     expect(t).toContain('Operator 0.14.0')
     expect(t).toContain('Chart not reported yet')
   })
@@ -132,6 +133,91 @@ describe('the read-only object pages', () => {
     expect(text(html)).toContain('Standard files left out')
     expect(html).toContain('<details class="left-out-change"><summary>What the Standard changed')
     expect(html).toContain('+line-length = 120')
+  })
+})
+
+describe('the Bundle page', () => {
+  it('lists its entries linked to their pages at their pinned refs, and the Containers that name it', () => {
+    const html = page('Bundle', 'python-service')
+    const t = text(html)
+    expect(t).toContain('Python service')
+    expect(t).toMatch(/Framework python-fastapi @ v1.3.0/)
+    expect(t).toMatch(/Standard python-standard @ v1.2.0/)
+    expect(t).toMatch(/Compute small @ v1.0.0/)
+    expect(t).toMatch(/Deployment k8s-manifests @ v1.1.0/)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=python-standard"')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Compute&amp;name=small"')
+    expect(html).not.toContain('kind=Framework')
+    expect(t).toContain('Containers that name it')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Container&amp;name=inventory-api"')
+    expect(html).not.toContain('name=orders-api"')
+  })
+
+  it('computes the Container types its entries share, as the operator does', () => {
+    // Framework python-fastapi lists only service, so service is all they share.
+    expect(text(page('Bundle', 'python-service'))).toMatch(/Container types service /)
+    const data = demoStory(NOW)
+    data.frameworks[0].spec.supportedTypes = ['job', 'worker', 'service']
+    // The first entry's order, kept to what the Standard, Compute (no job) and Deployment list too.
+    expect(text(page('Bundle', 'python-service', data))).toMatch(/Container types worker, service /)
+    data.computes[0].spec.supportedTypes = ['static-site']
+    expect(text(page('Bundle', 'python-service', data))).toContain('None: its entries share no Container type.')
+  })
+
+  it('says when an entry is not in the catalog, and leaves it out of the types', () => {
+    const data = demoStory(NOW)
+    data.bundles[0].spec.standardRef = { name: 'gone-standard' }
+    const html = page('Bundle', 'python-service', data)
+    expect(text(html)).toMatch(/Standard gone-standard · not in the catalog/)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=gone-standard"')
+    expect(text(html)).toMatch(/Container types service /)
+  })
+})
+
+describe('a bundled Container’s page', () => {
+  it('shows the Bundle and the sides it expanded to, each from the bundle, beside scaffoldedFrom', () => {
+    const html = page('Container', 'inventory-api')
+    const t = text(html)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Bundle&amp;name=python-service"')
+    expect(t).toMatch(/Bundle python-service Framework python-fastapi @ v1.3.0 · from bundle python-service/)
+    expect(t).toMatch(/Standard python-standard @ v1.2.0 · from bundle python-service/)
+    expect(t).toMatch(/Compute small · from bundle python-service/)
+    expect(t).toMatch(/Deployment k8s-manifests · from bundle python-service/)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=python-standard"')
+    expect(t).toMatch(/Scaffolded from python-fastapi @ v1.3.0 python-standard @ v1.2.0/)
+    // Its Standard comes from the bundle, so the checks section is there.
+    expect(t).toContain('When CI runs the full check')
+    expect(t).toContain('Its Bundle still names what it was scaffolded from')
+  })
+
+  it('says the Bundle is not expanded yet before the operator fills status.bundle', () => {
+    const data = demoStory(NOW)
+    const c = data.containers.find((x) => x.metadata.name === 'inventory-api')!
+    c.status = { phase: 'Pending' }
+    const t = text(page('Container', 'inventory-api', data))
+    expect(t).toMatch(/Bundle python-service · not expanded yet/)
+    expect(t).not.toContain('Standard python-standard')
+    expect(t).not.toContain('When CI runs the full check')
+  })
+
+  it('shows BundleCurrent=False with its message, and enforces nothing', () => {
+    const data = demoStory(NOW)
+    const c = data.containers.find((x) => x.metadata.name === 'inventory-api')!
+    c.status!.conditions = c.status!.conditions!.map((cond) =>
+      cond.type === 'BundleCurrent'
+        ? {
+            ...cond,
+            status: 'False',
+            reason: 'BundleChanged',
+            message: 'Bundle python-service now names compute medium',
+          }
+        : cond,
+    )
+    const t = text(page('Container', 'inventory-api', data))
+    expect(t).toContain('Its Bundle names other entries now; the repository keeps what it was scaffolded from')
+    expect(t).toContain('Bundle python-service now names compute medium')
+    // What it was scaffolded from stays what the page shows.
+    expect(t).toMatch(/Compute small · from bundle python-service/)
   })
 })
 

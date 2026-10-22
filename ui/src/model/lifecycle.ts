@@ -38,6 +38,7 @@ export type LifecycleKind =
   | 'Session'
   | 'Standard'
   | 'Compute'
+  | 'Bundle'
   | 'Deployment'
   | 'GitProvider'
   | 'DeployTarget'
@@ -234,6 +235,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   ),
   Compute: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
   Deployment: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
+  Bundle: phaseless(
+    'The four catalog entries a team picked together. A Container names it instead of the four; the factory expands it into the Container’s status at creation, and marks the Container BundleCurrent=False when the Bundle changes afterwards.',
+    'Nothing: a Container keeps what the Bundle named when it was created. To follow a changed Bundle, create a new Container.',
+  ),
   GitProvider: phaseless(
     'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',
     'Nothing, unless a Container fails to create its repository: then check the Secret it names, in the cluster.',
