@@ -1188,6 +1188,15 @@ func TestCanceller(t *testing.T) {
 		{name: "jobs that couldn't be read", read: false, want: CancelledByRunner},
 		{name: "a runner still online just after", jobs: []CIJob{stayed, {Conclusion: "cancelled", Runner: 6,
 			RunnerOnline: true, Ended: just}}, read: true, want: CancelledByUnsure},
+		// #1140: Gitea deletes a pool pod's ephemeral runner once its job ends,
+		// so the pod's fate tells, not whether the runner stayed online.
+		{name: "a pool pod that ended on its own", jobs: []CIJob{{Conclusion: "cancelled", Runner: 7,
+			RunnerName: "ci-gitea-go-abc12", PodFate: PodFateEnded, Ended: just}}, read: true, want: CancelledByPerson},
+		{name: "a pool pod lost before its job ended", jobs: []CIJob{stayed, {Conclusion: "cancelled", Runner: 7,
+			RunnerName: "ci-gitea-go-abc12", PodFate: PodFateLost, RunnerOnline: true, Ended: long}}, read: true,
+			want: CancelledByRunner},
+		{name: "a pool pod the pool no longer records", jobs: []CIJob{{Conclusion: "cancelled", Runner: 7,
+			RunnerName: "ci-gitea-go-abc12", Ended: long}}, read: true, want: CancelledByRunner},
 	} {
 		if got := Canceller(tc.jobs, tc.read, now); got != tc.want {
 			t.Errorf("%s: Canceller() = %q, want %q", tc.name, got, tc.want)

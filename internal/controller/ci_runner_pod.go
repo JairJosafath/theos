@@ -40,8 +40,9 @@ const (
 	AnnotationRunnerFate = "c4.factory.io/runner-fate"
 	// RunnerFateEnded is a pod whose runner ran its one job and exited on its
 	// own; RunnerFateLost one deleted, evicted or killed before its job ended.
-	RunnerFateEnded = "ended"
-	RunnerFateLost  = "lost"
+	// The Task reads them as model.CIJob.PodFate.
+	RunnerFateEnded = model.PodFateEnded
+	RunnerFateLost  = model.PodFateLost
 	// CINetworkPolicyName is the NetworkPolicy that fences the pool's pods.
 	CINetworkPolicyName = "c4-ci-runner"
 	// CIJobEnvConfigMap holds the variables the runner gives every job

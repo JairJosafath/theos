@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -371,7 +372,7 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, 
 	}
 	// A failure whose runs still run waits for them before its jobs run again.
 	if checks.State != gitprovider.CheckSuccess && facts.CIRun == (model.CIRun{}) {
-		facts.CIRun = r.ciRun(gitCtx, provider, repo, status.Commit, read)
+		facts.CIRun = r.ciRun(gitCtx, provider, repo, task.Namespace, status.Commit, read)
 	}
 	if status.PhaseChangedAt != nil {
 		facts.CheckingSince = status.PhaseChangedAt.Time
@@ -406,7 +407,7 @@ func (r *TaskReconciler) rerunState(ctx context.Context, provider gitprovider.Pr
 	if model.RerunEnded(seen, status.ChecksRerunAt.Time) {
 		return model.CIRun{}, true
 	}
-	return r.runState(ctx, provider, repo, status.Commit, seen, false), false
+	return r.runState(ctx, provider, repo, "", status.Commit, seen, false), false
 }
 
 // workflowRuns is the model's view of the Git host's runs.
@@ -424,7 +425,7 @@ func workflowRuns(runs []gitprovider.WorkflowRun) []model.WorkflowRun {
 // who cancelled a failed one. Runs that can't be read are unknown, which waits
 // up to model.QueuedChecksLimit.
 func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	commit string, canceller bool) model.CIRun {
+	namespace, commit string, canceller bool) model.CIRun {
 	ci := model.CIRun{Commit: commit}
 	runs, err := provider.CommitRuns(ctx, repo, commit)
 	if err != nil {
@@ -432,19 +433,20 @@ func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provide
 		ci.State = model.CIRunUnknown
 		return ci
 	}
-	return r.runState(ctx, provider, repo, commit, workflowRuns(runs), canceller)
+	return r.runState(ctx, provider, repo, namespace, commit, workflowRuns(runs), canceller)
 }
 
 // runState sums up the runs at commit, whether a runner is online while one is
 // queued, and, when canceller, who cancelled a failed one that ended
 // cancelled: asked only when the failure is read, as it costs a call a job.
+// namespace is the Task's, where the CI runner pool's pods are.
 func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	commit string, seen []model.WorkflowRun, canceller bool) model.CIRun {
+	namespace, commit string, seen []model.WorkflowRun, canceller bool) model.CIRun {
 	ci := model.CIRun{Commit: commit}
 	state, run := model.CommitRunState(seen)
 	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
 	if cancelled := model.CancelledRuns(seen); canceller && len(cancelled) > 0 {
-		ci.CancelledBy = r.canceller(ctx, provider, repo, cancelled)
+		ci.CancelledBy = r.canceller(ctx, provider, repo, namespace, cancelled)
 	}
 	switch state {
 	case model.CIRunRunning:
@@ -458,10 +460,11 @@ func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Prov
 	return ci
 }
 
-// canceller tells who cancelled the cancelled runs at a Task's commit: whether
-// the runners of their cancelled jobs stayed online (model.Canceller).
+// canceller tells who cancelled the cancelled runs at a Task's commit: by the
+// fate of the pool pod a cancelled job ran on (#1140), else whether the job's
+// runner stayed online (model.Canceller).
 func (r *TaskReconciler) canceller(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	cancelled []model.WorkflowRun) string {
+	namespace string, cancelled []model.WorkflowRun) string {
 	var jobs []model.CIJob
 	online, known := map[int64]bool{}, map[int64]bool{}
 	for _, run := range cancelled {
@@ -472,9 +475,11 @@ func (r *TaskReconciler) canceller(ctx context.Context, provider gitprovider.Pro
 			return model.Canceller(nil, false, r.now())
 		}
 		for _, j := range found {
-			job := model.CIJob{Conclusion: j.Conclusion, Runner: j.RunnerID, Ended: j.Completed}
+			job := model.CIJob{Conclusion: j.Conclusion, Runner: j.RunnerID, RunnerName: j.RunnerName,
+				Ended: j.Completed}
 			if job.Cancelled() && job.Runner != 0 {
-				if _, asked := known[job.Runner]; !asked {
+				job.PodFate = r.runnerPodFate(ctx, namespace, job.RunnerName)
+				if _, asked := known[job.Runner]; !asked && job.PodFate == "" {
 					online[job.Runner], known[job.Runner] = provider.RunnerOnline(ctx, job.Runner)
 				}
 				job.RunnerOnline, job.RunnerUnknown = online[job.Runner], !known[job.Runner]
@@ -483,6 +488,25 @@ func (r *TaskReconciler) canceller(ctx context.Context, provider gitprovider.Pro
 		}
 	}
 	return model.Canceller(jobs, true, r.now())
+}
+
+// runnerPodFate is the fate of the pool pod named runner in namespace, the
+// pool's verdict (AnnotationRunnerFate) or, before the pool wrote one, what
+// the pod shows; empty when no pool pod of that name is kept. Read live: the
+// Task's cache holds no pods.
+func (r *TaskReconciler) runnerPodFate(ctx context.Context, namespace, runner string) string {
+	if runner == "" {
+		return ""
+	}
+	var pod corev1.Pod
+	if err := r.APIReader.Get(ctx, types.NamespacedName{Namespace: namespace, Name: runner}, &pod); err != nil ||
+		pod.Labels[LabelCIRunner] != ciRunnerValue {
+		return ""
+	}
+	if fate := pod.Annotations[AnnotationRunnerFate]; fate != "" {
+		return fate
+	}
+	return runnerPodFate(&pod)
 }
 
 // noFreeSlot reports whether the Task must wait for an agent slot: all are taken,

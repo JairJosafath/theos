@@ -450,13 +450,13 @@ func TestRunJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []WorkflowJob{
-		{ID: 7, Status: "completed", Conclusion: "cancelled", RunnerID: 4,
+		{ID: 7, Status: "completed", Conclusion: "cancelled", RunnerID: 4, RunnerName: "gitea-runner-go-7f9",
 			Completed: time.Date(2026, 10, 16, 11, 59, 30, 0, time.UTC)},
 		{ID: 8, Status: "completed", Conclusion: "cancelled"},
 	}
 	if len(jobs) != issuePageSize+2 || !slices.EqualFunc(jobs[issuePageSize:], want, func(a, b WorkflowJob) bool {
 		return a.ID == b.ID && a.Status == b.Status && a.Conclusion == b.Conclusion && a.RunnerID == b.RunnerID &&
-			a.Completed.Equal(b.Completed)
+			a.RunnerName == b.RunnerName && a.Completed.Equal(b.Completed)
 	}) {
 		t.Errorf("RunJobs() = %d jobs ending %+v, want %d ending %+v", len(jobs), jobs[max(0, len(jobs)-2):],
 			issuePageSize+2, want)
