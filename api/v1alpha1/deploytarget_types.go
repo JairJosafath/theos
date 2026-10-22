@@ -76,6 +76,24 @@ type DeployTargetGitHub struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')",message="repository must be owner/name"
 	// +required
 	Repository string `json:"repository"`
+
+	// tagPrefix goes before the version in each release's tag. Unset, it is
+	// the Container's name and "-" (orders-cli-v0.1.0), so any number of
+	// Containers share the target; set, it is used as it is for every
+	// Container shipping there, "" giving bare tags (v0.1.0) on a
+	// repository of one app.
+	// +kubebuilder:validation:MaxLength=40
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
+	// +optional
+	TagPrefix *string `json:"tagPrefix,omitempty"`
+
+	// latest says whether each release shipped becomes the repository's
+	// Latest release on GitHub. It defaults to true; set it to false on a
+	// target for every app but the one people install, when several ship to
+	// one repository, so a library's release doesn't take Latest from it.
+	// +optional
+	Latest *bool `json:"latest,omitempty"`
 }
 
 // ConditionDeployTargetReady on a DeployTarget says whether its Secret holds

@@ -83,6 +83,14 @@ func (f *fakeGitHub) addRepository(repository, token string) {
 	f.ids[repository] = f.nextID
 }
 
+// hasRepository says whether repository was added.
+func (f *fakeGitHub) hasRepository(repository string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.repos[repository]
+	return ok
+}
+
 // repositoryID is GitHub's id of repository.
 func (f *fakeGitHub) repositoryID(repository string) int64 {
 	f.mu.Lock()

@@ -80,6 +80,23 @@ const (
 	GitHubSettingLatest = "latest"
 )
 
+// GitHubTagPrefix is the prefix a Container's tags carry at a github target:
+// the target's tagPrefix as it is when set ("" giving bare tags), else the
+// Container's name and "-", so any number of Containers share a target with
+// no setting (docs/plans/github-deploy-state.md, decision 3).
+func GitHubTagPrefix(set *string, container string) string {
+	if set != nil {
+		return *set
+	}
+	return container + "-"
+}
+
+// GitHubTakesLatest says whether a github target's releases become the
+// repository's Latest: its latest field, true when unset.
+func GitHubTakesLatest(latest *bool) bool {
+	return latest == nil || *latest
+}
+
 // deployMembers are the members the factory ships to, by name.
 var deployMembers = map[string]DeployMember{
 	DeployMemberGitHub: {Name: DeployMemberGitHub, Tool: "GitHub", SecretKeys: []string{"token"},
