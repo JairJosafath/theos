@@ -1,6 +1,7 @@
 // The releases the Crews tagged: each Crew's last one, as its status has it.
 
 import type { Crew, CrewRelease } from '../k8s/types'
+import { REPO_URL } from './versions'
 
 export interface CrewReleaseRow {
   /** "<namespace>/<crew>". */
@@ -60,3 +61,9 @@ export function publishFailure(crew: Crew): string | undefined {
   const reason = crew.status.conditions?.find((c) => c.type === 'Published' && c.status === 'False')?.reason
   return reason ? PUBLISH_REASON[reason] : undefined
 }
+
+/**
+ * Where docs/design.md says how a Crew's publishReleases moves to a github
+ * DeployTarget (Publishing a release): the field is deprecated by #1070.
+ */
+export const PUBLISH_MIGRATION_URL = `${REPO_URL}/blob/main/docs/design.md#publishing-a-release`

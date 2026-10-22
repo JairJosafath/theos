@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Container, DeployTarget } from '../k8s/types'
-import { approveCommand, approvePatch, deploysOf, describeApproval, memberOf, readinessOf, shippingTo } from './deploys'
+import {
+  approveCommand,
+  approvePatch,
+  deploysOf,
+  describeApproval,
+  githubImage,
+  githubSource,
+  memberOf,
+  readinessOf,
+  shippingTo,
+} from './deploys'
 
 const target = (spec: Partial<DeployTarget['spec']>, status?: DeployTarget['status']): DeployTarget => ({
   metadata: { name: 'prod', namespace: 'shop' },
@@ -127,5 +137,38 @@ describe('the approval', () => {
     expect(approveCommand(c, 1, entry, 'v1.3.0')).toBe(
       `kubectl -n shop patch container api --type=json -p '${JSON.stringify(approvePatch(1, entry, 'v1.3.0'))}'`,
     )
+  })
+})
+
+describe('githubSource and githubImage (#1603)', () => {
+  it('fills the source as the operator does: the Container’s name, the folder and /, nothing for the whole repository', () => {
+    expect(githubSource(target({}))).toBeUndefined()
+    expect(githubSource(target({ github: { repository: 'acme/api', source: {} } }))).toEqual({
+      path: '<container>',
+      tagPrefix: '<container>/',
+    })
+    expect(githubSource(target({ github: { repository: 'acme/api', source: { path: 'cli' } } }))).toEqual({
+      path: 'cli',
+      tagPrefix: 'cli/',
+    })
+    expect(githubSource(target({ github: { repository: 'acme/api', source: { path: '.' } } }))).toEqual({
+      path: '.',
+      tagPrefix: '',
+    })
+    expect(githubSource(target({ github: { repository: 'acme/api', source: { tagPrefix: '' } } }))).toEqual({
+      path: '<container>',
+      tagPrefix: '',
+    })
+  })
+
+  it('names the GHCR image as model.GitHubImage does: lower-cased, the Container’s name unless tagPrefix is ""', () => {
+    expect(githubImage(target({ github: { repository: 'Acme/API' } }), 'Orders')).toBe('ghcr.io/acme/api/orders')
+    expect(githubImage(target({ github: { repository: 'acme/api', tagPrefix: 'x-' } }), 'orders')).toBe(
+      'ghcr.io/acme/api/orders',
+    )
+    expect(githubImage(target({ github: { repository: 'Acme/API', tagPrefix: '' } }), 'orders')).toBe(
+      'ghcr.io/acme/api',
+    )
+    expect(githubImage(target({ github: undefined, argoCD: { destination: { namespace: 'a' } } }))).toBeUndefined()
   })
 })
