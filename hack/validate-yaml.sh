@@ -132,6 +132,14 @@ echo "The chart's gitProviders are in ConfigMap c4factory-gitproviders, none a h
 # Every GitProvider the chart renders carries a base and a go runner pool
 # (hack/chart-pools.sh, #1698).
 hack/chart-pools.sh "$OUT/chart-gitea-catalog.yaml" "$OUT/chart-gitea-bare-catalog.yaml" "$OUT/chart-gitproviders.yaml"
+# Every Bundle the chart renders (catalog.bundles) names entries it installs
+# that fit together (hack/chart-bundles.sh, #1623), and the default values
+# render some.
+hack/chart-bundles.sh "$OUT/chart-gitea-catalog.yaml"
+if ! grep -q '^kind: Bundle$' "$OUT/chart-gitea-catalog.yaml"; then
+	echo "The chart renders no Bundle into ConfigMap c4factory-catalog; values.yaml's catalog.bundles has python-service and go-cli" >&2
+	exit 1
+fi
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(
@@ -164,11 +172,11 @@ if [ "$pinned" != "$want" ]; then
 	exit 1
 fi
 if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
-	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector)$'; then
-	echo "The chart renders catalog entries or Agents with catalog.enabled=false and agents.enabled=false" >&2
+	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Bundle)$'; then
+	echo "The chart renders catalog entries, bundles or Agents with catalog.enabled=false and agents.enabled=false" >&2
 	exit 1
 fi
-echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog or Agents"
+echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents"
 
 # Shared credentials (docs/plans/done/shared-project-credentials.md): the chart makes
 # each project's Namespace, labeled to receive the shared Secrets and kept on
