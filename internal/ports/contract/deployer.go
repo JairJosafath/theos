@@ -8,8 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -139,7 +143,8 @@ func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s po
 }
 
 // shipment is version of the suite's app, with two files, its image by
-// digest and its repository.
+// digest, its repository and its source of two files; an adapter whose
+// target holds no source ignores the source.
 func shipment(version string) ports.Shipment {
 	file := func(name, content string) ports.File {
 		return ports.File{Name: name, Size: int64(len(content)),
@@ -148,8 +153,35 @@ func shipment(version string) ports.Shipment {
 			}}
 	}
 	digest := fmt.Sprintf("%064x", []byte(version))
-	return ports.Shipment{App: contractApp, DisplayName: "Orders CLI", Version: version,
+	s := ports.Shipment{App: contractApp, DisplayName: "Orders CLI", Version: version,
 		Repository: "https://git.example/contract/orders-cli.git", Notes: "- Orders can be listed",
 		Files: []ports.File{file("orders-cli_linux.tar.gz", "binary "+version), file("SHA256SUMS", "sums "+version)},
 		Image: "git.example/contract/orders-cli@sha256:" + digest[:64]}
+	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders-cli\n",
+		"main.go": "package main // " + version + "\n"})
+	return s
+}
+
+// source is a release's source of files, by path, and a ReadSource that
+// streams them.
+func source(files map[string]string) (*model.ReleaseSource, func(context.Context,
+	func(string, int64, io.Reader) error) error) {
+	paths := slices.Sorted(maps.Keys(files))
+	hashed := make([]model.SourceFile, 0, len(paths))
+	for _, p := range paths {
+		hashed = append(hashed, model.SourceFile{Path: p, Mode: model.ModeFile, Size: int64(len(files[p])),
+			Blob: model.BlobSHA([]byte(files[p]))})
+	}
+	src, err := model.NewSource(model.CI{}, hashed, "example.com/orders-cli")
+	if err != nil {
+		panic(err)
+	}
+	return src, func(_ context.Context, each func(string, int64, io.Reader) error) error {
+		for _, p := range paths {
+			if err := each(p, int64(len(files[p])), strings.NewReader(files[p])); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }

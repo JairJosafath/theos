@@ -181,7 +181,7 @@ type publishPass struct {
 	merged []int
 	target gitprovider.ReleaseTarget
 	gitea  *gitprovider.Release
-	gh     *githubSource
+	gh     *gitprovider.SourceFolder
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1alpha1.CrewReleaseSource
 	// private is whether GitHub reports the repository private, once read.
@@ -231,17 +231,21 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 				return false
 			}
 		}
-		if action == model.PublishReadRepository {
+		switch action {
+		case model.PublishReadRepository:
 			var repo gitprovider.TargetRepository
 			if repo, err = p.target.Repository(ctx); err == nil {
 				p.facts.Remote = &model.PublishTarget{Repository: repo.FullName, ID: repo.ID}
 				p.private = new(repo.Private)
 			}
-		} else if action == model.PublishReadGitHub {
+		case model.PublishReadGitHub:
 			p.facts.GitHub, err = targetReleases(ctx, p.target, *p.facts)
-		} else if p.gh, err = readGitHubSource(ctx, p.target, p.facts.Source.Path,
-			model.SourceTag(*p.facts.Source, p.tag)); err == nil {
-			p.facts.GitHubSource = p.gh.facts
+		default:
+			var gh gitprovider.SourceFolder
+			if gh, err = gitprovider.ReadSourceFolder(ctx, p.target, p.facts.Source.Path,
+				model.SourceTag(*p.facts.Source, p.tag)); err == nil {
+				p.gh, p.facts.GitHubSource = &gh, gh.Facts
+			}
 		}
 		if err != nil {
 			p.facts.Failure = publishFailure(err)

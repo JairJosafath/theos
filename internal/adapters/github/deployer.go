@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -57,9 +58,10 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 	return portError(err)
 }
 
-// Ship takes the next write of shipping s as a GitHub release: create the
-// draft, retarget it, upload a file or publish it; nothing once the release
-// is out. A release of the tag that the factory didn't make is left alone and
+// Ship takes the next write of shipping s as a GitHub release: with
+// source.path set, commit the release's source to the folder and tag it
+// first; then create the draft, retarget it, upload a file or publish it;
+// nothing once the release is out. A release of the tag that the factory didn't make is left alone and
 // fails with reason TagTaken.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	tag := model.GitHubTag(t.Settings[model.GitHubSettingTagPrefix], s.Version)
@@ -96,8 +98,18 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 			return nil
 		}
 	}
+	commit := s.Commit
+	if t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil && (ours == nil || ours.Draft) {
+		// The source goes out first, and the release is of its commit; a
+		// release that is out keeps the source it went out with.
+		done, err := d.shipSource(ctx, c, t, s, tag)
+		if err != nil || done == nil {
+			return portError(err)
+		}
+		commit = done.Commit
+	}
 	step := model.NextReleaseStep(model.ReleaseShip{Tag: tag, Name: model.ReleaseName(s.DisplayName, s.Version),
-		Body: model.ReleaseBody(s.Notes, marker), Commit: s.Commit, Files: files, Latest: takesLatest}, ours)
+		Body: model.ReleaseBody(s.Notes, marker), Commit: commit, Files: files, Latest: takesLatest}, ours)
 	return portError(d.write(ctx, c, s, step))
 }
 
@@ -184,6 +196,141 @@ func (d *Deployer) write(ctx context.Context, c gitprovider.ReleaseTarget, s por
 	return nil
 }
 
+// sourceTarget is where the target puts a release's source, and the source
+// tag of version; ok is false when it publishes none.
+func sourceTarget(t ports.Target, version string) (src model.PublishSource, tag string, ok bool) {
+	src.Path = t.Settings[model.GitHubSettingSourcePath]
+	if src.Path == "" {
+		return src, "", false
+	}
+	if prefix, set := t.Settings[model.GitHubSettingSourceTagPrefix]; set {
+		src.TagPrefix = &prefix
+	}
+	return src, model.SourceTag(src, version), true
+}
+
+// shipSource reads the repository's head and source tag and takes the next
+// write of publishing s's source, as model.NextSourceStep says. done is the
+// source commit and tag once both are there, and nil when it wrote.
+func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, t ports.Target, s ports.Shipment,
+	tag string) (done *model.PublishedSource, err error) {
+	src, sourceTag, _ := sourceTarget(t, s.Version)
+	gh, err := gitprovider.ReadSourceFolder(ctx, c, src.Path, sourceTag)
+	if err != nil {
+		return nil, err
+	}
+	step, done := model.NextSourceStep(model.SourceShip{Source: src, Files: s.Source,
+		Repository: t.Settings[model.GitHubSettingRepository], App: s.DisplayName, Owner: s.App, Tag: s.Version,
+		GitHubTag: tag}, gh.Facts)
+	if done != nil {
+		return done, nil
+	}
+	log := logr.FromContextOrDiscard(ctx)
+	switch step.Action {
+	case model.PublishFail:
+		return nil, &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
+	case model.PublishSourceCommit:
+		commit, err := commitSource(ctx, c, s, gh, step.SourceCommit)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("Committed release source", "commit", commit, "path", step.SourceCommit.Path,
+			"blobs", len(step.SourceCommit.Upload))
+	case model.PublishSourceTag:
+		if err := c.CreateRef(ctx, "tags/"+step.Tag, step.Commit); err != nil {
+			return nil, err
+		}
+		log.Info("Tagged release source", "tag", step.Tag, "commit", step.Commit)
+		if step.Warning != "" {
+			log.Info("Release source isn't go installable", "tag", step.Tag, "problem", step.Warning)
+		}
+	}
+	return nil, nil
+}
+
+// commitSource uploads the blobs GitHub lacks, streamed from s.ReadSource,
+// builds the folder's tree and the root tree, the head's with only the folder
+// replaced, commits it on the head and fast-forwards the default branch.
+func commitSource(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipment, gh gitprovider.SourceFolder,
+	sc *model.SourceCommit) (string, error) {
+	if err := uploadBlobs(ctx, c, s, sc.Upload); err != nil {
+		return "", err
+	}
+	entries := make([]gitprovider.GitTreeEntry, 0, len(sc.Files))
+	for _, f := range sc.Files {
+		entries = append(entries, gitprovider.GitTreeEntry{Path: f.Path, Mode: string(f.Mode), Type: "blob", SHA: f.Blob})
+	}
+	folder, err := c.CreateTree(ctx, "", entries)
+	if err != nil {
+		return "", err
+	}
+	if folder != sc.Tree {
+		return "", fmt.Errorf("github made the source's tree %s, not %s", folder, sc.Tree)
+	}
+	root := folder
+	if sc.Path != "." {
+		if root, err = c.CreateTree(ctx, gh.HeadRoot, []gitprovider.GitTreeEntry{
+			{Path: sc.Path, Mode: "040000", Type: "tree", SHA: folder}}); err != nil {
+			return "", err
+		}
+	}
+	commit, err := c.CreateCommit(ctx, sc.Message, root, []string{sc.Parent})
+	if err != nil {
+		return "", err
+	}
+	return commit, c.UpdateRef(ctx, "heads/"+gh.Branch, commit)
+}
+
+// uploadBlobs streams each file of upload from s.ReadSource into a blob. A
+// failure of ReadSource itself is a SourceError, the Git host's side.
+func uploadBlobs(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipment, upload []model.SourceFile) error {
+	if len(upload) == 0 {
+		return nil
+	}
+	if s.ReadSource == nil {
+		return &SourceError{Err: errors.New("the shipment can't stream its source")}
+	}
+	want := map[string]model.SourceFile{}
+	for _, f := range upload {
+		want[f.Path] = f
+	}
+	var githubErr error
+	readErr := s.ReadSource(ctx, func(path string, size int64, content io.Reader) error {
+		file, ok := want[path]
+		if !ok {
+			return nil
+		}
+		delete(want, path)
+		sha, err := c.CreateBlob(ctx, size, content)
+		switch {
+		case err != nil:
+			githubErr = err
+		case sha != file.Blob:
+			githubErr = fmt.Errorf("github stored %s as blob %s, not %s", path, sha, file.Blob)
+		}
+		return githubErr
+	})
+	switch {
+	case githubErr != nil:
+		return githubErr
+	case readErr != nil:
+		return &SourceError{Err: readErr}
+	case len(want) > 0:
+		return fmt.Errorf("the source of %s changed while it was published: %d files are gone", s.Version, len(want))
+	}
+	return nil
+}
+
+// SourceError is a release's source that couldn't be read again: the Git
+// host's side, not GitHub's.
+type SourceError struct {
+	Err error
+}
+
+func (e *SourceError) Error() string { return fmt.Sprintf("reading the release's source: %v", e.Err) }
+
+func (e *SourceError) Unwrap() error { return e.Err }
+
 // FileError is a release file that couldn't be opened: the Git host's side,
 // not GitHub's.
 type FileError struct {
@@ -210,8 +357,19 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 		return ports.DeployState{}, portError(err)
 	}
 	run := model.GitHubDeployState(facts).DeployRun
-	return ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
-		Reason: run.Reason, Message: run.Message}, nil
+	state := ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
+		Reason: run.Reason, Message: run.Message}
+	if src, sourceTag, ok := sourceTarget(t, run.Version); ok && run.Version != "" {
+		commit, err := c.Ref(ctx, "tags/"+sourceTag)
+		if err != nil {
+			return ports.DeployState{}, portError(err)
+		}
+		if commit != "" {
+			state.Source = &model.PublishedSource{Commit: commit, Tag: sourceTag,
+				URL: model.SourceURL(t.Settings[model.GitHubSettingRepository], src.Path, sourceTag)}
+		}
+	}
+	return state, nil
 }
 
 // deployFacts reads what GitHubDeployState decides on: every release, and
@@ -245,6 +403,9 @@ func portError(err error) error {
 		return nil
 	}
 	if _, ok := errors.AsType[*FileError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*SourceError](err); ok {
 		return err
 	}
 	re, ok := errors.AsType[*gitprovider.ReleaseError](err)

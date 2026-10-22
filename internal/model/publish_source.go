@@ -272,9 +272,9 @@ func SourceURL(repository, path, tag string) string {
 }
 
 // SourceMessage is the message of a source commit: the release's name, and a
-// trailer naming the Container and the GitHub tag.
-func SourceMessage(app, namespace, container, crewTag, tag string) string {
-	return fmt.Sprintf("%s: source\n\nC4factory-Source: %s/%s %s\n", ReleaseName(app, crewTag), namespace, container, tag)
+// trailer naming its owner, the Container as namespace/name, and the GitHub tag.
+func SourceMessage(app, owner, crewTag, tag string) string {
+	return fmt.Sprintf("%s: source\n\nC4factory-Source: %s %s\n", ReleaseName(app, crewTag), owner, tag)
 }
 
 // FoldersOverlap says two source folders of one repository are equal, or one
@@ -355,19 +355,19 @@ func sourceStep(f PublishFacts, tag string) (step PublishStep, done *PublishedSo
 		return PublishStep{Action: PublishReadSource}, nil
 	}
 	return NextSourceStep(SourceShip{Source: *f.Source, Files: f.SourceFiles, Repository: f.Repository,
-		App: f.App, Namespace: f.Namespace, Container: f.Container, Tag: f.Tag, GitHubTag: tag}, f.GitHubSource)
+		App: f.App, Owner: f.Namespace + "/" + f.Container, Tag: f.Tag, GitHubTag: tag}, f.GitHubSource)
 }
 
 // SourceShip is a release's source shipped to a GitHub repository: where it
 // goes, the files read from the release's tag, and the release it is the
 // source of (its version tag and its tag on GitHub, for the commit message).
+// Owner is the Container the release is of, as namespace/name.
 type SourceShip struct {
 	Source     PublishSource
 	Files      *ReleaseSource
 	Repository string
 	App        string
-	Namespace  string
-	Container  string
+	Owner      string
 	Tag        string
 	GitHubTag  string
 }
@@ -415,7 +415,7 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 	}
 	return PublishStep{Action: PublishSourceCommit, SourceCommit: &SourceCommit{
 		Path: src.Path, Files: s.Files.Files, Upload: upload, Tree: s.Files.Tree, Parent: gh.Head,
-		Message: SourceMessage(s.App, s.Namespace, s.Container, s.Tag, s.GitHubTag),
+		Message: SourceMessage(s.App, s.Owner, s.Tag, s.GitHubTag),
 	}}, nil
 }
 

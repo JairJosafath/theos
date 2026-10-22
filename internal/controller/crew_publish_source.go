@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"golang.org/x/mod/modfile"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -100,91 +99,12 @@ type sourceRead struct {
 	source *model.ReleaseSource
 }
 
-// githubSource is what the operator read of the repository for a release's
-// source: the facts, and the branch and head tree a source commit builds on.
-type githubSource struct {
-	facts    *model.GitHubSource
-	branch   string
-	headRoot string
-}
-
-// readGitHubSource reads the default branch's head and the folder's tree at
-// it, with the blobs in it, and the commit the source tag names with the
-// folder's tree there.
-func readGitHubSource(ctx context.Context, target gitprovider.SourceTarget, path,
-	sourceTag string) (*githubSource, error) {
-	branch, err := target.DefaultBranch(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := &githubSource{facts: &model.GitHubSource{}, branch: branch}
-	if out.facts.Head, err = target.Ref(ctx, "heads/"+branch); err != nil {
-		return nil, err
-	}
-	if out.facts.Head != "" {
-		head, err := target.Commit(ctx, out.facts.Head)
-		if err != nil {
-			return nil, err
-		}
-		out.headRoot = head.Tree
-		if out.facts.HeadTree, err = folderTree(ctx, target, head.Tree, path); err != nil {
-			return nil, err
-		}
-		if out.facts.HeadTree != "" {
-			// Only to skip uploads: a listing cut short uploads a few blobs again.
-			tree, err := target.Tree(ctx, out.facts.HeadTree, true)
-			if err != nil {
-				return nil, err
-			}
-			for _, e := range tree.Entries {
-				if e.Type == "blob" {
-					out.facts.HeadBlobs = append(out.facts.HeadBlobs, e.SHA)
-				}
-			}
-		}
-	}
-	if out.facts.TagCommit, err = target.Ref(ctx, "tags/"+sourceTag); err != nil || out.facts.TagCommit == "" {
-		return out, err
-	}
-	tagged, err := target.Commit(ctx, out.facts.TagCommit)
-	if err != nil {
-		return nil, err
-	}
-	out.facts.TagTree, err = folderTree(ctx, target, tagged.Tree, path)
-	return out, err
-}
-
-// folderTree is the tree of path under root, one folder at a time, or "" when
-// there is no folder there.
-func folderTree(ctx context.Context, target gitprovider.SourceTarget, root, path string) (string, error) {
-	if path == "." {
-		return root, nil
-	}
-	sha := root
-	for name := range strings.SplitSeq(path, "/") {
-		tree, err := target.Tree(ctx, sha, false)
-		if err != nil {
-			return "", err
-		}
-		sha = ""
-		for _, e := range tree.Entries {
-			if e.Path == name && e.Type == "tree" {
-				sha = e.SHA
-			}
-		}
-		if sha == "" {
-			return "", nil
-		}
-	}
-	return sha, nil
-}
-
 // commitSource uploads the blobs GitHub lacks, streamed from Gitea's archive
 // again, builds the folder's tree and the root tree, the head's with only the
 // folder replaced, commits it on the head and fast-forwards the default
 // branch. It returns Gitea's failure apart from GitHub's.
 func commitSource(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, tag string,
-	target gitprovider.SourceTarget, gh *githubSource, c *model.SourceCommit) (commit string, giteaErr, err error) {
+	target gitprovider.SourceTarget, gh *gitprovider.SourceFolder, c *model.SourceCommit) (commit string, giteaErr, err error) {
 	if giteaErr, err = uploadBlobs(ctx, provider, repo, tag, target, c.Upload); giteaErr != nil || err != nil {
 		return "", giteaErr, err
 	}
@@ -201,7 +121,7 @@ func commitSource(ctx context.Context, provider gitprovider.Provider, repo gitpr
 	}
 	root := folder
 	if c.Path != "." {
-		if root, err = target.CreateTree(ctx, gh.headRoot, []gitprovider.GitTreeEntry{
+		if root, err = target.CreateTree(ctx, gh.HeadRoot, []gitprovider.GitTreeEntry{
 			{Path: c.Path, Mode: "040000", Type: "tree", SHA: folder}}); err != nil {
 			return "", nil, err
 		}
@@ -209,7 +129,7 @@ func commitSource(ctx context.Context, provider gitprovider.Provider, repo gitpr
 	if commit, err = target.CreateCommit(ctx, c.Message, root, []string{c.Parent}); err != nil {
 		return "", nil, err
 	}
-	return commit, nil, target.UpdateRef(ctx, "heads/"+gh.branch, commit)
+	return commit, nil, target.UpdateRef(ctx, "heads/"+gh.Branch, commit)
 }
 
 // uploadBlobs streams each file of upload from Gitea's archive into a blob.

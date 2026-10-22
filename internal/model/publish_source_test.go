@@ -168,7 +168,7 @@ func TestSourceTag(t *testing.T) {
 	if got := SourceURL("JairJosafath/cel-lens", ".", "v0.6.1"); got != "https://github.com/JairJosafath/cel-lens/tree/v0.6.1" {
 		t.Errorf("SourceURL(.) = %q", got)
 	}
-	if got, want := SourceMessage("CEL engine", "cel-lens", "engine", "v0.6.1", "core-v0.6.1"),
+	if got, want := SourceMessage("CEL engine", "cel-lens/engine", "v0.6.1", "core-v0.6.1"),
 		"CEL engine v0.6.1: source\n\nC4factory-Source: cel-lens/engine core-v0.6.1\n"; got != want {
 		t.Errorf("SourceMessage = %q, want %q", got, want)
 	}
@@ -643,7 +643,7 @@ func TestNextPublishStepSourceRuns(t *testing.T) {
 func TestNextSourceStep(t *testing.T) {
 	files := &ReleaseSource{Files: []SourceFile{{Path: "main.go", Mode: "100644", Size: 3, Blob: "b1"}}, Tree: "t1"}
 	s := SourceShip{Source: PublishSource{Path: "."}, Files: files, Repository: "o/r", App: "shop",
-		Namespace: "ns", Container: "api", Tag: "v1.0.0", GitHubTag: "api-v1.0.0"}
+		Owner: "ns/api", Tag: "v1.0.0", GitHubTag: "api-v1.0.0"}
 	if step, done := NextSourceStep(s, nil); step.Action != PublishReadGitHubSource || done != nil {
 		t.Errorf("unread: got %v, %v", step.Action, done)
 	}
