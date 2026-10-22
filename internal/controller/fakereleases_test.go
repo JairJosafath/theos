@@ -65,6 +65,26 @@ type fakeReleaseState struct {
 	imageFailures map[string]int
 	imagePushes   map[string]int
 	registry      map[string]string
+	// packages is the package each file of a release holds, by
+	// owner/name@tag, as setReleasePackages read them; packageFailures how
+	// many PublishReleasePackages calls fail before one gets through, by
+	// owner/name; packagePublishes counts the calls, by owner/name@tag;
+	// packageUploads the package versions uploaded, by
+	// owner:ecosystem/name@version, each owner's registry its own as Gitea's
+	// are.
+	packages         map[string][]fakePackage
+	packageFailures  map[string]int
+	packagePublishes map[string]int
+	packageUploads   map[string]int
+}
+
+// fakePackage is the package a release's file holds: an npm tarball or a
+// wheel or sdist, with the name and version its metadata declares.
+type fakePackage struct {
+	ecosystem string
+	name      string
+	version   string
+	file      string
 }
 
 // fakeSourceFile is a file of a repository at a tag, as ReadSource hands it on.
@@ -84,7 +104,9 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			refused: map[string]bool{}, commitRuns: map[string][]gitprovider.WorkflowRun{},
 			sources: map[string][]fakeSourceFile{}, runJobs: map[string][]gitprovider.WorkflowJob{},
 			onlineRunners: map[int64]bool{}, images: map[string]gitprovider.Image{},
-			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{}}
+			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{},
+			packages: map[string][]fakePackage{}, packageFailures: map[string]int{}, packagePublishes: map[string]int{},
+			packageUploads: map[string]int{}}
 	}
 	return g.releases
 }
@@ -363,11 +385,78 @@ func (p *fakeProvider) PublishGoModule(_ context.Context, repo gitprovider.Repos
 	return out, nil
 }
 
-// PublishReleasePackages publishes nothing: no fake release holds a package
-// file yet (#1229 gives the port, #1232 the reconciler).
-func (p *fakeProvider) PublishReleasePackages(_ context.Context, _ gitprovider.Repository, tag string) (
+// PublishReleasePackages publishes the packages setReleasePackages gave the
+// release's files, as Gitea's adapter would: no release is ErrNoRelease; an
+// npm name outside repo.NpmScope is Unscoped, a version that isn't the tag's
+// Invalid, one in the registry already Exists, else it is uploaded now.
+func (p *fakeProvider) PublishReleasePackages(_ context.Context, repo gitprovider.Repository, tag string) (
 	gitprovider.ReleasePackages, error) {
-	return gitprovider.ReleasePackages{Tag: tag}, nil
+	p.git.mu.Lock()
+	defer p.git.mu.Unlock()
+	s := p.git.releaseState()
+	key := repo.Owner + "/" + repo.Name
+	out := gitprovider.ReleasePackages{Tag: tag}
+	s.packagePublishes[key+"@"+tag]++
+	if s.packageFailures[key] > 0 {
+		s.packageFailures[key]--
+		return out, fmt.Errorf("gitea unavailable")
+	}
+	if s.published[key+"@"+tag] == nil {
+		return out, fmt.Errorf("%w: %s of %s", gitprovider.ErrNoRelease, tag, key)
+	}
+	want := strings.TrimPrefix(tag, "v")
+	for _, f := range s.packages[key+"@"+tag] {
+		pkg := gitprovider.Package{Ecosystem: f.ecosystem, Name: f.name, Version: f.version, File: f.file}
+		switch {
+		case f.ecosystem == gitprovider.EcosystemNpm && !strings.HasPrefix(f.name, repo.NpmScope+"/"):
+			pkg.Outcome = gitprovider.PackageUnscoped
+			pkg.Reason = fmt.Sprintf("%s is not under the scope %s", f.name, repo.NpmScope)
+		case f.version != want:
+			pkg.Outcome = gitprovider.PackageInvalid
+			pkg.Reason = fmt.Sprintf("version %s is not the tag's, %s", f.version, want)
+		default:
+			pkg.Outcome = gitprovider.PackageExists
+			upload := repo.Owner + ":" + f.ecosystem + "/" + f.name + "@" + f.version
+			if s.packageUploads[upload] == 0 {
+				pkg.Outcome = gitprovider.PackagePublished
+				s.packageUploads[upload]++
+			}
+		}
+		out.Packages = append(out.Packages, pkg)
+	}
+	return out, nil
+}
+
+// setReleasePackages says which package each file of owner/name's release of
+// tag holds; the release itself is setGiteaRelease's.
+func (g *fakeGit) setReleasePackages(owner, name, tag string, packages ...fakePackage) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().packages[owner+"/"+name+"@"+tag] = packages
+}
+
+// failPackagePublishes makes the next n PublishReleasePackages calls of
+// owner/name fail.
+func (g *fakeGit) failPackagePublishes(owner, name string, n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.releaseState().packageFailures[owner+"/"+name] = n
+}
+
+// packagePublishes is how many times the Crew asked to publish owner/name's
+// packages at tag.
+func (g *fakeGit) packagePublishes(owner, name, tag string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().packagePublishes[owner+"/"+name+"@"+tag]
+}
+
+// packageUploads is how many times ecosystem package name@version was uploaded
+// to owner's registry.
+func (g *fakeGit) packageUploads(owner, ecosystem, name, version string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.releaseState().packageUploads[owner+":"+ecosystem+"/"+name+"@"+version]
 }
 
 // PublishImage gives the outcome setImage gave the release, after the

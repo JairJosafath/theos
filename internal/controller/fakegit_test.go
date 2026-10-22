@@ -615,6 +615,9 @@ func imageHost(url string) string {
 	return host
 }
 
+// Repository builds a repository's addresses as Gitea's adapter does, the
+// package registries under api/packages/<owner> and the npm scope the owner's
+// GitProvider names.
 func (p *fakeProvider) Repository(name string) gitprovider.Repository {
 	web := strings.TrimSuffix(p.cfg.URL, "/") + "/" + path.Join(p.cfg.Owner, name)
 	registry := strings.TrimSuffix(p.cfg.URL, "/") + "/api/packages/" + p.cfg.Owner
