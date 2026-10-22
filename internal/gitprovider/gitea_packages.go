@@ -260,7 +260,11 @@ func readTarball(file *os.File, asset ReleaseAsset) (*Package, packageMeta, erro
 			if err != nil {
 				return nil, meta, nil
 			}
-			return readPKGINFO(data, asset, "sdist")
+			// An sdist's PKG-INFO sits in <name>-<version>/; one elsewhere is
+			// some other tar's file.
+			if pkg, info, err := readPKGINFO(data, asset); pkg == nil || sdistDir(top, pkg.Name, pkg.Version) {
+				return pkg, info, err
+			}
 		}
 	}
 }
@@ -311,14 +315,28 @@ func readWheel(file *os.File, asset ReleaseAsset) (*Package, packageMeta, error)
 		if err != nil {
 			return nil, meta, nil
 		}
-		return readPKGINFO(data, asset, "bdist_wheel")
+		return readPKGINFO(data, asset)
 	}
 	return nil, meta, nil
 }
 
+// sdistDir reports whether dir is the top directory of name's sdist at
+// version: <name>-<version>, the name in any of its spellings (shop_api or
+// shop-api) and the version in any PEP 440 form.
+func sdistDir(dir, name, version string) bool {
+	spell := strings.NewReplacer("_", "-", ".", "-")
+	prefix := strings.ToLower(spell.Replace(name)) + "-"
+	if len(dir) <= len(prefix) || strings.ToLower(spell.Replace(dir[:len(prefix)])) != prefix {
+		return false
+	}
+	got, ok := normalizePEP440(dir[len(prefix):])
+	want, wantOK := normalizePEP440(version)
+	return ok && wantOK && got == want
+}
+
 // readPKGINFO reads a Python package's core metadata, a PKG-INFO or METADATA
 // file: headers, then a blank line and the long description.
-func readPKGINFO(data []byte, asset ReleaseAsset, filetype string) (*Package, packageMeta, error) {
+func readPKGINFO(data []byte, asset ReleaseAsset) (*Package, packageMeta, error) {
 	var meta packageMeta
 	headers, err := textproto.NewReader(bufio.NewReader(bytes.NewReader(append(data, "\n\n"...)))).ReadMIMEHeader()
 	if err != nil && len(headers) == 0 {
@@ -331,7 +349,6 @@ func readPKGINFO(data []byte, asset ReleaseAsset, filetype string) (*Package, pa
 	meta.metadataVersion = headers.Get("Metadata-Version")
 	meta.summary = headers.Get("Summary")
 	meta.requiresPython = headers.Get("Requires-Python")
-	_ = filetype
 	return &Package{Ecosystem: EcosystemPyPI, Name: name, Version: version, File: asset.Name}, meta, nil
 }
 
@@ -559,12 +576,15 @@ func (g *gitea) publishPyPI(ctx context.Context, repo Repository, pkg *Package, 
 	if strings.HasSuffix(pkg.File, ".whl") {
 		filetype, pyversion = "bdist_wheel", wheelPythonTag(pkg.File)
 	}
+	// The form's version is the normalised one: what a build backend writes,
+	// and all Gitea's version matcher accepts (it is case-sensitive).
+	version, _ := normalizePEP440(pkg.Version)
 	var buf bytes.Buffer
 	form := multipart.NewWriter(&buf)
 	for _, field := range [][2]string{
 		{":action", "file_upload"}, {"protocol_version", "1"},
 		{"metadata_version", orDefault(meta.metadataVersion, "2.1")},
-		{nameField, pkg.Name}, {"version", pkg.Version}, {"filetype", filetype}, {"pyversion", pyversion},
+		{nameField, pkg.Name}, {"version", version}, {"filetype", filetype}, {"pyversion", pyversion},
 		{"summary", meta.summary}, {"requires_python", meta.requiresPython},
 		{"md5_digest", hex.EncodeToString(sums.md5)}, {"sha256_digest", hex.EncodeToString(sums.sha256)},
 	} {

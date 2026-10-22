@@ -25,6 +25,12 @@ func TestRepositoryPackageRegistries(t *testing.T) {
 			PyPIIndex:   "https://pypi.example.com/simple",
 			PyPIUpload:  "https://pypi.example.com/upload",
 		}},
+		{"a registry without a trailing slash gets one (#1701)", Packages{NpmRegistry: "https://npm.example.com"}, Repository{
+			NpmScope:    "@c4factory",
+			NpmRegistry: "https://npm.example.com/",
+			PyPIIndex:   "https://git.example.com/api/packages/webshop/pypi/simple",
+			PyPIUpload:  "https://git.example.com/api/packages/webshop/pypi",
+		}},
 		{"each setting on its own", Packages{NpmScope: "@acme"}, Repository{
 			NpmScope:    "@acme",
 			NpmRegistry: "https://git.example.com/api/packages/webshop/npm/",
@@ -46,5 +52,29 @@ func TestRepositoryPackageRegistries(t *testing.T) {
 				t.Errorf("GoProxy = %q", got.GoProxy)
 			}
 		})
+	}
+}
+
+// TestSdistDir checks which top directory makes a tar's PKG-INFO an sdist's:
+// <name>-<version>, in any spelling of the name and form of the version (#1701).
+func TestSdistDir(t *testing.T) {
+	for _, tt := range []struct {
+		dir, name, version string
+		want               bool
+	}{
+		{"shop_api-0.1.0", "shop-api", "0.1.0", true},
+		{"shop-api-0.1.0", "shop-api", "0.1.0", true},
+		{"Shop.API-0.1.0", "shop_api", "0.1.0", true},
+		{"shop_api-1.0.0-RC.1", "shop-api", "1.0.0rc1", true},
+		{"shop_api-1.0.0rc1", "shop-api", "1.0.0-RC.1", true},
+		{"docs", "shop-api", "0.1.0", false},
+		{"shop_api", "shop-api", "0.1.0", false},
+		{"shop_api-0.2.0", "shop-api", "0.1.0", false},
+		{"other-0.1.0", "shop-api", "0.1.0", false},
+		{"shop_api-0.1.0", "shop-api", "not a version", false},
+	} {
+		if got := sdistDir(tt.dir, tt.name, tt.version); got != tt.want {
+			t.Errorf("sdistDir(%q, %q, %q) = %v, want %v", tt.dir, tt.name, tt.version, got, tt.want)
+		}
 	}
 }

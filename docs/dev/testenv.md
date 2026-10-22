@@ -194,7 +194,10 @@ Docker, so the Gitea tests run on any device, lite ones included:
 fixtures`: `hack/seed/seed.sh` with no projects, so no Secrets, plus the
 `webshop` organization) and runs the `Integration` tests in
 `internal/gitprovider`. A first run takes about three minutes, mostly
-pushing the templates; later runs take about half a minute. With
+pushing the templates; later runs take about half a minute. The packages
+test (`TestGiteaPackagesIntegration`) installs what it publishes with the
+real tools, so it wants `npm` and `uv` on PATH, and skips, saying which one
+is missing, when either isn't. With
 `C4_GITEA_URL` set (and `C4_GITEA_USERNAME`, `C4_GITEA_TOKEN`) it tests that
 Gitea instead, for example the Kind one behind `make gitea-forward`;
 `make test-gitea-kind` does that forward and reads the token from the cluster.
