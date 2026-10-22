@@ -101,6 +101,14 @@ check "a package nothing renders with changed: none" "$(moved internal/other/o.g
 echo x >ui/new.ts
 check "untracked file under ui/: ui-test" "$([ "$("$CACHE" key ui-test)" != "$(head -1 <<<"$k0")" ] && echo moved)" moved
 rm ui/new.ts
+# A file outside a tier's inputs that git can't add, as a parallel test's
+# scratch that vanishes mid-add, leaves the key as it was: the key adds only
+# the tier's files, and make check-tier-ui-test once missed and ran (#1814).
+if [ "$(id -u)" != 0 ]; then
+  echo x >docs/unreadable.md && chmod 000 docs/unreadable.md
+  check "unreadable file outside ui/: ui-test keys as before" "$("$CACHE" key ui-test)" "$(head -1 <<<"$k0")"
+  rm -f docs/unreadable.md
+fi
 "$CACHE" key nope >/dev/null 2>&1; check "key: unknown tier fails" $? 64
 # A tool a tier runs that the device lacks is part of its key, not a failure:
 # CI's shell-test job has no Node, and the key of ui-test failed there (#1285).

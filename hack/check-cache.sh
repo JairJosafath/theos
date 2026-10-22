@@ -26,25 +26,26 @@ set -uo pipefail
 
 DIR=${CHECK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/checks}
 
-# with_index CMD...: runs CMD with GIT_INDEX_FILE set to an index of the
-# working state as if it were all added: a copy of the index, so git add only
-# rehashes what changed, takes every change. The copy keeps the index's mtime:
-# git rehashes an entry whose file is as new as the index (racy git), and a
-# fresh mtime would make it trust stale stat data.
+# with_index CMD...: runs CMD with GIT_INDEX_FILE set to a copy of the index,
+# for CMD to git add the working state to: git add only rehashes what changed.
+# The copy keeps the index's mtime: git rehashes an entry whose file is as new
+# as the index (racy git), and a fresh mtime would make it trust stale stat data.
 with_index() {
   local index tmp
   index=$(git rev-parse --path-format=absolute --git-path index) || return 1
   tmp=$(mktemp) || return 1
   if [ -f "$index" ]; then cp -p "$index" "$tmp"; else rm -f "$tmp"; fi
-  GIT_INDEX_FILE=$tmp git add -A >/dev/null 2>&1 &&
-    GIT_INDEX_FILE=$tmp "$@"
+  GIT_INDEX_FILE=$tmp "$@"
   local rc=$?
   rm -f "$tmp"
   return $rc
 }
 
 # tree: the hash git would give the working state if it were all added.
-tree() { with_index git write-tree; }
+tree() { with_index add_all git write-tree; }
+
+# add_all CMD...: git add -A, then CMD.
+add_all() { git add -A >/dev/null 2>&1 && "$@"; }
 
 # tier_paths TIER: the pathspecs of the files TIER reads, a "--" line between
 # groups. Git's exclude pathspecs override every positive one, so each group
@@ -104,19 +105,37 @@ tier_desc() {
   esac
 }
 
-# list_groups: git ls-files -s of each group of pathspecs on stdin.
+# list_groups: git ls-files -s of each group of pathspecs on stdin, each
+# group git added first.
 list_groups() {
   local group=() p
   while IFS= read -r p; do
     if [ "$p" = -- ]; then
-      [ ${#group[@]} -gt 0 ] && { git ls-files -s -- "${group[@]}" || return 1; }
+      [ ${#group[@]} -gt 0 ] && { list_group "${group[@]}" || return 1; }
       echo --
       group=()
     else
       group+=("$p")
     fi
   done
-  [ ${#group[@]} -eq 0 ] || git ls-files -s -- "${group[@]}"
+  [ ${#group[@]} -eq 0 ] || list_group "${group[@]}"
+}
+
+# list_group PATHSPEC...: git add -A of the working state under PATHSPEC only,
+# then git ls-files -s of it. Only the tier's files are added, so a file
+# elsewhere that vanishes or can't be read while git adds (a parallel test's
+# scratch in the checkout) leaves the key alone (#1814). git add fails on a
+# pathspec that matches nothing, so those are left out of it.
+list_group() {
+  local add=() matched= p
+  for p in "$@"; do
+    case $p in
+      :!* | ':(exclude)'*) add+=("$p") ;;
+      *) [ -n "$(git ls-files -c -o --exclude-standard -- "$p" 2>/dev/null | head -1)" ] && add+=("$p") && matched=1 ;;
+    esac
+  done
+  if [ -n "$matched" ]; then git add -A -- "${add[@]}" >/dev/null 2>&1 || return 1; fi
+  git ls-files -s -- "$@"
 }
 
 # key TIER: the hash of TIER's name, its inputs as they are in the working
