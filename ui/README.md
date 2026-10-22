@@ -68,7 +68,7 @@ name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
 or Blocked off the path; what a person does now, as an action the UI takes or
 the exact next step (a link, or a `kubectl` line with a copy button); then its
 conditions, timeline, children and links out. The Task page adds its rounds,
-checks, review and agent runs; the Crew page its slots, Tasks and last release;
+checks, review and agent runs; the Crew page its slots, Tasks, routes by label and last release;
 the Container page, for a Container with a Standard, when CI runs its full
 check (`spec.checks`), what its repository runs now and `ChecksApplied` when
 False, with a choice that sets it when actions are on; and where it ships:

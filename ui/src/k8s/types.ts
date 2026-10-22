@@ -530,6 +530,12 @@ export interface Crew extends K8sObject {
       latest?: boolean
       source?: PublishSource
     }
+    /**
+     * Sends the issues with a label to other Agents: per role, the first route
+     * whose label the issue has and that names an Agent for it decides; with
+     * none, the Crew's own Agent takes it.
+     */
+    routes?: CrewRoute[]
   }
   status?: {
     phase?: CrewPhase
@@ -560,6 +566,14 @@ export interface Crew extends K8sObject {
 export interface PublishSource {
   path: string
   tagPrefix?: string
+}
+
+/** A Crew route: the issues with the label go to these Agents; a role it leaves out stays with the Crew's. */
+export interface CrewRoute {
+  /** An issue label, such as kind/docs, matched exactly. */
+  label: string
+  implementer?: LocalRef
+  reviewer?: LocalRef
 }
 
 /** A release a Crew tagged. */

@@ -1,7 +1,8 @@
 // A Crew's page: the object header (its state, its Ready condition, its Tasks,
 // and what a person does: re-run a failed release, resume it, or fix what
 // keeps it waiting), then who works and how many at once, its issues, and its
-// last release with its runs, Go module, publishing and bump issues. With the
+// routes by label, and its last release with its runs, Go module, publishing
+// and bump issues. With the
 // UI server's actions on, the person pauses or resumes it, sets those and its
 // release settings, and re-runs a failed release's runs (CrewActions). Where
 // it publishes says so when its Brief sets that, and the form changes it on
@@ -11,8 +12,9 @@ import type { BriefWriter } from '../../k8s/briefs'
 import { briefTarget, type CrewWriter } from '../../k8s/crews'
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
-import { crewSummary, issueList } from '../../model/crews'
+import { crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
 import { RELEASE_RUN, publishFailure } from '../../model/releases'
+import type { AgentRole } from '../../model/factory'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
@@ -127,6 +129,8 @@ export function CrewPage({
         {acts === 'act' ? <ParallelForm crew={crew} writer={writer} /> : null}
       </section>
 
+      {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
+
       <section className="panel" aria-labelledby="crew-release">
         <h2 className="panel-title small-title" id="crew-release">
           {release ? `Last release: ${release.tag}` : 'Releases'}
@@ -162,6 +166,44 @@ export function CrewPage({
         {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} brief={setBy} briefWriter={briefWriter} /> : null}
       </section>
     </main>
+  )
+}
+
+/**
+ * The Crew's routes by label, in order: for each role, the first route whose
+ * label the issue has and that names an Agent decides, else the Crew's own
+ * Agent, shown here as "the Crew's".
+ */
+function RoutesPanel({ routes }: { routes: CrewRouteSummary[] }) {
+  return (
+    <section className="panel" aria-labelledby="crew-routes">
+      <h2 className="panel-title small-title" id="crew-routes">
+        Routes by label
+      </h2>
+      <p className="panel-text">
+        Issues with a label go to these Agents instead; the first route an issue matches decides each role.
+      </p>
+      <ol className="routes">
+        {routes.map((r) => (
+          <li key={r.label}>
+            <span className="mono">{r.label}</span>
+            <span className="muted"> · implemented by </span>
+            <RouteAgent role={r.implementer} named={r.names.implementer} />
+            <span className="muted"> · reviewed by </span>
+            <RouteAgent role={r.reviewer} named={r.names.reviewer} />
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function RouteAgent({ role, named }: { role: AgentRole; named: boolean }) {
+  return (
+    <>
+      <AgentName role={role} />
+      {named ? null : <span className="muted"> (the Crew’s)</span>}
+    </>
   )
 }
 

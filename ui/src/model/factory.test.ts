@@ -596,6 +596,7 @@ describe('crewSummary', () => {
       },
       reviewer: { name: 'claude-reviewer', title: 'Claude Code, Opus', model: 'claude-opus-5-5', found: true },
       parallel: 1,
+      routes: [],
       active: [
         {
           name: 'cel-language-server-3',
