@@ -62,7 +62,7 @@ func ParseClusterDNS(entry string) (networkingv1.NetworkPolicyPeer, error) {
 	// c4-factory.clusterDNSPeers helper accepts, so one value renders the same
 	// peer for both fences: no ==, no !=, no set expression, no spaces.
 	pods := map[string]string{}
-	for _, pair := range strings.Split(selector, ",") {
+	for pair := range strings.SplitSeq(selector, ",") {
 		key, value, ok := strings.Cut(pair, "=")
 		if !ok || key == "" || strings.ContainsAny(pair, " \t") || strings.Contains(value, "=") {
 			return networkingv1.NetworkPolicyPeer{}, fmt.Errorf(
