@@ -409,9 +409,11 @@ Push the branch `plan/<round>` with these files:
     `m`, `h` or `d`, such as `15m` or `4h`) and `alerts.email` (who the
     alarms tell). Write a field only when the idea or a prompt says it ("we
     can lose at most 15 minutes of orders", "page ops@shop.example"), on a
-    Container the plan makes, and leave the rest, or the whole block, out:
-    the factory fills in its defaults (35 days, 1h, 4h, no copy, nobody
-    told). Whether the app runs as `production` or `development` is the
+    Container the plan makes whose Framework the catalog lists with
+    `readsOperations: true` (the AWS ones; a Framework without it renders
+    none of the block, so `operations` on its Container refuses the plan),
+    and leave the rest, or the whole block, out: the factory fills in its
+    defaults (35 days, 1h, 4h, no copy, nobody told). Whether the app runs as `production` or `development` is the
     deploy target's to say, not the plan's: a `tier` anywhere in a
     Container refuses the plan. An existing Container's `operations` is the
     person's; a plan that sets it is refused.
@@ -495,7 +497,7 @@ spec:
   frameworkRef: {name: go-service}
   computeRef: {name: k8s}
   deploymentRef: {name: helm}
-  operations: # only what the idea states (rule 17)
+  operations: # only what the idea states, on a Framework that reads it (rule 17)
     backups: {retentionDays: 90, copyToRegion: eu-west-1}
     recovery: {rpo: 15m, rto: 4h}
     alerts: {email: ops@shop.example}

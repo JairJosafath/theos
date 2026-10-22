@@ -97,9 +97,11 @@ func scaffoldedOperations(container *c4v1alpha1.Container, status *c4v1alpha1.Co
 // acts, and reports false where one does: spec.operations, the defaults
 // filled in, changed from the block the repository was last rendered with,
 // or an update hasn't ended. A Container that isn't scaffolded has no
-// condition. One scaffolded before the factory kept the block has it only
-// once spec.operations says something, and then False, ChangedAfterScaffold:
-// its repository has none of the block, so a Task changes it.
+// condition. One whose Framework doesn't read the block (status.operations
+// is nil: readsOperations isn't set on the Framework, or the Container was
+// scaffolded before the factory kept the block) has it only once
+// spec.operations says something, and then False, NotReadByFramework: its
+// repository has none of the block, so a Task changes it (#1209).
 func (r *ContainerReconciler) reportOperationsApplied(container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) bool {
 	if status.Phase != c4v1alpha1.ContainerReady {
@@ -112,8 +114,9 @@ func (r *ContainerReconciler) reportOperationsApplied(container *c4v1alpha1.Cont
 			return true
 		}
 		r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionFalse,
-			c4v1alpha1.ReasonChangedAfterScaffold, "The Container was scaffolded before the factory kept "+
-				"spec.operations, so its repository has none of it; change infra/operations.ts by a Task")
+			c4v1alpha1.ReasonNotReadByFramework, fmt.Sprintf("Framework %s doesn't read spec.operations "+
+				"(readsOperations is not set), so its repository has none of it; change the repository by a Task",
+				container.Spec.FrameworkRef.Name))
 		return true
 	}
 	if model.NextOperationsStep(operationsFacts(container, status)).Action != model.OperationsUpToDate {

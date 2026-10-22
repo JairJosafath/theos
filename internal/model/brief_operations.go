@@ -9,7 +9,9 @@ package model
 // once more after a restart writes it, is no change.
 
 // checkOperations checks the plan's Containers' operations: set only on a
-// Container the plan makes, and only to values the API server takes.
+// Container the plan makes, whose Framework reads the block (#1209), and only
+// to values the API server takes. An empty block is none. A Framework the
+// catalog doesn't list is refused by checkCatalog, not here.
 func checkOperations(plan Plan, current CurrentModel, refuse func(string, string, ...any)) {
 	for _, o := range plan.Objects {
 		if o.Kind != KindContainer || o.Operations == nil {
@@ -22,6 +24,12 @@ func checkOperations(plan Plan, current CurrentModel, refuse func(string, string
 			}
 			refuse(subject, "sets operations on a Container that exists; a plan writes operations only on a "+
 				"Container it makes, so the block a person keeps isn't undone: leave operations out")
+			continue
+		}
+		if entry, reason := catalogEntry(current.Catalog, SideFramework, o.Framework, ""); reason == "" &&
+			!entry.ReadsOperations && !sameOperations(nil, o.Operations) {
+			refuse(subject, "sets operations, which Framework %s doesn't read (readsOperations is not set on it), "+
+				"so its repository would hold none of it: leave operations out", o.Framework)
 			continue
 		}
 		for _, problem := range OperationsProblems(*o.Operations) {

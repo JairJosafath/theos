@@ -393,6 +393,9 @@ type catalogEntryOut struct {
 	// DeploysItself says a Framework is its Container's deployment, so the
 	// Container names no Compute and no Deployment.
 	DeploysItself bool `yaml:"deploysItself,omitempty"`
+	// ReadsOperations says a Framework renders infra/operations.ts from a
+	// Container's operations; a plan sets operations only on such a Container.
+	ReadsOperations bool `yaml:"readsOperations,omitempty"`
 }
 
 // workspaceCatalog lists the installed entries by side and name, with what
@@ -415,7 +418,7 @@ func workspaceCatalog(catalog []CatalogEntry) catalogOut {
 		frameworks := slices.Clone(e.SupportedFrameworks)
 		slices.Sort(frameworks)
 		*list = append(*list, catalogEntryOut{e.Name, strings.TrimSpace(e.Description), types, frameworks,
-			e.ChecksBeforeRelease, e.DeploysItself})
+			e.ChecksBeforeRelease, e.DeploysItself, e.ReadsOperations})
 	}
 	for _, list := range sides {
 		if *list == nil {

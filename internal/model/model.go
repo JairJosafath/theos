@@ -51,6 +51,9 @@ type CatalogEntry struct {
 	// DeploysItself says a Framework's template is its Container's deployment;
 	// false for other sides.
 	DeploysItself bool
+	// ReadsOperations says a Framework's template renders infra/operations.ts
+	// from a Container's spec.operations; false for other sides.
+	ReadsOperations bool
 }
 
 // Supports reports whether the entry lists the Container type.

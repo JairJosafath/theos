@@ -823,17 +823,24 @@ place it is deployed to, and a deploy that says nothing is `development`. A
 Brief's planner writes the block on a Container it makes, from what your idea
 states, and never a tier. The Container's page shows the block.
 
-The block renders into the repository when the Container is scaffolded, and
-its `OperationsApplied` condition is True. Change it afterwards and the
+Only a Framework that says `readsOperations: true` (the AWS ones, from their
+next releases on) renders the block. A Container on any other Framework
+shows no `OperationsApplied` condition until the block is set, and then
+False, reason `NotReadByFramework`, naming the Framework: the repository
+holds none of it, so file an issue in the app that changes it, or leave the
+block out. A Brief's planner refuses `operations` on such a Container.
+
+On a Framework that reads it, the block renders into the repository when the
+Container is scaffolded, and its `OperationsApplied` condition is True.
+Change it afterwards and the
 operator renders `infra/operations.ts` again from the new block, opens a
 pull request with that file alone, and merges it once CI passes:
 `OperationsApplied` is False, reason `Updating`, with the pull request's
 address while CI runs, then True, reason `UpdateMerged`, naming the commit.
 Failed CI leaves it False, reason `ChecksFailed`, with the pull request;
-re-run CI and it merges. A Framework that renders no `infra/operations.ts`
-leaves it False, reason `ChangedAfterScaffold`: file an issue in the app
-that changes the file. Only the AWS templates read the block, from their
-next releases on.
+re-run CI and it merges. A Framework that says it reads the block but
+renders no `infra/operations.ts` leaves it False, reason
+`ChangedAfterScaffold`: file an issue in the app that changes the file.
 
 ## Upgrading
 

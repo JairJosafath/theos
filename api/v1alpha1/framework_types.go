@@ -44,6 +44,14 @@ type FrameworkSpec struct {
 	// that names either.
 	// +optional
 	DeploysItself bool `json:"deploysItself,omitempty"`
+
+	// readsOperations says the template at spec.template.ref renders
+	// infra/operations.ts from a Container's spec.operations. A Container with
+	// a Framework that doesn't gets no OperationsApplied condition, and with a
+	// block set reports it False, NotReadByFramework; a Brief's planner
+	// refuses operations on such a Container.
+	// +optional
+	ReadsOperations bool `json:"readsOperations,omitempty"`
 }
 
 // +kubebuilder:object:root=true
