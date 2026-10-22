@@ -32,6 +32,9 @@ manager:
     - --sandbox-workspace-memory=3Gi
     - --max-agent-sandboxes=4
     - --sandbox-go-cache=/var/cache/c4factory/go/sandbox
+    # Each project's CI runner pool mounts its own directory under this one, a
+    # sibling of the shared runners' cache (runners.go.goCache).
+    - --ci-go-cache=/var/cache/c4factory/go/projects
 
   ## Health probes.
   ## The manager serves the liveness (/healthz) and readiness (/readyz) endpoints on this port.
@@ -403,11 +406,14 @@ gitea:
   ## a random password when it is missing, from the username and email below
   ## (a later change of them takes a new Secret); or existingSecret, your own
   ## Secret with username, password and email, which the pod never changes.
-  ## The runners' registration token, Secret gitea-runner, is made the same way.
-  ## Neither is rendered, so helm template, Argo CD and Flux never see a value.
-  ## To rotate one: kubectl -n gitea delete secret gitea-admin (or gitea-runner),
-  ## then kubectl -n gitea rollout restart deployment/gitea; after gitea-runner,
-  ## restart the runner Deployments too.
+  ## The shared runners' registration token, Secret gitea-runner, is the
+  ## templates organization's: the seed fetches it from Gitea after every
+  ## install and upgrade and keeps a Secret that already holds it. Neither is
+  ## rendered, so helm template, Argo CD and Flux never see a value. To rotate
+  ## the password: kubectl -n gitea delete secret gitea-admin, then kubectl -n
+  ## gitea rollout restart deployment/gitea. To rotate the token: reset it in
+  ## Gitea, delete the Secret, helm upgrade, then restart the runner
+  ## Deployments (README.md).
   ##
   admin:
     username: c4admin

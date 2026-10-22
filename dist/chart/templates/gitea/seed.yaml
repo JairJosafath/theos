@@ -4,8 +4,9 @@
 # The seed (hack/seed/seed.sh): the templates organization and its tagged
 # template repositories, and an organization, Secret gitea-credentials and,
 # when its namespace has none, a Project for each project, whose namespace it
-# labels to receive the Secrets the operator shares. Not the runners' token:
-# Gitea's pod makes that one. Last, it applies ConfigMap c4factory-catalog's
+# labels to receive the Secrets the operator shares; and Secret gitea-runner,
+# the templates organization's runner registration token, which the shared
+# runners register with (runners.yaml). Last, it applies ConfigMap c4factory-catalog's
 # GitProviders, catalog and Agents in place. A hook after every install and
 # upgrade: it changes nothing already in place but the fields the chart sets,
 # and a new chart version brings new template tags. A failed Job stays for its
@@ -49,7 +50,9 @@ spec:
             - name: PROJECTS
               value: {{ join " " (.Values.gitea.projects | uniq) | quote }}
             - name: RUNNER_SECRET
-              value: ""
+              value: gitea-runner
+            - name: RUNNER_NAMESPACE
+              value: {{ $ns | quote }}
             - name: PROJECT_OBJECTS
               value: "true"
             - name: SHARE_SECRETS
@@ -88,6 +91,41 @@ metadata:
   namespace: {{ $ns }}
   labels:
     {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+---
+# The seed may create Secrets in Gitea's namespace (create cannot be limited
+# by name) and change only gitea-runner, the shared runners' registration
+# token (hack/seed/rbac.yaml).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: seed-runner-token
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [gitea-runner]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: seed-runner-token
+  namespace: {{ $ns }}
+  labels:
+    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: seed-runner-token
+subjects:
+  - kind: ServiceAccount
+    name: seed
+    namespace: {{ $ns }}
 {{- with .Values.gitea.projects | uniq }}
 ---
 # The seed labels each project's namespace c4.factory.io/shared-secrets=true,

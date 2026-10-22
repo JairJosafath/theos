@@ -68,7 +68,12 @@ data:
 ---
 # The CI runner labelled {{ $label }} (config/runner/{{ $label }}.yaml in the Kind
 # test environment). Its init container registers with the token in Secret
-# gitea-runner; the runner container, where jobs run, never gets it.
+# gitea-runner, the templates organization's, which the seed makes once Gitea
+# answers: on a first install the pod waits in CreateContainerConfigError until
+# then, and the kubelet retries. The runner container, where jobs run, never
+# gets the token. Registered to that organization, the runner serves the
+# templates' checks only; a project's run on the operator's per-project pool
+# of single-job runners (docs/design.md, "CI").
 apiVersion: apps/v1
 kind: Deployment
 metadata:

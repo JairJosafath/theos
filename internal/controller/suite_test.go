@@ -61,6 +61,10 @@ const testStaleAfter = 3 * time.Second
 const (
 	testOperatorVersion = "1.2.3"
 	testChartVersion    = "0.9.0"
+	// testCIGoCache is the node root of the CI runner pools' Go caches, and
+	// testRunnerRecordKept how long an ended pool pod stays readable, in tests.
+	testCIGoCache        = "/var/cache/c4factory/go/ci"
+	testRunnerRecordKept = 3 * time.Second
 )
 
 // testUIAccount is the UI's ServiceAccount, in the operator's namespace, that
@@ -333,7 +337,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second,
 			ModelProxyURL:   testModelProxyURL,
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
-			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount}},
+			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount},
+			Git:              gitFake, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),

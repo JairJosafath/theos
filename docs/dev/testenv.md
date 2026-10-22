@@ -827,7 +827,11 @@ that the CRDs are the new chart's (`kubectl diff` against the CRDs it
 renders), that every earlier `c4` and `c4catalog` object is still
 there with its phase and its `Ready` condition, that the new manager logs no
 `Reconciler error` in its first two minutes (optimistic-lock conflicts
-aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that
+aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged (one
+exception: a `gitea-runner` that held an instance token before, with no
+`c4.factory.io/token-owner` annotation, is replaced once by the templates
+organization's token the seed stores, and the check wants that one to be
+there after), and that
 every Gitea repository is still there with its earlier head commit (the seed
 may add template tags). The chart up to v0.12.0 recreated its GitProviders,
 catalog and Agents as hooks on every upgrade; later ones have the seed apply

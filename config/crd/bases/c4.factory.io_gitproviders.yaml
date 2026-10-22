@@ -55,6 +55,126 @@ spec:
           spec:
             description: spec defines the desired state of GitProvider
             properties:
+              ci:
+                description: |-
+                  ci picks the CI system and how its runners are kept. Without it, the
+                  Git host's own CI serves the project's repositories on the install's
+                  shared runners.
+                properties:
+                  giteaActions:
+                    description: |-
+                      giteaActions is Gitea Actions on a pool of single-job runner pods the
+                      operator keeps in the project's namespace, registered to the GitProvider's
+                      owner organization.
+                    properties:
+                      runners:
+                        description: |-
+                          runners has one entry per job label. Each keeps size idle pods waiting
+                          for a job; a pod takes one job and is replaced.
+                        items:
+                          description: CIRunnerSpec is one label's runners in a project's
+                            pool.
+                          properties:
+                            goCache:
+                              description: |-
+                                goCache mounts the project's Go build cache from the node, under the
+                                operator's --ci-go-cache, so a job compiles only what changed. Only for
+                                an image with the Go toolchain.
+                              type: boolean
+                            image:
+                              description: |-
+                                image is the runner image, such as c4factory/gitea-runner-go:dev; it
+                                registers in an init container and runs the jobs.
+                              minLength: 1
+                              type: string
+                            label:
+                              description: label is the job label the runners take,
+                                as the workflows' runs-on names it.
+                              maxLength: 32
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                              type: string
+                            resources:
+                              description: resources for the runner container, where
+                                the jobs run.
+                              properties:
+                                claims:
+                                  description: |-
+                                    Claims lists the names of resources, defined in spec.resourceClaims,
+                                    that are used by this container.
+
+                                    This field depends on the
+                                    DynamicResourceAllocation feature gate.
+
+                                    This field is immutable. It can only be set for containers.
+                                  items:
+                                    description: ResourceClaim references one entry
+                                      in PodSpec.ResourceClaims.
+                                    properties:
+                                      name:
+                                        description: |-
+                                          Name must match the name of one entry in pod.spec.resourceClaims of
+                                          the Pod where this field is used. It makes that resource available
+                                          inside a container.
+                                        type: string
+                                      request:
+                                        description: |-
+                                          Request is the name chosen for a request in the referenced claim.
+                                          If empty, everything from the claim is made available, otherwise
+                                          only the result of this request.
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - name
+                                  x-kubernetes-list-type: map
+                                limits:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Limits describes the maximum amount of compute resources allowed.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                  type: object
+                                requests:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Requests describes the minimum amount of compute resources required.
+                                    If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                    otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                  type: object
+                              type: object
+                            size:
+                              default: 1
+                              description: size is how many idle pods wait for a job.
+                              format: int32
+                              maximum: 8
+                              minimum: 1
+                              type: integer
+                          required:
+                          - image
+                          - label
+                          type: object
+                        maxItems: 8
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - label
+                        x-kubernetes-list-type: map
+                    required:
+                    - runners
+                    type: object
+                type: object
               credentialsSecretRef:
                 description: credentialsSecretRef names a Secret with keys "username"
                   and "token".

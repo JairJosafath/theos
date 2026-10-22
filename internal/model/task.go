@@ -711,6 +711,16 @@ const (
 // and a runner's pod has 30 seconds to stop.
 const RunnerGoneAfter = 2 * time.Minute
 
+const (
+	// PodFateEnded is the fate of a pool runner pod (#1140) whose runner ran
+	// its one job and exited on its own: nobody told it to stop, so a cancel
+	// of its job was a person's. The controller writes it on the pod.
+	PodFateEnded = "ended"
+	// PodFateLost is the fate of a pool runner pod deleted, evicted or killed
+	// before its job ended: its runner cancelled the job.
+	PodFateLost = "lost"
+)
+
 // CIJob is a job of a CI run, as the Git host lists it.
 type CIJob struct {
 	// Conclusion is how it ended: success, failure, cancelled or skipped.
@@ -721,6 +731,12 @@ type CIJob struct {
 	// RunnerUnknown that it doesn't say.
 	RunnerOnline  bool
 	RunnerUnknown bool
+	// RunnerName is the runner's name, and PodFate, when that names a pod of
+	// the factory's pool that the operator still keeps, how the pod ended:
+	// PodFateEnded or PodFateLost; empty for a runner outside the pool, or a
+	// pod the pool no longer records.
+	RunnerName string
+	PodFate    string
 	// Ended is when it ended.
 	Ended time.Time
 }
@@ -738,6 +754,12 @@ func (j CIJob) Cancelled() bool { return j.Conclusion == checkCancelled }
 // past any of the Task's bounds). read false means the jobs couldn't be read:
 // the cancel counts as the runner's, MaxChecksReruns bounding what a person's
 // costs.
+//
+// A job that ran on a pod of the factory's pool (#1140) is told by the pod
+// instead: Gitea deletes an ephemeral runner once its job ends, so its runner
+// is gone after a person's cancel too. A pod that ended on its own
+// (PodFateEnded) was not told to stop, so a person cancelled; one lost before
+// its job ended (PodFateLost) was.
 func Canceller(jobs []CIJob, read bool, now time.Time) string {
 	if !read {
 		return CancelledByRunner
@@ -746,6 +768,9 @@ func Canceller(jobs []CIJob, read bool, now time.Time) string {
 	for _, job := range jobs {
 		switch {
 		case !job.Cancelled(), job.Runner == 0:
+		case job.PodFate == PodFateLost:
+			return CancelledByRunner
+		case job.PodFate == PodFateEnded:
 		case job.RunnerUnknown || !job.RunnerOnline:
 			return CancelledByRunner
 		case now.Sub(job.Ended) < RunnerGoneAfter:

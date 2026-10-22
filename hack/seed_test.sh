@@ -56,7 +56,10 @@ case "$method $path" in
   tok=tok-$RANDOM$RANDOM
   echo "$tok" >"$G/tokens/$(jq -r .name <<<"$data")"
   body=$(jq -nc --arg t "$tok" '{sha1: $t}') code=201 ;;
-"POST /v1/admin/actions/runners/registration-token") body=$(jq -nc --arg t "$(head -c 18 /dev/urandom | base64)" '{token: $t}') ;;
+# Gitea hands out the organization's token it has until it is reset.
+"POST /v1/orgs/templates/actions/runners/registration-token")
+  [[ -e $G/runner-token ]] || head -c 18 /dev/urandom | base64 >"$G/runner-token"
+  body=$(jq -nc --arg t "$(cat "$G/runner-token")" '{token: $t}') ;;
 *) code=500 ;;
 esac
 if [[ $path != /healthz && $path != /v1/version && $authed != true ]]; then code=401; fi
@@ -134,6 +137,11 @@ check "file without a token: file holds the token" "$(token)" "$(cat "$T/gitea/t
 "$SEED" >"$T/out" 2>&1; check "secret mode: succeeds" $? 0
 grep -q "create secret generic gitea-credentials" "$T/gitea/kubectl"; check "secret mode: stores Secret gitea-credentials" $? 0
 grep -q "create secret generic gitea-runner" "$T/gitea/kubectl"; check "secret mode: stores the runner token" $? 0
+# The shared runners register to the templates organization, never to the
+# instance (#1140): its token, annotated with its owner.
+grep -q "orgs/templates/actions/runners/registration-token" "$T/gitea/calls"; check "secret mode: the templates organization's runner token" $? 0
+grep -q "admin/actions/runners" "$T/gitea/calls"; check "secret mode: no instance runner token" $? 1
+grep -q "c4.factory.io/token-owner=org/templates" "$T/gitea/kubectl"; check "secret mode: the runner token names its owner" $? 0
 grep -q "projects" "$T/gitea/kubectl"; check "secret mode: no Project without PROJECT_OBJECTS" $? 1
 
 # The chart's seed (PROJECT_OBJECTS=true) creates the project's Project when
