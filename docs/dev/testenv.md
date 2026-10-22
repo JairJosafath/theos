@@ -549,6 +549,9 @@ around the steps that touch it:
    test environment's shortcut, not the chart's. It can't live in
    `hack/kind.yaml`: `extraMounts` needs an absolute host path, and the
    `registry.mirrors` patch is ignored once containerd reads `certs.d`.
+   That `clusterIP` is immutable, so `make gitea` deletes a Gitea Service
+   from before the pin, one whose IP differs (`hack/kind.sh gitea-service`),
+   before it applies `config/gitea`; the apply recreates it (#1679).
    Images built for a deploy (`make deploy`,
    the agent, runner, seed, session and UI images) are tagged per checkout
    (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),

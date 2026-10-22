@@ -62,6 +62,9 @@ gitea: ## Install Gitea (config/gitea) with a generated admin password, and wait
 			$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea; \
 		fi; \
 	fi
+	@# The Service's clusterIP is fixed and immutable: a Service from before the
+	@# pin goes first, or the apply fails with "field is immutable" (#1679).
+	@KUBECTL='$(KUBECTL)' hack/kind.sh gitea-service '$(KIND_CLUSTER)'
 	$(TESTENV_KUBECTL) apply -k config/gitea
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea --timeout=300s
 
