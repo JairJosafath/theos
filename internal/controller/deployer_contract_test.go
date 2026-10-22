@@ -106,6 +106,38 @@ func TestGitHubDeployer(t *testing.T) {
 	}
 }
 
+// shipUntilDeployed ships s to target until State, asked for s's version,
+// says Deployed.
+func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s ports.Shipment) {
+	t.Helper()
+	ctx := context.Background()
+	for range 10 {
+		if err := d.Ship(ctx, target, s); err != nil {
+			t.Fatalf("Ship(%s) = %v", s.Version, err)
+		}
+		st, err := d.State(ctx, target, s.App, s.Version)
+		if err != nil {
+			t.Fatalf("State() = %v", err)
+		}
+		if st.Version == s.Version && st.Phase == ports.PhaseDeployed {
+			return
+		}
+	}
+	t.Fatalf("%s isn't Deployed after 10 Ship calls", s.Version)
+}
+
+// publishedReleaseID is the id of repository's published release of tag.
+func publishedReleaseID(t *testing.T, gh *fakeGitHub, repository, tag string) int64 {
+	t.Helper()
+	for _, r := range gh.releases(repository) {
+		if r.TagName == tag && !r.Draft {
+			return r.ID
+		}
+	}
+	t.Fatalf("no published release %s in %s", tag, repository)
+	return 0
+}
+
 // TestGitHubDeployerRollback: an entry pinned to an older published release
 // reaches Deployed, as State is told the version it wants (#1445). On a
 // target that takes Latest, Ship moves Latest back to it first; on one that
@@ -122,33 +154,13 @@ func TestGitHubDeployerRollback(t *testing.T) {
 		return ports.Shipment{App: "ns/orders-cli", DisplayName: "Orders CLI", Version: version,
 			Files: []ports.File{file}}
 	}
-	// shipped ships version until State, asked for it, says Deployed.
 	shipped := func(t *testing.T, target ports.Target, version string) {
 		t.Helper()
-		for range 10 {
-			if err := d.Ship(ctx, target, shipment(version)); err != nil {
-				t.Fatalf("Ship(%s) = %v", version, err)
-			}
-			st, err := d.State(ctx, target, "ns/orders-cli", version)
-			if err != nil {
-				t.Fatalf("State() = %v", err)
-			}
-			if st.Version == version && st.Phase == ports.PhaseDeployed {
-				return
-			}
-		}
-		t.Fatalf("%s isn't Deployed after 10 Ship calls", version)
+		shipUntilDeployed(t, d, target, shipment(version))
 	}
-	// releaseID is the id of the app's release of tag.
 	releaseID := func(t *testing.T, repository, tag string) int64 {
 		t.Helper()
-		for _, r := range gh.releases(repository) {
-			if r.TagName == tag && !r.Draft {
-				return r.ID
-			}
-		}
-		t.Fatalf("no published release %s in %s", tag, repository)
-		return 0
+		return publishedReleaseID(t, gh, repository, tag)
 	}
 
 	t.Run("a pin to an older release on a target that takes Latest moves Latest back (#1445)", func(t *testing.T) {
