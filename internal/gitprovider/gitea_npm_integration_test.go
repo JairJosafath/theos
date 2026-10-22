@@ -25,15 +25,12 @@ import (
 // package published to the owner's npm registry installs as the restricted
 // agent account through the .npmrc c4agent writes, over plain http as the
 // in-cluster Gitea is reached, and over TLS, as an external one is, where npm
-// sends the agent's token. Like TestGiteaIntegration; skipped without npm.
+// sends the agent's token. Like TestGiteaIntegration; the publish runs
+// without npm, and only the install subtests skip (#1702).
 func TestGiteaNpmIntegration(t *testing.T) {
 	base := os.Getenv("C4_GITEA_URL")
 	if base == "" {
 		t.Skip("C4_GITEA_URL not set")
-	}
-	npmBin, err := exec.LookPath("npm")
-	if err != nil {
-		t.Skip("npm is not on PATH; the install check needs it")
 	}
 	creds := Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
@@ -116,6 +113,10 @@ func TestGiteaNpmIntegration(t *testing.T) {
 		repo Repository
 	}{{"over http", repo}, {"over https", tlsRepo}} {
 		t.Run("npm installs it as the agent "+tt.name, func(t *testing.T) {
+			npmBin, err := exec.LookPath("npm")
+			if err != nil {
+				t.Skip("npm is not on PATH; the install check needs it (#1702)")
+			}
 			home := t.TempDir()
 			if err := agentrunner.WriteNpmrc(home, agentrunner.Job{
 				RepoURL: tt.repo.CloneURL, Username: bot.Username, Token: bot.Token,
