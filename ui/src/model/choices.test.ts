@@ -64,12 +64,8 @@ describe('bundleTypes', () => {
     expect(bundleTypes(bundle({ ...b.spec, deploymentRef: { name: 'k8s' } }), catalog)).toEqual(['service'])
   })
 
-  it('is none when the entries share no type, or none is in the catalog', () => {
-    expect(bundleTypes(bundle({ frameworkRef: { name: 'fw' }, computeRef: { name: 'static' } }), catalog)).toEqual([
-      'service',
-      'worker',
-      'job',
-    ])
+  it('is none when the entries share no type, or one is not in the catalog', () => {
+    expect(bundleTypes(bundle({ frameworkRef: { name: 'fw' }, computeRef: { name: 'static' } }), catalog)).toEqual([])
     expect(bundleTypes(bundle({ frameworkRef: { name: 'missing' } }), catalog)).toEqual([])
     const only = { ...catalog, standards: [entry('std', ['static-site'])] }
     expect(bundleTypes(bundle({ frameworkRef: { name: 'fw' }, standardRef: { name: 'std' } }), only)).toEqual([])

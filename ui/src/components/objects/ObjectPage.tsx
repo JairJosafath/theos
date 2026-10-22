@@ -176,7 +176,9 @@ function pageFor(
     }
     case 'Bundle': {
       const bundle = named(data.bundles)
-      return bundle && <BundlePage bundle={bundle} catalog={data} containers={data.containers} />
+      return (
+        bundle && <BundlePage bundle={bundle} catalog={data} containers={data.containers} connection={connection} />
+      )
     }
     case 'GitProvider': {
       const provider = named(data.gitProviders)

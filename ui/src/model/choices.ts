@@ -74,13 +74,14 @@ export function bundleEntries(bundle: Bundle, catalog: Catalog): BundleEntry[] {
 
 /**
  * The Container types a Bundle supports: those its first entry lists that
- * every other entry found in the catalog lists too, in the first entry's
- * order. No entries found, or none shared, gives none. An entry the catalog
- * lacks is left out of the rule, as the page says it is missing.
+ * every other entry lists too, in the first entry's order. No entries, none
+ * shared, or an entry the catalog lacks gives none: the operator refuses a
+ * Container whose Bundle names a missing entry, so the page advertises no type.
  */
 export function bundleTypes(bundle: Bundle, catalog: Catalog): ContainerType[] {
-  const entries = bundleEntries(bundle, catalog).flatMap((e) => (e.entry ? [e.entry] : []))
-  if (!entries.length) return []
+  const named = bundleEntries(bundle, catalog)
+  if (!named.length || named.some((e) => !e.entry)) return []
+  const entries = named.map((e) => e.entry!)
   const [first, ...rest] = entries
   const out: ContainerType[] = []
   for (const t of first.spec.supportedTypes) {

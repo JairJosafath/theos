@@ -81,7 +81,7 @@ export function demoStory(now: number): StoryData {
       containers: 5,
       readyContainers: 2,
       activeSessions: 2,
-      summary: '1 of 4 containers Ready, 2 active sessions',
+      summary: '2 of 5 containers Ready, 2 active sessions',
     },
   }
 

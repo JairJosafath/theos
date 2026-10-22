@@ -176,7 +176,7 @@ const WORDING: Record<string, Wording> = {
 // Reasons that change the wording of a False condition.
 const REASON_WORDING: Record<string, string> = {
   AddedAfterScaffold: 'Added after scaffolding, so the repository does not include it',
-  BundleChanged: 'Its Bundle names other entries now; the repository keeps what it was scaffolded from',
+  BundleChanged: 'Its Bundle changed or is gone since the scaffold; the repository keeps what it was scaffolded from',
   WaitingForScaffold: 'Will be built in when the container is scaffolded',
   Scaffolding: 'Being scaffolded right now',
   ForeignCommits: 'The repository already had commits the factory did not make, so it stopped',
@@ -196,6 +196,8 @@ const WAITING_REASONS = new Set([
   'WaitingForPrevious',
   'Deploying',
   'NoRelease',
+  // A Ready Container's Bundle changed: reported, never applied (docs/plans/catalog-bundles.md, decision 6).
+  'BundleChanged',
 ])
 
 // A Brief's conditions that flag something for a person: False is the calm state.

@@ -236,8 +236,8 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   Compute: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
   Deployment: phaseless('A catalog entry, rendered into a Container once, at its scaffold.', CATALOG_STILL),
   Bundle: phaseless(
-    'The four catalog entries a team picked together. A Container names it instead of the four; the factory expands it into the Container’s status at creation, and marks the Container BundleCurrent=False when the Bundle changes afterwards.',
-    'Nothing: a Container keeps what the Bundle named when it was created. To follow a changed Bundle, create a new Container.',
+    'The four catalog entries a team picked together. A Container names it instead of the four; the factory expands it into the Container’s status until the scaffold, and marks a Ready Container BundleCurrent=False when the Bundle changes afterwards.',
+    'Nothing: a Ready Container keeps what the Bundle named when it was scaffolded, and a Bundle fix reaches a Container not yet scaffolded by itself. To follow a changed Bundle after the scaffold, create a new Container.',
   ),
   GitProvider: phaseless(
     'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',

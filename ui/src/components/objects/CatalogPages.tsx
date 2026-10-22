@@ -124,15 +124,21 @@ export function BundlePage({
   bundle,
   catalog,
   containers,
+  connection,
 }: {
   bundle: Bundle
   catalog: Catalog
   containers: Container[]
+  connection: Connection
 }) {
   const ns = bundle.metadata.namespace ?? ''
   const name = bundle.metadata.name
   const entries = bundleEntries(bundle, catalog)
   const types = bundleTypes(bundle, catalog)
+  // A refused read of a catalog kind would show its entries as missing: say the refusal first.
+  const unread = (['frameworks', 'standards', 'computes', 'deployments'] as const)
+    .map((k) => unreadOf(connection, RESOURCES[k]))
+    .filter((p) => p !== undefined)
   return (
     <main className="shell-page object-page">
       <ObjectHeader
@@ -151,6 +157,9 @@ export function BundlePage({
           Its entries
         </h2>
         {bundle.spec.description ? <p className="panel-text">{bundle.spec.description}</p> : null}
+        {unread.map((p) => (
+          <ReadProblem key={p.what} problem={p} />
+        ))}
         <dl className="facts">
           {entries.map(({ side, name: entryName, entry }) => {
             const href = pageHref(ns, SIDE_TITLE[side], entryName)
@@ -173,6 +182,8 @@ export function BundlePage({
             <dd>
               {types.length ? (
                 types.map(describeContainerType).join(', ')
+              ) : entries.some((e) => !e.entry) ? (
+                <span className="muted">None: an entry is not in the catalog.</span>
               ) : (
                 <span className="muted">None: its entries share no Container type.</span>
               )}

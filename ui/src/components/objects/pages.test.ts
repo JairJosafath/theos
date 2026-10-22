@@ -164,13 +164,13 @@ describe('the Bundle page', () => {
     expect(text(page('Bundle', 'python-service', data))).toContain('None: its entries share no Container type.')
   })
 
-  it('says when an entry is not in the catalog, and leaves it out of the types', () => {
+  it('says when an entry is not in the catalog, and advertises no type then', () => {
     const data = demoStory(NOW)
     data.bundles[0].spec.standardRef = { name: 'gone-standard' }
     const html = page('Bundle', 'python-service', data)
     expect(text(html)).toMatch(/Standard gone-standard · not in the catalog/)
     expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=gone-standard"')
-    expect(text(html)).toMatch(/Container types service /)
+    expect(text(html)).toContain('None: an entry is not in the catalog.')
   })
 })
 
@@ -214,7 +214,9 @@ describe('a bundled Container’s page', () => {
         : cond,
     )
     const t = text(page('Container', 'inventory-api', data))
-    expect(t).toContain('Its Bundle names other entries now; the repository keeps what it was scaffolded from')
+    expect(t).toContain(
+      'Its Bundle changed or is gone since the scaffold; the repository keeps what it was scaffolded from',
+    )
     expect(t).toContain('Bundle python-service now names compute medium')
     // What it was scaffolded from stays what the page shows.
     expect(t).toMatch(/Compute small · from bundle python-service/)
@@ -442,6 +444,13 @@ describe('a refused read of an optional kind', () => {
     ...LIVE,
     unread: [{ what: 'standards', code: 403, message: 'standards.c4.factory.io is forbidden', resource: 'standards' }],
   }
+
+  it('shows on a Bundle page before its entries, instead of “not in the catalog” alone', () => {
+    const data = { ...demoStory(NOW), standards: [] }
+    const t = text(page('Bundle', 'python-service', data, refused))
+    expect(t).toContain('Could not read standards (403): standards.c4.factory.io is forbidden')
+    expect(t).toMatch(/Standard python-standard · not in the catalog/)
+  })
 
   it('shows on the kind’s page instead of “not there”', () => {
     const data = { ...demoStory(NOW), standards: [] }
