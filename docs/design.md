@@ -586,7 +586,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 - **A place is a `DeployTarget`,** shared by any number of Containers: one
   member saying what it is (`github`, `argoCD` and
-  `cloudFormation` today, `flux` later, each with its adapter), a
+  `cloudFormation` today, `gitlab` and `flux` later, each with its adapter), a
   `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`
   (`Required` or `None`; empty is `Required` in production) and non-secret
@@ -670,7 +670,27 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   calls its API at `/api/v3` and uploads at `/api/uploads`, and copies the
   image to `containers.<host>` (the server's container registry, which
   needs subdomain isolation) in place of `ghcr.io`. The credentials and
-  calls are the same. GitLab (its own member) comes later.
+  calls are the same. GitLab is its own member, below.
+- **GitLab targets** (#1606, [plans/gitlab-deploy.md](plans/gitlab-deploy.md)):
+  a `gitlab` target does for gitlab.com or a self-hosted GitLab what a
+  `github` target does, by the same rules: what ships of each type, the
+  source snapshot and its checks, the tag prefixes, `FolderOverlaps` and
+  `TagTaken`. The member names the `project` by its full path
+  (`group/sub/project`), a self-hosted instance's `url` (`https://host[:port]`,
+  a path allowed for a relative URL root; never gitlab.com), `tagPrefix` and
+  `source` as `github`'s; it has no `latest`, since GitLab's latest release is
+  simply the newest. GitLab has no drafts, so the release is the last write,
+  made of the source commit with the notes and links to the files: the source
+  commit goes in through the Commits API, one commit per release, and the
+  release's files into the project's generic package registry (package the
+  Container's name, version the release's). The image goes by digest to the
+  project's container registry, at its `container_registry_image_prefix`
+  and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
+  registry is on and the token has `write_registry`; else the release ships
+  without one. The Secret holds `token`, a project access token with the
+  Maintainer role and the scopes `api`, `read_registry` and `write_registry`
+  (a group or personal access token works the same); a deploy token can't
+  call the API and is not taken.
 - **Kubernetes targets** (#1072, [plans/k8s-deploy.md](plans/k8s-deploy.md)):
   an `argoCD` target names Argo CD's namespace and project and the
   destination; the operator writes one Argo CD `Application` per Container
