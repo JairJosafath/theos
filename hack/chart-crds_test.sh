@@ -12,7 +12,10 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 fresh() { rm -rf "$T/bases" "$T/crd"; cp -r "$ROOT/config/crd/bases" "$T/bases"; cp -r "$ROOT/dist/chart/templates/crd" "$T/crd"; }
 run() { "$HACK/chart-crds.sh" "$T/bases" "$T/crd" >"$T/out" 2>&1; }
 
-fresh; run; check "the committed chart matches" $? 0
+# The committed tree itself: on a failure its diff goes to the log, since a
+# stale chart on main reads as a flake without it (#1799).
+fresh; run; st=$?; check "the committed chart matches" $st 0
+[ "$st" = 0 ] || sed 's/^/     /' "$T/out"
 
 fresh
 sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/c4.factory.io_people.yaml"
