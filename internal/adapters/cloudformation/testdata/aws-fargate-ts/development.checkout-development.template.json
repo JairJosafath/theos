@@ -1,0 +1,3838 @@
+{
+ "Description": "The checkout service of shop. An ECS service on Fargate behind an Application Load Balancer, and a DynamoDB table.",
+ "Parameters": {
+  "CertificateArn": {
+   "Type": "String",
+   "AllowedPattern": "^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$",
+   "Description": "The ARN of the ACM certificate the load balancer serves HTTPS with."
+  },
+  "ImageUri": {
+   "Type": "String",
+   "AllowedPattern": "^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$",
+   "Description": "The image the service runs, <account>.dkr.ecr.<region>.amazonaws.com/<repository>@sha256:<digest>."
+  },
+  "AlertEmail": {
+   "Type": "String",
+   "Default": "",
+   "AllowedPattern": "^([^@\\s]+@[^@\\s]+)?$",
+   "Description": "The email address the alarms notify; empty for none."
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Resources": {
+  "Items5C12978B": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "id",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "DeletionProtectionEnabled": false,
+    "KeySchema": [
+     {
+      "AttributeName": "id",
+      "KeyType": "HASH"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": false
+    },
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Items/Resource"
+   }
+  },
+  "Network1C6012B5": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {
+    "CidrBlock": "10.0.0.0/16",
+    "EnableDnsHostnames": true,
+    "EnableDnsSupport": true,
+    "InstanceTenancy": "default",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/Resource"
+   }
+  },
+  "NetworkPublicSubnet1Subnet5B78347B": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      0,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.0.0/24",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/Subnet"
+   }
+  },
+  "NetworkPublicSubnet1RouteTable1F8DA2C6": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/RouteTable"
+   }
+  },
+  "NetworkPublicSubnet1RouteTableAssociation870BDE42": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "NetworkPublicSubnet1RouteTable1F8DA2C6"
+    },
+    "SubnetId": {
+     "Ref": "NetworkPublicSubnet1Subnet5B78347B"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/RouteTableAssociation"
+   }
+  },
+  "NetworkPublicSubnet1DefaultRoute1E5C22EC": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "NetworkIGW094D9CE3"
+    },
+    "RouteTableId": {
+     "Ref": "NetworkPublicSubnet1RouteTable1F8DA2C6"
+    }
+   },
+   "DependsOn": [
+    "NetworkVPCGWDA581511"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/DefaultRoute"
+   }
+  },
+  "NetworkPublicSubnet1EIP9D5D85CF": {
+   "Type": "AWS::EC2::EIP",
+   "Properties": {
+    "Domain": "vpc",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet1"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/EIP"
+   }
+  },
+  "NetworkPublicSubnet1NATGatewayCA136767": {
+   "Type": "AWS::EC2::NatGateway",
+   "Properties": {
+    "AllocationId": {
+     "Fn::GetAtt": [
+      "NetworkPublicSubnet1EIP9D5D85CF",
+      "AllocationId"
+     ]
+    },
+    "SubnetId": {
+     "Ref": "NetworkPublicSubnet1Subnet5B78347B"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet1"
+     }
+    ]
+   },
+   "DependsOn": [
+    "NetworkPublicSubnet1DefaultRoute1E5C22EC",
+    "NetworkPublicSubnet1RouteTableAssociation870BDE42"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet1/NATGateway"
+   }
+  },
+  "NetworkPublicSubnet2SubnetC3758C96": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      1,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.1.0/24",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet2/Subnet"
+   }
+  },
+  "NetworkPublicSubnet2RouteTable24240B23": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet2/RouteTable"
+   }
+  },
+  "NetworkPublicSubnet2RouteTableAssociation1FAB434D": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "NetworkPublicSubnet2RouteTable24240B23"
+    },
+    "SubnetId": {
+     "Ref": "NetworkPublicSubnet2SubnetC3758C96"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet2/RouteTableAssociation"
+   }
+  },
+  "NetworkPublicSubnet2DefaultRoute2449ACD0": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "NetworkIGW094D9CE3"
+    },
+    "RouteTableId": {
+     "Ref": "NetworkPublicSubnet2RouteTable24240B23"
+    }
+   },
+   "DependsOn": [
+    "NetworkVPCGWDA581511"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PublicSubnet2/DefaultRoute"
+   }
+  },
+  "NetworkPrivateSubnet1SubnetC4D46731": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      0,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.2.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet1/Subnet"
+   }
+  },
+  "NetworkPrivateSubnet1RouteTableC10F5F52": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet1/RouteTable"
+   }
+  },
+  "NetworkPrivateSubnet1RouteTableAssociation802B0CF2": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "NetworkPrivateSubnet1RouteTableC10F5F52"
+    },
+    "SubnetId": {
+     "Ref": "NetworkPrivateSubnet1SubnetC4D46731"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet1/RouteTableAssociation"
+   }
+  },
+  "NetworkPrivateSubnet1DefaultRouteA48B3017": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "NatGatewayId": {
+     "Ref": "NetworkPublicSubnet1NATGatewayCA136767"
+    },
+    "RouteTableId": {
+     "Ref": "NetworkPrivateSubnet1RouteTableC10F5F52"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet1/DefaultRoute"
+   }
+  },
+  "NetworkPrivateSubnet2SubnetB345BF84": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": {
+     "Fn::Select": [
+      1,
+      {
+       "Fn::GetAZs": ""
+      }
+     ]
+    },
+    "CidrBlock": "10.0.3.0/24",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet2/Subnet"
+   }
+  },
+  "NetworkPrivateSubnet2RouteTable23F12729": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet2/RouteTable"
+   }
+  },
+  "NetworkPrivateSubnet2RouteTableAssociation32F66B8A": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "NetworkPrivateSubnet2RouteTable23F12729"
+    },
+    "SubnetId": {
+     "Ref": "NetworkPrivateSubnet2SubnetB345BF84"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet2/RouteTableAssociation"
+   }
+  },
+  "NetworkPrivateSubnet2DefaultRouteDF3F5474": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "NatGatewayId": {
+     "Ref": "NetworkPublicSubnet1NATGatewayCA136767"
+    },
+    "RouteTableId": {
+     "Ref": "NetworkPrivateSubnet2RouteTable23F12729"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/PrivateSubnet2/DefaultRoute"
+   }
+  },
+  "NetworkIGW094D9CE3": {
+   "Type": "AWS::EC2::InternetGateway",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/IGW"
+   }
+  },
+  "NetworkVPCGWDA581511": {
+   "Type": "AWS::EC2::VPCGatewayAttachment",
+   "Properties": {
+    "InternetGatewayId": {
+     "Ref": "NetworkIGW094D9CE3"
+    },
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/VPCGW"
+   }
+  },
+  "NetworkDynamoDb60DC9FAE": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "RouteTableIds": [
+     {
+      "Ref": "NetworkPrivateSubnet1RouteTableC10F5F52"
+     },
+     {
+      "Ref": "NetworkPrivateSubnet2RouteTable23F12729"
+     },
+     {
+      "Ref": "NetworkPublicSubnet1RouteTable1F8DA2C6"
+     },
+     {
+      "Ref": "NetworkPublicSubnet2RouteTable24240B23"
+     }
+    ],
+    "ServiceName": {
+     "Fn::Join": [
+      "",
+      [
+       "com.amazonaws.",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".dynamodb"
+      ]
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network"
+     }
+    ],
+    "VpcEndpointType": "Gateway",
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/DynamoDb/Resource"
+   }
+  },
+  "NetworkFlowLogIAMRoleF1E78E9D": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "vpc-flow-logs.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/FlowLog"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/FlowLog/IAMRole/Resource"
+   }
+  },
+  "NetworkFlowLogIAMRoleDefaultPolicy1BBF5673": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "FlowLogs16C1943A",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "NetworkFlowLogIAMRoleDefaultPolicy1BBF5673",
+    "Roles": [
+     {
+      "Ref": "NetworkFlowLogIAMRoleF1E78E9D"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/FlowLog/IAMRole/DefaultPolicy/Resource"
+   }
+  },
+  "NetworkFlowLog0C7D188B": {
+   "Type": "AWS::EC2::FlowLog",
+   "Properties": {
+    "DeliverLogsPermissionArn": {
+     "Fn::GetAtt": [
+      "NetworkFlowLogIAMRoleF1E78E9D",
+      "Arn"
+     ]
+    },
+    "LogDestinationType": "cloud-watch-logs",
+    "LogGroupName": {
+     "Ref": "FlowLogs16C1943A"
+    },
+    "ResourceId": {
+     "Ref": "Network1C6012B5"
+    },
+    "ResourceType": "VPC",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     },
+     {
+      "Key": "Name",
+      "Value": "checkout-development/Network/FlowLog"
+     }
+    ],
+    "TrafficType": "REJECT"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Network/FlowLog/FlowLog"
+   }
+  },
+  "FlowLogs16C1943A": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/FlowLogs/Resource"
+   }
+  },
+  "ClusterEB0386A7": {
+   "Type": "AWS::ECS::Cluster",
+   "Properties": {
+    "ClusterSettings": [
+     {
+      "Name": "containerInsights",
+      "Value": "enabled"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Cluster/Resource"
+   }
+  },
+  "ServiceLogs24DEC314": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "RetentionInDays": 30,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/ServiceLogs/Resource"
+   }
+  },
+  "UsersPoolBFC35D3B": {
+   "Type": "AWS::Cognito::UserPool",
+   "Properties": {
+    "AccountRecoverySetting": {
+     "RecoveryMechanisms": [
+      {
+       "Name": "verified_email",
+       "Priority": 1
+      }
+     ]
+    },
+    "AdminCreateUserConfig": {
+     "AllowAdminCreateUserOnly": true
+    },
+    "AutoVerifiedAttributes": [
+     "email"
+    ],
+    "DeletionProtection": "INACTIVE",
+    "EmailVerificationMessage": "The verification code to your new account is {####}",
+    "EmailVerificationSubject": "Verify your new account",
+    "EnabledMfas": [
+     "SOFTWARE_TOKEN_MFA"
+    ],
+    "MfaConfiguration": "OPTIONAL",
+    "Policies": {
+     "PasswordPolicy": {
+      "MinimumLength": 12,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "RequireUppercase": true,
+      "TemporaryPasswordValidityDays": 3
+     }
+    },
+    "SmsVerificationMessage": "The verification code to your new account is {####}",
+    "UserPoolTags": {
+     "c4factory:container": "checkout",
+     "c4factory:project": "webshop",
+     "c4factory:system": "shop"
+    },
+    "UsernameAttributes": [
+     "email"
+    ],
+    "VerificationMessageTemplate": {
+     "DefaultEmailOption": "CONFIRM_WITH_CODE",
+     "EmailMessage": "The verification code to your new account is {####}",
+     "EmailSubject": "Verify your new account",
+     "SmsMessage": "The verification code to your new account is {####}"
+    }
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Users/Pool/Resource"
+   }
+  },
+  "UsersPoolClient39A19381": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AccessTokenValidity": 60,
+    "AllowedOAuthFlowsUserPoolClient": false,
+    "ExplicitAuthFlows": [
+     "ALLOW_USER_PASSWORD_AUTH",
+     "ALLOW_USER_SRP_AUTH",
+     "ALLOW_REFRESH_TOKEN_AUTH"
+    ],
+    "GenerateSecret": false,
+    "PreventUserExistenceErrors": "ENABLED",
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "TokenValidityUnits": {
+     "AccessToken": "minutes"
+    },
+    "UserPoolId": {
+     "Ref": "UsersPoolBFC35D3B"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Users/Pool/Client/Resource"
+   }
+  },
+  "TaskTaskRoleE98524A1": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Task/TaskRole/Resource"
+   }
+  },
+  "TaskTaskRoleDefaultPolicyC02AED32": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "Items5C12978B",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TaskTaskRoleDefaultPolicyC02AED32",
+    "Roles": [
+     {
+      "Ref": "TaskTaskRoleE98524A1"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Task/TaskRole/DefaultPolicy/Resource"
+   }
+  },
+  "Task79114B6B": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Cpu": 256,
+      "Environment": [
+       {
+        "Name": "TABLE_NAME",
+        "Value": {
+         "Ref": "Items5C12978B"
+        }
+       },
+       {
+        "Name": "USER_POOL_ID",
+        "Value": {
+         "Ref": "UsersPoolBFC35D3B"
+        }
+       },
+       {
+        "Name": "USER_POOL_CLIENT_ID",
+        "Value": {
+         "Ref": "UsersPoolClient39A19381"
+        }
+       }
+      ],
+      "Essential": true,
+      "Image": {
+       "Ref": "ImageUri"
+      },
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "ServiceLogs24DEC314"
+        },
+        "awslogs-stream-prefix": "app",
+        "awslogs-region": {
+         "Ref": "AWS::Region"
+        }
+       }
+      },
+      "MemoryReservation": 512,
+      "Name": "App",
+      "PortMappings": [
+       {
+        "ContainerPort": 8080,
+        "Protocol": "tcp"
+       }
+      ],
+      "ReadonlyRootFilesystem": true,
+      "StopTimeout": 30
+     }
+    ],
+    "Cpu": "256",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "TaskExecutionRoleEF964934",
+      "Arn"
+     ]
+    },
+    "Family": "checkoutdevelopmentTask317BDDF1",
+    "Memory": "512",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "RuntimePlatform": {
+     "CpuArchitecture": "ARM64",
+     "OperatingSystemFamily": "LINUX"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "TaskTaskRoleE98524A1",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Task/Resource"
+   }
+  },
+  "TaskExecutionRoleEF964934": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Task/ExecutionRole/Resource"
+   }
+  },
+  "TaskExecutionRoleDefaultPolicy72339918": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "ServiceLogs24DEC314",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": "ecr:GetAuthorizationToken",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          "arn:",
+          {
+           "Ref": "AWS::Partition"
+          },
+          ":ecr:",
+          {
+           "Ref": "AWS::Region"
+          },
+          ":",
+          {
+           "Ref": "AWS::AccountId"
+          },
+          ":repository/cdk-hnb659fds-container-assets-",
+          {
+           "Ref": "AWS::AccountId"
+          },
+          "-",
+          {
+           "Ref": "AWS::Region"
+          }
+         ]
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TaskExecutionRoleDefaultPolicy72339918",
+    "Roles": [
+     {
+      "Ref": "TaskExecutionRoleEF964934"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Task/ExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "ServiceD69D759B": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "Cluster": {
+     "Ref": "ClusterEB0386A7"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [
+       "checkout-development-LoadBalancer-5xx-Rate-Critical",
+       "checkout-development-Service-5xx-Rate-Critical",
+       "checkout-development-Service-Unhealthy-Tasks-Critical"
+      ],
+      "Enable": true,
+      "Rollback": true
+     },
+     "DeploymentCircuitBreaker": {
+      "Enable": true,
+      "Rollback": true
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 100
+    },
+    "DesiredCount": 2,
+    "EnableECSManagedTags": false,
+    "HealthCheckGracePeriodSeconds": 60,
+    "LaunchType": "FARGATE",
+    "LoadBalancers": [
+     {
+      "ContainerName": "App",
+      "ContainerPort": 8080,
+      "TargetGroupArn": {
+       "Ref": "LoadBalancerHttpsServiceGroup1D3A8943"
+      }
+     }
+    ],
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "DISABLED",
+      "SecurityGroups": [
+       {
+        "Fn::GetAtt": [
+         "ServiceSecurityGroupC96ED6A7",
+         "GroupId"
+        ]
+       }
+      ],
+      "Subnets": [
+       {
+        "Ref": "NetworkPrivateSubnet1SubnetC4D46731"
+       },
+       {
+        "Ref": "NetworkPrivateSubnet2SubnetB345BF84"
+       }
+      ]
+     }
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "TaskDefinition": {
+     "Ref": "Task79114B6B"
+    }
+   },
+   "DependsOn": [
+    "LoadBalancerHttps0C5C99D2",
+    "LoadBalancerHttpsServiceGroup1D3A8943",
+    "TaskTaskRoleDefaultPolicyC02AED32",
+    "TaskTaskRoleE98524A1"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Service/Service"
+   }
+  },
+  "ServiceSecurityGroupC96ED6A7": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "checkout-development/Service/SecurityGroup",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "DependsOn": [
+    "TaskTaskRoleDefaultPolicyC02AED32",
+    "TaskTaskRoleE98524A1"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Service/SecurityGroup/Resource"
+   }
+  },
+  "ServiceSecurityGroupfromcheckoutdevelopmentLoadBalancerSecurityGroup7A69E1FF8080637DD62F": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Load balancer to target",
+    "FromPort": 8080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "ServiceSecurityGroupC96ED6A7",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "LoadBalancerSecurityGroupA28D6DD7",
+      "GroupId"
+     ]
+    },
+    "ToPort": 8080
+   },
+   "DependsOn": [
+    "TaskTaskRoleDefaultPolicyC02AED32",
+    "TaskTaskRoleE98524A1"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Service/SecurityGroup/from checkoutdevelopmentLoadBalancerSecurityGroup7A69E1FF:8080"
+   }
+  },
+  "ServiceTaskCountTarget23E25614": {
+   "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
+   "Properties": {
+    "MaxCapacity": 4,
+    "MinCapacity": 2,
+    "ResourceId": {
+     "Fn::Join": [
+      "",
+      [
+       "service/",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "/",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       }
+      ]
+     ]
+    },
+    "RoleARN": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:",
+       {
+        "Ref": "AWS::Partition"
+       },
+       ":iam::",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+      ]
+     ]
+    },
+    "ScalableDimension": "ecs:service:DesiredCount",
+    "ServiceNamespace": "ecs",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "DependsOn": [
+    "TaskTaskRoleDefaultPolicyC02AED32",
+    "TaskTaskRoleE98524A1"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Service/TaskCount/Target/Resource"
+   }
+  },
+  "ServiceTaskCountTargetCpuC81E254E": {
+   "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+   "Properties": {
+    "PolicyName": "checkoutdevelopmentServiceTaskCountTargetCpu60D7D486",
+    "PolicyType": "TargetTrackingScaling",
+    "ScalingTargetId": {
+     "Ref": "ServiceTaskCountTarget23E25614"
+    },
+    "TargetTrackingScalingPolicyConfiguration": {
+     "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "ECSServiceAverageCPUUtilization"
+     },
+     "TargetValue": 70
+    }
+   },
+   "DependsOn": [
+    "TaskTaskRoleDefaultPolicyC02AED32",
+    "TaskTaskRoleE98524A1"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Service/TaskCount/Target/Cpu/Resource"
+   }
+  },
+  "LoadBalancerLogsC31A6119": {
+   "Type": "AWS::S3::Bucket",
+   "Properties": {
+    "BucketEncryption": {
+     "ServerSideEncryptionConfiguration": [
+      {
+       "ServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+       }
+      }
+     ]
+    },
+    "LifecycleConfiguration": {
+     "Rules": [
+      {
+       "ExpirationInDays": 30,
+       "Status": "Enabled"
+      }
+     ]
+    },
+    "PublicAccessBlockConfiguration": {
+     "BlockPublicAcls": true,
+     "BlockPublicPolicy": true,
+     "IgnorePublicAcls": true,
+     "RestrictPublicBuckets": true
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancerLogs/Resource"
+   }
+  },
+  "LoadBalancerLogsPolicy8712CB4D": {
+   "Type": "AWS::S3::BucketPolicy",
+   "Properties": {
+    "Bucket": {
+     "Ref": "LoadBalancerLogsC31A6119"
+    },
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "s3:*",
+       "Condition": {
+        "Bool": {
+         "aws:SecureTransport": "false"
+        }
+       },
+       "Effect": "Deny",
+       "Principal": {
+        "AWS": "*"
+       },
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "LoadBalancerLogsC31A6119",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "LoadBalancerLogsC31A6119",
+             "Arn"
+            ]
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "s3:PutObject",
+       "Condition": {
+        "ArnLike": {
+         "aws:SourceArn": {
+          "Fn::Join": [
+           "",
+           [
+            "arn:",
+            {
+             "Ref": "AWS::Partition"
+            },
+            ":elasticloadbalancing:",
+            {
+             "Ref": "AWS::Region"
+            },
+            ":",
+            {
+             "Ref": "AWS::AccountId"
+            },
+            ":loadbalancer/*"
+           ]
+          ]
+         }
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "logdelivery.elasticloadbalancing.amazonaws.com"
+       },
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          {
+           "Fn::GetAtt": [
+            "LoadBalancerLogsC31A6119",
+            "Arn"
+           ]
+          },
+          "/load-balancer/AWSLogs/",
+          {
+           "Ref": "AWS::AccountId"
+          },
+          "/*"
+         ]
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancerLogs/Policy/Resource"
+   }
+  },
+  "LoadBalancerBE9EEC3A": {
+   "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+   "Properties": {
+    "LoadBalancerAttributes": [
+     {
+      "Key": "deletion_protection.enabled",
+      "Value": "false"
+     },
+     {
+      "Key": "routing.http.drop_invalid_header_fields.enabled",
+      "Value": "true"
+     },
+     {
+      "Key": "access_logs.s3.enabled",
+      "Value": "true"
+     },
+     {
+      "Key": "access_logs.s3.bucket",
+      "Value": {
+       "Ref": "LoadBalancerLogsC31A6119"
+      }
+     },
+     {
+      "Key": "access_logs.s3.prefix",
+      "Value": "load-balancer"
+     }
+    ],
+    "Scheme": "internet-facing",
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "LoadBalancerSecurityGroupA28D6DD7",
+       "GroupId"
+      ]
+     }
+    ],
+    "Subnets": [
+     {
+      "Ref": "NetworkPublicSubnet1Subnet5B78347B"
+     },
+     {
+      "Ref": "NetworkPublicSubnet2SubnetC3758C96"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Type": "application"
+   },
+   "DependsOn": [
+    "LoadBalancerLogsPolicy8712CB4D",
+    "NetworkPublicSubnet1DefaultRoute1E5C22EC",
+    "NetworkPublicSubnet1RouteTableAssociation870BDE42",
+    "NetworkPublicSubnet2DefaultRoute2449ACD0",
+    "NetworkPublicSubnet2RouteTableAssociation1FAB434D"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/Resource"
+   }
+  },
+  "LoadBalancerSecurityGroupA28D6DD7": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Automatically created Security Group for ELB checkoutdevelopmentLoadBalancer1A47D95A",
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow from anyone on port 443",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow from anyone on port 80",
+      "FromPort": 80,
+      "IpProtocol": "tcp",
+      "ToPort": 80
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/SecurityGroup/Resource"
+   }
+  },
+  "LoadBalancerSecurityGrouptocheckoutdevelopmentServiceSecurityGroup6827F35E808086FEB0B8": {
+   "Type": "AWS::EC2::SecurityGroupEgress",
+   "Properties": {
+    "Description": "Load balancer to target",
+    "DestinationSecurityGroupId": {
+     "Fn::GetAtt": [
+      "ServiceSecurityGroupC96ED6A7",
+      "GroupId"
+     ]
+    },
+    "FromPort": 8080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "LoadBalancerSecurityGroupA28D6DD7",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "ToPort": 8080
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/SecurityGroup/to checkoutdevelopmentServiceSecurityGroup6827F35E:8080"
+   }
+  },
+  "LoadBalancerHttps0C5C99D2": {
+   "Type": "AWS::ElasticLoadBalancingV2::Listener",
+   "Properties": {
+    "Certificates": [
+     {
+      "CertificateArn": {
+       "Ref": "CertificateArn"
+      }
+     }
+    ],
+    "DefaultActions": [
+     {
+      "TargetGroupArn": {
+       "Ref": "LoadBalancerHttpsServiceGroup1D3A8943"
+      },
+      "Type": "forward"
+     }
+    ],
+    "LoadBalancerArn": {
+     "Ref": "LoadBalancerBE9EEC3A"
+    },
+    "Port": 443,
+    "Protocol": "HTTPS",
+    "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/Https/Resource"
+   }
+  },
+  "LoadBalancerHttpsServiceGroup1D3A8943": {
+   "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+   "Properties": {
+    "HealthCheckIntervalSeconds": 15,
+    "HealthCheckPath": "/health",
+    "HealthyThresholdCount": 2,
+    "Port": 8080,
+    "Protocol": "HTTP",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "TargetGroupAttributes": [
+     {
+      "Key": "deregistration_delay.timeout_seconds",
+      "Value": "30"
+     },
+     {
+      "Key": "stickiness.enabled",
+      "Value": "false"
+     }
+    ],
+    "TargetType": "ip",
+    "VpcId": {
+     "Ref": "Network1C6012B5"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/Https/ServiceGroup/Resource"
+   }
+  },
+  "LoadBalancerHttpF4A6AC3E": {
+   "Type": "AWS::ElasticLoadBalancingV2::Listener",
+   "Properties": {
+    "DefaultActions": [
+     {
+      "RedirectConfig": {
+       "Port": "443",
+       "Protocol": "HTTPS",
+       "StatusCode": "HTTP_301"
+      },
+      "Type": "redirect"
+     }
+    ],
+    "LoadBalancerArn": {
+     "Ref": "LoadBalancerBE9EEC3A"
+    },
+    "Port": 80,
+    "Protocol": "HTTP",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/LoadBalancer/Http/Resource"
+   }
+  },
+  "AlarmsTopicKeyAB251E47": {
+   "Type": "AWS::KMS::Key",
+   "Properties": {
+    "Description": "Encrypts the alarm topic of checkout-development.",
+    "EnableKeyRotation": true,
+    "KeyPolicy": {
+     "Statement": [
+      {
+       "Action": "kms:*",
+       "Effect": "Allow",
+       "Principal": {
+        "AWS": {
+         "Fn::Join": [
+          "",
+          [
+           "arn:",
+           {
+            "Ref": "AWS::Partition"
+           },
+           ":iam::",
+           {
+            "Ref": "AWS::AccountId"
+           },
+           ":root"
+          ]
+         ]
+        }
+       },
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey*"
+       ],
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cloudwatch.amazonaws.com"
+       },
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PendingWindowInDays": 7,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/TopicKey/Resource"
+   }
+  },
+  "AlarmsTopic3A2DFEBA": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "KmsMasterKeyId": {
+     "Fn::GetAtt": [
+      "AlarmsTopicKeyAB251E47",
+      "Arn"
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Topic/Resource"
+   }
+  },
+  "AlarmsTopicPolicyED3A875E": {
+   "Type": "AWS::SNS::TopicPolicy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sns:Publish",
+       "Condition": {
+        "Bool": {
+         "aws:SecureTransport": "false"
+        }
+       },
+       "Effect": "Deny",
+       "Principal": "*",
+       "Resource": {
+        "Ref": "AlarmsTopic3A2DFEBA"
+       },
+       "Sid": "AllowPublishThroughSSLOnly"
+      },
+      {
+       "Action": "sns:Publish",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cloudwatch.amazonaws.com"
+       },
+       "Resource": {
+        "Ref": "AlarmsTopic3A2DFEBA"
+       },
+       "Sid": "1"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Topics": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Topic/Policy/Resource"
+   }
+  },
+  "AlarmsEmailSubscription71D15C2C": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": {
+     "Ref": "AlertEmail"
+    },
+    "Protocol": "email",
+    "TopicArn": {
+     "Ref": "AlarmsTopic3A2DFEBA"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/EmailSubscription"
+   },
+   "Condition": "HasAlertEmail"
+  },
+  "AlarmsDashboard322222B8": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"start\":\"-PT8H\",\"periodOverride\":\"inherit\",\"widgets\":[{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":0,\"properties\":{\"markdown\":\"### Load balancer\"}},{\"type\":\"metric\",\"width\":12,\"height\":5,\"x\":0,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"5xx answers of its own\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApplicationELB\",\"HTTPCode_ELB_5XX_Count\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"HTTPCode_ELB_5XX_Count > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":5,\"x\":12,\"y\":1,\"properties\":{\"view\":\"timeSeries\",\"title\":\"5xx answers of its own, % of requests\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"5xx, % of requests\",\"expression\":\"100 * errors / (requests + errors)\",\"period\":60}],[\"AWS/ApplicationELB\",\"HTTPCode_ELB_5XX_Count\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"id\":\"errors\",\"visible\":false,\"period\":60,\"stat\":\"Sum\"}],[\"AWS/ApplicationELB\",\"RequestCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"id\":\"requests\",\"visible\":false,\"period\":60,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"5xx, % of requests > 5 for 3 datapoints within 3 minutes\",\"value\":5,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":6,\"properties\":{\"markdown\":\"### Service\"}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":0,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"5xx answers from the tasks\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApplicationELB\",\"HTTPCode_Target_5XX_Count\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"HTTPCode_Target_5XX_Count > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":6,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"5xx answers from the tasks, % of requests\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"5xx, % of requests\",\"expression\":\"100 * errors / requests\",\"period\":60}],[\"AWS/ApplicationELB\",\"HTTPCode_Target_5XX_Count\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"id\":\"errors\",\"visible\":false,\"period\":60,\"stat\":\"Sum\"}],[\"AWS/ApplicationELB\",\"RequestCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"id\":\"requests\",\"visible\":false,\"period\":60,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"5xx, % of requests > 5 for 3 datapoints within 3 minutes\",\"value\":5,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":12,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApplicationELB\",\"TargetResponseTime\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"stat\":\"p99\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"TargetResponseTime > 1 for 1 datapoints within 5 minutes\",\"value\":1,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":18,\"y\":7,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Running tasks\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"ECS/ContainerInsights\",\"RunningTaskCount\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\"]],\"annotations\":{\"horizontal\":[{\"label\":\"RunningTaskCount < 2 for 1 datapoints within 5 minutes\",\"value\":2,\"yAxis\":\"left\"}]},\"yAxis\":{}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":12,\"properties\":{\"markdown\":\"### Fargate Service **Service**\"}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":0,\"y\":13,\"properties\":{\"view\":\"timeSeries\",\"title\":\"CPU Utilization\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ECS\",\"CPUUtilization\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\",{\"label\":\"Cluster CPU Utilization Average\"}],[\"AWS/ECS\",\"CPUUtilization\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\",{\"label\":\"Cluster CPU Utilization p100\",\"stat\":\"p100\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Cluster CPU Utilization Average > 90 for 1 datapoints within 5 minutes\",\"value\":90,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"max\":100,\"label\":\"%\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":6,\"y\":13,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Memory Utilization\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ECS\",\"MemoryUtilization\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\",{\"label\":\"Cluster Memory Utilization Average\"}],[\"AWS/ECS\",\"MemoryUtilization\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\",{\"label\":\"Cluster Memory Utilization p100\",\"stat\":\"p100\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Cluster Memory Utilization Average > 90 for 1 datapoints within 5 minutes\",\"value\":90,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"max\":100,\"label\":\"%\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":12,\"y\":13,\"properties\":{\"view\":\"timeSeries\",\"title\":\"TCP Flows\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApplicationELB\",\"ActiveConnectionCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"label\":\"Active\",\"stat\":\"Sum\"}],[\"AWS/ApplicationELB\",\"NewConnectionCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"label\":\"New\",\"stat\":\"Sum\"}],[{\"label\":\"Unhealthy routing (fail open)\",\"expression\":\"FILL(unhealthyRoutingRequestCount, 0)\"}],[\"AWS/ApplicationELB\",\"UnhealthyRoutingRequestCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::Select": [
+         1,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         2,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         3,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "\",\"TargetGroup\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerHttpsServiceGroup1D3A8943",
+         "TargetGroupFullName"
+        ]
+       },
+       "\",{\"id\":\"unhealthyRoutingRequestCount\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/ApplicationELB\",\"ProcessedBytes\",\"LoadBalancer\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerBE9EEC3A",
+         "LoadBalancerFullName"
+        ]
+       },
+       "\",{\"label\":\"Processed Bytes (min)\",\"stat\":\"Minimum\",\"yAxis\":\"right\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false},\"right\":{\"min\":0,\"label\":\"bytes\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":5,\"x\":18,\"y\":13,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Task Health\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"ECS/ContainerInsights\",\"RunningTaskCount\",\"ClusterName\",\"",
+       {
+        "Ref": "ClusterEB0386A7"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::GetAtt": [
+         "ServiceD69D759B",
+         "Name"
+        ]
+       },
+       "\",{\"label\":\"Running Tasks\"}],[\"AWS/ApplicationELB\",\"HealthyHostCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::Select": [
+         1,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         2,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         3,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "\",\"TargetGroup\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerHttpsServiceGroup1D3A8943",
+         "TargetGroupFullName"
+        ]
+       },
+       "\",{\"color\":\"#2ca02c\",\"label\":\"Healthy Tasks\",\"stat\":\"Minimum\"}],[\"AWS/ApplicationELB\",\"UnHealthyHostCount\",\"LoadBalancer\",\"",
+       {
+        "Fn::Select": [
+         1,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         2,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "/",
+       {
+        "Fn::Select": [
+         3,
+         {
+          "Fn::Split": [
+           "/",
+           {
+            "Ref": "LoadBalancerHttps0C5C99D2"
+           }
+          ]
+         }
+        ]
+       },
+       "\",\"TargetGroup\",\"",
+       {
+        "Fn::GetAtt": [
+         "LoadBalancerHttpsServiceGroup1D3A8943",
+         "TargetGroupFullName"
+        ]
+       },
+       "\",{\"color\":\"#d62728\",\"label\":\"Unhealthy Tasks\",\"stat\":\"Maximum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Unhealthy Tasks > 0 for 2 datapoints within 3 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"text\",\"width\":24,\"height\":1,\"x\":0,\"y\":18,\"properties\":{\"markdown\":\"### Dynamo Table **[Items](https://",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".console.aws.amazon.com/dynamodb/home?region=",
+       {
+        "Ref": "AWS::Region"
+       },
+       "#tables:selected=",
+       {
+        "Ref": "Items5C12978B"
+       },
+       ")**\"}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":19,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Read Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_rcu_sum/PERIOD(consumed_rcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedReadCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"consumed_rcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":3,\"x\":0,\"y\":22,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Write Usage\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Consumed\",\"expression\":\"consumed_wcu_sum/PERIOD(consumed_wcu_sum)\"}],[\"AWS/DynamoDB\",\"ConsumedWriteCapacityUnits\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"consumed_wcu_sum\",\"visible\":false,\"stat\":\"Sum\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":9,\"height\":6,\"x\":6,\"y\":19,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Latency (Average)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\" \",\"expression\":\"SEARCH('{\\\"AWS/DynamoDB\\\",\\\"TableName\\\",\\\"Operation\\\"} \\\"TableName\\\"=\\\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\\\" MetricName=\\\"SuccessfulRequestLatency\\\"', 'Average', 300)\"}]],\"yAxis\":{\"left\":{\"min\":0,\"label\":\"ms\",\"showUnits\":false}},\"legend\":{\"position\":\"right\"}}},{\"type\":\"metric\",\"width\":3,\"height\":6,\"x\":15,\"y\":19,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Throttles\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"Read\",\"expression\":\"FILL(readThrottles,0)\"}],[\"AWS/DynamoDB\",\"ReadThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"label\":\"Read\",\"id\":\"readThrottles\",\"visible\":false,\"stat\":\"Sum\"}],[{\"label\":\"Write\",\"expression\":\"FILL(writeThrottles,0)\"}],[\"AWS/DynamoDB\",\"WriteThrottleEvents\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"label\":\"Write\",\"id\":\"writeThrottles\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"Read > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"},{\"label\":\"Write > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}},{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":18,\"y\":19,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[{\"label\":\"System Errors\",\"expression\":\"systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchGetItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorBatchGetItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Scan\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorScan\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"Query\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorQuery\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"GetRecords\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorGetRecords\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"PutItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorPutItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"DeleteItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorDeleteItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"UpdateItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorUpdateItem\",\"visible\":false,\"stat\":\"Sum\"}],[\"AWS/DynamoDB\",\"SystemErrors\",\"Operation\",\"BatchWriteItem\",\"TableName\",\"",
+       {
+        "Ref": "Items5C12978B"
+       },
+       "\",{\"id\":\"systemErrorBatchWriteItem\",\"visible\":false,\"stat\":\"Sum\"}]],\"annotations\":{\"horizontal\":[{\"label\":\"System Errors > 0 for 1 datapoints within 5 minutes\",\"value\":0,\"yAxis\":\"left\"}]},\"yAxis\":{\"left\":{\"min\":0,\"label\":\"Count\",\"showUnits\":false}}}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "checkout-development",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Dashboard/Dashboard/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentLoadBalancer5xxWarning5F4484A7": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 0 has been breached.",
+    "AlarmName": "checkout-development-LoadBalancer-5xx-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+     {
+      "Name": "LoadBalancer",
+      "Value": {
+       "Fn::GetAtt": [
+        "LoadBalancerBE9EEC3A",
+        "LoadBalancerFullName"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "HTTPCode_ELB_5XX_Count",
+    "Namespace": "AWS/ApplicationELB",
+    "Period": 300,
+    "Statistic": "Sum",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-LoadBalancer-5xx-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentLoadBalancer5xxRateCriticalA7C867D1": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 5 has been breached.",
+    "AlarmName": "checkout-development-LoadBalancer-5xx-Rate-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 3,
+    "EvaluationPeriods": 3,
+    "Metrics": [
+     {
+      "Expression": "100 * errors / (requests + errors)",
+      "Id": "expr_1",
+      "Label": "5xx, % of requests",
+      "ReturnData": true
+     },
+     {
+      "Id": "errors",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "LoadBalancer",
+          "Value": {
+           "Fn::GetAtt": [
+            "LoadBalancerBE9EEC3A",
+            "LoadBalancerFullName"
+           ]
+          }
+         }
+        ],
+        "MetricName": "HTTPCode_ELB_5XX_Count",
+        "Namespace": "AWS/ApplicationELB"
+       },
+       "Period": 60,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "requests",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "LoadBalancer",
+          "Value": {
+           "Fn::GetAtt": [
+            "LoadBalancerBE9EEC3A",
+            "LoadBalancerFullName"
+           ]
+          }
+         }
+        ],
+        "MetricName": "RequestCount",
+        "Namespace": "AWS/ApplicationELB"
+       },
+       "Period": 60,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-LoadBalancer-5xx-Rate-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentService5xxWarning56D0548F": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 0 has been breached.",
+    "AlarmName": "checkout-development-Service-5xx-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+     {
+      "Name": "LoadBalancer",
+      "Value": {
+       "Fn::GetAtt": [
+        "LoadBalancerBE9EEC3A",
+        "LoadBalancerFullName"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "HTTPCode_Target_5XX_Count",
+    "Namespace": "AWS/ApplicationELB",
+    "Period": 300,
+    "Statistic": "Sum",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-5xx-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentService5xxRateCriticalD4DDEA89": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 5 has been breached.",
+    "AlarmName": "checkout-development-Service-5xx-Rate-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 3,
+    "EvaluationPeriods": 3,
+    "Metrics": [
+     {
+      "Expression": "100 * errors / requests",
+      "Id": "expr_1",
+      "Label": "5xx, % of requests",
+      "ReturnData": true
+     },
+     {
+      "Id": "errors",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "LoadBalancer",
+          "Value": {
+           "Fn::GetAtt": [
+            "LoadBalancerBE9EEC3A",
+            "LoadBalancerFullName"
+           ]
+          }
+         }
+        ],
+        "MetricName": "HTTPCode_Target_5XX_Count",
+        "Namespace": "AWS/ApplicationELB"
+       },
+       "Period": 60,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "requests",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "LoadBalancer",
+          "Value": {
+           "Fn::GetAtt": [
+            "LoadBalancerBE9EEC3A",
+            "LoadBalancerFullName"
+           ]
+          }
+         }
+        ],
+        "MetricName": "RequestCount",
+        "Namespace": "AWS/ApplicationELB"
+       },
+       "Period": 60,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-5xx-Rate-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentServiceLatencyP99WarningE9396E17": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 1 has been breached.",
+    "AlarmName": "checkout-development-Service-Latency-P99-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+     {
+      "Name": "LoadBalancer",
+      "Value": {
+       "Fn::GetAtt": [
+        "LoadBalancerBE9EEC3A",
+        "LoadBalancerFullName"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "ExtendedStatistic": "p99",
+    "MetricName": "TargetResponseTime",
+    "Namespace": "AWS/ApplicationELB",
+    "Period": 300,
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 1,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-Latency-P99-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentServiceRunningTasksCriticalBC469BE1": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Threshold of 2 has been breached.",
+    "AlarmName": "checkout-development-Service-Running-Tasks-Critical",
+    "ComparisonOperator": "LessThanThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+     {
+      "Name": "ClusterName",
+      "Value": {
+       "Ref": "ClusterEB0386A7"
+      }
+     },
+     {
+      "Name": "ServiceName",
+      "Value": {
+       "Fn::GetAtt": [
+        "ServiceD69D759B",
+        "Name"
+       ]
+      }
+     }
+    ],
+    "EvaluationPeriods": 1,
+    "MetricName": "RunningTaskCount",
+    "Namespace": "ECS/ContainerInsights",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 2,
+    "TreatMissingData": "breaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-Running-Tasks-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentServiceUnhealthyTasksCritical186C91C5": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Number of unhealthy tasks is too high.",
+    "AlarmName": "checkout-development-Service-Unhealthy-Tasks-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 2,
+    "EvaluationPeriods": 3,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "Unhealthy Tasks",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "LoadBalancer",
+          "Value": {
+           "Fn::Join": [
+            "",
+            [
+             {
+              "Fn::Select": [
+               1,
+               {
+                "Fn::Split": [
+                 "/",
+                 {
+                  "Ref": "LoadBalancerHttps0C5C99D2"
+                 }
+                ]
+               }
+              ]
+             },
+             "/",
+             {
+              "Fn::Select": [
+               2,
+               {
+                "Fn::Split": [
+                 "/",
+                 {
+                  "Ref": "LoadBalancerHttps0C5C99D2"
+                 }
+                ]
+               }
+              ]
+             },
+             "/",
+             {
+              "Fn::Select": [
+               3,
+               {
+                "Fn::Split": [
+                 "/",
+                 {
+                  "Ref": "LoadBalancerHttps0C5C99D2"
+                 }
+                ]
+               }
+              ]
+             }
+            ]
+           ]
+          }
+         },
+         {
+          "Name": "TargetGroup",
+          "Value": {
+           "Fn::GetAtt": [
+            "LoadBalancerHttpsServiceGroup1D3A8943",
+            "TargetGroupFullName"
+           ]
+          }
+         }
+        ],
+        "MetricName": "UnHealthyHostCount",
+        "Namespace": "AWS/ApplicationELB"
+       },
+       "Period": 60,
+       "Stat": "Maximum"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "missing"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-Unhealthy-Tasks-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentServiceCPUUsageWarning80537CDD": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "The CPU usage is too high.",
+    "AlarmName": "checkout-development-Service-CPU-Usage-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "Cluster CPU Utilization Average",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "ClusterName",
+          "Value": {
+           "Ref": "ClusterEB0386A7"
+          }
+         },
+         {
+          "Name": "ServiceName",
+          "Value": {
+           "Fn::GetAtt": [
+            "ServiceD69D759B",
+            "Name"
+           ]
+          }
+         }
+        ],
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/ECS"
+       },
+       "Period": 300,
+       "Stat": "Average"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 90,
+    "TreatMissingData": "missing"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-CPU-Usage-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentServiceMemoryUsageWarning10F1D67B": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "The memory usage is too high.",
+    "AlarmName": "checkout-development-Service-Memory-Usage-Warning",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Id": "m1",
+      "Label": "Cluster Memory Utilization Average",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "ClusterName",
+          "Value": {
+           "Ref": "ClusterEB0386A7"
+          }
+         },
+         {
+          "Name": "ServiceName",
+          "Value": {
+           "Fn::GetAtt": [
+            "ServiceD69D759B",
+            "Name"
+           ]
+          }
+         }
+        ],
+        "MetricName": "MemoryUtilization",
+        "Namespace": "AWS/ECS"
+       },
+       "Period": 300,
+       "Stat": "Average"
+      },
+      "ReturnData": true
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 90,
+    "TreatMissingData": "missing"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Service-Memory-Usage-Warning/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentItemsReadThrottledEventsCriticalDBC3FBAB": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Read throttled events above threshold.",
+    "AlarmName": "checkout-development-Items-Read-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(readThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Read",
+      "ReturnData": true
+     },
+     {
+      "Id": "readThrottles",
+      "Label": "Read",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "ReadThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Items-Read-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentItemsWriteThrottledEventsCriticalC1F348EE": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "Write throttled events above threshold.",
+    "AlarmName": "checkout-development-Items-Write-Throttled-Events-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "FILL(writeThrottles,0)",
+      "Id": "expr_1",
+      "Label": "Write",
+      "ReturnData": true
+     },
+     {
+      "Id": "writeThrottles",
+      "Label": "Write",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "WriteThrottleEvents",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Items-Write-Throttled-Events-Critical/Resource"
+   }
+  },
+  "AlarmsMonitoringcheckoutdevelopmentItemsSystemErrorCountCritical832F5D9D": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "ActionsEnabled": true,
+    "AlarmActions": [
+     {
+      "Ref": "AlarmsTopic3A2DFEBA"
+     }
+    ],
+    "AlarmDescription": "SystemError count is too high.",
+    "AlarmName": "checkout-development-Items-SystemError-Count-Critical",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "EvaluationPeriods": 1,
+    "Metrics": [
+     {
+      "Expression": "systemErrorGetItem+systemErrorBatchGetItem+systemErrorScan+systemErrorQuery+systemErrorGetRecords+systemErrorPutItem+systemErrorDeleteItem+systemErrorUpdateItem+systemErrorBatchWriteItem",
+      "Id": "expr_1",
+      "Label": "System Errors",
+      "ReturnData": true
+     },
+     {
+      "Id": "systemErrorGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchGetItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchGetItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorScan",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Scan"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorQuery",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "Query"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorGetRecords",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "GetRecords"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorPutItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "PutItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorDeleteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "DeleteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorUpdateItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "UpdateItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     },
+     {
+      "Id": "systemErrorBatchWriteItem",
+      "MetricStat": {
+       "Metric": {
+        "Dimensions": [
+         {
+          "Name": "Operation",
+          "Value": "BatchWriteItem"
+         },
+         {
+          "Name": "TableName",
+          "Value": {
+           "Ref": "Items5C12978B"
+          }
+         }
+        ],
+        "MetricName": "SystemErrors",
+        "Namespace": "AWS/DynamoDB"
+       },
+       "Period": 300,
+       "Stat": "Sum"
+      },
+      "ReturnData": false
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "c4factory:container",
+      "Value": "checkout"
+     },
+     {
+      "Key": "c4factory:project",
+      "Value": "webshop"
+     },
+     {
+      "Key": "c4factory:system",
+      "Value": "shop"
+     }
+    ],
+    "Threshold": 0,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/Alarms/Monitoring/checkout-development-Items-SystemError-Count-Critical/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/+1ZXY/buBX9LeHjglFnJ8UW8JvGdgI3MxnXciZojSCgyWuZOxSpJSk7rqD/XvBLluPZbBbdoLOFHxKLl1+Hh5fnXnKus+u/vcquXpC9eUnZ40vB11lbWEIf8Xgj50STCixoTPbmU8sOklSKrbN2SdYCVi2qibbcciXfwgGNWiRJBWiEfkAY2UPtPgvUYbTmQnBZ3inmTPP8n5/m08WnxfQf76fFEmEEkupD7cZBI5R/KD7d5e/yN9MJwqhWXNqZXPIKFkDVDvShqIHyDackdGifajOVDiFDow0RBjqMGAhw7edaWaChp6/DSEOldkTMleD0gEaIgbFaHVD30XHgl9phoNdZ+1DTVYsq8jn/t4nLlMS+IRb25JAspllLsGMlN7xsdAS5OuEmNFkGhubNWnCKMKKc6TtiHn2jDn+lh+Y7YuGsy0eMyoBlKpknJWHSbkmc2glsSCNsAbTR3B7eaNXUiSO/2of5GAdAhZ9x1SKyI1yQNRfcHv6lZEK0q+mMxW8H40Yo+hjLFanDILP6Xt6SRtItGlndAEa83v00/qI5MYaXclbvfsoZ02DMvRxriMxFLp4FCg+EsXf9nqPRyvX1PjHRhMtJv+N+Q54N8ueBIvhY8Cz3tVCNBX/AjvajLTdGUe4H6Bu7j+ls7n6Ou4DjgfjDXTYKxP+a8/8OxvNB8kxgBC+cSQtaQu9DQfxiKbeW0G0F0uJoeahpEtVV6xAnYQa94xROgl/Xa2nqgl8Ltb9V5ap1UqwaTSFquRvDBRwujxgxsppsNpzGNovp36fjZYxHcSR8ouEDSFGjZrJ0q180ApJIddj9eO68MB0XwcBQzesBACKE2udC3Dd2rRp5DKRPDN4iSuRMCi4hWIJGUCVliLQpCjWS/9JA3OruHBBhbPorqN2QH7/j7EGYhpSeGeK0Z/YAucOcVFm7UD4v0krAu2P0JsY0FbAbnyPVmkvKayJySlUj7Ukb1z+nR2+NS16qeeqV0pRVG8OLd9VAQF+HfkDfUPl/hgqf0v5dQX593F+v/RgimQAczDF9CJMtlas5w3BuZqywxILTJ5OmfX4D/S6zJyZw0mGhSpO1t6pM4qbBggw7/erqKxk7/vamfsI0hcvvTdaORWMs6BOBp0pawiXomTS83FrzcI1GCOL9IgwT++HXRLsEfEnM4wQ2XPqrkd/iJ/7F28WwKR6nyQa2OGgRAs0q9YxlXFAiHBY30tidkQ5TVUpuVda+N6DnSolViwyITcFL+b4+vRph5OOlzAUnBow7dFARLoKOdhiRcPLSxQqNrjGqiTF7pVlitUUVl7cgS7vtLxy/NFzDrdqDpsT0shzt7+v6SfuEl9y5xImxOFRrJXqrhaqeRwAPRHDG7SEJQLUhaITu58vZ/bv8FnlDAVRJ9ppQq7SDqmydhjKV+QNuiIllnD7GgoNPE5poSLLV2K0L355lXxeXkfA4W6HrnvsSJGi/91SD7eEwbtwW3ueN7TPyWsMOpHUQpp+5sSApTLVWuueNUArGLNUjyFPaThYRsHeY1LWIV2zSWGUocTf4rD26my59rh0TICe7piYuE0JAjcuMYssJr0CaY2qREqA+5dNeS0K2x+WY1IQmbC7/+3xicUfcjQxLtdSEPt6Bu9j297BaA3NHB1iq8KPUfucGETlS6FYDsz7r8mt6IKLpr92hfqyUYGrf3+rCATxhAocfj4nLsgh8BY9JrXtDh82rrL1p6KOn8OT5o3g1eP1Yu8w25L+5376IC+RGaQpFcZt2V/AN0AMVPgmKonruuBqcvKTQeDvs47v02hSWGBDi8BMDVovWvjjwnWF9h0EQYzkVirA1EURSLsvdddbmR4+6VYTd+DrQqy8lcViJh528V592ONPT1GjYMexMn9QNih1+rEzWvgW3rPMkOIj8WzgslI3ZeRKmp/UAoxok47L8wCVT+wFFb8FtujRZu1Q1D69ILmT4d7MntzS+PrnW2P/f829dyaToe2w2cLZm3a+lw1Sohu2JpdusnRCzXSuimVtw+h6cC2OJTllWDZordr8Drbl/uONyC5pbd2MjmjtuzDDT+sBZCTGg40Fm8A12tOesjx1bcHE2FvZESy5L80XRB2Ev+V84wXcd23PdU4hzQXTltjJKTfvbIxLXZXgzcOXJmedRVdVEc6Pkfe0igItcQbeIJeFlb6n89Em6thrMVomkqbAjovE+O/e7aE7tLjAXpKoF+JRhDpq6pKnXYeuuzHfcGC7LCbEuqEplbzQQuuWydMDD3apPJkLE8tx7XCkxTzmfVbmU/TFaeduFtwtvF94uvF14+xPztr6Q9vtJq0LpQtmFsgtlz4mySxS48PZn5s3fUH3TrsOL+NKWXkx85X1j68b/9X2sJOPhiUAqBtnP5i+7679m19fZjy9+Npy/1I20vIJsEX7xVXaVXb0Ib2n+CdHPm7X53hRKNB46du/SoIX7k9h/AO6J5StdJAAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "checkout-development/CDKMetadata/Default"
+   },
+   "Condition": "CDKMetadataAvailable"
+  }
+ },
+ "Outputs": {
+  "UsersUserPoolIdEEA1989E": {
+   "Description": "The Cognito user pool whose users may call the service.",
+   "Value": {
+    "Ref": "UsersPoolBFC35D3B"
+   }
+  },
+  "UsersUserPoolClientId8C554B1D": {
+   "Description": "The app client to sign in through (initiate-auth --client-id).",
+   "Value": {
+    "Ref": "UsersPoolClient39A19381"
+   }
+  },
+  "UsersIssuerFEFC9F59": {
+   "Description": "The issuer of the access tokens the service accepts.",
+   "Value": {
+    "Fn::GetAtt": [
+     "UsersPoolBFC35D3B",
+     "ProviderURL"
+    ]
+   }
+  },
+  "AlarmTopicArn": {
+   "Description": "The SNS topic every alarm of this stack notifies.",
+   "Value": {
+    "Ref": "AlarmsTopic3A2DFEBA"
+   }
+  },
+  "EntryPoint": {
+   "Description": "The load balancer’s DNS name: point the certificate’s domain at it (a CNAME or an alias record).",
+   "Value": {
+    "Fn::GetAtt": [
+     "LoadBalancerBE9EEC3A",
+     "DNSName"
+    ]
+   }
+  }
+ },
+ "Conditions": {
+  "HasAlertEmail": {
+   "Fn::Not": [
+    {
+     "Fn::Equals": [
+      {
+       "Ref": "AlertEmail"
+      },
+      ""
+     ]
+    }
+   ]
+  },
+  "CDKMetadataAvailable": {
+   "Fn::Or": [
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "af-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-3"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-south-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-3"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-4"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ca-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ca-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-northwest-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-central-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-south-2"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-3"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "il-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "sa-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-west-1"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Equals": [
+      {
+       "Ref": "AWS::Region"
+      },
+      "us-west-2"
+     ]
+    }
+   ]
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

@@ -95,6 +95,16 @@ func shipment(framework, version string, files []ports.File) ports.Shipment {
 	return ports.Shipment{App: testApp, DisplayName: framework, Version: version, Files: files}
 }
 
+// testImage is a release's image in the Registry, by digest.
+const testImage = "gitea.example/webshop/checkout@sha256:" +
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// withImage is s with testImage, copied into w's fake ECR.
+func (w *world) withImage(s ports.Shipment) ports.Shipment {
+	s.Image, s.CopyImage = testImage, w.aws.copyImage(testImage)
+	return s
+}
+
 // shipUntilDeployed ships s until State reports it Deployed, and returns
 // that state.
 func shipUntilDeployed(t *testing.T, d *Deployer, target ports.Target, s ports.Shipment) ports.DeployState {
@@ -169,14 +179,19 @@ func TestDeployerContract(t *testing.T) {
 	})
 }
 
-// Each of the four Frameworks' assemblies ships to Deployed at both tiers,
-// bootstrap first, and shipping it again starts nothing (#1608).
+// Each of the five Frameworks' assemblies ships to Deployed at both tiers,
+// bootstrap first, and shipping it again starts nothing (#1608); Fargate's
+// with its image (#1610).
 func TestShipEachFramework(t *testing.T) {
-	cases := map[string]struct{ stack, url string }{
-		"aws-lambda-ts": {stack: "price-fn", url: "http://price-fn"},
-		"aws-lambda-go": {stack: "stock-fn", url: "http://stock-fn"},
-		"aws-lambda-py": {stack: "tax-fn", url: "http://tax-fn"},
-		"aws-ec2-ts":    {stack: "search", url: "https://search"},
+	cases := map[string]struct {
+		stack, url string
+		image      bool
+	}{
+		"aws-lambda-ts":  {stack: "price-fn", url: "http://price-fn"},
+		"aws-lambda-go":  {stack: "stock-fn", url: "http://stock-fn"},
+		"aws-lambda-py":  {stack: "tax-fn", url: "http://tax-fn"},
+		"aws-ec2-ts":     {stack: "search", url: "https://search"},
+		"aws-fargate-ts": {stack: "checkout", url: "https://checkout", image: true},
 	}
 	for framework, c := range cases {
 		files := fixtureFiles(t, framework)
@@ -190,7 +205,11 @@ func TestShipEachFramework(t *testing.T) {
 				if tier == "development" {
 					stack += "-development"
 				}
-				st := shipUntilDeployed(t, w.d, tt, shipment(framework, "v1.0.0", files))
+				s := shipment(framework, "v1.0.0", files)
+				if c.image {
+					s = w.withImage(s)
+				}
+				st := shipUntilDeployed(t, w.d, tt, s)
 				if want := strings.Replace(c.url, c.stack, stack, 1) + ".example"; st.URL != want ||
 					st.Health != ports.HealthHealthy {
 					t.Errorf("State() = %+v, want URL %s and Healthy", st, want)
@@ -212,13 +231,16 @@ func TestShipEachFramework(t *testing.T) {
 				}
 				puts := len(a.puts)
 				for range 3 {
-					if err := w.d.Ship(context.Background(), tt, shipment(framework, "v1.0.0", files)); err != nil {
+					if err := w.d.Ship(context.Background(), tt, s); err != nil {
 						t.Fatalf("Ship() again = %v", err)
 					}
 				}
 				if n := a.appExecutions(testApp); n != 1 || len(a.appChangeSets()) != 1 || len(a.puts) != puts {
 					t.Errorf("after shipping again: %d executions, %d change sets, %d puts; want 1, 1, %d", n,
 						len(a.appChangeSets()), len(a.puts), puts)
+				}
+				if c.image != (len(a.copies) == 1) {
+					t.Errorf("image copies = %v, want one only when the stack runs an image", a.copies)
 				}
 			})
 		}
@@ -605,6 +627,43 @@ func TestShipArtifactMissing(t *testing.T) {
 	if err := w.d.Ship(context.Background(), tt, shipment("aws-lambda-ts", "v1.0.0", files)); !errors.Is(err,
 		ports.ErrArtifactMissing) {
 		t.Errorf("Ship() of a tier the release lacks = %v, want ErrArtifactMissing", err)
+	}
+}
+
+// A stack that runs the release's image gets it copied by digest into the
+// bootstrap's ECR repository, as the image-publishing role, and its
+// ImageUri names the copy; a release whose image is there copies nothing,
+// and a release without one is ErrArtifactMissing before anything is
+// published (#1610).
+func TestShipImage(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	files := fixtureFiles(t, "aws-fargate-ts")
+	tt.Parameters = map[string]string{"CertificateArn": "arn:aws:acm:eu-west-1:1:certificate/x"}
+
+	err := w.d.Ship(context.Background(), tt, shipment("aws-fargate-ts", "v1.0.0", files))
+	if !errors.Is(err, ports.ErrArtifactMissing) || !strings.Contains(err.Error(), "checkout") {
+		t.Errorf("Ship() without an image = %v, want ErrArtifactMissing naming the stack", err)
+	}
+	if len(a.puts) != 0 || len(a.appChangeSets()) != 0 {
+		t.Fatalf("without an image: %d puts, %d change sets; want none", len(a.puts), len(a.appChangeSets()))
+	}
+
+	shipUntilDeployed(t, w.d, tt, w.withImage(shipment("aws-fargate-ts", "v1.0.0", files)))
+	repo := "cdk-hnb659fds-container-assets-" + a.id + "-" + testRegion
+	want := a.id + ".dkr.ecr." + testRegion + ".amazonaws.com/" + repo + "@" + strings.TrimPrefix(testImage,
+		"gitea.example/webshop/checkout@")
+	if len(a.copies) != 1 || a.copies[0].What != want {
+		t.Errorf("copies = %+v, want one to %s", a.copies, want)
+	}
+	sets := a.appChangeSets()
+	if len(sets) != 1 || params(sets[0].In.Parameters)["ImageUri"] != want {
+		t.Fatalf("change sets = %+v, want one with ImageUri %s", sets, want)
+	}
+
+	shipUntilDeployed(t, w.d, tt, w.withImage(shipment("aws-fargate-ts", "v1.0.1", files)))
+	if len(a.copies) != 1 {
+		t.Errorf("copies after a release of the same image = %d, want 1", len(a.copies))
 	}
 }
 

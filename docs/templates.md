@@ -304,7 +304,7 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.6.0)
+### gitea-release (v1.7.0)
 
 A Deployment for cli, extension and operator Containers, and for the AWS
 Frameworks' function, service and static-site ones:
@@ -328,7 +328,11 @@ renders its lists loose, a blank line before the step that watches the run
 and before each item of "When a run fails", so ts-standard's Prettier check
 passes it (#1707). Since v1.6.0 it supports `function`, `service` and
 `static-site` for the AWS Frameworks, whose `make dist` writes the flat
-cloud assembly a `cloudFormation` DeployTarget ships (#1607).
+cloud assembly a `cloudFormation` DeployTarget ships (#1607). Since
+v1.7.0 an `aws-fargate-ts` service's release has the `image` job too: the
+release job names no image, and the deployer copies the digest the
+factory pushed into the bootstrap's ECR repository and passes it as the
+stack's `ImageUri` parameter (#1610).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli",
   "node cli", "go cli", "vscode extension" and the AWS combos and checks
@@ -429,7 +433,7 @@ envtest).
 
 aws-lambda-ts (v1.4.0), aws-lambda-go (v1.3.0) and aws-lambda-py (v1.3.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.2.0) and
-aws-fargate-ts (v1.3.0): a Node service behind an HTTPS load balancer.
+aws-fargate-ts (v2.0.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
 Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
@@ -462,7 +466,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.19.0)
+### aws-standard (v1.19.1)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -471,7 +475,8 @@ fetch factory packages (#1231); since v1.18.1 `~/.netrc` names the index's
 host without its port, as ts-standard v1.6.2's does (#1696). Since v1.19.0
 `make dist VERSION=<tag>` writes both tiers' cloud assemblies, flat, into
 `dist/` (`infra/dist.ts`, tested by `infra/dist.test.ts` on a synth) for
-gitea-release to attach (#1607).
+gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
+(#1610).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

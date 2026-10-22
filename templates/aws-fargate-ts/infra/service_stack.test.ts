@@ -342,6 +342,61 @@ describe('ServiceStack', () => {
     }
   });
 
+  it('runs the release’s image by digest, pulled from the bootstrap’s repository only', () => {
+    production.hasParameter('ImageUri', {
+      Type: 'String',
+      AllowedPattern: Match.stringLikeRegexp('@sha256:'),
+    });
+    production.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({ Name: 'App', Image: { Ref: 'ImageUri' } }),
+      ]),
+    });
+    production.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: [{ Ref: Match.stringLikeRegexp('^TaskExecutionRole') }],
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: [
+              'ecr:BatchCheckLayerAvailability',
+              'ecr:BatchGetImage',
+              'ecr:GetDownloadUrlForLayer',
+            ],
+            Resource: {
+              'Fn::Join': [
+                '',
+                Match.arrayWith([
+                  Match.stringLikeRegexp(':repository/cdk-hnb659fds-container-assets-'),
+                ]),
+              ],
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('pulls from the repository of the bootstrap qualifier the deployer copies to', () => {
+    const app = new App({ context: { '@aws-cdk/core:bootstrapQualifier': 'myq' } });
+    const template = Template.fromStack(
+      new ServiceStack(app, 'test', { tier: 'production', operations: OPERATIONS }),
+    );
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Resource: {
+              'Fn::Join': [
+                '',
+                Match.arrayWith([Match.stringLikeRegexp(':repository/cdk-myq-container-assets-')]),
+              ],
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
   it('serves HTTPS with the deployer’s certificate, and redirects HTTP to it', () => {
     production.hasParameter('CertificateArn', { Type: 'String' });
     production.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {

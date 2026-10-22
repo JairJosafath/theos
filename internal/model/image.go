@@ -44,18 +44,27 @@ const DeploymentK8sManifests = "k8s-manifests"
 // itself takes, its release carrying the cloud assembly.
 const DeploymentGiteaRelease = "gitea-release"
 
+// FrameworkAWSFargate is the catalog Framework that deploys a service to
+// ECS on Fargate; its release builds the service's image, which its stack
+// takes by digest (docs/plans/aws-deploy.md, decision 8).
+const FrameworkAWSFargate = "aws-fargate-ts"
+
 // imageBuilders are the catalog choices whose release builds an image: a
-// Deployment, and the Container type it does so for, "" for any.
-var imageBuilders = []struct{ deployment, typ string }{
-	{DeploymentK8sManifests, ""},
-	{DeploymentGiteaRelease, TypeOperator},
+// Deployment, and the Framework and Container type it does so for, "" for
+// any.
+var imageBuilders = []struct{ deployment, framework, typ string }{
+	{DeploymentK8sManifests, "", ""},
+	{DeploymentGiteaRelease, "", TypeOperator},
+	{DeploymentGiteaRelease, FrameworkAWSFargate, ""},
 }
 
 // BuildsImage reports whether a release of a Container with Deployment
-// deployment and type typ builds an image the operator pushes.
-func BuildsImage(deployment, typ string) bool {
+// deployment, Framework framework and type typ builds an image the operator
+// pushes.
+func BuildsImage(deployment, framework, typ string) bool {
 	for _, b := range imageBuilders {
-		if b.deployment == deployment && (b.typ == "" || b.typ == typ) {
+		if b.deployment == deployment && (b.framework == "" || b.framework == framework) &&
+			(b.typ == "" || b.typ == typ) {
 			return true
 		}
 	}

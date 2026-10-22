@@ -38,16 +38,20 @@ page, or, for AWS, let a `cloudFormation` deploy target ship them.
   IMG=<host>/<owner>/<repository>@<digest>`, so `install.yaml` as attached
   applies. The factory pushes a tag once, so the `release` job asks the
   registry for the tag's digest first and names it when it holds one; only a
-  first run names the digest just built. Other types have no image job.
+  first run names the digest just built. An `aws-fargate-ts` service's
+  release has the same `image` job (#1610), before a `release` job that names
+  no image: its stack takes the image as the `ImageUri` deploy parameter, and
+  the deployer copies the digest the factory pushed to the cloud. Every other
+  Container has no image job (`model.BuildsImage`).
 - **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
-  for Python projects), which the checks use too, and for an operator one
-  labelled `image` (BuildKit). The workflow token creates the release and
+  for Python projects), which the checks use too, and for a release that
+  builds an image one labelled `image` (BuildKit). The workflow token creates the release and
   uploads the files; no secrets.
 - **Release:** `git tag v0.1.0 && git push origin v0.1.0`, or create the tag in
   Gitea. Only the operator's Git user may push `v*` tags to a protected
   repository. Running the workflow again for a tag replaces its files.
 
-The workflow is a template only to pick the operator's `image` job: its `${{ }}`
+The workflow is a template only to pick the `image` job: its `${{ }}`
 expressions are Gitea's, not the factory's, written as `{{`${{ … }}`}}`. It puts
 npm's cache in the runner's memory-backed `/tmp`, uv's cache
 and Python in `.uv/` in the memory-backed checkout, and leaves Go's build cache

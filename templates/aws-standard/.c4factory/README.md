@@ -203,7 +203,7 @@ byte for byte.
   `SOURCES.md` names python-standard v1.6.0, whose job rules leave the
   copied files as they were (#1595). Since v1.19.0 `make dist` writes both
   tiers' cloud assemblies, flat, into `dist/` for gitea-release to attach
-  (#1607).
+  (#1607). v1.19.1's runbook passes Prettier (#1610).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

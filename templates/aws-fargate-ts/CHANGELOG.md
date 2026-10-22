@@ -6,6 +6,13 @@ Every user-visible change, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The stack runs a prebuilt image by digest, its `ImageUri` parameter,
+  instead of building one from the `Dockerfile` at deploy: synth and
+  `make dist` need no Docker, and the task pulls only from the CDK
+  bootstrap's ECR repository.
+
 ### Added
 
 - The service, scaffolded by C4 Factory: an HTTP API that stores and returns

@@ -10,6 +10,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	cfn "github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -49,6 +50,15 @@ type S3API interface {
 	PutObject(ctx context.Context, in *s3.PutObjectInput, opts ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 }
 
+// ECRAPI is what the member calls of ECR: it copies the release's image to
+// the bootstrap's repository for a stack that runs it.
+type ECRAPI interface {
+	GetAuthorizationToken(ctx context.Context, in *ecr.GetAuthorizationTokenInput,
+		opts ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
+	DescribeImages(ctx context.Context, in *ecr.DescribeImagesInput,
+		opts ...func(*ecr.Options)) (*ecr.DescribeImagesOutput, error)
+}
+
 // STSAPI is what the member calls of STS: who the credential is, and the
 // bootstrap roles it assumes.
 type STSAPI interface {
@@ -67,6 +77,7 @@ type SSMAPI interface {
 type Clients struct {
 	CloudFormation CloudFormationAPI
 	S3             S3API
+	ECR            ECRAPI
 	STS            STSAPI
 	SSM            SSMAPI
 }
@@ -77,7 +88,7 @@ type NewClients func(cfg aws.Config) Clients
 // AWSClients are the SDK's clients of cfg.
 func AWSClients(cfg aws.Config) Clients {
 	return Clients{CloudFormation: cfn.NewFromConfig(cfg), S3: streamingS3{s3.NewFromConfig(cfg)},
-		STS: sts.NewFromConfig(cfg), SSM: ssm.NewFromConfig(cfg)}
+		ECR: ecr.NewFromConfig(cfg), STS: sts.NewFromConfig(cfg), SSM: ssm.NewFromConfig(cfg)}
 }
 
 // streamingS3 puts an object from a body it can't seek, a release file

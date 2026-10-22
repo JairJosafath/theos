@@ -397,6 +397,9 @@ var funcs = template.FuncMap{
 	"lower":      strings.ToLower,
 	"dart":       dartString,
 	"ts":         tsString,
+	// buildsImage says a release of the Container builds an image the
+	// operator pushes: {{ buildsImage .Deployment .Framework .Type }}.
+	"buildsImage": model.BuildsImage,
 }
 
 // tsString quotes s as a TypeScript string literal the way Prettier, with

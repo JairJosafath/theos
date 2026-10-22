@@ -170,7 +170,10 @@ container asset that synth only stages.
   `--parameters <name>:CertificateArn=<arn>`, as a `copyToRegion` makes a
   second stack, which takes no certificate (#1305). v1.3.0 verifies a
   Cognito bearer token on every route but `/health`, with the stack's own
-  user pool and app client (#1479).
+  user pool and app client (#1479). v2.0.0's stack takes its image as the
+  `ImageUri` parameter instead of building a Docker asset, so `cdk synth`
+  and `make dist` need no Docker; gitea-release v1.7.0 builds and pushes
+  the image, and the deployer copies it to ECR by digest (#1610).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

@@ -57,7 +57,11 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 			return true, d.protect(ctx, ses, env, stack, st)
 		}
 	}
-	params, missing := model.CDKChangeSetParameters(stack.Parameters, ses.target.Parameters)
+	given, image, err := imageParameter(ses.target.Parameters, stack, env, s)
+	if err != nil {
+		return false, err
+	}
+	params, missing := model.CDKChangeSetParameters(stack.Parameters, given)
 	if len(missing) > 0 {
 		return false, &ports.Error{Kind: ports.ErrPrerequisiteMissing,
 			Cause: fmt.Errorf("stack %s needs the parameters %s, which have no default: give them in the "+
@@ -65,6 +69,11 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 	}
 	if err := publish(ctx, ses, fs, stack, env); err != nil {
 		return false, err
+	}
+	if image != nil {
+		if err := publishImage(ctx, ses, s, *image, env.Region); err != nil {
+			return false, err
+		}
 	}
 	deploy, err := ses.assume(ctx, env.Substitute(stack.AssumeRoleArn), env.Region)
 	if err != nil {
@@ -96,6 +105,34 @@ func (d *Deployer) shipStack(ctx context.Context, ses *session, fs files, stack 
 	}
 	log.Info("Executed change set", "version", s.Version, "token", token)
 	return false, d.protect(ctx, ses, env, stack, st)
+}
+
+// imageParameter is given, a target's parameters, with ImageUri the copy of
+// s's image in the bootstrap's ECR repository when stack runs the release's
+// image; image is where that copy goes, nil for a stack that runs none. A
+// shipment without an image is ErrArtifactMissing.
+func imageParameter(given map[string]string, stack model.CDKStack, env model.CDKEnv,
+	s ports.Shipment) (map[string]string, *model.CDKImageCopy, error) {
+	if !model.CDKTakesImage(stack.Parameters) {
+		return given, nil, nil
+	}
+	if s.Image == "" || s.CopyImage == nil {
+		return nil, nil, &ports.Error{Kind: ports.ErrArtifactMissing,
+			Cause: fmt.Errorf("stack %s runs the release's image, and release %s of %s has none: its release "+
+				"builds and pushes it", stack.StackName, s.Version, s.App)}
+	}
+	q, err := model.CDKQualifier(stack.BootstrapVersionParameter)
+	if err != nil {
+		return nil, nil, fmt.Errorf("stack %s: %w", stack.StackName, err)
+	}
+	cp, err := env.ImageCopy(s.Image, q)
+	if err != nil {
+		return nil, nil, fmt.Errorf("release %s of %s: %w", s.Version, s.App, err)
+	}
+	out := make(map[string]string, len(given)+1)
+	maps.Copy(out, given)
+	out[model.CDKImageURIParameter] = cp.URI
+	return out, &cp, nil
 }
 
 // changeSetInput is the change set that ships s's stack: CREATE or UPDATE
