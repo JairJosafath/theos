@@ -69,9 +69,9 @@ after `npm run bundle`; it listens on `PORT`, 8080 by default, and reads AWS
 credentials and the region the SDK's usual way. It traces only when
 `OTEL_EXPORTER_OTLP_ENDPOINT` names an OpenTelemetry collector.
 
-Nothing here deploys or needs an AWS account: synth runs offline and only
-stages the image's build context in `cdk.out/`, so it needs neither Docker
-nor credentials.
+Nothing here deploys or needs an AWS account: synth runs offline, and the
+stack runs a prebuilt image its `ImageUri` parameter names, so it needs
+neither Docker nor credentials.
 
 ## Tiers and operations
 
@@ -101,9 +101,18 @@ stack's `AlertEmail` parameter, which a deploy can set per environment. Each
 stack outputs `EntryPoint`, the load balancer's DNS name, and
 `AlarmTopicArn`, the topic its alarms notify.
 
-Deploying is for the stack's owner, with their own credentials and Docker:
-`cdk bootstrap` once per account and region, then
-`cdk deploy -c tier=production --all --parameters {{ .Container }}:CertificateArn=<arn>`
+The image ships by digest. A release builds the `Dockerfile`'s image and
+pushes it to the registry by its digest; a deploy copies that digest into
+the CDK bootstrap's ECR repository
+(`cdk-<qualifier>-container-assets-<account>-<region>`) and passes the copy,
+`<account>.dkr.ecr.<region>.amazonaws.com/<repository>@sha256:<digest>`, as
+`ImageUri`. The task pulls only from that repository, so the image a stack
+runs is exactly the one its release built.
+
+Deploying is for the stack's owner, with their own credentials:
+`cdk bootstrap` once per account and region, the image pushed to the
+bootstrap's repository, then
+`cdk deploy -c tier=production --all --parameters {{ .Container }}:CertificateArn=<arn> --parameters {{ .Container }}:ImageUri=<image>`
 with an ACM certificate for the service's domain, and a DNS record pointing that
 domain at the `EntryPoint` output. `--all` deploys the stack that holds the
 copy vault too when `copyToRegion` is set, and the parameter names the
