@@ -8,7 +8,7 @@ cmd/main.go                        Manager entry (registers controllers, Session
 cmd/c4session/                     Session client CLI, run in devcontainers
 cmd/c4agent/                       Task runner, run in agent sandboxes
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
-api/v1alpha1/*_types.go            CRD schemas for all nineteen kinds (+kubebuilder markers)
+api/v1alpha1/*_types.go            CRD schemas for all twenty kinds (+kubebuilder markers)
 api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
 api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status

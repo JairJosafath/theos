@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it once, at the scaffold, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092, decided, not built). |
+| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it once, at the scaffold, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092, decided, not built). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -60,6 +60,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Brief | nothing | none | An app idea in plain words and its prompts, which a planner Agent turns into the model |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Standard, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template and the Container types it supports |
+| Domain | Project | none | A catalog entry: a pinned template of what a system is about (a webshop's carts, stock and payments), its practices, common mistakes and choices; a SoftwareSystem names it in `spec.domainRefs` |
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
@@ -86,6 +87,22 @@ it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
 `Pending`, `ReferencesResolved=False`, reason `ExternalSystem`, and links to
 and from it are story only.
+
+**Domains.** A Standard tells the implementer how to build in a stack; a
+Domain tells it about what the system is for. It is its own catalog kind,
+`Domain`: a `displayName`, a `description` and a `template` at a pinned ref,
+and no `supportedTypes`, since what a system is about does not depend on a
+Container's type. A SoftwareSystem names the Domains it is about in
+`spec.domainRefs`: at most 5, unique, and none on an External system (CEL:
+the factory builds nothing there). Every Container of the system is
+scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
+the last layer, after the Connectors; the Standard's agent guide tells the
+implementer and the reviewer to read it. A Domain is written once, at the
+scaffold: a later bump of its `ref` does not reach a scaffolded Container.
+The planner names the installed Domains an idea is about on each new
+Internal system. [plans/domains.md](plans/domains.md) (#1512) has the
+decisions; the kind and `domainRefs` are built, the layer, the Standards'
+guides, the webshop Domain and the planner are its later steps.
 
 ## Scaffolding a Container
 
