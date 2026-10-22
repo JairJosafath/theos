@@ -22,6 +22,14 @@ const (
 	PackagesStateFailed    = "Failed"
 )
 
+// Ecosystems of what a release publishes, as status.lastRelease.packages
+// names them and a uses: line does; EcosystemGo is the release's Go module.
+const (
+	EcosystemGo   = "go"
+	EcosystemNpm  = "npm"
+	EcosystemPyPI = "PyPI"
+)
+
 // Reasons of the PackagesPublished condition.
 const (
 	PackagesReasonPublished       = "PackagesPublished"
