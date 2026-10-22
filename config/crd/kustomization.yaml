@@ -20,6 +20,7 @@ resources:
 - bases/c4.factory.io_crews.yaml
 - bases/c4.factory.io_briefs.yaml
 - bases/c4.factory.io_deploytargets.yaml
+- bases/c4.factory.io_bundles.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

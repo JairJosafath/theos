@@ -111,6 +111,7 @@ rules:
   - c4.factory.io
   resources:
   - agents
+  - bundles
   - computes
   - connectors
   - deployments

@@ -1,0 +1,18 @@
+# A Bundle names the catalog entries a team picked together, from factory.yaml:
+# a Container may name it instead of the four (docs/plans/catalog-bundles.md).
+# The webshop's own Containers keep naming their sides.
+apiVersion: c4.factory.io/v1alpha1
+kind: Bundle
+metadata:
+  name: python-service
+spec:
+  displayName: Python service
+  description: A FastAPI service with the Python Standard, small sizing and plain Kubernetes manifests.
+  frameworkRef:
+    name: python-fastapi
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests

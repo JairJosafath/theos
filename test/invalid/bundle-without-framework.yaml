@@ -1,0 +1,11 @@
+# expect: spec.frameworkRef: Required value
+apiVersion: c4.factory.io/v1alpha1
+kind: Bundle
+metadata:
+  name: no-framework
+  namespace: webshop
+spec:
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
