@@ -251,7 +251,8 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status), to)
+	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status), to,
+		git.provider.Repository(u.container.Name).NpmScope)
 	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref, Files: files})
 	if err != nil {
 		stopped(c4v1alpha1.ReasonFailed, fmt.Sprintf("Could not render the Framework %s at %s: %v", name, ref, err))
@@ -371,7 +372,7 @@ func (u *operationsUpdate) forceMerge(ctx, gitCtx context.Context) bool {
 		return false
 	}
 	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), recordedChecks(u.status),
-		model.ResolveOperations(operationsChoices(update.Operations)))
+		model.ResolveOperations(operationsChoices(update.Operations)), "")
 	title := model.OperationsUpdateTitle()
 	message, _ := strings.CutPrefix(scaffold.OperationsMessage(in, scaffoldedOperations(u.container, u.status)),
 		title+"\n\n")

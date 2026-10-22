@@ -73,7 +73,6 @@ func TestScaffoldInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container))
 	want := scaffold.Input{
 		CI:      ci,
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
@@ -84,9 +83,18 @@ func TestScaffoldInput(t *testing.T) {
 			Recovery: model.OperationsRecovery{RPO: "15m", RTO: model.DefaultRTO},
 			Alerts:   model.OperationsAlerts{Email: "ops@example.com"},
 		},
+		NpmScope: "@c4factory",
 	}
+	// An empty scope (a provider that sets none) is the default (#1231).
+	got := scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container), "")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
+	}
+	// The GitProvider's own scope is passed through (#1231).
+	want.NpmScope = "@acme"
+	got = scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container), "@acme")
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scaffoldInput(@acme) = %+v, want %+v", got, want)
 	}
 }
 

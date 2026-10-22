@@ -129,7 +129,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	}
 	in := scaffoldInput(container, ci, res.use.Connectors,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container))
+		specOperations(container), repo.NpmScope)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
@@ -236,10 +236,14 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 // scaffoldInput is what every template of the Container renders with. ci is
 // the CI system its repository runs, connectors are the unique Connector
 // names, sorted, checks is when CI runs the full check
-// (model.EffectiveChecks) and ops its operations block, the defaults filled
-// in.
+// (model.EffectiveChecks), ops its operations block, the defaults filled in,
+// and npmScope the scope the repository's npm package is named under
+// (gitprovider.Repository.NpmScope; empty means gitprovider.DefaultNpmScope).
 func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
-	checks string, ops model.Operations) scaffold.Input {
+	checks string, ops model.Operations, npmScope string) scaffold.Input {
+	if npmScope == "" {
+		npmScope = gitprovider.DefaultNpmScope
+	}
 	in := scaffold.Input{
 		CI:             ci,
 		Project:        container.Namespace,
@@ -251,6 +255,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Connectors:     connectors,
 		Checks:         checks,
 		Operations:     ops,
+		NpmScope:       npmScope,
 	}
 	if container.Spec.StandardRef != nil {
 		in.Standard = container.Spec.StandardRef.Name
