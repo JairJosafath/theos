@@ -72,9 +72,10 @@ type ContainerReconciler struct {
 	// deploySaid remembers each deploy's last Event, by Container UID and
 	// target.
 	deploySaid sync.Map
-	// deploySources is, by Container UID, the last release's source read
-	// from the Git host (sourceRead) for a github target that publishes it,
-	// so each poll of the deploy doesn't download the archive again.
+	// deploySources is, by Container UID and target, the last release's
+	// source read from the Git host (sourceRead) and checked against the
+	// target's own Secret, so each poll of the deploy doesn't download the
+	// archive again.
 	deploySources sync.Map
 	// imageSaid remembers each Container's last image Event, by UID: its
 	// release's tag and state.
@@ -124,14 +125,15 @@ func (r *ContainerReconciler) forget(uid types.UID) {
 	}
 	r.imageSaid.Delete(uid)
 	r.imagePushed.Delete(uid)
-	r.deploySources.Delete(uid)
 	prefix := string(uid) + "/"
-	r.deploySaid.Range(func(key, _ any) bool {
-		if k, ok := key.(string); ok && strings.HasPrefix(k, prefix) {
-			r.deploySaid.Delete(key)
-		}
-		return true
-	})
+	for _, m := range []*sync.Map{&r.deploySaid, &r.deploySources} {
+		m.Range(func(key, _ any) bool {
+			if k, ok := key.(string); ok && strings.HasPrefix(k, prefix) {
+				m.Delete(key)
+			}
+			return true
+		})
+	}
 }
 
 // Reconcile adopts the Container, resolves its references, checks its catalog

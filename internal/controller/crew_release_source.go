@@ -150,9 +150,9 @@ func knownCredentials(ctx context.Context, c client.Reader, apiReader client.Rea
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range data {
-			// Every key is an environment variable: a base URL is no secret.
-			if !strings.Contains(string(v), "://") {
+		for k, v := range data {
+			// Every key is an environment variable: a setting is no secret.
+			if model.CredentialKey(k) {
 				known = append(known, string(v))
 			}
 		}

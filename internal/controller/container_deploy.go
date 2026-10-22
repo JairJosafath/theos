@@ -273,7 +273,9 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 // per release and checked, target's own Secret among the credentials it must
 // not hold.
 func (p *deployPass) source(ctx context.Context, target ports.Target, version string) (*model.ReleaseSource, error) {
-	if last, ok := p.r.deploySources.Load(p.container.UID); ok && last.(sourceRead).tag == version {
+	// Each target's own Secret is among the values checked (#1602).
+	cache := string(p.container.UID) + "/" + target.Name
+	if last, ok := p.r.deploySources.Load(cache); ok && last.(sourceRead).tag == version {
 		return last.(sourceRead).source, nil
 	}
 	var own []string
@@ -288,7 +290,7 @@ func (p *deployPass) source(ctx context.Context, target ports.Target, version st
 	if err != nil {
 		return nil, err
 	}
-	p.r.deploySources.Store(p.container.UID, sourceRead{tag: version, source: source})
+	p.r.deploySources.Store(cache, sourceRead{tag: version, source: source})
 	return source, nil
 }
 

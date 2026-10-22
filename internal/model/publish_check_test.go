@@ -210,3 +210,35 @@ func TestScanBlob(t *testing.T) {
 		t.Fatal("a short read passed")
 	}
 }
+
+// #1602: an Agent Secret's settings are no credentials; its tokens and keys are.
+func TestCredentialKey(t *testing.T) {
+	for name, want := range map[string]bool{
+		"ANTHROPIC_API_KEY": true, "CLAUDE_CODE_OAUTH_TOKEN": true, "aws_secret_access_key": true,
+		"DB_PASSWORD": true, "GOOGLE_APPLICATION_CREDENTIALS": true, "token": true,
+		"AWS_REGION": false, "ANTHROPIC_MODEL": false, "ANTHROPIC_BASE_URL": false, "username": false,
+	} {
+		if got := CredentialKey(name); got != want {
+			t.Errorf("CredentialKey(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// #1602: the allow mark never skips a credential the operator holds, even
+// one of a known shape.
+func TestScanSecretsKnownNotAllowed(t *testing.T) {
+	known := token("", 24, alnum)
+	ghp := token("gh"+"p_", 36, alnum)
+	for _, line := range []string{known, ghp} {
+		content := "v = " + line + " # " + AllowSecretMark + "\n"
+		scan, err := ScanSecrets("a.txt", strings.NewReader(content), []string{known, ghp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := SecretScan{Found: []PublishProblem{{Reason: PublishSecretFound, Path: "a.txt", Line: 1,
+			Rule: ruleKnown}}}
+		if !reflect.DeepEqual(scan, want) {
+			t.Errorf("got %+v, want %+v", scan, want)
+		}
+	}
+}

@@ -38,6 +38,8 @@ func TestReconcilingADeletedContainerForgetsItsEntries(t *testing.T) {
 	r.deploySaid.Store(string(container.UID)+"/staging", "deployed")
 	r.deploySaid.Store(string(container.UID)+"/prod", "deployed")
 	r.deploySaid.Store(string(other)+"/staging", "deployed")
+	r.deploySources.Store(string(container.UID)+"/apps/open", sourceRead{tag: "v0.1.0"})
+	r.deploySources.Store(string(other)+"/apps/open", sourceRead{tag: "v0.2.0"})
 
 	if _, err := r.Reconcile(context.Background(),
 		ctrl.Request{NamespacedName: client.ObjectKeyFromObject(container)}); err != nil {
@@ -51,6 +53,7 @@ func TestReconcilingADeletedContainerForgetsItsEntries(t *testing.T) {
 	}
 	for name, m := range map[string]interface{ Range(func(any, any) bool) }{
 		"imageSaid": &r.imageSaid, "imagePushed": &r.imagePushed, "deploySaid": &r.deploySaid,
+		"deploySources": &r.deploySources,
 	} {
 		got := keys(m)
 		if len(got) != 1 {

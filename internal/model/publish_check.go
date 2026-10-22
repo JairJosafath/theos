@@ -107,9 +107,10 @@ type SecretScan struct {
 // and reports each line holding a secret: a private key block, a token of a
 // shape secretRules know, or one of known, the values of credentials the
 // operator holds (shorter than minKnown, or a number, are left out). A line
-// is reported once, for the first rule that hits; one marked AllowSecretMark
-// is counted as allowed instead. A file with a NUL byte is binary: it is read
-// to its end and reports nothing.
+// is reported once: as a credential the operator holds when it holds one,
+// which no mark allows, else for the first rule that hits, or, marked
+// AllowSecretMark, counted as allowed instead. A file with a NUL byte is
+// binary: it is read to its end and reports nothing.
 func ScanSecrets(path string, content io.Reader, known []string) (SecretScan, error) {
 	var values [][]byte
 	for _, k := range known {
@@ -122,7 +123,7 @@ func ScanSecrets(path string, content io.Reader, known []string) (SecretScan, er
 	var scan SecretScan
 	r := bufio.NewReaderSize(content, scanWindow)
 	var window, carry []byte
-	line, rule, marked := 1, "", false
+	line, rule, held, marked := 1, "", false, false
 	for {
 		chunk, err := r.ReadSlice('\n')
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) && !errors.Is(err, io.EOF) {
@@ -135,13 +136,18 @@ func ScanSecrets(path string, content io.Reader, known []string) (SecretScan, er
 		window = append(append(window[:0], carry...), chunk...)
 		marked = marked || bytes.Contains(window, []byte(AllowSecretMark))
 		if rule == "" {
-			rule = matchSecret(window, values)
+			rule = matchShape(window)
 		}
+		held = held || slices.ContainsFunc(values, func(k []byte) bool { return bytes.Contains(window, k) })
 		if errors.Is(err, bufio.ErrBufferFull) {
 			carry = append(carry[:0], window[max(0, len(window)-scanOverlap):]...)
 			continue
 		}
 		switch {
+		case held:
+			// A credential the operator holds is never allowed (#1602).
+			scan.Found = append(scan.Found, PublishProblem{Reason: PublishSecretFound, Path: path, Line: line,
+				Rule: ruleKnown})
 		case rule != "" && marked:
 			scan.Allowed++
 		case rule != "":
@@ -150,20 +156,15 @@ func ScanSecrets(path string, content io.Reader, known []string) (SecretScan, er
 		if err != nil {
 			return scan, nil
 		}
-		line, rule, marked, carry = line+1, "", false, carry[:0]
+		line, rule, held, marked, carry = line+1, "", false, false, carry[:0]
 	}
 }
 
-// matchSecret is the name of the first rule that hits in text, or "".
-func matchSecret(text []byte, known [][]byte) string {
+// matchShape is the name of the first rule that hits in text, or "".
+func matchShape(text []byte) string {
 	for _, r := range secretRules {
 		if r.re.Match(text) {
 			return r.name
-		}
-	}
-	for _, k := range known {
-		if bytes.Contains(text, k) {
-			return ruleKnown
 		}
 	}
 	return ""
@@ -262,4 +263,16 @@ type byteCount int64
 func (c *byteCount) Write(p []byte) (int, error) {
 	*c += byteCount(len(p))
 	return len(p), nil
+}
+
+// credentialKeyWords are what a Secret's key names when its value is a
+// credential, upper-cased.
+var credentialKeyWords = []string{"TOKEN", "KEY", "SECRET", "PASSWORD", "CREDENTIAL"}
+
+// CredentialKey says the key of a Secret holding environment variables names
+// a credential (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN), not a setting
+// (AWS_REGION, ANTHROPIC_MODEL), whose value a source may well hold.
+func CredentialKey(name string) bool {
+	upper := strings.ToUpper(name)
+	return slices.ContainsFunc(credentialKeyWords, func(w string) bool { return strings.Contains(upper, w) })
 }
