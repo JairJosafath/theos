@@ -174,7 +174,11 @@ the choices under that, and where they differ from Go.
      `vars.C4_NPM_SCOPE` (else `@c4factory`), `vars.C4_NPM_REGISTRY` and
      `vars.C4_PYPI_INDEX` (else `gitea.server_url` and
      `gitea.repository_owner` in the paths above), `secrets.C4_NPM_TOKEN`
-     and `secrets.C4_PYPI_TOKEN` (else `gitea.token`). The operator sets
+     and `secrets.C4_PYPI_TOKEN`. The fallback to `gitea.token` holds only
+     while the matching variable is unset (the host's own registry); with
+     `vars.C4_NPM_REGISTRY` or `vars.C4_PYPI_INDEX` set and its secret
+     unset, the workflow installs without a credential, never sending
+     `gitea.token` to another registry. The operator sets
      them on the GitProvider's owner (Gitea's organisation Actions variables
      and secrets, `PUT /orgs/{org}/actions/{variables,secrets}/{name}`)
      when `spec.packages` departs from the default, and deletes them when
