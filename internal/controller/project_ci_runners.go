@@ -252,10 +252,7 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 				"pool", key.provider+"/"+key.label)
 		}
 		if wanted {
-			went := time.Now()
-			if pod.DeletionTimestamp != nil {
-				went = pod.DeletionTimestamp.Time
-			}
+			went := runnerFateAt(pod)
 			switch {
 			case failure != "":
 				pool.failed = append(pool.failed, went)
@@ -398,6 +395,18 @@ func (r *ProjectReconciler) createOrUpdateUncached(ctx context.Context, obj clie
 	return r.Update(ctx, obj)
 }
 
+// runnerFateAt is when a pod's fate was recorded: AnnotationRunnerFateAt, else
+// its deletion, else now.
+func runnerFateAt(pod *corev1.Pod) time.Time {
+	if at, err := time.Parse(time.RFC3339Nano, pod.Annotations[AnnotationRunnerFateAt]); err == nil {
+		return at
+	}
+	if pod.DeletionTimestamp != nil {
+		return pod.DeletionTimestamp.Time
+	}
+	return time.Now()
+}
+
 // recordRunnerFate writes a pod's fate as AnnotationRunnerFate, and how it
 // failed, if it did, as AnnotationRunnerFailure, before the pool deletes it,
 // so the pool's own delete never reads as someone else's.
@@ -407,6 +416,7 @@ func (r *ProjectReconciler) recordRunnerFate(ctx context.Context, pod *corev1.Po
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[AnnotationRunnerFate] = fate
+	pod.Annotations[AnnotationRunnerFateAt] = time.Now().Format(time.RFC3339Nano)
 	if failure != "" {
 		pod.Annotations[AnnotationRunnerFailure] = failure
 	}

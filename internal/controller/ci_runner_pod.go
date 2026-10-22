@@ -50,6 +50,9 @@ const (
 	// deleting it: the container that ended non-zero (register, runner) or
 	// the pod's status reason. The pool backs off from such failures (#1699).
 	AnnotationRunnerFailure = "c4.factory.io/runner-failure"
+	// AnnotationRunnerFateAt is when the pool recorded the fate, RFC3339Nano:
+	// a deletionTimestamp has only seconds, too coarse for the backoff.
+	AnnotationRunnerFateAt = "c4.factory.io/runner-fate-at"
 	// CINetworkPolicyName is the NetworkPolicy that fences the pool's pods.
 	CINetworkPolicyName = "c4-ci-runner"
 	// CIJobEnvConfigMap holds the variables the runner gives every job
