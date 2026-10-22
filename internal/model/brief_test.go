@@ -394,6 +394,20 @@ func TestCheckPlan(t *testing.T) {
 			web := object(p, "Container/web")
 			web.Type, web.Bundle, web.Framework, web.Standard = TypeFunction, "lambda-on-k8s", "", ""
 		}, "Container/web", "bundleRef: bundle lambda-on-k8s: aws-lambda deploys itself"},
+		{"an existing Container on a Bundle, the plan naming only the Bundle", func(p *Plan, c *CurrentModel) {
+			c.Objects = append(c.Objects, PlanObject{Kind: KindContainer, Name: "mailer", SoftwareSystem: "shop",
+				Type: TypeService, GitProvider: "gitea", Bundle: "go-k8s", Framework: "go-service",
+				Standard: "go-standard", Deployment: "k8s"})
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: "mailer", SoftwareSystem: "shop",
+				Type: TypeService, GitProvider: "gitea", Bundle: "go-k8s"})
+		}, "", ""},
+		{"an existing Container on a Bundle, the plan naming its sides instead", func(p *Plan, c *CurrentModel) {
+			c.Objects = append(c.Objects, PlanObject{Kind: KindContainer, Name: "mailer", SoftwareSystem: "shop",
+				Type: TypeService, GitProvider: "gitea", Bundle: "go-k8s", Framework: "go-service",
+				Standard: "go-standard", Deployment: "k8s"})
+			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: "mailer", SoftwareSystem: "shop",
+				Type: TypeService, GitProvider: "gitea", Framework: "go-service", Standard: "go-standard", Deployment: "k8s"})
+		}, "Container/mailer", `bundleRef can't change (from "go-k8s" to "")`},
 		{"a Bundle beside a side", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").Bundle = "react-web"
 		}, "Container/web", "bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef: name the Bundle or the sides, never both"},

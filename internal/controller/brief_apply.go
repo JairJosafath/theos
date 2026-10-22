@@ -331,6 +331,7 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 			DisplayName:       o.DisplayName, Description: o.Description,
 			Type:           c4v1alpha1.ContainerType(o.Type),
 			GitProviderRef: c4v1alpha1.LocalRef{Name: o.GitProvider},
+			BundleRef:      optionalLocalRef(o.Bundle),
 			FrameworkRef:   c4v1alpha1.LocalRef{Name: o.Framework},
 			StandardRef:    optionalLocalRef(o.Standard),
 			ComputeRef:     optionalLocalRef(o.Compute),

@@ -1247,14 +1247,19 @@ func findObject(objects []PlanObject, ref Ref) (PlanObject, bool) {
 }
 
 // lockedFields are an object's fields besides its story text, by API name.
+// A Container on a Bundle locks the Bundle, not the sides it expanded to:
+// the namespace's carries both, a plan's only the Bundle (#1622).
 func lockedFields(o PlanObject) [][2]string {
 	switch o.Kind {
 	case KindContainer:
-		return [][2]string{
-			{"softwareSystemRef", o.SoftwareSystem}, {"type", o.Type}, {"gitProviderRef", o.GitProvider},
-			{"bundleRef", o.Bundle}, {"frameworkRef", o.Framework}, {"standardRef", o.Standard},
-			{"computeRef", o.Compute}, {"deploymentRef", o.Deployment},
+		fields := make([][2]string, 0, 8)
+		fields = append(fields, [2]string{"softwareSystemRef", o.SoftwareSystem}, [2]string{"type", o.Type},
+			[2]string{"gitProviderRef", o.GitProvider}, [2]string{"bundleRef", o.Bundle})
+		if o.Bundle != "" {
+			return fields
 		}
+		return append(fields, [2]string{"frameworkRef", o.Framework}, [2]string{"standardRef", o.Standard},
+			[2]string{"computeRef", o.Compute}, [2]string{"deploymentRef", o.Deployment})
 	case KindDataStore:
 		return [][2]string{{"softwareSystemRef", o.SoftwareSystem}, {"connectorRef", o.Connector}}
 	case KindRelationship:

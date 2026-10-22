@@ -113,24 +113,9 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 		if standard != "" {
 			with = " with the Standard " + standard
 		}
-		switch {
-		case onBundle:
-			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on the Bundle %s: "+
-				"it takes the first Bundle that supports the type and reads nothing else.", container, kind, bundle.Name))
-			if deployment != "" {
-				choices = append(choices,
-					fmt.Sprintf("The stand-in planner releases %s: once its issue is merged, its Crew prepares and tags "+
-						"the release, and %s ships it.", container, deployment))
-				files[PlanReleasesFile] = fmt.Sprintf("containers: [%s]\n", container)
-			}
-		case deployment == "":
-			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s: "+
-				"no Deployment ships a Framework of the catalog, so it takes the first and reads nothing else.",
-				container, kind, framework, with))
-		default:
-			choices = append(choices, fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s%s and the "+
-				"Deployment %s: it takes the catalog's first Framework a Deployment ships and reads nothing else.",
-				container, kind, framework, with, deployment),
+		choices = append(choices, standInContainerChoice(container, kind, framework+with, deployment, bundle.Name))
+		if deployment != "" {
+			choices = append(choices,
 				fmt.Sprintf("The stand-in planner releases %s: once its issue is merged, its Crew prepares and tags "+
 					"the release, and %s ships it.", container, deployment))
 			files[PlanReleasesFile] = fmt.Sprintf("containers: [%s]\n", container)
@@ -240,6 +225,24 @@ func standInCatalog(catalog catalogOut) (framework, kind, standard, deployment s
 		}
 	}
 	return "", "", "", ""
+}
+
+// standInContainerChoice says why the stand-in put container, a kind, on
+// bundle when that is set, else on framework and its Deployment.
+func standInContainerChoice(container, kind, framework, deployment, bundle string) string {
+	switch {
+	case bundle != "":
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on the Bundle %s: "+
+			"it takes the first Bundle that supports the type and reads nothing else.", container, kind, bundle)
+	case deployment == "":
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s: "+
+			"no Deployment ships a Framework of the catalog, so it takes the first and reads nothing else.",
+			container, kind, framework)
+	default:
+		return fmt.Sprintf("The stand-in planner adds Container %s, a %s on %s and the "+
+			"Deployment %s: it takes the catalog's first Framework a Deployment ships and reads nothing else.",
+			container, kind, framework, deployment)
+	}
 }
 
 // standInBundle is the catalog's first Bundle that supports kind, if any: the
