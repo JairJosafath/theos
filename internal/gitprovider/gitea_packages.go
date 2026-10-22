@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec // PyPI's md5_digest: a checksum, not a signature
+	"crypto/sha1" //nolint:gosec // npm's shasum: a checksum, not a signature
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -202,7 +202,7 @@ func (g *gitea) downloadAsset(ctx context.Context, repo Repository, asset Releas
 	if err != nil {
 		return nil, sums, err
 	}
-	hashes := []hash.Hash{md5.New(), sha1.New(), sha256.New(), sha512.New()}
+	hashes := []hash.Hash{md5.New(), sha1.New(), sha256.New(), sha512.New()} //nolint:gosec // the registries' checksums
 	w := []io.Writer{f}
 	for _, h := range hashes {
 		w = append(w, h)
@@ -445,14 +445,16 @@ func (g *gitea) publishNpm(ctx context.Context, repo Repository, pkg *Package, m
 		"shasum":    hex.EncodeToString(sums.sha1),
 		"tarball":   repo.NpmRegistry + pkg.Name + "/-/" + fileName,
 	})
-	head := map[string]any{
-		"_id":       pkg.Name,
-		"name":      pkg.Name,
-		"dist-tags": map[string]string{"latest": pkg.Version},
-		"versions":  map[string]map[string]json.RawMessage{pkg.Version: version},
-	}
-	if d, ok := meta.manifest["description"]; ok {
-		head["description"] = d
+	head := struct {
+		ID          string                                `json:"_id"`
+		Name        string                                `json:"name"`
+		Description json.RawMessage                       `json:"description,omitempty"`
+		DistTags    map[string]string                     `json:"dist-tags"`
+		Versions    map[string]map[string]json.RawMessage `json:"versions"`
+	}{
+		ID: pkg.Name, Name: pkg.Name, Description: meta.manifest["description"],
+		DistTags: map[string]string{"latest": pkg.Version},
+		Versions: map[string]map[string]json.RawMessage{pkg.Version: version},
 	}
 	headJSON, err := json.Marshal(head)
 	if err != nil {
@@ -558,7 +560,7 @@ func (g *gitea) publishPyPI(ctx context.Context, repo Repository, pkg *Package, 
 	for _, field := range [][2]string{
 		{":action", "file_upload"}, {"protocol_version", "1"},
 		{"metadata_version", orDefault(meta.metadataVersion, "2.1")},
-		{"name", pkg.Name}, {"version", pkg.Version}, {"filetype", filetype}, {"pyversion", pyversion},
+		{"name", pkg.Name}, {"version", pkg.Version}, {"filetype", filetype}, {"pyversion", pyversion}, //nolint:goconst // the form's fields
 		{"summary", meta.summary}, {"requires_python", meta.requiresPython},
 		{"md5_digest", hex.EncodeToString(sums.md5)}, {"sha256_digest", hex.EncodeToString(sums.sha256)},
 	} {

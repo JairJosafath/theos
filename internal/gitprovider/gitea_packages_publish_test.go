@@ -329,7 +329,7 @@ func decodeNpmPut(t *testing.T, body []byte) npmDocument {
 }
 
 func outcomes(pkgs []Package) []string {
-	var out []string
+	out := make([]string, 0, len(pkgs))
 	for _, p := range pkgs {
 		out = append(out, p.Ecosystem+" "+p.Name+"@"+p.Version+" "+string(p.Outcome))
 	}
@@ -340,106 +340,7 @@ func outcomes(pkgs []Package) []string {
 // Gitea (#1229, decisions 2 to 5 of docs/plans/app-packages.md).
 func TestPublishReleasePackages(t *testing.T) {
 	ctx := context.Background()
-	ui := npmTarball(t, "@c4factory/shop-ui", "0.1.0")
-	whl := wheel(t, "shop-api", "0.1.0")
-	sd := sdist(t, "shop-api", "0.1.0")
-	release := []testAsset{
-		{"shop-ui-0.1.0.tgz", ui},
-		{"shop_api-0.1.0-py3-none-any.whl", whl},
-		{"shop_api-0.1.0.tar.gz", sd},
-		{"SHA256SUMS", []byte("abc  shop-ui-0.1.0.tgz\n")},
-		{"lambda.zip", archiveZip(t, "lambda", map[string]string{"index.js": "exports.handler = 1\n"})},
-		{"shop-ui.oci.tar", append([]byte("notgzip"), make([]byte, 600)...)},
-	}
-
-	t.Run("publishes an npm tarball, a wheel and an sdist", func(t *testing.T) {
-		h, p := newPackageHost(t, "v0.1.0", release, Packages{})
-		got, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.1.0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := []Package{
-			{Outcome: PackagePublished, Ecosystem: EcosystemNpm, Name: "@c4factory/shop-ui", Version: "0.1.0", File: "shop-ui-0.1.0.tgz"},
-			{Outcome: PackagePublished, Ecosystem: EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0-py3-none-any.whl"},
-			{Outcome: PackagePublished, Ecosystem: EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0.tar.gz"},
-		}
-		if got.Tag != "v0.1.0" || !slices.Equal(got.Packages, want) {
-			t.Fatalf("PublishReleasePackages() = %+v\nwant packages %+v", got, want)
-		}
-
-		// Every file but the zip is opened; the one that isn't gzip is dropped.
-		if wantDownloads := []string{"shop-ui-0.1.0.tgz", "shop_api-0.1.0-py3-none-any.whl", "shop_api-0.1.0.tar.gz",
-			"SHA256SUMS", "shop-ui.oci.tar"}; !slices.Equal(h.downloads, wantDownloads) {
-			t.Errorf("downloaded %v, want %v", h.downloads, wantDownloads)
-		}
-
-		// The npm publish: the version looked up first, then PUT as npm publish does.
-		npmPath := "/api/packages/webshop/npm/@c4factory%2Fshop-ui"
-		if i, j := slices.Index(h.calls, "GET "+npmPath), slices.Index(h.calls, "PUT "+npmPath); i < 0 || j < i {
-			t.Errorf("calls = %v, want GET then PUT of %s", h.calls, npmPath)
-		}
-		doc := decodeNpmPut(t, h.npmPut)
-		if doc.ID != "@c4factory/shop-ui" || doc.Name != "@c4factory/shop-ui" || doc.Description != "The shop's UI" ||
-			doc.DistTags["latest"] != "0.1.0" {
-			t.Errorf("npm document head = %+v", doc)
-		}
-		v, ok := doc.Versions["0.1.0"]
-		if !ok || len(doc.Versions) != 1 {
-			t.Fatalf("npm document versions = %v, want 0.1.0 alone", doc.Versions)
-		}
-		sum512 := sha512.Sum512(ui)
-		if v.ID != "@c4factory/shop-ui@0.1.0" || v.Name != "@c4factory/shop-ui" || v.Version != "0.1.0" ||
-			v.Repository["url"] != "https://git.example.com/webshop/shop-ui.git" || v.Repository["type"] != "git" {
-			t.Errorf("npm version = %+v", v)
-		}
-		if v.Dist.Integrity != "sha512-"+base64.StdEncoding.EncodeToString(sum512[:]) ||
-			v.Dist.Tarball != h.url+"/api/packages/webshop/npm/@c4factory/shop-ui/-/shop-ui-0.1.0.tgz" || len(v.Dist.Shasum) != 40 {
-			t.Errorf("npm dist = %+v", v.Dist)
-		}
-		att, ok := doc.Attachments["shop-ui-0.1.0.tgz"]
-		if !ok || len(doc.Attachments) != 1 {
-			t.Fatalf("npm attachments = %v, want shop-ui-0.1.0.tgz alone", doc.Attachments)
-		}
-		data, err := base64.StdEncoding.DecodeString(att.Data)
-		if err != nil || !bytes.Equal(data, ui) || att.Length != int64(len(ui)) || att.ContentType != "application/octet-stream" {
-			t.Errorf("npm attachment: %d bytes (decode error %v), length %d, type %s; want the tarball's %d bytes",
-				len(data), err, att.Length, att.ContentType, len(ui))
-		}
-		if h.npmLength != int64(len(h.npmPut)) {
-			t.Errorf("npm PUT Content-Length = %d, body is %d bytes", h.npmLength, len(h.npmPut))
-		}
-
-		// The PyPI uploads: the index read first, then the form twine sends.
-		if i, j := slices.Index(h.calls, "GET /api/packages/webshop/pypi/simple/shop-api/"),
-			slices.Index(h.calls, "POST /api/packages/webshop/pypi"); i < 0 || j < i {
-			t.Errorf("calls = %v, want the simple index read before the upload", h.calls)
-		}
-		if len(h.pypiForm) != 2 {
-			t.Fatalf("%d PyPI uploads, want the wheel and the sdist", len(h.pypiForm))
-		}
-		for i, file := range [][]byte{whl, sd} {
-			form := h.pypiForm[i]
-			sum := sha256.Sum256(file)
-			want := map[string]string{":action": "file_upload", "protocol_version": "1", "metadata_version": "2.3",
-				"name": "shop-api", "version": "0.1.0", "summary": "The shop's API", "requires_python": ">=3.12",
-				"sha256_digest": hex.EncodeToString(sum[:])}
-			want["filetype"], want["pyversion"], want["content.filename"] = "bdist_wheel", "py3", "shop_api-0.1.0-py3-none-any.whl"
-			if i == 1 {
-				want["filetype"], want["pyversion"], want["content.filename"] = "sdist", "source", "shop_api-0.1.0.tar.gz"
-			}
-			for k, v := range want {
-				if form[k] != v {
-					t.Errorf("PyPI upload %d: %s = %q, want %q", i, k, form[k], v)
-				}
-			}
-			if len(form["md5_digest"]) != 32 {
-				t.Errorf("PyPI upload %d: md5_digest = %q", i, form["md5_digest"])
-			}
-			if !bytes.Equal(h.pypiContent[i], file) {
-				t.Errorf("PyPI upload %d: content is %d bytes, want the file's %d", i, len(h.pypiContent[i]), len(file))
-			}
-		}
-	})
+	ui, _, _, release := shopRelease(t)
 
 	t.Run("a repeat publishes nothing", func(t *testing.T) {
 		h, p := newPackageHost(t, "v0.1.0", release, Packages{})
@@ -484,6 +385,152 @@ func TestPublishReleasePackages(t *testing.T) {
 		}
 	})
 
+	t.Run("no release is ErrNoRelease", func(t *testing.T) {
+		_, p := newPackageHost(t, "v0.1.0", nil, Packages{})
+		_, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.2.0")
+		if !errors.Is(err, ErrNoRelease) {
+			t.Fatalf("PublishReleasePackages() of an unreleased tag = %v, want ErrNoRelease", err)
+		}
+	})
+
+	t.Run("a failing registry is an error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/v1/repos/webshop/shop/releases/tags/") {
+				_, _ = fmt.Fprintf(w, `{"id":7,"tag_name":"v0.1.0","assets":[{"id":1,"name":"shop-ui-0.1.0.tgz","size":%d,"uuid":"u"}]}`, len(ui))
+				return
+			}
+			if r.URL.Path == "/attachments/u" {
+				_, _ = w.Write(ui)
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		t.Cleanup(srv.Close)
+		p, _ := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop"})
+		if _, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.1.0"); err == nil ||
+			!strings.Contains(err.Error(), "HTTP 500") {
+			t.Fatalf("PublishReleasePackages() against a failing registry = %v, want an HTTP 500 error", err)
+		}
+	})
+}
+
+// shopRelease is the release the tests publish: the shop's npm tarball,
+// wheel and sdist, and three files that are no package.
+func shopRelease(t *testing.T) (ui, whl, sd []byte, release []testAsset) {
+	t.Helper()
+	ui = npmTarball(t, "@c4factory/shop-ui", "0.1.0")
+	whl = wheel(t, "shop-api", "0.1.0")
+	sd = sdist(t, "shop-api", "0.1.0")
+	release = []testAsset{
+		{"shop-ui-0.1.0.tgz", ui},
+		{"shop_api-0.1.0-py3-none-any.whl", whl},
+		{"shop_api-0.1.0.tar.gz", sd},
+		{"SHA256SUMS", []byte("abc  shop-ui-0.1.0.tgz\n")},
+		{"lambda.zip", archiveZip(t, "lambda", map[string]string{"index.js": "exports.handler = 1\n"})},
+		{"shop-ui.oci.tar", append([]byte("notgzip"), make([]byte, 600)...)},
+	}
+	return ui, whl, sd, release
+}
+
+// TestPublishReleasePackagesUploads checks what PublishReleasePackages sends:
+// the npm publish document with its tarball streamed, and the PyPI upload
+// form twine sends, one per file (#1229).
+func TestPublishReleasePackagesUploads(t *testing.T) {
+	ctx := context.Background()
+	ui, whl, sd, release := shopRelease(t)
+	h, p := newPackageHost(t, "v0.1.0", release, Packages{})
+	got, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Package{
+		{Outcome: PackagePublished, Ecosystem: EcosystemNpm, Name: "@c4factory/shop-ui", Version: "0.1.0", File: "shop-ui-0.1.0.tgz"},
+		{Outcome: PackagePublished, Ecosystem: EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0-py3-none-any.whl"},
+		{Outcome: PackagePublished, Ecosystem: EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0.tar.gz"},
+	}
+	if got.Tag != "v0.1.0" || !slices.Equal(got.Packages, want) {
+		t.Fatalf("PublishReleasePackages() = %+v\nwant packages %+v", got, want)
+	}
+
+	// Every file but the zip is opened; the one that isn't gzip is dropped.
+	if wantDownloads := []string{"shop-ui-0.1.0.tgz", "shop_api-0.1.0-py3-none-any.whl", "shop_api-0.1.0.tar.gz",
+		"SHA256SUMS", "shop-ui.oci.tar"}; !slices.Equal(h.downloads, wantDownloads) {
+		t.Errorf("downloaded %v, want %v", h.downloads, wantDownloads)
+	}
+
+	// The npm publish: the version looked up first, then PUT as npm publish does.
+	npmPath := "/api/packages/webshop/npm/@c4factory%2Fshop-ui"
+	if i, j := slices.Index(h.calls, "GET "+npmPath), slices.Index(h.calls, "PUT "+npmPath); i < 0 || j < i {
+		t.Errorf("calls = %v, want GET then PUT of %s", h.calls, npmPath)
+	}
+	doc := decodeNpmPut(t, h.npmPut)
+	if doc.ID != "@c4factory/shop-ui" || doc.Name != "@c4factory/shop-ui" || doc.Description != "The shop's UI" ||
+		doc.DistTags["latest"] != "0.1.0" {
+		t.Errorf("npm document head = %+v", doc)
+	}
+	v, ok := doc.Versions["0.1.0"]
+	if !ok || len(doc.Versions) != 1 {
+		t.Fatalf("npm document versions = %v, want 0.1.0 alone", doc.Versions)
+	}
+	sum512 := sha512.Sum512(ui)
+	if v.ID != "@c4factory/shop-ui@0.1.0" || v.Name != "@c4factory/shop-ui" || v.Version != "0.1.0" ||
+		v.Repository["url"] != "https://git.example.com/webshop/shop-ui.git" || v.Repository["type"] != "git" {
+		t.Errorf("npm version = %+v", v)
+	}
+	if v.Dist.Integrity != "sha512-"+base64.StdEncoding.EncodeToString(sum512[:]) ||
+		v.Dist.Tarball != h.url+"/api/packages/webshop/npm/@c4factory/shop-ui/-/shop-ui-0.1.0.tgz" || len(v.Dist.Shasum) != 40 {
+		t.Errorf("npm dist = %+v", v.Dist)
+	}
+	att, ok := doc.Attachments["shop-ui-0.1.0.tgz"]
+	if !ok || len(doc.Attachments) != 1 {
+		t.Fatalf("npm attachments = %v, want shop-ui-0.1.0.tgz alone", doc.Attachments)
+	}
+	data, err := base64.StdEncoding.DecodeString(att.Data)
+	if err != nil || !bytes.Equal(data, ui) || att.Length != int64(len(ui)) || att.ContentType != "application/octet-stream" {
+		t.Errorf("npm attachment: %d bytes (decode error %v), length %d, type %s; want the tarball's %d bytes",
+			len(data), err, att.Length, att.ContentType, len(ui))
+	}
+	if h.npmLength != int64(len(h.npmPut)) {
+		t.Errorf("npm PUT Content-Length = %d, body is %d bytes", h.npmLength, len(h.npmPut))
+	}
+
+	// The PyPI uploads: the index read first, then the form twine sends.
+	if i, j := slices.Index(h.calls, "GET /api/packages/webshop/pypi/simple/shop-api/"),
+		slices.Index(h.calls, "POST /api/packages/webshop/pypi"); i < 0 || j < i {
+		t.Errorf("calls = %v, want the simple index read before the upload", h.calls)
+	}
+	if len(h.pypiForm) != 2 {
+		t.Fatalf("%d PyPI uploads, want the wheel and the sdist", len(h.pypiForm))
+	}
+	for i, file := range [][]byte{whl, sd} {
+		form := h.pypiForm[i]
+		sum := sha256.Sum256(file)
+		want := map[string]string{":action": "file_upload", "protocol_version": "1", "metadata_version": "2.3",
+			"name": "shop-api", "version": "0.1.0", "summary": "The shop's API", "requires_python": ">=3.12",
+			"sha256_digest": hex.EncodeToString(sum[:])}
+		want["filetype"], want["pyversion"], want["content.filename"] = "bdist_wheel", "py3", "shop_api-0.1.0-py3-none-any.whl"
+		if i == 1 {
+			want["filetype"], want["pyversion"], want["content.filename"] = "sdist", "source", "shop_api-0.1.0.tar.gz"
+		}
+		for k, v := range want {
+			if form[k] != v {
+				t.Errorf("PyPI upload %d: %s = %q, want %q", i, k, form[k], v)
+			}
+		}
+		if len(form["md5_digest"]) != 32 {
+			t.Errorf("PyPI upload %d: md5_digest = %q", i, form["md5_digest"])
+		}
+		if !bytes.Equal(h.pypiContent[i], file) {
+			t.Errorf("PyPI upload %d: content is %d bytes, want the file's %d", i, len(h.pypiContent[i]), len(file))
+		}
+	}
+}
+
+// TestPublishReleasePackagesOutcomes checks the outcomes that are results,
+// not errors: an unscoped name, a version that isn't the tag's, PEP 440
+// normalisation, and a release with no package file (#1229).
+func TestPublishReleasePackagesOutcomes(t *testing.T) {
+	ctx := context.Background()
 	for _, tt := range []struct {
 		name   string
 		tag    string
@@ -557,34 +604,6 @@ func TestPublishReleasePackages(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("no release is ErrNoRelease", func(t *testing.T) {
-		_, p := newPackageHost(t, "v0.1.0", nil, Packages{})
-		_, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.2.0")
-		if !errors.Is(err, ErrNoRelease) {
-			t.Fatalf("PublishReleasePackages() of an unreleased tag = %v, want ErrNoRelease", err)
-		}
-	})
-
-	t.Run("a failing registry is an error", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/v1/repos/webshop/shop/releases/tags/") {
-				_, _ = fmt.Fprintf(w, `{"id":7,"tag_name":"v0.1.0","assets":[{"id":1,"name":"shop-ui-0.1.0.tgz","size":%d,"uuid":"u"}]}`, len(ui))
-				return
-			}
-			if r.URL.Path == "/attachments/u" {
-				_, _ = w.Write(ui)
-				return
-			}
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(srv.Close)
-		p, _ := Client{}.Provider(Config{URL: srv.URL, Owner: "webshop"})
-		if _, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.1.0"); err == nil ||
-			!strings.Contains(err.Error(), "HTTP 500") {
-			t.Fatalf("PublishReleasePackages() against a failing registry = %v, want an HTTP 500 error", err)
-		}
-	})
 }
 
 // TestPublishReleasePackagesCustomRegistry checks a GitProvider's own scope
