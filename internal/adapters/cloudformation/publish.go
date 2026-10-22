@@ -3,13 +3,19 @@ package cloudformation
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-logr/logr"
 
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -79,4 +85,58 @@ func put(ctx context.Context, c S3API, f ports.File, bucket, key string) error {
 		return portError(fmt.Errorf("publishing %s to s3://%s/%s: %w", f.Name, bucket, key, err))
 	}
 	return nil
+}
+
+// publishImage copies s's image to cp, the bootstrap's ECR repository, as
+// the image-publishing role, when ECR lacks its digest. The copy is tagged
+// the digest's hex, so a tag that is there names the same image. ECR or the
+// registry refusing the role refuses the credential, and any other failure
+// to write the copy is unreachable; a failure to read the image keeps the
+// caller's error.
+func publishImage(ctx context.Context, ses *session, s ports.Shipment, cp model.CDKImageCopy, region string) error {
+	c, err := ses.assume(ctx, cp.Role, region)
+	if err != nil {
+		return err
+	}
+	there, err := imageExists(ctx, c.ECR, cp)
+	if err != nil || there {
+		return err
+	}
+	login, err := c.ECR.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	if err != nil {
+		return portError(fmt.Errorf("logging in to ECR %s: %w", cp.Host, err))
+	}
+	if len(login.AuthorizationData) == 0 {
+		return fmt.Errorf("logging in to ECR %s: ECR returned no token", cp.Host)
+	}
+	raw, err := base64.StdEncoding.DecodeString(aws.ToString(login.AuthorizationData[0].AuthorizationToken))
+	user, password, ok := strings.Cut(string(raw), ":")
+	if err != nil || !ok {
+		return fmt.Errorf("logging in to ECR %s: the token is not base64 user:password", cp.Host)
+	}
+	err = s.CopyImage(ctx, ports.Registry{Host: cp.Host, Username: user, Password: password}, cp.Repository, cp.Tag)
+	switch {
+	case err == nil:
+		logr.FromContextOrDiscard(ctx).Info("Copied the image", "image", s.Image, "copy", cp.URI)
+		return nil
+	case errors.Is(err, oci.ErrSource):
+		return err
+	case oci.Refused(err):
+		return &ports.Error{Kind: ports.ErrCredentialRefused, Cause: fmt.Errorf("copying the image to %s: %w",
+			cp.URI, err)}
+	}
+	return &ports.Error{Kind: ports.ErrUnreachable, Cause: fmt.Errorf("copying the image to %s: %w", cp.URI, err)}
+}
+
+// imageExists asks ECR whether cp's repository holds its digest.
+func imageExists(ctx context.Context, c ECRAPI, cp model.CDKImageCopy) (bool, error) {
+	_, err := c.DescribeImages(ctx, &ecr.DescribeImagesInput{RepositoryName: aws.String(cp.Repository),
+		ImageIds: []ecrtypes.ImageIdentifier{{ImageDigest: aws.String(cp.Digest)}}})
+	if err == nil {
+		return true, nil
+	}
+	if apiCode(err) == "ImageNotFoundException" {
+		return false, nil
+	}
+	return false, portError(fmt.Errorf("reading %s: %w", cp.URI, err))
 }
