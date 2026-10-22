@@ -108,7 +108,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 		}
 		return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships, info.Checks,
-			"Found the initial commit from an earlier attempt")
+			res.entries[0].ReadsOperations, "Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
 			fmt.Sprintf("Repository %s has commits C4 Factory didn't make; it only scaffolds into a new, empty repository",
@@ -153,7 +153,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
 	return r.ready(ctx, container, status, result.ScaffoldedFrom, res.use.Relationships, in.Checks,
-		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
+		res.entries[0].ReadsOperations, fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
 // fetchLayers fetches every catalog entry's template at its pinned ref, in layer
@@ -176,10 +176,13 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 
 // ready records a finished scaffold. From here on the factory only reports.
 // checks is when CI runs the full check as the scaffold rendered the Standard's
-// files; empty reads as EveryChange.
+// files; empty reads as EveryChange. readsOperations says the Framework
+// rendered spec.operations into the repository (#1209): only then is the
+// block recorded, so a Framework that doesn't read it never reports it
+// applied.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus, from []string, relationships []model.AppliedRelationship, checks string,
-	message string) (ctrl.Result, error) {
+	readsOperations bool, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
 	if container.Spec.StandardRef != nil {
@@ -192,7 +195,10 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.C
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	// The commit an earlier attempt pushed doesn't say its operations, so a
 	// recovered scaffold records the block as it is now.
-	status.Operations = operationsStatus(specOperations(container))
+	status.Operations = nil
+	if readsOperations {
+		status.Operations = operationsStatus(specOperations(container))
+	}
 	r.reportOperationsApplied(container, status)
 	r.condition(container, status, c4v1alpha1.ConditionScaffolded, metav1.ConditionTrue,
 		c4v1alpha1.ReasonScaffolded, message)

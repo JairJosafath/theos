@@ -104,8 +104,8 @@ func happyCurrent() CurrentModel {
 				Framework: "go-service"},
 		},
 		Catalog: []CatalogEntry{
-			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}},
-			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}},
+			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}, ReadsOperations: true},
+			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}, ReadsOperations: true},
 			{Side: SideStandard, Name: "web-standard", SupportedTypes: []string{TypeStaticSite},
 				SupportedFrameworks: []string{"react-site"}},
 			{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{TypeService},

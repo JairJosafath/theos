@@ -13,6 +13,12 @@ import { DEFAULT_COMPONENTS } from '../health.mjs'
 import { identity, oidcFromEnv } from '../oidc.mjs'
 import { actionsFromEnv, allowedHostsFromEnv, createServer, resolveUpstream } from '../server.mjs'
 
+// The SHA256SUMS ui/Dockerfile writes next to the Session client binaries, in
+// sha256sum's format, over the fixtures below (#1175).
+const SUMS = ['amd64', 'arm64']
+  .map((arch) => `${createHash('sha256').update(`ELF ${arch}`).digest('hex')}  c4session-linux-${arch}\n`)
+  .join('')
+
 /** Starts a server on a free port and returns its base URL. */
 function listen(server) {
   return new Promise((resolve) => {
@@ -126,6 +132,7 @@ describe('server.mjs', () => {
     await mkdir(path.join(dist, 'downloads'))
     await writeFile(path.join(dist, 'downloads', 'c4session-linux-amd64'), 'ELF amd64')
     await writeFile(path.join(dist, 'downloads', 'c4session-linux-arm64'), 'ELF arm64')
+    await writeFile(path.join(dist, 'downloads', 'SHA256SUMS'), SUMS)
     await writeFile(path.join(dist, 'downloads', 'notes.txt'), 'not a download')
 
     server = createServer({
@@ -1611,6 +1618,12 @@ describe('server.mjs', () => {
     const head = await fetch(`${base}/downloads/c4session-linux-amd64`, { method: 'HEAD' })
     assert.equal(head.status, 200)
     assert.equal(head.headers.get('content-length'), String('ELF amd64'.length))
+    // The checksums the feature verifies the binary against, from the same
+    // directory (#1175): as text, so a browser shows them.
+    const sums = await fetch(`${base}/downloads/SHA256SUMS`)
+    assert.equal(sums.status, 200)
+    assert.equal(await sums.text(), SUMS)
+    assert.equal(sums.headers.get('content-type'), 'text/plain; charset=utf-8')
     // Any address that reaches the UI serves it: the Host check is for the API.
     const byService = await request(
       base,

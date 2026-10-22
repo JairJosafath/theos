@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -58,14 +59,17 @@ func TestReportOperationsApplied(t *testing.T) {
 		// An operations update carries these (#1119).
 		{"changed after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(rpo("15m")), updates},
 		{"added after the scaffold", c4v1alpha1.ContainerReady, rpo("5m"), scaffoldedWith(nil), updates},
-		{"scaffolded before the factory kept it, no block", c4v1alpha1.ContainerReady, nil, nil, ""},
-		{"scaffolded before the factory kept it, an empty block", c4v1alpha1.ContainerReady,
+		// The Framework doesn't read the block, or the Container was scaffolded
+		// before the factory kept it (#1209).
+		{"not read by the Framework, no block", c4v1alpha1.ContainerReady, nil, nil, ""},
+		{"not read by the Framework, an empty block", c4v1alpha1.ContainerReady,
 			&c4v1alpha1.OperationsSpec{}, nil, ""},
-		{"scaffolded before the factory kept it, a block", c4v1alpha1.ContainerReady, rpo("5m"), nil,
-			c4v1alpha1.ReasonChangedAfterScaffold},
+		{"not read by the Framework, a block", c4v1alpha1.ContainerReady, rpo("5m"), nil,
+			c4v1alpha1.ReasonNotReadByFramework},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			container := &c4v1alpha1.Container{Spec: c4v1alpha1.ContainerSpec{Operations: tt.spec}}
+			container := &c4v1alpha1.Container{Spec: c4v1alpha1.ContainerSpec{Operations: tt.spec,
+				FrameworkRef: c4v1alpha1.LocalRef{Name: "go-cli"}}}
 			status := &c4v1alpha1.ContainerStatus{Phase: tt.phase, Operations: tt.recorded}
 			reported := (&ContainerReconciler{}).reportOperationsApplied(container, status)
 			c := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionOperationsApplied)
@@ -82,6 +86,9 @@ func TestReportOperationsApplied(t *testing.T) {
 				t.Errorf("no OperationsApplied, want reason %s", tt.want)
 			case c != nil && c.Reason != tt.want:
 				t.Errorf("OperationsApplied reason = %s (%s), want %s", c.Reason, c.Message, tt.want)
+			case c != nil && c.Reason == c4v1alpha1.ReasonNotReadByFramework &&
+				!strings.Contains(c.Message, "Framework go-cli doesn't read spec.operations"):
+				t.Errorf("OperationsApplied message = %q, want it to name the Framework", c.Message)
 			}
 		})
 	}

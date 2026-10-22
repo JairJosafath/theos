@@ -42,19 +42,22 @@ later, create all types together with
 // +kubebuilder:default="value"
 ```
 
-**After a change to `*_types.go` or its markers**, regenerate all three copies
-of what they describe, and commit them with the change:
+**After a change to `*_types.go` or its markers**, regenerate what they
+describe, and commit it with the change:
 
 ```bash
-make manifests  # config/crd/bases and config/rbac/role.yaml
+make manifests  # config/crd/bases, config/rbac/role.yaml, and the chart's copies of them
 make generate   # the zz_generated DeepCopy methods
-make chart      # dist/chart/templates/crd, the chart's copy of the CRDs
 ```
 
-`hack/chart-crds_test.sh` (in `make validate-yaml`, so in `make check`) fails
-when the chart's CRDs differ from `config/crd/bases`; under yolo mode nothing
-runs it before the merge, so main goes red until someone regenerates the chart
-(#1670).
+`make manifests` writes `dist/chart/templates/crd` and the chart's manager
+role too (`hack/chart-crds.sh --write`, `hack/chart-role.sh --write`), so a
+regenerated base never lands without the chart's copy: that happened three
+times in a day under yolo mode, where nothing checks before the merge, and
+main went red each time (#1670, #1689). `hack/chart-crds.sh` and
+`hack/chart-role.sh` (in `make validate-yaml`, so in `make check`) still fail
+when the copies differ, and CI's *Lint* job then runs `make check-generated`,
+which fails when a generated file differs from what is committed.
 
 - **Use** `metav1.Condition` for status (not custom string fields). Phases are a
   convenience on top of conditions.

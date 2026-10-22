@@ -170,11 +170,12 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	var spec c4v1alpha1.CatalogEntrySpec
 	var frameworks []string
-	var checksBeforeRelease, deploysItself bool
+	var checksBeforeRelease, deploysItself, readsOperations bool
 	switch o := obj.(type) {
 	case *c4v1alpha1.Framework:
 		spec = o.Spec.CatalogEntrySpec
 		deploysItself = o.Spec.DeploysItself
+		readsOperations = o.Spec.ReadsOperations
 	case *c4v1alpha1.Standard:
 		spec = o.Spec.CatalogEntrySpec
 		frameworks = o.Spec.SupportedFrameworks
@@ -200,5 +201,6 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		SupportedFrameworks: frameworks,
 		ChecksBeforeRelease: checksBeforeRelease,
 		DeploysItself:       deploysItself,
+		ReadsOperations:     readsOperations,
 	}
 }

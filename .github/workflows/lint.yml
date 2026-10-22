@@ -85,6 +85,10 @@ jobs:
         env:
           # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
           GITHUB_TOKEN: ${{ github.token }}
+      # make validate-yaml regenerated the CRDs, the role and the chart's copies
+      # of them; a stale committed one shows as a change here (#1689).
+      - name: Generated files are committed
+        run: make check-generated
 
   test-hack:
     permissions:
