@@ -81,7 +81,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	if r.ModelProxyURL != "" {
 		// A sandbox on the shared token holds no token: the proxy's pods in the
 		// release namespace are its only way to Claude with one (decision 6 of
-		// docs/plans/model-proxy.md). The proxy's own policy admits only
+		// docs/plans/done/model-proxy.md). The proxy's own policy admits only
 		// sandboxes of namespaces opted in to the shared Secrets.
 		proxy := intstr.FromInt32(ModelProxyPort)
 		egress = append(egress, networkingv1.NetworkPolicyEgressRule{

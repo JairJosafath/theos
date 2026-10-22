@@ -125,14 +125,16 @@ func main() {
 	flag.StringVar(&sessionBinaryURL, "session-binary-url", "",
 		"URL of a linux c4session binary for the feature to download; ${arch} becomes amd64 or arm64.")
 	flag.Var(&sharedSecrets, "shared-secret",
-		"A Secret in the operator's namespace (POD_NAMESPACE) to copy into every project namespace labeled "+
-			"c4.factory.io/shared-secrets=true, such as claude-credentials; repeatable. None: nothing is shared.")
+		"The Agents' token Secret in the operator's namespace (POD_NAMESPACE), such as claude-credentials, read "+
+			"by the model proxy and never copied: an Agent in a project namespace labeled "+
+			"c4.factory.io/shared-secrets=true whose credentialsSecretRef names it is on the factory's shared "+
+			"token; repeatable, needs --model-proxy-url. None: every Agent's Secret is its project's own.")
 	flag.Var(&sharedPullSecrets, "shared-pull-secret",
-		"An image pull Secret in the operator's namespace to share like --shared-secret; repeatable.")
+		"An image pull Secret in the operator's namespace to copy into every project namespace labeled "+
+			"c4.factory.io/shared-secrets=true; repeatable. None: no pull Secret is shared.")
 	flag.StringVar(&modelProxyURL, "model-proxy-url", "",
 		"The model proxy's URL, such as http://c4-model-proxy.<namespace>.svc:8080: an agent sandbox whose Agent "+
-			"names a --shared-secret Secret holds no token and reaches Claude through it. None: the Secret goes "+
-			"into the sandbox as env.")
+			"names a --shared-secret Secret holds no token and reaches Claude through it. None: no shared token.")
 	flag.StringVar(&uiServiceAccount, "ui-service-account", "",
 		"The UI's ServiceAccount, as namespace/name, let read the pods and their metrics in every project "+
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
@@ -148,6 +150,11 @@ func main() {
 	}
 	if podNamespace == "" && modelProxyURL != "" {
 		setupLog.Error(nil, "--model-proxy-url needs POD_NAMESPACE, the operator's namespace")
+		os.Exit(1)
+	}
+	if len(sharedSecrets) > 0 && modelProxyURL == "" {
+		setupLog.Error(nil, "--shared-secret needs --model-proxy-url: the token is never copied into a project "+
+			"namespace, so a sandbox reaches it only through the model proxy")
 		os.Exit(1)
 	}
 
