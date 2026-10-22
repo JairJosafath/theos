@@ -78,6 +78,10 @@ spec:
           # claude-secret, copied into every project namespace labeled
           # c4.factory.io/shared-secrets=true (docs/dev/testenv.md).
           - --shared-secret=claude-credentials
+          # Agents on that Secret hold no token: their sandboxes reach Claude
+          # through the model proxy of config/model-proxy (namePrefix
+          # c4-factory-), which adds it (docs/plans/model-proxy.md).
+          - --model-proxy-url=http://c4-factory-model-proxy.c4-factory-system.svc:8080
           # The UI of config/ui reads the agent sandboxes' pods in each project
           # namespace; nowhere else but the factory's own (#1080).
           - --ui-service-account=c4-factory-ui/c4-factory-ui

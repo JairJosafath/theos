@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
@@ -557,6 +558,77 @@ var _ = Describe("Task", func() {
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "claude-credentials"),
 			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": rand.Text()}})
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+	})
+
+	It("gives an Agent on the shared token a sandbox with no token, which reaches the model proxy", func() {
+		// #1136: the Task asks for the namespace's label, then for the source
+		// Secret in the operator's namespace; the sandbox holds no Secret of its
+		// own and goes to Claude through the proxy. The source starts missing;
+		// the suite's other specs share it, so it is put back as it was.
+		source := &corev1.Secret{}
+		if err := k8sClient.Get(ctx, key(operatorNamespace, sharedToken), source); err == nil {
+			Expect(k8sClient.Delete(ctx, source)).To(Succeed())
+			DeferCleanup(func() {
+				mustCreate(&corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
+					Type: source.Type, Data: source.Data})
+			})
+		} else {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		agent := newAgent(ns, 1)
+		agent.Spec.CredentialsSecretRef = &c4v1alpha1.LocalRef{Name: sharedToken}
+		mustCreate(agent, newTask(ns, "add-crop", "Add crop"))
+		waitsFor := func(message string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				cond := condition(getTask(g, ns, "add-crop").Status.Conditions, ConditionProgressing)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Reason).To(Equal("CredentialsNotFound"))
+				g.Expect(cond.Message).To(Equal(message))
+			}).Should(Succeed())
+		}
+
+		By("asking for the label while the namespace hasn't opted in")
+		waitsFor("Agent claude is on the factory's shared Secret " + sharedToken + ": label namespace " + ns + " " +
+			c4v1alpha1.LabelSharedSecrets + "=true, so its agents reach the factory's model proxy")
+
+		By("naming the operator's namespace once it has, while the source is missing")
+		namespace := &corev1.Namespace{}
+		Expect(k8sClient.Get(ctx, key("", ns), namespace)).To(Succeed())
+		Expect(patch(namespace, func() {
+			namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}
+		})).To(Succeed())
+		waitsFor("Secret " + sharedToken + " of Agent claude not found in namespace " + operatorNamespace)
+
+		By("starting the run once the source is there, with no token in the sandbox")
+		mine := &corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
+			StringData: map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": rand.Text()}}
+		Expect(k8sClient.Create(ctx, mine)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, mine))).To(Succeed()) })
+		var sandbox *unstructured.Unstructured
+		Eventually(func(g Gomega) { sandbox = sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		spec, _, _ := unstructured.NestedMap(sandbox.Object, "spec", "podTemplate", "spec")
+		var pod corev1.PodSpec
+		Expect(runtime.DefaultUnstructuredConverter.FromUnstructured(spec, &pod)).To(Succeed())
+		for _, v := range pod.Volumes {
+			Expect(v.Secret).To(BeNil(), "volume %s", v.Name)
+		}
+		for _, c := range append(pod.Containers, pod.InitContainers...) {
+			Expect(c.EnvFrom).To(BeEmpty(), "container %s", c.Name)
+			for _, e := range c.Env {
+				if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+					Expect(e.ValueFrom.SecretKeyRef.Name).NotTo(Equal(sharedToken), "env %s of container %s", e.Name, c.Name)
+				}
+			}
+		}
+		env := map[string]string{}
+		for _, e := range pod.Containers[0].Env {
+			env[e.Name] = e.Value
+		}
+		Expect(env).To(HaveKeyWithValue(envAnthropicBaseURL, testModelProxyURL))
+		Expect(env).To(HaveKeyWithValue(envAnthropicAuthToken, modelProxyToken))
 	})
 })
 

@@ -99,6 +99,37 @@ type sandboxRun struct {
 	briefRound int
 	// pullSecrets are the shared pull Secrets the pod lists in imagePullSecrets.
 	pullSecrets []string
+	// modelProxyURL, when set, means the Agent is on the factory's shared token
+	// (onSharedToken): the pod gets no credentials Secret, and reaches Claude
+	// through the model proxy at this URL.
+	modelProxyURL string
+}
+
+// What a sandbox on the shared token gets instead of the token: Claude Code
+// sends every request to the proxy, with a placeholder it needs to start and
+// the proxy drops (docs/plans/model-proxy.md, decision 4).
+const (
+	envAnthropicBaseURL   = "ANTHROPIC_BASE_URL"
+	envAnthropicAuthToken = "ANTHROPIC_AUTH_TOKEN" //nolint:gosec // an environment variable's name
+	modelProxyToken       = "c4-model-proxy"
+)
+
+// onSharedToken reports whether the Agent is on the factory's shared token:
+// its credentialsSecretRef names one of the --shared-secret Secrets and the
+// operator runs with --model-proxy-url. A stand-in Agent has no ref; an Agent
+// on a Secret of its own is the project's business.
+func onSharedToken(agent *c4v1alpha1.Agent, sharedSecrets []string, modelProxyURL string) bool {
+	ref := agent.Spec.CredentialsSecretRef
+	return ref != nil && modelProxyURL != "" && slices.Contains(sharedSecrets, ref.Name)
+}
+
+// sandboxModelProxy returns the proxy URL a sandbox of the Agent gets, or
+// none for an Agent not on the shared token.
+func (r *TaskReconciler) sandboxModelProxy(agent *c4v1alpha1.Agent) string {
+	if onSharedToken(agent, r.SharedSecrets, r.ModelProxyURL) {
+		return r.ModelProxyURL
+	}
+	return ""
 }
 
 // Where a sandbox mounts the shared Go build cache, and the variables pointing
@@ -164,7 +195,13 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
-	if ref := agent.Spec.CredentialsSecretRef; ref != nil {
+	switch ref := agent.Spec.CredentialsSecretRef; {
+	case run.modelProxyURL != "":
+		// The token stays in the release namespace: the proxy adds it.
+		env = append(env,
+			corev1.EnvVar{Name: envAnthropicBaseURL, Value: run.modelProxyURL},
+			corev1.EnvVar{Name: envAnthropicAuthToken, Value: modelProxyToken})
+	case ref != nil:
 		envFrom = append(envFrom, corev1.EnvFromSource{
 			SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name}},
 		})

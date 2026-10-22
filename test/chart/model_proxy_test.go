@@ -215,3 +215,80 @@ func decodeModelProxy(t *testing.T, where string, manifests []byte, name string)
 	}
 	return got
 }
+
+// managerModelProxyArg is the flag the manager gets so sandboxes on the shared
+// token reach the proxy (docs/plans/model-proxy.md decision 5, #1136).
+const managerModelProxyArg = "--model-proxy-url="
+
+// TestModelProxyManagerFlag checks that the manager is told where the proxy
+// is: the chart passes --model-proxy-url with agents.enabled and not without,
+// and config/manager passes it too.
+func TestModelProxyManagerFlag(t *testing.T) {
+	helm := helmBinary(t)
+	out, err := exec.Command(helm, "template", release, chartDir, "--namespace", releaseNS).Output()
+	if err != nil {
+		t.Fatalf("helm template: %v", err)
+	}
+	want := managerModelProxyArg + "http://" + modelProxyName + "." + releaseNS + ".svc:8080"
+	if got := managerArg(t, "the chart", out, managerModelProxyArg); got != want {
+		t.Errorf("the chart's manager has %q, want %q", got, want)
+	}
+
+	out, err = exec.Command(helm, "template", release, chartDir, "--namespace", releaseNS,
+		"--set", "agents.enabled=false").Output()
+	if err != nil {
+		t.Fatalf("helm template agents.enabled=false: %v", err)
+	}
+	if got := managerArg(t, "the chart without agents", out, managerModelProxyArg); got != "" {
+		t.Errorf("the chart's manager has %q with agents.enabled=false", got)
+	}
+
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "config", "manager", "manager.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = managerModelProxyArg + "http://c4-factory-model-proxy.c4-factory-system.svc:8080"
+	if got := managerArg(t, "config/manager", manifest, managerModelProxyArg); got != want {
+		t.Errorf("config/manager's manager has %q, want %q", got, want)
+	}
+}
+
+// managerArg returns the manager container's argument starting with prefix,
+// or "" when it has none. It fails the test when manifests hold no manager.
+func managerArg(t *testing.T, where string, manifests []byte, prefix string) string {
+	t.Helper()
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(manifests)))
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(bytes.TrimSpace(doc)) == 0 || !strings.Contains(string(doc), "kind: Deployment\n") {
+			continue
+		}
+		obj, _, err := scheme.Codecs.UniversalDeserializer().Decode(doc, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: decode: %v\n%s", where, err, doc)
+		}
+		d, ok := obj.(*appsv1.Deployment)
+		if !ok {
+			continue
+		}
+		for _, c := range d.Spec.Template.Spec.Containers {
+			if c.Name != "manager" {
+				continue
+			}
+			for _, a := range c.Args {
+				if strings.HasPrefix(a, prefix) {
+					return a
+				}
+			}
+			return ""
+		}
+	}
+	t.Fatalf("%s: no Deployment with a manager container", where)
+	return ""
+}

@@ -27,10 +27,18 @@ import (
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
 const AgentNetworkPolicyName = "c4-agent-sandbox"
 
+// The model proxy's pods, as the chart and config/model-proxy label them, and
+// the port they listen on.
+const (
+	ModelProxyAppName = "c4-model-proxy"
+	ModelProxyPort    = 8080
+)
+
 // ensureAgentNetwork fences agent sandboxes in the project: no traffic in, and
-// out only DNS, the in-cluster Git hosts of the project's GitProviders, and HTTPS
-// to public addresses (the model API, package registries). The Kubernetes API and
-// every other in-cluster service stay out of reach.
+// out only DNS, the in-cluster Git hosts of the project's GitProviders, HTTPS
+// to public addresses (the model API, package registries) and, when the
+// operator has one, the model proxy. The Kubernetes API and every other
+// in-cluster service stay out of reach.
 func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v1alpha1.Project) error {
 	var providers c4v1alpha1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
@@ -69,6 +77,22 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 		egress = append(egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{corev1.LabelMetadataName: ns}},
 		}}})
+	}
+	if r.ModelProxyURL != "" {
+		// A sandbox on the shared token holds no token: the proxy's pods in the
+		// release namespace are its only way to Claude with one (decision 6 of
+		// docs/plans/model-proxy.md). The proxy's own policy admits only
+		// sandboxes of namespaces opted in to the shared Secrets.
+		proxy := intstr.FromInt32(ModelProxyPort)
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					corev1.LabelMetadataName: r.SourceNamespace}},
+				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					"app.kubernetes.io/name": ModelProxyAppName}},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}},
+		})
 	}
 
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
