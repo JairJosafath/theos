@@ -231,7 +231,7 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
 | `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of the node, its volume and extra `GITEA__section__KEY` settings |
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
-| `gitea.projects` | project names: a namespace each (see `projectNamespaces.create`), labeled `c4.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
+| `gitea.projects` | project names, or objects `{name, packages}` (`packages` as `gitProviders[].packages`): a namespace each (see `projectNamespaces.create`), labeled `c4.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
 | `projectNamespaces.create` | make each of `gitea.projects`' namespaces, kept on uninstall, unless it exists and isn't the release's (default on); off, you make them and the seed labels them |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors), each pinned to its tag in `templates/versions.txt` (default on) |
@@ -276,6 +276,33 @@ a per-project pool of a `base` and a `go` runner on the chart's runner images
 `gitProviders[].token` and `username` are gone (they put the token in your
 values file and in every revision of Helm's release record); a values file
 that still sets them fails to render and says what to do.
+
+`packages`, optional on a `gitProviders[]` entry and on a `gitea.projects[]`
+object, is the GitProvider's `spec.packages`: the npm scope and registry and
+the PyPI index the agents' pods install from and the published Containers
+publish to. Unset, they are the host's own package registries, read with the
+GitProvider's token. A registry of your own names a Secret you make, with key
+`token` (publishes; only the operator reads it) and, optionally, `readToken`
+(installs); when it is set the operator sets `C4_NPM_SCOPE`, `C4_NPM_REGISTRY`
+and `C4_PYPI_INDEX` as the owner's Actions variables and the read tokens as
+its Actions secrets, and deletes them when `packages` is unset again.
+
+```yaml
+gitProviders:
+  - namespace: webshop
+    # ...
+    packages:
+      npm:
+        scope: "@acme"
+        registry: https://npm.example.com/
+        credentialsSecretRef:
+          name: acme-npm          # keys token and, optionally, readToken
+      pypi:
+        index: https://pypi.example.com/simple
+        upload: https://pypi.example.com/
+        credentialsSecretRef:
+          name: acme-pypi
+```
 
 The CRDs are part of the release, so the GitProviders are not release objects:
 the chart renders them into ConfigMap `c4factory-gitproviders`, and Job

@@ -630,6 +630,99 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 	}
 }
 
+// The npm scope and registry and the PyPI index come from the GitProvider's
+// URL and owner by default, in cluster or not, with no token env: the pod
+// installs with the agent bot's Git token. A spec.packages of its own sends
+// its scope and URLs, and its Secrets' readToken as the token envs, optional
+// so a Secret without one still runs the pod.
+func TestBuildSandboxPackages(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, url           string
+		packages            gitprovider.Packages
+		npmSecret, pySecret string
+		want                []corev1.EnvVar
+	}{
+		{name: "an in-cluster Gitea", url: "http://gitea.gitea.svc.cluster.local:3000", want: []corev1.EnvVar{
+			{Name: "C4_NPM_SCOPE", Value: "@c4factory"},
+			{Name: "C4_NPM_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/"},
+			{Name: "C4_PYPI_INDEX", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/pypi/simple"},
+		}},
+		{name: "an external Gitea", url: "https://git.example.com/", want: []corev1.EnvVar{
+			{Name: "C4_NPM_SCOPE", Value: "@c4factory"},
+			{Name: "C4_NPM_REGISTRY", Value: "https://git.example.com/api/packages/apps/npm/"},
+			{Name: "C4_PYPI_INDEX", Value: "https://git.example.com/api/packages/apps/pypi/simple"},
+		}},
+		{name: "a spec.packages of its own", url: "https://git.example.com",
+			packages: gitprovider.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/registry",
+				PyPIIndex: "https://pypi.example.com/simple", PyPIUpload: "https://pypi.example.com/upload"},
+			npmSecret: "acme-npm", pySecret: "acme-pypi",
+			want: []corev1.EnvVar{
+				{Name: "C4_NPM_SCOPE", Value: "@acme"},
+				{Name: "C4_NPM_REGISTRY", Value: "https://npm.example.com/registry"},
+				readTokenEnv("C4_NPM_TOKEN", "acme-npm"),
+				{Name: "C4_PYPI_INDEX", Value: "https://pypi.example.com/simple"},
+				readTokenEnv("C4_PYPI_TOKEN", "acme-pypi"),
+			}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: tt.url, Owner: "apps",
+				Credentials: gitprovider.Credentials{Token: "t"}, Packages: tt.packages})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo := provider.Repository("image-shrink")
+			for _, role := range []string{model.RoleImplementer, model.RoleReviewer} {
+				sandbox, err := buildSandbox(sandboxRun{
+					task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+					status:    &c4v1alpha1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+					container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+					agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+					name:      "add-crop-r1-" + role, role: role,
+					repoURL: repo.CloneURL, gitSecret: "image-shrink-agent-git",
+					npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
+					npmSecret: tt.npmSecret, pypiSecret: tt.pySecret,
+				}, scheme, time.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []corev1.EnvVar
+				for _, e := range podOf(t, sandbox).Containers[0].Env {
+					if strings.HasPrefix(e.Name, "C4_NPM_") || strings.HasPrefix(e.Name, "C4_PYPI_") {
+						got = append(got, e)
+					}
+				}
+				if !reflect.DeepEqual(got, tt.want) {
+					t.Errorf("%s: package env %v, want %v", role, got, tt.want)
+				}
+			}
+		})
+	}
+	// The planner's pod gets none, as with Go: task_plan.go passes no
+	// package field (TestBuildSandboxPlanEnv has its whole env).
+	t.Run("the planner", func(t *testing.T) {
+		sandbox, err := buildSandbox(sandboxRun{
+			task:   &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")},
+			status: &c4v1alpha1.TaskStatus{Round: 1, Branch: "plan/4"},
+			agent:  &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+			name:   "cel-lens-plan-4-r1-plan", role: model.RolePlanner,
+			repoURL: "http://gitea/apps/brief-cel-lens.git", gitSecret: "brief-cel-lens-git",
+			brief: "cel-lens", briefRound: 4,
+		}, scheme, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range podOf(t, sandbox).Containers[0].Env {
+			if strings.HasPrefix(e.Name, "C4_NPM_") || strings.HasPrefix(e.Name, "C4_PYPI_") {
+				t.Errorf("planner pod has %s=%q, want no package env", e.Name, e.Value)
+			}
+		}
+	})
+}
+
 func TestBuildSandboxPlanEnv(t *testing.T) {
 	if model.RolePlanner != agentrunner.RolePlan {
 		t.Fatalf("model.RolePlanner = %q, but c4agent plans as %q", model.RolePlanner, agentrunner.RolePlan)

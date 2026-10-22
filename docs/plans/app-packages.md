@@ -174,12 +174,20 @@ the choices under that, and where they differ from Go.
      `vars.C4_NPM_SCOPE` (else `@c4factory`), `vars.C4_NPM_REGISTRY` and
      `vars.C4_PYPI_INDEX` (else `gitea.server_url` and
      `gitea.repository_owner` in the paths above), `secrets.C4_NPM_TOKEN`
-     and `secrets.C4_PYPI_TOKEN` (else `gitea.token`). The operator sets
+     and `secrets.C4_PYPI_TOKEN`. The fallback to `gitea.token` holds only
+     while the matching variable is unset (the host's own registry); with
+     `vars.C4_NPM_REGISTRY` or `vars.C4_PYPI_INDEX` set and its secret
+     unset, the workflow installs without a credential, never sending
+     `gitea.token` to another registry. The operator sets
      them on the GitProvider's owner (Gitea's organisation Actions variables
      and secrets, `PUT /orgs/{org}/actions/{variables,secrets}/{name}`)
      when `spec.packages` departs from the default, and deletes them when
      it returns to it; by default none is set and the workflows need
-     nothing. The workflows write `~/.npmrc` and `~/.netrc` from them, as
+     nothing. The owner-level secrets hold the registry Secrets' `readToken`,
+     never `token`: a workflow installs and never publishes with them, and
+     `token` reaches no code the agents wrote. A registry Secret without
+     `readToken` sets no owner secret, and the workflow installs without a
+     credential (`internal/controller/project_packages.go`). The workflows write `~/.npmrc` and `~/.netrc` from them, as
      go-standard's `check.yaml` writes its netrc:
      - the check workflows of ts-standard, python-standard and aws-standard;
      - gitea-release's release workflow, because its `make dist` installs

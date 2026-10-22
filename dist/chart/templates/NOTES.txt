@@ -32,7 +32,7 @@ with the tagged templates. Its admin password, and Gitea on http://localhost:300
 
   kubectl -n {{ $ns }} get secret {{ include "c4-factory.giteaAdminSecret" . }} -o jsonpath='{.data.password}' | base64 -d; echo
   kubectl -n {{ $ns }} port-forward svc/gitea 3000
-{{- range .Values.gitea.projects }}
+{{- range include "c4-factory.projectNames" . | fromJsonArray }}
 
 Project {{ . }}: organization {{ . }} in Gitea, GitProvider gitea in namespace {{ . }}.
 {{- end }}

@@ -35,12 +35,29 @@ var (
 func packagedRelease(ns, status, conclusion string, files []fakeFile, packages ...fakePackage) {
 	GinkgoHelper()
 	readyContainer(ns)
+	packagedReleaseOf(ns, status, conclusion, files, packages...)
+}
+
+// packagedReleaseOf is packagedRelease once orders-api is ready, for a spec
+// that changes its GitProvider first.
+func packagedReleaseOf(ns, status, conclusion string, files []fakeFile, packages ...fakePackage) {
+	GinkgoHelper()
 	crewAgents(ns, 1)
 	mergedIssue(ns)
 	gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "", files...)
 	gitFake.setReleasePackages(ns, "orders-api", "v0.1.0", packages...)
 	releaseRun(ns, status, conclusion)
 	taggingCrew(ns)
+}
+
+// setNpmScope sets the npm scope of ns's GitProvider, spec.packages.npm.scope,
+// which the Crew reads through the Repository its provider builds.
+func setNpmScope(ns, scope string) {
+	GinkgoHelper()
+	provider := &c4v1alpha1.GitProvider{}
+	Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
+	provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
+	Expect(k8sClient.Update(ctx, provider)).To(Succeed())
 }
 
 // releasePackages is the Crew's last release's packages once the state is
@@ -186,10 +203,11 @@ var _ = Describe("Crew release packages", func() {
 
 	It("leaves a tarball outside the GitProvider's scope alone, naming the scope it lacks", func() {
 		ns := newProjectNamespace()
-		gitFake.setNpmScope(ns, "@acme")
+		readyContainer(ns)
+		setNpmScope(ns, "@acme")
 		other := fakePackage{ecosystem: gitprovider.EcosystemNpm, name: "@c4factory/x", version: "0.1.0",
 			file: "c4factory-x-0.1.0.tgz"}
-		packagedRelease(ns, "completed", "success", []fakeFile{{name: other.file, data: []byte("tgz")}}, other)
+		packagedReleaseOf(ns, "completed", "success", []fakeFile{{name: other.file, data: []byte("tgz")}}, other)
 
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "NoPackage", metav1.ConditionTrue, "NoPackage")

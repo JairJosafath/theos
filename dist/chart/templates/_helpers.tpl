@@ -61,3 +61,36 @@ When disabled, serviceAccount.name must be set; use "default" to pick the namesp
 {{- required "serviceAccount.name is required when serviceAccount.enabled=false (set name: default explicitly to use the namespace default ServiceAccount)" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+gitea.projects, one object per name in order: an entry is a name, or an object
+with a name and, optionally, the GitProvider's packages (spec.packages). A JSON
+list; read it with fromJsonArray.
+*/}}
+{{- define "c4-factory.projects" -}}
+{{- $projects := list }}
+{{- $seen := dict }}
+{{- range $i, $p := .Values.gitea.projects }}
+{{- if kindIs "string" $p }}
+{{- $p = dict "name" $p }}
+{{- end }}
+{{- $name := required (printf "gitea.projects[%d]: a project is a name, or an object with a name" $i) $p.name }}
+{{- if not (hasKey $seen $name) }}
+{{- $_ := set $seen $name true }}
+{{- $projects = append $projects $p }}
+{{- end }}
+{{- end }}
+{{- $projects | toJson }}
+{{- end }}
+
+{{/*
+The names of gitea.projects, each once, in order. A JSON list; read it with
+fromJsonArray.
+*/}}
+{{- define "c4-factory.projectNames" -}}
+{{- $names := list }}
+{{- range include "c4-factory.projects" . | fromJsonArray }}
+{{- $names = append $names .name }}
+{{- end }}
+{{- $names | toJson }}
+{{- end }}

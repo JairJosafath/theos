@@ -51,6 +51,72 @@ type GitProviderSpec struct {
 	// (#1698).
 	// +optional
 	CI *CISpec `json:"ci,omitempty"`
+
+	// packages names the npm and PyPI registries the owner's packages are
+	// published to and installed from. Without it, and for each registry
+	// left out, the Git host's own registries under the owner, with the
+	// scope @c4factory: the operator publishes with the GitProvider's
+	// credentials and the agents install with the agent bot's.
+	// +optional
+	Packages *PackagesSpec `json:"packages,omitempty"`
+}
+
+// PackagesSpec names the owner's package registries, one per ecosystem.
+type PackagesSpec struct {
+	// npm is the registry the owner's npm packages go to.
+	// +optional
+	NPM *NpmPackagesSpec `json:"npm,omitempty"`
+
+	// pypi is the index the owner's Python packages go to.
+	// +optional
+	PyPI *PyPIPackagesSpec `json:"pypi,omitempty"`
+}
+
+// NpmPackagesSpec is the owner's npm registry.
+type NpmPackagesSpec struct {
+	// scope is the scope the owner's packages are named under, such as
+	// @c4factory; the registry serves it.
+	// +kubebuilder:validation:Pattern=`^@[a-z0-9][a-z0-9._-]*$`
+	// +kubebuilder:validation:MaxLength=214
+	// +optional
+	Scope string `json:"scope,omitempty"`
+
+	// registry is the registry's URL, such as https://registry.example.com/npm/.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +kubebuilder:validation:MaxLength=2048
+	// +optional
+	Registry string `json:"registry,omitempty"`
+
+	// credentialsSecretRef names a Secret with the key "token", which
+	// publishes (only the operator reads it), and may have "readToken",
+	// which the agents and the owner's CI install with. Without it,
+	// installs from another host send no credential.
+	// +optional
+	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
+}
+
+// PyPIPackagesSpec is the owner's Python package index.
+type PyPIPackagesSpec struct {
+	// index is the simple index's URL, where packages are installed from,
+	// such as https://pypi.example.com/simple.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +kubebuilder:validation:MaxLength=2048
+	// +optional
+	Index string `json:"index,omitempty"`
+
+	// upload is the URL packages are published to, such as
+	// https://pypi.example.com/legacy/.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +kubebuilder:validation:MaxLength=2048
+	// +optional
+	Upload string `json:"upload,omitempty"`
+
+	// credentialsSecretRef names a Secret with the key "token", which
+	// publishes (only the operator reads it), and may have "readToken",
+	// which the agents and the owner's CI install with. Without it,
+	// installs from another host send no credential.
+	// +optional
+	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 }
 
 // CISpec picks the CI system, one member at a time. giteaActions is the only

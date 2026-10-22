@@ -197,6 +197,80 @@ spec:
                 maxLength: 100
                 minLength: 1
                 type: string
+              packages:
+                description: |-
+                  packages names the npm and PyPI registries the owner's packages are
+                  published to and installed from. Without it, and for each registry
+                  left out, the Git host's own registries under the owner, with the
+                  scope @c4factory: the operator publishes with the GitProvider's
+                  credentials and the agents install with the agent bot's.
+                properties:
+                  npm:
+                    description: npm is the registry the owner's npm packages go to.
+                    properties:
+                      credentialsSecretRef:
+                        description: |-
+                          credentialsSecretRef names a Secret with the key "token", which
+                          publishes (only the operator reads it), and may have "readToken",
+                          which the agents and the owner's CI install with. Without it,
+                          installs from another host send no credential.
+                        properties:
+                          name:
+                            description: name of the referenced object.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      registry:
+                        description: registry is the registry's URL, such as https://registry.example.com/npm/.
+                        maxLength: 2048
+                        pattern: ^https?://
+                        type: string
+                      scope:
+                        description: |-
+                          scope is the scope the owner's packages are named under, such as
+                          @c4factory; the registry serves it.
+                        maxLength: 214
+                        pattern: ^@[a-z0-9][a-z0-9._-]*$
+                        type: string
+                    type: object
+                  pypi:
+                    description: pypi is the index the owner's Python packages go
+                      to.
+                    properties:
+                      credentialsSecretRef:
+                        description: |-
+                          credentialsSecretRef names a Secret with the key "token", which
+                          publishes (only the operator reads it), and may have "readToken",
+                          which the agents and the owner's CI install with. Without it,
+                          installs from another host send no credential.
+                        properties:
+                          name:
+                            description: name of the referenced object.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      index:
+                        description: |-
+                          index is the simple index's URL, where packages are installed from,
+                          such as https://pypi.example.com/simple.
+                        maxLength: 2048
+                        pattern: ^https?://
+                        type: string
+                      upload:
+                        description: |-
+                          upload is the URL packages are published to, such as
+                          https://pypi.example.com/legacy/.
+                        maxLength: 2048
+                        pattern: ^https?://
+                        type: string
+                    type: object
+                type: object
               provider:
                 default: gitea
                 description: provider is the kind of Git hosting.

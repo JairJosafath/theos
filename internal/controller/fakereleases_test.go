@@ -71,14 +71,11 @@ type fakeReleaseState struct {
 	// owner/name; packagePublishes counts the calls, by owner/name@tag;
 	// packageUploads the package versions uploaded, by
 	// owner:ecosystem/name@version, each owner's registry its own as Gitea's
-	// are; and
-	// npmScopes the npm scope of each owner's GitProvider, @c4factory when
-	// unset.
+	// are.
 	packages         map[string][]fakePackage
 	packageFailures  map[string]int
 	packagePublishes map[string]int
 	packageUploads   map[string]int
-	npmScopes        map[string]string
 }
 
 // fakePackage is the package a release's file holds: an npm tarball or a
@@ -109,7 +106,7 @@ func (g *fakeGit) releaseState() *fakeReleaseState {
 			onlineRunners: map[int64]bool{}, images: map[string]gitprovider.Image{},
 			imageFailures: map[string]int{}, imagePushes: map[string]int{}, registry: map[string]string{},
 			packages: map[string][]fakePackage{}, packageFailures: map[string]int{}, packagePublishes: map[string]int{},
-			packageUploads: map[string]int{}, npmScopes: map[string]string{}}
+			packageUploads: map[string]int{}}
 	}
 	return g.releases
 }
@@ -460,23 +457,6 @@ func (g *fakeGit) packageUploads(owner, ecosystem, name, version string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.releaseState().packageUploads[owner+":"+ecosystem+"/"+name+"@"+version]
-}
-
-// setNpmScope sets the npm scope of owner's GitProvider, as its spec.packages
-// would.
-func (g *fakeGit) setNpmScope(owner, scope string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.releaseState().npmScopes[owner] = scope
-}
-
-// npmScopeLocked is the npm scope of owner's GitProvider, @c4factory when
-// unset, read under the fake's lock.
-func (s *fakeReleaseState) npmScopeLocked(owner string) string {
-	if scope := s.npmScopes[owner]; scope != "" {
-		return scope
-	}
-	return gitprovider.DefaultNpmScope
 }
 
 // PublishImage gives the outcome setImage gave the release, after the

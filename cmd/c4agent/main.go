@@ -60,13 +60,18 @@ func run(ctx context.Context, workdir string) agentrunner.Result {
 	if err := os.MkdirAll(workdir, 0o750); err != nil {
 		return agentrunner.Result{Role: job.Role, Error: err.Error()}
 	}
-	// For an Agent whose own GOPROXY names the Git host's registry.
+	// For an Agent whose own GOPROXY names the Git host's registry, and for
+	// uv's installs from the owner's index.
 	home, err := os.UserHomeDir()
 	if err == nil {
 		err = agentrunner.WriteNetrc(home, job)
 	}
 	if err != nil {
 		return agentrunner.Result{Role: job.Role, Error: "c4agent: .netrc: " + err.Error()}
+	}
+	// For npm's installs of the owner's scope.
+	if err := agentrunner.WriteNpmrc(home, job); err != nil {
+		return agentrunner.Result{Role: job.Role, Error: "c4agent: .npmrc: " + err.Error()}
 	}
 	stopProxy, err := serveGoProxy(job)
 	if err != nil {

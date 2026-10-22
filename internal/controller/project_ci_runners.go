@@ -85,12 +85,13 @@ func (r *ProjectReconciler) runnerRecordKept() time.Duration {
 // pod of a provider or label no longer in any ci block is deleted too, lost if
 // it was still running. Every pod keeps its finalizer, and so stays readable
 // with its fate, for runnerRecordKept after its deletion was asked; the
-// returned duration says when the next record expires, zero for none.
+// returned duration says when the next record expires, zero for none, and
+// the namespace's GitProviders are returned for ensurePackagesActions.
 func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1alpha1.Project,
-	status *c4v1alpha1.ProjectStatus) (time.Duration, error) {
+	status *c4v1alpha1.ProjectStatus) (time.Duration, []c4v1alpha1.GitProvider, error) {
 	var providers c4v1alpha1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	pools := map[poolKey]*ciPool{}
 	var failures []string
@@ -101,7 +102,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 		}
 		token, reason, err := r.runnerToken(ctx, project.Namespace, p.Name)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		if reason != "" {
 			failures = append(failures, fmt.Sprintf("%s: %s", p.Name, reason))
@@ -111,7 +112,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 			continue
 		}
 		if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		for _, runner := range p.Spec.CI.GiteaActions.Runners {
 			pools[poolKey{p.Name, runner.Label}] = &ciPool{in: runnerPodInput{
@@ -123,15 +124,15 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 
 	next, err := r.sweepRunnerPods(ctx, project.Namespace, pools)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if len(pools) > 0 {
 		if err := r.ensureCINetwork(ctx, project, gitNamespacesOf(providers.Items)); err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 	}
 	if err := r.fillPools(ctx, project, pools); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	switch {
 	case len(failures) > 0:
@@ -143,7 +144,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 	default:
 		meta.RemoveStatusCondition(&status.Conditions, ConditionCIRunners)
 	}
-	return next, nil
+	return next, providers.Items, nil
 }
 
 // sweepRunnerPods goes over the project's pool pods: one not ended, of a pool

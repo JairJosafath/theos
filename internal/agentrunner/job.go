@@ -66,6 +66,18 @@ const (
 	// EnvGoRegistry is the owner's Go package registry, where GoProxy sends
 	// the factory's module paths.
 	EnvGoRegistry = "C4_GO_REGISTRY"
+	// EnvNpmScope is the scope the owner's npm packages are named under, and
+	// EnvNpmRegistry the registry that serves it; both or neither.
+	EnvNpmScope    = "C4_NPM_SCOPE"
+	EnvNpmRegistry = "C4_NPM_REGISTRY"
+	// EnvNpmToken installs from a registry on another host than the Git
+	// host; the Git host's own registry takes the agent's Git token.
+	EnvNpmToken = "C4_NPM_TOKEN" //nolint:gosec // an environment variable's name
+	// EnvPyPIIndex is the simple index the owner's Python packages are
+	// installed from, and EnvPyPIToken installs from one on another host
+	// than the Git host.
+	EnvPyPIIndex = "C4_PYPI_INDEX"
+	EnvPyPIToken = "C4_PYPI_TOKEN" //nolint:gosec // an environment variable's name
 	// EnvSessionTokenLimit is the Agent's sessionTokenLimit: the size at which
 	// an agent session hands off to a fresh one.
 	EnvSessionTokenLimit = "C4AGENT_SESSION_TOKEN_LIMIT"
@@ -121,6 +133,14 @@ type Job struct {
 	Brief string
 	// GoRegistry is the owner's Go package registry; empty: no GoProxy.
 	GoRegistry string
+	// NpmScope and NpmRegistry are the owner's npm scope and the registry
+	// that serves it; empty: no .npmrc. NpmToken installs from a registry
+	// on another host than the Git host.
+	NpmScope, NpmRegistry, NpmToken string
+	// PyPIIndex is the simple index the owner's Python packages are
+	// installed from, and PyPIToken installs from one on another host than
+	// the Git host.
+	PyPIIndex, PyPIToken string
 	// SessionTokenLimit is the size at which an agent session hands off to a
 	// fresh one; 0: sessions run to their end.
 	SessionTokenLimit int64
@@ -129,22 +149,27 @@ type Job struct {
 // JobFromEnv reads a Job from environment variables.
 func JobFromEnv(getenv func(string) string) (Job, error) {
 	job := Job{
-		Role:       getenv(EnvRole),
-		RepoURL:    getenv(EnvRepoURL),
-		Branch:     getenv(EnvBranch),
-		Base:       getenv(EnvBase),
-		Goal:       getenv(EnvGoal),
-		Feedback:   getenv(EnvFeedback),
-		Context:    getenv(EnvContext),
-		Project:    getenv(EnvProject),
-		Container:  getenv(EnvContainer),
-		Task:       getenv(EnvTask),
-		Username:   getenv(EnvGitUsername),
-		Token:      getenv(EnvGitToken),
-		Harness:    getenv(EnvHarness),
-		Model:      getenv(EnvModel),
-		Brief:      getenv(EnvBrief),
-		GoRegistry: getenv(EnvGoRegistry),
+		Role:        getenv(EnvRole),
+		RepoURL:     getenv(EnvRepoURL),
+		Branch:      getenv(EnvBranch),
+		Base:        getenv(EnvBase),
+		Goal:        getenv(EnvGoal),
+		Feedback:    getenv(EnvFeedback),
+		Context:     getenv(EnvContext),
+		Project:     getenv(EnvProject),
+		Container:   getenv(EnvContainer),
+		Task:        getenv(EnvTask),
+		Username:    getenv(EnvGitUsername),
+		Token:       getenv(EnvGitToken),
+		Harness:     getenv(EnvHarness),
+		Model:       getenv(EnvModel),
+		Brief:       getenv(EnvBrief),
+		GoRegistry:  getenv(EnvGoRegistry),
+		NpmScope:    getenv(EnvNpmScope),
+		NpmRegistry: getenv(EnvNpmRegistry),
+		NpmToken:    getenv(EnvNpmToken),
+		PyPIIndex:   getenv(EnvPyPIIndex),
+		PyPIToken:   getenv(EnvPyPIToken),
 	}
 	if job.Base == "" {
 		job.Base = "main"

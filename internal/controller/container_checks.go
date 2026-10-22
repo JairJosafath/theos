@@ -96,6 +96,7 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,
 		Credentials: creds,
+		Packages:    packagesOf(&provider),
 	})
 	if err != nil {
 		return gitAccess{}, err
