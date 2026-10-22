@@ -124,9 +124,10 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   elsewhere gives their own value. The design never hard-codes such a choice
   for the user, and no plan asks the owner to hold a name or an account on a
   user's behalf (#1234: `@c4factory` on npmjs.org was proposed as the one
-  scope; the scope is a setting, and its default is the in-cluster Gitea's
-  npm registry). The accounts and credentials the project itself needs stay
-  the owner's ([GOVERNANCE.md](GOVERNANCE.md), "Reserved to the owner").
+  scope; the scope and the registry are settings, the scope's default is
+  `@c4factory` and the registry's the in-cluster Gitea's npm registry, so
+  nothing leaves the cluster unless the user says where). The accounts and
+  credentials the project itself needs stay the owner's ([GOVERNANCE.md](GOVERNANCE.md), "Reserved to the owner").
 - **Test the rules where they live,** at the lowest tier that can see them:
   1. `internal/model` and `internal/scaffold` table tests, the Agent
      Sandbox and pod specs the controllers build, the fence included, and
