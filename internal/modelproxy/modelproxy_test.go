@@ -555,3 +555,33 @@ func TestConnectionHeaderKeepsTheCredential(t *testing.T) {
 		})
 	}
 }
+
+// TestDrainFailsReadinessOnly checks that Drain turns /readyz to 503 while
+// /healthz and the forwarded paths go on being served, so a stopping pod
+// leaves the Service's endpoints before its listener closes (#1135).
+func TestDrainFailsReadinessOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeKey(t, dir, OAuthTokenKey, rand.Text(), then)
+	up := newUpstream(t)
+	p := New(mustURL(t, up.URL), dir, nil)
+	proxy := httptest.NewServer(p)
+	t.Cleanup(proxy.Close)
+
+	if status, _ := send(t, proxy, "/readyz", nil); status != http.StatusOK {
+		t.Fatalf("/readyz before Drain = %d; want 200", status)
+	}
+	p.Drain()
+	if status, body := send(t, proxy, "/readyz", nil); status != http.StatusServiceUnavailable ||
+		!strings.Contains(body, "stopping") {
+		t.Errorf("/readyz after Drain = %d %q; want 503 saying it is stopping", status, body)
+	}
+	if status, _ := send(t, proxy, "/healthz", nil); status != http.StatusOK {
+		t.Errorf("/healthz after Drain = %d; want 200", status)
+	}
+	if status, _ := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusOK {
+		t.Errorf("/v1/messages after Drain = %d; want 200: open and new requests are still served", status)
+	}
+	if n := len(up.requests()); n != 1 {
+		t.Errorf("the upstream was sent %d requests after Drain; want 1", n)
+	}
+}

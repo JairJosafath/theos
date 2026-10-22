@@ -1,0 +1,16 @@
+# The model proxy (docs/plans/model-proxy.md, decisions 2 and 7): the operator
+# image's second binary, /model-proxy, in the release namespace, the one place
+# the Claude token is used. Included from config/default; the chart's copy is
+# dist/chart/templates/model-proxy (hand-written). The Makefile's deploy and
+# build-installer targets set the image here as they do in config/manager.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- deployment.yaml
+- service.yaml
+- networkpolicy.yaml
+- pdb.yaml
+images:
+- name: controller
+  newName: c4factory/operator
+  newTag: dev

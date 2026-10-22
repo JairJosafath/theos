@@ -1,0 +1,84 @@
+{{- if .Values.agents.enabled }}
+{{- $mp := .Values.agents.modelProxy }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "c4-factory.modelProxyName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "c4-factory.modelProxyLabels" . | nindent 4 }}
+spec:
+  replicas: {{ $mp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "c4-factory.modelProxySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "c4-factory.modelProxyLabels" . | nindent 8 }}
+    spec:
+      # The proxy talks to no API server: no ServiceAccount token.
+      automountServiceAccountToken: false
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: model-proxy
+        image: {{ include "c4-factory.modelProxyImage" . | quote }}
+        {{- with .Values.manager.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        command:
+        - /model-proxy
+        args:
+        - --listen=:8080
+        - --upstream={{ $mp.upstream }}
+        - --credentials-dir=/etc/model-proxy/credentials
+        # A stop fails /readyz and keeps serving this long before the listener
+        # closes, so the Service's endpoints drop the pod first.
+        - --drain={{ $mp.drainSeconds }}s
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        # /readyz fails until the Secret holds a token and while a stop drains.
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 20
+          timeoutSeconds: 5
+        resources:
+          {{- toYaml $mp.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        # The token enters as a file, never as env: the kubelet refreshes a
+        # whole-Secret volume (no subPath) when the Secret changes, and the
+        # proxy reads it on every request.
+        - name: credentials
+          mountPath: /etc/model-proxy/credentials
+          readOnly: true
+      volumes:
+      - name: credentials
+        secret:
+          secretName: {{ .Values.agents.credentialsSecret }}
+{{- end }}

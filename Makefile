@@ -301,6 +301,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	cd config/model-proxy && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -326,14 +327,16 @@ deploy: manifests kustomize ## Build the operator, load it into the Kind cluster
 	$(MAKE) --no-print-directory docker-build IMG=$(IMG)-$(CHECKOUT_TAG)
 	hack/kind.sh load '$(KIND_CLUSTER)' $(IMG)
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	cd config/model-proxy && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | $(TESTENV_KUBECTL) apply -f -
 	@# Same tag, new image: restart so the pods pick it up.
-	$(TESTENV_KUBECTL) -n c4-factory-system rollout restart deployment/c4-factory-controller-manager
+	$(TESTENV_KUBECTL) -n c4-factory-system rollout restart deployment/c4-factory-controller-manager deployment/c4-factory-model-proxy
 	$(TESTENV_KUBECTL) -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=180s
 
 .PHONY: deploy-manifests
 deploy-manifests: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config, without building.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	cd config/model-proxy && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
 
 .PHONY: undeploy
