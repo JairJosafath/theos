@@ -1224,9 +1224,11 @@ _Run and monitor the system, and improve it in small, reversible changes._
 {{- if not (or $queue $schedule $event) }}
   - `AwsSolutions-APIG1`: the API has access logging.
   - Serverless `APIGWStructuredLogging`: an access log in JSON. The stage
-    writes the Common Log Format, which the Standard acknowledges: it
-    cannot tell a repository's Framework version, so it cannot hold an
-    older one to JSON. A new stage writes JSON.
+    writes a JSON object per request, with the request id, the route, the
+    status, the latencies and the integration's error. A stage scaffolded
+    before aws-lambda-ts v1.4.0 or aws-lambda-py and -go v1.3.0 writes the
+    Common Log Format, which the Standard acknowledges: it cannot tell a
+    repository's Framework version, so it cannot hold an older one to JSON.
 {{- end }}
   - Serverless `LambdaTracing`: every function traces in production; the
     Standard acknowledges it in development, which traces nothing.

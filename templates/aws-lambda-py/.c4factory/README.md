@@ -120,6 +120,9 @@ CloudFormation offline. The same API as `aws-lambda-ts`, in Python.
   out.
   v1.2.1's README deploys production with `--all`, as a `copyToRegion`
   makes a second stack, `<name>-backup-copy` (#1465).
+  v1.3.0 writes the HTTP API stage's access log as a JSON object per
+  request (`ACCESS_LOG_FIELDS` in `infra/api_stack.ts`), where it wrote the
+  Common Log Format, so Logs Insights queries it by field (#1420).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`,
   the Go, Node and uv toolchain CI and agents use, with ruff, Python, ESLint
   and Prettier set up.

@@ -139,11 +139,23 @@ describe('ApiStack', () => {
     production.resourceCountIs('AWS::ApiGatewayV2::Route', 2);
   });
 
-  it('logs every request and throttles the stage', () => {
+  it('logs every request as JSON and throttles the stage', () => {
     production.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
       StageName: '$default',
       AutoDeploy: true,
-      AccessLogSettings: { DestinationArn: Match.anyValue(), Format: Match.anyValue() },
+      // A JSON object per request, which Logs Insights queries by field.
+      AccessLogSettings: {
+        DestinationArn: Match.anyValue(),
+        Format: Match.serializedJson(
+          Match.objectLike({
+            requestId: '$context.requestId',
+            routeKey: '$context.routeKey',
+            status: '$context.status',
+            responseLatency: '$context.responseLatency',
+            integrationError: '$context.integrationErrorMessage',
+          }),
+        ),
+      },
       DefaultRouteSettings: { ThrottlingRateLimit: 50, ThrottlingBurstLimit: 100 },
     });
   });
