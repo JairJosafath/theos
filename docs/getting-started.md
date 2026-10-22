@@ -889,8 +889,10 @@ place it is deployed to, and a deploy that says nothing is `development`. A
 Brief's planner writes the block on a Container it makes, from what your idea
 states, and never a tier. The Container's page shows the block.
 
-Only a Framework that says `readsOperations: true` (the AWS ones, from their
-next releases on) renders the block. A Container on any other Framework
+Only a Framework that says `readsOperations: true` renders the block: today
+the nine AWS Frameworks (`aws-lambda-ts`, `aws-lambda-go`, `aws-lambda-py`,
+`aws-ec2-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-queue-ts`,
+`aws-schedule-ts` and `aws-event-ts`), none of the Kubernetes ones. A Container on any other Framework
 shows no `OperationsApplied` condition until the block is set, and then
 False, reason `NotReadByFramework`, naming the Framework: the repository
 holds none of it, so file an issue in the app that changes it, or leave the

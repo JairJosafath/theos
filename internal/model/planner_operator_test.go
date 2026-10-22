@@ -54,6 +54,7 @@ func chartCatalog(t *testing.T) []CatalogEntry {
 					SupportedTypes      []string `yaml:"supportedTypes"`
 					SupportedFrameworks []string `yaml:"supportedFrameworks"`
 					DeploysItself       bool     `yaml:"deploysItself"`
+					ReadsOperations     bool     `yaml:"readsOperations"`
 				} `yaml:"spec"`
 			} `yaml:"entries"`
 		} `yaml:"catalog"`
@@ -65,7 +66,7 @@ func chartCatalog(t *testing.T) []CatalogEntry {
 	for _, e := range values.Catalog.Entries {
 		entries = append(entries, CatalogEntry{Side: e.Kind, Name: e.Name, Description: e.Spec.Description,
 			SupportedTypes: e.Spec.SupportedTypes, SupportedFrameworks: e.Spec.SupportedFrameworks,
-			DeploysItself: e.Spec.DeploysItself})
+			DeploysItself: e.Spec.DeploysItself, ReadsOperations: e.Spec.ReadsOperations})
 	}
 	return entries
 }

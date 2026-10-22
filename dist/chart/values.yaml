@@ -575,6 +575,8 @@ catalog:
         supportedTypes: [function]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-ec2-ts
       ref: v1.1.1
@@ -584,6 +586,8 @@ catalog:
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-fargate-ts
       ref: v1.2.1
@@ -593,6 +597,8 @@ catalog:
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-lambda-go
       ref: v1.2.1
@@ -602,6 +608,8 @@ catalog:
         supportedTypes: [function]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-lambda-py
       ref: v1.2.1
@@ -611,6 +619,8 @@ catalog:
         supportedTypes: [function]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-static-site-ts
       ref: v1.0.0
@@ -620,6 +630,8 @@ catalog:
         supportedTypes: [static-site]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-queue-ts
       ref: v1.1.1
@@ -629,6 +641,8 @@ catalog:
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
       ref: v1.1.1
@@ -638,6 +652,8 @@ catalog:
         supportedTypes: [job]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: aws-event-ts
       ref: v1.1.1
@@ -647,6 +663,8 @@ catalog:
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
+        # Renders a Container's operations block into infra/operations.ts (#1703).
+        readsOperations: true
     - kind: Framework
       name: python-cli
       ref: v1.1.0

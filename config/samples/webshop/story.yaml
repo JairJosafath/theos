@@ -109,11 +109,6 @@ spec:
   # (deploytarget-argocd.yaml); status.deploys[] says how far it got.
   deploy:
     - target: kind-cluster
-  operations:
-    recovery:
-      rpo: 15m
-    alerts:
-      email: ops@webshop.example
 ---
 # A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
 # SIGTERM, in the image k8s-manifests builds, with no Service.
