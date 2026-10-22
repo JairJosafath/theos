@@ -15,32 +15,6 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-// GoModuleOutcome is what PublishGoModule did with a tag.
-type GoModuleOutcome string
-
-const (
-	// GoModulePublished means the module's version was uploaded now.
-	GoModulePublished GoModuleOutcome = "Published"
-	// GoModuleExists means the registry already had the version; nothing was uploaded.
-	GoModuleExists GoModuleOutcome = "Exists"
-	// GoModuleNoGoMod means the repository has no go.mod at its root at the tag.
-	GoModuleNoGoMod GoModuleOutcome = "NoGoMod"
-	// GoModuleInvalid means the module can't be published at the tag, such as a
-	// v2.0.0 whose module path lacks /v2; Reason says why. A retry won't help.
-	GoModuleInvalid GoModuleOutcome = "Invalid"
-)
-
-// GoModule is the result of publishing a repository's Go module at a tag.
-type GoModule struct {
-	Outcome GoModuleOutcome
-	// Path is the module path go.mod declares, "" when there is no go.mod.
-	Path string
-	// Version is the tag, the module's version.
-	Version string
-	// Reason says why an Invalid module can't be published.
-	Reason string
-}
-
 // PublishGoModule publishes the Go module at the root of repo, as of tag, to
 // the Gitea Go package registry of repo's owner, under the module path its
 // go.mod declares and with tag as its version. A repository with no go.mod, a

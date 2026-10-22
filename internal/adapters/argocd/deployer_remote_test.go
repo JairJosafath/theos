@@ -64,7 +64,7 @@ type copies struct {
 	err  error
 }
 
-func (c *copies) copy(_ context.Context, to ports.Registry, repository, tag string) error {
+func (c *copies) copy(_ context.Context, to ports.ImageRegistry, repository, tag string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
@@ -207,18 +207,18 @@ func TestCopyImage(t *testing.T) {
 	takenErr := fmt.Errorf("gitea: %w: mirror/webshop/orders-api:v1.2.0 names sha256:ff, not sha256:ab", oci.ErrTagTaken)
 	for _, tc := range []struct {
 		name     string
-		copy     func(context.Context, ports.Registry, string, string) error
+		copy     func(context.Context, ports.ImageRegistry, string, string) error
 		wantKind error
 		want     error
 	}{
 		{name: "no CopyImage", wantKind: ports.ErrArtifactMissing},
-		{name: "a refused login", copy: func(context.Context, ports.Registry, string, string) error { return refusedErr },
+		{name: "a refused login", copy: func(context.Context, ports.ImageRegistry, string, string) error { return refusedErr },
 			wantKind: ports.ErrCredentialRefused},
-		{name: "the source unread", copy: func(context.Context, ports.Registry, string, string) error { return sourceErr },
+		{name: "the source unread", copy: func(context.Context, ports.ImageRegistry, string, string) error { return sourceErr },
 			want: sourceErr},
 		{name: "a tag naming another image (#1770)",
-			copy: func(context.Context, ports.Registry, string, string) error { return takenErr }, wantKind: oci.ErrTagTaken},
-		{name: "a registry down", copy: func(context.Context, ports.Registry, string, string) error {
+			copy: func(context.Context, ports.ImageRegistry, string, string) error { return takenErr }, wantKind: oci.ErrTagTaken},
+		{name: "a registry down", copy: func(context.Context, ports.ImageRegistry, string, string) error {
 			return errors.New("connection refused")
 		}, wantKind: ports.ErrUnreachable},
 	} {
@@ -239,9 +239,9 @@ func TestCopyImage(t *testing.T) {
 	}
 
 	t.Run("copies under the path with the Secret's login", func(t *testing.T) {
-		var got ports.Registry
+		var got ports.ImageRegistry
 		var gotRepo, gotTag string
-		s.CopyImage = func(_ context.Context, to ports.Registry, repository, tag string) error {
+		s.CopyImage = func(_ context.Context, to ports.ImageRegistry, repository, tag string) error {
 			got, gotRepo, gotTag = to, repository, tag
 			return nil
 		}
@@ -249,7 +249,7 @@ func TestCopyImage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := ports.Registry{Host: "registry.remote:5000", Username: "pusher", Password: "pw"}
+		want := ports.ImageRegistry{Host: "registry.remote:5000", Username: "pusher", Password: "pw"}
 		if got != want || gotRepo != "mirror/webshop/orders-api" || gotTag != "v1.2.0" {
 			t.Errorf("copied to %+v %s:%s", got, gotRepo, gotTag)
 		}
@@ -263,9 +263,9 @@ func TestCopyImage(t *testing.T) {
 		lab.Settings[model.ArgoCDSettingImageRegistry] = "registry.lab:5000"
 		lab.Settings[model.ArgoCDSettingImageRegistryInsecure] = "true"
 		lab.Settings[model.ArgoCDSettingImageRepositoryLayout] = model.ArgoCDLayoutFlat
-		var got ports.Registry
+		var got ports.ImageRegistry
 		var gotRepo string
-		s.CopyImage = func(_ context.Context, to ports.Registry, repository, _ string) error {
+		s.CopyImage = func(_ context.Context, to ports.ImageRegistry, repository, _ string) error {
 			got, gotRepo = to, repository
 			return nil
 		}
@@ -273,7 +273,7 @@ func TestCopyImage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := ports.Registry{Host: "registry.lab:5000", Username: "pusher", Password: "pw", Insecure: true}
+		want := ports.ImageRegistry{Host: "registry.lab:5000", Username: "pusher", Password: "pw", Insecure: true}
 		if got != want || gotRepo != "orders-api" {
 			t.Errorf("copied to %+v %s", got, gotRepo)
 		}

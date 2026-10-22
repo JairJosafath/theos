@@ -1,6 +1,8 @@
 package gitprovider
 
 import (
+	"github.com/JairJosafath/c4factory/internal/ports"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,7 +16,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
-// gitea is a Provider backed by Gitea's REST API for repositories and plain Git
+// gitea implements every Git host port, backed by Gitea's REST API for repositories and plain Git
 // over HTTP for commits.
 type gitea struct {
 	base  *url.URL
@@ -27,6 +29,14 @@ type gitea struct {
 	// the host's own registries.
 	packages Packages
 }
+
+var (
+	_ ports.GitHost     = (*gitea)(nil)
+	_ ports.Issues      = (*gitea)(nil)
+	_ ports.CI          = (*gitea)(nil)
+	_ ports.AgentAccess = (*gitea)(nil)
+	_ ports.Registry    = (*gitea)(nil)
+)
 
 func newGitea(cfg Config, client *http.Client) (*gitea, error) {
 	base, err := url.Parse(strings.TrimSuffix(cfg.URL, "/"))

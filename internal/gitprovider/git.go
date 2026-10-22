@@ -1,6 +1,8 @@
 package gitprovider
 
 import (
+	"github.com/JairJosafath/c4factory/internal/ports"
+
 	"context"
 	"errors"
 	"fmt"
@@ -28,7 +30,7 @@ import (
 )
 
 const (
-	defaultBranch = "main"
+	defaultBranch = ports.DefaultBranch
 	remoteName    = "origin"
 )
 

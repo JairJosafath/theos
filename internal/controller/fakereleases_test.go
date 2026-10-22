@@ -14,6 +14,7 @@ import (
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/oci"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The fake host's releases. A milestone's due date is the one its issues were
@@ -527,7 +528,7 @@ func (p *fakeProvider) ImageDigest(_ context.Context, repo gitprovider.Repositor
 
 // CopyImage records the copy of digest to toRepository at to under tag;
 // to the fake GHCR it copies for real, from owner/name in registryFake.
-func (p *fakeProvider) CopyImage(ctx context.Context, repo gitprovider.Repository, digest string, to oci.Registry,
+func (p *fakeProvider) CopyImage(ctx context.Context, repo gitprovider.Repository, digest string, to ports.ImageRegistry,
 	toRepository, tag string) error {
 	p.git.mu.Lock()
 	state := p.git.releaseState()
@@ -539,7 +540,8 @@ func (p *fakeProvider) CopyImage(ctx context.Context, repo gitprovider.Repositor
 	if ghcrFake == nil || to.Host != ghcrFake.host {
 		return nil
 	}
-	return oci.Copy(ctx, oci.Registry{Host: registryFake.host}, repo.Owner+"/"+repo.Name, digest, to, toRepository, tag)
+	return oci.Copy(ctx, oci.Registry{Host: registryFake.host}, repo.Owner+"/"+repo.Name, digest,
+		oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password, Insecure: to.Insecure}, toRepository, tag)
 }
 
 // imageCopy is the digest CopyImage copied to ref, host/repository:tag.
