@@ -51,12 +51,12 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1alpha1.Cr
 	var places []model.SourcePlace
 	for _, c := range crews.Items {
 		if p := c.Spec.PublishReleases; p != nil && p.Source != nil {
-			places = append(places, model.SourcePlace{Crew: c.Namespace + "/" + c.Name,
+			places = append(places, model.SourcePlace{Owner: c.Namespace + "/" + c.Name,
 				Repository: p.GitHub.Repository, Path: p.Source.Path})
 		}
 	}
 	spec := crew.Spec.PublishReleases
-	return model.SourceOverlaps(model.SourcePlace{Crew: crew.Namespace + "/" + crew.Name,
+	return model.SourceOverlaps(model.SourcePlace{Owner: crew.Namespace + "/" + crew.Name,
 		Repository: spec.GitHub.Repository, Path: spec.Source.Path}, places), nil
 }
 

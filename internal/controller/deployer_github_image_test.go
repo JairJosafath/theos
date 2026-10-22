@@ -40,6 +40,7 @@ func TestGitHubDeployerImage(t *testing.T) {
 			t.Fatalf("push: %v", err)
 		}
 		return ports.Shipment{App: app, DisplayName: "Orders API", Version: version,
+			Type: model.TypeService, Deployment: model.DeploymentK8sManifests,
 			Image: owner.host + "/" + repo + "@" + digest,
 			CopyImage: func(ctx context.Context, to ports.Registry, repository, tag string) error {
 				return oci.Copy(ctx, oci.Registry{Host: owner.host}, repo, digest,

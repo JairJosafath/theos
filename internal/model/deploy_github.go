@@ -150,3 +150,52 @@ func GitHubImageNotes(notes, image string) string {
 	}
 	return strings.TrimRight(notes, "\n") + "\n\n" + line + "\n"
 }
+
+// GitHubNothingToPublish is the ArtifactMissing message of a release a
+// github target has nothing of to ship.
+const GitHubNothingToPublish = "nothing to publish: no release files, no source, no image"
+
+// GitHubShipmentFacts are what a github target could ship of a release of a
+// Container (docs/plans/github-deploy.md, Decisions 1 and 2).
+type GitHubShipmentFacts struct {
+	// Type and Deployment are the Container's type and Deployment.
+	Type, Deployment string
+	// Files are the names of the release's files on the Git host.
+	Files []string
+	// Source says the target publishes the source and the release has one.
+	Source bool
+	// Image says the release's image is published, by digest, for its version.
+	Image bool
+	// PackagesToken says the target's Secret holds GitHubSecretPackagesToken.
+	PackagesToken bool
+}
+
+// GitHubShipmentPlan is what a github target ships of a release, besides the
+// GitHub release itself, which always goes with the release's notes.
+type GitHubShipmentPlan struct {
+	// Source says the release's source goes to the target's folder.
+	Source bool
+	// Files are the release files the GitHub release carries.
+	Files []string
+	// Image says the release's image goes to GitHub's container registry.
+	Image bool
+}
+
+// GitHubShipment decides what a github target ships of a release: the source
+// when the target publishes it; the release's files, its image archive left
+// out, as the image goes to a registry; and the image when the Container's
+// Deployment builds one, it is published and the target holds a packages
+// token. With none of the three, problem is GitHubNothingToPublish.
+func GitHubShipment(f GitHubShipmentFacts) (plan GitHubShipmentPlan, problem string) {
+	plan.Source = f.Source
+	for _, name := range f.Files {
+		if !IsImageArchive(name) {
+			plan.Files = append(plan.Files, name)
+		}
+	}
+	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Type)
+	if !plan.Source && len(plan.Files) == 0 && !plan.Image {
+		return plan, GitHubNothingToPublish
+	}
+	return plan, ""
+}
