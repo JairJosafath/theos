@@ -168,7 +168,7 @@
 #                                        (a run whose jobs never started doesn't count). Exit 3: GitHub
 #                                        started none of the newest run's failed jobs (failed payments, a
 #                                        spending limit); prints an issue body with their annotation
-#   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count]
+#   hack/lib/github.sh flakes [--days N] [--seen FILE] [--count | --closed TITLE]
 #                                        the Ginkgo specs and shell test cases (TEST FILE: CASE) that failed on
 #                                        main in the last N days (default 7): SPEC<tab>RUN<tab>TIME<tab>STREAK for
 #                                        each [FAIL] line, and each FAIL line test-hack.sh shows, of each failed
@@ -176,7 +176,9 @@
 #                                        streak, the failed runs of its workflow with no pass between them
 #                                        (cancelled and skipped runs are neither): failures in a row share it.
 #                                        --seen skips the runs FILE lists and writes there the runs it read
-#                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first
+#                                        (the relay watch's); --count prints COUNT<tab>SPEC instead, most first;
+#                                        --closed prints NUMBER<tab>CLOSED_AT of the newest closed issue titled
+#                                        TITLE that closed in the window, nothing when none (#1824)
 #   hack/lib/github.sh queued [--minutes M]
 #                                        whether runs on main wait for a runner: when the oldest run on main
 #                                        with a job queued was queued more than M minutes ago (default 30),
@@ -3056,24 +3058,35 @@ gh_fail_specs() {
   '
 }
 
-# gh_flakes [--days N] [--seen FILE] [--count]: see the usage above. A run
-# whose log can't be read is left out of FILE, so the next call reads it again;
-# FILE keeps only the runs still in the window. Every run on main in the
-# window is listed, not just the failed ones, so a failure's streak can be
-# told (#1398): a run still going is neither a pass nor a failure, so one that
-# fails after it joins the streak before it.
+# gh_flakes [--days N] [--seen FILE] [--count | --closed TITLE]: see the usage
+# above. A run whose log can't be read is left out of FILE, so the next call
+# reads it again; FILE keeps only the runs still in the window. Every run on
+# main in the window is listed, not just the failed ones, so a failure's
+# streak can be told (#1398): a run still going is neither a pass nor a
+# failure, so one that fails after it joins the streak before it. --closed is
+# the watch's question before it files: the issues updated in the window hold
+# every one closed in it, so a bug closed before the window, whose runs are
+# all before it too, needn't be found (#1824).
 gh_flakes() {
-  local days=7 seen= count= since runs id at log out= read=
+  local days=7 seen= count= closed= since runs id at log out= read=
+  local usage='usage: flakes [--days N] [--seen FILE] [--count | --closed TITLE]'
   while [ $# -gt 0 ]; do
     case $1 in
-      --days) days=${2:?usage: flakes [--days N] [--seen FILE] [--count]}; shift 2 ;;
-      --seen) seen=${2:?usage: flakes [--days N] [--seen FILE] [--count]}; shift 2 ;;
+      --days) days=${2:?$usage}; shift 2 ;;
+      --seen) seen=${2:?$usage}; shift 2 ;;
       --count) count=1; shift ;;
-      *) echo "usage: flakes [--days N] [--seen FILE] [--count]" >&2; return 64 ;;
+      --closed) closed=${2:?$usage}; shift 2 ;;
+      *) echo "$usage" >&2; return 64 ;;
     esac
   done
   gh_token || return 1
   since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ) || return 1
+  if [ -n "$closed" ]; then
+    gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100" \
+      --jq ".[] | select((.pull_request | not) and .closed_at != null and .title == $(jq -n --arg t "$closed" '$t')) | [.closed_at, .number] | @tsv" |
+      sort -r | head -1 | awk -F'\t' '{ print $2 "\t" $1 }'
+    return "${PIPESTATUS[0]}"
+  fi
   runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --created ">=${since%%T*}" --limit 1000 \
     --json databaseId,createdAt,conclusion,workflowName,headSha) || return 1
   runs=$(jq -r --arg since "$since" 'group_by(.workflowName)[] | sort_by(.createdAt) |

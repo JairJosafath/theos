@@ -68,7 +68,8 @@
 # runs within WATCH_FLAKE_DAYS days (default 7) with a pass of the workflow
 # between them: a flaky spec rarely fails twice in a row, so it never turns
 # main red, and failures in a row are main being red, which "main is red"
-# tracks (#1398). An open one is not filed again.
+# tracks (#1398). An open one is not filed again, and the runs a closed one
+# already listed are its fixed flake: only runs after it closed count (#1824).
 #
 # In the same round it notices runs on main that wait for a runner: a queued
 # run never fails, so red sees nothing while the device's self-hosted runners
@@ -478,13 +479,19 @@ tmp_round() {
 # count once, since they are main being red, not a flake (#1398). A row
 # without a STREAK, written before it was kept, counts as a streak of its own. hack/lib/github.sh create leaves an open issue with the
 # title alone, so a spec that fails again files nothing new while its bug is
-# open. GitHub caps a title at 256 characters: a longer spec is cut, at 240
-# characters whatever the locale, the same way each time. A failure to read
-# or file is logged once until it works; a spec whose bug could not be filed
-# is tried again next round (FLAKE_RETRY), though no run of it is new.
+# open. A closed one listed the runs before it closed, and a watch that
+# starts with an empty $DIR/flakes-runs reads them all again: before filing,
+# the newest closed bug with the title is asked for (hack/lib/github.sh flakes
+# --closed, one call per spec that reached two streaks) and only the runs
+# after it closed count, so a fixed flake is not refiled, and one that fails
+# twice again after its fix is (#1824). GitHub caps a title at 256
+# characters: a longer spec is cut, at 240 characters whatever the locale,
+# the same way each time. A failure to read or file is logged once until it
+# works; a spec whose bug could not be filed, or whose closed bug could not
+# be read, is tried again next round (FLAKE_RETRY), though no run of it is new.
 FLAKE_SAID= FLAKE_RETRY=
 flake_round() {
-  local out rc spec n since title body said= retry=
+  local out rc spec n since t fixed closed title body said= retry=
   out=$(github flakes --days "$FLAKE_DAYS" --seen "$DIR/flakes-runs" 2>"$DIR/flakes.err")
   rc=$?
   if [ "$rc" != 0 ]; then
@@ -500,17 +507,34 @@ flake_round() {
   while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     # The spec goes in through the environment: awk -v would read its backslashes.
-    n=$(S=$spec awk -F'\t' -v t="$since" '$1 == ENVIRON["S"] && $3 >= t { r[NF > 3 ? $4 : $2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
+    t=$since
+    n=$(S=$spec awk -F'\t' -v t="$t" '$1 == ENVIRON["S"] && $3 >= t { r[NF > 3 ? $4 : $2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
     if [ "$n" -lt 2 ]; then
       log "a spec failed on main: $spec"
       continue
     fi
     title="Flaky: $(LC_ALL=C.UTF-8 bash -c 'printf %s "${1:0:240}"' _ "$spec")"
-    body="The spec \`$spec\` failed on main $n times in the last $FLAKE_DAYS days with a pass between them, so main wasn't red: it is flaky.
+    fixed=$(github flakes --days "$FLAKE_DAYS" --closed "$title" 2>&1)
+    rc=$?
+    if [ "$rc" != 0 ]; then
+      said=fail retry+=$spec$'\n'
+      [ "$FLAKE_SAID" = fail ] || log "a spec failed on main $n times in $FLAKE_DAYS days: $spec; could not read its closed bug (exit $rc): ${fixed//$'\n'/; }"
+      continue
+    fi
+    if [ -n "$fixed" ]; then
+      closed=${fixed#*$'\t'}
+      [[ $closed < $since ]] || t=$closed
+      n=$(S=$spec awk -F'\t' -v t="$t" '$1 == ENVIRON["S"] && $3 >= t { r[NF > 3 ? $4 : $2] = 1 } END { print length(r) }' "$DIR/flakes.tsv")
+      if [ "$n" -lt 2 ]; then
+        log "a spec failed on main after its bug #${fixed%%$'\t'*} closed at $closed: $spec"
+        continue
+      fi
+    fi
+    body="The spec \`$spec\` failed on main $n times in the last $FLAKE_DAYS days with a pass between them, so main wasn't red: it is flaky.${fixed:+ Its earlier bug #${fixed%%$'\t'*} closed at $closed; the runs before that are not listed.}
 
 ## Runs
 
-$(S=$spec awk -F'\t' -v t="$since" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4factory}" \
+$(S=$spec awk -F'\t' -v t="$t" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4factory}" \
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
