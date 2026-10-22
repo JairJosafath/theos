@@ -734,7 +734,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.

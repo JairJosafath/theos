@@ -1268,3 +1268,40 @@ func TestGiteaReleasePinHoldsItsReleaseJobFixes(t *testing.T) {
 			v[0], v[1], v[2])
 	}
 }
+
+// #1579: go-kubebuilder's Dockerfile cross-builds by itself, so the
+// Standard's docker-buildx builds it as it is. kubebuilder's sed put a second
+// --platform on its first FROM, which BuildKit refuses, and the -prefixed
+// build line then exited 0 having pushed nothing.
+func TestOperatorStandardDockerBuildxUsesTheDockerfile(t *testing.T) {
+	_, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "go-operator-standard"},
+	})
+	f, ok := result.Files["Makefile"]
+	if !ok {
+		t.Fatalf("Makefile not written for an operator; files: %v", result.Files.Paths())
+	}
+	makefile := string(f.Data)
+	start := strings.Index(makefile, "\ndocker-buildx:")
+	if start < 0 {
+		t.Fatalf("operator Makefile has no docker-buildx target:\n%s", makefile)
+	}
+	recipe := makefile[start+1:]
+	if end := strings.Index(recipe, "\n\n"); end >= 0 {
+		recipe = recipe[:end]
+	}
+	for _, banned := range []string{"Dockerfile.cross", "sed ", "--platform=\\$$"} {
+		if strings.Contains(recipe, banned) {
+			t.Errorf("docker-buildx mentions %q (#1579):\n%s", banned, recipe)
+		}
+	}
+	if !strings.Contains(recipe, "-f Dockerfile .") {
+		t.Errorf("docker-buildx does not build -f Dockerfile (#1579):\n%s", recipe)
+	}
+	for _, line := range strings.Split(recipe, "\n") {
+		if strings.Contains(line, "buildx build") && strings.HasPrefix(strings.TrimSpace(line), "-") {
+			t.Errorf("docker-buildx ignores a failed build (#1579): %q", line)
+		}
+	}
+}
