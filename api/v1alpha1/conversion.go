@@ -240,6 +240,12 @@ func (src *Deployment) ConvertTo(dst conversion.Hub) error { return convertToHub
 // ConvertFrom converts the hub to this Deployment.
 func (dst *Deployment) ConvertFrom(src conversion.Hub) error { return convertFromHub(src, dst) }
 
+// ConvertTo converts this Domain to its hub.
+func (src *Domain) ConvertTo(dst conversion.Hub) error { return convertToHub(src, dst) }
+
+// ConvertFrom converts the hub to this Domain.
+func (dst *Domain) ConvertFrom(src conversion.Hub) error { return convertFromHub(src, dst) }
+
 // ConvertTo converts this Framework to its hub.
 func (src *Framework) ConvertTo(dst conversion.Hub) error { return convertToHub(src, dst) }
 

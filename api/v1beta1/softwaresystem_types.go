@@ -25,6 +25,7 @@ const (
 )
 
 // SoftwareSystemSpec defines the desired state of SoftwareSystem.
+// +kubebuilder:validation:XValidation:rule="!has(self.domainRefs) || size(self.domainRefs) == 0 || !has(self.location) || self.location != 'External'",message="an External system names no domainRefs: the factory builds nothing there"
 type SoftwareSystemSpec struct {
 	// location is Internal for a system the factory builds, External for one
 	// the story only names. An External system's Containers and DataStores
@@ -54,6 +55,15 @@ type SoftwareSystemSpec struct {
 	// +listType=atomic
 	// +optional
 	KPIs []string `json:"kpis,omitempty"`
+
+	// domainRefs name the Domains the system is about, such as webshop. Each
+	// of its Containers is scaffolded with them under docs/agents/domain/.
+	// +kubebuilder:validation:MaxItems=5
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	// +listType=set
+	// +optional
+	DomainRefs []string `json:"domainRefs,omitempty"`
 }
 
 // SoftwareSystemStatus rolls up the state of the system's Containers.
@@ -90,6 +100,7 @@ type SoftwareSystemStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=c4,shortName=sys
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Location",type=string,JSONPath=".spec.location"
+// +kubebuilder:printcolumn:name="Domains",type=string,JSONPath=".spec.domainRefs",priority=1
 // +kubebuilder:printcolumn:name="Containers",type=integer,JSONPath=".status.containers"
 // +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=".status.readyContainers"
 // +kubebuilder:printcolumn:name="Sessions",type=integer,JSONPath=".status.activeSessions"

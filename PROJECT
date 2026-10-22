@@ -335,4 +335,12 @@ resources:
   kind: Task
   path: github.com/JairJosafath/c4factory/api/v1beta1
   version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: factory.io
+  group: c4
+  kind: Domain
+  path: github.com/JairJosafath/c4factory/api/v1beta1
+  version: v1beta1
 version: "3"

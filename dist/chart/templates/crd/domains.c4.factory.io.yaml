@@ -9,6 +9,18 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.22.0
   name: domains.c4.factory.io
 spec:
+  {{- if .Values.webhook.enabled }}
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: {{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+          namespace: {{ .Release.Namespace }}
+          path: /convert
+      conversionReviewVersions:
+      - v1
+  {{- end }}
   group: c4.factory.io
   names:
     categories:
@@ -91,5 +103,77 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: Display Name
+      type: string
+    - jsonPath: .spec.template.ref
+      name: Ref
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Domain is a catalog entry: what a SoftwareSystem is about, such as a webshop.
+          A system names its Domains in spec.domainRefs, and each of its Containers is
+          scaffolded with them under docs/agents/domain/<name>/. It is owned by the Project.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the template
+            properties:
+              description:
+                description: description says what the domain covers.
+                maxLength: 1000
+                type: string
+              displayName:
+                description: displayName is a human-friendly name, such as "Webshop".
+                maxLength: 100
+                type: string
+              template:
+                description: template is the repository and pinned ref to scaffold
+                  from.
+                properties:
+                  ref:
+                    description: ref is a tag or a full commit SHA, never a branch.
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  url:
+                    description: url of the template's Git repository.
+                    pattern: ^https?://
+                    type: string
+                required:
+                - ref
+                - url
+                type: object
+            required:
+            - template
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
     subresources: {}
 {{- end }}
