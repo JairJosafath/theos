@@ -2,6 +2,7 @@ package cloudformation
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -15,16 +16,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cfn "github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
 	"github.com/aws/smithy-go"
+
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // fakeAWS is an in-memory AWS of accounts, each with CloudFormation stacks
-// and change sets, S3 objects, SSM parameters and the CDK bootstrap roles.
+// and change sets, S3 objects, ECR images, SSM parameters and the CDK
+// bootstrap roles.
 // A caller is found from the config's credentials: a user's access key, or
 // role:<arn> for a role it assumed. An executed change set moves its stack
 // to *_IN_PROGRESS; the stack finishes on its next read.
@@ -46,6 +52,8 @@ type fakeAccount struct {
 	stacks       map[string]*fakeStack
 	objects      map[string][]byte // bucket/key
 	puts         []fakeCall
+	images       map[string]bool // repository@digest
+	copies       []fakeCall
 	params       map[string]string
 	changeSets   []fakeChangeSetCall
 	executions   []fakeExecution
@@ -96,7 +104,7 @@ func (f *fakeAWS) account(key string, mayBootstrap bool) *fakeAccount {
 	defer f.mu.Unlock()
 	f.seq++
 	a := &fakeAccount{id: fmt.Sprintf("%012d", 100000000000+f.seq), mayBootstrap: mayBootstrap,
-		stacks: map[string]*fakeStack{}, objects: map[string][]byte{}, params: map[string]string{},
+		stacks: map[string]*fakeStack{}, objects: map[string][]byte{}, images: map[string]bool{}, params: map[string]string{},
 		fail: map[string]bool{}, empty: map[string]bool{}}
 	f.accounts[a.id] = a
 	f.keys[key] = a
@@ -115,8 +123,8 @@ func (f *fakeAWS) bootstrap(a *fakeAccount, v int, params map[string]string) {
 }
 
 func (f *fakeAWS) clients(cfg aws.Config) Clients {
-	return Clients{CloudFormation: &fakeCFN{f, cfg}, S3: &fakeS3{f, cfg}, STS: &fakeSTS{f, cfg},
-		SSM: &fakeSSM{f, cfg}}
+	return Clients{CloudFormation: &fakeCFN{f, cfg}, S3: &fakeS3{f, cfg}, ECR: &fakeECR{f, cfg},
+		STS: &fakeSTS{f, cfg}, SSM: &fakeSSM{f, cfg}}
 }
 
 func apiErr(code, msg string) error { return &smithy.GenericAPIError{Code: code, Message: msg} }
@@ -500,6 +508,78 @@ func (c *fakeS3) PutObject(_ context.Context, in *s3.PutObjectInput,
 	a.objects[key] = body
 	a.puts = append(a.puts, fakeCall{What: key, Caller: who})
 	return &s3.PutObjectOutput{}, nil
+}
+
+type fakeECR struct {
+	f   *fakeAWS
+	cfg aws.Config
+}
+
+// imagePublisher is the account of the image-publishing role cfg is, or
+// AccessDeniedException.
+func (c *fakeECR) imagePublisher() (*fakeAccount, error) {
+	a, who, err := c.f.caller(c.cfg)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(who, ":role/cdk-hnb659fds-image-publishing-role-"+a.id+"-") {
+		return nil, apiErr("AccessDeniedException", who+" may not use ECR")
+	}
+	return a, nil
+}
+
+// GetAuthorizationToken's token is AWS:pw-<account>, base64.
+func (c *fakeECR) GetAuthorizationToken(context.Context, *ecr.GetAuthorizationTokenInput,
+	...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	a, err := c.imagePublisher()
+	if err != nil {
+		return nil, err
+	}
+	token := base64.StdEncoding.EncodeToString([]byte("AWS:pw-" + a.id))
+	return &ecr.GetAuthorizationTokenOutput{AuthorizationData: []ecrtypes.AuthorizationData{
+		{AuthorizationToken: aws.String(token)}}}, nil
+}
+
+func (c *fakeECR) DescribeImages(_ context.Context, in *ecr.DescribeImagesInput,
+	_ ...func(*ecr.Options)) (*ecr.DescribeImagesOutput, error) {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	a, err := c.imagePublisher()
+	if err != nil {
+		return nil, err
+	}
+	repo := aws.ToString(in.RepositoryName)
+	if !a.bootstrapped() || !strings.HasPrefix(repo, "cdk-hnb659fds-container-assets-"+a.id+"-") {
+		return nil, apiErr("RepositoryNotFoundException", "no repository "+repo)
+	}
+	if len(in.ImageIds) != 1 || !a.images[repo+"@"+aws.ToString(in.ImageIds[0].ImageDigest)] {
+		return nil, apiErr("ImageNotFoundException", "no such image in "+repo)
+	}
+	return &ecr.DescribeImagesOutput{ImageDetails: []ecrtypes.ImageDetail{{RepositoryName: in.RepositoryName,
+		ImageDigest: in.ImageIds[0].ImageDigest}}}, nil
+}
+
+// copyImage is a Shipment's CopyImage of image into the account's ECR that
+// the registry's host names, logged in with the password its token gives.
+func (f *fakeAWS) copyImage(image string) func(context.Context, ports.Registry, string, string) error {
+	return func(_ context.Context, to ports.Registry, repository, tag string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		id, _, _ := strings.Cut(to.Host, ".")
+		a := f.accounts[id]
+		if a == nil || to.Username != "AWS" || to.Password != "pw-"+id {
+			return fmt.Errorf("%s: 401 Unauthorized", to.Host)
+		}
+		_, digest, _ := strings.Cut(image, "@")
+		if tag != strings.TrimPrefix(digest, "sha256:") {
+			return fmt.Errorf("tag %s isn't the digest's hex", tag)
+		}
+		a.images[repository+"@"+digest] = true
+		a.copies = append(a.copies, fakeCall{What: to.Host + "/" + repository + "@" + digest})
+		return nil
+	}
 }
 
 type fakeSTS struct {
