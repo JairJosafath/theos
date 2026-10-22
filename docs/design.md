@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it once, at the scaffold, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092, decided, not built). |
+| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092; the planner naming one is not built yet). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -81,6 +81,18 @@ status:
   scaffoldedFrom: [python-fastapi@v1.3.0, python-standard@v1.0.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
 ```
 
+A Container names a Bundle instead of its four sides: `bundleRef: {name:
+python-service}` in place of `frameworkRef`, `standardRef`, `computeRef` and
+`deploymentRef` (a CEL rule asks for exactly one of `bundleRef` and
+`frameworkRef`, refuses a side beside `bundleRef`, and keeps `bundleRef`
+immutable). Until the scaffold every reconcile expands the Bundle afresh and
+writes the entry names to `status.bundle` (`name`, `framework`, `standard`,
+`compute`, `deployment`); from the scaffold on the operator reads
+`status.bundle` and never the Bundle again, so a Bundle changed later changes
+no scaffolded Container. A missing Bundle keeps the Container `Pending`,
+reason `NotFound`; the checks below run on the expanded entries, and their
+message starts with `bundle <name>: `.
+
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
@@ -106,7 +118,10 @@ and from it are story only.
    names of the project, system, container, type and chosen entries, the
    Connectors, the CI system and, after the Framework, the paths it rendered
    (`{{ if has .FrameworkFiles "infra/operations.ts" }}`), so a layer tests a
-   file, not a name or ref. Each CI system's files sit under
+   file, not a name or ref. A template refuses a combination its layer can't
+   serve with `{{ fail "why" }}`: the render stops and the Container is
+   `Failed` with that message, as a Connector no Framework file calls does.
+   Each CI system's files sit under
    `.c4factory/ci/<system>/` and render at the root only for the Container's;
    a template with CI files but none for it fails, `UnsupportedCI`.
 5. **Assemble the devcontainer:** the Framework's settings plus a compose
@@ -257,13 +272,17 @@ GitProvider `ci` block names, registered `--ephemeral` to the project's Git
 organization so each pod takes one job and ends. The operator deletes an
 ended pod and starts a fresh one; the pool goes with the Project: once the
 Project is gone, the operator deletes every pool pod and lets the kept
-records go at once, since no Task is left to read them (#1697). A pod
+records go at once, since no Task is left to read them (#1697). The pool
+follows its `ci` block: an idle pod above a lowered `size`, or built from
+another `image` than the block now says, is replaced, a busy one once its
+job ends, and a dropped block takes the pool's Secret, ConfigMap and
+NetworkPolicy with it (#1700). A pod
 that failed on its own (its registration or its runner ended non-zero) is
 replaced only after a backoff, 10s doubling per failure in a row up to 5
 minutes, until a pod runs its job; a GitProvider whose host gives no
-registration token keeps its pods, gets none added, and the Project's
-`CIRunners` condition says `ProviderUnavailable` until the host answers
-(#1699). The pods
+registration token keeps its pods, gets none added or replaced, and the
+Project's `CIRunners` condition says `ProviderUnavailable` until the host
+answers (#1699). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods

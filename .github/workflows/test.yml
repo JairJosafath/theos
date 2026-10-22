@@ -121,6 +121,20 @@ jobs:
           C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
         run: cat "$C4_SLOWEST_SPECS" 2>/dev/null || echo "The controller suite wrote no report."
 
+      # The Gitea integration tests install the packages they publish with
+      # the real npm and uv; without them the install subtests skip, and
+      # the self-hosted runners have neither (#1702). No cache: the installs
+      # fetch one package each from the local Gitea.
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
       - name: Gitea integration tests
         run: make test-gitea
 

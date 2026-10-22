@@ -39,7 +39,7 @@ func (r *ContainerReconciler) checksRecheck() time.Duration {
 // A Git error keeps the last known result: checks are a report, not a step.
 func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) ctrl.Result {
-	if !model.Protected(container.Spec.StandardRef != nil) {
+	if !model.Protected(container.Choices().Standard != "") {
 		return ctrl.Result{}
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
@@ -116,11 +116,11 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 // such condition; a read error keeps the last one.
 func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1alpha1.Container,
 	status *c4v1alpha1.ContainerStatus) {
-	if container.Spec.StandardRef == nil {
+	if container.Choices().Standard == "" {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionChecksApplied)
 		return
 	}
-	name := container.Spec.StandardRef.Name
+	name := container.Choices().Standard
 	var standard c4v1alpha1.Standard
 	found, err := r.lookup(ctx, container.Namespace, name, &standard)
 	if err != nil {

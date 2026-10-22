@@ -11,6 +11,9 @@ package controller
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
@@ -43,16 +46,27 @@ const ConditionCIRunners = "CIRunners"
 const DefaultRunnerRecordKept = 2 * time.Hour
 
 // ciPool is one label's pool of one GitProvider: what buildRunnerPod needs,
-// how many pods are not ended, and whether the pool gets no new pod this
-// reconcile (its provider gave no token, or it backs off from failures).
+// the hash of the pod spec it makes, how many pods are not ended, which of
+// those the Git host has given no job, whether the pool gets no new pod this
+// reconcile (its provider gave no token, or it backs off from failures), and
+// whether its host gave no token, so which pods have a job is not known.
 // failed are when its kept pods that failed on their own (AnnotationRunnerFailure)
 // went, and ended when its newest pod that ran its job went.
 type ciPool struct {
 	in     runnerPodInput
+	spec   string
 	live   int32
+	idle   []*corev1.Pod
 	held   bool
+	blind  bool
 	failed []time.Time
 	ended  time.Time
+}
+
+// stale is whether a pod was built from another spec than the pool's: a
+// changed image, resources or cache, or an operator that builds pods anew.
+func (p *ciPool) stale(pod *corev1.Pod) bool {
+	return pod.Annotations[AnnotationRunnerSpec] != p.spec
 }
 
 // backoff is how long the pool still waits before it starts a pod: the
@@ -124,11 +138,19 @@ func (r *ProjectReconciler) runnerBackoffBase() time.Duration {
 // ConfigMap and the CI NetworkPolicy once the project has any pool. An ended
 // pod is annotated with its fate (runnerPodFate), then deleted and replaced; a
 // pod of a provider or label no longer in any ci block is deleted too, lost if
-// it was still running. A pod that failed on its own is replaced only after
-// the pool's backoff (#1699). A provider whose host gives no registration
-// token keeps its pods but gets none added, and the returned retry says so.
-// Every pod keeps its finalizer, and so stays readable with its fate, for
-// runnerRecordKept after its deletion was asked.
+// it was still running. The pool follows its ci block (#1700): a pod the host
+// has given no job goes when it is above a lowered size, or was built from
+// another spec than the block now says, and the pool fills back up with
+// pods of the new spec; a pod running a job stays until it ends. A pod that
+// failed on its own is replaced only after the pool's backoff (#1699). A
+// provider whose host gives no registration token keeps its pods but gets
+// none added, and the returned retry says so. A provider whose ci block went
+// loses its token Secret, and the ConfigMap and NetworkPolicy go with the
+// project's last pool. Every pod keeps its finalizer, and so stays readable
+// with its fate, for runnerRecordKept after its deletion was asked; the
+// returned recheck says when the next record expires or a backoff ends,
+// zero for none, and the namespace's GitProviders are returned for
+// ensurePackagesActions.
 func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1alpha1.Project,
 	status *c4v1alpha1.ProjectStatus) (ciRunners, error) {
 	var providers c4v1alpha1.GitProviderList
@@ -136,14 +158,18 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 		return ciRunners{}, err
 	}
 	pools := map[poolKey]*ciPool{}
+	busy := map[string]bool{}
 	var failures []string
 	var retry error
 	failedReason := "ProviderUnavailable"
 	for _, p := range providers.Items {
 		if p.Spec.CI == nil || p.Spec.CI.GiteaActions == nil {
+			if err := r.deleteRunnerTokenSecret(ctx, project.Namespace, p.Name); err != nil {
+				return ciRunners{}, err
+			}
 			continue
 		}
-		token, reason, tokenErr, err := r.runnerToken(ctx, project.Namespace, p.Name)
+		token, reason, tokenErr, err := r.runnerToken(ctx, project.Namespace, p.Name, busy)
 		if err != nil {
 			return ciRunners{}, err
 		}
@@ -162,14 +188,15 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 			return ciRunners{}, err
 		}
 		for _, runner := range p.Spec.CI.GiteaActions.Runners {
-			pools[poolKey{p.Name, runner.Label}] = &ciPool{held: tokenErr != nil, in: runnerPodInput{
+			in := runnerPodInput{
 				namespace: project.Namespace, provider: p.Name, gitURL: p.Spec.URL,
 				tokenSecret: ciRunnerTokenSecret(p.Name), runner: runner, goCacheRoot: r.CIGoCache,
-			}}
+			}
+			pools[poolKey{p.Name, runner.Label}] = &ciPool{in: in, spec: runnerSpecHash(in), held: tokenErr != nil, blind: tokenErr != nil}
 		}
 	}
 
-	next, err := r.sweepRunnerPods(ctx, project.Namespace, pools)
+	next, err := r.sweepRunnerPods(ctx, project.Namespace, pools, busy)
 	if err != nil {
 		return ciRunners{}, err
 	}
@@ -180,6 +207,11 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1al
 		if err := r.ensureCINetwork(ctx, project, gitNamespacesOf(providers.Items)); err != nil {
 			return ciRunners{}, err
 		}
+	} else if err := r.deleteCINetwork(ctx, project.Namespace); err != nil {
+		return ciRunners{}, err
+	}
+	if err := r.trimPools(ctx, pools); err != nil {
+		return ciRunners{}, err
 	}
 	if err := r.fillPools(ctx, project, pools); err != nil {
 		return ciRunners{}, err
@@ -218,10 +250,12 @@ func (r *ProjectReconciler) holdBackingOff(ctx context.Context, pools map[poolKe
 }
 
 // sweepRunnerPods goes over the project's pool pods: one not ended, of a pool
-// still wanted, counts as live; an ended one, or one of no pool, gets its fate
-// recorded and is deleted; a deleted one is kept until its record expires.
-// Returns when the next record expires, zero for none.
-func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pools map[poolKey]*ciPool) (time.Duration, error) {
+// still wanted, counts as live, and as idle unless the host says its runner
+// is busy; an ended one, or one of no pool, gets its fate recorded and is
+// deleted; a deleted one is kept until its record expires. Returns when the
+// next record expires, zero for none.
+func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pools map[poolKey]*ciPool,
+	busy map[string]bool) (time.Duration, error) {
 	log := logf.FromContext(ctx)
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods, client.InNamespace(ns), client.MatchingLabels{LabelCIRunner: ciRunnerValue}); err != nil {
@@ -240,6 +274,9 @@ func (r *ProjectReconciler) sweepRunnerPods(ctx context.Context, ns string, pool
 			}
 			if fate == "" {
 				pool.live++
+				if !busy[pod.Name] {
+					pool.idle = append(pool.idle, pod)
+				}
 				continue
 			}
 			if fate == RunnerFateLost {
@@ -308,9 +345,8 @@ func (r *ProjectReconciler) dropPool(ctx context.Context, ns string) error {
 	return nil
 }
 
-// fillPools creates the pods each pool not held is short of, pools in name order.
-func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.Project, pools map[poolKey]*ciPool) error {
-	log := logf.FromContext(ctx)
+// sortedPoolKeys are the pools' keys in name order.
+func sortedPoolKeys(pools map[poolKey]*ciPool) []poolKey {
 	keys := make([]poolKey, 0, len(pools))
 	for key := range pools {
 		keys = append(keys, key)
@@ -318,13 +354,63 @@ func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.P
 	slices.SortFunc(keys, func(a, b poolKey) int {
 		return cmp.Or(cmp.Compare(a.provider, b.provider), cmp.Compare(a.label, b.label))
 	})
-	for _, key := range keys {
+	return keys
+}
+
+// trimPools deletes the idle pods a pool no longer wants: every one built
+// from another spec than the pool's, and then, newest first, those above its
+// size. Each is recorded lost: it had no job, and if the host gave it one in
+// the meantime, the Task reruns that job's checks. A busy pod is never
+// deleted here; it ends on its own and the pool replaces it, or not, then.
+func (r *ProjectReconciler) trimPools(ctx context.Context, pools map[poolKey]*ciPool) error {
+	log := logf.FromContext(ctx)
+	for _, key := range sortedPoolKeys(pools) {
+		pool := pools[key]
+		if pool.blind {
+			continue // the host listed no runners: a pod that looks idle may have a job
+		}
+		slices.SortFunc(pool.idle, func(a, b *corev1.Pod) int {
+			if sa, sb := pool.stale(a), pool.stale(b); sa != sb {
+				if sa {
+					return -1
+				}
+				return 1
+			}
+			return b.CreationTimestamp.Compare(a.CreationTimestamp.Time)
+		})
+		for _, pod := range pool.idle {
+			stale := pool.stale(pod)
+			if !stale && pool.live <= pool.in.runner.Size {
+				break
+			}
+			if err := r.recordRunnerFate(ctx, pod, RunnerFateLost, ""); err != nil {
+				return err
+			}
+			if err := client.IgnoreNotFound(r.Delete(ctx, pod)); err != nil {
+				return err
+			}
+			pool.live--
+			why := "above size"
+			if stale {
+				why = "spec changed"
+			}
+			log.Info("Deleted idle CI runner pod", "pod", pod.Name, "pool", key.provider+"/"+key.label, "why", why)
+		}
+	}
+	return nil
+}
+
+// fillPools creates the pods each pool not held is short of, pools in name order.
+func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.Project, pools map[poolKey]*ciPool) error {
+	log := logf.FromContext(ctx)
+	for _, key := range sortedPoolKeys(pools) {
 		pool := pools[key]
 		if pool.held {
 			continue
 		}
 		for ; pool.live < pool.in.runner.Size; pool.live++ {
 			pod := buildRunnerPod(pool.in)
+			pod.Annotations = map[string]string{AnnotationRunnerSpec: pool.spec}
 			if err := controllerutil.SetControllerReference(project, pod, r.Scheme); err != nil {
 				return err
 			}
@@ -341,12 +427,25 @@ func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.P
 // register runners: the condition's reason is then UnsupportedCI.
 const reasonCannotRegister = "its Git host cannot register runners"
 
-// runnerToken is a GitProvider's runner registration token. A provider whose
+// runnerSpecHash names the pod spec buildRunnerPod makes of in, so a pod
+// says in AnnotationRunnerSpec which spec it was built from.
+func runnerSpecHash(in runnerPodInput) string {
+	spec, err := json.Marshal(buildRunnerPod(in).Spec)
+	if err != nil {
+		panic(err) // a PodSpec always marshals
+	}
+	sum := sha256.Sum256(spec)
+	return hex.EncodeToString(sum[:8])
+}
+
+// runnerToken is a GitProvider's runner registration token, and the names of
+// its runners the host has given a job are added to busy. A provider whose
 // host cannot register runners, or whose credentials cannot be read, gives a
 // reason instead and no error: the Project's condition says it. A host that
 // gives no token (a 403, Gitea down) gives a reason and tokenErr, which the
 // reconcile retries with (#1699).
-func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string) (token, reason string, tokenErr, err error) {
+func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string,
+	busy map[string]bool) (token, reason string, tokenErr, err error) {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, ns, name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -363,7 +462,34 @@ func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string) (t
 		return "", "runner registration token: " + err.Error(),
 			fmt.Errorf("runner registration token of GitProvider %s: %w", name, err), nil
 	}
+	registered, err := runners.Runners(ctx)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("runners of GitProvider %s: %w", name, err)
+	}
+	for _, runner := range registered {
+		if runner.Busy {
+			busy[runner.Name] = true
+		}
+	}
 	return token, "", nil, nil
+}
+
+// deleteRunnerTokenSecret removes a GitProvider's runner registration token
+// Secret, once its ci block is gone; one that is gone already is no error.
+func (r *ProjectReconciler) deleteRunnerTokenSecret(ctx context.Context, ns, provider string) error {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ciRunnerTokenSecret(provider), Namespace: ns}}
+	return client.IgnoreNotFound(r.Delete(ctx, secret))
+}
+
+// deleteCINetwork removes the job.env ConfigMap and the CI NetworkPolicy, once
+// the project has no pool left; ones gone already are no error.
+func (r *ProjectReconciler) deleteCINetwork(ctx context.Context, ns string) error {
+	env := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: CIJobEnvConfigMap, Namespace: ns}}
+	if err := client.IgnoreNotFound(r.Delete(ctx, env)); err != nil {
+		return err
+	}
+	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: CINetworkPolicyName, Namespace: ns}}
+	return client.IgnoreNotFound(r.Delete(ctx, policy))
 }
 
 // ensureRunnerTokenSecret writes a GitProvider's runner registration token to

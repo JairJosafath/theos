@@ -228,8 +228,8 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		return &model.DeployShipFailure{Reason: model.DeployReleaseNotFound}
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
-		Type: string(p.container.Spec.Type), Deployment: refName(p.container.Spec.DeploymentRef),
-		Framework: p.container.Spec.FrameworkRef.Name, Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
+		Type: string(p.container.Spec.Type), Deployment: p.container.Choices().Deployment,
+		Framework: p.container.Choices().Framework, Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
 	if sourcePath != "" {
 		if shipment.Source, err = p.source(ctx, target, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
@@ -438,9 +438,9 @@ func (r *ContainerReconciler) newestRelease(ctx context.Context, container *c4v1
 // need: its Deployment, and whether its Framework deploys itself.
 func (r *ContainerReconciler) deployContainer(ctx context.Context,
 	container *c4v1alpha1.Container) (model.DeployContainer, error) {
-	brings := model.DeployContainer{Deployment: refName(container.Spec.DeploymentRef)}
+	brings := model.DeployContainer{Deployment: container.Choices().Deployment}
 	var framework c4v1alpha1.Framework
-	found, err := r.lookup(ctx, container.Namespace, container.Spec.FrameworkRef.Name, &framework)
+	found, err := r.lookup(ctx, container.Namespace, container.Choices().Framework, &framework)
 	if found {
 		brings.DeploysItself = framework.Spec.DeploysItself
 	}
