@@ -663,7 +663,7 @@ model and context it needs.
   the scope and the bot's token (uv reads the `~/.netrc` it writes). The
   TypeScript and Python Standards' checks and gitea-release's release run
   write the same from the job's token. See
-  [plans/app-packages.md](plans/app-packages.md).
+  [plans/done/app-packages.md](plans/done/app-packages.md).
 - **A release can be published to GitHub.** A Crew with
   `spec.publishReleases.github` (`repository: owner/name`, and a Secret the
   user creates holding a token for that one repository) copies its last release
@@ -1049,7 +1049,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Brief stays `Applying` and its message names the issue, the app and why,
   such as a release that published neither a Go module nor a package. See
   [plans/done/app-modules.md](plans/done/app-modules.md) and
-  [plans/app-packages.md](plans/app-packages.md).
+  [plans/done/app-packages.md](plans/done/app-packages.md).
 - **It asks only for what costs money or touches access.** Agents, their
   models, a Crew's size, GitProviders and credentials are never the planner's
   to make or change. When it needs one, or can't go on without a decision, the

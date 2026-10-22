@@ -1,0 +1,16 @@
+$ go test ./internal/model/ -run "TestUsesLine|TestUsesNothingPublished|TestBriefIssueBodyUsing|TestPlannerGuideShowsUses" -v   # #1233, 2026-10-22
+=== RUN   TestBriefIssueBodyUsing
+--- PASS: TestBriefIssueBodyUsing (0.00s)
+=== RUN   TestUsesLine
+=== RUN   TestUsesLine/Go_module
+=== RUN   TestUsesLine/Go_module,_ecosystem_unset
+=== RUN   TestUsesLine/npm,_the_default_scope
+=== RUN   TestUsesLine/npm,_a_custom_scope
+=== RUN   TestUsesLine/PyPI,_with_its_index
+--- PASS: TestUsesLine (0.00s)
+=== RUN   TestUsesNothingPublished
+--- PASS: TestUsesNothingPublished (0.00s)
+=== RUN   TestPlannerGuideShowsUses
+--- PASS: TestPlannerGuideShowsUses (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/model	0.014s
