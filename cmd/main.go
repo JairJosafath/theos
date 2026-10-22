@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,6 +58,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(c4v1alpha1.AddToScheme(scheme))
+	// The webhook certificate's CA is patched into the CRDs.
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -65,6 +69,7 @@ func main() {
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
 	var webhookPort int
+	var webhookService, webhookCertSecret string
 	var enableLeaderElection bool
 	var probeAddr string
 	var secureMetrics bool
@@ -95,6 +100,13 @@ func main() {
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
 	flag.IntVar(&webhookPort, "webhook-port", 9443, "Port the webhook server listens on. "+
 		"Defaults to 9443. Set -1 to disable the webhook server.")
+	flag.StringVar(&webhookService, "webhook-service", "",
+		"The manager's webhook Service in the operator's namespace (POD_NAMESPACE): the operator issues the webhook "+
+			"certificate for <service>.<namespace>.svc into --webhook-cert-secret and patches its CA into the "+
+			"c4.factory.io CRDs that convert by webhook. None: no webhook server, unless --webhook-cert-path names "+
+			"certificates.")
+	flag.StringVar(&webhookCertSecret, "webhook-cert-secret", "",
+		"The Secret in the operator's namespace the webhook certificate is kept in; needs --webhook-service.")
 	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
@@ -167,6 +179,10 @@ func main() {
 		setupLog.Error(nil, "--shared-secret and --shared-pull-secret need POD_NAMESPACE, the operator's namespace")
 		os.Exit(1)
 	}
+	if webhookService != "" && (podNamespace == "" || webhookCertSecret == "" || webhookCertPath != "") {
+		setupLog.Error(nil, "--webhook-service needs POD_NAMESPACE and --webhook-cert-secret, and no --webhook-cert-path")
+		os.Exit(1)
+	}
 	if podNamespace == "" && modelProxyURL != "" {
 		setupLog.Error(nil, "--model-proxy-url needs POD_NAMESPACE, the operator's namespace")
 		os.Exit(1)
@@ -226,6 +242,27 @@ func main() {
 		webhookServerOptions.CertDir = webhookCertPath
 		webhookServerOptions.CertName = webhookCertName
 		webhookServerOptions.KeyName = webhookCertKey
+	}
+
+	// The operator issues the webhook certificate itself (docs/plans/api-versions.md,
+	// decision 3): read or made before the manager starts, so the server
+	// starts with it, and checked again daily.
+	var webhookCert *controller.WebhookCert
+	if webhookService != "" {
+		direct, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "Failed to create the webhook certificate's client")
+			os.Exit(1)
+		}
+		webhookCert = &controller.WebhookCert{Client: direct, Namespace: podNamespace,
+			Secret: webhookCertSecret, Service: webhookService}
+		if err := webhookCert.Ensure(ctrl.LoggerInto(context.Background(), setupLog)); err != nil {
+			setupLog.Error(err, "Failed to set up the webhook certificate")
+			os.Exit(1)
+		}
+		webhookServerOptions.TLSOpts = append(slices.Clone(webhookTLSOpts), func(c *tls.Config) {
+			c.GetCertificate = webhookCert.GetCertificate
+		})
 	}
 
 	webhookServer := webhook.NewServer(webhookServerOptions)
@@ -427,6 +464,18 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
+	if webhookCert != nil {
+		// The webhook server starts before the caches; the pod is ready, and in
+		// the Service, once it serves.
+		if err := mgr.Add(webhookCert); err != nil {
+			setupLog.Error(err, "Failed to add the webhook certificate's recheck")
+			os.Exit(1)
+		}
+		if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+			setupLog.Error(err, "Failed to set up the webhook ready check")
+			os.Exit(1)
+		}
+	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Failed to set up health check")
 		os.Exit(1)
