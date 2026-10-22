@@ -1092,6 +1092,23 @@ spec:
           spec:
             description: spec defines the desired state of Container
             properties:
+              bundleRef:
+                description: |-
+                  bundleRef names the Bundle catalog entry that picks the Framework,
+                  Standard, Compute and Deployment together. It replaces the four refs
+                  below: a Container names a bundle or its sides, never both. The operator
+                  expands it until the scaffold and records the expansion in
+                  status.bundle; from the scaffold on it reads status.bundle and never the
+                  Bundle again. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               checks:
                 default: EveryChange
                 description: |-
@@ -1189,8 +1206,9 @@ spec:
                 maxLength: 100
                 type: string
               frameworkRef:
-                description: 'frameworkRef names the Framework catalog entry: language,
-                  framework and tooling.'
+                description: |-
+                  frameworkRef names the Framework catalog entry: language, framework and
+                  tooling. Set it, or bundleRef.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -1317,11 +1335,20 @@ spec:
                 - function
                 type: string
             required:
-            - frameworkRef
             - gitProviderRef
             - softwareSystemRef
             - type
             type: object
+            x-kubernetes-validations:
+            - message: name a bundleRef or a frameworkRef
+              rule: has(self.bundleRef) || has(self.frameworkRef)
+            - message: bundleRef replaces frameworkRef, standardRef, computeRef and
+                deploymentRef
+              rule: '!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef)
+                || has(self.computeRef) || has(self.deploymentRef))'
+            - message: bundleRef is immutable
+              rule: has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef)
+                || self.bundleRef == oldSelf.bundleRef)
           status:
             description: status defines the observed state of Container
             properties:
@@ -1366,6 +1393,33 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              bundle:
+                description: |-
+                  bundle is what spec.bundleRef expanded to, by entry name: afresh at each
+                  reconcile until the scaffold, then kept as the scaffold used it. Only a
+                  Container that names a bundle has it.
+                properties:
+                  compute:
+                    description: compute names the Compute the bundle picked, if any.
+                    type: string
+                  deployment:
+                    description: deployment names the Deployment the bundle picked,
+                      if any.
+                    type: string
+                  framework:
+                    description: framework names the Framework the bundle picked.
+                    type: string
+                  name:
+                    description: name is the Bundle's name.
+                    type: string
+                  standard:
+                    description: standard names the Standard the bundle picked, if
+                      any.
+                    type: string
+                required:
+                - framework
+                - name
+                type: object
               checks:
                 description: |-
                   checks is the latest CI result on the default branch. Only Containers with a
