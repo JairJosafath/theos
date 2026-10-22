@@ -25,8 +25,9 @@ var sessionFlag = regexp.MustCompile(`(?m)^\s*- --session-binary-url=(\S+)$`)
 // c4session. By default that is the UI, whose image carries the client under
 // /downloads/, so a release of the private repository needs no GitHub login
 // (#1151): the port-forward's localhost, or behind an Ingress the first
-// ui.allowedHosts entry over https. With the UI off it is the release's files,
-// which Release attaches (#1079). A set sessionBinaryURL replaces the default;
+// ui.allowedHosts entry over ui.sessionBinaryScheme, https unless set
+// (#1704). With the UI off it is the release's files, which Release attaches
+// (#1079). A set sessionBinaryURL replaces the default;
 // an empty one sets no flag. Both sources publish SHA256SUMS next to the
 // binaries, which the feature verifies the download against (#1175).
 func TestReleasedChartNamesItsSessionClient(t *testing.T) {
@@ -50,6 +51,8 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		{"the UI's port", []string{"ui.service.port=9090"}, "http://localhost:9090/downloads/c4session-linux-${arch}"},
 		{"behind an Ingress: the first allowed host", []string{"ui.allowedHosts={factory.example.com,other.example.com}"},
 			"https://factory.example.com/downloads/c4session-linux-${arch}"},
+		{"#1704: an Ingress without TLS", []string{"ui.allowedHosts={factory.example.com}", "ui.sessionBinaryScheme=http"},
+			"http://factory.example.com/downloads/c4session-linux-${arch}"},
 		{"the UI off: the release's files", []string{"ui.enabled=false"}, github},
 		{"a set value replaces the default", []string{"sessionBinaryURL=https://x.example.com/${arch}"},
 			"https://x.example.com/${arch}"},
