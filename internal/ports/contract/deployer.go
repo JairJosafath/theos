@@ -135,14 +135,17 @@ func Deployer(t *testing.T, env DeployerEnv) {
 	})
 
 	t.Run("a missing artifact is ErrArtifactMissing", func(t *testing.T) {
-		// A release with no files and no image lacks what any member ships:
-		// GitHub its files, Argo CD its image.
+		// A release with no files, no image and no source lacks what any
+		// member ships: GitHub its files or source, Argo CD its image. A
+		// source alone ships on GitHub (#1599), so it goes too (#1785).
 		target := env.Target(t)
 		s := shipment("v1.0.0")
 		s.Files = nil
 		s.Image = ""
+		s.Source = nil
+		s.ReadSource = nil
 		if err := d.Ship(ctx, target, s); !errors.Is(err, ports.ErrArtifactMissing) {
-			t.Errorf("Ship() of a release without files or image = %v, want ErrArtifactMissing", err)
+			t.Errorf("Ship() of a release without files, image or source = %v, want ErrArtifactMissing", err)
 		}
 		if n := env.Deploys(t, target, contractApp); n != 0 {
 			t.Errorf("deploys = %d, want 0", n)
