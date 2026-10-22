@@ -30,8 +30,13 @@ const clearIssue = "## Goal\n\nValidate orders.\n\n## Acceptance criteria\n\n- [
 // newCrew returns the Crew of orders-api: Agent claude implements, Agent
 // reviewer reviews.
 func newCrew(ns string) *c4v1alpha1.Crew {
-	return &c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, "orders-api"), Spec: c4v1alpha1.CrewSpec{
-		ContainerRef: c4v1alpha1.LocalRef{Name: "orders-api"},
+	return newCrewOf(ns, "orders-api")
+}
+
+// newCrewOf is a Crew named for Container name, on it.
+func newCrewOf(ns, name string) *c4v1alpha1.Crew {
+	return &c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.CrewSpec{
+		ContainerRef: c4v1alpha1.LocalRef{Name: name},
 		Implementer:  c4v1alpha1.LocalRef{Name: "claude"},
 		Reviewer:     c4v1alpha1.LocalRef{Name: "reviewer"},
 	}}
