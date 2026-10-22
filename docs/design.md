@@ -763,12 +763,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy. The copy
-  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
-  plain HTTP). It resolves the destination tag first: a tag already
-  naming the digest is left alone and nothing is written, so a registry
-  with immutable tags takes a retried Ship; a tag naming another image
-  fails the deploy with that reason, and is not retried as transient.
+  `registryPassword`, a credential that reads tags as well as pushes, and
+  `kustomize.images` names the copy. The copy speaks HTTPS unless
+  `imageRegistryInsecure` is set (a lab registry over plain HTTP). It
+  resolves the destination tag first: a tag already naming the digest is
+  left alone and nothing is written, so a registry with immutable tags
+  takes a retried Ship; a tag naming another image fails the deploy with
+  that reason, and is not retried as transient. A credential that may
+  push but not read (a token scoped to push alone) fails the deploy as a
+  refused credential naming the read it lacks, and writes nothing: a
+  blind write could move a tag (#1877).
   `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
   `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
   (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
@@ -782,7 +786,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   bootstrapping the environment when the credential may (else *Needs you*
   says the command). State comes from the stack's status and its newest
   event, the URL from the `EntryPoint` output. The factory never deletes a
-  stack. Fargate's image comes by digest from the Registry (#1069).
+  stack. Fargate's image comes by digest from the Registry (#1069),
+  copied into the bootstrap's ECR repository as its image-publishing
+  role, which reads tags as well as pushes (the copy resolves its tag
+  first; a role without `ecr:BatchGetImage` refuses the credential, #1877).
 
 ## Distribution and issues
 
