@@ -1,8 +1,9 @@
 # Where orders-cli's releases ship to: a GitHub repository whose releases are
 # the deploys (docs/plans/done/deploy.md). It needs Secret orders-cli-deploy, with
 # the key token, a fine-grained token for that repository alone with Contents
-# read and write, which you create yourself; Ready says whether GitHub takes
-# it. Container orders-cli names it in spec.deploy (story.yaml), and each of
+# read and write, or a GitHub App's appId, installationId and privateKey
+# (docs/getting-started.md), which you create yourself; Ready says whether
+# GitHub takes it. Container orders-cli names it in spec.deploy (story.yaml), and each of
 # its releases ships there once the release runs succeed. Not in
 # kustomization.yaml: apply it with
 # kubectl apply -n webshop -f deploytarget.yaml.
