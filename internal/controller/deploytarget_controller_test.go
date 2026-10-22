@@ -117,6 +117,15 @@ var _ = Describe("DeployTarget", func() {
 		Entry("a source tagPrefix with a space (#1599)", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders cli/")}
 		}, "spec.github.source.tagPrefix"),
+		Entry("a server url over http (#1605)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "http://ghe.example.com"
+		}, "url must be https://host, with no path"),
+		Entry("a server's API url (#1605)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://ghe.example.com/api/v3"
+		}, "url must be https://host, with no path"),
+		Entry("github.com as a server url (#1605)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://github.com"
+		}, "leave it unset for github.com"),
 		Entry("more than 50 parameters", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.Parameters = map[string]string{}
 			for i := range 51 {

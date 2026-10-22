@@ -472,6 +472,52 @@ var _ = Describe("Container deploys", func() {
 		Expect(githubFake.appMints(installation)).To(Equal(1), "the token is kept, not minted per call")
 	})
 
+	It("is Ready and ships a release, its source and its image to a github target on a GitHub Enterprise Server (#1605)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		repository := "acme/" + ns + "-ghes"
+		installation := newInstallation()
+		key, pemKey := newGitHubAppKey()
+		githubFake.addRepository(repository, "a-token-the-target-never-holds")
+		githubFake.addApp("78", installation, repository, &key.PublicKey)
+		dt := newDeployTarget(ns, "ghes", "ghes-github")
+		dt.Spec.GitHub.Repository = repository
+		dt.Spec.GitHub.URL = githubFake.enterprise.URL
+		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{}
+		mustCreate(newDeploySecret(ns, "ghes-github", map[string]string{"appId": "78",
+			"installationId": installation, "privateKey": string(pemKey),
+			model.GitHubSecretPackagesToken: "pkg-" + strings.Repeat("x", 8)}), dt)
+		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+
+		archive, digest := ocitest.TwoPlatforms(GinkgoT())
+		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
+			bytes.NewReader(archive))
+		Expect(err).NotTo(HaveOccurred())
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
+		all, app := appSource("example.com/orders")
+		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
+		shipRelease(ns, "v0.1.0", true)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "ghes"})
+
+		deployIs(ns, "ghes", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		Expect(githubFake.folder(repository, "tags/orders-api/v0.1.0", "orders-api")).To(Equal(app))
+		var published []string
+		for _, r := range githubFake.releases(repository) {
+			if !r.Draft {
+				published = append(published, r.TagName)
+			}
+		}
+		Expect(published).To(ConsistOf("orders-api-v0.1.0"))
+		image := strings.ToLower(repository) + "/orders-api"
+		got, err := oci.Resolve(ctx, oci.Registry{Host: ghcrFake.host}, image, "v0.1.0")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(digest))
+		Expect(githubFake.enterpriseUsed(repository)).To(BeNumerically(">", 0),
+			"the target's calls went to its own server")
+		Expect(githubFake.appMints(installation)).To(Equal(1))
+	})
+
 	It("publishes no source holding a secret or lacking a license, and ships the next clean release (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
