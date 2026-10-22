@@ -170,6 +170,20 @@ func TestMissingCatalog(t *testing.T) {
 	if !HasFramework(current.Catalog) || HasFramework(current.Catalog[2:]) {
 		t.Error("HasFramework is wrong")
 	}
+	// #1622: a Container on a Bundle needs the Bundle's entries as the sides
+	// would be, and the Bundle itself.
+	files := happyFiles()
+	files[PlanModelFile] = webOnBundle(files[PlanModelFile])
+	if plan, err = ParsePlan(files); err != nil {
+		t.Fatal(err)
+	}
+	if got := MissingCatalog(plan, current); !reflect.DeepEqual(got, want) {
+		t.Errorf("MissingCatalog on a Bundle = %q, want %q (the Bundle's Standard is needed)", got, want)
+	}
+	current.Bundles = nil
+	if got, want := MissingCatalog(plan, current), []string{"Bundle react-web", "Connector postgres"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("MissingCatalog without the Bundle = %q, want %q", got, want)
+	}
 }
 
 func TestRefusalTextAndKeepNewest(t *testing.T) {

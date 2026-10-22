@@ -146,6 +146,17 @@ spec:
   deploymentRef: {name: k8s}
 ---
 apiVersion: c4.factory.io/v1alpha1
+kind: Container
+metadata:
+  name: mailer
+spec:
+  description: Sends the mail.
+  softwareSystemRef: {name: shop}
+  type: worker
+  gitProviderRef: {name: gitea}
+  bundleRef: {name: go-worker}
+---
+apiVersion: c4.factory.io/v1alpha1
 kind: Person
 metadata:
   name: ann
@@ -238,9 +249,40 @@ connectors:
     - name: postgres
       supportedTypes:
         - service
+bundles: []
 `
 	if got != want {
 		t.Fatalf("catalog.yaml =\n%s\nwant\n%s", got, want)
+	}
+
+	// #1622: a Bundle lists its entries and the types they all support; one on
+	// an entry that isn't installed supports no type.
+	// A Bundle the operator's check refuses for every type, here a Standard
+	// that doesn't fit its Framework, supports no type either.
+	bundles := []Bundle{
+		{Name: "py-worker", Description: " Python jobs. ", Framework: "python-fastapi", Compute: "small"},
+		{Name: "go-web", Framework: "go-service", Standard: "go-standard"},
+		{Name: "py-misfit", Framework: "python-fastapi", Standard: "go-standard"},
+	}
+	got = workspaceFiles(t, BriefWorkspace{Catalog: catalog, Bundles: bundles})[WorkspaceCatalogFile]
+	want = `bundles:
+    - name: go-web
+      framework: go-service
+      standard: go-standard
+      supportedTypes:
+        - service
+    - name: py-misfit
+      framework: python-fastapi
+      standard: go-standard
+      supportedTypes: []
+    - name: py-worker
+      description: Python jobs.
+      framework: python-fastapi
+      compute: small
+      supportedTypes: []
+`
+	if i := strings.Index(got, "bundles:"); i < 0 || got[i:] != want {
+		t.Fatalf("catalog.yaml =\n%s\nwant it to end with\n%s", got, want)
 	}
 }
 

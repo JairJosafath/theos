@@ -9,11 +9,12 @@ import (
 // Standard, a Compute and a Deployment a team picked together
 // (docs/plans/catalog-bundles.md). It never names a Connector.
 type Bundle struct {
-	Name       string
-	Framework  string
-	Standard   string
-	Compute    string
-	Deployment string
+	Name        string
+	Description string
+	Framework   string
+	Standard    string
+	Compute     string
+	Deployment  string
 }
 
 // BundleChoice is one side a bundle names: the catalog side and the entry's name.
@@ -56,6 +57,39 @@ func BundleSupportedTypes(entries []CatalogEntry) []string {
 		}
 	}
 	return out
+}
+
+// BundleEntries expands a bundle to the catalog entries it names, in the
+// order their layers are rendered: the same expansion the operator makes
+// before it checks a Container's choices. The first missing entry is named,
+// as "Framework go-service", and ends the expansion.
+func BundleEntries(b Bundle, catalog []CatalogEntry) (entries []CatalogEntry, missing string) {
+	for _, c := range BundleChoices(b) {
+		i := slices.IndexFunc(catalog, func(e CatalogEntry) bool { return e.Side == c.Side && e.Name == c.Name })
+		if i < 0 {
+			return nil, c.Side + " " + c.Name
+		}
+		entries = append(entries, catalog[i])
+	}
+	return entries, ""
+}
+
+// CheckBundle checks a bundle's entries for a Container type as the operator
+// does (CheckChoices, CheckStandard and CheckDeploysItself), with the error
+// naming the bundle (InBundle).
+func CheckBundle(b Bundle, containerType string, entries []CatalogEntry) error {
+	err := CheckChoices(containerType, entries)
+	if err == nil {
+		var standard *CatalogEntry
+		if i := slices.IndexFunc(entries, func(e CatalogEntry) bool { return e.Side == SideStandard }); i >= 0 {
+			standard = &entries[i]
+		}
+		err = CheckStandard(b.Framework, standard)
+	}
+	if err == nil && len(entries) > 0 {
+		err = CheckDeploysItself(entries[0], containerType, b.Compute, b.Deployment)
+	}
+	return InBundle(b.Name, err)
 }
 
 // InBundle names the bundle a Container's choices came from at the start of a

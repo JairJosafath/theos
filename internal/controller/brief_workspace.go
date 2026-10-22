@@ -306,6 +306,9 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 	if ws.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
 	}
+	if ws.Bundles, err = installedBundles(ctx, r.Client, brief.Namespace); err != nil {
+		return ws, err
+	}
 	ws.Containers, ws.Suggestions, ws.Failed, err = r.containerIssues(ctx, brief)
 	return ws, err
 }
@@ -458,8 +461,8 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 		s, picked := o.Spec, o.Choices()
 		out = append(out, model.PlanObject{Kind: model.KindContainer, Name: o.Name,
 			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
-			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Framework: picked.Framework,
-			Standard: picked.Standard, Compute: picked.Compute, Deployment: picked.Deployment,
+			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Bundle: picked.Bundle,
+			Framework: picked.Framework, Standard: picked.Standard, Compute: picked.Compute, Deployment: picked.Deployment,
 			Checks: string(s.Checks), Operations: plannedOperations(s.Operations)})
 	}
 	var stores c4v1alpha1.DataStoreList
@@ -530,6 +533,21 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 	}
 	for i := range connectors.Items {
 		out = append(out, catalogEntry(model.SideConnector, &connectors.Items[i]))
+	}
+	return out, nil
+}
+
+// installedBundles reads the namespace's Bundles, each as the entry names it
+// picks, the way the operator expands a Container's bundleRef.
+func installedBundles(ctx context.Context, c client.Reader, ns string) ([]model.Bundle, error) {
+	var bundles c4v1alpha1.BundleList
+	if err := c.List(ctx, &bundles, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	var out []model.Bundle
+	for _, b := range bundles.Items {
+		out = append(out, model.Bundle{Name: b.Name, Description: b.Spec.Description, Framework: b.Spec.FrameworkRef.Name,
+			Standard: refName(b.Spec.StandardRef), Compute: refName(b.Spec.ComputeRef), Deployment: refName(b.Spec.DeploymentRef)})
 	}
 	return out, nil
 }
