@@ -56,6 +56,8 @@ type BriefWorkspace struct {
 	Objects []PlanObject
 	// Catalog is every installed catalog entry.
 	Catalog []CatalogEntry
+	// Bundles are the namespace's Bundles.
+	Bundles []Bundle
 	// Containers are the namespace's Containers that have a repository.
 	Containers []WorkspaceContainer
 	// Suggestions are the reviewers' suggestions waiting in the Brief's
@@ -119,7 +121,7 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceModelFile, err)
 	}
-	catalog, err := marshalDocument(workspaceCatalog(ws.Catalog))
+	catalog, err := marshalDocument(workspaceCatalog(ws.Catalog, ws.Bundles))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceCatalogFile, err)
 	}
@@ -304,7 +306,8 @@ type containerOut struct {
 	SoftwareSystemRef refOut  `yaml:"softwareSystemRef"`
 	Type              string  `yaml:"type"`
 	GitProviderRef    refOut  `yaml:"gitProviderRef"`
-	FrameworkRef      refOut  `yaml:"frameworkRef"`
+	BundleRef         *refOut `yaml:"bundleRef,omitempty"`
+	FrameworkRef      *refOut `yaml:"frameworkRef,omitempty"`
 	StandardRef       *refOut `yaml:"standardRef,omitempty"`
 	ComputeRef        *refOut `yaml:"computeRef,omitempty"`
 	DeploymentRef     *refOut `yaml:"deploymentRef,omitempty"`
@@ -333,7 +336,8 @@ func optionalRef(name string) *refOut {
 // renderWorkspaceModel writes the namespace's story objects as manifests, in
 // plan/model.yaml's format, so the planner starts its plan from a copy. A
 // Container's checks is left out, so a copy leaves it alone; containers.yaml
-// says it.
+// says it. A Container on a Bundle shows the bundle and none of the sides it
+// expanded to: the bundle stays what the team wrote.
 func renderWorkspaceModel(objects []PlanObject) (string, error) {
 	sorted := slices.Clone(objects)
 	slices.SortStableFunc(sorted, func(a, b PlanObject) int {
@@ -352,10 +356,13 @@ func renderWorkspaceModel(objects []PlanObject) (string, error) {
 		case KindSoftwareSystem:
 			m.Spec = systemOut{text, o.Needs, o.KPIs, SystemLocation(o)}
 		case KindContainer:
-			m.Spec = containerOut{textOut: text, SoftwareSystemRef: refOut{o.SoftwareSystem}, Type: o.Type,
-				GitProviderRef: refOut{o.GitProvider}, FrameworkRef: refOut{o.Framework},
-				StandardRef: optionalRef(o.Standard), ComputeRef: optionalRef(o.Compute),
-				DeploymentRef: optionalRef(o.Deployment)}
+			spec := containerOut{textOut: text, SoftwareSystemRef: refOut{o.SoftwareSystem}, Type: o.Type,
+				GitProviderRef: refOut{o.GitProvider}, BundleRef: optionalRef(o.Bundle)}
+			if o.Bundle == "" {
+				spec.FrameworkRef, spec.StandardRef = &refOut{o.Framework}, optionalRef(o.Standard)
+				spec.ComputeRef, spec.DeploymentRef = optionalRef(o.Compute), optionalRef(o.Deployment)
+			}
+			m.Spec = spec
 		case KindDataStore:
 			m.Spec = dataStoreOut{text, refOut{o.SoftwareSystem}, refOut{o.Connector}}
 		case KindRelationship:
@@ -380,6 +387,21 @@ type catalogOut struct {
 	Computes    []catalogEntryOut `yaml:"computes"`
 	Deployments []catalogEntryOut `yaml:"deployments"`
 	Connectors  []catalogEntryOut `yaml:"connectors"`
+	// Bundles are the namespace's Bundles, each with the entries it names and
+	// the types they all support.
+	Bundles []bundleOut `yaml:"bundles"`
+}
+
+type bundleOut struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description,omitempty"`
+	Framework   string `yaml:"framework"`
+	Standard    string `yaml:"standard,omitempty"`
+	Compute     string `yaml:"compute,omitempty"`
+	Deployment  string `yaml:"deployment,omitempty"`
+	// SupportedTypes are the Container types every entry of the bundle
+	// supports; none when an entry it names isn't installed.
+	SupportedTypes []string `yaml:"supportedTypes"`
 }
 
 type catalogEntryOut struct {
@@ -399,8 +421,9 @@ type catalogEntryOut struct {
 }
 
 // workspaceCatalog lists the installed entries by side and name, with what
-// each supports: a Container may only name these.
-func workspaceCatalog(catalog []CatalogEntry) catalogOut {
+// each supports, and the Bundles by name, with the types their entries all
+// support: a Container may only name these.
+func workspaceCatalog(catalog []CatalogEntry, bundles []Bundle) catalogOut {
 	sorted := slices.Clone(catalog)
 	slices.SortFunc(sorted, func(a, b CatalogEntry) int { return strings.Compare(a.Name, b.Name) })
 	out := catalogOut{}
@@ -424,6 +447,18 @@ func workspaceCatalog(catalog []CatalogEntry) catalogOut {
 		if *list == nil {
 			*list = []catalogEntryOut{}
 		}
+	}
+	out.Bundles = []bundleOut{}
+	sortedBundles := slices.Clone(bundles)
+	slices.SortFunc(sortedBundles, func(a, b Bundle) int { return strings.Compare(a.Name, b.Name) })
+	for _, b := range sortedBundles {
+		types := []string{}
+		if entries, missing := BundleEntries(b, catalog); missing == "" {
+			types = append(types, BundleSupportedTypes(entries)...)
+			slices.Sort(types)
+		}
+		out.Bundles = append(out.Bundles, bundleOut{b.Name, strings.TrimSpace(b.Description), b.Framework, b.Standard,
+			b.Compute, b.Deployment, types})
 	}
 	return out
 }

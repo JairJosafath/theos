@@ -182,6 +182,12 @@ func MissingCatalog(plan Plan, current CurrentModel) []string {
 		}
 		switch o.Kind {
 		case KindContainer:
+			if o.Bundle != "" {
+				if _, ok := findBundle(current.Bundles, o.Bundle); !ok && !slices.Contains(out, "Bundle "+o.Bundle) {
+					out = append(out, "Bundle "+o.Bundle)
+				}
+				continue
+			}
 			need(SideFramework, o.Framework)
 			need(SideStandard, o.Standard)
 			need(SideCompute, o.Compute)
