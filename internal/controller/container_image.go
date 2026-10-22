@@ -32,7 +32,7 @@ const imageTimeout = 30 * time.Minute
 // buildsImage reports whether the Container's catalog choice builds an image
 // on release.
 func buildsImage(container *c4v1alpha1.Container) bool {
-	return model.BuildsImage(refName(container.Spec.DeploymentRef), container.Spec.FrameworkRef.Name,
+	return model.BuildsImage(container.Choices().Deployment, container.Choices().Framework,
 		string(container.Spec.Type))
 }
 

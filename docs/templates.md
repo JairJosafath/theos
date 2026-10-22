@@ -495,19 +495,29 @@ gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
   and `make dist` only writes the assembly the `cloudFormation` DeployTarget
   ships.
 
-### dynamodb (v1.0.0)
+### dynamodb (v1.1.0)
 
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
-on-demand, encrypted table for a function Container.
+on-demand, encrypted table for a function Container. Since v1.1.0
+`connectDynamoDB` takes a `DataStoreUser` (anything `IGrantable` with an
+`addEnvironment`: a Lambda `Function`, a task role with its container, an
+instance role with its unit's environment) in place of a Lambda, and its
+file refuses a Framework that renders no `infra/connectors.ts` with
+`{{ fail }}`, so the Container fails with a `TemplateError` naming the
+Framework and the Connector instead of getting a file nothing calls (#1739,
+[docs/plans/aws-data-stores.md](plans/aws-data-stores.md)).
 
 - CI: `make test-templates`, combo "aws lambda function with dynamodb": its
   `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
-  include; `TestDynamoDBConnectorConnectsToAWSLambdaTS`
+  include, a non-Lambda grantee included;
+  `TestDynamoDBConnectorConnectsToAWSLambdaTS` and
+  `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
-  production. Only aws-lambda-ts wires it in (#1393).
+  production. Only aws-lambda-ts wires it in yet (#1393); the others fail
+  the Container until their step of the plan.
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 

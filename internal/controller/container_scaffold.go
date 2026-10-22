@@ -47,6 +47,9 @@ func (r *ContainerReconciler) scaffoldTimeout() time.Duration {
 func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha1.Container,
 	res resolved, status *c4v1alpha1.ContainerStatus) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	// What the scaffold reads of the Container's choices: status.bundle is
+	// written only with the rest of the status, so a copy carries it.
+	view := withBundle(container, res.bundle)
 
 	// The cache can lag behind our own status writes. Check the live object, so a
 	// reconcile queued during the last attempt doesn't scaffold a second time.
@@ -79,6 +82,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		URL:         res.provider.Spec.URL,
 		Owner:       res.provider.Spec.Owner,
 		Credentials: res.creds,
+		Packages:    packagesOf(res.provider),
 	})
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionRepositoryCreated, c4v1alpha1.ReasonFailed,
@@ -104,10 +108,10 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	switch model.ScaffoldHistory(len(commits), info.Container, container.Namespace+"/"+container.Name) {
 	case model.HistoryRecover:
 		log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
-		if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
+		if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 		}
-		return r.ready(ctx, container, status, info.ScaffoldedFrom, info.Relationships, info.Checks,
+		return r.ready(ctx, container, status, res.choices.Standard, info.ScaffoldedFrom, info.Relationships, info.Checks,
 			res.entries[0].ReadsOperations, "Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
@@ -127,7 +131,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(container, ci, res.use.Connectors,
+	in := scaffoldInput(view, ci, res.use.Connectors,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
@@ -147,12 +151,12 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
-	if err := protectRepository(gitCtx, r.Client, provider, repo, container); err != nil {
+	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
-	return r.ready(ctx, container, status, result.ScaffoldedFrom, res.use.Relationships, in.Checks,
+	return r.ready(ctx, container, status, res.choices.Standard, result.ScaffoldedFrom, res.use.Relationships, in.Checks,
 		res.entries[0].ReadsOperations, fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -181,14 +185,13 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 // block recorded, so a Framework that doesn't read it never reports it
 // applied.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, from []string, relationships []model.AppliedRelationship, checks string,
+	status *c4v1alpha1.ContainerStatus, standard string, from []string, relationships []model.AppliedRelationship, checks string,
 	readsOperations bool, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
-	if container.Spec.StandardRef != nil {
-		name := container.Spec.StandardRef.Name
-		if ref := model.ScaffoldedRef(from, name); ref != "" {
-			status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: name, Ref: ref,
+	if standard != "" {
+		if ref := model.ScaffoldedRef(from, standard); ref != "" {
+			status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: standard, Ref: ref,
 				Checks: c4v1alpha1.ChecksMode(checks)}
 		}
 	}
@@ -244,6 +247,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 	if npmScope == "" {
 		npmScope = gitprovider.DefaultNpmScope
 	}
+	choices := container.Choices()
 	in := scaffold.Input{
 		CI:             ci,
 		Project:        container.Namespace,
@@ -252,22 +256,24 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		DisplayName:    container.Spec.DisplayName,
 		Description:    container.Spec.Description,
 		Type:           string(container.Spec.Type),
-		Framework:      container.Spec.FrameworkRef.Name,
+		Framework:      choices.Framework,
+		Standard:       choices.Standard,
+		Compute:        choices.Compute,
+		Deployment:     choices.Deployment,
 		Connectors:     connectors,
 		Checks:         checks,
 		Operations:     ops,
 		NpmScope:       npmScope,
 	}
-	if container.Spec.StandardRef != nil {
-		in.Standard = container.Spec.StandardRef.Name
-	}
-	if container.Spec.ComputeRef != nil {
-		in.Compute = container.Spec.ComputeRef.Name
-	}
-	if container.Spec.DeploymentRef != nil {
-		in.Deployment = container.Spec.DeploymentRef.Name
-	}
 	return in
+}
+
+// withBundle is a copy of the Container carrying bundle as its status.bundle,
+// for reading its choices before the status that records them is written.
+func withBundle(container *c4v1alpha1.Container, bundle *c4v1alpha1.ContainerBundleStatus) *c4v1alpha1.Container {
+	view := container.DeepCopy()
+	view.Status.Bundle = bundle.DeepCopy()
+	return view
 }
 
 func repoDescription(container *c4v1alpha1.Container) string {

@@ -116,7 +116,7 @@ func (r *ContainerReconciler) reportOperationsApplied(container *c4v1alpha1.Cont
 		r.condition(container, status, c4v1alpha1.ConditionOperationsApplied, metav1.ConditionFalse,
 			c4v1alpha1.ReasonNotReadByFramework, fmt.Sprintf("Framework %s doesn't read spec.operations "+
 				"(readsOperations is not set), so its repository has none of it; change the repository by a Task",
-				container.Spec.FrameworkRef.Name))
+				container.Choices().Framework))
 		return true
 	}
 	if model.NextOperationsStep(operationsFacts(container, status)).Action != model.OperationsUpToDate {

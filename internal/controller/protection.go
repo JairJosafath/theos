@@ -46,10 +46,10 @@ func protection(ctx context.Context, c client.Reader, container *c4v1alpha1.Cont
 		return model.CI{}, nil, err
 	}
 	var standard []string
-	if ref := container.Spec.StandardRef; ref != nil {
+	if name := container.Choices().Standard; name != "" {
 		var s c4v1alpha1.Standard
-		if err := c.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: ref.Name}, &s); err != nil {
-			return model.CI{}, nil, fmt.Errorf("reading Standard %s: %w", ref.Name, err)
+		if err := c.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: name}, &s); err != nil {
+			return model.CI{}, nil, fmt.Errorf("reading Standard %s: %w", name, err)
 		}
 		standard = s.Spec.ProtectedPaths
 	}
@@ -63,7 +63,7 @@ func protection(ctx context.Context, c client.Reader, container *c4v1alpha1.Cont
 // It is safe to repeat, so it also brings older repositories up to date.
 func protectRepository(ctx context.Context, c client.Reader, provider gitprovider.Provider,
 	repo gitprovider.Repository, container *c4v1alpha1.Container) error {
-	if !model.Protected(container.Spec.StandardRef != nil) {
+	if !model.Protected(container.Choices().Standard != "") {
 		return nil
 	}
 	ci, paths, err := protection(ctx, c, container)
