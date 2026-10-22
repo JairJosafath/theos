@@ -159,3 +159,30 @@ func TestConversionFieldsAnnotation(t *testing.T) {
 		t.Errorf("round trip through the narrow version:\nwant %+v\ngot  %+v", src, back)
 	}
 }
+
+// An annotation a user wrote by hand places nothing outside spec and status,
+// and one that isn't JSON is dropped, so reads at the other version still work.
+func TestConversionFieldsAnnotationByHand(t *testing.T) {
+	old := schema.GroupVersion{Group: GroupVersion.Group, Version: "vold"}
+	next := schema.GroupVersion{Group: GroupVersion.Group, Version: "vnext"}
+	key := fmt.Sprintf(FieldsAnnotation, old.Version)
+	for _, tc := range []struct{ name, value string }{
+		{"not JSON", "x"},
+		{"metadata", `{"metadata":{"name":"y"},"kind":"Other"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := &narrow{
+				TypeMeta:   metav1.TypeMeta{APIVersion: next.String(), Kind: "Thing"},
+				ObjectMeta: metav1.ObjectMeta{Name: "a", Annotations: map[string]string{key: tc.value}},
+				Spec:       narrowSpec{Name: "n"},
+			}
+			dst := &wide{}
+			if err := convertObject(src, dst, next.Version, old, nil); err != nil {
+				t.Fatal(err)
+			}
+			if dst.Name != "a" || dst.Kind != "Thing" || dst.Spec.Name != "n" || len(dst.Annotations) != 0 {
+				t.Errorf("converted to %+v, want Thing a, spec.name n and no annotation", dst)
+			}
+		})
+	}
+}

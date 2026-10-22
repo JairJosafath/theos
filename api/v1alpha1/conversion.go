@@ -62,9 +62,7 @@ func convertObject(src, dst runtime.Object, srcVersion string, dstGV schema.Grou
 	if err != nil {
 		return fmt.Errorf("convert %T: %w", src, err)
 	}
-	if err := restoreFields(obj, dstGV.Version); err != nil {
-		return fmt.Errorf("convert %T: %w", src, err)
-	}
+	restoreFields(obj, dstGV.Version)
 	obj["apiVersion"] = dstGV.String()
 	if hook != nil {
 		if err := hook(obj); err != nil {
@@ -100,26 +98,32 @@ func convertObject(src, dst runtime.Object, srcVersion string, dstGV schema.Grou
 	return nil
 }
 
-// restoreFields merges back into obj the fields that rode in version's
-// annotation, and drops the annotation.
-func restoreFields(obj map[string]any, version string) error {
+// restoreFields merges back into obj the spec and status fields that rode in
+// version's annotation, and drops the annotation. Anyone who can edit the
+// object can write the annotation, so it places nothing else, and one that
+// isn't a JSON object is dropped rather than failing every read of the
+// object at the other version.
+func restoreFields(obj map[string]any, version string) {
 	metadata, _ := obj["metadata"].(map[string]any)
 	annotations, _ := metadata["annotations"].(map[string]any)
 	key := fmt.Sprintf(FieldsAnnotation, version)
 	data, ok := annotations[key].(string)
 	if !ok {
-		return nil
+		return
 	}
 	delete(annotations, key)
 	if len(annotations) == 0 {
 		delete(metadata, "annotations")
 	}
 	var fields map[string]any
-	if err := utiljson.Unmarshal([]byte(data), &fields); err != nil {
-		return fmt.Errorf("annotation %s: %w", key, err)
+	if utiljson.Unmarshal([]byte(data), &fields) != nil {
+		return
 	}
-	mergeFields(obj, fields)
-	return nil
+	for _, k := range []string{"spec", "status"} {
+		if part, ok := fields[k].(map[string]any); ok {
+			mergeFields(obj, map[string]any{k: part})
+		}
+	}
 }
 
 // mergeFields sets every field of from in into, merging maps.
