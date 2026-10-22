@@ -16,7 +16,8 @@ CloudFormation offline.
   `Authorization: Bearer <token>`, an access token of the stack's user pool
   issued to its app client, which `src/auth.ts` verifies with
   `aws-jwt-verify` (signature against the pool's keys, issuer, expiry,
-  `token_use`, `client_id`), and is answered 401 without one; `answer` routes `PUT` and `GET
+  `token_use`, `client_id`), and is answered 401 without one (500 when
+  the pool's keys can't be fetched); `answer` routes `PUT` and `GET
   /items/{id}` and `GET /health`, validates input and answers with status
   codes. `src/items.ts` holds the rules and imports neither the SDK nor
   `node:http`; `src/item_store.ts` wraps DynamoDB behind the `ItemStore`

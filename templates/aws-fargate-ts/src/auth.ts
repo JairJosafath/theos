@@ -1,8 +1,11 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import { FetchError } from 'aws-jwt-verify/error';
 
 /**
  * Whether a request's `Authorization` header carries a token the service
- * accepts. It never throws: a token that doesn't verify is false.
+ * accepts. A token that doesn't verify is false; it throws only when the
+ * pool's keys can't be fetched, which is the service's failure, not the
+ * caller's, so it is answered 500 and logged.
  */
 export type Authenticate = (authorization: string | undefined) => Promise<boolean>;
 
@@ -30,7 +33,10 @@ export function bearerAuthenticator(verifier: TokenVerifier): Authenticate {
     try {
       await verifier.verify(token);
       return true;
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof FetchError) {
+        throw error;
+      }
       return false;
     }
   };

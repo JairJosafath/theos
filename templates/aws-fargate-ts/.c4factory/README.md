@@ -24,7 +24,8 @@ container asset that synth only stages.
   `Authorization: Bearer <token>`, an access token of the stack's user pool
   issued to its app client, which `src/auth.ts` verifies with
   `aws-jwt-verify` (signature against the pool's keys, issuer, expiry,
-  `token_use`, `client_id`), and is answered 401 without one; `answer` routes `GET /health`, `PUT` and
+  `token_use`, `client_id`), and is answered 401 without one (500 when
+  the pool's keys can't be fetched); `answer` routes `GET /health`, `PUT` and
   `GET /items/{id}`, validates input and answers with status codes;
   `src/items.ts` holds the rules and imports neither the SDK nor Node's HTTP
   types; `src/item_store.ts` wraps DynamoDB behind the `ItemStore` interface

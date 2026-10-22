@@ -1,5 +1,6 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import { FetchError } from 'aws-jwt-verify/error';
 import { describe, expect, it } from 'vitest';
 
 import { bearerAuthenticator, bearerToken } from './auth';
@@ -61,6 +62,14 @@ describe('bearerAuthenticator', () => {
     { name: 'a token that is no JWT', header: 'Bearer nonsense' },
   ])('refuses $name', async ({ header }) => {
     expect(await authenticate(header)).toBe(false);
+  });
+
+  it('throws when the pool keys cannot be fetched', async () => {
+    const unreachable = bearerAuthenticator({
+      verify: () =>
+        Promise.reject(new FetchError('https://cognito-idp.example/jwks.json', 'timeout')),
+    });
+    await expect(unreachable(`Bearer ${token()}`)).rejects.toBeInstanceOf(FetchError);
   });
 });
 
