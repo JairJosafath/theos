@@ -29,8 +29,8 @@ const (
 	ActionsVarNpmScope     = "C4_NPM_SCOPE"
 	ActionsVarNpmRegistry  = "C4_NPM_REGISTRY"
 	ActionsVarPyPIIndex    = "C4_PYPI_INDEX"
-	ActionsSecretNpmToken  = "C4_NPM_TOKEN"
-	ActionsSecretPyPIToken = "C4_PYPI_TOKEN"
+	ActionsSecretNpmToken  = "C4_NPM_TOKEN"  //nolint:gosec // the name of an Actions secret
+	ActionsSecretPyPIToken = "C4_PYPI_TOKEN" //nolint:gosec // the name of an Actions secret
 )
 
 // packagesActions is what the owner's Actions hold for its package
