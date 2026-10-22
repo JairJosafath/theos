@@ -144,7 +144,7 @@ React 19 and TypeScript, built by Vite into a static site in `dist/`.
 - Auth: n/a: a public page with no API client; the API it calls
   verifies a bearer JWT (#1474).
 
-### node-cli (v1.0.0)
+### node-cli (v1.1.0)
 
 A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 `npm pack`.
@@ -158,13 +158,21 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - README: `README.md.tmpl`: use, install the tarball, develop, `make dist`,
   layout.
 - Deploy: gitea-release in "node cli" attaches `dist/<container>-<version>.tgz`
-  to the tag's release. Publishing to a registry is #1229 and #1231.
+  to the tag's release, and the Crew publishes the tarball to the owner's npm
+  registry (#1229). Since v1.1.0 `package.json` names the package
+  `<scope>/<container>`, the scope from the GitProvider's `spec.packages`
+  (`@c4factory` by default), set at scaffold time and never again (#1231).
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.4.0)
+### python-standard (v1.5.0)
 
-The Python rulebook and its `make check`.
+The Python rulebook and its `make check`. Since v1.5.0 the check workflow
+writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
+secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`, `C4_PYPI_INDEX`, `C4_NPM_TOKEN`,
+`C4_PYPI_TOKEN`), falling back to the host's own registries and the
+workflow's token, so `uv` fetches factory packages; `AGENTS.md` says how a
+package is declared (#1231).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -179,9 +187,14 @@ The Python rulebook and its `make check`.
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.5.0)
+### ts-standard (v1.6.0)
 
-The TypeScript rulebook for react-vite, node-cli and vscode-extension.
+The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
+v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
+Actions variables and secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`,
+`C4_PYPI_INDEX`, `C4_NPM_TOKEN`, `C4_PYPI_TOKEN`), falling back to the host's
+own registries and the workflow's token, so `npm ci` fetches factory
+packages; `AGENTS.md` says how one is added (#1231).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes" and "node cli".
@@ -276,7 +289,7 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.4.1)
+### gitea-release (v1.5.0)
 
 A Deployment for cli, extension and operator Containers:
 `.gitea/workflows/release.yaml` runs `make dist VERSION=<tag>` on a `v*` tag
@@ -288,7 +301,11 @@ release job has a digest guard: it fails before `make dist` unless the
 name an image that is not there (#1581). And a rerun rule: the operator
 pushes a tag's image once and never replaces it, so the job asks the
 registry for the tag's digest first and names the one it holds; 404 names
-the digest just built, any other answer fails the step (#1583).
+the digest just built, any other answer fails the step (#1583). Since
+v1.5.0 the release job writes `~/.npmrc` and `~/.netrc` from the owner's
+Actions variables and secrets before `make dist`, falling back to the
+host's own registries and the workflow's token, so a build that installs
+factory packages finds them (#1231).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli"
   and "node cli" and checks the files it attaches.
@@ -406,10 +423,12 @@ aws-standard.
   (#1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.17.4)
+### aws-standard (v1.18.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
-runbook, `infra/standard.ts` with CDK Nag.
+runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
+writes `~/.npmrc` and `~/.netrc` as ts-standard's does, so `npm ci` and `uv`
+fetch factory packages (#1231).
 
 - CI: #1476.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

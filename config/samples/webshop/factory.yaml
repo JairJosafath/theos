@@ -61,7 +61,7 @@ spec:
   checksBeforeRelease: true
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
-    ref: v1.5.0
+    ref: v1.6.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Standard
@@ -76,7 +76,7 @@ spec:
   checksBeforeRelease: true
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
-    ref: v1.4.0
+    ref: v1.5.0
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Compute

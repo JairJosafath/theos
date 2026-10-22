@@ -43,6 +43,24 @@ and a review. Never commit red.
   maintained, well-known packages with type hints (`py.typed`) and a licence
   that fits. A package without types needs its stubs (`types-<name>`) as a dev
   dependency, never an ignore.
+- A factory package (another Container of this project) comes from the
+  owner's index, declared once in `pyproject.toml` and the package pinned to
+  it, so every other package stays on PyPI:
+
+  ```toml
+  [[tool.uv.index]]
+  name = "c4factory"
+  url = "<index>"
+  explicit = true
+
+  [tool.uv.sources]
+  <container> = { index = "c4factory" }
+  ```
+
+  then `uv add <container>==<version>`. The index URL is the one your pod's
+  `C4_PYPI_INDEX` names (the owner's Gitea by default,
+  `<gitea>/api/packages/<owner>/pypi/simple`); the credentials come from
+  `~/.netrc`, which your pod and CI write, never from `pyproject.toml`.
 
 ## Review rules (lint can't check these)
 
