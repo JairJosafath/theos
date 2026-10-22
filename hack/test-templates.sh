@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
-# make test-templates: renders the webshop's template combinations (rows of
-# templateCombos in internal/scaffold/templates_test.go) the way the operator
+# make test-templates: renders template combinations (rows of templateCombos
+# in internal/scaffold/templates_test.go: the webshop's, the go cli, the
+# vscode extension and every AWS one) the way the operator
 # scaffolds them, commits each in a new git repository and runs its own
 # `make check`; then what its Deployment does: `kustomize build deploy/k8s`
 # for k8s-manifests, and for gitea-release `make dist` at the scaffold's
 # version, failing unless dist/ holds the files the release workflow attaches.
-# No cluster, no Docker; uv and npm fetch what the renders' lock files pin.
-# make check doesn't run it; a change to one of these templates does (#1469).
+# The AWS combos' make check synthesizes with CDK Nag and runs cfn-lint;
+# nothing calls AWS. No cluster, no Docker; uv, npm and go fetch what the
+# renders' lock files pin. make check doesn't run it; a change to one of
+# these templates does (#1469, #1476).
 # hack/test-templates-operator.sh does the same for the operator combo.
 #
-#   KUSTOMIZE  the kustomize binary of this repository (the Makefile passes it)
-#   COMBO      run only the combo of this name (one of the names below)
-#   KEEP       non-empty: keep the rendered repositories and print where
+#   KUSTOMIZE      the kustomize binary of this repository (the Makefile passes it)
+#   GOLANGCI_LINT  this repository's golangci-lint, which the Go renders' make
+#                  check runs as golangci-lint on PATH (the Makefile passes it)
+#   COMBO          run only the combo of this name (one of the names below)
+#   KEEP           non-empty: keep the rendered repositories and print where
 #
 # It runs every combo and ends naming each combo and target that failed.
 set -euo pipefail
 
-: "${KUSTOMIZE:?}"
+: "${KUSTOMIZE:?}" "${GOLANGCI_LINT:?}"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
@@ -26,6 +31,18 @@ combos=(
 	"python cli|cli|shop-admin|Shop Admin|Framework=python-cli Standard=python-standard Deployment=gitea-release"
 	"react web app on kubernetes|static-site|storefront|Storefront|Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests"
 	"node cli|cli|shop-tool|Shop Tool|Framework=node-cli Standard=ts-standard Deployment=gitea-release"
+	"go cli|cli|shop-ctl|Shop Ctl|Framework=go-cli Standard=go-standard Deployment=gitea-release"
+	"vscode extension|extension|shop-helper|Shop Helper|Framework=vscode-extension Standard=ts-standard Deployment=gitea-release"
+	"aws lambda function|function|price-fn|Price Fn|Framework=aws-lambda-ts Standard=aws-standard"
+	"aws lambda function with dynamodb|function|cart-fn|Cart Fn|Framework=aws-lambda-ts Standard=aws-standard Connector=dynamodb"
+	"aws lambda function in go|function|stock-fn|Stock Fn|Framework=aws-lambda-go Standard=aws-standard"
+	"aws python lambda function|function|tax-fn|Tax Fn|Framework=aws-lambda-py Standard=aws-standard"
+	"aws ec2 service|service|search|Search|Framework=aws-ec2-ts Standard=aws-standard"
+	"aws fargate service|service|checkout|Checkout|Framework=aws-fargate-ts Standard=aws-standard"
+	"aws queue consumer|worker|mailer|Mailer|Framework=aws-queue-ts Standard=aws-standard"
+	"aws scheduled job|job|nightly-report|Nightly Report|Framework=aws-schedule-ts Standard=aws-standard"
+	"aws event consumer|worker|audit|Audit|Framework=aws-event-ts Standard=aws-standard"
+	"aws static site|static-site|landing|Landing|Framework=aws-static-site-ts Standard=aws-standard"
 )
 
 if [ -n "${COMBO:-}" ]; then
@@ -47,6 +64,12 @@ if [ -n "${KEEP:-}" ]; then
 else
 	trap 'rm -rf "$T"' EXIT
 fi
+# golangci-lint under the name the rendered Makefile looks for on PATH, as in
+# the toolchain image.
+mkdir -p "$T/bin"
+ln -s "$GOLANGCI_LINT" "$T/bin/golangci-lint"
+unset GOLANGCI_LINT
+export PATH="$T/bin:$PATH"
 # The rendered repos' make is their own, not a sub-make of this repository's.
 unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES C4_HEAVY_SLOT
 
@@ -63,6 +86,13 @@ dist_files() {
 	# npm packs the scoped package @c4factory/<container> (hack/render's default
 	# scope) as c4factory-<container>-<version>.tgz (#1695).
 	node-cli) want=("dist/c4factory-$container-$version.tgz") ;;
+	vscode-extension) want=("dist/$container-$version.vsix") ;;
+	go-cli)
+		want=(dist/SHA256SUMS)
+		for p in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64.exe windows_arm64.exe; do
+			want+=("dist/${container}_$p")
+		done
+		;;
 	*) echo "no release files known for $framework" >&2; return 1 ;;
 	esac
 	for f in "${want[@]}"; do
@@ -100,6 +130,8 @@ run_combo() {
 		local version
 		case $framework in
 		python-cli) version=v$(uv version --short) ;;
+		# A Go module has no version of its own; the tag is the version.
+		go-cli) version=v0.1.0 ;;
 		*) version=v$(node -p "require('./package.json').version") ;;
 		esac
 		failed="make dist VERSION=$version"

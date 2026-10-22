@@ -183,13 +183,16 @@ test-templates-operator: kubebuilder kustomize controller-gen envtest ## Render 
 		hack/test-templates-operator.sh
 
 # Renders the webshop's template combos (fastapi with postgres, python cli,
-# react on kubernetes, node cli) and runs each one's own make check, then
-# kustomize build or make dist (hack/test-templates.sh); COMBO="node cli" runs
-# one. Not part of make check: run it when a change touches one of their
-# templates. It fetches from npm and PyPI.
+# react on kubernetes, node cli), the go cli, the vscode extension and every
+# AWS combo, and runs each one's own make check, then kustomize build or make
+# dist (hack/test-templates.sh); COMBO="node cli" runs one. Not part of make
+# check: run it when a change touches one of their templates. It fetches from
+# npm, PyPI and the Go module proxy; nothing calls AWS.
 .PHONY: test-templates
-test-templates: kustomize ## Render the webshop's template combos and run their make check, kustomize build and make dist.
-	KUSTOMIZE="$(KUSTOMIZE)" hack/test-templates.sh
+test-templates: kustomize ## Render the template combos (webshop, go cli, vscode extension, AWS) and run their make check, kustomize build and make dist.
+	@# GOLANGCI_LINT_BASE is defined further down, too late for a prerequisite.
+	@$(MAKE) --no-print-directory "$(GOLANGCI_LINT_BASE)"
+	KUSTOMIZE="$(KUSTOMIZE)" GOLANGCI_LINT="$(GOLANGCI_LINT_BASE)" hack/test-templates.sh
 
 # Regenerates the go-kubebuilder Framework from the pinned kubebuilder; review
 # the diff, then tag the template (hack/template-go-kubebuilder/main.go says how
