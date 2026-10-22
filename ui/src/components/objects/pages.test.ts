@@ -195,7 +195,9 @@ describe('github targets (#1603)', () => {
     const t = plain(html)
     expect(t).toContain('Tags <container>-v1.2.3 (tagPrefix not set: the Container’s name and -)')
     expect(t).toContain('Source folder <container>, tagged <container>/v1.2.3 (path not set: each Container’s name)')
-    expect(t).toContain('Image ghcr.io/webshop-co/webshop/<container> · copied when the Secret holds packagesToken')
+    expect(t).toContain(
+      'Image ghcr.io/webshop-co/webshop/<container> · copied, for a Container whose release builds an image, when the Secret holds packagesToken',
+    )
     expect(t).toContain('Secret oss-github')
     expect(t).toMatch(
       /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on GHCR\./,

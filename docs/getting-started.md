@@ -640,7 +640,8 @@ entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
 A `github` DeployTarget does more than copy the release. With `source` it
 commits the app's own files at the release's tag into a folder of the
 repository, tagged, and makes the GitHub release of that commit; with a
-`packagesToken` it copies a `k8s-manifests` Container's image to GHCR. The
+`packagesToken` it copies the release's image to GHCR (a `k8s-manifests`
+Container's, or an `operator`'s with `gitea-release`). The
 overlay [config/samples/webshop-github](../config/samples/webshop-github/)
 publishes the webshop's `orders-api` that way, after it ships to the Argo
 CD in the cluster:

@@ -96,7 +96,10 @@ function GitHubFacts({ target }: { target: DeployTarget }) {
       <dt>Image</dt>
       <dd>
         <span className="mono">{githubImage(target)}</span>
-        <span className="muted small"> · copied when the Secret holds {GITHUB_SECRET_KEYS.packages}</span>
+        <span className="muted small">
+          {' '}
+          · copied, for a Container whose release builds an image, when the Secret holds {GITHUB_SECRET_KEYS.packages}
+        </span>
       </dd>
     </>
   )
