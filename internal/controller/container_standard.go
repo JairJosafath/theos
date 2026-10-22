@@ -143,35 +143,9 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 			}
 			f.PR = &model.UpdatePullRequest{Merged: pr.Merged, Closed: pr.State == stateClosed,
 				Mergeable: pr.Mergeable, HeadSHA: pr.HeadSHA}
-		case model.StandardReadChecks:
-			git, ok := u.access(ctx)
-			if !ok {
+		case model.StandardReadMain, model.StandardReadChecks, model.StandardReadFiles:
+			if !u.read(ctx, gitCtx, step.Action, &f) {
 				return
-			}
-			checks, err := git.provider.CombinedStatus(gitCtx, git.provider.Repository(u.container.Name),
-				s.Update.Commit)
-			if err != nil {
-				u.gitError(ctx, err)
-				return
-			}
-			// A state the host leaves empty is pending, so the model doesn't ask again.
-			f.Checks = cmp.Or(checks.State, gitprovider.CheckPending)
-			f.ChecksURL, f.Contexts, f.CI = checks.URL, checks.Contexts, git.ci
-		case model.StandardReadFiles:
-			git, ok := u.access(ctx)
-			if !ok {
-				return
-			}
-			changed, err := git.provider.PullRequestFiles(gitCtx, git.provider.Repository(u.container.Name),
-				int(s.Update.PullRequest))
-			switch {
-			case errors.Is(err, gitprovider.ErrTooManyFiles):
-				f.Files = &model.UpdateFiles{Unchecked: err.Error()}
-			case err != nil:
-				u.gitError(ctx, err) // never merge a path nobody checked
-				return
-			default:
-				f.Files = &model.UpdateFiles{Changed: changed}
 			}
 		case model.StandardUpToDate:
 			u.upToDate(ctx)
@@ -226,6 +200,47 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1alpha1.S
 	}
 }
 
+// read reads what action asks for from the Git host into f, and reports whether
+// it could.
+func (u *standardUpdate) read(ctx, gitCtx context.Context, action model.StandardAction,
+	f *model.StandardUpdateFacts) bool {
+	git, ok := u.access(ctx)
+	if !ok {
+		return false
+	}
+	repo := git.provider.Repository(u.container.Name)
+	switch action {
+	case model.StandardReadChecks:
+		checks, err := git.provider.CombinedStatus(gitCtx, repo, u.status.Standard.Update.Commit)
+		if err != nil {
+			u.gitError(ctx, err)
+			return false
+		}
+		// A state the host leaves empty is pending, so the model doesn't ask again.
+		f.Checks = cmp.Or(checks.State, gitprovider.CheckPending)
+		f.ChecksURL, f.Contexts, f.CI = checks.URL, checks.Contexts, git.ci
+	case model.StandardReadMain:
+		_, head, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, nil)
+		if err != nil {
+			u.gitError(ctx, err)
+			return false
+		}
+		f.Main = head
+	case model.StandardReadFiles:
+		changed, err := git.provider.PullRequestFiles(gitCtx, repo, int(u.status.Standard.Update.PullRequest))
+		switch {
+		case errors.Is(err, gitprovider.ErrTooManyFiles):
+			f.Files = &model.UpdateFiles{Unchecked: err.Error()}
+		case err != nil:
+			u.gitError(ctx, err) // never merge a path nobody checked
+			return false
+		default:
+			f.Files = &model.UpdateFiles{Changed: changed}
+		}
+	}
+	return true
+}
+
 // inFlight is the update in status as the model sees it, or nil.
 func inFlight(update *c4v1alpha1.StandardUpdateStatus) *model.StandardUpdateInFlight {
 	if update == nil {
@@ -233,8 +248,8 @@ func inFlight(update *c4v1alpha1.StandardUpdateStatus) *model.StandardUpdateInFl
 	}
 	return &model.StandardUpdateInFlight{
 		Ref: update.Ref, Mode: string(update.Checks), Stopped: update.Stopped, PullRequest: int(update.PullRequest),
-		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Paths: update.Paths,
-		Take: update.Take, Held: update.Stopped == c4v1alpha1.ReasonNoLightCheck,
+		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Base: update.Base,
+		Paths: update.Paths, Take: update.Take, Held: update.Stopped == c4v1alpha1.ReasonNoLightCheck,
 	}
 }
 
@@ -395,7 +410,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 	s.Update = &c4v1alpha1.StandardUpdateStatus{
-		Ref: to.Ref, Checks: c4v1alpha1.ChecksMode(to.Checks), Branch: branch, Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
+		Ref: to.Ref, Checks: c4v1alpha1.ChecksMode(to.Checks), Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
 		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut, Behind: behindAfter,
 	}
 	u.updating()
@@ -732,7 +747,7 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1alpha1.
 			model.StandardTakeTitle(s.Name, s.Ref, take.Paths()), model.StandardTakeBody(s.Name, s.Ref, take.Taken))
 		if err == nil {
 			s.Update = &c4v1alpha1.StandardUpdateStatus{
-				Ref: s.Ref, Checks: c4v1alpha1.ChecksMode(recordedChecks(u.status)), Take: true, Branch: branch, Commit: commit, PullRequest: int32(pr.Number),
+				Ref: s.Ref, Checks: c4v1alpha1.ChecksMode(recordedChecks(u.status)), Take: true, Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number),
 				PullRequestURL: pr.URL, Paths: take.Paths(),
 			}
 			u.updating()

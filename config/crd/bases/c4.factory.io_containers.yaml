@@ -826,6 +826,11 @@ spec:
                     description: update is the Standard update in flight, or the last
                       one, stopped.
                     properties:
+                      base:
+                        description: |-
+                          base is main's head the update was planned from. An update whose CI
+                          failed is planned again once main is no longer at it.
+                        type: string
                       behind:
                         description: |-
                           behind are the files behind once the update merges, each with the ref
