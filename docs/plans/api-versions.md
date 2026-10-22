@@ -20,7 +20,7 @@ deprecated and when one may be dropped. The first roadmap criterion of 1.0
 past `v1alpha1` that existing objects convert to") holds.
 
 Done when every step below is merged: the promise is in `docs/design.md`;
-all 18 kinds serve `v1alpha1` and `v1beta1` with `v1beta1` stored;
+every kind serves `v1alpha1` and `v1beta1` with `v1beta1` stored;
 envtest creates each kind at `v1alpha1`, reads it at `v1beta1` and back
 unchanged, and rewrites an object stored at `v1alpha1`; `test/compat`
 guards both versions; the operator, the UI, the Session client, the
@@ -30,7 +30,7 @@ with a warning naming the release that may drop it. Test output goes to
 
 ## Where we stand
 
-- 18 kinds in `api/v1alpha1`, served and stored at `v1alpha1` only, no
+- Every kind in `api/v1alpha1` is served and stored at `v1alpha1` only, no
   `conversion` stanza (`strategy: None` by default), no webhook server
   running: `cmd/main.go` has kubebuilder's webhook flags, the chart has
   `webhook.enabled: false` and `certManager.enabled: false`, and nothing
@@ -80,7 +80,7 @@ with a warning naming the release that may drop it. Test output goes to
    - What the promise leaves out stays as #1097 wrote it: what the operator
      does with an object may change, as the release notes say.
 
-2. **`v1beta1` changes no shape.** Its 18 kinds are `v1alpha1`'s, field for
+2. **`v1beta1` changes no shape.** Its kinds are `v1alpha1`'s, field for
    field, with `v1beta1` the hub and `v1alpha1` the spoke. The one
    candidate, dropping `Crew.spec.publishReleases`, waits on a Brief naming
    DeployTargets, which waits on two open plans (#1071, #1072); coupling
@@ -189,12 +189,15 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    `networkPolicy.enabled` the chart opens the webhook port to any source:
    the API server calls from outside the pod network, and TLS guards it.
 
-3. **`api/v1beta1` for every kind, converting.** Each of the 18 kinds
-   scaffolded with `kubebuilder create api --version v1beta1 --kind K
-   --resource --controller=false`, its types copied from `v1alpha1` with
-   the hub marker, `Convertible` on `v1alpha1` through the generic
-   converter, the conversion handler registered, every CRD at
-   `strategy: Webhook`, storage still `v1alpha1`. `kind/feature`. Done when
+3. **`api/v1beta1` for every kind, converting.** The kinds a new version
+   covers are `WebhookCRDs` in `internal/controller/webhook_cert.go`, the
+   list its unit test pins to `config/crd/bases` (no fixed count: Bundle
+   made it 19, #1829). Each of them is scaffolded with
+   `kubebuilder create api --version v1beta1 --kind K --resource
+   --controller=false`, its types copied from `v1alpha1` with the hub
+   marker, `Convertible` on `v1alpha1` through the generic converter, the
+   conversion handler registered, every CRD at `strategy: Webhook`,
+   storage still `v1alpha1`. `kind/feature`. Done when
    a round-trip test over fuzzed objects of every kind passes, envtest
    (with `WebhookInstallOptions`) creates each kind at `v1alpha1`, reads it
    at `v1beta1` and back unchanged, and `make check` passes with every

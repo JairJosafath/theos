@@ -1,5 +1,5 @@
 # A Bundle names the catalog entries a team picked together, from factory.yaml:
-# a Container may name it instead of the four (docs/plans/catalog-bundles.md).
+# a Container may name it instead of the four (docs/plans/done/catalog-bundles.md).
 # The webshop's own Containers keep naming their sides.
 apiVersion: c4.factory.io/v1alpha1
 kind: Bundle

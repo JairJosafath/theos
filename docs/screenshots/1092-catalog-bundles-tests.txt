@@ -1,0 +1,111 @@
+Evidence for docs/plans/done/catalog-bundles.md (#1092, catalog bundles): the
+test output of the plan's steps, run on 2026-10-22 by otter-1871 (#1871).
+No cluster: tiers 1, 2 and 4 of AGENTS.md's "Test the rules where they live".
+
+== Tier 1: internal/model's bundle tests (#1619, #1622)
+$ go test ./internal/model -run Bundle -count=1 -v
+--- PASS: TestBundlersToBump (0.00s)
+    --- PASS: TestBundlersToBump/none (0.00s)
+    --- PASS: TestBundlersToBump/each_Ready_bundler,_by_name (0.00s)
+    --- PASS: TestBundlersToBump/a_filed_one_is_left_out (0.00s)
+    --- PASS: TestBundlersToBump/a_link_created_after_the_release_is_left_out (0.00s)
+    --- PASS: TestBundlersToBump/a_link_created_as_the_release_went_out_counts (0.00s)
+    --- PASS: TestBundlersToBump/a_bundler_not_Ready_waits (0.00s)
+    --- PASS: TestBundlersToBump/a_Container_linked_twice_is_bumped_once,_through_its_first_link (0.00s)
+    --- PASS: TestBundlersToBump/a_late_second_link_doesn't_hide_the_first (0.00s)
+--- PASS: TestBundleChoices (0.00s)
+    --- PASS: TestBundleChoices/all_four_sides (0.00s)
+    --- PASS: TestBundleChoices/no_compute (0.00s)
+    --- PASS: TestBundleChoices/framework_only (0.00s)
+--- PASS: TestBundleSupportedTypes (0.00s)
+    --- PASS: TestBundleSupportedTypes/the_intersection,_in_the_first_entry's_order (0.00s)
+    --- PASS: TestBundleSupportedTypes/one_entry_supports_what_it_lists (0.00s)
+    --- PASS: TestBundleSupportedTypes/narrowed_by_a_later_entry (0.00s)
+    --- PASS: TestBundleSupportedTypes/entries_that_share_no_type_support_none (0.00s)
+    --- PASS: TestBundleSupportedTypes/a_type_listed_twice_counts_once (0.00s)
+    --- PASS: TestBundleSupportedTypes/no_entries_support_none (0.00s)
+--- PASS: TestInBundle (0.00s)
+    --- PASS: TestInBundle/unsupported_type (0.00s)
+    --- PASS: TestInBundle/standard_doesn't_fit (0.00s)
+    --- PASS: TestInBundle/deploys_itself (0.00s)
+    --- PASS: TestInBundle/no_bundle (0.00s)
+--- PASS: TestBundleChanges (0.00s)
+    --- PASS: TestBundleChanges/unchanged (0.00s)
+    --- PASS: TestBundleChanges/one_side (0.00s)
+    --- PASS: TestBundleChanges/a_side_added_and_one_removed,_in_side_order (0.00s)
+    --- PASS: TestBundleChanges/every_side (0.00s)
+--- PASS: TestBundleStringRoundTrip (0.00s)
+--- PASS: TestPlannerGuidePrefersABundle (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/model	0.004s
+
+== Tier 2: the chart's bundles (#1623), make validate-yaml
+$ make validate-yaml
+Skipped, they fetch remote URLs: config/agent-sandbox, config/argocd, config/metrics-server
+The chart's GitProviders, catalog and Agents are in ConfigMap c4factory-catalog, none a hook
+The chart's gitProviders are in ConfigMap c4factory-gitproviders, none a hook
+Every GitProvider the chart renders carries a base and a go runner pool
+2 Bundles in chart-gitea-catalog.yaml name entries the chart installs, each supporting a Container type
+Validating 44 files
+All valid
+The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents
+The chart makes the project Namespaces, lets the seed label them and turns sharing on
+The chart lets the UI read pods only in its components' namespaces and, through the operator, the projects'
+The manager shares claude-credentials into the labeled sample namespaces
+The CI runners in bin/yaml/chart-gitea.yaml are fenced: gitea/gitea-runner-base, gitea/gitea-runner-go, gitea/gitea-runner-image
+The CI runners in bin/yaml/chart-gitea-bare.yaml are fenced: gitea/gitea-runner-base, gitea/gitea-runner-go, gitea/gitea-runner-image
+The CI runners in config/runner/base.yaml, config/runner/go.yaml, config/runner/image.yaml, config/runner/network-policy.yaml, bin/yaml/kustomize-gitea.yaml are fenced: gitea/gitea-runner-base, gitea/gitea-runner-go, gitea/gitea-runner-image
+The CI runners in bin/yaml/chart-gitea-dns.yaml are fenced: gitea/gitea-runner-base, gitea/gitea-runner-go, gitea/gitea-runner-image
+The CI fence and the manager take clusterDNS
+All 15 invalid files rejected
+The chart's CRDs match config/crd/bases
+The chart's manager role matches config/rbac/role.yaml
+The chart's manager Deployment keeps /tmp, POD_NAMESPACE, C4_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook
+
+== Tier 4: envtest, the Bundle specs (#1619, #1620, #1621, #1622)
+$ KUBEBUILDER_ASSETS=... go test ./internal/controller -v -run '^TestControllers$' -count=1 -ginkgo.focus=Bundle -ginkgo.v
+Will run 9 of 529 specs
+[BeforeSuite] internal/controller/suite_test.go:258
+Bundle takes a frameworkRef alone or with the three optional sides
+  internal/controller/bundle_test.go:20
+  • [2.052 seconds]
+Bundle is refused without a frameworkRef
+  internal/controller/bundle_test.go:37
+  • [0.100 seconds]
+Brief rounds on a Bundle lists the Bundles in catalog.yaml, refuses one that doesn't support the type, and applies one that does
+  internal/controller/brief_bundle_test.go:29
+  • [2.438 seconds]
+Container naming a Bundle names a bundleRef or a frameworkRef, never both, and keeps its bundleRef
+  internal/controller/container_bundle_test.go:56
+  • [0.099 seconds]
+Container naming a Bundle waits for a missing Bundle, naming it
+  internal/controller/container_bundle_test.go:93
+  • [0.235 seconds]
+Container naming a Bundle scaffolds like its twin naming the four entries, and keeps the expansion it scaffolded from
+  internal/controller/container_bundle_test.go:112
+  • [2.242 seconds]
+Container naming a Bundle reports a changed or deleted Bundle, never applying it (#1621)
+  internal/controller/container_bundle_test.go:158
+  • [1.255 seconds]
+Container naming a Bundle recovers the expansion the earlier attempt pushed when the Bundle changed since (#1621)
+  internal/controller/container_bundle_test.go:202
+  • [1.055 seconds]
+Container naming a Bundle fails a Bundle whose entries don't fit the Container, naming the bundle
+  internal/controller/container_bundle_test.go:234
+  • [0.124 seconds]
+Ran 9 of 529 Specs in 13.997 seconds
+SUCCESS! -- 9 Passed | 0 Failed | 0 Pending | 520 Skipped
+--- PASS: TestControllers (14.00s)
+ok  	github.com/JairJosafath/c4factory/internal/controller	14.020s
+
+== The UI (#1624), its bundle tests
+$ cd ui && npx vitest run src/model/choices.test.ts
+ ✓ src/model/choices.test.ts > choicesOf > reads the spec refs of a Container that named its sides 1ms
+ ✓ src/model/choices.test.ts > choicesOf > reads status.bundle of a bundled Container, and only the bundle before its expansion 0ms
+ ✓ src/model/choices.test.ts > bundleTypes > is the first entry’s types that every other entry lists, in the first entry’s order 0ms
+ ✓ src/model/choices.test.ts > bundleTypes > is none when the entries share no type, or one is not in the catalog 0ms
+ ✓ src/model/choices.test.ts > bundleTypes > names each entry with its catalog entry, or without one when the catalog lacks it 0ms
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  22:11:18
+   Duration  107ms (transform 64%, import 19%, tests 9%, worker 7%)

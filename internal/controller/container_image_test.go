@@ -19,6 +19,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 const testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -195,8 +196,16 @@ var _ = Describe("Container images", func() {
 		gitFake.failImagePushes(ns, "orders-api", 5)
 		shipRelease(ns, "v0.1.0", true)
 
-		d := deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployGitHostUnreachable, "", model.DeployDeploying)
-		Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
+		// The push runs beside the reconciler (#1572), so the deploy waits on
+		// it Pushing before it waits on it Failed: wait for the failure
+		// (#1847).
+		Eventually(func(g Gomega) {
+			d, cond := deployOf(g, ns, "staging")
+			g.Expect(cond.Reason).To(Equal(model.DeployDeploying))
+			g.Expect(d.Phase).To(Equal(model.DeployPhaseWaiting))
+			g.Expect(d.Reason).To(Equal(model.DeployGitHostUnreachable))
+			g.Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
+		}, deployWait).Should(Succeed())
 		Expect(shippedImages(ns, "staging")).To(BeEmpty())
 
 		By("shipping once the push succeeds")
@@ -265,6 +274,44 @@ var _ = Describe("Container images", func() {
 			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		}).Should(Succeed())
 		shipRelease(ns, "v0.1.0", true)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.NewestRelease).To(Equal("v0.1.0"))
+		}, deployWait).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Image).To(BeNil())
+			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionImagePublished)).To(BeNil())
+		}, 3*time.Second).Should(Succeed())
+		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(BeZero())
+	})
+
+	It("reports no image for a Fargate Container scaffolded before the image job (#1797)", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		// aws-fargate-ts v1.3.0 predates the image job (v2.0.0, #1610), so
+		// the release workflow it rendered pushes no archive. The tree
+		// served under it doesn't matter: only the scaffolded ref counts.
+		gitFake.addTemplate(templatesURL+model.FrameworkAWSFargate, "v1.3.0", scaffold.Tree{
+			"README.md.tmpl": {Data: []byte("# {{ .Container }}\n")},
+		})
+		fargate := &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, model.FrameworkAWSFargate),
+			Spec: newFrameworkSpec(templatesURL+model.FrameworkAWSFargate, "v1.3.0", c4v1alpha1.ContainerTypeService)}
+		fargate.Spec.DeploysItself = true
+		giteaRelease := &c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
+			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.8.0", c4v1alpha1.ContainerTypeService)}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.FrameworkRef.Name = model.FrameworkAWSFargate
+		container.Spec.ComputeRef = nil
+		container.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: model.DeploymentGiteaRelease}
+		mustCreate(newSystem(ns, "webshop-core"), fargate, giteaRelease, container, newCrew(ns))
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}).Should(Succeed())
+		Expect(container.Status.ScaffoldedFrom).To(ContainElement(model.FrameworkAWSFargate + "@v1.3.0"))
+		shipRelease(ns, "v0.1.0", true) // its files: the build's tar.gz, no *.oci.tar
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())

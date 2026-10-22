@@ -69,6 +69,8 @@ const (
 	// testRunnerRecordKept how long an ended pool pod stays readable, in tests.
 	testCIGoCache        = "/var/cache/c4factory/go/ci"
 	testRunnerRecordKept = 3 * time.Second
+	// testRunnerBackoff is a pool's first wait after a pod failed, in tests.
+	testRunnerBackoff = 500 * time.Millisecond
 )
 
 // testUIAccount is the UI's ServiceAccount, in the operator's namespace, that
@@ -366,7 +368,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			ModelProxyURL:   testModelProxyURL,
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount},
-			Git:              gitFake, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept},
+			Git:              gitFake, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept,
+			RunnerBackoff: testRunnerBackoff},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
