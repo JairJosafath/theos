@@ -229,7 +229,8 @@ alarms and runbooks) were written down and left to the reader.
     Connector can reuse them. #1117 added the `dynamodb` Connector v1.0.0,
     wired into `aws-lambda-ts` v1.2.0 through its `infra/connectors.ts`; the
     Framework's own tables stay, and the planner still plans no DataStore
-    for an AWS Container until the other Frameworks wire it too.
+    for an AWS Container until the other Frameworks wire it too: the plan
+    for that is [aws-data-stores.md](aws-data-stores.md) (#1393).
 
 ## Track A, per Framework
 
