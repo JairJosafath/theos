@@ -8,6 +8,7 @@ package scaffold
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -390,6 +391,10 @@ func checkPath(p string) error {
 
 var funcs = template.FuncMap{
 	"has": slices.Contains[[]string],
+	// fail stops the render with msg, so a template refuses a combination its
+	// layer can't serve and the Container fails with a TemplateError saying
+	// why: {{ if not (has .FrameworkFiles "infra/connectors.ts") }}{{ fail "..." }}{{ end }}.
+	"fail": func(msg string) (string, error) { return "", errors.New(msg) },
 	// trimPrefix takes the prefix first, as Sprig does: {{ trimPrefix "@" .NpmScope }}.
 	"trimPrefix": func(prefix, s string) string { return strings.TrimPrefix(s, prefix) },
 	"snake":      func(s string) string { return strings.ReplaceAll(s, "-", "_") },

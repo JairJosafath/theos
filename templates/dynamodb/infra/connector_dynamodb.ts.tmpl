@@ -1,11 +1,12 @@
+{{ if not (has .FrameworkFiles "infra/connectors.ts") }}{{ fail (printf "the %s Framework doesn't wire the dynamodb Connector: it renders no infra/connectors.ts, so a Container on it can't take a DataStore on dynamodb" .Framework) }}{{ end -}}
 import { RemovalPolicy } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
-import type { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
+import type { IGrantable } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 
 import type { TierRules } from './standard';
 
-/** The environment variable that hands the function the table's name. */
+/** The environment variable that hands the user the table's name. */
 export const DYNAMODB_TABLE_NAME = 'DYNAMODB_TABLE_NAME';
 
 /**
@@ -24,16 +25,24 @@ export const DYNAMODB_ACTIONS = [
 ] as const;
 
 /**
+ * What uses a data store: something the table can grant to, which takes the
+ * table's name from its environment. A Lambda `Function` is one; a Fargate
+ * task passes its task role and its container definition's `addEnvironment`,
+ * an EC2 instance its instance role and the environment its unit reads.
+ */
+export type DataStoreUser = IGrantable & { addEnvironment(key: string, value: string): unknown };
+
+/**
  * The DataStore on the `dynamodb` Connector: one on-demand table, keyed by a
  * partition key `pk` and a sort key `sk`, both strings, so one table holds
  * every kind of item the Container keeps. It is kept, protected and
  * recoverable where the tier keeps data and thrown away with the stack where
  * it doesn't, like the Framework's own tables; the stack's backup plan
- * selects it by the stack's tag. `fn` gets its name in `DYNAMODB_TABLE_NAME`
+ * selects it by the stack's tag. `user` gets its name in `DYNAMODB_TABLE_NAME`
  * and may make only `DYNAMODB_ACTIONS` on it. The Framework's
  * `infra/connectors.ts` calls this and alarms on the table it returns.
  */
-export function connectDynamoDB(scope: Construct, fn: LambdaFunction, rules: TierRules): Table {
+export function connectDynamoDB(scope: Construct, user: DataStoreUser, rules: TierRules): Table {
   const table = new Table(scope, 'DynamoDB', {
     billingMode: BillingMode.PAY_PER_REQUEST,
     encryption: TableEncryption.AWS_MANAGED,
@@ -45,7 +54,7 @@ export function connectDynamoDB(scope: Construct, fn: LambdaFunction, rules: Tie
     deletionProtection: rules.keepData,
     removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
   });
-  table.grant(fn, ...DYNAMODB_ACTIONS);
-  fn.addEnvironment(DYNAMODB_TABLE_NAME, table.tableName);
+  table.grant(user, ...DYNAMODB_ACTIONS);
+  user.addEnvironment(DYNAMODB_TABLE_NAME, table.tableName);
   return table;
 }

@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -52,7 +53,8 @@ func TestDynamoDBConnectorConnectsToAWSLambdaTS(t *testing.T) {
 	for _, want := range []string{
 		"rules.pointInTimeRecovery",
 		"deletionProtection: rules.keepData",
-		"table.grant(fn, ...DYNAMODB_ACTIONS)",
+		"table.grant(user, ...DYNAMODB_ACTIONS)",
+		"export type DataStoreUser = IGrantable & { addEnvironment(key: string, value: string): unknown };",
 	} {
 		if !strings.Contains(table, want) {
 			t.Errorf("infra/connector_dynamodb.ts lacks %q", want)
@@ -60,6 +62,45 @@ func TestDynamoDBConnectorConnectsToAWSLambdaTS(t *testing.T) {
 	}
 	if strings.Contains(table, "dynamodb:Scan") {
 		t.Error("the dynamodb Connector grants Scan")
+	}
+	// The guard against a Framework that doesn't wire it leaves nothing
+	// behind when the Framework does (#1739).
+	if !strings.HasPrefix(table, "import { RemovalPolicy } from 'aws-cdk-lib';\n") {
+		t.Errorf("infra/connector_dynamodb.ts doesn't start with its first import:\n%.120s", table)
+	}
+}
+
+// TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt: a function Framework
+// without infra/connectors.ts never calls the Connector's file, so rendering
+// it fails the Container with a TemplateError naming the Connector and the
+// Framework, through the fail template function (#1739, decision 3 of
+// docs/plans/aws-data-stores.md).
+func TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt(t *testing.T) {
+	in, layers := loadCombo(t, model.TypeFunction, []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideConnector, "dynamodb"},
+	}, "")
+	// A stand-in function Framework: a CDK app with no infra/connectors.ts.
+	in.Framework = "aws-lambda-other"
+	layers[0] = Layer{Side: model.SideFramework, Name: "aws-lambda-other", Ref: "local", Files: Tree{
+		"README.md":           {Data: []byte("# {{ .DisplayName }}\n")},
+		"infra/stack.ts":      {Data: []byte("export {};\n")},
+		"src/handler.ts":      {Data: []byte("export const handler = async () => {};\n")},
+		"src/handler.test.ts": {Data: []byte("export {};\n")},
+	}}
+	_, err := Build(in, layers, Options{})
+	var tmplErr *TemplateError
+	if !errors.As(err, &tmplErr) {
+		t.Fatalf("Build with a Framework that doesn't wire dynamodb: got %v, want a *TemplateError", err)
+	}
+	if tmplErr.Layer != "dynamodb" || tmplErr.Path != "infra/connector_dynamodb.ts.tmpl" {
+		t.Errorf("TemplateError names layer %q path %q, want dynamodb infra/connector_dynamodb.ts.tmpl", tmplErr.Layer, tmplErr.Path)
+	}
+	for _, want := range []string{"aws-lambda-other", "doesn't wire the dynamodb Connector", "infra/connectors.ts"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
 	}
 }
 
