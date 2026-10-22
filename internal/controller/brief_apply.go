@@ -487,7 +487,7 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready
 		if len(buildsOn) < len(blockers) {
 			continue // a blocker isn't filed: it waits with its Container
 		}
-		uses, err := r.usedModules(ctx, run, issues, issue)
+		uses, err := r.usedPackages(ctx, run, issues, issue)
 		if err != nil {
 			return fmt.Errorf("reading the modules issue %d of %s uses: %w", issue.N, c.Name, err)
 		}
@@ -515,7 +515,7 @@ func (run *roundApply) filed(n int) *c4v1alpha1.BriefIssue {
 // makes it depend on what it builds on and labels it ready, and records it.
 func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos map[string]*issueRepo,
 	c *c4v1alpha1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn,
-	uses usedModules) error {
+	uses usedPackages) error {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	ir := repos[c.Name]
@@ -585,7 +585,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		if len(buildsOn) > 0 || len(issue.Uses) > 0 {
 			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
 		}
-		body := model.BriefIssueBodyUsing(issue, brief.Name, round, buildsOn, uses.modules)
+		body := model.BriefIssueBodyUsing(issue, brief.Name, round, buildsOn, uses.packages)
 		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, *milestone)
 		if err != nil {
 			return err
@@ -603,10 +603,10 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		if len(uses.waits) > 0 {
 			run.usesWaits = append(run.usesWaits, fmt.Sprintf("issue %s/%s#%d waits for %s",
 				repo.Owner, repo.Name, filed.Number, strings.Join(uses.waits, " and ")))
-			return nil // readied once the modules are published, so not recorded yet
+			return nil // readied once the releases have published, so not recorded yet
 		}
 		if err := r.pinUses(gitCtx, provider, repo, filed, model.BriefIssueBodyUsing(issue, brief.Name, round,
-			buildsOn, uses.modules), uses.modules); err != nil {
+			buildsOn, uses.packages), uses.packages); err != nil {
 			return err
 		}
 		if !byHand && !slices.Contains(filed.Labels, model.LabelReady) {
@@ -614,7 +614,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				return err
 			}
 			logf.FromContext(ctx).Info("Ordered Brief issue", "container", c.Name, "number", filed.Number,
-				"round", round, "blockers", len(buildsOn), "uses", len(uses.modules))
+				"round", round, "blockers", len(buildsOn), "uses", len(uses.packages))
 		}
 	}
 	return r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, issue.N, filed)

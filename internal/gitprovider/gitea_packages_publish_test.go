@@ -337,7 +337,7 @@ func outcomes(pkgs []Package) []string {
 }
 
 // TestPublishReleasePackages checks PublishReleasePackages against a fake
-// Gitea (#1229, decisions 2 to 5 of docs/plans/app-packages.md).
+// Gitea (#1229, decisions 2 to 5 of docs/plans/done/app-packages.md).
 func TestPublishReleasePackages(t *testing.T) {
 	ctx := context.Background()
 	ui, _, _, release := shopRelease(t)

@@ -1,7 +1,7 @@
 # One app uses another app's released npm or PyPI package
 
 GitHub issue #1087. Agent: otter-1087. It follows
-[app-modules.md](done/app-modules.md) (#430), which shares Go modules
+[app-modules.md](app-modules.md) (#430), which shares Go modules
 between apps and left npm and PyPI to a later issue (its decision 9).
 Amended by #1234 (wren-1234, 2026-10-22) on the owner's direction: the npm
 scope, the npm registry and the PyPI index are settings (decisions 3 and 5),

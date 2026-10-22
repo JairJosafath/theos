@@ -334,7 +334,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
   npmjs.org or any public registry (#1234): by default nothing leaves the
   cluster, and a user who publishes elsewhere sets a scope they hold, their
   registry's and index's URLs and a credential Secret of their own
-  ([plans/app-packages.md](plans/app-packages.md)).
+  ([plans/done/app-packages.md](plans/done/app-packages.md)).
 - **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
   (a repository and a token Secret for it alone) copies the tag, notes and
   files once the runs succeed; the operator does it, not CI, so the token
@@ -435,8 +435,12 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   `c4.factory.io/brief`. A failed step says where and why
   (`Planned=False`, `ApplyFailed`).
 - **One app uses another's release, never its branch.** An issue's `uses:`
-  names a related Container; it turns ready once that app has a published
-  version, and says how to fetch it.
+  names a related Container; it turns ready once that app's release has
+  settled and published something other apps install, a Go module, an npm
+  package or a PyPI package, and its body gets a line per thing published
+  saying how to fetch it (`go get`, `npm install --save-exact`, `uv add`
+  pinned to the Git host's index). A settled release that published nothing
+  keeps the issue waiting, and the Brief says why.
 - **It asks only for what costs money or touches access.** Agents, models,
   GitProviders and credentials are never the planner's; it says what it needs
   in `NeedsInput`. The Crews' `parallel` (`spec.parallel`, else a prompt's

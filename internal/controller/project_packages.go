@@ -24,7 +24,7 @@ import (
 // The owner's Actions variables and secrets that name its package
 // registries, which the workflows of #1231 read; by default, when
 // spec.packages leaves everything to the host's own registries, none is set
-// (docs/plans/app-packages.md, decision 5).
+// (docs/plans/done/app-packages.md, decision 5).
 const (
 	ActionsVarNpmScope     = "C4_NPM_SCOPE"
 	ActionsVarNpmRegistry  = "C4_NPM_REGISTRY"

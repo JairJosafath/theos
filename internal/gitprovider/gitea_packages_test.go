@@ -5,7 +5,7 @@ import "testing"
 // TestRepositoryPackageRegistries checks the npm and PyPI settings a repository
 // carries: the host's own registries and scope @c4factory by default, and the
 // GitProvider's own when Config names them (#1229, decision 5 of
-// docs/plans/app-packages.md).
+// docs/plans/done/app-packages.md).
 func TestRepositoryPackageRegistries(t *testing.T) {
 	for _, tt := range []struct {
 		name     string

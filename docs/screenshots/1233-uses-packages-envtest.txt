@@ -1,0 +1,15 @@
+$ go test -v ./internal/controller/ -ginkgo.focus "use another app" -ginkgo.v   # #1233, 2026-10-22
+Brief issues that use another app files the CLI's issue unready until the core's module is published, then readies it pinned to it
+• [5.961 seconds]
+Brief issues that use another app says so while the core's release published nothing other apps install
+• [3.748 seconds]
+Brief issues that use another app finishes an issue a restart left filed but not ready, filing nothing twice
+• [3.664 seconds]
+Brief issues that use another app readies a TypeScript CLI's issue once the core's npm package is published, pinned to it
+• [4.777 seconds]
+Brief issues that use another app readies a Python CLI's issue a restart left unready once the core's PyPI package is published
+• [2.731 seconds]
+Ran 5 of 464 Specs in 26.080 seconds
+SUCCESS! -- 5 Passed | 0 Failed | 0 Pending | 459 Skipped
+--- PASS: TestControllers (26.08s)
+ok  	github.com/JairJosafath/c4factory/internal/controller	26.434s

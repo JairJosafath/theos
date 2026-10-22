@@ -821,13 +821,58 @@ func TestBriefIssueBodyUsing(t *testing.T) {
 	issue := PlanIssue{N: 3, Body: "## Goal\n\nCheck a file."}
 	got := BriefIssueBodyUsing(issue, "cel-lens", 1,
 		[]BuildsOn{{Repository: "shop/core", Number: 2, Title: "The checker"}},
-		[]UsedModule{{Path: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"}})
+		[]UsedPackage{{Ecosystem: EcosystemGo, Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			{Ecosystem: EcosystemNpm, Name: "@c4factory/cel-lens-core", Version: "0.1.0"}})
 	want := "## Goal\n\nCheck a file.\n\n" +
 		"Builds on shop/core#2 (The checker).\n\n" +
-		"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.\n\n" +
+		"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.\n" +
+		"Uses npm package @c4factory/cel-lens-core 0.1.0: npm install --save-exact @c4factory/cel-lens-core@0.1.0.\n\n" +
 		"<!-- c4-brief: cel-lens/1/3 -->\n"
 	if got != want {
 		t.Errorf("body\n%q\nwant\n%q", got, want)
+	}
+}
+
+// #1233: one line per thing a used release published, with the command the
+// app's AGENTS.md has an agent run; the npm scope and the PyPI index are the
+// GitProvider's settings, so the line takes them as published.
+func TestUsesLine(t *testing.T) {
+	index := "https://gitea.example/api/packages/shop/pypi/simple"
+	tests := []struct {
+		name string
+		pkg  UsedPackage
+		want string
+	}{
+		{"Go module", UsedPackage{Ecosystem: EcosystemGo, Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
+		{"Go module, ecosystem unset", UsedPackage{Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
+		{"npm, the default scope", UsedPackage{Ecosystem: EcosystemNpm, Name: "@c4factory/cel-lens-core", Version: "0.1.0"},
+			"Uses npm package @c4factory/cel-lens-core 0.1.0: npm install --save-exact @c4factory/cel-lens-core@0.1.0."},
+		{"npm, a custom scope", UsedPackage{Ecosystem: EcosystemNpm, Name: "@acme/cel-lens-core", Version: "0.1.0"},
+			"Uses npm package @acme/cel-lens-core 0.1.0: npm install --save-exact @acme/cel-lens-core@0.1.0."},
+		{"PyPI, with its index", UsedPackage{Ecosystem: EcosystemPyPI, Name: "cel-lens-core", Version: "0.1.0", Index: index},
+			"Uses PyPI package cel-lens-core 0.1.0 from the c4factory index " + index +
+				": uv add cel-lens-core==0.1.0, pinned to that index as AGENTS.md says."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := UsesLine(tt.pkg); got != tt.want {
+				t.Errorf("UsesLine\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+// #1233: a settled release that published nothing keeps the issue waiting,
+// and the message says why on both sides.
+func TestUsesNothingPublished(t *testing.T) {
+	got := UsesNothingPublished("core", "v0.1.0", "v0.1.0 has no go.mod at the repository's root",
+		"v0.1.0 attached no npm tarball, wheel or sdist; no package to publish")
+	want := "core, whose release v0.1.0 published nothing other apps install: v0.1.0 has no go.mod at the " +
+		"repository's root; v0.1.0 attached no npm tarball, wheel or sdist; no package to publish"
+	if got != want {
+		t.Errorf("message\n%q\nwant\n%q", got, want)
 	}
 }
 
