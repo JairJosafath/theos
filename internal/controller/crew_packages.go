@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,12 +27,19 @@ import (
 // Crew's last release is in its registry, and why not.
 const ConditionPackagesPublished = "PackagesPublished"
 
-// Events of publishing a release's packages, and their action.
+// Events of publishing a release's packages, and the action of the Warning.
 const (
 	reasonPackagePublished = "PackagePublished"
 	reasonPackageInvalid   = "InvalidPackage"
 	actionPublishPackages  = "PublishReleasePackages"
 )
+
+// packageAction is the action of an upload's Event. The recorder folds Events
+// of one reason and action into a series, keeping the first note, so each
+// ecosystem's upload is its own action and its Event names its package.
+func packageAction(ecosystem string) string {
+	return "Publish" + strings.ToUpper(ecosystem[:1]) + ecosystem[1:] + "Package"
+}
 
 // packagesTimeout bounds one publish: it downloads each package file of the
 // release and uploads it to its registry.
@@ -43,7 +51,9 @@ const packagesTimeout = 5 * time.Minute
 // model.DecidePackages rules. A release with no package file and a file that
 // can't be published at the tag's version are settled; a host that can't be
 // reached is tried again on the next poll. Each upload is a Normal Event and
-// a log line; a file left unpublished is a Warning Event, once per release.
+// a log line, with the ecosystem as its action (PublishNpmPackage,
+// PublishPyPIPackage); a file left unpublished is a Warning Event, once per
+// release.
 func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
 	release := status.LastRelease
@@ -116,7 +126,7 @@ func (r *CrewReconciler) reportPackages(ctx context.Context, crew *c4v1alpha1.Cr
 	log := logf.FromContext(ctx).WithValues("tag", tag)
 	for _, p := range uploaded {
 		log.Info("Published package", "ecosystem", p.Ecosystem, "name", p.Name, "version", p.Version, "file", p.File)
-		r.event(crew, corev1.EventTypeNormal, reasonPackagePublished, actionPublishPackages,
+		r.event(crew, corev1.EventTypeNormal, reasonPackagePublished, packageAction(p.Ecosystem),
 			fmt.Sprintf("Published %s %s %s", p.Ecosystem, p.Name, p.Version))
 	}
 	switch d.State {

@@ -70,7 +70,8 @@ type fakeReleaseState struct {
 	// many PublishReleasePackages calls fail before one gets through, by
 	// owner/name; packagePublishes counts the calls, by owner/name@tag;
 	// packageUploads the package versions uploaded, by
-	// ecosystem/name@version, in the registry every spec shares; and
+	// owner:ecosystem/name@version, each owner's registry its own as Gitea's
+	// are; and
 	// npmScopes the npm scope of each owner's GitProvider, @c4factory when
 	// unset.
 	packages         map[string][]fakePackage
@@ -418,7 +419,7 @@ func (p *fakeProvider) PublishReleasePackages(_ context.Context, repo gitprovide
 			pkg.Reason = fmt.Sprintf("version %s is not the tag's, %s", f.version, want)
 		default:
 			pkg.Outcome = gitprovider.PackageExists
-			upload := f.ecosystem + "/" + f.name + "@" + f.version
+			upload := repo.Owner + ":" + f.ecosystem + "/" + f.name + "@" + f.version
 			if s.packageUploads[upload] == 0 {
 				pkg.Outcome = gitprovider.PackagePublished
 				s.packageUploads[upload]++
@@ -453,11 +454,12 @@ func (g *fakeGit) packagePublishes(owner, name, tag string) int {
 	return g.releaseState().packagePublishes[owner+"/"+name+"@"+tag]
 }
 
-// packageUploads is how many times ecosystem package name@version was uploaded.
-func (g *fakeGit) packageUploads(ecosystem, name, version string) int {
+// packageUploads is how many times ecosystem package name@version was uploaded
+// to owner's registry.
+func (g *fakeGit) packageUploads(owner, ecosystem, name, version string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.releaseState().packageUploads[ecosystem+"/"+name+"@"+version]
+	return g.releaseState().packageUploads[owner+":"+ecosystem+"/"+name+"@"+version]
 }
 
 // setNpmScope sets the npm scope of owner's GitProvider, as its spec.packages
