@@ -229,10 +229,24 @@ seccomp and AppArmor `Unconfined`, which BuildKit's user namespaces need, as uid
 `make validate-yaml` checks that too. Each job starts its own BuildKit, its
 state in the job's temporary directory, removed from inside BuildKit's user
 namespace when the build ends, since the runner outside it can't remove a file
-a `RUN` step gave another user. Still open: one long-lived runner per label serves
-every project, so a job can leave something for the next; a pool of single-job
-runners per project closes it (#1076). Until then one install is one trust
-domain ([getting-started](getting-started.md#what-the-factory-trusts)).
+a `RUN` step gave another user.
+
+A project's checks run on its own pool of single-job runner pods, which the
+operator keeps in the project's namespace, one pool per label the project's
+GitProvider `ci` block names, registered `--ephemeral` to the project's Git
+organization so each pod takes one job and ends. The operator deletes an
+ended pod and starts a fresh one; the pool goes with the Project. The pods
+sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
+namespace and public HTTPS out), hold no ServiceAccount token, get the
+registration token only in an init container, and the `go` label's pods
+mount a Go build cache of the project's own on the node. The shared runners
+Helm installs register to the templates organization and serve the
+templates' checks only. Who cancelled a job is read from its pod: a pod that
+ended its one job on its own after the cancel was a person's; one deleted,
+evicted or killed before its job ended was the runner's, and the Task reruns
+the checks at no cost to a round (`model.Canceller`). The isolation left is
+the node's: the pods share it with everything else
+([getting-started](getting-started.md#what-the-factory-trusts)).
 
 ## Crews and releases
 

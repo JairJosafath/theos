@@ -2,8 +2,9 @@
 {{- $image := printf "%s:%s" .Values.gitea.image.repository .Values.gitea.image.tag }}
 {{- $seed := .Values.gitea.seed }}
 # Gitea, rootless image, one replica, as config/gitea/deployment.yaml. The
-# credentials container makes Secrets gitea-admin and gitea-runner when they are
-# missing, so no generated value is ever rendered; the setup container prepares
+# credentials container makes Secret gitea-admin when it is missing, so no
+# generated value is ever rendered (the seed makes gitea-runner, the shared
+# runners' token, once Gitea answers: seed.yaml); the setup container prepares
 # app.ini, migrates the database and makes the admin match the admin Secret.
 # All of it is safe to repeat on every start.
 apiVersion: apps/v1
@@ -60,12 +61,6 @@ spec:
                   --from-literal=email="$ADMIN_EMAIL" --from-literal=password="$(openssl rand -hex 24)"
               fi
               {{- end }}
-              # Gitea takes it as its global registration token on every start
-              # (GITEA_RUNNER_REGISTRATION_TOKEN), so the runners start without
-              # waiting for the seed.
-              if missing gitea-runner; then
-                kubectl create secret generic gitea-runner --from-literal=token="$(openssl rand -hex 20)"
-              fi
           env:
             - name: HOME
               value: /tmp
@@ -140,9 +135,6 @@ spec:
             # on first start survive restarts.
             - name: GITEA_APP_INI
               value: /var/lib/gitea/custom/conf/app.ini
-            # The runners register with this token (the credentials container).
-            - name: GITEA_RUNNER_REGISTRATION_TOKEN
-              valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
           ports:
             - name: http
               containerPort: 3000

@@ -115,13 +115,29 @@ kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 
 kubectl -n gitea port-forward service/gitea 3000:3000   # http://localhost:3000
 ```
 
-To rotate the admin's password or the runners' registration token, delete
-its Secret and restart the pods that use it; Gitea's pod makes a new one:
+To rotate the admin's password, delete its Secret and restart Gitea's pod,
+which makes a new one:
 
 ```bash
-kubectl -n gitea delete secret gitea-admin     # or gitea-runner
+kubectl -n gitea delete secret gitea-admin
 kubectl -n gitea rollout restart deployment/gitea
-kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-runner-go  # after gitea-runner
+```
+
+The shared runners register to the `templates` organization with the token
+in Secret `gitea/gitea-runner`, which the seed fetches from Gitea on every
+install and upgrade (Gitea hands out the same token until it is reset). They
+serve the templates' checks only; each project's checks run on a pool of
+single-job runner pods the operator keeps in the project's namespace. On an
+upgrade from a chart whose runners registered to the instance, the running
+runner pods keep that registration until restarted. To rotate the token,
+reset it in Gitea (its runners page under the `templates` organization), then
+delete the Secret, `helm upgrade` so the seed stores the new one, and restart
+the runner Deployments:
+
+```bash
+kubectl -n gitea delete secret gitea-runner
+helm upgrade ...   # the same command as the install
+kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-runner-go
 ```
 
 With `gitea.admin.existingSecret` the admin is your Secret: change its

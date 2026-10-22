@@ -525,8 +525,13 @@ jobs:
           $KUBECTL get c4,c4catalog -A -o json | jq -r '.items[] | [.kind, .metadata.namespace, .metadata.name,
             (.status.phase // "-"), ((.status.conditions // []) | map(select(.type == "Ready")) | .[0].status // "-")] | @tsv' |
             sort >"$out/objects.tsv"
+          # name hash token-owner: the owner annotation says whose token
+          # gitea-runner holds (org/templates since the seed makes it; empty
+          # for an instance token an earlier chart made).
           for s in gitea-admin gitea-runner; do
-            echo "$s $($KUBECTL -n gitea get secret "$s" -o json | jq -cS .data | sha256sum | cut -c1-16)"
+            hash=$($KUBECTL -n gitea get secret "$s" -o json | jq -cS .data | sha256sum | cut -c1-16)
+            owner=$($KUBECTL -n gitea get secret "$s" -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-owner}')
+            echo "$s $hash $owner"
           done >"$out/secrets.txt"
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
@@ -610,7 +615,23 @@ jobs:
             echo "::error::The manager logged $(wc -l <<<"$errors") reconcile errors in its first two minutes after the upgrade (above)"
             fail=1
           fi
-          if ! diff -u "$EVIDENCE/before/secrets.txt" "$EVIDENCE/after/secrets.txt"; then
+          # An upgrade from a chart whose gitea-runner held an instance token
+          # (no owner annotation) replaces it once with the templates
+          # organization's; that one change is expected, every other fails.
+          secrets_before="$EVIDENCE/before/secrets.txt"
+          if [ "$(awk '$1 == "gitea-runner" { print $3 }' "$secrets_before")" = "" ]; then
+            echo "Secret gitea-runner held an instance token before the upgrade; the seed replaces it with the templates organization's"
+            secrets_before=$(mktemp)
+            grep -v '^gitea-runner ' "$EVIDENCE/before/secrets.txt" >"$secrets_before"
+            grep -v '^gitea-runner ' "$EVIDENCE/after/secrets.txt" >"$secrets_before.after"
+            if [ "$(awk '$1 == "gitea-runner" { print $3 }' "$EVIDENCE/after/secrets.txt")" != "org/templates" ]; then
+              echo "::error::The upgrade left Secret gitea-runner without the templates organization's token"
+              fail=1
+            fi
+          else
+            cp "$EVIDENCE/after/secrets.txt" "$secrets_before.after"
+          fi
+          if ! diff -u "$secrets_before" "$secrets_before.after"; then
             echo "::error::The upgrade changed Secret gitea-admin or gitea-runner (hashes above)"
             fail=1
           fi

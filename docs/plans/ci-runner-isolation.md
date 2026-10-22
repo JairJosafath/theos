@@ -136,7 +136,10 @@ Decided before building, from the code as it stands after #1138 and #1139:
   `goCache` (bool: mount the project's cache). No block, no pool: the Helm
   runners serve as today. The root of the per-project Go caches is an
   operator flag `--ci-go-cache` (as `--sandbox-go-cache`), the pods
-  mounting `<root>/<project namespace>`; empty root, no cache mount.
+  mounting `<root>/<project namespace>`; empty root, no cache mount. The
+  root is `/var/cache/c4factory/go/projects` in the manifests and the chart,
+  a sibling of the shared runners' `go/ci`, so the shared `go` runner never
+  mounts a project's cache.
 - **The ProjectReconciler keeps the pool** (`project_ci_runners.go`), owning
   the pods (`Owns(&corev1.Pod{})`, controller reference to the Project so
   deletion cascades) and reconciling on GitProvider spec changes, which it
@@ -163,9 +166,10 @@ Decided before building, from the code as it stands after #1138 and #1139:
   container `register`, the `go-cache` init container when `goCache`, the
   `runner` container with no `RUNNER_TOKEN`, `work` and `tmp` emptyDirs in
   memory, the cache as `hostPath` `<root>/<namespace>` `DirectoryOrCreate`
-  and the `job.env` variables as literal env (no ConfigMap: the runner reads
-  `env_file`, so a ConfigMap `c4-ci-runner-env` per project, as the chart's,
-  is the fallback if the runner ignores the environment).
+  and the `job.env` variables in ConfigMap `c4-ci-runner-env` per project,
+  mounted as the runner's `env_file`, as the chart's shared runners have
+  (the runner reads `env_file`, not its environment, so the literal env first
+  proposed here was not kept).
 - **The CI NetworkPolicy** `c4-ci-runner` selects
   `c4.factory.io/ci-runner: "true"`; `ensureAgentNetwork`'s egress build
   moves into `fenceEgress(gitNamespaces)` so both policies share it,

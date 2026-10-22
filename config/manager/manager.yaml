@@ -74,6 +74,10 @@ spec:
           # and the next Task don't compile again what an earlier one did. CI's
           # cache is a sibling no sandbox mounts (config/runner/go.yaml).
           - --sandbox-go-cache=/var/cache/c4factory/go/sandbox
+          # Each project's CI runner pool mounts its own directory under this
+          # one; the shared runners' cache is a sibling (config/runner/go.yaml),
+          # so no shared runner mounts a project's.
+          - --ci-go-cache=/var/cache/c4factory/go/projects
           # The agents' Claude token, made once in this namespace by make
           # claude-secret, copied into every project namespace labeled
           # c4.factory.io/shared-secrets=true (docs/dev/testenv.md).
