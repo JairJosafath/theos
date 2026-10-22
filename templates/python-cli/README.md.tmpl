@@ -18,6 +18,24 @@ before the next one doubles with each failure in a row, up to 5 minutes.
 Kubernetes, SIGTERM is how a pod is stopped, so a round must finish within the pod's
 grace period (30 seconds unless the Deployment says otherwise).
 {{- end }}
+{{ else if eq .Type "job" }}
+The `{{ .Container }}` job of {{ .SoftwareSystem }}, in project {{ .Project }}: a program
+in Python 3.12 or later that runs once to completion, managed with
+[uv](https://docs.astral.sh/uv/) and scaffolded by C4 Factory.
+
+## Run it
+
+```sh
+uv run python -m app   # the image runs python -m app
+```
+
+It does its work once, logs to stderr, one line per event, and exits: 0 when done, 1
+when the work raised, with the traceback in the log. It never loops or waits for a
+signal the way a worker does; work that must go on is a worker.
+{{- if eq .Deployment "k8s-manifests" }} On
+Kubernetes a Job runs it, and a run that exits non-zero runs again, up to the Job's
+`backoffLimit` (3), so a run must be safe to redo.
+{{- end }}
 {{ else }}
 The `{{ .Container }}` command-line program of {{ .SoftwareSystem }}, in project {{ .Project }}:
 a command in Python 3.12 or later, managed with [uv](https://docs.astral.sh/uv/) and
@@ -45,17 +63,19 @@ Open the repository in its devcontainer (`.devcontainer/`), which installs uv an
 uv sync                          # create .venv from pyproject.toml and uv.lock
 {{- if eq .Type "worker" }}
 uv run python -m app             # run it; Ctrl-C stops it
+{{- else if eq .Type "job" }}
+uv run python -m app             # run it once
 {{- else }}
 uv run {{ .Container }} -n Ada   # run it
 {{- end }}
 uv run pytest                    # unit tests
 {{- if .Standard }}
 make check                       # what CI runs: lint, formatting, types, tests and the build
-{{- if ne .Type "worker" }}
+{{- if eq .Type "cli" }}
 make dist                        # the release wheel and sdist in dist/
 {{- end }}
 make help                        # every target
-{{- else if ne .Type "worker" }}
+{{- else if eq .Type "cli" }}
 uv build                         # the release wheel and sdist in dist/
 {{- end }}
 ```
@@ -71,6 +91,13 @@ uv build                         # the release wheel and sdist in dist/
   repeats it. Tests call `run` with a fake `Stop`, and one sends a real SIGTERM.
 - `app/backoff.py` holds the waits: `INTERVAL_SECONDS` between rounds, doubled per
   failure in a row up to `MAX_SECONDS`.
+- `app/*.py` are the program's modules; `app/__main__.py` runs it as `python -m app`.
+- `tests/` holds the pytest tests, one file per module.
+{{- else if eq .Type "job" }}
+- `app/job.py` is the job: `main`, the `[project.scripts]` entry point in
+  `pyproject.toml`, sets up logging and calls `run`, which does `work` once and maps
+  its outcome to the exit code. Put the job's work in `work`, or pass `run` your own;
+  return when it is done and raise when it failed. Tests call `run` with fakes.
 - `app/*.py` are the program's modules; `app/__main__.py` runs it as `python -m app`.
 - `tests/` holds the pytest tests, one file per module.
 {{- else }}

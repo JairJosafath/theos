@@ -5,9 +5,10 @@ flags parsed with the standard library's `argparse`, a `main` tests call
 directly, a pure module with its unit tests, and a `[project.scripts]` entry
 point, released as a wheel and an sdist. As a `worker`, the same project runs a
 long-running process instead: `python -m app` does a round of work, waits, and
-stops cleanly on SIGTERM.
+stops cleanly on SIGTERM. As a `job`, `python -m app` does its work once and
+exits.
 
-- **Supports:** `cli`, `worker` (since v1.1.0)
+- **Supports:** `cli`, `worker` (since v1.1.0), `job` (since v1.2.0)
 - **Layout (`cli`):** `app/cli.py` holds `main(argv=None) -> int`, the entry point
   `[project.scripts]` maps the Container's name to; it parses, writes results
   to stdout and returns the exit code (argparse exits 0 after `--help` and
@@ -23,12 +24,25 @@ stops cleanly on SIGTERM.
   doubled per failure in a row, at most 300. `tests/test_worker.py` drives
   `run` with a fake `Stop` and sends a real SIGTERM to `python -m app`. The
   worker has no `cli.py`, `greeting.py` or flags, and no `--version`.
+- **Layout (`job`):** `app/job.py` holds `main() -> int`, the entry point,
+  which logs to stderr and calls `run(work)`: `work` once, then the exit
+  code, 0 when it returned and 1 when it raised (logged with its
+  traceback). A job must run once and return: exit 0 when done and
+  non-zero on failure, and never loop or wait for SIGTERM the way a worker
+  does; work that goes on is a worker. A run must be safe to redo, as a
+  failed one is retried (k8s-manifests' Job retries it up to its
+  `backoffLimit`, 3). A job has its own `job.py` rather than the worker's
+  loop with a note, so the scaffold already does what a job owes its
+  runner. `tests/test_job.py` drives `run` and `main` with fakes. Like the
+  worker, it has no `cli.py`, `greeting.py`, `backoff.py`, flags or
+  `--version`.
 - **Writes:** `pyproject.toml`, `uv.lock`, `.python-version`, `app/`, `tests/`,
   `README.md`, `CHANGELOG.md`, `.gitignore`; the files of the other type
   render empty and are left out.
 - **Deployment:** k8s-manifests (v1.3.0 and later) builds a worker's image
   (`CMD ["python", "-m", "app"]`, user 1000) and runs it without a port, probes
-  or Service.
+  or Service; v1.9.0 and later run a job's image the same way in a `batch/v1`
+  Job.
 - **Package:** `name` is the Container, version `0.1.0`, Python 3.12 or later,
   no dependencies; `uv_build` builds the `app` package from the root. The
   program reads its version from the installed metadata
@@ -39,7 +53,8 @@ stops cleanly on SIGTERM.
   group pins `ruff`, `mypy` and `pytest` exactly, `uv_build` builds it, and its
   code passes ruff with every rule and mypy `--strict`. With a Standard,
   `pyproject.toml` leaves out its own `[tool.ruff]` tables. A worker needs
-  python-standard v1.4.0 or later, whose agent guide has the worker's rules.
+  python-standard v1.4.0 or later, whose agent guide has the worker's rules,
+  and a job python-standard v1.6.0 or later.
 - **Release:** python-standard's `make dist VERSION=v1.2.3` writes
   `dist/<name>-1.2.3-py3-none-any.whl` and `dist/<name>-1.2.3.tar.gz` (the
   name with `_` for `-`), which gitea-release attaches to the release.

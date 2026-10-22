@@ -5,7 +5,8 @@ ruff with every rule, ruff's formatter, mypy `--strict`, pytest, the agent guide
 and role guides, offline style digests, issue and pull request templates, and
 the `make check` contract CI runs.
 
-- **Supports:** `service`, `cli`, `worker` (since v1.4.0, with `python-cli`);
+- **Supports:** `service`, `cli`, `worker` (since v1.4.0, with `python-cli`),
+  `job` (since v1.6.0, with `python-cli`);
   Frameworks: `python-fastapi`, `python-cli`
 - **Writes:** `ruff.toml`, `mypy.ini`, `.editorconfig`, `Makefile`, `AGENTS.md`,
   `docs/style/`, `docs/agents/implementer.md`, `docs/agents/reviewer.md`,

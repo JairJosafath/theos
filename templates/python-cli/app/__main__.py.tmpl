@@ -4,6 +4,8 @@ import sys
 
 {{ if eq .Type "worker" -}}
 from app.worker import main
+{{- else if eq .Type "job" -}}
+from app.job import main
 {{- else -}}
 from app.cli import main
 {{- end }}

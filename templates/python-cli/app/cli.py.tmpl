@@ -1,4 +1,4 @@
-{{- if ne .Type "worker" -}}
+{{- if eq .Type "cli" -}}
 """The command line: parse the flags, do the work, return the exit code."""
 
 import argparse
