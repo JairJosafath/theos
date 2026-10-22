@@ -195,8 +195,16 @@ var _ = Describe("Container images", func() {
 		gitFake.failImagePushes(ns, "orders-api", 5)
 		shipRelease(ns, "v0.1.0", true)
 
-		d := deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployGitHostUnreachable, "", model.DeployDeploying)
-		Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
+		// The push runs beside the reconciler (#1572), so the deploy waits on
+		// it Pushing before it waits on it Failed: wait for the failure
+		// (#1847).
+		Eventually(func(g Gomega) {
+			d, cond := deployOf(g, ns, "staging")
+			g.Expect(cond.Reason).To(Equal(model.DeployDeploying))
+			g.Expect(d.Phase).To(Equal(model.DeployPhaseWaiting))
+			g.Expect(d.Reason).To(Equal(model.DeployGitHostUnreachable))
+			g.Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
+		}, deployWait).Should(Succeed())
 		Expect(shippedImages(ns, "staging")).To(BeEmpty())
 
 		By("shipping once the push succeeds")
