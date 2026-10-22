@@ -363,7 +363,10 @@ The operator moves bytes with credentials it holds; it builds nothing.
   also commits the app's source at its tag into that folder, without the
   factory's own files (`model.FactoryOwnPaths`), tagged `<path>/vX.Y.Z` so
   `go install` finds it. Crews publishing to one repository may not overlap
-  (`FolderOverlaps`). It moves over with the copy, as the target's `source`.
+  (`FolderOverlaps`). The same checks as a `github` target's run before the
+  first write of a version (`model.PublishChecks`, below), failing
+  `Published` with `LicenseMissing`, `ReadmeMissing` or `SecretFound`. It
+  moves over with the copy, as the target's `source`.
 
 ## Standards and the catalog
 
@@ -645,7 +648,12 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   no secret the factory recognises (a private key block, a token of a known
   shape, the value of a credential the operator holds); a problem fails the
   entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
-  and line and never the value, until another version is wanted. The image
+  and line and never the value, until another version is wanted. The
+  values compared are the GitProvider's token, the Container's agent Git
+  token, its namespace's Agents' token Secrets (their keys naming a token, key, secret, password or credential) and the target's own Secret.
+  A line marked `c4factory:allow-secret` is skipped, and the message says
+  how many when nothing else is found; release files and images are not
+  scanned. The image
   goes by digest to `ghcr.io/<owner>/<repository>/<name>` (the repository
   alone when `tagPrefix` is `""`), tagged with the version, before the
   release is published; `status.deploys[].image` reports

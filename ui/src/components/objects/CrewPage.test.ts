@@ -122,6 +122,7 @@ describe('the Crew page’s published release', () => {
     ['FolderOverlaps', 'Failed: its source folder overlaps another Crew’s'],
     ['SourceTooLarge', 'Failed: a file of the source is too large for GitHub'],
     ['BranchProtected', 'Failed: the repository’s default branch is protected'],
+    ['SecretFound', 'Failed: the source holds a secret'],
   ])('says why it failed with %s, in words, beside the message', (reason, words) => {
     const html = render(undefined, published('Failed', reason))
     expect(html).toContain(words)

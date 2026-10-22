@@ -49,6 +49,9 @@ export const PUBLISH_REASON: Record<string, string> = {
   BranchProtected: 'the repository’s default branch is protected',
   RepositoryRenamed: 'the target repository was renamed',
   RepositoryReplaced: 'the target repository is another one than the Crew published to before',
+  LicenseMissing: 'the source has no license at its root',
+  ReadmeMissing: 'the source has no README at its root',
+  SecretFound: 'the source holds a secret',
 }
 
 /** Why the Crew's last publish failed, in words; undefined unless it failed for a reason known here. */

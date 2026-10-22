@@ -67,6 +67,10 @@ type ReleaseSource struct {
 	// GoModule is the module path go.mod at the root declares, or "" for a
 	// source with no go.mod.
 	GoModule string
+	// Problems stop the source going out (PublishChecks); Allowed counts the
+	// lines AllowSecretMark skipped. Check sets both.
+	Problems []PublishProblem
+	Allowed  int
 }
 
 // GitHubSource is what the GitHub repository holds of a Crew's source folder.
@@ -399,6 +403,11 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 	case gh.TagCommit != "" && gh.TagTree == s.Files.Tree:
 		return PublishStep{}, &PublishedSource{Commit: gh.TagCommit, Tag: sourceTag,
 			URL: SourceURL(s.Repository, src.Path, sourceTag)}
+	case len(s.Files.Problems) > 0:
+		// Before any write: a release the agents made doesn't go out by
+		// itself with a secret in it (#1602).
+		return fail(s.Files.Problems[0].Reason, "the source of %s isn't published: %s; a newer release publishes "+
+			"instead", s.Tag, PublishProblemsMessage(s.Files.Problems, s.Files.Allowed)), nil
 	case gh.TagCommit != "":
 		return fail(PublishSourceTagTaken, "%s already has a tag %s whose %s isn't the source of %s; it leaves it alone",
 			s.Repository, sourceTag, folderName(src.Path), s.Tag), nil
