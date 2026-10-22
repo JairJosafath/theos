@@ -128,14 +128,24 @@ Tests run on main is the first thing that sees your change.
    - <finding, file:line>
    ```
    No findings: `Review: no findings` and the `Agent:` line.
-3. Fix what it found, commit and push; then edit the comment from a file
-   (`gh api --method PATCH repos/OWNER/REPO/issues/comments/ID -F body=@FILE`)
-   so every finding starts with its verdict: `- Fixed in <SHA>: <finding>` or
-   `- Dismissed (<reason>): <finding>`. Only top-level list items outside a
-   code fence are findings; a sub-item may explain.
+3. Fix what it found, commit and push; then post the review again as a new
+   comment (`gh pr comment PR --body-file FILE`), never an edit of the first
+   (auto mode refuses the edit, #1615): it starts with `Review:`, has the
+   `Agent:` line, and repeats every finding with its verdict in front:
+   `- Fixed in <SHA>: <finding>` or `- Dismissed (<reason>): <finding>`.
+   Only top-level list items outside a code fence are findings; a sub-item
+   may explain. The first comment stays as it was.
+   ```
+   Review: verdicts on the review above
+   Agent: otter-23
+
+   - Fixed in 1a2b3c4: <finding, file:line>
+   - Dismissed (<reason>): <finding, file:line>
+   ```
 4. `land`. It takes the newest `Review:` comment posted through the owner's
    account with an `Agent:` line, and refuses while any finding in it starts
-   with neither Fixed nor Dismissed, quoting the first.
+   with neither Fixed nor Dismissed, quoting the first. No finding was
+   settled yet when the newest such comment is the review itself.
 
 ## Finish
 
