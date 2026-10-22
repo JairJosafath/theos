@@ -180,12 +180,12 @@ func TestGitHubImageNotes(t *testing.T) {
 	}
 }
 
-// TestGitHubShipment covers docs/plans/done/github-deploy.md's Decisions 1 and 2
+// TestReleaseShipment covers docs/plans/done/github-deploy.md's Decisions 1 and 2
 // (#1599): every type ships to a github target, its source when the target
 // publishes it, its files without the image archive, its image only where
 // its Deployment builds one, and a release with none of the three is
 // ArtifactMissing.
-func TestGitHubShipment(t *testing.T) {
+func TestReleaseShipment(t *testing.T) {
 	types := []string{TypeStaticSite, TypeService, TypeJob, TypeWorker, TypeMobileApp, TypeCLI, TypeExtension,
 		TypeOperator, TypeFunction}
 	deployments := []string{"", DeploymentK8sManifests, DeploymentGiteaRelease}
@@ -204,9 +204,9 @@ func TestGitHubShipment(t *testing.T) {
 		for _, deployment := range deployments {
 			for _, source := range []bool{false, true} {
 				for _, token := range []bool{false, true} {
-					f := GitHubShipmentFacts{Type: typ, Deployment: deployment, Files: files(typ), Source: source,
-						Image: BuildsImage(deployment, "", typ), PackagesToken: token}
-					plan, problem := GitHubShipment(f)
+					f := ReleaseShipmentFacts{Type: typ, Deployment: deployment, Files: files(typ), Source: source,
+						Image: BuildsImage(deployment, "", typ), TakesImage: token}
+					plan, problem := ReleaseShipment(f)
 					name := typ + "/" + deployment
 					if plan.Source != source {
 						t.Errorf("%s source=%v: plan.Source = %v", name, source, plan.Source)
@@ -230,51 +230,51 @@ func TestGitHubShipment(t *testing.T) {
 	}
 	tests := []struct {
 		name        string
-		f           GitHubShipmentFacts
-		want        GitHubShipmentPlan
+		f           ReleaseShipmentFacts
+		want        ReleaseShipmentPlan
 		wantProblem string
 	}{
 		{name: "a service with no files and no source has nothing to publish",
-			f:           GitHubShipmentFacts{Type: TypeService},
-			wantProblem: GitHubNothingToPublish},
+			f:           ReleaseShipmentFacts{Type: TypeService},
+			wantProblem: NothingToPublish},
 		{name: "a service with no files ships its source",
-			f:    GitHubShipmentFacts{Type: TypeService, Source: true},
-			want: GitHubShipmentPlan{Source: true}},
+			f:    ReleaseShipmentFacts{Type: TypeService, Source: true},
+			want: ReleaseShipmentPlan{Source: true}},
 		{name: "a k8s-manifests service ships its published image with a packages token",
-			f: GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true,
-				PackagesToken: true},
-			want: GitHubShipmentPlan{Image: true}},
+			f: ReleaseShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true,
+				TakesImage: true},
+			want: ReleaseShipmentPlan{Image: true}},
 		{name: "no packages token ships no image",
-			f:           GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true},
-			wantProblem: GitHubNothingToPublish},
+			f:           ReleaseShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests, Image: true},
+			wantProblem: NothingToPublish},
 		{name: "an image not yet published ships none",
-			f: GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests,
-				PackagesToken: true},
-			wantProblem: GitHubNothingToPublish},
+			f: ReleaseShipmentFacts{Type: TypeService, Deployment: DeploymentK8sManifests,
+				TakesImage: true},
+			wantProblem: NothingToPublish},
 		{name: "a gitea-release service builds no image",
-			f: GitHubShipmentFacts{Type: TypeService, Deployment: DeploymentGiteaRelease, Image: true,
-				PackagesToken: true},
-			wantProblem: GitHubNothingToPublish},
+			f: ReleaseShipmentFacts{Type: TypeService, Deployment: DeploymentGiteaRelease, Image: true,
+				TakesImage: true},
+			wantProblem: NothingToPublish},
 		{name: "an operator's image archive is left out of its files",
-			f: GitHubShipmentFacts{Type: TypeOperator, Deployment: DeploymentGiteaRelease,
+			f: ReleaseShipmentFacts{Type: TypeOperator, Deployment: DeploymentGiteaRelease,
 				Files: []string{"install.yaml", "operator" + ImageArchiveSuffix}},
-			want: GitHubShipmentPlan{Files: []string{"install.yaml"}}},
+			want: ReleaseShipmentPlan{Files: []string{"install.yaml"}}},
 		{name: "an image archive alone is nothing to publish",
-			f: GitHubShipmentFacts{Type: TypeOperator, Deployment: DeploymentGiteaRelease,
+			f: ReleaseShipmentFacts{Type: TypeOperator, Deployment: DeploymentGiteaRelease,
 				Files: []string{"operator" + ImageArchiveSuffix}},
-			wantProblem: GitHubNothingToPublish},
+			wantProblem: NothingToPublish},
 		{name: "a cli ships its files and source",
-			f:    GitHubShipmentFacts{Type: TypeCLI, Files: []string{"a.tar.gz"}, Source: true},
-			want: GitHubShipmentPlan{Source: true, Files: []string{"a.tar.gz"}}},
+			f:    ReleaseShipmentFacts{Type: TypeCLI, Files: []string{"a.tar.gz"}, Source: true},
+			want: ReleaseShipmentPlan{Source: true, Files: []string{"a.tar.gz"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, problem := GitHubShipment(tt.f)
+			got, problem := ReleaseShipment(tt.f)
 			if problem != tt.wantProblem {
 				t.Errorf("problem = %q, want %q", problem, tt.wantProblem)
 			}
 			if tt.wantProblem == "" && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GitHubShipment() = %+v, want %+v", got, tt.want)
+				t.Errorf("ReleaseShipment() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
