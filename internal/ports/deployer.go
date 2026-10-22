@@ -110,6 +110,8 @@ type Registry struct {
 	Host string
 	// Username and Password log in; both empty is anonymous.
 	Username, Password string
+	// Insecure speaks plain HTTP to Host; false is TLS.
+	Insecure bool
 }
 
 // File is a release file, opened only when the adapter sends it.

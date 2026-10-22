@@ -193,15 +193,18 @@ func TestDeployerContractOnAnotherCluster(t *testing.T) {
 
 // copyImage's errors: no CopyImage is a missing artifact, the target's
 // registry refusing the login refuses the credential, a failure to read the
-// image keeps the caller's error, and any other failure is unreachable; the
-// copy goes under the imageRegistry's path, tagged the version, with the
-// Secret's login (#1590).
+// image keeps the caller's error, a tag that names another image fails for
+// good and is no port error, so the deploy isn't retried as transient
+// (#1770), and any other failure is unreachable; the copy goes under the
+// imageRegistry's path, tagged the version, with the Secret's login (#1590),
+// over TLS and nested unless the target says otherwise (#1770).
 func TestCopyImage(t *testing.T) {
 	tt := remoteTarget("argocd", nil)
 	cfg := read(tt)
 	s := shipment("v1.2.0")
 	refusedErr := fmt.Errorf("write: %w", &transport.Error{StatusCode: http.StatusUnauthorized})
 	sourceErr := fmt.Errorf("%w: read: boom", oci.ErrSource)
+	takenErr := fmt.Errorf("gitea: %w: mirror/webshop/orders-api:v1.2.0 names sha256:ff, not sha256:ab", oci.ErrTagTaken)
 	for _, tc := range []struct {
 		name     string
 		copy     func(context.Context, ports.Registry, string, string) error
@@ -213,6 +216,8 @@ func TestCopyImage(t *testing.T) {
 			wantKind: ports.ErrCredentialRefused},
 		{name: "the source unread", copy: func(context.Context, ports.Registry, string, string) error { return sourceErr },
 			want: sourceErr},
+		{name: "a tag naming another image (#1770)",
+			copy: func(context.Context, ports.Registry, string, string) error { return takenErr }, wantKind: oci.ErrTagTaken},
 		{name: "a registry down", copy: func(context.Context, ports.Registry, string, string) error {
 			return errors.New("connection refused")
 		}, wantKind: ports.ErrUnreachable},
@@ -225,6 +230,10 @@ func TestCopyImage(t *testing.T) {
 			}
 			if tc.want != nil && err != tc.want {
 				t.Errorf("copyImage() = %v, want %v as it is", err, tc.want)
+			}
+			var perr *ports.Error
+			if tc.wantKind == oci.ErrTagTaken && errors.As(err, &perr) {
+				t.Errorf("copyImage() = %v is the port's %v; a taken tag is no transient failure", err, perr.Kind)
 			}
 		})
 	}
@@ -245,6 +254,30 @@ func TestCopyImage(t *testing.T) {
 			t.Errorf("copied to %+v %s:%s", got, gotRepo, gotTag)
 		}
 		if image != "registry.remote:5000/mirror/webshop/orders-api@sha256:"+strings.Repeat("ab", 32) {
+			t.Errorf("image = %s", image)
+		}
+	})
+
+	t.Run("plain HTTP and the flat layout (#1770)", func(t *testing.T) {
+		lab := remoteTarget("argocd", nil)
+		lab.Settings[model.ArgoCDSettingImageRegistry] = "registry.lab:5000"
+		lab.Settings[model.ArgoCDSettingImageRegistryInsecure] = "true"
+		lab.Settings[model.ArgoCDSettingImageRepositoryLayout] = model.ArgoCDLayoutFlat
+		var got ports.Registry
+		var gotRepo string
+		s.CopyImage = func(_ context.Context, to ports.Registry, repository, _ string) error {
+			got, gotRepo = to, repository
+			return nil
+		}
+		image, err := copyImage(context.Background(), lab, read(lab), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := ports.Registry{Host: "registry.lab:5000", Username: "pusher", Password: "pw", Insecure: true}
+		if got != want || gotRepo != "orders-api" {
+			t.Errorf("copied to %+v %s", got, gotRepo)
+		}
+		if image != "registry.lab:5000/orders-api@sha256:"+strings.Repeat("ab", 32) {
 			t.Errorf("image = %s", image)
 		}
 	})

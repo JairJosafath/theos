@@ -425,6 +425,38 @@ func TestCopyKeepsTheDigestAndTheAttestations(t *testing.T) {
 	assertSameIndex(t, to.Registry, "mirror/web", idx)
 }
 
+// TestCopyNeverMovesATag (#1770): a repeat of a copy writes no manifest, so
+// a registry whose tags are immutable takes it, and a tag naming another
+// image is ErrTagTaken with nothing written.
+func TestCopyNeverMovesATag(t *testing.T) {
+	ctx := context.Background()
+	from, to := newRegistry(t, nil), newRegistry(t, nil)
+	first := must(Push(ctx, from.Registry, "shop/web", "v1.0.0", stream(t, layout(t, twoPlatforms(t)))))
+	other := must(Push(ctx, from.Registry, "shop/web", "v2.0.0", stream(t, layout(t, twoPlatforms(t)))))
+	if err := Copy(ctx, from.Registry, "shop/web", first.Digest, to.Registry, "mirror/web", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+
+	to.puts.Store(0)
+	if err := Copy(ctx, from.Registry, "shop/web", first.Digest, to.Registry, "mirror/web", "v1.0.0"); err != nil {
+		t.Fatalf("the repeat failed: %v", err)
+	}
+	if n := to.puts.Load(); n != 0 {
+		t.Errorf("the repeat put %d manifests, want none", n)
+	}
+
+	err := Copy(ctx, from.Registry, "shop/web", other.Digest, to.Registry, "mirror/web", "v1.0.0")
+	if !errors.Is(err, ErrTagTaken) || !strings.Contains(err.Error(), first.Digest) {
+		t.Fatalf("another image under v1.0.0 = %v; want ErrTagTaken naming %s", err, first.Digest)
+	}
+	if n := to.puts.Load(); n != 0 {
+		t.Errorf("a refused copy put %d manifests, want none", n)
+	}
+	if d := must(Resolve(ctx, to.Registry, "mirror/web", "v1.0.0")); d != first.Digest {
+		t.Errorf("v1.0.0 resolves to %s, want the first copy's %s", d, first.Digest)
+	}
+}
+
 func TestARegistryThatAsksForABearerToken(t *testing.T) {
 	ctx := context.Background()
 	reg := newRegistry(t, bearer)
