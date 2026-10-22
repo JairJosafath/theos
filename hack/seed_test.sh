@@ -48,7 +48,7 @@ case "$method $path" in
 "GET /v1/version") body='{"version":"test"}' ;;
 "GET /v1/user") $authed || code=401 ;;
 "GET /v1/orgs/"*) [[ -e $G/orgs/${path#/v1/orgs/} ]] || code=404 ;;
-"POST /v1/orgs") touch "$G/orgs/$(jq -r .username <<<"$data")"; code=201 ;;
+"POST /v1/orgs") jq -r .visibility <<<"$data" >"$G/orgs/$(jq -r .username <<<"$data")"; code=201 ;;
 "DELETE /v1/users/admin/tokens/"*)
   f=$G/tokens/${path##*/}
   if [[ -e $f ]]; then rm "$f"; code=204; else code=404; fi ;;
@@ -98,6 +98,8 @@ check "file mode: file records the scopes" "$(sed -n 's/^C4_GITEA_TOKEN_SCOPES=/
 check "file mode: no kubectl" "$(test -e "$T/gitea/kubectl" && echo called)" ""
 check "file mode: no runner token" "$(grep -c runners "$T/gitea/calls")" 0
 check "file mode: templates and webshop organizations" "$(ls "$T/gitea/orgs" | tr '\n' ' ')" "templates webshop "
+# Public, so a node's image pull and Argo CD's clone need no Secret (#1589).
+check "file mode: both organizations are public" "$(cat "$T/gitea/orgs/templates" "$T/gitea/orgs/webshop" | tr '\n' ' ')" "public public "
 grep -qF -- "$(token)" "$T/out"; check "file mode: the token is never printed" $? 1
 grep -q "Stored the token in $CREDS/webshop.env" "$T/out"; check "file mode: says where it stored the token" $? 0
 first=$(token)
