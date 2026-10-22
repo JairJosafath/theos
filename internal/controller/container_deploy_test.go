@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -440,6 +441,48 @@ var _ = Describe("Container deploys", func() {
 		}
 		Expect(published).To(ConsistOf("orders-api-v0.1.0"))
 		Expect(assets).To(ConsistOf("install.yaml"), "the image archive is the image's, not a release file")
+	})
+
+	It("publishes no source holding a secret or lacking a license, and ships the next clean release (#1602)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		head := githubFake.ref(repository, "heads/main")
+		leaky, leaked := leakedSource("example.com/orders")
+		gitFake.setSource(ns, "orders-api", "v0.1.0", leaky...)
+		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
+			fakeFile{"install.yaml", []byte("kind: List\n")})
+		crewRelease(ns, "v0.1.0", model.RunSucceeded)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "open"})
+
+		d := deployIs(ns, "open", model.DeployPhaseFailed, model.DeploySecretFound, "", model.DeployFailed)
+		Expect(d.Message).To(ContainSubstring("config/app.env line 2: a GitHub token (ghp_)"))
+		Expect(d.Message).To(ContainSubstring("it isn't tried again until another version is wanted"))
+		Expect(d.Message).NotTo(ContainSubstring(leaked))
+		saidOnce(ns, model.DeployEventFailed, "config/app.env line 2")
+		Expect(githubFake.releases(repository)).To(BeEmpty(), "nothing of the version is written")
+		Expect(githubFake.ref(repository, "heads/main")).To(Equal(head))
+		Expect(githubFake.ref(repository, "tags/orders-api/v0.1.0")).To(BeEmpty())
+
+		By("failing the next release, the line gone but so is the license, LicenseMissing")
+		all, app := appSource("example.com/orders")
+		gitFake.setSource(ns, "orders-api", "v0.2.0", slices.DeleteFunc(slices.Clone(all), func(f fakeSourceFile) bool {
+			return f.path == "LICENSE"
+		})...)
+		gitFake.setGiteaRelease(ns, "orders-api", "v0.2.0", "Notes of v0.2.0",
+			fakeFile{"install.yaml", []byte("kind: List\n")})
+		crewRelease(ns, "v0.2.0", model.RunSucceeded)
+		d = deployIs(ns, "open", model.DeployPhaseFailed, model.DeployLicenseMissing, "", model.DeployFailed)
+		Expect(d.Message).To(ContainSubstring("no license"))
+		Expect(githubFake.releases(repository)).To(BeEmpty())
+
+		By("shipping the next release, with its license")
+		gitFake.setSource(ns, "orders-api", "v0.3.0", all...)
+		gitFake.setGiteaRelease(ns, "orders-api", "v0.3.0", "Notes of v0.3.0",
+			fakeFile{"install.yaml", []byte("kind: List\n")})
+		crewRelease(ns, "v0.3.0", model.RunSucceeded)
+		deployIs(ns, "open", model.DeployPhaseDeployed, model.DeployDeployed, "v0.3.0", model.DeployDeployed)
+		Expect(githubFake.folder(repository, "tags/orders-api/v0.3.0", "orders-api")).To(Equal(app))
 	})
 
 	It("has nothing to ship to a github target of a release with no files, no source and no image (#1599)", func() {

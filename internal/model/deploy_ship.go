@@ -69,6 +69,13 @@ const (
 	// Container's source to overlaps another Container's there; shipped once
 	// they are apart.
 	DeployFolderOverlaps = "FolderOverlaps"
+	// DeployLicenseMissing, DeployReadmeMissing and DeploySecretFound: the
+	// source a github target publishes fails a check before it goes out
+	// (PublishChecks, #1602); not shipped again until another version is
+	// wanted.
+	DeployLicenseMissing = PublishLicenseMissing
+	DeployReadmeMissing  = PublishReadmeMissing
+	DeploySecretFound    = PublishSecretFound
 )
 
 // DeployRun is a deploy as the target's tool reports it.
@@ -95,8 +102,9 @@ type DeployReport struct {
 type DeployShipFailure struct {
 	// Reason is DeployUnreachable, DeployCredentialRefused,
 	// DeployArtifactMissing, DeployPrerequisiteMissing, DeployReleaseNotFound,
-	// DeployGitHostUnreachable, DeployFolderOverlaps, or DeployFailed for any
-	// other failure.
+	// DeployGitHostUnreachable, DeployFolderOverlaps, DeployLicenseMissing,
+	// DeployReadmeMissing, DeploySecretFound, or DeployFailed for any other
+	// failure.
 	Reason string
 	// Detail is what the tool or the Git host said.
 	Detail string
@@ -339,6 +347,9 @@ func deployShip(f DeployFacts, r DeployReport, version, message string) DeploySt
 		case DeployFolderOverlaps:
 			r.Message = fmt.Sprintf("DeployTarget %s can't take the source of %s: %s; shipped once the "+
 				"folders are apart", f.Target, version, fail.Detail)
+		case DeployLicenseMissing, DeployReadmeMissing, DeploySecretFound:
+			r.Message = fmt.Sprintf("The source of %s isn't published to %s: %s; it isn't tried again until "+
+				"another version is wanted", version, f.Target, fail.Detail)
 		default:
 			r.Message = fmt.Sprintf("Shipping %s to %s failed: %s; it isn't tried again until another version "+
 				"is wanted", version, f.Target, fail.Detail)

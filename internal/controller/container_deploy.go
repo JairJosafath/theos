@@ -231,8 +231,13 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 		Type: string(p.container.Spec.Type), Deployment: refName(p.container.Spec.DeploymentRef),
 		Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
 	if sourcePath != "" {
-		if shipment.Source, err = p.source(ctx, version); err != nil {
+		if shipment.Source, err = p.source(ctx, target, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}
+		}
+		if problems := shipment.Source.Problems; len(problems) > 0 {
+			// Nothing of the version is written (#1602).
+			return &model.DeployShipFailure{Reason: problems[0].Reason,
+				Detail: model.PublishProblemsMessage(problems, shipment.Source.Allowed)}
 		}
 		shipment.ReadSource = releaseSource(p.provider, p.repo, version)
 	}
@@ -265,12 +270,21 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 }
 
 // source is the release's source at version, read from the Git host once
-// per release.
-func (p *deployPass) source(ctx context.Context, version string) (*model.ReleaseSource, error) {
+// per release and checked, target's own Secret among the credentials it must
+// not hold.
+func (p *deployPass) source(ctx context.Context, target ports.Target, version string) (*model.ReleaseSource, error) {
 	if last, ok := p.r.deploySources.Load(p.container.UID); ok && last.(sourceRead).tag == version {
 		return last.(sourceRead).source, nil
 	}
-	source, err := readSource(ctx, p.r.Client, p.container, p.provider, p.repo, version)
+	var own []string
+	for _, v := range target.Secret {
+		own = append(own, string(v))
+	}
+	known, err := knownCredentials(ctx, p.r.Client, p.r.APIReader, p.container, own...)
+	if err != nil {
+		return nil, err
+	}
+	source, err := readSource(ctx, p.r.Client, p.container, p.provider, p.repo, version, known)
 	if err != nil {
 		return nil, err
 	}
