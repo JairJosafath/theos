@@ -60,6 +60,7 @@ make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind'
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
+make argocd              # Argo CD core (config/argocd), where the webshop's Containers deploy to
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node, uv and kubebuilder toolchain, CI runner (label go) and agent image
 make runner-image        # CI runner (label image): rootless BuildKit, which builds release images
@@ -155,8 +156,8 @@ It also fails when a CRD in `dist/chart/templates/crd` differs from
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
-`config/agent-sandbox` and `config/metrics-server` fetch remote URLs and are
-skipped. What it rendered is in `bin/yaml/`.
+`config/agent-sandbox`, `config/argocd` and `config/metrics-server` fetch remote
+URLs and are skipped. What it rendered is in `bin/yaml/`.
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
 `build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's
