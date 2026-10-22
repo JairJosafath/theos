@@ -144,7 +144,7 @@ func unplaced(want, got map[string]any) map[string]any {
 		wantMap, isMap := v.(map[string]any)
 		gotMap, gotIsMap := g.(map[string]any)
 		switch {
-		case !ok && v == nil:
+		case !ok && carriesNothing(v):
 		case isMap && gotIsMap:
 			if sub := unplaced(wantMap, gotMap); len(sub) > 0 {
 				left[k] = sub
@@ -154,6 +154,26 @@ func unplaced(want, got map[string]any) map[string]any {
 		}
 	}
 	return left
+}
+
+// carriesNothing reports whether v holds no field: null, or an empty list or
+// map, or a map of such. The unstructured form writes `status: {}` for a
+// status whose only list is empty but not nil, and drops it when nil.
+func carriesNothing(v any) bool {
+	switch v := v.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case map[string]any:
+		for _, sub := range v {
+			if !carriesNothing(sub) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // ConvertTo converts this Agent to its hub.

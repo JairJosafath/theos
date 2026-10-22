@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
@@ -468,6 +469,13 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
+	if webhookCert != nil || webhookCertPath != "" {
+		// Every c4.factory.io kind converts between its versions here: each
+		// v1alpha1 type is Convertible to its v1beta1 hub
+		// (docs/plans/api-versions.md, decision 3).
+		mgr.GetWebhookServer().Register("/convert",
+			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
+	}
 	if webhookCert != nil {
 		// The webhook server starts before the caches; the pod is ready, and in
 		// the Service, once it serves.
