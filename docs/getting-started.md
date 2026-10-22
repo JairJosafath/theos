@@ -52,7 +52,10 @@ gap). What the runners still share:
   plugin that enforces them, which the agents' fence needs too), with the
   registration token out of a job's reach and a Go build cache of the
   project's own; the shared runners Helm installs serve the templates'
-  checks only. What the pods still share is the node: its
+  checks only. The chart's GitProviders carry that pool (a `base` and a
+  `go` runner, the labels the templates' checks run on), so a fresh install
+  needs nothing added for a project's checks to run. What the pods still
+  share is the node: its
   kernel, and the cache directories on its disk, which only the kubelet's
   mounts keep apart.
 
@@ -104,7 +107,7 @@ makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
 operator shares the pull secret into it and its agents reach the model proxy,
 and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
-and GitProvider `gitea`, and the chart makes the catalog (the templates the seed
+and GitProvider `gitea` with its pool of `base` and `go` runners, and the chart makes the catalog (the templates the seed
 pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-event-ts`, `aws-fargate-ts`, `aws-lambda-go`, `aws-lambda-py`, `aws-lambda-ts`, `aws-queue-ts`, `aws-schedule-ts`, `aws-static-site-ts`, `go-cli`, `go-kubebuilder`, `node-cli`,
 `python-cli`, `python-fastapi`, `react-vite` and `vscode-extension`, Standards `aws-standard`, `go-standard`,
 `go-operator-standard`, `ts-standard` and `python-standard`, Compute `small`,

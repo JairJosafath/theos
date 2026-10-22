@@ -459,6 +459,14 @@ gitea:
 ## A Container's workflow picks one with runs-on: <label>. NetworkPolicy
 ## ci-runner fences them: no traffic in, out only DNS, Gitea and public HTTPS.
 ##
+## Each label's shared runner, in Gitea's namespace, serves the templates'
+## checks only. A project's checks run on its own pool of single-job runner
+## pods, which the operator keeps from the ci block of the project's
+## GitProvider: the chart gives every GitProvider it renders (gitea.projects'
+## and gitProviders') a pool per label whose pool.size is above 0, on that
+## label's image and resources, so a project's checks have a runner on a
+## fresh install (#1698). The `check` workflows of the Standards run on `go`
+## and `base`; `image` serves releases, which have no pool yet.
 runners:
   ## The minimal toolchain (Node, bash, git, make).
   base:
@@ -472,6 +480,8 @@ runners:
       limits: {cpu: "1", memory: 1Gi}
     workSize: 512Mi
     tmpSize: 256Mi
+    pool:
+      size: 1
   ## The Go and Node toolchain. A job takes at most 4 cores, so a build can't
   ## starve the API server and Gitea. goCache: the node directory holding its
   ## Go build cache (empty: none).
@@ -487,6 +497,8 @@ runners:
     workSize: 2Gi
     tmpSize: 1Gi
     goCache: /var/cache/c4factory/go/ci
+    pool:
+      size: 1
   ## Rootless BuildKit, for release runs that build a Container's image:
   ## buildctl-daemonless.sh starts BuildKit for one job, its state in the job's
   ## work directory. One build at a time per replica; more queue in Gitea.
