@@ -217,6 +217,15 @@ Open the UI:
 kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080 &   # http://localhost:8080
 ```
 
+The UI also serves the Session client, `c4session`, under `/downloads/`: a
+scaffolded devcontainer's build fetches it from there, by default
+`http://localhost:8080/downloads/c4session-linux-${arch}` (the port-forward
+above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
+with no GitHub login. The build must reach that address: a port-forward's
+localhost is the laptop's, not a container's, so a laptop devcontainer needs
+the chart's `sessionBinaryURL` set to an address it reaches, or it starts
+without becoming a Session.
+
 Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
 box under *Describe an app*, and create the Brief. Or, the same without the UI,
 [config/samples/brief/cel-lens.yaml](../config/samples/brief/cel-lens.yaml)
