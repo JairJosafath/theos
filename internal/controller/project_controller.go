@@ -54,6 +54,9 @@ type ProjectReconciler struct {
 	// SharedSecretsRecheck is how often an opted-in Project looks at its
 	// sources again; DefaultSharedSecretsRecheck when zero.
 	SharedSecretsRecheck time.Duration
+	// ModelProxyURL, when set, is the model proxy's URL in SourceNamespace: the
+	// agent fence then lets sandboxes reach the proxy's pods.
+	ModelProxyURL string
 	// OperatorVersion and ChartVersion are written to status.factory:
 	// buildinfo.Version and the chart's C4_CHART_VERSION.
 	OperatorVersion string

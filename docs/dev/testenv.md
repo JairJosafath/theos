@@ -208,8 +208,11 @@ After `make deploy`, `make claude-secret` stores it as Secret
 operator's namespace) of the leased cluster, without the token in its argv or
 transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
-and the operator copies the Secret into every namespace with
-the label `c4.factory.io/shared-secrets: "true"`, keeping each copy in step
+and with `--model-proxy-url` naming the model proxy's Service, so a sandbox on
+the shared token gets `ANTHROPIC_BASE_URL` pointing at the proxy instead of the
+token (the chart passes both when `agents.enabled`). The operator copies the
+Secret into every namespace with the label `c4.factory.io/shared-secrets:
+"true"`, keeping each copy in step
 with it. `make seed` labels `webshop` and `apps`, and the webshop sample and
 the e2e fixture label theirs, so one Secret serves every project; a rotated
 token reaches them all within five minutes. Another namespace opts in with

@@ -99,6 +99,9 @@ const (
 	operatorNamespace = "c4-factory-system"
 	sharedToken       = "shared-token"
 	sharedPullSecret  = "shared-pull"
+	// testModelProxyURL is the chart's real configuration: the model proxy's
+	// Service in the release namespace (dist/chart/templates/model-proxy).
+	testModelProxyURL = "http://c4-model-proxy.c4-factory-system.svc:8080"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -316,6 +319,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ProjectReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			SharedSecrets: []string{sharedToken}, SharedPullSecrets: []string{sharedPullSecret},
 			SourceNamespace: operatorNamespace, SharedSecretsRecheck: time.Second,
+			ModelProxyURL:   testModelProxyURL,
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount}},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
@@ -328,11 +332,13 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
+			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
 			Now: taskNow},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
-			Issues: githubFake, Now: briefNow},
+			ModelProxyURL: testModelProxyURL,
+			Issues:        githubFake, Now: briefNow},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,

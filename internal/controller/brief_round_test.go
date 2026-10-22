@@ -560,8 +560,10 @@ spec:
 	})
 
 	It("says where to give a token the operator shares, and gets the copy with no Project yet", func() {
-		// The source starts missing; the suite's other specs share it, so it is
-		// put back as it was.
+		// Agents on the shared token reach Claude through the model proxy
+		// (#1136): the Brief asks for the label, then for the source Secret in the
+		// operator's namespace, and waits for no copy. The source starts
+		// missing; the suite's other specs share it, so it is put back as it was.
 		source := &corev1.Secret{}
 		if err := k8sClient.Get(ctx, key(operatorNamespace, sharedToken), source); err == nil {
 			Expect(k8sClient.Delete(ctx, source)).To(Succeed())
@@ -589,9 +591,8 @@ spec:
 			b := getBrief(g, shared)
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
-				Equal("Secret "+sharedToken+" of Agent planner is missing: label namespace "+shared+" "+
-					c4v1alpha1.LabelSharedSecrets+"=true, so the factory shares it from namespace "+operatorNamespace+
-					", or make it in "+shared+" for this project only")))
+				Equal("Agent planner is on the factory's shared Secret "+sharedToken+": label namespace "+shared+" "+
+					c4v1alpha1.LabelSharedSecrets+"=true, so its agents reach the factory's model proxy")))
 		}).Should(Succeed())
 
 		By("naming the operator's namespace once it has opted in, while the source is missing")
@@ -604,11 +605,11 @@ spec:
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
 				Equal("Secret "+sharedToken+" of Agent planner is missing: make it in namespace "+operatorNamespace+
-					", which the factory shares with every project, or in "+shared+" for this project only")))
+					" with the Agents' token, which the factory's model proxy uses for every project")))
 			g.Expect(b.Status.Round).To(BeZero())
 		}).Should(Succeed())
 
-		By("copying the source in, with no Project, and starting round 1")
+		By("starting round 1 once the source is there, and copying it in with no Project (until #1137)")
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, shared), &c4v1alpha1.Project{}))).To(BeTrue())
 		mine := &corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
 			Data: map[string][]byte{"token": []byte("first")}}

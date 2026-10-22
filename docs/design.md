@@ -204,11 +204,13 @@ repository only. `main` takes no pushes: only the operator merges, the
 reviewed commit only; the Git host refuses changes to the platform's and the
 Standard's protected files (the gated merge aside) and keeps `v*` tags to the
 operator. A per-project NetworkPolicy allows only DNS, the Git host and public
-HTTPS. Each run has a deadline. The Claude token is readable inside the
-sandbox; a model proxy that adds it to the agent's requests is the fix
-([plans/model-proxy.md](plans/model-proxy.md)). Its one source is a Secret in
-the release namespace, copied only into namespaces with a label their users
-can't set.
+HTTPS. Each run has a deadline. A sandbox on the factory's shared token holds
+no token: it reaches Claude through the model proxy in the release namespace,
+which adds the token to the agent's requests, and the fence lets it reach the
+proxy alone ([plans/model-proxy.md](plans/model-proxy.md)). The token's one
+source is a Secret in the release namespace, copied only into namespaces with
+a label their users can't set. An Agent on a Secret of its own keeps that
+Secret as the sandbox's environment, readable inside it.
 
 ### The CI fence
 
