@@ -91,12 +91,16 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 		return gitAccess{}, fmt.Errorf("secret %s of GitProvider %s not found",
 			provider.Spec.CredentialsSecretRef.Name, name)
 	}
+	packages, err := packagesWithTokens(ctx, apiReader, &provider)
+	if err != nil {
+		return gitAccess{}, fmt.Errorf("GitProvider %s: %w", name, err)
+	}
 	p, err := git.Provider(gitprovider.Config{
 		Kind:        string(provider.Spec.Provider),
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,
 		Credentials: creds,
-		Packages:    packagesOf(&provider),
+		Packages:    packages,
 	})
 	if err != nil {
 		return gitAccess{}, err
