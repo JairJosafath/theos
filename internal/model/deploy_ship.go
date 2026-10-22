@@ -75,13 +75,16 @@ type DeployRun struct {
 	Phase  string
 	Health string
 	URL    string
+	// Image is the app's image as the target holds it, host/repository@digest,
+	// when the target copies it.
+	Image string
 	// Reason and Message say why a deploy failed.
 	Reason, Message string
 }
 
 // DeployReport is one entry of a Container's status.deploys.
 type DeployReport struct {
-	Target, Version, WantedVersion, Phase, Health, URL, Reason, Message string
+	Target, Version, WantedVersion, Phase, Health, URL, Image, Reason, Message string
 }
 
 // DeployShipFailure is how shipping a version failed.
@@ -183,7 +186,7 @@ func NextDeploy(f DeployFacts) DeployStep {
 	wanted := DeployWanted(f.Version, f.Newest)
 	r := DeployReport{Target: f.Target, WantedVersion: wanted, Phase: DeployPhaseWaiting}
 	if p := f.Prev; p != nil {
-		r.Version, r.Health, r.URL = p.Version, p.Health, p.URL
+		r.Version, r.Health, r.URL, r.Image = p.Version, p.Health, p.URL, p.Image
 	}
 	if step, held := deployHeldBefore(f, r, wanted); held {
 		return step
@@ -196,10 +199,10 @@ func NextDeploy(f DeployFacts) DeployStep {
 	run := *f.Run
 	switch run.Phase {
 	case DeployPhaseDeployed:
-		r.Version, r.URL = run.Version, run.URL
+		r.Version, r.URL, r.Image = run.Version, run.URL, run.Image
 	case "":
 		// The tool has no deploy of the app: nothing runs there.
-		r.Version, r.URL = "", ""
+		r.Version, r.URL, r.Image = "", "", ""
 	}
 	if run.Health != "" {
 		r.Health = run.Health

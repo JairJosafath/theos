@@ -142,6 +142,9 @@ type DeployState struct {
 	Health string
 	// URL is where the app, or its release, answers, when the tool knows it.
 	URL string
+	// Image is the app's image as the target holds it, host/repository@digest,
+	// when the target copies it; "" otherwise.
+	Image string
 	// Reason and Message say why a deploy failed, or what it waits on.
 	Reason, Message string
 	// Source is the release's source as the target published it, nil until

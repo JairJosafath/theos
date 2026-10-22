@@ -75,7 +75,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 	prevs := map[string]*model.DeployReport{}
 	for _, d := range status.Deploys {
 		prevs[d.Target] = &model.DeployReport{Target: d.Target, Version: d.Version, WantedVersion: d.WantedVersion,
-			Phase: d.Phase, Health: d.Health, URL: d.URL, Reason: d.Reason, Message: d.Message}
+			Phase: d.Phase, Health: d.Health, URL: d.URL, Image: d.Image, Reason: d.Reason, Message: d.Message}
 	}
 	pass := &deployPass{r: r, container: container, log: log, image: status.Image}
 	reports := map[string]*model.DeployReport{}
@@ -108,7 +108,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 			}
 		}
 		deploys = append(deploys, c4v1alpha1.ContainerDeployStatus{Target: rep.Target, Version: rep.Version,
-			WantedVersion: rep.WantedVersion, Phase: rep.Phase, Health: rep.Health, URL: rep.URL, Reason: rep.Reason,
+			WantedVersion: rep.WantedVersion, Phase: rep.Phase, Health: rep.Health, URL: rep.URL, Image: rep.Image, Reason: rep.Reason,
 			Message: rep.Message, Since: since})
 		if s.Cause == model.DeployDeploying || s.Cause == model.DeployTargetNotReady && rep.Reason ==
 			model.DeployUnreachable {
@@ -196,7 +196,7 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 		return ports.Target{}, nil
 	}
 	facts.Run = &model.DeployRun{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
-		Reason: run.Reason, Message: run.Message}
+		Image: run.Image, Reason: run.Reason, Message: run.Message}
 	return target, deployer
 }
 

@@ -118,3 +118,42 @@ func TestGitHubReadsLatest(t *testing.T) {
 		})
 	}
 }
+
+func TestGitHubImage(t *testing.T) {
+	tests := []struct {
+		name, repository, container, tagPrefix, want string
+	}{
+		{"a prefix gives each Container its own image", "acme/shop", "orders-api", "orders-api-",
+			"acme/shop/orders-api"},
+		{"an empty prefix gives the repository to one Container", "acme/shop", "orders-api", "", "acme/shop"},
+		{"lower-cased, as GHCR wants it", "Acme/Shop", "orders-api", "v", "acme/shop/orders-api"},
+		{"lower-cased without a prefix too", "Acme/Shop", "orders-api", "", "acme/shop"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GitHubImage(tt.repository, tt.container, tt.tagPrefix); got != tt.want {
+				t.Errorf("GitHubImage(%q, %q, %q) = %q, want %q", tt.repository, tt.container, tt.tagPrefix, got,
+					tt.want)
+			}
+		})
+	}
+}
+
+func TestGitHubImageNotes(t *testing.T) {
+	const image = "ghcr.io/acme/shop/orders-api@sha256:abc"
+	tests := []struct {
+		name, notes, image, want string
+	}{
+		{"no image leaves the notes", "Fixes the cart.\n", "", "Fixes the cart.\n"},
+		{"the image follows the notes", "Fixes the cart.\n\n", image,
+			"Fixes the cart.\n\nImage: `" + image + "`\n"},
+		{"no notes is the image alone", " ", image, "Image: `" + image + "`\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GitHubImageNotes(tt.notes, tt.image); got != tt.want {
+				t.Errorf("GitHubImageNotes(%q, %q) = %q, want %q", tt.notes, tt.image, got, tt.want)
+			}
+		})
+	}
+}
