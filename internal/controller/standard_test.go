@@ -142,13 +142,22 @@ var _ = Describe("Agent network fence", func() {
 		var policy networkingv1.NetworkPolicy
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, AgentNetworkPolicyName), &policy)).To(Succeed())
-			g.Expect(policy.Spec.Egress).To(HaveLen(3))
+			g.Expect(policy.Spec.Egress).To(HaveLen(4))
 		}).Should(Succeed())
 		Expect(policy.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue(LabelAgentSandbox, "true"))
 		Expect(policy.Spec.Ingress).To(BeEmpty())
 		Expect(policy.Spec.Egress[1].To[0].IPBlock.Except).To(ContainElement("10.0.0.0/8"))
 		Expect(policy.Spec.Egress[2].To[0].NamespaceSelector.MatchLabels).
 			To(HaveKeyWithValue("kubernetes.io/metadata.name", "gitea"))
+		// The model proxy (#1136): the sandboxes reach it, and nothing else in
+		// the release namespace.
+		proxy := policy.Spec.Egress[3]
+		Expect(proxy.To).To(HaveLen(1))
+		Expect(proxy.To[0].NamespaceSelector.MatchLabels).
+			To(Equal(map[string]string{"kubernetes.io/metadata.name": operatorNamespace}))
+		Expect(proxy.To[0].PodSelector.MatchLabels).To(Equal(map[string]string{"app.kubernetes.io/name": ModelProxyAppName}))
+		Expect(proxy.Ports).To(HaveLen(1))
+		Expect(proxy.Ports[0].Port.IntValue()).To(Equal(ModelProxyPort))
 		Expect(policy.OwnerReferences).To(ContainElement(HaveField("Kind", "Project")))
 	})
 })
