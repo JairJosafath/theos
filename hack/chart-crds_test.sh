@@ -17,6 +17,17 @@ run() { "$HACK/chart-crds.sh" "$T/bases" "$T/crd" >"$T/out" 2>&1; }
 fresh; run; st=$?; check "the committed chart matches" $st 0
 [ "$st" = 0 ] || sed 's/^/     /' "$T/out"
 
+# Every chart CRD converts by the operator's webhook when webhook.enabled
+# (#1615), and by strategy None without: the stanza sits inside the guard.
+n=0; for f in "$ROOT"/dist/chart/templates/crd/*.yaml; do
+	awk '$0 == "spec:" { s = 1; next }
+		s == 1 { ok = $0 == "  {{- if .Values.webhook.enabled }}"; s = 2; next }
+		s == 2 && /path: \/convert$/ { p = 1 }
+		s == 2 && $0 == "  {{- end }}" { done = ok && p; exit }
+		END { exit !done }' "$f" || n=$((n + 1))
+done
+check "every chart CRD converts at /convert under webhook.enabled" $n 0
+
 fresh
 sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/c4.factory.io_people.yaml"
 run; check "a field added to the API, chart not regenerated: fails" $? 1
