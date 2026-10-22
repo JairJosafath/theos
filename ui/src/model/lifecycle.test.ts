@@ -549,7 +549,7 @@ describe('the read-only kinds', () => {
     expect(lifecycleOf('Relationship', 'AddedAfterScaffold').person).toMatch(/by hand.*scaffolds a Container once/)
   })
 
-  it.each(['Project', 'SoftwareSystem', 'Standard', 'Compute', 'Deployment', 'GitProvider'] as const)(
+  it.each(['Project', 'SoftwareSystem', 'Standard', 'Compute', 'Deployment', 'Bundle', 'GitProvider'] as const)(
     '%s has no phases, and one thing a person does',
     (kind) => {
       expect(hasPhases(kind)).toBe(false)

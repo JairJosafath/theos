@@ -26,10 +26,11 @@ func checkOperations(plan Plan, current CurrentModel, refuse func(string, string
 				"Container it makes, so the block a person keeps isn't undone: leave operations out")
 			continue
 		}
-		if entry, reason := catalogEntry(current.Catalog, SideFramework, o.Framework, ""); reason == "" &&
+		framework := planFramework(o, current.Bundles)
+		if entry, reason := catalogEntry(current.Catalog, SideFramework, framework, ""); reason == "" &&
 			!entry.ReadsOperations && !sameOperations(nil, o.Operations) {
 			refuse(subject, "sets operations, which Framework %s doesn't read (readsOperations is not set on it), "+
-				"so its repository would hold none of it: leave operations out", o.Framework)
+				"so its repository would hold none of it: leave operations out", framework)
 			continue
 		}
 		for _, problem := range OperationsProblems(*o.Operations) {

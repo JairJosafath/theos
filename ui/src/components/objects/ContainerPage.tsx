@@ -13,6 +13,7 @@
 import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
 import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Relationship, Session } from '../../k8s/types'
+import { choicesOf } from '../../model/choices'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
@@ -65,8 +66,10 @@ export function ContainerPage({
       href: update.pullRequestURL,
       label: `Standard ${update.take ? 'take' : 'update'} pull request #${update.pullRequest ?? ''}`,
     })
-  const frameworkName = container.spec.frameworkRef?.name ?? container.status?.bundle?.framework
-  const framework = frameworks.find((f) => f.metadata.name === frameworkName)
+  // Its spec's refs, or what its Bundle expanded to (status.bundle); the UI enforces nothing.
+  const choices = choicesOf(container)
+  const framework = frameworks.find((f) => f.metadata.name === choices.framework)
+  const fromBundle = choices.bundle ? <span className="muted small"> · from bundle {choices.bundle}</span> : null
   return (
     <main className="shell-page object-page">
       <ObjectHeader
@@ -117,37 +120,50 @@ export function ContainerPage({
         <dl className="facts">
           <dt>Type</dt>
           <dd>{describeContainerType(container.spec.type)}</dd>
-          <dt>Framework</dt>
-          <dd className="mono">
-            {frameworkName ?? ''}
-            {framework ? ` @ ${framework.spec.template.ref}` : ''}
-          </dd>
-          {container.spec.standardRef ? (
+          {choices.bundle ? (
+            <>
+              <dt>Bundle</dt>
+              <dd className="mono">
+                <a href={pageHref(ns, 'Bundle', choices.bundle)}>{choices.bundle}</a>
+                {status?.bundle ? null : <span className="muted small"> · not expanded yet</span>}
+              </dd>
+            </>
+          ) : null}
+          {choices.framework ? (
+            <>
+              <dt>Framework</dt>
+              <dd className="mono">
+                {choices.framework}
+                {framework ? ` @ ${framework.spec.template.ref}` : ''}
+                {fromBundle}
+              </dd>
+            </>
+          ) : null}
+          {choices.standard ? (
             <>
               <dt>Standard</dt>
               <dd className="mono">
-                <a href={pageHref(ns, 'Standard', container.spec.standardRef.name)}>
-                  {container.spec.standardRef.name}
-                </a>
+                <a href={pageHref(ns, 'Standard', choices.standard)}>{choices.standard}</a>
                 {status?.standard ? ` @ ${status.standard.ref}` : ''}
+                {fromBundle}
               </dd>
             </>
           ) : null}
-          {container.spec.computeRef ? (
+          {choices.compute ? (
             <>
               <dt>Compute</dt>
               <dd className="mono">
-                <a href={pageHref(ns, 'Compute', container.spec.computeRef.name)}>{container.spec.computeRef.name}</a>
+                <a href={pageHref(ns, 'Compute', choices.compute)}>{choices.compute}</a>
+                {fromBundle}
               </dd>
             </>
           ) : null}
-          {container.spec.deploymentRef ? (
+          {choices.deployment ? (
             <>
               <dt>Deployment</dt>
               <dd className="mono">
-                <a href={pageHref(ns, 'Deployment', container.spec.deploymentRef.name)}>
-                  {container.spec.deploymentRef.name}
-                </a>
+                <a href={pageHref(ns, 'Deployment', choices.deployment)}>{choices.deployment}</a>
+                {fromBundle}
               </dd>
             </>
           ) : null}
@@ -178,7 +194,7 @@ export function ContainerPage({
         </dl>
       </section>
 
-      {container.spec.standardRef ? <ContainerChecks container={container} writer={writer} /> : null}
+      {choices.standard ? <ContainerChecks container={container} writer={writer} /> : null}
 
       <ContainerOperations container={container} />
 

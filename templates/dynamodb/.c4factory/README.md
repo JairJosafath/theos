@@ -24,7 +24,7 @@ is the model's, not the Framework's.
   its unit reads.
 - **Frameworks:** a Framework wires it in its `infra/connectors.ts`, rendered with
   `{{ if has .Connectors "dynamodb" }}`, and alarms on the table like its own.
-  `aws-lambda-ts` does. A Framework that renders no `infra/connectors.ts`
+  `aws-lambda-ts`, `aws-lambda-py` and `aws-lambda-go` do. A Framework that renders no `infra/connectors.ts`
   doesn't wire it, and `connector_dynamodb.ts.tmpl` refuses it with
   `{{ fail }}`: the Container fails with a `TemplateError` naming the
   Framework and the Connector, rather than getting a file nothing calls.

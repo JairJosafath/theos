@@ -108,11 +108,11 @@ func (f *fakeGitHub) GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.R
 
 // GitHubToken is the real client's, minting a GitHub App's token at the
 // fake: at apiURL when set, the enterprise server's.
-func (f *fakeGitHub) GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error) {
+func (f *fakeGitHub) GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error) {
 	if apiURL != "" {
-		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubToken(ctx, apiURL, secret)
+		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubToken(ctx, apiURL, repository, secret)
 	}
-	return gitprovider.Client{}.GitHubToken(ctx, f.server.URL, secret)
+	return gitprovider.Client{}.GitHubToken(ctx, f.server.URL, repository, secret)
 }
 
 // enterpriseUsed is how many requests repository took through the

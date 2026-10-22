@@ -181,7 +181,7 @@ func TestPlanRefusesADeploymentForAWSFargateTS(t *testing.T) {
 }
 
 func TestWorkspaceCatalogSaysWhichFrameworksDeployThemselves(t *testing.T) {
-	out := workspaceCatalog(chartCatalog(t))
+	out := workspaceCatalog(chartCatalog(t), nil)
 	for _, e := range out.Frameworks {
 		if want := strings.HasPrefix(e.Name, "aws-"); e.DeploysItself != want {
 			t.Errorf("the workspace catalog's %s: deploysItself %v, want %v", e.Name, e.DeploysItself, want)

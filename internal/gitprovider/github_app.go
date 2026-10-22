@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,8 +27,10 @@ import (
 // minted again.
 const appTokenMargin = 5 * time.Minute
 
-// appTokens keeps each installation's token until appTokenMargin before it
-// expires, so every call of a target uses the one token.
+// appTokens keeps each installation's token for each repository until
+// appTokenMargin before it expires, so every call of a target uses the one
+// token. An expired entry goes when the next token is kept (#1792), so a
+// rotated key or a deleted target leaves one behind for an hour at most.
 var appTokens = struct {
 	sync.Mutex
 	byKey map[string]appToken
@@ -40,11 +43,15 @@ type appToken struct {
 
 // GitHubToken returns the token a github Secret's data gives: its token as it
 // is, else an installation token of the GitHub App its three keys name, minted
-// at apiURL (github.com's API when "") and kept until five minutes before it
-// expires. It returns "" when the Secret holds neither whole. A mint GitHub
-// refuses, or a private key that is no RSA key, is a ReleaseError of
+// at apiURL (github.com's API when "") for repository (owner/name) alone, and
+// kept until five minutes before it expires. The token reaches no other
+// repository of the installation (#1792), with the permissions the
+// installation has: the plan names only the deploy member's (Contents), and
+// a Brief's requests need Issues too, so the App's installation says which.
+// It returns "" when the Secret holds neither whole. A mint GitHub refuses,
+// or a private key that is no RSA key, is a ReleaseError of
 // ReasonUnauthorized with GitHub's message.
-func (c Client) GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error) {
+func (c Client) GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error) {
 	token, app, ok := model.GitHubCredential(secret)
 	if !ok || app == nil {
 		return token, nil
@@ -54,7 +61,8 @@ func (c Client) GitHubToken(ctx context.Context, apiURL string, secret map[strin
 		return "", err
 	}
 	sum := sha256.Sum256(app.PrivateKey)
-	key := api.String() + "\x00" + app.AppID + "\x00" + app.InstallationID + "\x00" + hex.EncodeToString(sum[:])
+	key := api.String() + "\x00" + app.AppID + "\x00" + app.InstallationID + "\x00" + hex.EncodeToString(sum[:]) +
+		"\x00" + repository
 	now := c.now()
 	appTokens.Lock()
 	kept, found := appTokens.byKey[key]
@@ -62,11 +70,16 @@ func (c Client) GitHubToken(ctx context.Context, apiURL string, secret map[strin
 	if found && now.Before(kept.expires.Add(-appTokenMargin)) {
 		return kept.token, nil
 	}
-	minted, err := c.mintAppToken(ctx, api.String(), app, now)
+	minted, err := c.mintAppToken(ctx, api.String(), app, repository, now)
 	if err != nil {
 		return "", err
 	}
 	appTokens.Lock()
+	for k, t := range appTokens.byKey {
+		if !now.Before(t.expires) {
+			delete(appTokens.byKey, k)
+		}
+	}
 	appTokens.byKey[key] = minted
 	appTokens.Unlock()
 	return minted.token, nil
@@ -80,14 +93,26 @@ func (c Client) now() time.Time {
 }
 
 // mintAppToken signs a JWT of app with its private key and trades it for an
-// installation token.
-func (c Client) mintAppToken(ctx context.Context, api string, app *model.GitHubApp, now time.Time) (appToken, error) {
+// installation token of repository (owner/name) alone.
+func (c Client) mintAppToken(ctx context.Context, api string, app *model.GitHubApp, repository string,
+	now time.Time) (appToken, error) {
 	const what = "minting the GitHub App's installation token"
 	refused := func(format string, a ...any) error {
 		return &ReleaseError{Reason: ReasonUnauthorized, Message: "github: " + what + " failed: " + fmt.Sprintf(format, a...)}
 	}
 	if _, err := strconv.ParseInt(app.InstallationID, 10, 64); err != nil {
 		return appToken{}, refused("installationId %q is not a number", app.InstallationID)
+	}
+	_, name, found := strings.Cut(repository, "/")
+	if !found || name == "" {
+		return appToken{}, refused("repository %q is not owner/name", repository)
+	}
+	// GitHub takes the repositories' names, under the installation's owner.
+	body, err := json.Marshal(struct {
+		Repositories []string `json:"repositories"`
+	}{[]string{name}})
+	if err != nil {
+		return appToken{}, &ReleaseError{Reason: ReasonGitHubError, Message: "github: " + err.Error()}
 	}
 	key, err := appPrivateKey(app.PrivateKey)
 	if err != nil {
@@ -98,7 +123,7 @@ func (c Client) mintAppToken(ctx context.Context, api string, app *model.GitHubA
 		return appToken{}, refused("signing the JWT: %v", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		api+"/app/installations/"+app.InstallationID+"/access_tokens", bytes.NewReader(nil))
+		api+"/app/installations/"+app.InstallationID+"/access_tokens", bytes.NewReader(body))
 	if err != nil {
 		return appToken{}, &ReleaseError{Reason: ReasonGitHubError, Message: "github: " + err.Error()}
 	}

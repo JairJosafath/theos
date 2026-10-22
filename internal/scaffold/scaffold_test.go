@@ -402,6 +402,16 @@ func TestCommitMessageRoundTrip(t *testing.T) {
 	if info, err := ParseCommitMessage(CommitMessage(in, from, rels)); err != nil || info.Checks != "BeforeRelease" {
 		t.Errorf("checks = %q, %v, want BeforeRelease", info.Checks, err)
 	}
+	if info.Bundle != nil {
+		t.Errorf("bundle of a Container naming its sides = %+v, want none", info.Bundle)
+	}
+	// A bundled Container's commit records the expansion it scaffolded from (#1621).
+	in.Bundle, in.Framework, in.Compute, in.Deployment = "web-service", "python-fastapi", "small", "k8s-manifests"
+	want := &model.Bundle{Name: "web-service", Framework: "python-fastapi", Standard: "python-standard",
+		Compute: "small", Deployment: "k8s-manifests"}
+	if info, err := ParseCommitMessage(CommitMessage(in, from, rels)); err != nil || !reflect.DeepEqual(info.Bundle, want) {
+		t.Errorf("bundle = %+v, %v, want %+v", info.Bundle, err, want)
+	}
 	if _, err := ParseCommitMessage("Initial commit\n"); !errors.Is(err, ErrNotOurs) {
 		t.Errorf("ParseCommitMessage(foreign) error = %v, want ErrNotOurs", err)
 	}

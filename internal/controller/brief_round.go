@@ -380,6 +380,9 @@ func (r *BriefReconciler) currentModel(ctx context.Context, brief *c4v1alpha1.Br
 	if current.Catalog, err = installedCatalog(ctx, r.Client, brief.Namespace); err != nil {
 		return current, err
 	}
+	if current.Bundles, err = installedBundles(ctx, r.Client, brief.Namespace); err != nil {
+		return current, err
+	}
 	var crews c4v1alpha1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace)); err != nil {
 		return current, err

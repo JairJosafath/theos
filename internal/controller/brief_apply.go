@@ -62,8 +62,10 @@ type roundApply struct {
 	// issuesRead says the issues the API server's Brief records were taken
 	// in, as they are once before an issue is filed.
 	issuesRead bool
-	// catalog is the namespace's installed catalog, for the round's summary.
+	// catalog and bundles are the namespace's installed catalog and Bundles,
+	// for the round's summary.
 	catalog []model.CatalogEntry
+	bundles []model.Bundle
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -118,7 +120,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "setting the Crews' parallel", err)
 	}
 	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round)),
-		catalog: current.Catalog}
+		catalog: current.Catalog, bundles: current.Bundles}
 	var created []string
 	newRelationships := false
 	for _, o := range model.ApplyOrder(plan.Objects) {
@@ -331,6 +333,7 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 			DisplayName:       o.DisplayName, Description: o.Description,
 			Type:           c4v1alpha1.ContainerType(o.Type),
 			GitProviderRef: c4v1alpha1.LocalRef{Name: o.GitProvider},
+			BundleRef:      optionalLocalRef(o.Bundle),
 			FrameworkRef:   c4v1alpha1.LocalRef{Name: o.Framework},
 			StandardRef:    optionalLocalRef(o.Standard),
 			ComputeRef:     optionalLocalRef(o.Compute),
@@ -735,7 +738,7 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 	if err != nil {
 		return err
 	}
-	summary := model.AppliedRoundSummary(plan, run.catalog)
+	summary := model.AppliedRoundSummary(plan, run.catalog, run.bundles)
 	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices,
 		Unanswered: run.unanswered})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)

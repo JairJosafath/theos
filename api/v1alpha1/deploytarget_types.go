@@ -280,6 +280,7 @@ type DeployTargetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"
