@@ -510,23 +510,21 @@ supports `worker` and `job` too, for aws-queue-ts, aws-event-ts and
 aws-schedule-ts (#1741).
 
 - CI: `make test-templates`, combos "aws lambda function with dynamodb",
-  "aws lambda function in go with dynamodb", "aws python lambda function
-  with dynamodb", "aws queue consumer with dynamodb", "aws event consumer
-  with dynamodb" and "aws scheduled job with dynamodb": their `make check`.
+  "aws queue consumer with dynamodb", "aws event consumer with dynamodb"
+  and "aws scheduled job with dynamodb": their `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
   include, a non-Lambda grantee included;
   `TestDynamoDBConnectorConnectsToAWSLambdaTS`,
-  `TestDynamoDBConnectorConnectsToOtherAWSLambdas`,
   `TestDynamoDBConnectorConnectsToAWSWorkersAndJobs`,
   `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt` and
   `TestDynamoDBConnectorFailsAWorkerFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
-  production. aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it in
-  (#1393, #1740), and aws-queue-ts, aws-event-ts and aws-schedule-ts
-  (#1741); the other AWS Frameworks fail the Container until their step of
-  the plan.
+  production. aws-lambda-ts wires it in (#1393), and aws-queue-ts,
+  aws-event-ts and aws-schedule-ts (#1741); the other AWS Frameworks fail
+  the Container until their step of the plan (aws-lambda-py and
+  aws-lambda-go: #1740).
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 
