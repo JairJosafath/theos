@@ -2,7 +2,7 @@
 # line, named here so make check accepts the drop (docs/design.md,
 # "Compatibility"): the version, or <crd name>/<version> for one CRD, then the
 # release notes' line under *Removed*. The pull request that drops a version
-# adds its line here, where review sees it; hack/release.sh's baseline copy
-# makes the line stale after the release, so the next change removes it.
+# adds its line here, where review sees it; hack/release.sh's bump removes
+# the entries with its baseline copy, so none stays stale after the release.
 #
 #   v1alpha1  Removed the v1alpha1 API versions; v1beta1 has served since 0.9.0.

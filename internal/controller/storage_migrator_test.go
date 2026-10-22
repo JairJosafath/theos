@@ -66,10 +66,12 @@ var _ = Describe("Storage migrator", func() {
 			By("storing objects at v1alpha1, more than one page's worth")
 			ns := newProjectNamespace()
 			const people = 3
+			stored := map[string]string{}
 			for i := range people {
 				p := &c4v1alpha1.Person{ObjectMeta: metav1.ObjectMeta{GenerateName: "reader-", Namespace: ns},
 					Spec: c4v1alpha1.PersonSpec{DisplayName: "Reader"}}
 				Expect(k8sClient.Create(ctx, p)).To(Succeed(), i)
+				stored[p.Name] = p.ResourceVersion
 			}
 
 			By("moving the storage version to v1beta1, as the upgrade does")
@@ -93,12 +95,13 @@ var _ = Describe("Storage migrator", func() {
 			Expect(ready).To(BeNumerically(">=", 2))
 			Expect(storedVersions()).To(Equal([]string{"v1beta1"}))
 
-			By("keeping the objects, readable at v1beta1")
+			By("rewriting every object, kept and readable at v1beta1")
 			var list c4v1beta1.PersonList
 			Expect(k8sClient.List(ctx, &list, client.InNamespace(ns))).To(Succeed())
 			Expect(list.Items).To(HaveLen(people))
 			for _, p := range list.Items {
 				Expect(p.Spec.DisplayName).To(Equal("Reader"))
+				Expect(p.ResourceVersion).NotTo(Equal(stored[p.Name]), "%s was not rewritten", p.Name)
 			}
 
 			By("doing nothing on a later pass")

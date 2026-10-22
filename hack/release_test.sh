@@ -17,6 +17,7 @@ tree() {
   mkdir -p "$1/dist/chart" "$1/docs" "$1/config/crd/bases" "$1/test/compat/baseline"
   echo "kind: CustomResourceDefinition # $2" >"$1/config/crd/bases/things.yaml"
   echo "kind: CustomResourceDefinition # old" >"$1/test/compat/baseline/gone.yaml"
+  printf '# Versions the last release served that this tree no longer serves.\n#\n#   v1alpha1  Removed the v1alpha1 API versions.\nv1alpha1  Removed the v1alpha1 API versions.\n' >"$1/test/compat/dropped.txt"
   printf 'apiVersion: v2\nname: c4-factory\nversion: %s\nappVersion: "dev"\n' "$2" >"$1/dist/chart/Chart.yaml"
   printf 'The commands use the release `%s`; for a later one, change `VERSION`.\n\n```bash\nVERSION=%s\n```\n\nVERSION=%s\n' \
     "$2" "$2" "$2" >"$1/docs/getting-started.md"
@@ -51,6 +52,8 @@ ROOT=$T/bump "$RELEASE" --check v1.3.0
 check "  and --check agrees" $? 0
 check "  the rest of the chart is kept" "$(grep -c 'appVersion: "dev"' "$T/bump/dist/chart/Chart.yaml")" 1
 check "  the CRDs become the baseline" "$(ls "$T/bump/test/compat/baseline")" things.yaml
+check "  bump empties dropped.txt's entries" "$(grep -vc '^#' "$T/bump/test/compat/dropped.txt")" 0
+check "  and keeps its comments" "$(grep -c '^#' "$T/bump/test/compat/dropped.txt")" 3
 
 # The release command: a bare origin with main at 1.2.0, a clone, and a fake gh
 # whose pr merge merges the branch into origin's main with a merge commit.
