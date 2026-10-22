@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092). |
+| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -697,7 +697,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 - **GitHub targets** (#1070, [plans/done/github-deploy.md](plans/done/github-deploy.md)):
   a `github` target is how a Container is published as open source, for
   every type. It ships three things of each release, each by its own rule
-  (`model.GitHubShipment`): the app's source at the tag, when the member's
+  (`model.ReleaseShipment`): the app's source at the tag, when the member's
   `source` is set; a GitHub release of the tag, always, with its notes and
   the files when the release has them, its image archive (`*.oci.tar`) left
   out; and the release's image on GHCR, when the Container publishes one

@@ -1,7 +1,7 @@
 # Catalog bundles: a Framework, Standard, Compute and Deployment picked together
 
 Issue: #1092. Written 2026-10-22, after the deploy model
-([done/deploy.md](done/deploy.md), decision 1) settled what a bundle can hold:
+([deploy.md](deploy.md), decision 1) settled what a bundle can hold:
 a `Deployment` stays a pinned template any number of Containers share, and the
 place a Container ships to is a `DeployTarget` the Container names in
 `spec.deploy`. So a bundle names catalog entries only.
@@ -34,7 +34,7 @@ the bundle expanded to.
   (`brief_standin.go`) pick and check sides the same way.
 - The UI has a page per catalog kind (`ui/src/components/objects/CatalogPages.tsx`).
 - A served version keeps `v1alpha1`'s additive rules
-  ([api-versions.md](api-versions.md), decision 1): a new kind and a new
+  ([api-versions.md](../api-versions.md), decision 1): a new kind and a new
   optional field are allowed; a required field turning optional is too.
 
 ## Decisions
@@ -138,3 +138,6 @@ Every step's pull request has landed with its tests, `make check` green: a
 Container that names `python-service` is Ready with the same
 `scaffoldedFrom` as one naming the four entries, its status shows the
 expansion, and a stand-in Brief plans a Container on a bundle.
+
+Done 2026-10-22: every step landed (#1619 to #1624). Evidence, the steps' test
+output: [1092-catalog-bundles-tests.txt](../../screenshots/1092-catalog-bundles-tests.txt).
