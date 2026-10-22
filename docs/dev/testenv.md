@@ -541,7 +541,15 @@ around the steps that touch it:
    use-context`): every checkout shares `.dev/kube/config` of the main
    checkout, and plain kubectl in another session would follow it. The
    `cluster` target and `hack/up.sh` put it back after kind sets it
-   (`hack/kind.sh keep-context`). Images built for a deploy (`make deploy`,
+   (`hack/kind.sh keep-context`). After the create, `make cluster` writes
+   containerd's `hosts.toml` into every node (`hack/kind.sh registry-hosts`),
+   mapping `gitea.gitea.svc.cluster.local:3000` to the fixed ClusterIP of
+   `config/gitea/service.yaml` (`10.96.0.30`), so a node pulls a Container's
+   image from the in-cluster Gitea by the name the Deployment carries; the
+   test environment's shortcut, not the chart's. It can't live in
+   `hack/kind.yaml`: `extraMounts` needs an absolute host path, and the
+   `registry.mirrors` patch is ignored once containerd reads `certs.d`.
+   Images built for a deploy (`make deploy`,
    the agent, runner, seed, session and UI images) are tagged per checkout
    (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
    so two checkouts building at once never share a tag; `hack/kind.sh load`
