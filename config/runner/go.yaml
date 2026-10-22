@@ -81,7 +81,7 @@ spec:
           image: c4factory/gitea-runner-go:dev
           imagePullPolicy: Never
           # A job takes at most 4 of the node's cores, so a build can't starve etcd,
-          # the API server and Gitea: docs/dev/testenv.md, "CPU on the cluster device".
+          # the API server and Gitea: docs/dev/devices.md, "CPU on the cluster device".
           resources:
             requests: {cpu: 500m, memory: 1Gi}
             limits: {cpu: "4", memory: 6Gi}

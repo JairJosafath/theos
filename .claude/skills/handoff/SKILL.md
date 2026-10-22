@@ -51,7 +51,7 @@ lower tiers can give and say in the pull request what a human run of Kind
 would check. Kind is a tier only a human runs: `cluster acquire` refuses
 without `C4_HUMAN_CLUSTER=1`, which no agent sets. A human who needs a Kind
 cluster follows
-[docs/dev/testenv.md](../../../docs/dev/testenv.md#sharing-the-kind-clusters-between-checkouts)
+[docs/dev/devices.md](../../../docs/dev/devices.md#sharing-the-kind-clusters-between-checkouts)
 ("Sharing the Kind clusters between checkouts").
 
 ## Sign your work

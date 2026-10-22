@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that every job of the GitHub workflows can run on the self-hosted
-# runners (hack/gh-runner, docs/dev/testenv.md): its runs-on uses vars.RUNS_ON,
+# runners (hack/gh-runner, docs/dev/devices.md): its runs-on uses vars.RUNS_ON,
 # and a job that makes a Kind cluster (kind create cluster, the e2e target)
 # asks for the label c4factory-kind, which only runner 1 of a device carries,
 # so a device runs one of them at a time. A workflow that runs on pushes to a

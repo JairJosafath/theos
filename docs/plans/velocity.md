@@ -116,7 +116,7 @@ without trusting a stale merge).
 | This plan, the label in `GH_LABELS`, the pick order, the docs, the watch's flake filing | #1280 | `make test-hack`: urgent beats velocity, velocity beats older ready; no doc says "in-progress first" |
 | Optimistic `land` | #1281 | `make test-hack`: no second check when main did not move; the turn-held time in `.relay/land-*.log` |
 | Coverage only when asked | #1282 | `touch hack/lib/github.sh; make check` shows `internal/controller` `(cached)` |
-| The envtest suite in parallel procs | #1283 | the suite's wall time and peak RSS at 1, 2, 4 procs in `docs/dev/testenv.md` |
+| The envtest suite in parallel procs | #1283 | the suite's wall time and peak RSS at 1, 2, 4 procs in `docs/dev/devices.md` |
 | Follow-ups the finder works, triage every 10 min | #1284 | `make test-hack`: `--next` readies, reserves, is skipped by others, expires |
 | Each check tier cached on its own inputs | #1285 | `touch hack/x.sh; make check` skips the UI check and `validate-yaml` |
 

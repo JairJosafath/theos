@@ -105,7 +105,7 @@ if command -v docker >/dev/null; then
     [ -n "$use" ] && kind="; the Kind node $node uses ${use%% /*}"
 fi
 
-msg="Memory is low: $(awk -v kb="$avail" 'BEGIN { printf "%.1f", kb / 1048576 }') GiB available, under the $min GiB a heavy job like \`$job\` needs (RELAY_MIN_MEM_GIB). Using the most: ${top:-unknown}$kind. Running it now can stall every session on this device; close a session or wait for other builds to finish first (docs/dev/testenv.md, \"Memory on the cluster device\").${queue:+ $queue}"
+msg="Memory is low: $(awk -v kb="$avail" 'BEGIN { printf "%.1f", kb / 1048576 }') GiB available, under the $min GiB a heavy job like \`$job\` needs (RELAY_MIN_MEM_GIB). Using the most: ${top:-unknown}$kind. Running it now can stall every session on this device; close a session or wait for other builds to finish first (docs/dev/devices.md, \"Memory on the cluster device\").${queue:+ $queue}"
 if [ "${C4_HEADLESS:-}" = 1 ]; then
   say "$msg"
 else

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-hosted GitHub Actions runners for this repository, in containers on this
 # device's Docker (hack/gh-runner/Dockerfile). The workflows run on them when
-# the repository variable RUNS_ON is self-hosted (docs/dev/testenv.md).
+# the repository variable RUNS_ON is self-hosted (docs/dev/devices.md).
 #
 #   hack/gh-runner/gh-runner.sh up      build the image, register each runner once and start RUNNERS of them (make gh-runner RUNNERS=N)
 #   hack/gh-runner/gh-runner.sh down    stop them all, remove them from GitHub, drop their registrations (make gh-runner-down)

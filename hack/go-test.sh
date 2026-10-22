@@ -19,7 +19,7 @@
 #                        1 runs it in one go test, as before)
 #   C4_TEST_MIN_MEM_GIB  below this much MemAvailable an unset C4_TEST_PROCS
 #                        means 1 (default 4): each part takes about a GiB more
-#                        (docs/dev/testenv.md, "Memory on the cluster device")
+#                        (docs/dev/devices.md, "Memory on the cluster device")
 #   RELAY_MEMINFO        file to read instead of /proc/meminfo (the test fakes it)
 #   GO                   the go command (default go; the test fakes it)
 set -uo pipefail

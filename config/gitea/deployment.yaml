@@ -101,7 +101,7 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
           # The request is Gitea's share of a busy node; at 50m a CI build left it
-          # too little to answer its probes: docs/dev/testenv.md, "CPU on the
+          # too little to answer its probes: docs/dev/devices.md, "CPU on the
           # cluster device".
           resources:
             requests: {cpu: 500m, memory: 128Mi}
