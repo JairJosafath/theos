@@ -284,13 +284,17 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 		desired.SetLabels(map[string]string{
 			c4v1alpha1.LabelBrief: run.brief.Name, c4v1alpha1.LabelBriefRound: run.round,
 		})
-		if err := r.Create(ctx, desired); apierrors.IsAlreadyExists(err) {
-			return true, nil // made by an earlier reconcile the cache doesn't show yet
-		} else if err != nil {
+		err := r.Create(ctx, desired)
+		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return false, err
 		}
+		// Made now, or by an earlier reconcile of this round the cache doesn't
+		// show yet: either way the round made it, and Status.Created names it
+		// through run.made (#1870).
 		run.made = append(run.made, c4v1alpha1.BriefObject{Kind: o.Kind, Name: o.Name})
-		logf.FromContext(ctx).Info("Created story object", "kind", o.Kind, "name", o.Name, "round", run.round)
+		if err == nil {
+			logf.FromContext(ctx).Info("Created story object", "kind", o.Kind, "name", o.Name, "round", run.round)
+		}
 		return true, nil
 	}
 	if err != nil {
