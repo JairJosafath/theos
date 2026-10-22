@@ -219,8 +219,10 @@ remote cluster.
        // Ship starts shipping s to target. Repeating it for the same
        // app and version is safe and starts nothing new.
        Ship(ctx context.Context, target Target, s Shipment) error
-       // State reads back what runs at target for app.
-       State(ctx context.Context, target Target, app string) (DeployState, error)
+       // State reads back what runs at target for app; version is the
+       // version the entry wants (its pin, else the newest release), which
+       // a target whose versions stand side by side reports (#1485).
+       State(ctx context.Context, target Target, app, version string) (DeployState, error)
    }
    ```
 
@@ -338,12 +340,12 @@ What #1162 settled that the decisions above left open:
 - **Tests** give the reconciler a member table (`DeployMembers`) whose
   `github` row needs a Framework that leaves deploying to the target, since no
   real member needs anything yet; `Incompatible` is seen through it.
-- **Known limits, filed as follow-ups:** the GitHub member's `State` is the
-  newest marked release, so a pin to an older published release re-ships
-  each poll and stays `Deploying`, and two Containers shipping to one
-  `github` target take the same tags (`TagTaken`) until #1070 gives the
-  member a tag prefix ([github-deploy-state.md](../github-deploy-state.md)
-  settles both, #1445); and the Container reconciler runs one
+- **Known limits, filed as follow-ups:** a pin to an older published
+  release stayed `Deploying` until `State` took the wanted version
+  ([github-deploy-state.md](../github-deploy-state.md), #1485); two
+  Containers shipping to one `github` target take the same tags
+  (`TagTaken`) until #1486 gives the member a tag prefix (the same plan,
+  #1445); and the Container reconciler runs one
   worker, so a long GitHub upload holds the other Containers' reconciles for
   its length, as a Crew's upload held the Crews before `crewWorkers`.
 
