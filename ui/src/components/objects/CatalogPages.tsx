@@ -1,13 +1,22 @@
 // The pages of the catalog and the Git hosts: a Standard, Compute or
 // Deployment (its template, what it supports, the Containers that name it;
-// with UI actions on, a Standard's ref bump, StandardActions), a
+// with UI actions on, a Standard's ref bump, StandardActions), a Bundle (its
+// four entries, the types they share, the Containers that name it), a
 // GitProvider (where repositories go, and its Secret's name: the UI never
 // reads Secrets), and the Project page's list of them, where a refused read
 // of any of these kinds says so.
 
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { ReactNode } from 'react'
-import { RESOURCES, type CatalogEntry, type Container, type GitProvider, type Standard } from '../../k8s/types'
+import {
+  RESOURCES,
+  type Bundle,
+  type CatalogEntry,
+  type Container,
+  type GitProvider,
+  type Standard,
+} from '../../k8s/types'
+import { bundleEntries, bundleTypes, choicesOf, type BundleSide, type Catalog } from '../../model/choices'
 import { describeContainerType } from '../../model/describe'
 import { ObjectHeader, type ChildRef } from '../ObjectHeader'
 import { pageHref, projectCrumb } from './links'
@@ -15,16 +24,17 @@ import { ReadProblem } from './ReadProblem'
 
 type CatalogKind = 'Standard' | 'Compute' | 'Deployment'
 
-/** Which Container field names an entry of each kind. */
-const REF: Record<CatalogKind | 'GitProvider', (c: Container) => string | undefined> = {
-  Standard: (c) => c.spec.standardRef?.name,
-  Compute: (c) => c.spec.computeRef?.name,
-  Deployment: (c) => c.spec.deploymentRef?.name,
+/** Which Container choice names an entry of each kind: its spec's ref, or what its Bundle expanded to. */
+const REF: Record<CatalogKind | 'Bundle' | 'GitProvider', (c: Container) => string | undefined> = {
+  Standard: (c) => choicesOf(c).standard,
+  Compute: (c) => choicesOf(c).compute,
+  Deployment: (c) => choicesOf(c).deployment,
+  Bundle: (c) => choicesOf(c).bundle,
   GitProvider: (c) => c.spec.gitProviderRef.name,
 }
 
 /** The Containers that name this entry, each linked to its page. */
-function usedBy(kind: CatalogKind | 'GitProvider', name: string, containers: Container[]): ChildRef[] {
+function usedBy(kind: CatalogKind | 'Bundle' | 'GitProvider', name: string, containers: Container[]): ChildRef[] {
   return containers
     .filter((c) => REF[kind](c) === name)
     .map((c) => ({
@@ -97,6 +107,94 @@ export function CatalogPage({
   )
 }
 
+const SIDE_TITLE: Record<BundleSide, string> = {
+  framework: 'Framework',
+  standard: 'Standard',
+  compute: 'Compute',
+  deployment: 'Deployment',
+}
+
+/**
+ * A Bundle's page: the entries it names, each linked to its page where it has
+ * one and said to be missing when the catalog lacks it, the Container types
+ * every entry supports (computed here, as the operator does), and the
+ * Containers that name it. It has no status, so no conditions and no actions.
+ */
+export function BundlePage({
+  bundle,
+  catalog,
+  containers,
+  connection,
+}: {
+  bundle: Bundle
+  catalog: Catalog
+  containers: Container[]
+  connection: Connection
+}) {
+  const ns = bundle.metadata.namespace ?? ''
+  const name = bundle.metadata.name
+  const entries = bundleEntries(bundle, catalog)
+  const types = bundleTypes(bundle, catalog)
+  // A refused read of a catalog kind would show its entries as missing: say the refusal first.
+  const unread = (['frameworks', 'standards', 'computes', 'deployments'] as const)
+    .map((k) => unreadOf(connection, RESOURCES[k]))
+    .filter((p) => p !== undefined)
+  return (
+    <main className="shell-page object-page">
+      <ObjectHeader
+        kind="Bundle"
+        name={name}
+        namespace={ns}
+        title={bundle.spec.displayName}
+        breadcrumb={[projectCrumb(ns)]}
+        childrenTitle="Containers that name it"
+        children={usedBy('Bundle', name, containers)}
+        links={[]}
+      />
+
+      <section className="panel" aria-labelledby="bundle-entries">
+        <h2 className="panel-title small-title" id="bundle-entries">
+          Its entries
+        </h2>
+        {bundle.spec.description ? <p className="panel-text">{bundle.spec.description}</p> : null}
+        {unread.map((p) => (
+          <ReadProblem key={p.what} problem={p} />
+        ))}
+        <dl className="facts">
+          {entries.map(({ side, name: entryName, entry }) => {
+            const href = pageHref(ns, SIDE_TITLE[side], entryName)
+            return (
+              <div key={side} className="facts-row">
+                <dt>{SIDE_TITLE[side]}</dt>
+                <dd className="mono">
+                  {href ? <a href={href}>{entryName}</a> : entryName}
+                  {entry ? (
+                    <span className="muted"> @ {entry.spec.template.ref}</span>
+                  ) : (
+                    <span className="muted small"> · not in the catalog</span>
+                  )}
+                </dd>
+              </div>
+            )
+          })}
+          <div className="facts-row">
+            <dt>Container types</dt>
+            <dd>
+              {types.length ? (
+                types.map(describeContainerType).join(', ')
+              ) : entries.some((e) => !e.entry) ? (
+                <span className="muted">None: an entry is not in the catalog.</span>
+              ) : (
+                <span className="muted">None: its entries share no Container type.</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+  )
+}
+
 /**
  * A GitProvider's page. It shows the fields it names one by one, never the
  * object whole, and of its credentials only the Secret's name.
@@ -149,6 +247,7 @@ const CATALOG: {
   { title: 'Standards', kind: 'Standard', resource: RESOURCES.standards, list: (d) => d.standards },
   { title: 'Computes', kind: 'Compute', resource: RESOURCES.computes, list: (d) => d.computes },
   { title: 'Deployments', kind: 'Deployment', resource: RESOURCES.deployments, list: (d) => d.deployments },
+  { title: 'Bundles', kind: 'Bundle', resource: RESOURCES.bundles, list: (d) => d.bundles },
   { title: 'Connectors', kind: 'Connector', resource: RESOURCES.connectors, list: (d) => d.connectors },
   { title: 'Git providers', kind: 'GitProvider', resource: RESOURCES.gitProviders, list: (d) => d.gitProviders },
 ]

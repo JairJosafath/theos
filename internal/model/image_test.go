@@ -13,23 +13,36 @@ import "testing"
 func TestBuildsImage(t *testing.T) {
 	for _, tt := range []struct {
 		deployment, framework, typ string
+		scaffoldedFrom             []string
 		want                       bool
 	}{
-		{"k8s-manifests", "go-service", TypeService, true},
-		{"k8s-manifests", "ts-worker", TypeWorker, true},
-		{"k8s-manifests", "kubebuilder", TypeOperator, true},
-		{"gitea-release", "go-cli", TypeCLI, false},
-		{"gitea-release", "kubebuilder", TypeOperator, true},
+		{"k8s-manifests", "go-service", TypeService, nil, true},
+		{"k8s-manifests", "ts-worker", TypeWorker, nil, true},
+		{"k8s-manifests", "kubebuilder", TypeOperator, nil, true},
+		{"gitea-release", "go-cli", TypeCLI, nil, false},
+		{"gitea-release", "kubebuilder", TypeOperator, nil, true},
 		// Fargate's stack takes its image by digest; the other AWS
 		// Frameworks build none (#1610).
-		{"gitea-release", "aws-fargate-ts", TypeService, true},
-		{"gitea-release", "aws-ec2-ts", TypeService, false},
-		{"gitea-release", "aws-lambda-ts", TypeService, false},
-		{"aws-fargate-ts", "aws-fargate-ts", TypeService, false},
-		{"", "", TypeService, false},
+		{"gitea-release", "aws-fargate-ts", TypeService, nil, true},
+		{"gitea-release", "aws-ec2-ts", TypeService, nil, false},
+		{"gitea-release", "aws-lambda-ts", TypeService, nil, false},
+		{"aws-fargate-ts", "aws-fargate-ts", TypeService, nil, false},
+		{"", "", TypeService, nil, false},
+		// #1797: the scaffolded aws-fargate-ts ref decides, as a Container
+		// scaffolded before v2.0.0 has no image job; a commit ref counts as
+		// current, and the other builders don't look at the ref.
+		{"gitea-release", "aws-fargate-ts", TypeService,
+			[]string{"aws-fargate-ts@v1.3.0", "aws-standard@v1.19.1", "gitea-release@v1.6.0"}, false},
+		{"gitea-release", "aws-fargate-ts", TypeService,
+			[]string{"aws-fargate-ts@v2.0.0", "aws-standard@v1.19.1", "gitea-release@v1.8.0"}, true},
+		{"gitea-release", "aws-fargate-ts", TypeService, []string{"aws-fargate-ts@v2.1.0"}, true},
+		{"gitea-release", "aws-fargate-ts", TypeService, []string{"aws-fargate-ts@3f1c2a9d"}, true},
+		{"gitea-release", "aws-fargate-ts", TypeService, []string{"aws-standard@v1.0.0"}, true},
+		{"k8s-manifests", "go-service", TypeService, []string{"go-service@v0.1.0", "k8s-manifests@v1.0.0"}, true},
 	} {
-		if got := BuildsImage(tt.deployment, tt.framework, tt.typ); got != tt.want {
-			t.Errorf("BuildsImage(%q, %q, %q) = %v, want %v", tt.deployment, tt.framework, tt.typ, got, tt.want)
+		if got := BuildsImage(tt.deployment, tt.framework, tt.typ, tt.scaffoldedFrom); got != tt.want {
+			t.Errorf("BuildsImage(%q, %q, %q, %q) = %v, want %v", tt.deployment, tt.framework, tt.typ,
+				tt.scaffoldedFrom, got, tt.want)
 		}
 	}
 }

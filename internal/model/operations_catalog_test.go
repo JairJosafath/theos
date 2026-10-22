@@ -53,7 +53,7 @@ func TestChartFrameworksWithAnOperationsTemplateReadOperations(t *testing.T) {
 // The planner's workspace catalog carries readsOperations through, so a plan
 // sets operations only on a Container whose Framework renders it (#1703).
 func TestWorkspaceCatalogSaysWhichFrameworksReadOperations(t *testing.T) {
-	out := workspaceCatalog(chartCatalog(t))
+	out := workspaceCatalog(chartCatalog(t), nil)
 	for _, e := range out.Frameworks {
 		if want := templateRendersOperations(t, e.Name); e.ReadsOperations != want {
 			t.Errorf("the workspace catalog's %s: readsOperations %v, want %v", e.Name, e.ReadsOperations, want)

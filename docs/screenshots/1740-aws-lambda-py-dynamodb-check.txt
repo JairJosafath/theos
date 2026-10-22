@@ -1,0 +1,90 @@
+# make check in a scaffolded aws-lambda-py v1.4.0 + aws-standard v1.19.1 Container with the dynamodb Connector v1.0.0 (issue #1740)
+# go run ./hack/render -out DIR -type function Framework=aws-lambda-py Standard=aws-standard Connector=dynamodb
+# then make check in DIR, on 2026-10-22, Node v24.22.1, go1.26.10. Bundling lines are cut; the same render without dynamodb passes too.
+
+npm ci --no-audit --no-fund
+
+added 141 packages in 3s
+uv sync --locked
+Downloading cpython-3.14.9-linux-x86_64-gnu (download) (35.0MiB)
+ Downloaded cpython-3.14.9-linux-x86_64-gnu (download)
+Using CPython 3.14.9
+Creating virtual environment at: .venv
+Resolved 26 packages in 0.61ms
+Downloading pygments (1.2MiB)
+Downloading ruff (9.9MiB)
+Downloading ast-serialize (1.3MiB)
+Downloading mypy (14.7MiB)
+Downloading botocore (15.3MiB)
+ Downloaded ast-serialize
+ Downloaded pygments
+ Downloaded ruff
+ Downloaded botocore
+ Downloaded mypy
+Prepared 23 packages in 194ms
+Installed 24 packages in 30ms
+ + ast-serialize==0.13.0
+ + aws-lambda-powertools==3.36.0
+ + boto3==1.43.112
+ + botocore==1.43.112
+ + botocore-stubs==1.43.112
+ + iniconfig==2.3.1
+ + jmespath==1.1.0
+ + librt==0.16.0
+ + mypy==2.4.0
+ + mypy-extensions==1.1.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + python-dateutil==2.9.0.post0
+ + ruff==0.16.10
+ + s3transfer==0.19.2
+ + six==1.17.0
+ + types-boto3==1.43.112
+ + types-boto3-dynamodb==1.43.106
+ + types-s3transfer==0.19.2
+ + typing-extensions==4.16.0
+ + urllib3==2.8.0
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+24 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.9, pytest-9.1.1, pluggy-1.6.0
+rootdir: DIR
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+
+============================== 63 passed in 0.52s ==============================
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 DIR
+
+
+ Test Files  4 passed (4)
+      Tests  99 passed (99)
+   Start at  19:22:51
+   Duration  3.26s (tests 79%, import 18%, transform 3%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+AI agent detected
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Installed 9 packages in 25ms

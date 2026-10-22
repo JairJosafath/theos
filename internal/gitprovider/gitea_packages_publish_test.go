@@ -574,7 +574,7 @@ func TestPublishReleasePackagesOutcomes(t *testing.T) {
 				File: "shop_api-0.2.0-py3-none-any.whl", Reason: "version 0.2.0 is not the tag's, 0.1.0"},
 		},
 	}, {
-		name: "a pre-release tag is normalised for Python and exact for npm",
+		name: "a pre-release tag is normalised for Python and exact for npm (#1701)",
 		tag:  "v1.0.0-rc.1",
 		assets: []testAsset{{"shop-ui-1.0.0-rc.1.tgz", npmTarball(t, "@c4factory/shop-ui", "1.0.0-rc.1")},
 			{"shop_api-1.0.0rc1-py3-none-any.whl", wheel(t, "shop-api", "1.0.0rc1")},
@@ -611,8 +611,9 @@ func TestPublishReleasePackagesOutcomes(t *testing.T) {
 			if uploaded := h.npmPut != nil || len(h.pypiForm) > 0; uploaded != tt.uploads {
 				t.Errorf("uploaded = %v, want %v (calls %v)", uploaded, tt.uploads, h.calls)
 			}
-			if tt.uploads && len(h.pypiForm) == 2 && (h.pypiForm[0]["version"] != "1.0.0rc1" || h.pypiForm[1]["version"] != "1.0.0-RC.1") {
-				t.Errorf("PyPI uploads declare versions %q and %q, want the files' own", h.pypiForm[0]["version"], h.pypiForm[1]["version"])
+			if tt.uploads && len(h.pypiForm) == 2 && (h.pypiForm[0]["version"] != "1.0.0rc1" || h.pypiForm[1]["version"] != "1.0.0rc1") {
+				t.Errorf("PyPI uploads declare versions %q and %q, want both normalised to 1.0.0rc1 (#1701)",
+					h.pypiForm[0]["version"], h.pypiForm[1]["version"])
 			}
 		})
 	}

@@ -106,3 +106,53 @@ func TestInBundle(t *testing.T) {
 		t.Error("InBundle(nil) is not nil")
 	}
 }
+
+func TestBundleChanges(t *testing.T) {
+	scaffolded := Bundle{Name: "web-service", Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"}
+	tests := []struct {
+		name string
+		now  Bundle
+		want []string
+	}{
+		{name: "unchanged", now: scaffolded},
+		{name: "one side", now: Bundle{Name: "web-service", Framework: "python-fastapi", Compute: "large", Deployment: "k8s-manifests"},
+			want: []string{"compute: small, now large"}},
+		{name: "a side added and one removed, in side order", now: Bundle{Name: "web-service", Framework: "python-fastapi",
+			Standard: "python-standard", Compute: "small"},
+			want: []string{"standard: none, now python-standard", "deployment: k8s-manifests, now none"}},
+		{name: "every side", now: Bundle{Name: "web-service", Framework: "go-kubebuilder", Standard: "go-standard", Compute: "large"},
+			want: []string{"framework: python-fastapi, now go-kubebuilder", "standard: none, now go-standard",
+				"compute: small, now large", "deployment: k8s-manifests, now none"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BundleChanges(scaffolded, tt.now); !slices.Equal(got, tt.want) {
+				t.Errorf("BundleChanges() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBundleStringRoundTrip(t *testing.T) {
+	// #1621: the scaffold's commit records the expansion it was pushed with, so
+	// a retry after the Bundle changed recovers what was scaffolded.
+	for _, b := range []Bundle{
+		{Name: "web-service", Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"},
+		{Name: "full", Framework: "python-fastapi", Standard: "python-standard", Compute: "small", Deployment: "k8s-manifests"},
+		{Name: "bare", Framework: "python-fastapi"},
+	} {
+		if got := ParseBundle(b.String()); got != b {
+			t.Errorf("ParseBundle(%q) = %+v, want %+v", b.String(), got, b)
+		}
+	}
+	want := "web-service framework=python-fastapi compute=small deployment=k8s-manifests"
+	if got := (Bundle{Name: "web-service", Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"}).String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got := ParseBundle(""); got != (Bundle{}) {
+		t.Errorf("ParseBundle(\"\") = %+v, want empty", got)
+	}
+	if got := ParseBundle("web-service framework=python-fastapi connector=postgres"); got != (Bundle{Name: "web-service", Framework: "python-fastapi"}) {
+		t.Errorf("ParseBundle(unknown side) = %+v", got)
+	}
+}

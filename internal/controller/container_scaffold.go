@@ -111,7 +111,16 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 		}
-		return r.ready(ctx, container, status, res.choices.Standard, info.ScaffoldedFrom, info.Relationships, info.Checks,
+		// The commit records the expansion the push used; the Bundle may
+		// have changed since, which is reported, never applied (#1621). An
+		// older commit without it keeps the expansion resolved now.
+		standard := res.choices.Standard
+		if b := info.Bundle; b != nil {
+			status.Bundle = &c4v1alpha1.ContainerBundleStatus{Name: b.Name, Framework: b.Framework,
+				Standard: b.Standard, Compute: b.Compute, Deployment: b.Deployment}
+			standard = b.Standard
+		}
+		return r.ready(ctx, container, status, standard, info.ScaffoldedFrom, info.Relationships, info.Checks,
 			res.entries[0].ReadsOperations, "Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
@@ -260,6 +269,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Standard:       choices.Standard,
 		Compute:        choices.Compute,
 		Deployment:     choices.Deployment,
+		Bundle:         choices.Bundle,
 		Connectors:     connectors,
 		Checks:         checks,
 		Operations:     ops,

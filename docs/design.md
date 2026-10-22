@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092; the planner naming one is not built yet). |
+| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -89,10 +89,17 @@ python-service}` in place of `frameworkRef`, `standardRef`, `computeRef` and
 immutable). Until the scaffold every reconcile expands the Bundle afresh and
 writes the entry names to `status.bundle` (`name`, `framework`, `standard`,
 `compute`, `deployment`); from the scaffold on the operator reads
-`status.bundle` and never the Bundle again, so a Bundle changed later changes
-no scaffolded Container. A missing Bundle keeps the Container `Pending`,
-reason `NotFound`; the checks below run on the expanded entries, and their
-message starts with `bundle <name>: `.
+`status.bundle` and never applies the Bundle again, so a Bundle changed later
+changes no scaffolded Container. A Ready Container reports it instead:
+`BundleCurrent=True` while the Bundle still names what `status.bundle`
+records, `False`, reason `BundleChanged`, listing the sides that differ
+(`compute: small, now large`) or saying `Bundle <name> is gone` when it was
+deleted; a Container naming its sides has no such condition. The operator
+changes nothing on it: a Standard bump still reaches the Container through
+the Standard, and the other sides are scaffold-once. A missing Bundle keeps
+a Container not yet scaffolded `Pending`, reason `NotFound`; the checks
+below run on the expanded entries, and their message starts with
+`bundle <name>: `.
 
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
@@ -145,7 +152,19 @@ guides, the webshop Domain and the planner are its later steps.
    service per Connector.
 6. **Write `.c4factory.yaml`** with the project, the container and the
    scaffold's refs.
-7. **Push one commit,** protect `main` with the Standard's required checks,
+7. **Write `LICENSE`** when the Container's `spec.license`, else its
+   Project's, names one: an SPDX id from the set the operator holds the text
+   of (`MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`,
+   `MPL-2.0`, `GPL-2.0-only`, `GPL-3.0-only`, `LGPL-3.0-only`,
+   `AGPL-3.0-only`, `Unlicense`), an enum in the schema. The text is the
+   SPDX one; where it has a copyright line, the year is the scaffold's and
+   the holder the Project's `displayName`, else its name. The factory never
+   picks a license: with none set, no file. It is an operator path like
+   `.c4factory.yaml`, which records the id; a layer writing `LICENSE` is the
+   two-layers collision below. Read at scaffold only: changing the setting
+   later rewrites nothing, and a Container already scaffolded gets its
+   license by a commit ([plans/license.md](plans/license.md)).
+8. **Push one commit,** protect `main` with the Standard's required checks,
    then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
 
 Every file belongs to exactly one layer: two layers writing a path fail the
@@ -293,7 +312,13 @@ records go at once, since no Task is left to read them (#1697). The pool
 follows its `ci` block: an idle pod above a lowered `size`, or built from
 another `image` than the block now says, is replaced, a busy one once its
 job ends, and a dropped block takes the pool's Secret, ConfigMap and
-NetworkPolicy with it (#1700). The pods
+NetworkPolicy with it (#1700). A pod
+that failed on its own (its registration or its runner ended non-zero) is
+replaced only after a backoff, 10s doubling per failure in a row up to 5
+minutes, until a pod runs its job; a GitProvider whose host gives no
+registration token keeps its pods, gets none added or replaced, and the
+Project's `CIRunners` condition says `ProviderUnavailable` until the host
+answers (#1699). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
@@ -424,7 +449,9 @@ when the changes don't overlap; one that overlaps is left out, listed in
 `FilesBehind`), until a person sets `c4.factory.io/standard-take` (the
 operator merges the Standard's version) or `c4.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
-refs, `status.standard` the current.
+refs, `status.standard` the current. A Container that got its Standard from a
+Bundle keeps following the Standard itself; a changed Bundle is only reported
+(`BundleCurrent`, above), never applied.
 
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 ([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).
@@ -485,7 +512,10 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
 - **The operator checks and applies the plan.** A plan writes only story
   kinds and installed entries that fit, changes only story text of what
   exists, adds nothing to an External system and deletes nothing; else the
-  next round gets the reasons. The operator makes a Crew per new Container
+  next round gets the reasons. A plan's Container may name a Bundle instead
+  of the four sides; the check expands it as the operator would, so a Bundle
+  that doesn't support the type fails the round with the message the
+  Container would show, and the Container is created on the Bundle. The operator makes a Crew per new Container
   and files the issues once it is Ready, ordered by their `after:` front
   matter as Git host dependencies. What it made carries the label
   `c4.factory.io/brief`. A failed step says where and why
@@ -651,8 +681,9 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   summed by `Deployed`.
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
-  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`, and
-  `gitea-release` for an `operator`), the
+  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`,
+  `gitea-release` for an `operator`, and `gitea-release` with
+  `aws-fargate-ts`), the
   operator pushes `status.newestRelease`'s `*.oci.tar` to the owner's
   registry once and reports it in `status.image` (`tag`, `repository`,
   `digest`, `platforms`, `state`, `message`, `publishedTime`) and
@@ -688,7 +719,11 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   no secret the factory recognises (a private key block, a token of a known
   shape, the value of a credential the operator holds); a problem fails the
   entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
-  and line and never the value, until another version is wanted. The
+  and line and never the value, until another version is wanted.
+  `LicenseMissing` says how a license gets there: `spec.license` on the
+  Project or the Container before it is scaffolded (Scaffolding a
+  Container), or a committed license file, the only way for a Container
+  already scaffolded. The
   values compared are the GitProvider's token, the Container's agent Git
   token, its namespace's Agents' token Secrets (their keys naming a token, key, secret, password or credential) and the target's own Secret.
   A line marked `c4factory:allow-secret` is skipped, and the message says

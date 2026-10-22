@@ -80,6 +80,9 @@ type ProjectReconciler struct {
 	// RunnerRecordKept is how long an ended pool pod stays readable;
 	// DefaultRunnerRecordKept when zero.
 	RunnerRecordKept time.Duration
+	// RunnerBackoff is how long a CI runner pool waits after a pod failed on
+	// its own, doubled per failure in a row; DefaultRunnerBackoff when zero.
+	RunnerBackoff time.Duration
 	// packagesApplied is, per namespace/GitProvider, the packagesActions last
 	// sent to the owner's host (ensurePackagesActions).
 	packagesApplied sync.Map
@@ -138,24 +141,37 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
-	recordExpiry, providers, err := r.ensureCIRunners(ctx, &project, status)
+	ci, err := r.ensureCIRunners(ctx, &project, status)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensurePackagesActions(ctx, &project, providers); err != nil {
+	if ci.retry != nil {
+		// What follows may fail on the same host: say it first.
+		if err := r.writeStatus(ctx, &project, status); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if err := r.ensurePackagesActions(ctx, &project, ci.providers); err != nil {
 		return ctrl.Result{}, err
 	}
 	recheck, err := r.shareSecrets(ctx, &project, status)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if recordExpiry > 0 && (recheck == 0 || recordExpiry < recheck) {
-		recheck = recordExpiry
+	if ci.recheck > 0 && (recheck == 0 || ci.recheck < recheck) {
+		recheck = ci.recheck
 	}
 	if err := r.rollUp(ctx, &project, status); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: recheck}, r.writeStatus(ctx, &project, status)
+	if err := r.writeStatus(ctx, &project, status); err != nil {
+		return ctrl.Result{}, err
+	}
+	if ci.retry != nil {
+		// The queue's backoff retries the host's token.
+		return ctrl.Result{}, ci.retry
+	}
+	return ctrl.Result{RequeueAfter: recheck}, nil
 }
 
 // adoptChildren sets the Project as owner of every kind it owns directly. These
@@ -226,7 +242,7 @@ func (r *ProjectReconciler) writeStatus(ctx context.Context, project *c4v1alpha1
 		return nil
 	}
 	orig := project.DeepCopy()
-	project.Status = *status
+	project.Status = *status.DeepCopy()
 	return r.Status().Patch(ctx, project, client.MergeFrom(orig))
 }
 

@@ -30,10 +30,10 @@ import (
 const imageTimeout = 30 * time.Minute
 
 // buildsImage reports whether the Container's catalog choice builds an image
-// on release.
+// on release, at the refs it was scaffolded from (#1797).
 func buildsImage(container *c4v1alpha1.Container) bool {
 	return model.BuildsImage(container.Choices().Deployment, container.Choices().Framework,
-		string(container.Spec.Type))
+		string(container.Spec.Type), container.Status.ScaffoldedFrom)
 }
 
 // publishImage pushes the image of the Container's newest release to the

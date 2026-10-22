@@ -98,7 +98,7 @@ func (g *gitea) repository(name string) Repository {
 		ImageRegistry: g.base.Host + "/" + strings.ToLower(g.owner),
 		NpmScope:      orDefault(g.packages.NpmScope, DefaultNpmScope),
 		// npm joins a registry URL with a trailing slash and a package name.
-		NpmRegistry: orDefault(g.packages.NpmRegistry, registry.JoinPath("npm").String()+"/"),
+		NpmRegistry: strings.TrimSuffix(orDefault(g.packages.NpmRegistry, registry.JoinPath("npm").String()), "/") + "/",
 		PyPIIndex:   orDefault(g.packages.PyPIIndex, registry.JoinPath("pypi/simple").String()),
 		PyPIUpload:  orDefault(g.packages.PyPIUpload, registry.JoinPath("pypi").String()),
 	}

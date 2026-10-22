@@ -40,10 +40,13 @@ func guideExampleCurrent() CurrentModel {
 			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}, ReadsOperations: true},
 			{Side: SideStandard, Name: "web-standard", SupportedTypes: []string{TypeStaticSite},
 				SupportedFrameworks: []string{"react-site"}},
+			{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{TypeService},
+				SupportedFrameworks: []string{"go-service"}},
 			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},
 			{Side: SideDeployment, Name: "helm", SupportedTypes: []string{TypeService}},
 			{Side: SideConnector, Name: "postgres", SupportedTypes: []string{TypeService}},
 		},
+		Bundles:     []Bundle{{Name: "react-web", Framework: "react-site", Standard: "web-standard"}},
 		GitProvider: "gitea",
 	}
 }
@@ -235,5 +238,36 @@ func TestPlannerGuideSaysWhenASystemIsExternal(t *testing.T) {
 	}
 	if o, ok := findObject(plan.Objects, Ref{KindSoftwareSystem, "payments"}); !ok || o.Location != LocationExternal {
 		t.Errorf("the example plan has no External system: %+v", o)
+	}
+}
+
+// #1622: the guide tells the planner to prefer a Bundle of catalog.yaml, and
+// its example plan has a Container on one and one on the sides.
+func TestPlannerGuidePrefersABundle(t *testing.T) {
+	for _, want := range []string{"**Use only the listed catalog, and prefer a Bundle.**",
+		"Its `bundles` list the namespace's", "`bundleRef` and none of `frameworkRef`",
+		"either `bundleRef` (rule 2) or `frameworkRef`", "never both"} {
+		if !strings.Contains(plannerGuideText, want) {
+			t.Errorf("PLANNER.md doesn't say %q", want)
+		}
+	}
+	plan, err := ParsePlan(guideExampleFiles(t, plannerGuideText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onBundle, onSides bool
+	for _, o := range plan.Objects {
+		if o.Kind != KindContainer {
+			continue
+		}
+		switch {
+		case o.Bundle != "" && o.Framework == "" && o.Standard == "" && o.Compute == "" && o.Deployment == "":
+			onBundle = true
+		case o.Bundle == "" && o.Framework != "":
+			onSides = true
+		}
+	}
+	if !onBundle || !onSides {
+		t.Errorf("the example plan's Containers: on a Bundle %v, on the sides %v; want both", onBundle, onSides)
 	}
 }

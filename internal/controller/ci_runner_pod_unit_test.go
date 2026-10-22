@@ -145,6 +145,84 @@ func TestRunnerPodFate(t *testing.T) {
 	}
 }
 
+// A pool pod that failed on its own names how, so the pool backs off from it;
+// one that ended its job, still runs or is being deleted is no failure (#1699).
+func TestRunnerPodFailure(t *testing.T) {
+	now := metav1.NewTime(time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC))
+	exited := func(name string, exit int32) []corev1.ContainerStatus {
+		return []corev1.ContainerStatus{{Name: name, State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: exit}}}}
+	}
+	for _, tc := range []struct {
+		name string
+		pod  corev1.Pod
+		want string
+	}{
+		{name: "registration failed", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed,
+			InitContainerStatuses: exited("register", 1)}}, want: "register"},
+		{name: "the runner failed", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed,
+			InitContainerStatuses: exited("register", 0), ContainerStatuses: exited(ciRunnerContainer, 2)}},
+			want: ciRunnerContainer},
+		{name: "evicted", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted"}},
+			want: "Evicted"},
+		{name: "failed with no container status", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed}},
+			want: "Failed"},
+		{name: "deleted while running", pod: corev1.Pod{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning}}},
+		{name: "ended its job", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodSucceeded,
+			ContainerStatuses: exited(ciRunnerContainer, 0)}}},
+		{name: "still running", pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning}}},
+	} {
+		if got := runnerPodFailure(&tc.pod); got != tc.want {
+			t.Errorf("%s: runnerPodFailure() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The pool's wait doubles per failure in a row, capped at MaxRunnerBackoff (#1699).
+func TestRunnerBackoff(t *testing.T) {
+	for _, tc := range []struct {
+		base time.Duration
+		n    int
+		want time.Duration
+	}{
+		{base: 10 * time.Second, n: 0, want: 0},
+		{base: 10 * time.Second, n: 1, want: 10 * time.Second},
+		{base: 10 * time.Second, n: 2, want: 20 * time.Second},
+		{base: 10 * time.Second, n: 6, want: MaxRunnerBackoff},
+		{base: 10 * time.Second, n: 100, want: MaxRunnerBackoff},
+	} {
+		if got := runnerBackoff(tc.base, tc.n); got != tc.want {
+			t.Errorf("runnerBackoff(%v, %d) = %v, want %v", tc.base, tc.n, got, tc.want)
+		}
+	}
+}
+
+// The pool counts its failures since its last ended job, and waits from the
+// newest (#1699).
+func TestCIPoolBackoff(t *testing.T) {
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	for _, tc := range []struct {
+		name string
+		pool ciPool
+		want time.Duration
+	}{
+		{name: "no failure", pool: ciPool{ended: ago(time.Minute)}, want: 0},
+		{name: "one failure", pool: ciPool{failed: []time.Time{ago(4 * time.Second)}}, want: 6 * time.Second},
+		{name: "two in a row, from the newest", pool: ciPool{failed: []time.Time{ago(time.Minute), ago(5 * time.Second)}},
+			want: 15 * time.Second},
+		{name: "a job ended since the first", pool: ciPool{failed: []time.Time{ago(time.Minute), ago(5 * time.Second)},
+			ended: ago(30 * time.Second)}, want: 5 * time.Second},
+		{name: "a job ended since the last", pool: ciPool{failed: []time.Time{ago(time.Minute)}, ended: ago(time.Second)},
+			want: 0},
+	} {
+		if got := tc.pool.backoff(10*time.Second, now); got != tc.want {
+			t.Errorf("%s: backoff() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // Both fences share one egress: DNS, the Git hosts' namespaces, public HTTPS.
 func TestFenceEgress(t *testing.T) {
 	egress := fenceEgress(nil, []string{"gitea", "gitlab"})

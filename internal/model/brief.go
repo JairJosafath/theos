@@ -79,10 +79,12 @@ type PlanObject struct {
 
 	// SoftwareSystem is a Container's or DataStore's.
 	SoftwareSystem string
-	// Type, GitProvider, Framework, Standard, Compute and Deployment are a
-	// Container's; the last three may be empty.
+	// Type, GitProvider, Bundle, Framework, Standard, Compute and Deployment
+	// are a Container's. A plan's Container names a Bundle or its sides, never
+	// both; the namespace's carries both the Bundle and what it expanded to.
 	Type        string
 	GitProvider string
+	Bundle      string
 	Framework   string
 	Standard    string
 	Compute     string
@@ -362,6 +364,7 @@ type planContainerSpec struct {
 	SoftwareSystemRef planLocalRef    `yaml:"softwareSystemRef"`
 	Type              string          `yaml:"type"`
 	GitProviderRef    planLocalRef    `yaml:"gitProviderRef"`
+	BundleRef         *planLocalRef   `yaml:"bundleRef"`
 	FrameworkRef      planLocalRef    `yaml:"frameworkRef"`
 	StandardRef       *planLocalRef   `yaml:"standardRef"`
 	ComputeRef        *planLocalRef   `yaml:"computeRef"`
@@ -509,7 +512,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 		}
 		o.DisplayName, o.Description = spec.DisplayName, spec.Description
 		o.SoftwareSystem, o.Type, o.GitProvider = spec.SoftwareSystemRef.Name, spec.Type, spec.GitProviderRef.Name
-		o.Framework, o.Standard = spec.FrameworkRef.Name, spec.StandardRef.name()
+		o.Bundle, o.Framework, o.Standard = spec.BundleRef.name(), spec.FrameworkRef.Name, spec.StandardRef.name()
 		o.Compute, o.Deployment = spec.ComputeRef.name(), spec.DeploymentRef.name()
 		o.Checks, o.Operations = spec.Checks, spec.Operations.choices()
 	case KindDataStore:
@@ -594,6 +597,8 @@ type CurrentModel struct {
 	Objects []PlanObject
 	// Catalog is every installed catalog entry.
 	Catalog []CatalogEntry
+	// Bundles are the namespace's Bundles.
+	Bundles []Bundle
 	// GitProvider is the Brief's; every new Container names it.
 	GitProvider string
 	// Designer says the Brief names a designer, so a new Container's Crew has one.
@@ -844,6 +849,14 @@ func checkCreatedContainer(current CurrentModel, o PlanObject, refuse func(strin
 	if o.GitProvider != current.GitProvider {
 		refuse(subject, "gitProviderRef names %q; a Brief's Containers use its GitProvider, %q", o.GitProvider, current.GitProvider)
 	}
+	if o.Bundle != "" {
+		checkCreatedBundle(current, o, refuse)
+		return
+	}
+	if o.Framework == "" {
+		refuse(subject, "names no bundleRef and no frameworkRef; a Container names a Bundle of %s or its sides", WorkspaceCatalogFile)
+		return
+	}
 	for _, side := range []struct{ side, field, name string }{
 		{SideFramework, "frameworkRef", o.Framework},
 		{SideStandard, "standardRef", o.Standard},
@@ -869,6 +882,58 @@ func checkCreatedContainer(current CurrentModel, o PlanObject, refuse func(strin
 			}
 		}
 	}
+}
+
+// checkCreatedBundle checks a Container that names a Bundle: no side beside
+// it, a Bundle of the namespace whose entries are installed, and the entries
+// checked as the operator checks them, so the round fails with the message
+// the Container would show.
+func checkCreatedBundle(current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
+	subject := o.Ref().String()
+	if o.Framework != "" || o.Standard != "" || o.Compute != "" || o.Deployment != "" {
+		refuse(subject, "bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef: name the "+
+			"Bundle or the sides, never both")
+		return
+	}
+	bundle, ok := findBundle(current.Bundles, o.Bundle)
+	if !ok {
+		names := []string{}
+		for _, b := range current.Bundles {
+			names = append(names, b.Name)
+		}
+		slices.Sort(names)
+		refuse(subject, "bundleRef names %q, which is not a Bundle of the namespace; installed: %s",
+			o.Bundle, cmp.Or(joinAnd(names), "none"))
+		return
+	}
+	entries, missing := BundleEntries(bundle, current.Catalog)
+	if missing != "" {
+		refuse(subject, "bundleRef: bundle %s names %s, which is not installed; fix the Bundle or name another",
+			bundle.Name, missing)
+		return
+	}
+	if err := CheckBundle(bundle, o.Type, entries); err != nil {
+		refuse(subject, "bundleRef: %v", err)
+	}
+}
+
+func findBundle(bundles []Bundle, name string) (Bundle, bool) {
+	for _, b := range bundles {
+		if b.Name == name {
+			return b, true
+		}
+	}
+	return Bundle{}, false
+}
+
+// planFramework is the Framework a plan's Container is on: its frameworkRef,
+// or its Bundle's; empty when the Bundle isn't the namespace's.
+func planFramework(o PlanObject, bundles []Bundle) string {
+	if o.Bundle == "" {
+		return o.Framework
+	}
+	b, _ := findBundle(bundles, o.Bundle)
+	return b.Framework
 }
 
 func checkCreatedRelationship(plan Plan, current CurrentModel, o PlanObject, refuse func(string, string, ...any)) {
@@ -1182,14 +1247,19 @@ func findObject(objects []PlanObject, ref Ref) (PlanObject, bool) {
 }
 
 // lockedFields are an object's fields besides its story text, by API name.
+// A Container on a Bundle locks the Bundle, not the sides it expanded to:
+// the namespace's carries both, a plan's only the Bundle (#1622).
 func lockedFields(o PlanObject) [][2]string {
 	switch o.Kind {
 	case KindContainer:
-		return [][2]string{
-			{"softwareSystemRef", o.SoftwareSystem}, {"type", o.Type}, {"gitProviderRef", o.GitProvider},
-			{"frameworkRef", o.Framework}, {"standardRef", o.Standard}, {"computeRef", o.Compute},
-			{"deploymentRef", o.Deployment},
+		fields := make([][2]string, 0, 8)
+		fields = append(fields, [2]string{"softwareSystemRef", o.SoftwareSystem}, [2]string{"type", o.Type},
+			[2]string{"gitProviderRef", o.GitProvider}, [2]string{"bundleRef", o.Bundle})
+		if o.Bundle != "" {
+			return fields
 		}
+		return append(fields, [2]string{"frameworkRef", o.Framework}, [2]string{"standardRef", o.Standard},
+			[2]string{"computeRef", o.Compute}, [2]string{"deploymentRef", o.Deployment})
 	case KindDataStore:
 		return [][2]string{{"softwareSystemRef", o.SoftwareSystem}, {"connectorRef", o.Connector}}
 	case KindRelationship:
