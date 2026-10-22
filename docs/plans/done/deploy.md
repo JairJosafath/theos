@@ -345,9 +345,10 @@ What #1162 settled that the decisions above left open:
   ([github-deploy-state.md](github-deploy-state.md), #1485); two
   Containers shipping to one `github` target took the same tags
   (`TagTaken`) until #1486 gave the member a `tagPrefix`, the Container's
-  name by default (the same plan, #1445); and the Container reconciler runs one
-  worker, so a long GitHub upload holds the other Containers' reconciles for
-  its length, as a Crew's upload held the Crews before `crewWorkers`.
+  name by default (the same plan, #1445); and the Container reconciler ran one
+  worker, so a long GitHub upload held the other Containers' reconciles for
+  its length, as a Crew's upload held the Crews before `crewWorkers`, until
+  #1446 gave it `containerWorkers` (4).
 
 ## Step 4 as built
 
