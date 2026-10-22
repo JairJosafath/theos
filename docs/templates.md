@@ -104,26 +104,31 @@ runs `SELECT 1`.
   unless `AUTH_DISABLED=true` (the devcontainer sets it). The tests sign
   tokens with a key they make (#1474).
 
-### python-cli (v1.1.0)
+### python-cli (v1.2.0)
 
 An argparse command-line program on uv that builds a wheel and an sdist; as
 a `worker` (#1468), a long-running `python -m app` that does a round of work,
-backs off while rounds fail and stops cleanly on SIGTERM.
+backs off while rounds fail and stops cleanly on SIGTERM; as a `job`
+(#1595), a `python -m app` that does its work once and exits 0, or 1 when
+it failed.
 
 - CI: `make test-templates`, combo "python cli": its `make check`, then
   `make dist VERSION=v0.1.0` and the wheel and sdist in `dist/`.
 - Tests: `tests/test_cli.py.tmpl` and `tests/test_greeting.py.tmpl`, or for a
   worker `tests/test_worker.py.tmpl` (a real SIGTERM included) and
-  `tests/test_backoff.py.tmpl`, run by python-standard's `make test`.
+  `tests/test_backoff.py.tmpl`, or for a job `tests/test_job.py.tmpl`, run
+  by python-standard's `make test`.
 - Lint: python-standard's ruff and mypy.
 - README: `README.md.tmpl`: use, install the wheel, develop, `make dist`,
   layout.
 - Deploy: gitea-release in "python cli" attaches `make dist`'s wheel and sdist
   to the tag's release. Publishing to a package registry is #1229. A worker
-  ships with k8s-manifests ("python worker on kubernetes").
+  ships with k8s-manifests ("python worker on kubernetes"), a job as its
+  Job ("python job on kubernetes").
 - Logging: results to stdout, errors to stderr (`app/cli.py.tmpl`), which is
   what a command-line program owes its user; a worker logs each event to
-  stderr with `logging` (`app/worker.py.tmpl`).
+  stderr with `logging` (`app/worker.py.tmpl`), and so does a job
+  (`app/job.py.tmpl`).
 
 ### react-vite (v1.0.0)
 
@@ -169,7 +174,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.5.1)
+### python-standard (v1.6.0)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
@@ -178,7 +183,9 @@ secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`, `C4_PYPI_INDEX`, `C4_NPM_TOKEN`,
 workflow's token, so `uv` fetches factory packages; `AGENTS.md` says how a
 package is declared (#1231). Since v1.5.1 `~/.netrc` names the index's host
 without its port, which `uv` matches on, and its login is `__token__` when
-`C4_PYPI_TOKEN` is set (#1696).
+`C4_PYPI_TOKEN` is set (#1696). Since v1.6.0 it supports a `job` with
+python-cli, and `AGENTS.md` has a job's rules: run once, exit non-zero on
+failure, safe to redo (#1595).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -451,7 +458,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.18.2)
+### aws-standard (v1.18.3)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow

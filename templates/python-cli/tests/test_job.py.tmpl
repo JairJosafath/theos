@@ -1,0 +1,38 @@
+{{- if eq .Type "job" -}}
+import logging
+
+import pytest
+
+from app import job
+from app.job import run
+
+
+def test_a_run_that_returns_exits_0(caplog: pytest.LogCaptureFixture) -> None:
+    runs: list[int] = []
+    caplog.set_level(logging.INFO)
+    assert run(lambda: runs.append(1)) == 0
+    assert runs == [1]
+    assert "done" in caplog.text
+
+
+def test_a_run_that_raises_exits_1_with_its_traceback(caplog: pytest.LogCaptureFixture) -> None:
+    failure = RuntimeError("provider down")
+
+    def work() -> None:
+        raise failure
+
+    assert run(work) == 1
+    assert "failed" in caplog.text
+    assert "provider down" in caplog.text
+
+
+def test_main_runs_the_work_once_and_exits(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runs: list[int] = []
+    monkeypatch.setattr(job, "work", lambda: runs.append(1))
+    caplog.set_level(logging.INFO)
+    assert job.main() == 0
+    assert runs == [1]
+    assert "started" in caplog.text
+{{ end -}}

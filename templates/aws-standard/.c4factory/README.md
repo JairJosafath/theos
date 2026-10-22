@@ -197,7 +197,9 @@ byte for byte.
   `docs/well-architected.md` says an HTTP API stage writes its access log as
   JSON, as aws-lambda-ts v1.4.0 and aws-lambda-go and -py v1.3.0 do, and
   that `APIGWStructuredLogging` is acknowledged only on an older
-  repository's stage, which writes the Common Log Format (#1420).
+  repository's stage, which writes the Common Log Format (#1420). v1.18.3's
+  `SOURCES.md` names python-standard v1.6.0, whose job rules leave the
+  copied files as they were (#1595).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

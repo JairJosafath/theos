@@ -1,4 +1,4 @@
-{{- if ne .Type "worker" -}}
+{{- if eq .Type "cli" -}}
 import pytest
 
 from app.greeting import greeting
