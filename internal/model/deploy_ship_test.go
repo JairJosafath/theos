@@ -161,6 +161,16 @@ func TestNextDeploy(t *testing.T) {
 				Reason: DeployArtifactMissing, Message: "lacks"}
 		}, phase: DeployPhaseFailed, reason: DeployArtifactMissing, cause: DeployFailed, message: "lacks",
 			version: "v1.0.0"},
+		{name: "a secret in the source fails (#1602)", change: func(f *DeployFacts) {
+			f.Failure = &DeployShipFailure{Reason: DeploySecretFound, Detail: "a.env line 3: a private key"}
+		}, phase: DeployPhaseFailed, reason: DeploySecretFound, cause: DeployFailed,
+			message: "The source of v1.1.0 isn't published to staging: a.env line 3: a private key; it isn't " +
+				"tried again until another version is wanted"},
+		{name: "a missing license isn't shipped again (#1602)", change: func(f *DeployFacts) {
+			f.Prev = &DeployReport{Target: "staging", WantedVersion: "v1.1.0", Phase: DeployPhaseFailed,
+				Reason: DeployLicenseMissing, Message: "no license"}
+		}, phase: DeployPhaseFailed, reason: DeployLicenseMissing, cause: DeployFailed, message: "no license",
+			version: "v1.0.0"},
 		// A failed write can leave a GitHub draft the tool shows Deploying.
 		{name: "a failure held while the tool shows the version Deploying", change: func(f *DeployFacts) {
 			f.Run = &DeployRun{Version: "v1.1.0", Phase: DeployPhaseDeploying}
