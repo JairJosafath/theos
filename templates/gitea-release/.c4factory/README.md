@@ -29,7 +29,9 @@ release page.
   `<host>/<owner>/<repository>` (lowercase), and the `release` job names that
   image by its index digest: `make dist VERSION=<tag>
   IMG=<host>/<owner>/<repository>@<digest>`, so `install.yaml` as attached
-  applies. Other types have no image job.
+  applies. The factory pushes a tag once, so the `release` job asks the
+  registry for the tag's digest first and names it when it holds one; only a
+  first run names the digest just built. Other types have no image job.
 - **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
   for Python projects), which the checks use too, and for an operator one
   labelled `image` (BuildKit). The workflow token creates the release and
