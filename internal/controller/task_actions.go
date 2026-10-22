@@ -301,12 +301,18 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1alpha1.Task, st
 	}
 	name := sandboxName(task, status, role)
 	story := c4Context(ctx, r.Client, container)
+	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	sandbox, err := buildSandbox(sandboxRun{
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
 		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
+		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
 	}, r.Scheme, r.now())
 	if err != nil {
@@ -1032,11 +1038,25 @@ func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1alpha1
 	provider, err := r.Git.Provider(gitprovider.Config{
 		Kind: string(gp.Spec.Provider), URL: gp.Spec.URL, Owner: gp.Spec.Owner,
 		Credentials: gitprovider.Credentials{Username: string(secret.Data["username"]), Token: string(secret.Data["token"])},
+		Packages:    packagesOf(&gp),
 	})
 	if err != nil {
 		return nil, gitprovider.Repository{}, err
 	}
 	return provider, provider.Repository(container.Name), nil
+}
+
+// packagesSecrets names the Secrets of the npm registry and PyPI index of a
+// Container's GitProvider, "" for one without.
+func (r *TaskReconciler) packagesSecrets(ctx context.Context, container *c4v1alpha1.Container) (npm, pypi string,
+	err error) {
+	var gp c4v1alpha1.GitProvider
+	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name},
+		&gp); err != nil {
+		return "", "", fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
+	}
+	npm, pypi = packagesSecrets(&gp)
+	return npm, pypi, nil
 }
 
 // extrasNote names the unprotected files a Standard change changes besides its

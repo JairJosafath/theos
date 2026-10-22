@@ -360,6 +360,15 @@ ui:
 ## `helm uninstall` leaves them in place. With gitea.enabled, gitea.projects
 ## makes these instead.
 ##
+## packages, optional, is the GitProvider's spec.packages: the owner's npm and
+## PyPI registries the agents install from and the published Containers
+## publish to. Unset, they are the host's own (scope @c4factory, and
+## <url>/api/packages/<owner>/npm/ and .../pypi) and the GitProvider's token
+## reads them. A registry of your own names a Secret you make, with key
+## "token" (publishes; only the operator reads it) and, optionally,
+## "readToken" (installs: the agents' pods and the owner's Actions secret
+## C4_NPM_TOKEN or C4_PYPI_TOKEN); the chart renders none.
+##
 gitProviders: []
 #  - namespace: webshop
 #    name: git
@@ -367,6 +376,17 @@ gitProviders: []
 #    url: http://git.example.com:3000
 #    owner: webshop
 #    existingSecret: git-credentials
+#    packages:
+#      npm:
+#        scope: "@acme"
+#        registry: https://npm.example.com/
+#        credentialsSecretRef:
+#          name: acme-npm
+#      pypi:
+#        index: https://pypi.example.com/simple
+#        upload: https://pypi.example.com/
+#        credentialsSecretRef:
+#          name: acme-pypi
 
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
 ## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
@@ -440,10 +460,16 @@ gitea:
   ## Project names: for each, the chart makes the namespace of that name (see
   ## projectNamespaces), the seed creates its organization and stores Secret
   ## gitea-credentials there, and the chart creates GitProvider gitea there.
-  ## helm upgrade to add one.
+  ## helm upgrade to add one. An entry is a name, or an object with the name
+  ## and the GitProvider's packages (as gitProviders[].packages): unset, the
+  ## agents install from and the Containers publish to the release's Gitea.
   ##
   projects: []
   #  - webshop
+  #  - name: shop
+  #    packages:
+  #      npm:
+  #        scope: "@acme"
   seed:
     image:
       repository: ghcr.io/jairjosafath/c4factory/seed

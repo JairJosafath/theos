@@ -93,6 +93,13 @@ type sandboxRun struct {
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
 	// released modules, the only one c4agent asks for the factory's modules.
 	goProxy string
+	// npmScope, npmRegistry and pypiIndex, when set, are the owner's npm
+	// scope, the registry that serves it and the simple index of the
+	// owner's Python packages. npmSecret and pypiSecret name the Secrets
+	// whose readToken installs from a registry on another host than the
+	// Git host; "" for the host's own, which the agent's Git token serves.
+	npmScope, npmRegistry, pypiIndex string
+	npmSecret, pypiSecret            string
 	// brief is the Brief a plan run plans, and briefRound the Brief's round it
 	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
 	brief      string
@@ -192,6 +199,23 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: agentrunner.EnvGoRegistry, Value: run.goProxy},
 			corev1.EnvVar{Name: "GOPROXY", Value: agentrunner.GoProxyURL},
 			corev1.EnvVar{Name: "GONOSUMDB", Value: agentrunner.FactoryModules})
+	}
+	// npm sends the scope, and uv each package, to its own registry, so no
+	// proxy: c4agent writes ~/.npmrc and ~/.netrc from these. A Secret
+	// without readToken gives no credential: a public registry.
+	if run.npmRegistry != "" {
+		env = append(env,
+			corev1.EnvVar{Name: agentrunner.EnvNpmScope, Value: run.npmScope},
+			corev1.EnvVar{Name: agentrunner.EnvNpmRegistry, Value: run.npmRegistry})
+		if run.npmSecret != "" {
+			env = append(env, readTokenEnv(agentrunner.EnvNpmToken, run.npmSecret))
+		}
+	}
+	if run.pypiIndex != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvPyPIIndex, Value: run.pypiIndex})
+		if run.pypiSecret != "" {
+			env = append(env, readTokenEnv(agentrunner.EnvPyPIToken, run.pypiSecret))
+		}
 	}
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
@@ -348,6 +372,18 @@ func secretEnv(name, secret, key string) corev1.EnvVar {
 	return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: key,
 	}}}
+}
+
+// packagesReadTokenKey is the key of a package registry's Secret that
+// installs; the Secret's token publishes, and only the operator reads it.
+const packagesReadTokenKey = "readToken"
+
+// readTokenEnv is secretEnv for a package registry Secret's readToken, which
+// the Secret may lack: the env is then unset.
+func readTokenEnv(name, secret string) corev1.EnvVar {
+	env := secretEnv(name, secret, packagesReadTokenKey)
+	env.ValueFrom.SecretKeyRef.Optional = new(true)
+	return env
 }
 
 func toAnyMap(m map[string]string) map[string]any {

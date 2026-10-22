@@ -48,7 +48,7 @@ spec:
             - name: GITEA_WAIT
               value: {{ $seed.waitSeconds | quote }}
             - name: PROJECTS
-              value: {{ join " " (.Values.gitea.projects | uniq) | quote }}
+              value: {{ join " " (include "c4-factory.projectNames" . | fromJsonArray) | quote }}
             - name: RUNNER_SECRET
               value: gitea-runner
             - name: RUNNER_NAMESPACE
@@ -126,7 +126,7 @@ subjects:
   - kind: ServiceAccount
     name: seed
     namespace: {{ $ns }}
-{{- with .Values.gitea.projects | uniq }}
+{{- with include "c4-factory.projectNames" . | fromJsonArray }}
 ---
 # The seed labels each project's namespace c4.factory.io/shared-secrets=true,
 # which opts it in to the Secrets the operator shares: the chart's own
@@ -158,7 +158,7 @@ subjects:
     name: seed
     namespace: {{ $ns }}
 {{- end }}
-{{- range .Values.gitea.projects | uniq }}
+{{- range include "c4-factory.projectNames" . | fromJsonArray }}
 ---
 # The seed may create Secret gitea-credentials and change only that one,
 # create the project's Project when the namespace has none, and apply the
