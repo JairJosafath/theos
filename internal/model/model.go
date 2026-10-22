@@ -8,6 +8,7 @@ package model
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 )
@@ -489,6 +490,20 @@ func covers(prot, path string) bool {
 // private network (docs/design.md, "The fence" and "The CI fence").
 func PrivateRanges() []string {
 	return []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
+}
+
+// PrivateBlock reports whether cidr is an address block (10.96.0.10/32,
+// 169.254.20.10/32) that lies inside one of PrivateRanges: an address the
+// cluster's own services answer on, which is where cluster DNS runs (#1257).
+func PrivateBlock(cidr string) bool {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(PrivateRanges(), func(r string) bool {
+		private := netip.MustParsePrefix(r)
+		return private.Bits() <= block.Bits() && private.Contains(block.Addr())
+	})
 }
 
 // ClusterNamespace returns the namespace of an in-cluster service address, such
