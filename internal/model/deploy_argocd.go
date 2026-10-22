@@ -1,6 +1,9 @@
 package model
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // DeployMemberArgoCD ships each release as one Argo CD Application that
 // points at the Container's repository at the release tag and sets the image;
@@ -36,11 +39,40 @@ const ArgoCDManifestsPath = "deploy/k8s"
 // operation failed; the message is Argo CD's.
 const DeployReasonSyncFailed = "SyncFailed"
 
+// ArgoCDApplicationNameMax is the longest name an Application may have:
+// under label tracking Argo CD writes the name into the
+// app.kubernetes.io/instance label of every resource it manages, and a label
+// value is 63 characters at most (#1669).
+const ArgoCDApplicationNameMax = 63
+
 // ArgoCDApplicationName is the name of app's Application in the target's
 // Argo CD namespace: the Container's namespace and name, joined with a dash,
-// since Applications of every namespace share that one namespace.
-func ArgoCDApplicationName(app string) string {
-	return strings.Replace(app, "/", "-", 1)
+// since Applications of every namespace share that one namespace. An error
+// when the joined name is over ArgoCDApplicationNameMax, though each part
+// fits on its own.
+func ArgoCDApplicationName(app string) (string, error) {
+	name := strings.Replace(app, "/", "-", 1)
+	if len(name) > ArgoCDApplicationNameMax {
+		return "", fmt.Errorf("the Application name %s is %d characters, over the %d a label value holds: "+
+			"shorten the Container's namespace or name", name, len(name), ArgoCDApplicationNameMax)
+	}
+	return name, nil
+}
+
+// ArgoCDApplicationConflict says whether app may ship to, or read, the
+// Application whose c4.factory.io/namespace and c4.factory.io/container
+// labels are namespace and container: nil when they name app, or name
+// nothing; else the error names the Container they do name. Two Containers'
+// names can join to the same (a-b/c and a/b-c), and the second must not
+// repoint the first's Application or report its deploy (#1669).
+func ArgoCDApplicationConflict(app, namespace, container string) error {
+	if namespace == "" && container == "" {
+		return nil
+	}
+	if owner := namespace + "/" + container; owner != app {
+		return fmt.Errorf("belongs to Container %s, whose name joins to the same: rename one of them", owner)
+	}
+	return nil
 }
 
 // Argo CD's sync statuses, health statuses and operation phases, as the
