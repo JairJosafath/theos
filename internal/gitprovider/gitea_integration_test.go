@@ -134,7 +134,7 @@ func TestGiteaIntegration(t *testing.T) {
 }
 
 // pinnedTemplateTag returns the tag templates/versions.txt pins for a template,
-// the one hack/seed/seed.sh pushes to the seeded Gitea.
+// the one the seed (make seed-local) pushes to the seeded Gitea.
 func pinnedTemplateTag(t *testing.T, template string) string {
 	t.Helper()
 	data, err := os.ReadFile("../../templates/versions.txt")
