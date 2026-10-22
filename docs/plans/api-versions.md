@@ -178,6 +178,15 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    certificate (`#<step>` named), an envtest shows the CRDs patched with
    the CA and the role allowing it, `make validate-yaml` passes the
    chart, and the pull request says what a human's Kind run would check.
+   Built (#1614) with two choices the decision left open: the CA lasts ten
+   years and a re-issue keeps it, renewing only the serving certificate, so
+   a replica that hasn't re-read the Secret stays trusted by the
+   `caBundle`; and the CA goes only into CRDs at `strategy: Webhook`, since
+   the API server refuses a webhook stanza beside `None` (step 3 flips
+   them). The generated role is cluster-wide, so its `secrets` rule already
+   covers the namespace; no namespaced Role was added. With
+   `networkPolicy.enabled` the chart opens the webhook port to any source:
+   the API server calls from outside the pod network, and TLS guards it.
 
 3. **`api/v1beta1` for every kind, converting.** Each of the 18 kinds
    scaffolded with `kubebuilder create api --version v1beta1 --kind K

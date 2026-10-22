@@ -1,0 +1,24 @@
+{{- if and .Values.networkPolicy.enabled .Values.webhook.enabled }}
+# The API server calls the conversion webhook from outside any pod network,
+# so no selector names it: the port is open, and TLS with the operator's
+# own CA guards it (docs/plans/api-versions.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+  name: {{ include "c4-factory.resourceName" (dict "suffix" "allow-webhook-traffic" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: {{ .Values.webhook.port }}
+          protocol: TCP
+{{- end }}
