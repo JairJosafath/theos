@@ -54,6 +54,7 @@ const (
 	trailerContainer    = "C4-Factory-Container"
 	trailerFrom         = "Scaffolded-From"
 	trailerRelationship = "Applied-Relationship"
+	trailerBundle       = "Scaffolded-Bundle"
 )
 
 // Author of the initial commit.
@@ -79,6 +80,9 @@ func CommitMessage(in Input, scaffoldedFrom []string, relationships []model.Appl
 	if checks := scaffoldedChecks(in); checks != "" {
 		fmt.Fprintf(&b, "%s: %s\n", trailerChecks, checks)
 	}
+	if in.Bundle != "" {
+		fmt.Fprintf(&b, "%s: %s\n", trailerBundle, scaffoldedBundle(in))
+	}
 	return b.String()
 }
 
@@ -94,6 +98,10 @@ type CommitInfo struct {
 	// scaffolded; commits made before it was recorded, or of a Container without
 	// a Standard, leave it empty.
 	Checks string
+	// Bundle is the Bundle the Container's entries were expanded from, as they
+	// were at the scaffold; nil for a Container naming its sides, or a commit
+	// made before it was recorded.
+	Bundle *model.Bundle
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
@@ -117,6 +125,9 @@ func ParseCommitMessage(msg string) (CommitInfo, error) {
 			info.Relationships = append(info.Relationships, model.ParseAppliedRelationship(value))
 		case trailerChecks:
 			info.Checks = strings.TrimSpace(value)
+		case trailerBundle:
+			bundle := model.ParseBundle(value)
+			info.Bundle = &bundle
 		}
 	}
 	if info.Container == "" {
@@ -132,4 +143,11 @@ func scaffoldedChecks(in Input) string {
 		return ""
 	}
 	return model.StandardVersion{Checks: in.Checks}.Normal().Checks
+}
+
+// scaffoldedBundle is the Bundle in's entries were expanded from, as the
+// commit records it.
+func scaffoldedBundle(in Input) model.Bundle {
+	return model.Bundle{Name: in.Bundle, Framework: in.Framework, Standard: in.Standard,
+		Compute: in.Compute, Deployment: in.Deployment}
 }

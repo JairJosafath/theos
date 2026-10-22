@@ -88,10 +88,17 @@ python-service}` in place of `frameworkRef`, `standardRef`, `computeRef` and
 immutable). Until the scaffold every reconcile expands the Bundle afresh and
 writes the entry names to `status.bundle` (`name`, `framework`, `standard`,
 `compute`, `deployment`); from the scaffold on the operator reads
-`status.bundle` and never the Bundle again, so a Bundle changed later changes
-no scaffolded Container. A missing Bundle keeps the Container `Pending`,
-reason `NotFound`; the checks below run on the expanded entries, and their
-message starts with `bundle <name>: `.
+`status.bundle` and never applies the Bundle again, so a Bundle changed later
+changes no scaffolded Container. A Ready Container reports it instead:
+`BundleCurrent=True` while the Bundle still names what `status.bundle`
+records, `False`, reason `BundleChanged`, listing the sides that differ
+(`compute: small, now large`) or saying `Bundle <name> is gone` when it was
+deleted; a Container naming its sides has no such condition. The operator
+changes nothing on it: a Standard bump still reaches the Container through
+the Standard, and the other sides are scaffold-once. A missing Bundle keeps
+a Container not yet scaffolded `Pending`, reason `NotFound`; the checks
+below run on the expanded entries, and their message starts with
+`bundle <name>: `.
 
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
@@ -407,7 +414,9 @@ when the changes don't overlap; one that overlaps is left out, listed in
 `FilesBehind`), until a person sets `c4.factory.io/standard-take` (the
 operator merges the Standard's version) or `c4.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
-refs, `status.standard` the current.
+refs, `status.standard` the current. A Container that got its Standard from a
+Bundle keeps following the Standard itself; a changed Bundle is only reported
+(`BundleCurrent`, above), never applied.
 
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 ([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).
