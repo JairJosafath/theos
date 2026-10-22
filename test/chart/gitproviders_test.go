@@ -99,13 +99,14 @@ func TestGitProvidersApplyInPlace(t *testing.T) {
 // and other in the project namespace on url, and the values sets extra.
 func renderGitProviders(ctx context.Context, t *testing.T, helm, url string, extra ...string) rendered {
 	t.Helper()
-	sets := []string{
+	sets := make([]string, 0, 9+len(extra))
+	sets = append(sets,
 		"gitea.enabled=false",
-		"gitProviders[0].namespace=" + project, "gitProviders[0].url=" + url,
-		"gitProviders[0].owner=" + project, "gitProviders[0].existingSecret=git-credentials",
-		"gitProviders[1].namespace=" + project, "gitProviders[1].name=other", "gitProviders[1].url=" + url,
-		"gitProviders[1].owner=" + project, "gitProviders[1].existingSecret=git-credentials",
-	}
+		"gitProviders[0].namespace="+project, "gitProviders[0].url="+url,
+		"gitProviders[0].owner="+project, "gitProviders[0].existingSecret=git-credentials",
+		"gitProviders[1].namespace="+project, "gitProviders[1].name=other", "gitProviders[1].url="+url,
+		"gitProviders[1].owner="+project, "gitProviders[1].existingSecret=git-credentials",
+	)
 	return render(ctx, t, helm, gitProvidersConfigMap, []string{gitProvidersSource, gitProvidersApply},
 		append(sets, extra...)...)
 }

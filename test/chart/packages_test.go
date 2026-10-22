@@ -40,7 +40,8 @@ func TestGitProvidersRenderPackages(t *testing.T) {
 		if scope, _, _ := unstructured.NestedString(shop, "spec", "packages", "npm", "scope"); scope != "@acme" {
 			t.Errorf("GitProvider of shop has npm scope %q, want @acme", scope)
 		}
-		if name, _, _ := unstructured.NestedString(shop, "spec", "packages", "npm", "credentialsSecretRef", "name"); name != "acme-npm" {
+		name, _, _ := unstructured.NestedString(shop, "spec", "packages", "npm", "credentialsSecretRef", "name")
+		if name != "acme-npm" {
 			t.Errorf("GitProvider of shop has npm credentialsSecretRef %q, want acme-npm", name)
 		}
 	})
