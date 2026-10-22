@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -429,7 +430,13 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		"platform=linux/amd64,linux/arm64", `${REPOSITORY##*/}-$TAG.oci.tar`,
 		"an operator's release needs one", `host=${SERVER_URL#*://}`,
 		`tr A-Z a-z)@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
+		// #1581: the registry is at the host's root, whatever path ROOT_URL
+		// has, and a digest that is not sha256: plus 64 hex fails the step.
+		`image="${host%%/*}/`, `grep -Eq '^sha256:[0-9a-f]{64}$' ||`,
 	})
+	if strings.Contains(string(f.Data), `image="${host%/}/`) {
+		t.Errorf("operator %s keeps ROOT_URL's path in the image host (#1581)", workflow)
+	}
 	// Gitea's ${{ }} expressions stay; a Go template action would not parse.
 	if strings.Contains(strings.ReplaceAll(string(f.Data), "${{", ""), "{{") {
 		t.Errorf("operator %s keeps a template action:\n%s", workflow, f.Data)
@@ -449,6 +456,93 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		if strings.Contains(string(f.Data), never) {
 			t.Errorf("cli %s contains %q, an operator's image job:\n%s", workflow, never, f.Data)
 		}
+	}
+}
+
+// TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt runs the make dist step
+// of an operator's release, extracted from the rendered workflow, against a
+// stub make that records the IMG it receives (#1581): a sub-path in the Git
+// host's ROOT_URL stays out of the image host, the repository is lowercased,
+// and a digest that is not sha256: plus 64 hex fails the step before make.
+func TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	_, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "go-operator-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	var w workflow
+	if err := yaml.Unmarshal(result.Files[".gitea/workflows/release.yaml"].Data, &w); err != nil {
+		t.Fatal(err)
+	}
+	var script string
+	for _, step := range w.Jobs["release"].Steps {
+		if step.Name == "make dist" {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatalf("no make dist step in the release job: %+v", w.Jobs["release"].Steps)
+	}
+	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cases := []struct {
+		name, serverURL, digest string
+		wantIMG                 string // "" when the step must fail before make
+	}{
+		{"a host alone", "https://git.example.com", digest,
+			"git.example.com/owner/repo@" + digest},
+		{"a host with a port", "http://gitea.local:3000", digest,
+			"gitea.local:3000/owner/repo@" + digest},
+		{"a ROOT_URL with a sub-path", "https://git.example.com/gitea", digest,
+			"git.example.com/owner/repo@" + digest},
+		{"a ROOT_URL with a trailing slash", "https://git.example.com/", digest,
+			"git.example.com/owner/repo@" + digest},
+		{"an empty digest", "https://git.example.com", "", ""},
+		{"a null digest", "https://git.example.com", "null", ""},
+		{"a digest without its algorithm", "https://git.example.com", digest[len("sha256:"):], ""},
+		{"a short digest", "https://git.example.com", "sha256:0123456789abcdef", ""},
+		{"a digest that is not hex", "https://git.example.com", "sha256:" + strings.Repeat("xy", 32), ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			bin := filepath.Join(dir, "bin")
+			got := filepath.Join(dir, "make.args")
+			write(t, bin, "make", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+got+"\"\n")
+			if err := os.Chmod(filepath.Join(bin, "make"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("sh", "-e", "-c", script)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TAG=v1.2.3",
+				"SERVER_URL="+c.serverURL, "REPOSITORY=Owner/Repo", "DIGEST="+c.digest)
+			out, err := cmd.CombinedOutput()
+			if c.wantIMG == "" {
+				if err == nil {
+					t.Fatalf("the step passed with digest %q; want it to fail before make dist:\n%s", c.digest, out)
+				}
+				if _, statErr := os.Stat(got); statErr == nil {
+					t.Errorf("make dist ran with digest %q:\n%s", c.digest, out)
+				}
+				if !strings.Contains(string(out), "gave no digest") {
+					t.Errorf("the step's failure doesn't say the digest is missing:\n%s", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the step failed: %v\n%s", err, out)
+			}
+			args, readErr := os.ReadFile(got)
+			if readErr != nil {
+				t.Fatalf("make dist didn't run:\n%s", out)
+			}
+			want := "dist\nVERSION=v1.2.3\nIMG=" + c.wantIMG + "\n"
+			if string(args) != want {
+				t.Errorf("make received:\n%s\nwant:\n%s", args, want)
+			}
+		})
 	}
 }
 
