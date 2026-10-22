@@ -389,7 +389,11 @@ tools and envtest) run every check without a cluster.
   `Container.spec.operations` (retention, copy region, RPO, RTO, who alarms
   tell), rendered into `infra/operations.ts`, its defaults from
   `internal/model`; a change reaches the repository by a pull request the
-  operator merges (`OperationsApplied`). Each has `docs/runbook.md`
+  operator merges (`OperationsApplied`). A Framework that renders the block
+  says so, `readsOperations: true`; a Container on any other Framework shows
+  no `OperationsApplied` until the block is set, and then
+  `False`/`NotReadByFramework`, naming the Framework, and a Brief's planner
+  refuses `operations` on it. Each has `docs/runbook.md`
   ([plans/aws-production.md](plans/aws-production.md)).
 
 ## Briefs: an idea in plain words

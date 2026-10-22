@@ -37,7 +37,7 @@ func guideExampleCurrent() CurrentModel {
 		NewPrompt: true,
 		Catalog: []CatalogEntry{
 			{Side: SideFramework, Name: "react-site", SupportedTypes: []string{TypeStaticSite}},
-			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}},
+			{Side: SideFramework, Name: "go-service", SupportedTypes: []string{TypeService}, ReadsOperations: true},
 			{Side: SideStandard, Name: "web-standard", SupportedTypes: []string{TypeStaticSite},
 				SupportedFrameworks: []string{"react-site"}},
 			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},

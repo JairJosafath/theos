@@ -49,6 +49,41 @@ func TestParsePlanRefusesATier(t *testing.T) {
 	}
 }
 
+// #1209: a Framework that doesn't read the block gets none; an empty block is none.
+func TestCheckPlanRefusesOperationsOnAFrameworkThatDoesNotReadThem(t *testing.T) {
+	for name, tc := range map[string]struct {
+		block   string
+		refused bool
+	}{
+		"a block":        {"  operations:\n    alerts: {email: a@b.io}\n", true},
+		"an empty block": {"  operations: {}\n", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := ParsePlan(withOperations("web", tc.block))
+			if err != nil {
+				t.Fatal(err)
+			}
+			current := happyCurrent()
+			for i := range current.Catalog {
+				if current.Catalog[i].Name == "react-site" {
+					current.Catalog[i].ReadsOperations = false
+				}
+			}
+			refusals := CheckPlan(plan, current)
+			if !tc.refused {
+				if len(refusals) != 0 {
+					t.Fatalf("refusals = %v, want none", refusals)
+				}
+				return
+			}
+			want := "sets operations, which Framework react-site doesn't read (readsOperations is not set on it)"
+			if len(refusals) != 1 || refusals[0].Subject != "Container/web" || !strings.Contains(refusals[0].Reason, want) {
+				t.Fatalf("refusals = %v, want one about Container/web saying %q", refusals, want)
+			}
+		})
+	}
+}
+
 func TestCheckPlanOperations(t *testing.T) {
 	email := &OperationsChoices{Email: "a@b.io"}
 	for _, tc := range []struct {

@@ -183,10 +183,16 @@ const (
 	ReasonPending = "Pending"
 	// ReasonChangedAfterScaffold: OperationsApplied is False because the
 	// Container's spec.operations changed after its scaffold and the operator
-	// can't carry the change to its repository: the Container was scaffolded
-	// before the factory kept the block, or its Framework renders no
-	// infra/operations.ts. A Task changes the file.
+	// can't carry the change to its repository: its Framework says it reads
+	// the block but renders no infra/operations.ts. A Task changes the file.
 	ReasonChangedAfterScaffold = "ChangedAfterScaffold"
+	// ReasonNotReadByFramework: OperationsApplied is False because
+	// spec.operations is set on a Container whose Framework doesn't read the
+	// block (readsOperations is not set), so its repository has none of it;
+	// a Task changes the repository. A Container scaffolded before the
+	// factory kept the block counts as not read. Without a block, such a
+	// Container has no OperationsApplied condition.
+	ReasonNotReadByFramework = "NotReadByFramework"
 	// ReasonUpdateMerged: OperationsApplied is True because the operations
 	// update that renders spec.operations into infra/operations.ts merged; the
 	// message names the commit.

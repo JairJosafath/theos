@@ -336,6 +336,8 @@ export interface CatalogEntry extends K8sObject {
     template: { url: string; ref: string }
     /** A Framework only: its template is its Container's deployment, so it takes no Compute or Deployment. */
     deploysItself?: boolean
+    /** A Framework only: its template renders infra/operations.ts from a Container's spec.operations. */
+    readsOperations?: boolean
   }
 }
 

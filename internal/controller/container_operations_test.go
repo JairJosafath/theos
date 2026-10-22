@@ -40,26 +40,33 @@ func operationsFile(rpo, email string) string {
 		"',\n  email: '" + email + "',\n};\n"
 }
 
+// newOperationsFramework registers opsFramework's template for ns, with
+// infra/operations.ts.tmpl when renders, and returns the Framework, which
+// says it reads the block either way.
+func newOperationsFramework(ns string, renders bool) *c4v1alpha1.Framework {
+	GinkgoHelper()
+	url := templatesURL + ns + "/" + opsFramework
+	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.6.0"))
+	Expect(tree).NotTo(BeEmpty())
+	if renders {
+		tree[model.OperationsFile+".tmpl"] = scaffold.File{Data: []byte(operationsTemplate)}
+	}
+	gitFake.addTemplate(url, "v1.3.0", tree)
+	spec := newFrameworkSpec(url, "v1.3.0", c4v1alpha1.ContainerTypeService)
+	spec.ReadsOperations = true
+	return &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, opsFramework), Spec: spec}
+}
+
 // createOperationsContainer creates orders-api, with the block ops, on the
 // Framework opsFramework, in a namespace with a factory, and waits until it is
 // scaffolded with OperationsApplied True.
 func createOperationsContainer(ns string, ops *c4v1alpha1.OperationsSpec) {
 	GinkgoHelper()
 	createFactory(ns)
-	url := templatesURL + ns + "/" + opsFramework
-	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.6.0"))
-	Expect(tree).NotTo(BeEmpty())
-	tree[model.OperationsFile+".tmpl"] = scaffold.File{Data: []byte(operationsTemplate)}
-	gitFake.addTemplate(url, "v1.3.0", tree)
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
 	container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: opsFramework}
 	container.Spec.Operations = ops
-	mustCreate(
-		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, opsFramework),
-			Spec: newFrameworkSpec(url, "v1.3.0", c4v1alpha1.ContainerTypeService)},
-		newSystem(ns, "webshop-core"),
-		container,
-	)
+	mustCreate(newOperationsFramework(ns, true), newSystem(ns, "webshop-core"), container)
 	eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
 }
 
@@ -130,9 +137,9 @@ func eventuallyOperationsApplied(ns string, status metav1.ConditionStatus, reaso
 var _ = Describe("Container operations", func() {
 	It("scaffolds without the block on the defaults, and leaves spec as it was written", func() {
 		ns := newProjectNamespace()
-		createWebshop(ns)
+		createOperationsContainer(ns, nil)
 
-		container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+		container := getContainer(Default, ns)
 		Expect(container.Spec.Operations).To(BeNil(), "the defaults are the factory's, never written into spec")
 		Expect(container.Status.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
 			Backups:  &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(35))},
@@ -141,47 +148,105 @@ var _ = Describe("Container operations", func() {
 		}))
 	})
 
-	It("scaffolds with the block, then reports a change its Framework can't render until it is undone", func() {
+	// #1209: a Framework that doesn't read the block, as the go-cli sample's,
+	// reports nothing until the block is set, and then that its repository
+	// holds none of it.
+	It("reports no OperationsApplied on a Framework that doesn't read the block, and NotReadByFramework once it is set",
+		func() {
+			ns := newProjectNamespace()
+			createWebshop(ns)
+			container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied)).To(BeNil())
+			Expect(container.Status.Operations).To(BeNil(), "nothing was rendered, so nothing is recorded")
+
+			By("setting the block")
+			pushes := gitFake.pushCount()
+			Expect(patch(container, func() {
+				container.Spec.Operations = &c4v1alpha1.OperationsSpec{
+					Recovery: &c4v1alpha1.OperationsRecovery{RPO: "5m"}}
+			})).To(Succeed())
+			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonNotReadByFramework)
+			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).To(Equal(
+				"Framework python-fastapi doesn't read spec.operations (readsOperations is not set), " +
+					"so its repository has none of it; change the repository by a Task"))
+			Expect(container.Status.Operations).To(BeNil())
+			Expect(container.Status.OperationsUpdate).To(BeNil(), "no update acts")
+			Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
+				"nothing reaches the repository")
+			Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+
+			By("leaving the block out again")
+			Expect(patch(container, func() { container.Spec.Operations = nil })).To(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionOperationsApplied)).
+					To(BeNil())
+			}).Should(Succeed())
+		})
+
+	// #1209: the go-cli sample's Container, with the block set from the start.
+	It("scaffolds a go-cli Container with the block, and says from the start that go-cli doesn't read it", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.Operations = &c4v1alpha1.OperationsSpec{
-			Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
-			Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
-		}
-		mustCreate(newSystem(ns, "webshop-core"), container)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeCLI)
+		container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: "go-cli"}
+		container.Spec.ComputeRef, container.Spec.DeploymentRef = nil, nil
+		container.Spec.Operations = &c4v1alpha1.OperationsSpec{Alerts: &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"}}
+		mustCreate(
+			&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-cli"),
+				Spec: newFrameworkSpec(templatesURL+"go-cli", "v1.0.0", c4v1alpha1.ContainerTypeCLI)},
+			newSystem(ns, "webshop-core"), container)
 
-		container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
-		Expect(container.Spec.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
-			Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
-			Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
-		}), "a client reads back only the fields it set")
-		Expect(container.Status.Operations.Backups.RetentionDays).To(HaveValue(BeZero()))
-		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
-		Expect(container.Status.Operations.Alerts.Email).To(Equal("ops@example.com"))
-
-		By("changing the block after the scaffold, on a Framework that renders no infra/operations.ts")
-		pushes := gitFake.pushCount()
-		Expect(patch(container, func() {
-			container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
-		})).To(Succeed())
-		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonChangedAfterScaffold)
+		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonNotReadByFramework)
+		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
 		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
-			To(ContainSubstring("the Framework python-fastapi at v1.6.0 renders no infra/operations.ts"))
-		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps what the scaffold rendered")
-		Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped",
-			c4v1alpha1.ReasonChangedAfterScaffold)))
-		Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
-			"nothing reaches the repository")
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
-
-		By("writing the default out, which is the block the scaffold rendered")
-		Expect(patch(container, func() {
-			container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "1h"}
-		})).To(Succeed())
-		container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
-		Expect(container.Status.OperationsUpdate).To(BeNil())
+			To(HavePrefix("Framework go-cli doesn't read spec.operations"))
+		Expect(container.Status.Operations).To(BeNil())
+		Expect(gitFake.repo(ns, "orders-api").files).NotTo(HaveKey(model.OperationsFile))
 	})
+
+	It("scaffolds with the block, then reports a change its Framework says it reads but can't render, until it is undone",
+		func() {
+			ns := newProjectNamespace()
+			createFactory(ns)
+			container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+			container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: opsFramework}
+			container.Spec.Operations = &c4v1alpha1.OperationsSpec{
+				Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
+				Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			}
+			mustCreate(newOperationsFramework(ns, false), newSystem(ns, "webshop-core"), container)
+
+			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+			Expect(container.Spec.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
+				Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
+				Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			}), "a client reads back only the fields it set")
+			Expect(container.Status.Operations.Backups.RetentionDays).To(HaveValue(BeZero()))
+			Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
+			Expect(container.Status.Operations.Alerts.Email).To(Equal("ops@example.com"))
+
+			By("changing the block after the scaffold, on a Framework that says it reads it but renders no infra/operations.ts")
+			pushes := gitFake.pushCount()
+			Expect(patch(container, func() {
+				container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+			})).To(Succeed())
+			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonChangedAfterScaffold)
+			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
+				To(ContainSubstring("the Framework " + opsFramework + " at v1.3.0 renders no infra/operations.ts"))
+			Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps what the scaffold rendered")
+			Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped",
+				c4v1alpha1.ReasonChangedAfterScaffold)))
+			Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
+				"nothing reaches the repository")
+			Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+
+			By("writing the default out, which is the block the scaffold rendered")
+			Expect(patch(container, func() {
+				container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "1h"}
+			})).To(Succeed())
+			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+			Expect(container.Status.OperationsUpdate).To(BeNil())
+		})
 
 	// #1119: a change to the block reaches the repository the way a Standard bump does.
 	It("renders infra/operations.ts again from a changed block, and merges it once CI passes", func() {
