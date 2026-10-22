@@ -196,7 +196,7 @@ const WAITING_REASONS = new Set([
   'WaitingForPrevious',
   'Deploying',
   'NoRelease',
-  // A Ready Container's Bundle changed: reported, never applied (docs/plans/catalog-bundles.md, decision 6).
+  // A Ready Container's Bundle changed: reported, never applied (docs/plans/done/catalog-bundles.md, decision 6).
   'BundleChanged',
 ])
 
