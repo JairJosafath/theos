@@ -100,22 +100,22 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.GitHub.Repository = "https://github.com/acme/orders-cli"
 		}, "repository must be owner/name"),
 		Entry("a source folder going up (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("apps/../secrets")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new("apps/../secrets")}
 		}, "path must have no '.', '..' or '.git' folder in it"),
 		Entry("a source folder in .git (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new(".git/hooks")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new(".git/hooks")}
 		}, "path must have no '.', '..' or '.git' folder in it"),
 		Entry("a source folder that isn't a path (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("/orders")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new("/orders")}
 		}, "spec.github.source.path"),
 		Entry("a source tagPrefix with '..' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders..cli/")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("orders..cli/")}
 		}, "tagPrefix must make a git tag name"),
 		Entry("a source tagPrefix with a leading '/' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("/orders")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("/orders")}
 		}, "tagPrefix must make a git tag name"),
 		Entry("a source tagPrefix with a space (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders cli/")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("orders cli/")}
 		}, "spec.github.source.tagPrefix"),
 		Entry("a server url over http (#1605)", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.URL = "http://ghe.example.com"
@@ -146,7 +146,7 @@ var _ = Describe("DeployTarget", func() {
 		Entry("github and argoCD", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{
 				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
-		}, "set exactly one target member: github, argoCD or cloudFormation"),
+		}, "set exactly one target member: github, gitlab, argoCD or cloudFormation"),
 		Entry("an argoCD target with no destination", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}
@@ -154,7 +154,7 @@ var _ = Describe("DeployTarget", func() {
 		// The cloudFormation member (#1609).
 		Entry("github and cloudFormation", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1"}
-		}, "set exactly one target member: github, argoCD or cloudFormation"),
+		}, "set exactly one target member: github, gitlab, argoCD or cloudFormation"),
 		Entry("a cloudFormation target with no region", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub = nil
 			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{}

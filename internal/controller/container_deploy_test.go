@@ -96,7 +96,7 @@ func readyTarget(ns, name string, tier c4v1alpha1.DeployTier) {
 // sourceTarget makes github DeployTarget name in ns, Ready, shipping the
 // source to folder path (nil: each Container's name) of its own repository,
 // which it returns.
-func sourceTarget(ns, name string, source c4v1alpha1.DeployTargetGitHubSource) string {
+func sourceTarget(ns, name string, source c4v1alpha1.DeployTargetSource) string {
 	GinkgoHelper()
 	repository := "acme/" + ns + "-" + name
 	githubFake.addRepository(repository, "t0ken")
@@ -416,7 +416,7 @@ var _ = Describe("Container deploys", func() {
 	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetSource{})
 		all, app := appSource("example.com/orders")
 		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
 		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
@@ -483,7 +483,7 @@ var _ = Describe("Container deploys", func() {
 		dt := newDeployTarget(ns, "ghes", "ghes-github")
 		dt.Spec.GitHub.Repository = repository
 		dt.Spec.GitHub.URL = githubFake.enterprise.URL
-		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{}
+		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{}
 		mustCreate(newDeploySecret(ns, "ghes-github", map[string]string{"appId": "78",
 			"installationId": installation, "privateKey": string(pemKey),
 			model.GitHubSecretPackagesToken: "pkg-" + strings.Repeat("x", 8)}), dt)
@@ -521,7 +521,7 @@ var _ = Describe("Container deploys", func() {
 	It("publishes no source holding a secret or lacking a license, and ships the next clean release (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetSource{})
 		head := githubFake.ref(repository, "heads/main")
 		leaky, leaked := leakedSource("example.com/orders")
 		gitFake.setSource(ns, "orders-api", "v0.1.0", leaky...)
@@ -563,14 +563,14 @@ var _ = Describe("Container deploys", func() {
 	It("checks the source against each github target's own Secret (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		public := sourceTarget(ns, "public", c4v1alpha1.DeployTargetGitHubSource{})
+		public := sourceTarget(ns, "public", c4v1alpha1.DeployTargetSource{})
 		// The mirror's token sits in the source: only the mirror knows it.
 		token := rand.Text()
 		mirror := "acme/" + ns + "-mirror"
 		githubFake.addRepository(mirror, token)
 		dt := newDeployTarget(ns, "mirror", "mirror-github")
 		dt.Spec.GitHub.Repository = mirror
-		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{}
+		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{}
 		mustCreate(newDeploySecret(ns, "mirror-github", map[string]string{"token": token}), dt)
 		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		all, _ := appSource("example.com/orders")
@@ -613,7 +613,7 @@ var _ = Describe("Container deploys", func() {
 	})
 
 	DescribeTable("fails the later of two Containers whose folders of one github target overlap (#1599)",
-		func(source c4v1alpha1.DeployTargetGitHubSource, problem string) {
+		func(source c4v1alpha1.DeployTargetSource, problem string) {
 			ns := newProjectNamespace()
 			deployingContainer(ns)
 			cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
@@ -637,9 +637,9 @@ var _ = Describe("Container deploys", func() {
 				g.Expect(d.Message).To(And(ContainSubstring(problem), ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
 			}, deployWait).Should(Succeed())
 		},
-		Entry("the whole repository", c4v1alpha1.DeployTargetGitHubSource{Path: new(".")}, "folder"),
+		Entry("the whole repository", c4v1alpha1.DeployTargetSource{Path: new(".")}, "folder"),
 		Entry("their own folders under the target's one source tag prefix",
-			c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("")}, "source tag prefix"),
+			c4v1alpha1.DeployTargetSource{TagPrefix: new("")}, "source tag prefix"),
 	)
 
 	It("scaffolds another Container while one Container's Ship is still uploading (#1446)", func() {
