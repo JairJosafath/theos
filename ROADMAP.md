@@ -84,8 +84,9 @@ its user-visible steps join an existing milestone or none.
 1.0 is a promise: what a device builds keeps working across upgrades. It needs
 all of these:
 
-- a written compatibility promise for `c4.factory.io`, and a served version
-  past `v1alpha1` that existing objects convert to;
+- a written [compatibility promise](docs/design.md#compatibility) for
+  `c4.factory.io`, and a served version past `v1alpha1` that existing
+  objects convert to;
 - every release checks the upgrade from the previous one;
 - the agent fence closes its known gap: the Claude token never enters the
   sandbox ([docs/design.md](docs/design.md#the-fence)); met 2026-10-22, #1137;

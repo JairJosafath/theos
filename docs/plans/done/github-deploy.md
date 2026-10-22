@@ -116,9 +116,10 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
    same repository and the same Secret (key `token`, unchanged), a
    `spec.deploy` entry on the Container, then the field removed. Both may
    exist at once: each finds the other's release by its marker and leaves
-   it alone, so the second is a no-op reporting `Deployed`. Dropping the
-   field is `v1beta1`'s (#1082), whose conversion keeps a Crew's
-   `publishReleases` readable and whose plan says how the objects move. A
+   it alone, so the second is a no-op reporting `Deployed`. `v1beta1`
+   keeps the field, deprecated, and the version after it drops it (#1082,
+   decision 2), whose conversion keeps a Crew's `publishReleases` readable
+   and whose plan says how the objects move. A
    Brief's `releases[]` keeps inlining `CrewPublishReleases` and writing
    `publishReleases` on its Crews; a Brief naming DeployTargets is the
    planner follow-up [deploy.md](deploy.md) decision 2 put after
@@ -277,7 +278,7 @@ real one.
 - A mirror of the Container's history; a per-target exclude list beyond
   `FactoryOwnPaths`.
 - GitHub Enterprise and GitLab (decision 7), each its own proposed issue.
-- Dropping `publishReleases` (#1082's `v1beta1`) and a Brief naming
+- Dropping `publishReleases` (the version after #1082's `v1beta1`) and a Brief naming
   DeployTargets (the planner follow-up of [deploy.md](deploy.md)).
 - Scanning release files or images; signing them.
 - Images on GHCR from an App's installation token, until GitHub takes one.
