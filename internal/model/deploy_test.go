@@ -61,9 +61,9 @@ func TestGitHubTagPrefix(t *testing.T) {
 
 func TestDeployMembers(t *testing.T) {
 	tests := []struct {
-		name     string
-		member   string
-		c        DeployContainer
+		name      string
+		member    string
+		c         DeployContainer
 		wantKeys  []string
 		wantLacks []string
 		wantErr   bool
