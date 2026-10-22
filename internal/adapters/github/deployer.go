@@ -25,7 +25,7 @@ import (
 // tests.
 type Releases interface {
 	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
-	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
+	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
 }
 
 // Deployer ships releases to GitHub. It is the tool itself, so Ship takes one
@@ -67,15 +67,16 @@ func hosts(t ports.Target) model.GitHubHosts {
 }
 
 // client is the target's repository, with the Secret's token or its GitHub
-// App's installation token, minted at the target's API. A mint GitHub
-// refuses is CredentialRefused.
+// App's installation token, minted at the target's API for that repository
+// alone. A mint GitHub refuses is CredentialRefused.
 func (d *Deployer) client(ctx context.Context, t ports.Target) (gitprovider.ReleaseTarget, error) {
 	h := hosts(t)
-	token, err := d.releases.GitHubToken(ctx, h.API, t.Secret)
+	repository := t.Settings[model.GitHubSettingRepository]
+	token, err := d.releases.GitHubToken(ctx, h.API, repository, t.Secret)
 	if err != nil {
 		return nil, portError(err)
 	}
-	return d.releases.GitHubReleases(gitprovider.GitHubConfig{Repository: t.Settings[model.GitHubSettingRepository],
+	return d.releases.GitHubReleases(gitprovider.GitHubConfig{Repository: repository,
 		Token: token, APIURL: h.API, UploadURL: h.Upload})
 }
 
