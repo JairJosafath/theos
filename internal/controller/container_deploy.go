@@ -282,7 +282,8 @@ func (p *deployPass) source(ctx context.Context, version string) (*model.Release
 func (p *deployPass) folderOverlaps(ctx context.Context, target ports.Target,
 	path string) *model.DeployShipFailure {
 	var dt c4v1alpha1.DeployTarget
-	if found, err := p.r.lookup(ctx, p.container.Namespace, target.Name, &dt); err != nil || !found {
+	_, name, _ := strings.Cut(target.Name, "/")
+	if found, err := p.r.lookup(ctx, p.container.Namespace, name, &dt); err != nil || !found {
 		return nil
 	}
 	var containers c4v1alpha1.ContainerList

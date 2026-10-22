@@ -87,6 +87,21 @@ func readyTarget(ns, name string, tier c4v1alpha1.DeployTier) {
 	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 }
 
+// sourceTarget makes github DeployTarget name in ns, Ready, shipping the
+// source to folder path (nil: each Container's name) of its own repository,
+// which it returns.
+func sourceTarget(ns, name string, path *string) string {
+	GinkgoHelper()
+	repository := "acme/" + ns + "-" + name
+	githubFake.addRepository(repository, "t0ken")
+	dt := newDeployTarget(ns, name, name+"-github")
+	dt.Spec.GitHub.Repository = repository
+	dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: path}
+	mustCreate(newDeploySecret(ns, name+"-github", map[string]string{"token": "t0ken"}), dt)
+	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+	return repository
+}
+
 // setDeploy sets orders-api's spec.deploy.
 func setDeploy(ns string, deploy ...c4v1alpha1.ContainerDeploy) {
 	GinkgoHelper()
@@ -343,6 +358,79 @@ var _ = Describe("Container deploys", func() {
 			}
 			g.Expect(published(shared)).To(ConsistOf("orders-api-v0.1.0", "orders-cli-v0.1.0"))
 			g.Expect(published(bare)).To(ConsistOf("v0.1.0"))
+		}, deployWait).Should(Succeed())
+	})
+
+	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		repository := sourceTarget(ns, "open", nil)
+		all, app := appSource("example.com/orders")
+		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
+		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
+			fakeFile{"install.yaml", []byte("kind: List\n")}, fakeFile{"orders-api.oci.tar", []byte("an image")})
+		crewRelease(ns, "v0.1.0", model.RunSucceeded)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "open"})
+
+		deployIs(ns, "open", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+		source := githubFake.ref(repository, "tags/orders-api/v0.1.0")
+		Expect(source).NotTo(BeEmpty(), "the folder's tag")
+		Expect(githubFake.folder(repository, "tags/orders-api/v0.1.0", "orders-api")).To(Equal(app))
+		Expect(githubFake.ref(repository, "tags/orders-api-v0.1.0")).To(Equal(source),
+			"the release's tag names the source commit")
+		var published []string
+		var assets []string
+		for _, r := range githubFake.releases(repository) {
+			if !r.Draft {
+				published = append(published, r.TagName)
+				for _, a := range r.assets {
+					assets = append(assets, a.Name)
+				}
+			}
+		}
+		Expect(published).To(ConsistOf("orders-api-v0.1.0"))
+		Expect(assets).To(ConsistOf("install.yaml"), "the image archive is the image's, not a release file")
+	})
+
+	It("has nothing to ship to a github target of a release with no files, no source and no image (#1599)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		repository := "acme/" + ns + "-closed"
+		githubFake.addRepository(repository, "t0ken")
+		dt := newDeployTarget(ns, "closed", "closed-github")
+		dt.Spec.GitHub.Repository = repository
+		mustCreate(newDeploySecret(ns, "closed-github", map[string]string{"token": "t0ken"}), dt)
+		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+		shipRelease(ns, "v0.1.0", false)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "closed"})
+
+		d := deployIs(ns, "closed", model.DeployPhaseFailed, model.DeployArtifactMissing, "", model.DeployFailed)
+		Expect(d.Message).To(ContainSubstring(model.GitHubNothingToPublish))
+		Expect(githubFake.releases(repository)).To(BeEmpty())
+	})
+
+	It("fails the later of two Containers whose folders of one github target overlap (#1599)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
+		cli.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		crew := newCrew(ns)
+		crew.Name, crew.Spec.ContainerRef.Name = "orders-cli", "orders-cli"
+		mustCreate(cli, crew)
+		sourceTarget(ns, "open", new("."))
+		all, _ := appSource("example.com/orders")
+		for _, name := range []string{"orders-api", "orders-cli"} {
+			gitFake.setSource(ns, name, "v0.1.0", all...)
+			gitFake.setGiteaRelease(ns, name, "v0.1.0", "Notes of v0.1.0")
+			crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
+			setDeployOf(ns, name, c4v1alpha1.ContainerDeploy{Target: "open"})
+		}
+
+		Eventually(func(g Gomega) {
+			d, _ := deployOfContainer(g, ns, "orders-cli", "open")
+			g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
+			g.Expect(d.Reason).To(Equal(model.DeployFolderOverlaps))
+			g.Expect(d.Message).To(And(ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
 		}, deployWait).Should(Succeed())
 	})
 
