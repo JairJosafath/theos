@@ -207,14 +207,14 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
   const link = (row: (typeof rows)[number]) =>
     row.status?.url ? [{ label: `At ${row.target}`, url: row.status.url }] : []
   for (const row of rows) {
-    if (row.awaiting && row.index >= 0) {
+    if (row.awaiting && row.entry) {
       items.push({
         ...base('Container', c, `Approve|${row.target}`),
         title: `waits for your approval of ${row.awaiting} at ${row.target}`,
         ...entry(row),
         place,
         links: [],
-        command: approveCommand(c, row, row.awaiting),
+        command: approveCommand(c, row.index, row.entry, row.awaiting),
       })
     }
     if (row.status?.phase === 'Failed') {

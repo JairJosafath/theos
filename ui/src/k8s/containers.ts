@@ -8,8 +8,27 @@
 // the API server's message and nothing here copies their rules.
 
 import { approvePatch } from '../model/deploys'
-import { GROUP, VERSION, resourcePath, RESOURCES, type ChecksMode, type Crew, type Task } from './types'
-import { errorFromResponse } from './watch'
+import {
+  GROUP,
+  VERSION,
+  resourcePath,
+  RESOURCES,
+  type ChecksMode,
+  type ContainerDeploy,
+  type Crew,
+  type Task,
+} from './types'
+import { ApiError, errorFromResponse } from './watch'
+
+/**
+ * The API server's whole message when a JSON patch fails to apply, a failed
+ * `test` among them; a refusal of the Container itself names it instead.
+ */
+const PATCH_REJECTED = 'the server rejected our request due to an error in our request'
+
+/** What the UI says when the approval's tests fail: the entry changed since the page read it (#1461). */
+export const STALE_APPROVAL =
+  'The page is out of date: this deploy changed since it was read, perhaps approved by someone else. Look again and approve once more if it still waits.'
 
 /** The annotation whose new value makes the operator try a Failed Container's scaffold again. */
 export const RETRY_ANNOTATION = 'c4.factory.io/retry'
@@ -80,17 +99,11 @@ export interface ContainerWriter {
   answerStandard(namespace: string, name: string, answer: StandardAnswer, ref: string): Promise<void>
   setChecks(namespace: string, name: string, checks: ChecksMode): Promise<void>
   /**
-   * Approves `version` at spec.deploy's entry `index`, which must still name
-   * `target` and, when given, still have `approved`, the approval the page showed.
+   * Approves `version` at spec.deploy's entry `index`, which must still be as
+   * the page read it, `entry`: its target, and its approval or that it had
+   * none. Rejects with STALE_APPROVAL when it no longer is.
    */
-  approveDeploy(
-    namespace: string,
-    name: string,
-    index: number,
-    target: string,
-    version: string,
-    approved?: string,
-  ): Promise<void>
+  approveDeploy(namespace: string, name: string, index: number, entry: ContainerDeploy, version: string): Promise<void>
   /** Resolves to the new Task's name. */
   startTask(namespace: string, container: string, crew: Crew, goal: string): Promise<string>
 }
@@ -142,16 +155,22 @@ export class LiveContainerWriter implements ContainerWriter {
     namespace: string,
     name: string,
     index: number,
-    target: string,
+    entry: ContainerDeploy,
     version: string,
-    approved?: string,
   ): Promise<void> {
     const path = `${resourcePath(RESOURCES.containers, namespace)}/${encodeURIComponent(name)}`
-    await this.send(`${this.baseUrl}${path}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-      body: JSON.stringify(approvePatch(index, target, version, approved)),
-    })
+    try {
+      await this.send(`${this.baseUrl}${path}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+        body: JSON.stringify(approvePatch(index, entry, version)),
+      })
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 422 && err.message === PATCH_REJECTED) {
+        throw new ApiError(err.code, STALE_APPROVAL)
+      }
+      throw err
+    }
   }
 
   async startTask(namespace: string, container: string, crew: Crew, goal: string): Promise<string> {

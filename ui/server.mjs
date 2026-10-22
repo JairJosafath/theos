@@ -358,23 +358,31 @@ function createsObject(kind, specFields, fixed = {}) {
 
 /**
  * A JSON patch approving a version at one spec.deploy entry: a `test` that the
- * entry at index N names a target (a string), optionally a `test` of the
- * entry's approved as it was (a string), then its only write, an `add` of a
- * string at /spec/deploy/N/approved, the same N throughout. The tests keep a
- * list reordered since the page read it from approving another target, and a
- * stale page from taking back a newer approval. Returns the patch, or undefined.
+ * entry at index N names a target (a string), then a `test` of the approval
+ * the page showed, either the entry's approved as it was (a string) or, where
+ * it had none, the whole entry as it was (its target, after and version, all
+ * strings, and no approved), then its only write, an `add` of a string at
+ * /spec/deploy/N/approved, the same N throughout. The tests keep a list
+ * reordered since the page read it from approving another target, and a stale
+ * page from taking back a newer approval, a first one too (#1461): JSON Patch
+ * can't test that a member is missing, so that test is of the whole entry.
+ * Returns the patch, or undefined.
  */
 function approvesDeploy(body) {
-  if (!Array.isArray(body) || body.length < 2 || body.length > 3) return undefined
-  const op = (o, name, field) => {
+  if (!Array.isArray(body) || body.length !== 3) return undefined
+  const op = (o, name, field, valid = (v) => typeof v === 'string') => {
     if (!isObject(o) || o.op !== name || Object.keys(o).sort().join() !== 'op,path,value') return undefined
-    if (typeof o.value !== 'string') return undefined
-    const m = typeof o.path === 'string' ? /^\/spec\/deploy\/(0|[1-9][0-9]?)\/([a-z]+)$/.exec(o.path) : null
+    if (!valid(o.value)) return undefined
+    const m = typeof o.path === 'string' ? /^\/spec\/deploy\/(0|[1-9][0-9]?)(?:\/([a-z]+))?$/.exec(o.path) : null
     return m && m[2] === field ? m[1] : undefined
   }
+  const entry = (v) =>
+    isObject(v) &&
+    typeof v.target === 'string' &&
+    Object.entries(v).every(([k, f]) => ['target', 'after', 'version'].includes(k) && typeof f === 'string')
   const index = op(body[0], 'test', 'target')
-  if (index === undefined || op(body.at(-1), 'add', 'approved') !== index) return undefined
-  return body.length === 2 || op(body[1], 'test', 'approved') === index ? body : undefined
+  if (index === undefined || op(body[2], 'add', 'approved') !== index) return undefined
+  return op(body[1], 'test', 'approved') === index || op(body[1], 'test', undefined, entry) === index ? body : undefined
 }
 
 /**

@@ -11,7 +11,7 @@
 import { useContext, useRef, useState } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
-import { RESOURCES, type Container, type DeployTarget } from '../../k8s/types'
+import { RESOURCES, type Container, type ContainerDeploy, type DeployTarget } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import {
   approveCommand,
@@ -311,9 +311,16 @@ function DeployItem({
           </>
         ) : null}
       </dl>
-      {row.awaiting && row.index >= 0 ? (
+      {row.awaiting && row.entry ? (
         // Keyed by the version, so a newer one waiting starts afresh, not as approved.
-        <Approve key={row.awaiting} container={container} row={row} version={row.awaiting} writer={writer} />
+        <Approve
+          key={row.awaiting}
+          container={container}
+          index={row.index}
+          entry={row.entry}
+          version={row.awaiting}
+          writer={writer}
+        />
       ) : null}
     </li>
   )
@@ -322,12 +329,14 @@ function DeployItem({
 /** The approval of the version waiting: a button with actions on, else the kubectl line. */
 function Approve({
   container,
-  row,
+  index,
+  entry,
   version,
   writer,
 }: {
   container: Container
-  row: DeployRow
+  index: number
+  entry: ContainerDeploy
   version: string
   writer: ContainerWriter
 }) {
@@ -344,7 +353,7 @@ function Approve({
     return (
       <div className="container-action">
         <p className="panel-text">
-          {version} waits for a person’s approval to ship to {row.target}.{' '}
+          {version} waits for a person’s approval to ship to {entry.target}.{' '}
           {session?.actions ? (
             <>
               <SignInLink /> to approve it here, or run:
@@ -353,7 +362,7 @@ function Approve({
             'To approve it, run:'
           )}
         </p>
-        <CommandLine command={approveCommand(container, row, version)} />
+        <CommandLine command={approveCommand(container, index, entry, version)} />
       </div>
     )
 
@@ -366,7 +375,7 @@ function Approve({
   async function approve() {
     setSending(true)
     try {
-      await writer.approveDeploy(ns, name, row.index, row.target, version, row.approved)
+      await writer.approveDeploy(ns, name, index, entry, version)
       setSent(true)
     } catch (err) {
       setError(writeError(err))
@@ -376,11 +385,11 @@ function Approve({
     }
   }
 
-  const id = `approve-${name}-${row.target}`
+  const id = `approve-${name}-${entry.target}`
   return (
     <div className="container-action">
       <p className="panel-text">
-        {version} waits for a person’s approval to ship to {row.target}.
+        {version} waits for a person’s approval to ship to {entry.target}.
       </p>
       <button type="button" className="button" onClick={open} disabled={sending}>
         Approve {version}…
@@ -393,7 +402,7 @@ function Approve({
       {error ? <FormError error={error} /> : null}
       <dialog ref={dialog} className="dialog" aria-labelledby={id}>
         <h2 className="panel-title small-title" id={id}>
-          Ship {version} of {name} to {row.target}?
+          Ship {version} of {name} to {entry.target}?
         </h2>
         <p className="panel-text">
           The factory ships it through the target’s own tool once the Container’s spec says it is approved.

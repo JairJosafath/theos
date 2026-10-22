@@ -352,7 +352,7 @@ describe('needs', () => {
         reason: 'WaitingForApproval',
         message: approvalMessage,
         command:
-          'kubectl -n shop patch container api --type=json -p \'[{"op":"test","path":"/spec/deploy/1/target","value":"prod"},{"op":"add","path":"/spec/deploy/1/approved","value":"v1.3.0"}]\'',
+          'kubectl -n shop patch container api --type=json -p \'[{"op":"test","path":"/spec/deploy/1/target","value":"prod"},{"op":"test","path":"/spec/deploy/1","value":{"target":"prod","after":"staging"}},{"op":"add","path":"/spec/deploy/1/approved","value":"v1.3.0"}]\'',
         place: 'Container',
       },
     },

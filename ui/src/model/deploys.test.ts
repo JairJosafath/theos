@@ -104,25 +104,28 @@ describe('deploysOf', () => {
 })
 
 describe('the approval', () => {
-  it('is one write of the entry’s approved, after a test that the entry names the target (#1163)', () => {
-    expect(approvePatch(2, 'prod', 'v1.3.0')).toEqual([
-      { op: 'test', path: '/spec/deploy/2/target', value: 'prod' },
-      { op: 'add', path: '/spec/deploy/2/approved', value: 'v1.3.0' },
-    ])
-  })
-
-  it('tests the approval it replaces, when the entry has one (#1163)', () => {
-    expect(approvePatch(0, 'prod', 'v1.3.0', 'v1.2.0')).toEqual([
+  it('is one write of the entry’s approved, after tests of its target and the approval it replaces (#1163)', () => {
+    expect(approvePatch(0, { target: 'prod', approved: 'v1.2.0' }, 'v1.3.0')).toEqual([
       { op: 'test', path: '/spec/deploy/0/target', value: 'prod' },
       { op: 'test', path: '/spec/deploy/0/approved', value: 'v1.2.0' },
       { op: 'add', path: '/spec/deploy/0/approved', value: 'v1.3.0' },
     ])
   })
 
+  it('tests the whole entry as read where it had no approval, so a newer first one fails it (#1461)', () => {
+    expect(approvePatch(2, { target: 'prod', after: 'staging' }, 'v1.3.0')).toEqual([
+      { op: 'test', path: '/spec/deploy/2/target', value: 'prod' },
+      { op: 'test', path: '/spec/deploy/2', value: { target: 'prod', after: 'staging' } },
+      { op: 'add', path: '/spec/deploy/2/approved', value: 'v1.3.0' },
+    ])
+  })
+
   it('is the same patch as a kubectl line', () => {
-    const c = container([{ target: 'staging' }, { target: 'prod', approved: 'v1.2.0' }])
-    expect(approveCommand(c, deploysOf(c)[1], 'v1.3.0')).toBe(
-      `kubectl -n shop patch container api --type=json -p '${JSON.stringify(approvePatch(1, 'prod', 'v1.3.0', 'v1.2.0'))}'`,
+    const entry = { target: 'prod', approved: 'v1.2.0' }
+    const c = container([{ target: 'staging' }, entry])
+    expect(deploysOf(c)[1].entry).toBe(entry)
+    expect(approveCommand(c, 1, entry, 'v1.3.0')).toBe(
+      `kubectl -n shop patch container api --type=json -p '${JSON.stringify(approvePatch(1, entry, 'v1.3.0'))}'`,
     )
   })
 })

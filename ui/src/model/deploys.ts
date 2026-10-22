@@ -3,7 +3,7 @@
 // deploys with the approval a person gives. Pure, and read only from spec and
 // status: the operator decides what ships, and the CRD and RBAC who may approve.
 
-import type { Condition, Container, ContainerDeployStatus, DeployTarget } from '../k8s/types'
+import type { Condition, Container, ContainerDeploy, ContainerDeployStatus, DeployTarget } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import type { Tone } from './describe'
 
@@ -82,6 +82,8 @@ export interface DeployRow {
   after?: string
   pinned?: string
   approved?: string
+  /** The spec.deploy entry as read; none for a status left over from a removed entry. */
+  entry?: ContainerDeploy
   status?: ContainerDeployStatus
   /** The version waiting for a person's approval, when the operator says so. */
   awaiting?: string
@@ -98,6 +100,7 @@ export function deploysOf(container: Container): DeployRow[] {
       after: entry.after,
       pinned: entry.version,
       approved: entry.approved,
+      entry,
       status,
       awaiting: status?.reason === 'WaitingForApproval' ? status.wantedVersion || undefined : undefined,
     }
@@ -113,28 +116,34 @@ export function shippingTo(target: string, containers: Container[]): Container[]
 }
 
 /** A JSON patch operation of the approval. */
-export type ApproveOp = { op: 'test' | 'add'; path: string; value: string }
+export type ApproveOp =
+  { op: 'test' | 'add'; path: string; value: string } | { op: 'test'; path: string; value: ContainerDeploy }
 
 /**
- * The patch that approves `version` at the entry `index` of spec.deploy: its
- * only write sets that entry's approved, after a test that the entry still
- * names `target`, so a list reordered since the page read it is refused, not
- * approved at another target; and, when the entry had an approval, a test that
- * it still has `approved`, so a stale page or a copied line can't take back
- * a newer approval someone made since.
+ * The patch that approves `version` at the entry `index` of spec.deploy, read
+ * as `entry`: its only write sets that entry's approved, after a test that the
+ * entry still names its target, so a list reordered since can't approve it at
+ * another target; then a test that the entry still has the approval the page
+ * showed, so a stale page or a copied line can't take back a newer approval
+ * someone made since. JSON Patch can't test that a member is missing, so where
+ * the entry had no approval the test is of the whole entry as read (#1461): a
+ * first approval someone made since, or any other change to the entry, fails
+ * it.
  */
-export function approvePatch(index: number, target: string, version: string, approved?: string): ApproveOp[] {
+export function approvePatch(index: number, entry: ContainerDeploy, version: string): ApproveOp[] {
   const at = `/spec/deploy/${index}`
   return [
-    { op: 'test', path: `${at}/target`, value: target },
-    ...(approved ? [{ op: 'test' as const, path: `${at}/approved`, value: approved }] : []),
+    { op: 'test', path: `${at}/target`, value: entry.target },
+    entry.approved
+      ? { op: 'test', path: `${at}/approved`, value: entry.approved }
+      : { op: 'test', path: at, value: entry },
     { op: 'add', path: `${at}/approved`, value: version },
   ]
 }
 
-/** The kubectl line that approves the version waiting at a Container's entry. */
-export function approveCommand(container: Container, row: DeployRow, version: string): string {
+/** The kubectl line that approves the version waiting at a Container's entry `index`, read as `entry`. */
+export function approveCommand(container: Container, index: number, entry: ContainerDeploy, version: string): string {
   const ns = container.metadata.namespace ?? ''
-  const patch = JSON.stringify(approvePatch(row.index, row.target, version, row.approved))
+  const patch = JSON.stringify(approvePatch(index, entry, version))
   return `kubectl -n ${ns} patch container ${container.metadata.name} --type=json -p '${patch}'`
 }
