@@ -12,19 +12,24 @@ import "testing"
 
 func TestBuildsImage(t *testing.T) {
 	for _, tt := range []struct {
-		deployment, typ string
-		want            bool
+		deployment, framework, typ string
+		want                       bool
 	}{
-		{"k8s-manifests", TypeService, true},
-		{"k8s-manifests", TypeWorker, true},
-		{"k8s-manifests", TypeOperator, true},
-		{"gitea-release", TypeCLI, false},
-		{"gitea-release", TypeOperator, true},
-		{"aws-fargate-ts", TypeService, false},
-		{"", TypeService, false},
+		{"k8s-manifests", "go-service", TypeService, true},
+		{"k8s-manifests", "ts-worker", TypeWorker, true},
+		{"k8s-manifests", "kubebuilder", TypeOperator, true},
+		{"gitea-release", "go-cli", TypeCLI, false},
+		{"gitea-release", "kubebuilder", TypeOperator, true},
+		// Fargate's stack takes its image by digest; the other AWS
+		// Frameworks build none (#1610).
+		{"gitea-release", "aws-fargate-ts", TypeService, true},
+		{"gitea-release", "aws-ec2-ts", TypeService, false},
+		{"gitea-release", "aws-lambda-ts", TypeService, false},
+		{"aws-fargate-ts", "aws-fargate-ts", TypeService, false},
+		{"", "", TypeService, false},
 	} {
-		if got := BuildsImage(tt.deployment, tt.typ); got != tt.want {
-			t.Errorf("BuildsImage(%q, %q) = %v, want %v", tt.deployment, tt.typ, got, tt.want)
+		if got := BuildsImage(tt.deployment, tt.framework, tt.typ); got != tt.want {
+			t.Errorf("BuildsImage(%q, %q, %q) = %v, want %v", tt.deployment, tt.framework, tt.typ, got, tt.want)
 		}
 	}
 }

@@ -341,6 +341,72 @@ func (e CDKEnv) TemplateURL(bucket, key string) string {
 	return "https://" + bucket + ".s3." + e.Region + "." + suffix + "/" + key
 }
 
+// CDKImageURIParameter is the parameter of a stack that runs the release's
+// image, aws-fargate-ts's: the factory gives it the image's copy in the
+// bootstrap's ECR repository, by digest (docs/plans/aws-deploy.md,
+// decision 8).
+const CDKImageURIParameter = "ImageUri"
+
+// CDKDefaultQualifier is the bootstrap's qualifier when a stack names none.
+const CDKDefaultQualifier = "hnb659fds"
+
+// CDKTakesImage reports whether a stack with params runs the release's image.
+func CDKTakesImage(params []CDKParameter) bool {
+	return slices.ContainsFunc(params, func(p CDKParameter) bool { return p.Name == CDKImageURIParameter })
+}
+
+// CDKQualifier is the bootstrap qualifier of a stack that reads its
+// bootstrap version from the SSM parameter versionParameter,
+// /cdk-bootstrap/<qualifier>/version; CDKDefaultQualifier for none.
+func CDKQualifier(versionParameter string) (string, error) {
+	if versionParameter == "" {
+		return CDKDefaultQualifier, nil
+	}
+	rest, ok := strings.CutPrefix(versionParameter, "/cdk-bootstrap/")
+	q, ok2 := strings.CutSuffix(rest, "/version")
+	if !ok || !ok2 || q == "" || strings.Contains(q, "/") {
+		return "", fmt.Errorf("bootstrap version parameter %q is not /cdk-bootstrap/<qualifier>/version",
+			versionParameter)
+	}
+	return q, nil
+}
+
+// CDKImageCopy is where a release's image goes for a stack that runs it:
+// the bootstrap's ECR repository, tagged the digest's hex, as the bootstrap's
+// image-publishing role. The repository's tags are immutable, and a tag
+// named by the content always names the same image.
+type CDKImageCopy struct {
+	// Host is the account's ECR registry in the region; Repository the
+	// bootstrap's container-assets repository; Tag the digest's hex.
+	Host, Repository, Tag string
+	// Digest is the image's digest, the copy's too.
+	Digest string
+	// Role is the bootstrap's image-publishing role, which writes the copy.
+	Role string
+	// URI is the copy by digest, the stack's ImageUri.
+	URI string
+}
+
+// ImageCopy is where image, host/repository@sha256:<hex> as the operator
+// pushed it (#1069), goes for a stack of the bootstrap qualifier q in e.
+func (e CDKEnv) ImageCopy(image, q string) (CDKImageCopy, error) {
+	_, digest, _ := strings.Cut(image, "@")
+	hex, ok := strings.CutPrefix(digest, "sha256:")
+	if !ok || len(hex) != 64 || strings.ContainsFunc(hex, func(r rune) bool { return r > 0x7f || !isLowerHex(byte(r)) }) {
+		return CDKImageCopy{}, fmt.Errorf("image %q is not host/repository@sha256:<digest>", image)
+	}
+	suffix := "amazonaws.com"
+	if e.Partition == "aws-cn" {
+		suffix = "amazonaws.com.cn"
+	}
+	c := CDKImageCopy{Host: e.Account + ".dkr.ecr." + e.Region + "." + suffix,
+		Repository: "cdk-" + q + "-container-assets-" + e.Account + "-" + e.Region, Tag: hex, Digest: digest,
+		Role: "arn:" + e.Partition + ":iam::" + e.Account + ":role/cdk-" + q + "-image-publishing-role-" + e.Account +
+			"-" + e.Region}
+	c.URI = c.Host + "/" + c.Repository + "@" + digest
+	return c, nil
+}
+
 // CDKTemplateParameters are the parameters a CloudFormation template (JSON)
 // declares, by name.
 func CDKTemplateParameters(template []byte) ([]CDKParameter, error) {

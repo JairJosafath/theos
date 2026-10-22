@@ -193,6 +193,53 @@ func TestCDKEnv(t *testing.T) {
 	}
 }
 
+// TestCDKImageCopy covers docs/plans/aws-deploy.md's decision 8 (#1610):
+// a Fargate stack's image goes to the bootstrap's ECR repository of its
+// qualifier, tagged the digest's hex, as the image-publishing role.
+func TestCDKImageCopy(t *testing.T) {
+	for param, want := range map[string]string{"": CDKDefaultQualifier,
+		"/cdk-bootstrap/hnb659fds/version": "hnb659fds", "/cdk-bootstrap/custom1/version": "custom1"} {
+		if got, err := CDKQualifier(param); err != nil || got != want {
+			t.Errorf("CDKQualifier(%q) = %q, %v, want %q", param, got, err, want)
+		}
+	}
+	for _, bad := range []string{"/cdk-bootstrap//version", "/other/q/version", "/cdk-bootstrap/a/b/version",
+		"/cdk-bootstrap/q"} {
+		if _, err := CDKQualifier(bad); err == nil {
+			t.Errorf("CDKQualifier(%q): no error", bad)
+		}
+	}
+	hex := strings.Repeat("ab", 32)
+	image := "gitea.example:3000/shop/orders@sha256:" + hex
+	env := CDKEnv{Partition: "aws", Account: "111122223333", Region: "eu-west-1"}
+	got, err := env.ImageCopy(image, "hnb659fds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := CDKImageCopy{Host: "111122223333.dkr.ecr.eu-west-1.amazonaws.com",
+		Repository: "cdk-hnb659fds-container-assets-111122223333-eu-west-1", Tag: hex, Digest: "sha256:" + hex,
+		Role: "arn:aws:iam::111122223333:role/cdk-hnb659fds-image-publishing-role-111122223333-eu-west-1",
+		URI: "111122223333.dkr.ecr.eu-west-1.amazonaws.com/cdk-hnb659fds-container-assets-111122223333-eu-west-1" +
+			"@sha256:" + hex}
+	if got != want {
+		t.Errorf("ImageCopy = %+v, want %+v", got, want)
+	}
+	cn := CDKEnv{Partition: "aws-cn", Account: "1", Region: "cn-north-1"}
+	if got, _ := cn.ImageCopy(image, "q"); got.Host != "1.dkr.ecr.cn-north-1.amazonaws.com.cn" {
+		t.Errorf("aws-cn ImageCopy host = %s", got.Host)
+	}
+	for _, bad := range []string{"", "r/o:v1", "r/o@sha256:abc", "r/o@sha512:" + hex,
+		"r/o@sha256:" + strings.ToUpper(hex)} {
+		if _, err := env.ImageCopy(bad, "q"); err == nil {
+			t.Errorf("ImageCopy(%q): no error", bad)
+		}
+	}
+	if !CDKTakesImage([]CDKParameter{{Name: "A"}, {Name: CDKImageURIParameter}}) ||
+		CDKTakesImage([]CDKParameter{{Name: "A"}}) {
+		t.Error("CDKTakesImage: wrong")
+	}
+}
+
 func TestCDKChangeSetParameters(t *testing.T) {
 	params := []CDKParameter{{Name: "AlertEmail", HasDefault: true}, {Name: "BootstrapVersion", HasDefault: true},
 		{Name: "CertificateArn"}, {Name: "Other"}}

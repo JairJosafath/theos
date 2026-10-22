@@ -193,8 +193,9 @@ const GitHubNothingToPublish = "nothing to publish: no release files, no source,
 // GitHubShipmentFacts are what a github target could ship of a release of a
 // Container (docs/plans/done/github-deploy.md, Decisions 1 and 2).
 type GitHubShipmentFacts struct {
-	// Type and Deployment are the Container's type and Deployment.
-	Type, Deployment string
+	// Type, Deployment and Framework are the Container's type, Deployment
+	// and Framework.
+	Type, Deployment, Framework string
 	// Files are the names of the release's files on the Git host.
 	Files []string
 	// Source says the target publishes the source and the release has one.
@@ -228,7 +229,7 @@ func GitHubShipment(f GitHubShipmentFacts) (plan GitHubShipmentPlan, problem str
 			plan.Files = append(plan.Files, name)
 		}
 	}
-	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Type)
+	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Framework, f.Type)
 	if !plan.Source && len(plan.Files) == 0 && !plan.Image {
 		return plan, GitHubNothingToPublish
 	}

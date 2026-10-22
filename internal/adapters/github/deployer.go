@@ -93,7 +93,8 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		names[i] = f.Name
 	}
 	plan, problem := model.GitHubShipment(model.GitHubShipmentFacts{Type: s.Type, Deployment: s.Deployment,
-		Files: names, Source: t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil,
+		Framework: s.Framework,
+		Files:     names, Source: t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil,
 		Image: s.Image != "", PackagesToken: strings.TrimSpace(string(t.Secret[model.GitHubSecretPackagesToken])) != ""})
 	if problem != "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
