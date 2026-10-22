@@ -588,7 +588,7 @@ catalog:
         supportedTypes: [service]
     - kind: Framework
       name: vscode-extension
-      ref: v1.0.0
+      ref: v1.1.0
       spec:
         displayName: VS Code extension (TypeScript)
         description: A VS Code extension in TypeScript, bundled with esbuild, with a pure module and its unit tests.
