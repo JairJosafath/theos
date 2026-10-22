@@ -5,9 +5,11 @@
 {{- if eq .Framework "vscode-extension" }}{{ $files = "the extension's `.vsix`" }}{{ end -}}
 {{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager image (an `.oci.tar` the factory pushes to the Git host's registry), the manager binaries, `install.yaml` naming that image by digest, and `SHA256SUMS`" }}{{ end -}}
 {{- $operator := eq .Type "operator" -}}
+{{- $watch := 3 -}}
 {{- $manifest := "" -}}
 {{- if eq .Framework "python-cli" }}{{ $manifest = "pyproject.toml" }}{{ end -}}
 {{- if or (eq .Framework "node-cli") (eq .Framework "vscode-extension") }}{{ $manifest = "package.json" }}{{ end -}}
+{{- if $manifest }}{{ $watch = 4 }}{{ end -}}
 # Releasing {{ .Container }}
 
 A pushed version tag releases {{ .Container }}: the workflow
@@ -37,13 +39,9 @@ people download the files from the release page.
    Or create the tag on main in Gitea's web UI. Tags are `vX.Y.Z`; only a
    tag starting with `v` starts the workflow. On a protected repository only
    the operator's Git user may push `v*` tags.
-{{- if $manifest }}
-4. Watch the run under the repository's **Actions** tab; when it is green,
+
+{{ $watch }}. Watch the run under the repository's **Actions** tab; when it is green,
    the release page lists the files.
-{{- else }}
-3. Watch the run under the repository's **Actions** tab; when it is green,
-   the release page lists the files.
-{{- end }}
 
 The workflow runs on a runner labelled `go`, the one the checks use, with the
 workflow's own token: no secrets to set.{{ if $operator }} The `image` job runs on the
@@ -76,13 +74,14 @@ Every file directly in `dist/` is what the release would get; folders in
 The run's log says which step failed: `make dist`, or attaching the files{{ if $operator }};
 for an operator, the `image` job before them, which builds the image and
 attaches it{{ end }}.
-{{- if $operator }}
 
+{{ if $operator -}}
 - **The `image` job failed** (no `Dockerfile` at the root, a build error, or
   the upload of the `.oci.tar` broke): nothing was attached and no image was
   pushed. Fix it on main, then move the tag to the fixed commit and push it
   again, as for `make dist` below.
-{{- end }}
+
+{{ end -}}
 - **`make dist` failed** (a build error{{ if $manifest }}, or the tag doesn't
   match `{{ $manifest }}`{{ end }}): nothing was attached{{ if $operator }} but the
   image archive, which the factory pushes to the registry{{ end }}. Fix it on
@@ -101,10 +100,12 @@ attaches it{{ end }}.
   leaves it unpushed, and `install.yaml` names the digest the registry holds.
   When the fix changes what goes into the image, tag it as the next version.
 {{- end }}
+
 - **Attaching failed** (Gitea was unreachable, or an upload broke halfway):
   re-run the job from the **Actions** tab, or push the tag again. A run
   replaces the files that are already on the release, so running it again
   is safe.
+
 - **A wrong file got attached:** delete the asset on the release page (edit
   the release), fix `make dist`, and run the release again as above. Only
   files that the new run writes are replaced; one it no longer writes stays
