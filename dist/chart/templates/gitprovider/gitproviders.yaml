@@ -44,5 +44,9 @@ spec:
   owner: {{ required (printf "gitProviders[%d].owner is required" $i) $gp.owner | quote }}
   credentialsSecretRef:
     name: {{ required (printf "gitProviders[%d].existingSecret is required: a Secret you create with keys username and token" $i) $gp.existingSecret }}
+  {{- with $gp.packages }}
+  packages:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}

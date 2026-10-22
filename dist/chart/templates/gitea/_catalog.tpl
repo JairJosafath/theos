@@ -8,28 +8,32 @@ GitProvider, and hand edits would be lost (docs/plans/done/upgrade-in-place.md).
 */}}
 {{- define "c4-factory.catalogObjects" -}}
 {{- if .Values.gitea.enabled }}
-{{- range .Values.gitea.projects | uniq }}
+{{- range include "c4-factory.projects" . | fromJsonArray }}
 ---
-# Project {{ . }} scaffolds into its organization in the release's Gitea, with
-# the token the seed stored.
+# Project {{ .name }} scaffolds into its organization in the release's Gitea,
+# with the token the seed stored.
 apiVersion: c4.factory.io/v1alpha1
 kind: GitProvider
 metadata:
   name: gitea
-  namespace: {{ . }}
+  namespace: {{ .name }}
   labels:
     app.kubernetes.io/managed-by: c4factory-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   provider: gitea
   url: {{ include "c4-factory.giteaURL" $ | quote }}
-  owner: {{ . | quote }}
+  owner: {{ .name | quote }}
   credentialsSecretRef:
     name: gitea-credentials
+  {{- with .packages }}
+  packages:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{- if and .Values.gitea.enabled .Values.catalog.enabled }}
-{{- range $project := .Values.gitea.projects | uniq }}
+{{- range $project := include "c4-factory.projectNames" . | fromJsonArray }}
 {{- range $.Values.catalog.entries }}
 ---
 # Project {{ $project }}'s catalog entry {{ .name }}: the template the seed
@@ -53,7 +57,7 @@ spec:
 {{- if and .Values.gitea.enabled .Values.agents.enabled }}
 {{- $a := .Values.agents }}
 {{- $image := printf "%s:%s" $a.image.repository ($a.image.tag | default .Chart.AppVersion) }}
-{{- range $project := .Values.gitea.projects | uniq }}
+{{- range $project := include "c4-factory.projectNames" . | fromJsonArray }}
 {{- range $role := list "planner" "designer" "implementer" "reviewer" }}
 {{- $agent := get $a $role }}
 {{- if regexMatch "(?i)fable" $agent.model }}

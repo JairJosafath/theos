@@ -1,6 +1,6 @@
 {{- if and .Values.gitea.enabled .Values.projectNamespaces.create }}
 {{- $skip := list .Release.Namespace (include "c4-factory.giteaNamespace" .) }}
-{{- range .Values.gitea.projects | uniq }}
+{{- range include "c4-factory.projectNames" . | fromJsonArray }}
 {{- if not (has . $skip) }}
 {{- $existing := lookup "v1" "Namespace" "" . }}
 {{- $annotations := dig "metadata" "annotations" (dict) $existing }}
