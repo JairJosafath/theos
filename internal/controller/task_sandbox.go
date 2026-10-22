@@ -11,7 +11,6 @@ package controller
 import (
 	"context"
 	"encoding/json"
-	"k8s.io/utils/ptr"
 	"maps"
 	"slices"
 	"strconv"
@@ -383,7 +382,7 @@ const packagesReadTokenKey = "readToken"
 // then unset.
 func optionalSecretEnv(name, secret, key string) corev1.EnvVar {
 	env := secretEnv(name, secret, key)
-	env.ValueFrom.SecretKeyRef.Optional = ptr.To(true)
+	env.ValueFrom.SecretKeyRef.Optional = new(true)
 	return env
 }
 
