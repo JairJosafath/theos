@@ -1,0 +1,15 @@
+{{- if and .Values.agents.enabled (gt (int .Values.agents.modelProxy.replicas) 1) }}
+# A rollout or a node drain keeps one proxy serving, so agents' streams go on.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "c4-factory.modelProxyName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "c4-factory.modelProxyLabels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "c4-factory.modelProxySelectorLabels" . | nindent 6 }}
+{{- end }}

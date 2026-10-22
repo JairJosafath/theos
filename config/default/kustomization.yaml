@@ -20,6 +20,7 @@ resources:
 - ../manager
 # Project name equals namespace, enforced at admission.
 - ../policy
+- ../model-proxy
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- ../webhook

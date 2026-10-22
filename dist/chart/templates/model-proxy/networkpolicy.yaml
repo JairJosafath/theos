@@ -1,0 +1,31 @@
+{{- if .Values.agents.enabled }}
+# The proxy takes traffic only from agent sandboxes (docs/plans/model-proxy.md,
+# decision 7): pods the operator labels c4.factory.io/agent-sandbox=true, in
+# the namespaces labelled c4.factory.io/shared-secrets=true, the label that
+# decides who may use the shared token and that a namespace's own users can't
+# set. Not behind networkPolicy.enabled: it is the fence, not an option.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "c4-factory.modelProxyName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "c4-factory.modelProxyLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "c4-factory.modelProxySelectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          c4.factory.io/shared-secrets: "true"
+      podSelector:
+        matchLabels:
+          c4.factory.io/agent-sandbox: "true"
+    ports:
+    - port: http
+      protocol: TCP
+{{- end }}

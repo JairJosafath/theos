@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // The key files the proxy reads in its credentials directory. When both hold
@@ -40,13 +41,15 @@ const (
 const OAuthBeta = "oauth-2025-04-20"
 
 // Proxy is the model proxy's http.Handler. It answers /healthz (always 200)
-// and /readyz (200 once it has a credential, else 503) itself, and forwards
-// every other path to its upstream, or answers 503 while it has no credential.
+// and /readyz (200 once it has a credential and until Drain, else 503)
+// itself, and forwards every other path to its upstream, or answers 503
+// while it has no credential.
 type Proxy struct {
 	upstream *url.URL
 	dir      string
 	log      *slog.Logger
 	proxy    *httputil.ReverseProxy
+	draining atomic.Bool
 
 	mu      sync.Mutex
 	files   map[string]keyFile // by key name
@@ -90,6 +93,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
+	if r.URL.Path == "/readyz" && p.draining.Load() {
+		http.Error(w, "The model proxy is stopping.", http.StatusServiceUnavailable)
+		return
+	}
 	name, value := p.credential()
 	switch {
 	case name == "":
@@ -109,6 +116,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).EnableFullDuplex()
 	p.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
+
+// Drain makes /readyz answer 503 from now on while every other path goes on
+// being served, so a stopping pod leaves the Service's endpoints before its
+// listener closes and a sandbox's new connection is never refused. Requests
+// already open are untouched.
+func (p *Proxy) Drain() { p.draining.Store(true) }
 
 // rewrite points the request at the upstream, its path and query joined onto
 // the upstream's and its Host the upstream's, and swaps the client's
