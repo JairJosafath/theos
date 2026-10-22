@@ -86,6 +86,24 @@ var _ = Describe("DeployTarget", func() {
 		Entry("a repository URL", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.Repository = "https://github.com/acme/orders-cli"
 		}, "repository must be owner/name"),
+		Entry("a source folder going up (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("apps/../secrets")}
+		}, "path must have no '.', '..' or '.git' folder in it"),
+		Entry("a source folder in .git (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new(".git/hooks")}
+		}, "path must have no '.', '..' or '.git' folder in it"),
+		Entry("a source folder that isn't a path (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("/orders")}
+		}, "spec.github.source.path"),
+		Entry("a source tagPrefix with '..' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders..cli/")}
+		}, "tagPrefix must make a git tag name"),
+		Entry("a source tagPrefix with a leading '/' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("/orders")}
+		}, "tagPrefix must make a git tag name"),
+		Entry("a source tagPrefix with a space (#1599)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders cli/")}
+		}, "spec.github.source.tagPrefix"),
 		Entry("more than 50 parameters", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.Parameters = map[string]string{}
 			for i := range 51 {

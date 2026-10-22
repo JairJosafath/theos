@@ -107,6 +107,38 @@ type DeployTargetGitHub struct {
 	// one repository, so a library's release doesn't take Latest from it.
 	// +optional
 	Latest *bool `json:"latest,omitempty"`
+
+	// source publishes each release's source too: the app's files at the
+	// release's tag, the factory's own left out, committed into a folder of
+	// the repository and tagged, with the GitHub release made of that commit.
+	// Unset, no source is published.
+	// +optional
+	Source *DeployTargetGitHubSource `json:"source,omitempty"`
+}
+
+// DeployTargetGitHubSource is where a github target publishes each release's
+// source.
+type DeployTargetGitHubSource struct {
+	// path is the folder, such as orders-cli; "." is the whole repository.
+	// Unset, it is the Container's name, so any number of Containers share
+	// the target. The folder is the app's: each release replaces what it
+	// holds, so two Containers shipping to the target need folders apart,
+	// neither inside the other.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^([.]|[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$`
+	// +kubebuilder:validation:XValidation:rule="self == '.' || !self.matches('(^|/)([.][.]?|[.][gG][iI][tT])(/|$)')",message="path must have no '.', '..' or '.git' folder in it"
+	// +optional
+	Path *string `json:"path,omitempty"`
+
+	// tagPrefix goes before the version in the source's tag. Unset, it is
+	// the folder and "/" (orders-cli/v0.1.0, the tag go install looks for),
+	// and nothing for ".".
+	// +kubebuilder:validation:MaxLength=101
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
+	// +optional
+	TagPrefix *string `json:"tagPrefix,omitempty"`
 }
 
 // DeployTargetArgoCD is an Argo CD whose Applications are the deploys, one

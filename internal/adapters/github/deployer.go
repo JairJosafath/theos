@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -65,18 +66,27 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // fails with reason TagTaken.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	tag := model.GitHubTag(t.Settings[model.GitHubSettingTagPrefix], s.Version)
-	if len(s.Files) == 0 {
-		return &ports.Error{Kind: ports.ErrArtifactMissing,
-			Cause: fmt.Errorf("release %s of %s has no files to ship to GitHub", s.Version, s.App)}
+	names := make([]string, len(s.Files))
+	for i, f := range s.Files {
+		names[i] = f.Name
+	}
+	plan, problem := model.GitHubShipment(model.GitHubShipmentFacts{Type: s.Type, Deployment: s.Deployment,
+		Files: names, Source: t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil,
+		Image: s.Image != "", PackagesToken: strings.TrimSpace(string(t.Secret[model.GitHubSecretPackagesToken])) != ""})
+	if problem != "" {
+		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
 	}
 	c, err := d.client(t)
 	if err != nil {
 		return err
 	}
 	marker := model.ShipMarker(s.App, tag)
-	files := make([]model.ReleaseAsset, len(s.Files))
+	// A file's ID is its index in s.Files, which write streams it from.
+	var files []model.ReleaseAsset
 	for i, f := range s.Files {
-		files[i] = model.ReleaseAsset{ID: int64(i), Name: f.Name, Size: f.Size}
+		if slices.Contains(plan.Files, f.Name) {
+			files = append(files, model.ReleaseAsset{ID: int64(i), Name: f.Name, Size: f.Size})
+		}
 	}
 	ours, err := marked(ctx, c, tag, marker, files)
 	if err != nil {
@@ -99,7 +109,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		}
 	}
 	commit := s.Commit
-	if t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil && (ours == nil || ours.Draft) {
+	if plan.Source && (ours == nil || ours.Draft) {
 		// The source goes out first, and the release is of its commit; a
 		// release that is out keeps the source it went out with.
 		done, err := d.shipSource(ctx, c, t, s, tag)
