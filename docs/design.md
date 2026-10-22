@@ -128,7 +128,19 @@ and from it are story only.
    service per Connector.
 6. **Write `.c4factory.yaml`** with the project, the container and the
    scaffold's refs.
-7. **Push one commit,** protect `main` with the Standard's required checks,
+7. **Write `LICENSE`** when the Container's `spec.license`, else its
+   Project's, names one: an SPDX id from the set the operator holds the text
+   of (`MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`,
+   `MPL-2.0`, `GPL-2.0-only`, `GPL-3.0-only`, `LGPL-3.0-only`,
+   `AGPL-3.0-only`, `Unlicense`), an enum in the schema. The text is the
+   SPDX one; where it has a copyright line, the year is the scaffold's and
+   the holder the Project's `displayName`, else its name. The factory never
+   picks a license: with none set, no file. It is an operator path like
+   `.c4factory.yaml`, which records the id; a layer writing `LICENSE` is the
+   two-layers collision below. Read at scaffold only: changing the setting
+   later rewrites nothing, and a Container already scaffolded gets its
+   license by a commit ([plans/license.md](plans/license.md)).
+8. **Push one commit,** protect `main` with the Standard's required checks,
    then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
 
 Every file belongs to exactly one layer: two layers writing a path fail the
@@ -674,7 +686,11 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   no secret the factory recognises (a private key block, a token of a known
   shape, the value of a credential the operator holds); a problem fails the
   entry `LicenseMissing`, `ReadmeMissing` or `SecretFound`, naming the file
-  and line and never the value, until another version is wanted. The
+  and line and never the value, until another version is wanted.
+  `LicenseMissing` says how a license gets there: `spec.license` on the
+  Project or the Container before it is scaffolded (Scaffolding a
+  Container), or a committed license file, the only way for a Container
+  already scaffolded. The
   values compared are the GitProvider's token, the Container's agent Git
   token, its namespace's Agents' token Secrets (their keys naming a token, key, secret, password or credential) and the target's own Secret.
   A line marked `c4factory:allow-secret` is skipped, and the message says
