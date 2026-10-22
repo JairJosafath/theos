@@ -400,6 +400,12 @@ check "escalated" "$(OPEN='[[{"number":88,"labels":[{"name":"status/needs-mainta
   "88 $(date -d 2026-10-06T09:00:00Z +%s)
 89 0"
 check "escalated, none" "$(OPEN='[[]]' gh_escalated)" ""
+# The list query names the label with a literal slash: GitHub matches nothing
+# for labels=status%2Fneeds-maintainer (#1802).
+check "escalated: labels=status/needs-maintainer, slash unencoded (#1802)" "$(
+  gh_api() { local a; for a; do case $a in repos/*) echo "$a" >>"$T/escalated-urls" ;; esac; done; echo '[[]]'; }
+  gh_escalated >/dev/null; cat "$T/escalated-urls"
+)" "repos/$C4_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100"
 
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted"
 # The other take holds the lock until told to let go, and this one is seen
@@ -677,7 +683,7 @@ check "intake leaves the report issue alone" "$(calls)" ""
     [[ " $* " == *" --input - "* ]] && cat >"$T/in"
     echo "$m $url" >>"$T/calls"
     case "$m $url" in
-      "GET $R/issues?state=open&labels=maintainer%2Freport"*) [ ! -e "$T/report" ] || echo 7 ;;
+      "GET $R/issues?state=open&labels=maintainer/report"*) [ ! -e "$T/report" ] || echo 7 ;;
       "GET $R/labels/maintainer%2Freport") [ -e "$T/report-label" ] ;;
       "POST $R/labels") touch "$T/report-label" ;;
       "POST $R/issues") jq -c '{title, labels}' "$T/in" >"$T/report"; jq -r .body "$T/in" >"$T/body7"; echo "N7 https://x/issues/7" ;;
@@ -691,11 +697,11 @@ check "intake leaves the report issue alone" "$(calls)" ""
   }
   echo "first" >"$T/r1"
   out=$(gh_report "$T/r1" 2>&1)
-  check "report: first call creates and pins" "$out | $(calls | tr '\n' ',')" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/labels/maintainer%2Freport,POST $R/labels,POST $R/issues,POST graphql,"
+  check "report: first call creates and pins, labels=maintainer/report unencoded (#1802)" "$out | $(calls | tr '\n' ',')" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer/report&per_page=10,GET $R/labels/maintainer%2Freport,POST $R/labels,POST $R/issues,POST graphql,"
   check "report: the issue's title and label" "$(cat "$T/report")" '{"title":"Maintainer report","labels":["maintainer/report"]}'
   : >"$T/calls"
   echo "second" | gh_report - >"$T/out" 2>&1
-  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,PATCH $R/issues/7, | second"
+  check "report: then edits it" "$(cat "$T/out") | $(calls | tr '\n' ',') | $(cat "$T/body7")" "https://x/issues/7 | GET $R/issues?state=open&labels=maintainer/report&per_page=10,GET $R/issues/7,PATCH $R/issues/7, | second"
   check "activity: newest change, the report left out, and main" "$(gh_activity)" "2026-10-06T08:00:00Z abc123"
 
   # report-note: the watch's line under Health and Needs you (Nothing. goes),
@@ -719,7 +725,7 @@ Relay: 9 workers · main: green
 
 ## Since 01:10
 - Decided: #1"
-  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer%2Freport&per_page=10,GET $R/issues/7,GET $R/issues/7,PATCH $R/issues/7,"
+  check "report-note: reads and edits the report" "$(calls | tr '\n' ',')" "GET $R/issues?state=open&labels=maintainer/report&per_page=10,GET $R/issues/7,GET $R/issues/7,PATCH $R/issues/7,"
   gh_report_note runners 'Runners offline since T: 3 runs queued'
   check "report-note: a new count replaces the lines" "$(grep -c 'watch:runners' "$T/body7") $(grep -c '3 runs queued' "$T/body7")" "2 2"
   : >"$T/calls"
@@ -1236,7 +1242,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
     echo "$m $url" >>"$T/calls"
     case "$m $url" in
-      "GET $R/issues?state=open&labels=maintainer%2Freport"*) data='[{"number":7}]' ;;
+      "GET $R/issues?state=open&labels=maintainer/report"*) data='[{"number":7}]' ;;
       "GET $R/issues/7/comments"*) data=$(cat "$Q"/*.json 2>/dev/null | jq -sc '[sort_by(.id)]') ;;
       "POST $R/issues/7/comments")
         a=$(($(ls "$Q" | sed 's/\.json//' | sort -n | tail -1) + 1))
@@ -1679,7 +1685,7 @@ MAKE
     while [ $# -gt 0 ]; do [ "$1" = --jq ] && q=$2; shift; done
     echo "$m $url$in" >>"$Y/calls"
     case "$m $url" in
-      "GET $R/issues?state=open&labels=maintainer%2Freport"*) data='[{"number":7}]' ;;
+      "GET $R/issues?state=open&labels=maintainer/report"*) data='[{"number":7}]' ;;
       "GET $R/issues?state=open&per_page=100") data=$(jq -Rn '[inputs | {number: tonumber}]' <"$Y/open") ;;
       "GET $R/issues/7") data=$(jq -Rn '{labels: [inputs | {name: .}]}' <"$Y/labels") ;;
       "GET $R/issues/"*) data='{"body": ""}' ;;

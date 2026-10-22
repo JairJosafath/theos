@@ -728,11 +728,13 @@ gh_proposed() {
 # line as N SINCE, SINCE being when N last got that label (epoch seconds; 0
 # when its events don't say). hack/relay-watch.sh starts the maintainer for
 # one escalated after the last sweep started; the maintainer's own comments on
-# it don't count, so a sweep that leaves it there doesn't start another.
+# it don't count, so a sweep that leaves it there doesn't start another. The
+# labels query carries its slash as is: GitHub's list matches nothing for an
+# encoded one (#1802); only a /labels/NAME path segment encodes it.
 gh_escalated() {
   local pages n events
   pages=$(gh_api --paginate --slurp \
-    "repos/$C4_GITHUB_REPO/issues?state=open&labels=status%2Fneeds-maintainer&sort=created&direction=asc&per_page=100") ||
+    "repos/$C4_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100") ||
     return 1
   for n in $(jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/needs-maintainer"))
     | .number' <<<"$pages"); do
@@ -2181,9 +2183,10 @@ gh_activity() {
 }
 
 # gh_report_find: the Maintainer report issue's number (the oldest open issue
-# labeled maintainer/report), or nothing when there is none.
+# labeled maintainer/report), or nothing when there is none. The slash stays
+# unencoded, as in gh_escalated (#1802).
 gh_report_find() {
-  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=${GH_REPORT_LABEL//\//%2F}&per_page=10" \
+  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=$GH_REPORT_LABEL&per_page=10" \
     --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
 }
 
