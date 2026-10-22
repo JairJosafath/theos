@@ -201,7 +201,8 @@ spec:
                       one repository, so a library's release doesn't take Latest from it.
                     type: boolean
                   repository:
-                    description: repository is owner/name on github.com.
+                    description: repository is owner/name, on github.com or the server
+                      at url.
                     maxLength: 140
                     type: string
                     x-kubernetes-validations:
@@ -258,6 +259,22 @@ spec:
                         ''/'' or ''-'', no ''..'', ''//'' or ''/.'', and no folder
                         ending in .lock'
                       rule: '!self.matches(''^[./-]|//|/[.]|[.][.]|[.]lock(/|$)'')'
+                  url:
+                    description: |-
+                      url is a GitHub Enterprise Server's address, https://host, for a
+                      repository there; unset, the repository is on github.com. The
+                      operator calls its API under /api/v3 and copies images to its
+                      registry at containers.<host>, which needs the server's subdomain
+                      isolation on.
+                    maxLength: 200
+                    type: string
+                    x-kubernetes-validations:
+                    - message: 'url must be https://host, with no path: the server''s
+                        address, not its API''s'
+                      rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')
+                    - message: url is for GitHub Enterprise Server; leave it unset
+                        for github.com
+                      rule: '!self.matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
                 required:
                 - repository
                 type: object

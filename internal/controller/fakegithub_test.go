@@ -28,7 +28,13 @@ import (
 // that can't see it.
 type fakeGitHub struct {
 	server *httptest.Server
-	mu     sync.Mutex
+	// enterprise is the same fake as a GitHub Enterprise Server, over TLS
+	// with its API under /api/v3 and its uploads under /api/uploads.
+	enterprise *httptest.Server
+	mu         sync.Mutex
+	// enterpriseCalls are the requests each repository took through the
+	// enterprise server.
+	enterpriseCalls map[string]int
 	// repos holds each repository's releases by owner/name, git its git
 	// objects and refs, tokens the token each accepts, ids GitHub's id of
 	// each, renamed the name GitHub follows each to, and written the
@@ -82,20 +88,39 @@ type fakeGitHubAsset struct {
 func newFakeGitHub() *fakeGitHub {
 	f := &fakeGitHub{repos: map[string][]*fakeGitHubRelease{}, git: map[string]*fakeGitStore{},
 		tokens: map[string]string{}, ids: map[string]int64{}, renamed: map[string]string{},
-		written: map[string]int{}, latest: map[string]int64{}, apps: map[string]fakeGitHubApp{}}
+		written: map[string]int{}, latest: map[string]int64{}, apps: map[string]fakeGitHubApp{},
+		enterpriseCalls: map[string]int{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
+	f.enterprise = httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	return f
 }
 
-// GitHubReleases is the real client, pointed at the fake.
+// GitHubReleases is the real client, pointed at the fake: github.com's
+// stands for the plain server, and a GitHub Enterprise Server's URLs, the
+// enterprise one's, are kept.
 func (f *fakeGitHub) GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error) {
+	if cfg.APIURL != "" {
+		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubReleases(cfg)
+	}
 	cfg.APIURL, cfg.UploadURL = f.server.URL, f.server.URL
 	return gitprovider.Client{}.GitHubReleases(cfg)
 }
 
-// GitHubToken is the real client's, minting a GitHub App's token at the fake.
-func (f *fakeGitHub) GitHubToken(ctx context.Context, _ string, secret map[string][]byte) (string, error) {
+// GitHubToken is the real client's, minting a GitHub App's token at the
+// fake: at apiURL when set, the enterprise server's.
+func (f *fakeGitHub) GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error) {
+	if apiURL != "" {
+		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubToken(ctx, apiURL, secret)
+	}
 	return gitprovider.Client{}.GitHubToken(ctx, f.server.URL, secret)
+}
+
+// enterpriseUsed is how many requests repository took through the
+// enterprise server.
+func (f *fakeGitHub) enterpriseUsed(repository string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.enterpriseCalls[repository]
 }
 
 // addApp installs GitHub App appID, whose key public is, on repository as
@@ -259,6 +284,19 @@ func (f *fakeGitHub) name(repository string) string {
 func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// The enterprise server answers only under its API's and uploads' paths.
+	enterprise := req.TLS != nil
+	if enterprise {
+		path, api := strings.CutPrefix(req.URL.Path, "/api/v3/")
+		if !api {
+			path, api = strings.CutPrefix(req.URL.Path, "/api/uploads/")
+		}
+		if !api {
+			reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
+			return
+		}
+		req.URL.Path = "/" + path
+	}
 	if req.URL.Path == "/user" && req.Method == http.MethodGet {
 		// Every repository's token is the factory's account.
 		reply(w, http.StatusOK, fakeGitHubUser{"c4factory-bot"})
@@ -291,6 +329,9 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	f.count(req, repository)
+	if enterprise {
+		f.enterpriseCalls[repository]++
+	}
 	if whole {
 		reply(w, http.StatusOK, map[string]any{"id": f.ids[repository], "full_name": f.name(repository),
 			"default_branch": f.git[repository].branch, "private": f.git[repository].private})

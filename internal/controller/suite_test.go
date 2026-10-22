@@ -308,6 +308,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
+	DeferCleanup(githubFake.enterprise.Close)
 	ghcrFake, registryFake = newFakeRegistry(), newFakeRegistry()
 	DeferCleanup(ghcrFake.server.Close)
 	DeferCleanup(registryFake.server.Close)
