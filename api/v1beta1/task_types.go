@@ -427,6 +427,7 @@ type TaskStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
 // +kubebuilder:printcolumn:name="Issue",type=integer,JSONPath=".spec.issue"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
