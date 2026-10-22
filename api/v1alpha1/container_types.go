@@ -87,6 +87,14 @@ type ContainerSpec struct {
 	// +optional
 	Operations *OperationsSpec `json:"operations,omitempty"`
 
+	// license is the SPDX id of the license the repository is scaffolded
+	// with, over the Project's spec.license: the operator writes its text as
+	// LICENSE. It is read at scaffold only: changing it later rewrites
+	// nothing, and a Container already scaffolded gets its license by a
+	// commit. With neither set, the repository gets no LICENSE.
+	// +optional
+	License License `json:"license,omitempty"`
+
 	// deploy names the DeployTargets each release of the Container's Crew
 	// ships to, in order. The operator ships the newest release whose runs
 	// succeeded, or an entry's pinned version, through the target's tool, and

@@ -215,6 +215,27 @@ spec:
                 required:
                 - name
                 type: object
+              license:
+                description: |-
+                  license is the SPDX id of the license the repository is scaffolded
+                  with, over the Project's spec.license: the operator writes its text as
+                  LICENSE. It is read at scaffold only: changing it later rewrites
+                  nothing, and a Container already scaffolded gets its license by a
+                  commit. With neither set, the repository gets no LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
+                type: string
               operations:
                 description: |-
                   operations is what the application promises whatever tier runs it: how
@@ -1229,6 +1250,27 @@ spec:
                 required:
                 - name
                 type: object
+              license:
+                description: |-
+                  license is the SPDX id of the license the repository is scaffolded
+                  with, over the Project's spec.license: the operator writes its text as
+                  LICENSE. It is read at scaffold only: changing it later rewrites
+                  nothing, and a Container already scaffolded gets its license by a
+                  commit. With neither set, the repository gets no LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
+                type: string
               operations:
                 description: |-
                   operations is what the application promises whatever tier runs it: how

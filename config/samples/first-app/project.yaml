@@ -6,3 +6,5 @@ metadata:
 spec:
   displayName: Webshop
   description: An online shop where customers browse, order and reorder.
+  # No spec.license: the Containers are scaffolded without a LICENSE. Set one
+  # (an SPDX id such as MIT) before the first Container to have it written.

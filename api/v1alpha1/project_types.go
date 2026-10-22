@@ -23,6 +23,15 @@ type ProjectSpec struct {
 	// +kubebuilder:validation:MaxLength=1000
 	// +optional
 	Description string `json:"description,omitempty"`
+
+	// license is the SPDX id of the license the project's Containers are
+	// scaffolded with: the operator writes its text as each repository's
+	// LICENSE. A Container's own spec.license overrides it. It is read at
+	// scaffold only: changing it later rewrites nothing, and a Container
+	// already scaffolded gets its license by a commit. No default: with none
+	// set, a Container is scaffolded without a LICENSE.
+	// +optional
+	License License `json:"license,omitempty"`
 }
 
 // ProjectStatus rolls up the state of everything in the project.

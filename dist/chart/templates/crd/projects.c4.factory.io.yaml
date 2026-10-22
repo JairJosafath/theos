@@ -81,6 +81,28 @@ spec:
                 description: displayName is a human-friendly name for the story.
                 maxLength: 100
                 type: string
+              license:
+                description: |-
+                  license is the SPDX id of the license the project's Containers are
+                  scaffolded with: the operator writes its text as each repository's
+                  LICENSE. A Container's own spec.license overrides it. It is read at
+                  scaffold only: changing it later rewrites nothing, and a Container
+                  already scaffolded gets its license by a commit. No default: with none
+                  set, a Container is scaffolded without a LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
+                type: string
             type: object
           status:
             description: status defines the observed state of Project
@@ -239,6 +261,28 @@ spec:
               displayName:
                 description: displayName is a human-friendly name for the story.
                 maxLength: 100
+                type: string
+              license:
+                description: |-
+                  license is the SPDX id of the license the project's Containers are
+                  scaffolded with: the operator writes its text as each repository's
+                  LICENSE. A Container's own spec.license overrides it. It is read at
+                  scaffold only: changing it later rewrites nothing, and a Container
+                  already scaffolded gets its license by a commit. No default: with none
+                  set, a Container is scaffolded without a LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
                 type: string
             type: object
           status:

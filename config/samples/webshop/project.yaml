@@ -6,3 +6,6 @@ metadata:
 spec:
   displayName: Webshop
   description: An online shop where customers browse, order and reorder.
+  # The license every Container in the project is scaffolded with. MIT is this
+  # sample's choice, not the factory's: it never picks one.
+  license: MIT
