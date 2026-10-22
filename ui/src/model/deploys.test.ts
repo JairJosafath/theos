@@ -26,7 +26,7 @@ describe('memberOf', () => {
     expect(memberOf(target({}))).toEqual({ member: 'github', label: 'GitHub releases', where: 'acme/api' })
   })
 
-  it('names the argoCD member and its destination, the server only when it is another cluster (#1588)', () => {
+  it('names the argoCD member and its destination, the server only when it is another cluster (#1588, #1675)', () => {
     const t = target({
       github: undefined,
       credentialsSecretRef: undefined,
