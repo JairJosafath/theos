@@ -26,53 +26,69 @@ describe('describeRetention', () => {
   })
 })
 
+const rendered = {
+  backups: { retentionDays: 35, copyToRegion: '' },
+  recovery: { rpo: '1h', rto: '4h' },
+  alerts: { email: 'ops@example.com' },
+}
+
 describe('operationsOf', () => {
-  it('fills in the defaults for a Container without a block', () => {
+  it('shows the spec as written, nothing filled in, before the operator resolves it (#1210)', () => {
     const view = operationsOf(container())
+    expect(view.resolved).toBe(false)
     expect(values(container())).toEqual({
-      retention: '35 days',
-      copy: 'none',
-      rpo: '1h',
-      rto: '4h',
-      alerts: 'nobody',
+      retention: 'default',
+      copy: 'default',
+      rpo: 'default',
+      rto: 'default',
+      alerts: 'default',
     })
     expect(view.rows.every((r) => r.isDefault)).toBe(true)
   })
 
-  it('shows the spec and marks only the fields left out as defaults', () => {
+  it('shows what the spec sets and marks only the fields left out as defaults', () => {
     const view = operationsOf(
       container({ backups: { retentionDays: 0, copyToRegion: 'eu-west-1' }, recovery: { rpo: '15m' } }),
     )
+    expect(view.resolved).toBe(false)
     expect(view.rows.map((r) => [r.key, r.value, r.isDefault])).toEqual([
       ['retention', 'point-in-time recovery only', false],
       ['copy', 'eu-west-1', false],
       ['rpo', '15m', false],
-      ['rto', '4h', true],
-      ['alerts', 'nobody', true],
+      ['rto', 'default', true],
+      ['alerts', 'default', true],
     ])
   })
 
-  it('shows the spec, not what the scaffold rendered with', () => {
-    const c = container(
-      { backups: { retentionDays: 90 } },
-      {
-        operations: {
-          backups: { retentionDays: 35, copyToRegion: '' },
-          recovery: { rpo: '1h', rto: '4h' },
-          alerts: { email: 'ops@example.com' },
-        },
-      },
-    )
-    expect(values(c).retention).toBe('90 days')
-    expect(values(c).alerts).toBe('nobody')
-    expect(operationsOf(c).rows.find((r) => r.key === 'alerts')?.isDefault).toBe(true)
+  it('shows status.operations, every field filled in, once the operator resolved it (#1210)', () => {
+    const view = operationsOf(container({ alerts: { email: 'ops@example.com' } }, { operations: rendered }))
+    expect(view.resolved).toBe(true)
+    expect(view.rows.map((r) => [r.key, r.value, r.isDefault])).toEqual([
+      ['retention', '35 days', true],
+      ['copy', 'none', true],
+      ['rpo', '1h', true],
+      ['rto', '4h', true],
+      ['alerts', 'ops@example.com', false],
+    ])
   })
 
-  it('reads an empty region or email written out as the default', () => {
+  it('marks no default while a changed block waits to be applied', () => {
+    const changed: Condition = {
+      type: 'OperationsApplied',
+      status: 'False',
+      reason: 'ChangedAfterScaffold',
+      message: 'spec.operations changed after the scaffold',
+    }
+    const c = container({ backups: { retentionDays: 90 } }, { operations: rendered, conditions: [changed] })
+    expect(values(c).retention).toBe('35 days')
+    expect(operationsOf(c).rows.some((r) => r.isDefault)).toBe(false)
+  })
+
+  it('reads an empty region or email written out as left out', () => {
     const c = container({ backups: { copyToRegion: '' }, alerts: { email: '' } })
     const rows = operationsOf(c).rows
-    expect(rows.find((r) => r.key === 'copy')).toMatchObject({ value: 'none', isDefault: true })
-    expect(rows.find((r) => r.key === 'alerts')).toMatchObject({ value: 'nobody', isDefault: true })
+    expect(rows.find((r) => r.key === 'copy')).toMatchObject({ value: 'default', isDefault: true })
+    expect(rows.find((r) => r.key === 'alerts')).toMatchObject({ value: 'default', isDefault: true })
   })
 
   it('carries OperationsApplied only when False', () => {

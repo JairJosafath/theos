@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // A Container's spec.operations is what the app promises whatever tier runs
@@ -19,6 +20,14 @@ const (
 	DefaultRTO                 = "4h"
 	// MaxRetentionDays is the most days backups may be kept.
 	MaxRetentionDays int32 = 3650
+)
+
+// The MaxLength markers of the CRD's OperationsSpec, in characters; the test
+// that holds the patterns to the CRD holds these too.
+const (
+	MaxCopyToRegionLength = 32
+	MaxObjectiveLength    = 16
+	MaxEmailLength        = 254
 )
 
 // OperationsChoices is a Container's spec.operations as written: a nil
@@ -92,25 +101,39 @@ var (
 )
 
 // OperationsProblems returns what the API server would refuse in c, one
-// sentence per field, naming it as spec.operations does.
+// sentence per field, naming it as spec.operations does: the ranges, the
+// patterns and the lengths of the CRD's markers (#1210).
 func OperationsProblems(c OperationsChoices) []string {
 	var out []string
 	if d := c.RetentionDays; d != nil && (*d < 0 || *d > MaxRetentionDays) {
 		out = append(out, fmt.Sprintf("backups.retentionDays is %d; write 0 to %d days, 0 meaning point-in-time "+
 			"recovery only", *d, MaxRetentionDays))
 	}
-	if !regionPattern.MatchString(c.CopyToRegion) {
+	tooLong := func(name, value string, most int) string {
+		return fmt.Sprintf("%s is %d characters; the most is %d", name, utf8.RuneCountInString(value), most)
+	}
+	switch {
+	case !regionPattern.MatchString(c.CopyToRegion):
 		out = append(out, fmt.Sprintf("backups.copyToRegion is %q; write an AWS region such as eu-west-1, "+
 			"or leave it out", c.CopyToRegion))
+	case utf8.RuneCountInString(c.CopyToRegion) > MaxCopyToRegionLength:
+		out = append(out, tooLong("backups.copyToRegion", c.CopyToRegion, MaxCopyToRegionLength))
 	}
 	for _, f := range []struct{ name, value string }{{"recovery.rpo", c.RPO}, {"recovery.rto", c.RTO}} {
-		if f.value != "" && !objectivePattern.MatchString(f.value) {
+		switch {
+		case f.value == "":
+		case !objectivePattern.MatchString(f.value):
 			out = append(out, fmt.Sprintf("%s is %q; write a number of minutes, hours or days, such as 30m, "+
 				"4h or 1d", f.name, f.value))
+		case utf8.RuneCountInString(f.value) > MaxObjectiveLength:
+			out = append(out, tooLong(f.name, f.value, MaxObjectiveLength))
 		}
 	}
-	if !emailPattern.MatchString(c.Email) {
+	switch {
+	case !emailPattern.MatchString(c.Email):
 		out = append(out, fmt.Sprintf("alerts.email is %q; write one email address, or leave it out", c.Email))
+	case utf8.RuneCountInString(c.Email) > MaxEmailLength:
+		out = append(out, tooLong("alerts.email", c.Email, MaxEmailLength))
 	}
 	return out
 }
