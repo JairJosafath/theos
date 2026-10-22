@@ -62,6 +62,16 @@ unanswered for 14 days.
      `ready`, as design work if the design is still open (AGENTS.md,
      "Designing is our job"). If something else is missing, set `proposed`
      and say what.
+   - Before you call an item reserved, check whether it is a choice that
+     depends on where or how a user runs the factory: a registry, a package
+     scope, an index, a provider, a name the user holds somewhere. Such a
+     choice is a setting with a default that works on the chart's in-cluster
+     Gitea, and the user gives their own value elsewhere (AGENTS.md, "What
+     can be configured is configured"). If a setting removes the need for
+     the owner's choice, decide it that way: ready the issue with the
+     setting as its design and never ask the owner to hold a name or an
+     account for the users. Only an account or credential the project itself
+     needs is reserved (GOVERNANCE.md, "Reserved to the owner").
    - If the item is reserved, set or keep `status/needs-human`, comment your
      recommendation, and add the item to *Needs you*.
    - **A stale claim** (a `<!-- c4-claim-stale -->` comment: a live heartbeat

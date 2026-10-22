@@ -23,6 +23,11 @@ draws the story on top.
 - **Quality comes from what the platform enforces,** not from trusting the
   agent: the fence, protected files, required checks and a reviewer.
 - **Humans and agents are equal,** both in devcontainers, both Sessions.
+- **What can be configured is configured.** A choice that depends on where or
+  how a user runs the factory (a registry, a scope, an index, a provider) is
+  a setting whose default works on the chart's in-cluster Gitea; the design
+  never fixes it for the user ([AGENTS.md](../AGENTS.md), "What can be
+  configured is configured").
 
 | Topic | Rule |
 | --- | --- |
