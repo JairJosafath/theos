@@ -47,6 +47,17 @@ var ErrInvalid = errors.New("invalid image archive")
 // once pushed, names one image for good.
 var ErrTagTaken = errors.New("the tag names another image")
 
+// ErrSource wraps Copy's failure to read the image it copies, as opposed to
+// a failure to write the copy.
+var ErrSource = errors.New("the source registry")
+
+// Refused says whether err is a registry refusing the credential: 401 or 403.
+func Refused(err error) bool {
+	var terr *transport.Error
+	return errors.As(err, &terr) &&
+		(terr.StatusCode == http.StatusUnauthorized || terr.StatusCode == http.StatusForbidden)
+}
+
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
@@ -107,7 +118,7 @@ func Copy(ctx context.Context, from Registry, fromRepository, digest string, to 
 	}
 	desc, err := remote.Get(src.Digest(digest), from.options(ctx)...)
 	if err != nil {
-		return fmt.Errorf("read %s@%s: %w", src, digest, err)
+		return fmt.Errorf("%w: read %s@%s: %w", ErrSource, src, digest, err)
 	}
 	var ref name.Reference = dst.Digest(digest)
 	if tag != "" {

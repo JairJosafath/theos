@@ -653,8 +653,13 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   health back into `status.deploys[]`. Nothing is written to the repository
   at deploy. It needs a `k8s-manifests` Deployment (`service`, `worker`,
   `static-site`, `job`); operators stay out. The factory never installs
-  Argo CD. The first cluster is the factory's own; another cluster, by a
-  `kubeconfig` key in the Secret, comes later.
+  Argo CD. Argo CD runs on the factory's own cluster unless the target's
+  Secret holds a `kubeconfig`, from which the operator reaches another
+  cluster's. There, `gitURL` is the Git host as that cluster sees it, for
+  each `Application`'s `repoURL`, and `imageRegistry` is a registry its
+  nodes can pull from: the operator copies the image there by digest,
+  tagged with the version, with the Secret's `registryUsername` and
+  `registryPassword`, and `kustomize.images` names the copy.
 - **AWS targets** (#1071, [plans/aws-deploy.md](plans/aws-deploy.md)): a
   `cloudFormation` target names a region and, as a guard, an account. CI
   synthesizes the CDK app and the release carries the cloud assembly

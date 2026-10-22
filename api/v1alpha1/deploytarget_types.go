@@ -46,9 +46,10 @@ type DeployTargetSpec struct {
 	GitHub *DeployTargetGitHub `json:"github,omitempty"`
 
 	// argoCD ships each release of a Container with the k8s-manifests
-	// Deployment as one Argo CD Application in the cluster the operator runs
-	// in: the Container's repository at the release tag, its deploy/k8s path
-	// and the release's image; Argo CD rolls it out.
+	// Deployment as one Argo CD Application, in the cluster the operator runs
+	// in or, with a kubeconfig in the Secret, another one: the Container's
+	// repository at the release tag, its deploy/k8s path and the release's
+	// image; Argo CD rolls it out.
 	// +optional
 	ArgoCD *DeployTargetArgoCD `json:"argoCD,omitempty"`
 
@@ -56,6 +57,9 @@ type DeployTargetSpec struct {
 	// the user creates; its keys are the member's (token for github). Only the
 	// operator reads it: it is never mounted in a sandbox or passed to a CI job.
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
+	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
+	// when that is not the operator's) and registryUsername and
+	// registryPassword (the login to argoCD.imageRegistry for the copy).
 	// +optional
 	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
@@ -105,8 +109,9 @@ type DeployTargetGitHub struct {
 	Latest *bool `json:"latest,omitempty"`
 }
 
-// DeployTargetArgoCD is an Argo CD in the operator's cluster whose
-// Applications are the deploys, one per Container.
+// DeployTargetArgoCD is an Argo CD whose Applications are the deploys, one
+// per Container: in the operator's cluster, or in the one the Secret's
+// kubeconfig names.
 type DeployTargetArgoCD struct {
 	// namespace is where Argo CD runs and its Applications live.
 	// +kubebuilder:validation:MaxLength=63
@@ -126,6 +131,25 @@ type DeployTargetArgoCD struct {
 	// destination is where the apps run.
 	// +required
 	Destination DeployTargetArgoCDDestination `json:"destination"`
+
+	// imageRegistry is a registry the destination's nodes pull from,
+	// host[:port][/path], as the nodes see it. Set, each release's image is
+	// copied there, under the image's own repository after path, and the
+	// Application names the copy; unset, it names the image in the owner's
+	// registry.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*$`
+	// +optional
+	ImageRegistry string `json:"imageRegistry,omitempty"`
+
+	// gitURL is the Git host's address, scheme://host[:port], as Argo CD
+	// sees it. Set, it replaces the scheme and host of the repository's
+	// clone URL in each Application; unset, Argo CD clones the URL the
+	// operator does.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https?://[^/?#@]+/?$')",message="gitURL must be scheme://host[:port]"
+	// +optional
+	GitURL string `json:"gitURL,omitempty"`
 }
 
 // DeployTargetArgoCDDestination is where an argoCD target's apps run, as

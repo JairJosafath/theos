@@ -112,6 +112,16 @@ func (g *gitea) ImageDigest(ctx context.Context, repo Repository, tag string) (s
 	return digest, nil
 }
 
+// CopyImage copies repo's image at digest from the owner's registry to
+// toRepository at to, tagged tag.
+func (g *gitea) CopyImage(ctx context.Context, repo Repository, digest string, to oci.Registry,
+	toRepository, tag string) error {
+	if err := oci.Copy(ctx, g.registry(), imagePath(repo), digest, to, toRepository, tag); err != nil {
+		return fmt.Errorf("gitea: %w", err)
+	}
+	return nil
+}
+
 func assetNames(assets []ReleaseAsset) []string {
 	names := make([]string, 0, len(assets))
 	for _, a := range assets {

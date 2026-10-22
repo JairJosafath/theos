@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/JairJosafath/c4factory/internal/oci"
+
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -307,6 +309,11 @@ type Provider interface {
 	// ImageDigest returns the digest repo's image tag names in the owner's
 	// container registry, or "" when there is none.
 	ImageDigest(ctx context.Context, repo Repository, tag string) (string, error)
+	// CopyImage copies repo's image at digest from the owner's container
+	// registry to toRepository at to, tagged tag, with the same digest: an
+	// argoCD target on another cluster pulls from a registry its nodes reach
+	// (#1590).
+	CopyImage(ctx context.Context, repo Repository, digest string, to oci.Registry, toRepository, tag string) error
 	// ReadSource calls fn with each file of repo as of tag, as git archive makes
 	// it, its path, mode and size, and its content, which is streamed, never
 	// held whole in memory, and read only during the call. A submodule fails the
