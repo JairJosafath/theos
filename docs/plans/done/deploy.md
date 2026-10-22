@@ -342,10 +342,10 @@ What #1162 settled that the decisions above left open:
   real member needs anything yet; `Incompatible` is seen through it.
 - **Known limits, filed as follow-ups:** a pin to an older published
   release stayed `Deploying` until `State` took the wanted version
-  ([github-deploy-state.md](../github-deploy-state.md), #1485); two
-  Containers shipping to one `github` target take the same tags
-  (`TagTaken`) until #1486 gives the member a tag prefix (the same plan,
-  #1445); and the Container reconciler runs one
+  ([github-deploy-state.md](github-deploy-state.md), #1485); two
+  Containers shipping to one `github` target took the same tags
+  (`TagTaken`) until #1486 gave the member a `tagPrefix`, the Container's
+  name by default (the same plan, #1445); and the Container reconciler runs one
   worker, so a long GitHub upload holds the other Containers' reconciles for
   its length, as a Crew's upload held the Crews before `crewWorkers`.
 

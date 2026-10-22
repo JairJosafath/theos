@@ -8,6 +8,7 @@ permission. See the LICENSE file.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -42,6 +43,66 @@ type GitProviderSpec struct {
 	// credentialsSecretRef names a Secret with keys "username" and "token".
 	// +required
 	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+
+	// ci picks the CI system and how its runners are kept. Without it, the
+	// Git host's own CI serves the project's repositories on the install's
+	// shared runners.
+	// +optional
+	CI *CISpec `json:"ci,omitempty"`
+}
+
+// CISpec picks the CI system, one member at a time. giteaActions is the only
+// member in v1alpha1.
+type CISpec struct {
+	// giteaActions is Gitea Actions on a pool of single-job runner pods the
+	// operator keeps in the project's namespace, registered to the GitProvider's
+	// owner organization.
+	// +optional
+	GiteaActions *GiteaActionsSpec `json:"giteaActions,omitempty"`
+}
+
+// GiteaActionsSpec is the per-project pool of Gitea Actions runners.
+type GiteaActionsSpec struct {
+	// runners has one entry per job label. Each keeps size idle pods waiting
+	// for a job; a pod takes one job and is replaced.
+	// +listType=map
+	// +listMapKey=label
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	// +required
+	Runners []CIRunnerSpec `json:"runners"`
+}
+
+// CIRunnerSpec is one label's runners in a project's pool.
+type CIRunnerSpec struct {
+	// label is the job label the runners take, as the workflows' runs-on names it.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=32
+	// +required
+	Label string `json:"label"`
+
+	// image is the runner image, such as c4factory/gitea-runner-go:dev; it
+	// registers in an init container and runs the jobs.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Image string `json:"image"`
+
+	// size is how many idle pods wait for a job.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=8
+	// +kubebuilder:default=1
+	// +optional
+	Size int32 `json:"size,omitempty"`
+
+	// resources for the runner container, where the jobs run.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// goCache mounts the project's Go build cache from the node, under the
+	// operator's --ci-go-cache, so a job compiles only what changed. Only for
+	// an image with the Go toolchain.
+	// +optional
+	GoCache bool `json:"goCache,omitempty"`
 }
 
 // +kubebuilder:object:root=true

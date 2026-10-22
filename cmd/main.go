@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -35,6 +36,7 @@ import (
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/features"
+	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
@@ -71,6 +73,7 @@ func main() {
 	var leaseDuration time.Duration
 	var workspaceMemory string
 	var sandboxGoCache string
+	var ciGoCache string
 	var goProxy string
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
@@ -110,6 +113,10 @@ func main() {
 		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
 			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
 			"Never the CI runner's cache: agents run untrusted code, and Go trusts its cache.")
+	flag.StringVar(&ciGoCache, "ci-go-cache", "",
+		"When set, a directory on the node, such as /var/cache/c4factory/go/ci, under which each project's "+
+			"CI runner pods get their own Go and golangci-lint build cache, <dir>/<project namespace>; a job "+
+			"compiles only what changed. Never shared with the agent sandboxes' cache.")
 	flag.StringVar(&goProxy, "go-proxy", controller.DefaultGoProxy,
 		"The Go proxy asked whether go get finds a released Go module whose path is outside c4factory.local/; "+
 			"off asks none, and the Crew's own GitHub source tag is the answer.")
@@ -290,6 +297,8 @@ func main() {
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
+		Git:               gitprovider.Client{},
+		CIGoCache:         ciGoCache,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)
@@ -306,8 +315,17 @@ func main() {
 		setupLog.Error(err, "Failed to load the Session feature")
 		os.Exit(1)
 	}
-	// Each DeployTarget member's adapter, by the member's name.
-	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{})}
+	// Each DeployTarget member's adapter, by the member's name. The Argo CD
+	// adapter reads uncached, so a check on a cluster without Argo CD starts
+	// no informer on a CRD that isn't there.
+	argoClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme(),
+		Mapper: mgr.GetRESTMapper(), HTTPClient: mgr.GetHTTPClient()})
+	if err != nil {
+		setupLog.Error(err, "Failed to make the Argo CD adapter's client")
+		os.Exit(1)
+	}
+	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{}),
+		model.DeployMemberArgoCD: argocd.New(argoClient)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),

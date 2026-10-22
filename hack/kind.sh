@@ -7,6 +7,8 @@
 #                                         into Kind cluster CLUSTER under the name IMAGE
 #   hack/kind.sh keep-context CMD ARGS..  run CMD (kind create cluster, kind export kubeconfig),
 #                                         then put the kubeconfig's current context back
+#   hack/kind.sh registry-hosts CLUSTER   write containerd's hosts.toml for Gitea into CLUSTER's nodes
+#   hack/kind.sh gitea-service CLUSTER    delete CLUSTER's Gitea Service when its ClusterIP isn't the fixed one
 #
 # A build tags IMAGE-<checkout> (c4factory/operator:dev-relay-2-1a2b3c), never
 # the shared IMAGE, so another checkout's build can't replace it between the
@@ -21,6 +23,17 @@ set -euo pipefail
 KIND=${KIND:-kind}
 KUBECTL=${KUBECTL:-kubectl}
 CONTAINER_TOOL=${CONTAINER_TOOL:-docker}
+
+# The in-cluster Gitea as a node pulls from it. The operator pushes a
+# Container's image to Gitea's registry at GITEA_HOST and writes that name,
+# with its digest, into the Deployment it ships (docs/plans/k8s-deploy.md,
+# decision 7). The node has no cluster DNS, so containerd resolves the name
+# through a hosts.toml that points it at the Service's fixed ClusterIP
+# (config/gitea/service.yaml; Kind's service range is 10.96.0.0/16, .1 is the
+# API server and .10 kube-dns). This is the test environment's shortcut: a
+# real cluster pulls from a registry with a real name and TLS.
+GITEA_HOST=gitea.gitea.svc.cluster.local:3000
+GITEA_CLUSTER_IP=10.96.0.30
 
 # checkout_tag: the checkout's directory name and a hash of its path, as a tag
 # suffix: two checkouts never share one, and the same checkout keeps its own.
@@ -87,12 +100,47 @@ keep_context() {
   return "$rc"
 }
 
+# registry_hosts CLUSTER: write /etc/containerd/certs.d/GITEA_HOST/hosts.toml
+# into every node of CLUSTER, so a pull of GITEA_HOST/... goes to Gitea's
+# ClusterIP over plain HTTP. It lives here and not in hack/kind.yaml: kind's
+# extraMounts needs an absolute host path, and the legacy registry.mirrors
+# patch is ignored once containerd reads certs.d (kind's default). Idempotent,
+# so `make cluster` runs it whether or not the cluster existed.
+registry_hosts() {
+  local cluster=$1 node nodes dir="/etc/containerd/certs.d/$GITEA_HOST"
+  nodes=$("$KIND" get nodes --name "$cluster")
+  [ -n "$nodes" ] || { echo "kind.sh: Kind cluster $cluster has no nodes" >&2; return 1; }
+  for node in $nodes; do
+    printf 'server = "http://%s"\n\n[host."http://%s"]\n  capabilities = ["pull", "resolve"]\n' \
+      "$GITEA_CLUSTER_IP:${GITEA_HOST##*:}" "$GITEA_CLUSTER_IP:${GITEA_HOST##*:}" |
+      "$CONTAINER_TOOL" exec -i "$node" sh -c 'mkdir -p "$1" && cat >"$1/hosts.toml"' sh "$dir"
+  done
+  echo "Mapped $GITEA_HOST to http://$GITEA_CLUSTER_IP:${GITEA_HOST##*:} in Kind cluster $cluster"
+}
+
+# gitea_service CLUSTER: delete Service gitea/gitea of CLUSTER when its
+# ClusterIP isn't GITEA_CLUSTER_IP, so the apply of config/gitea that follows
+# creates it with the fixed one. spec.clusterIP is immutable: on a pool
+# cluster whose Gitea predates the pin the Service holds an allocated IP, and
+# the apply failed with "field is immutable" (#1679). A Service that already
+# has the fixed IP, or none at all, is left alone.
+gitea_service() {
+  local cluster=$1 ip
+  ip=$("$KUBECTL" --context "kind-$cluster" -n gitea get svc gitea --ignore-not-found -o 'jsonpath={.spec.clusterIP}')
+  if [ -n "$ip" ] && [ "$ip" != "$GITEA_CLUSTER_IP" ]; then
+    echo "Deleting Service gitea/gitea of Kind cluster $cluster: its ClusterIP $ip is not the fixed $GITEA_CLUSTER_IP (immutable; the apply recreates it)"
+    "$KUBECTL" --context "kind-$cluster" -n gitea delete svc gitea
+  fi
+}
+
 main() {
   case "${1:-}" in
     checkout) checkout_tag ;;
     load) [ $# -eq 3 ] || { echo "usage: hack/kind.sh load CLUSTER IMAGE" >&2; return 64; }; load "$2" "$3" ;;
     keep-context) shift; [ $# -gt 0 ] || { echo "usage: hack/kind.sh keep-context CMD [ARGS...]" >&2; return 64; }; keep_context "$@" ;;
-    *) echo "usage: hack/kind.sh checkout | load CLUSTER IMAGE | keep-context CMD [ARGS...]" >&2; return 64 ;;
+    registry-hosts) [ $# -eq 2 ] || { echo "usage: hack/kind.sh registry-hosts CLUSTER" >&2; return 64; }; registry_hosts "$2" ;;
+    gitea-service) [ $# -eq 2 ] || { echo "usage: hack/kind.sh gitea-service CLUSTER" >&2; return 64; }; gitea_service "$2" ;;
+    *) echo "usage: hack/kind.sh checkout | load CLUSTER IMAGE | keep-context CMD [ARGS...] | registry-hosts CLUSTER | gitea-service CLUSTER" >&2; return 64 ;;
   esac
 }
 

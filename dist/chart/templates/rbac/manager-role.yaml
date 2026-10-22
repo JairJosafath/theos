@@ -13,11 +13,30 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - update
+- apiGroups:
+  - ""
+  resources:
   - namespaces
-  - pods
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -47,6 +66,24 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - appprojects
+  verbs:
   - get
   - list
   - watch

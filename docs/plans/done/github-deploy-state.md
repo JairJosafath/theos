@@ -1,7 +1,7 @@
 # What runs at a GitHub target, and whose tags are whose
 
 Parent issue: #1445, found while building #1162. Agent: otter-1445. It
-settles two rules [plans/done/deploy.md](done/deploy.md) left as known
+settles two rules [deploy.md](deploy.md) left as known
 limits of the DeployTarget's `github` member; #1070 builds the rest of the
 member (source, history, GHCR, a GitHub App) on them.
 

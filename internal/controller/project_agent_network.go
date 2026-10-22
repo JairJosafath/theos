@@ -10,8 +10,6 @@ package controller
 
 import (
 	"context"
-	"net/url"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -21,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
@@ -35,54 +32,22 @@ const (
 )
 
 // ensureAgentNetwork fences agent sandboxes in the project: no traffic in, and
-// out only DNS, the in-cluster Git hosts of the project's GitProviders, HTTPS
-// to public addresses (the model API, package registries) and, when the
-// operator has one, the model proxy. The Kubernetes API and every other
-// in-cluster service stay out of reach.
+// out only what fenceEgress allows, the in-cluster Git hosts being those of the
+// project's GitProviders, and, when the operator has one, the model proxy.
 func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v1alpha1.Project) error {
 	var providers c4v1alpha1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}
-	var gitNamespaces []string
-	for _, p := range providers.Items {
-		u, err := url.Parse(p.Spec.URL)
-		if err != nil {
-			continue
-		}
-		if ns, ok := model.ClusterNamespace(u.Hostname()); ok && !slices.Contains(gitNamespaces, ns) {
-			gitNamespaces = append(gitNamespaces, ns)
-		}
-	}
-	slices.Sort(gitNamespaces)
-
-	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
-	dns, https := intstr.FromInt32(53), intstr.FromInt32(443)
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			To: []networkingv1.NetworkPolicyPeer{{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
-					corev1.LabelMetadataName: metav1.NamespaceSystem}},
-				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
-		},
-		{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{
-				CIDR: "0.0.0.0/0", Except: model.PrivateRanges()}}},
-			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &https}},
-		},
-	}
-	for _, ns := range gitNamespaces {
-		egress = append(egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{
-			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{corev1.LabelMetadataName: ns}},
-		}}})
-	}
+	gitNamespaces := gitNamespacesOf(providers.Items)
+	egress := fenceEgress(gitNamespaces)
 	if r.ModelProxyURL != "" {
 		// A sandbox on the shared token holds no token: the proxy's pods in the
 		// release namespace are its only way to Claude with one (decision 6 of
 		// docs/plans/done/model-proxy.md). The proxy's own policy admits only
-		// sandboxes of namespaces opted in to the shared Secrets.
+		// sandboxes of namespaces opted in to the shared Secrets. The CI runners'
+		// policy has no such rule: a job never talks to Claude.
+		tcp := corev1.ProtocolTCP
 		proxy := intstr.FromInt32(ModelProxyPort)
 		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{{
@@ -99,11 +64,8 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 		Name: AgentNetworkPolicyName, Namespace: project.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
 		policy.Labels = projectLabels(project.Namespace)
-		policy.Spec = networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{LabelAgentSandbox: agentSandboxValue}},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
-			Egress:      egress,
-		}
+		policy.Spec = fencePolicySpec(map[string]string{LabelAgentSandbox: agentSandboxValue}, gitNamespaces)
+		policy.Spec.Egress = egress
 		return controllerutil.SetControllerReference(project, policy, r.Scheme)
 	})
 	return err

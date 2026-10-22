@@ -18,6 +18,7 @@ permissions:
 jobs:
   unstatus:
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Drop the issue's status labels

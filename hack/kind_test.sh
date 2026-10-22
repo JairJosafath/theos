@@ -19,8 +19,21 @@ fake_kind() {
     "create cluster") echo "kind-$4" >"$T/context" ;;
   esac
 }
-fake_docker() { [ "$1" = image ] && { [ "$3" != missing:dev-$(checkout_tag) ]; return; }; echo "docker $*" >>"$T/calls"; }
+fake_docker() {
+  [ "$1" = image ] && { [ "$3" != missing:dev-$(checkout_tag) ]; return; }
+  echo "docker $*" >>"$T/calls"
+  [ "$2" = -i ] && cat >"$T/stdin"
+}
 fake_kubectl() {
+  # Named-context calls (gitea-service): the Service's ClusterIP is $T/svc-ip.
+  if [ "$1" = --context ]; then
+    echo "kubectl $*" >>"$T/calls"
+    case "$5" in
+      get) cat "$T/svc-ip" 2>/dev/null ;;
+      delete) : >"$T/svc-ip" ;;
+    esac
+    return
+  fi
   case "$2" in
     current-context) [ -s "$T/context" ] && cat "$T/context" || { echo "error: current-context is not set" >&2; return 1; } ;;
     use-context) echo "$3" >"$T/context" ;;
@@ -80,6 +93,40 @@ keep_context slow_switch b & wait
 check "keep-context: concurrent calls restore the original" "$(cat "$T/context")" kind-c4factory
 check "keep-context: lock beside the kubeconfig" "$(ls "$T" | grep -c '^config\.keep-context\.lock$')" 1
 
+# registry-hosts: every node gets containerd's hosts.toml for Gitea, pointing
+# at the ClusterIP config/gitea/service.yaml fixes.
+registry_hosts c4factory-2 >/dev/null
+check "registry-hosts: calls" "$(calls)" "kind get nodes --name c4factory-2
+docker exec -i c4factory-2-control-plane sh -c mkdir -p \"\$1\" && cat >\"\$1/hosts.toml\" sh /etc/containerd/certs.d/gitea.gitea.svc.cluster.local:3000"
+check "registry-hosts: hosts.toml" "$(cat "$T/stdin")" 'server = "http://10.96.0.30:3000"
+
+[host."http://10.96.0.30:3000"]
+  capabilities = ["pull", "resolve"]'
+ip=$(sed -n 's/^ *clusterIP: *//p' "$(dirname "$0")/../config/gitea/service.yaml")
+check "registry-hosts: the Service's ClusterIP" "$GITEA_CLUSTER_IP" "$ip"
+registry_hosts gone >/dev/null 2>&1
+check "registry-hosts: no nodes fails" "$?" 1
+calls >/dev/null
+
+# gitea-service: spec.clusterIP is immutable, so before make gitea applies
+# config/gitea, a Service whose ClusterIP differs from the fixed one is
+# deleted (#1679); one that matches, or none, is left alone.
+get_svc="kubectl --context kind-c4factory-2 -n gitea get svc gitea --ignore-not-found -o jsonpath={.spec.clusterIP}"
+printf 10.96.187.4 >"$T/svc-ip"
+gitea_service c4factory-2 >/dev/null
+check "gitea-service: another ClusterIP is deleted (#1679)" "$(calls)" "$get_svc
+kubectl --context kind-c4factory-2 -n gitea delete svc gitea"
+printf 10.96.0.30 >"$T/svc-ip"
+gitea_service c4factory-2 >/dev/null
+check "gitea-service: the fixed ClusterIP stays (#1679)" "$(calls)" "$get_svc"
+rm -f "$T/svc-ip"
+gitea_service c4factory-2 >/dev/null
+check "gitea-service: no Service stays (#1679)" "$(calls)" "$get_svc"
+check "gitea-service: make gitea runs it before the apply (#1679)" \
+  "$(awk '/kind.sh gitea-service/{s=NR} /apply -k config\/gitea/{a=NR} END{print (s && a && s<a) ? "yes" : "no"}' "$(dirname "$0")/testenv.mk")" yes
+
 check "usage" "$(main bogus 2>/dev/null; echo $?)" 64
+check "usage: registry-hosts" "$(main registry-hosts 2>/dev/null; echo $?)" 64
+check "usage: gitea-service" "$(main gitea-service 2>/dev/null; echo $?)" 64
 
 exit "$fail"

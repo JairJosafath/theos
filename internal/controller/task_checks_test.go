@@ -15,6 +15,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -66,6 +69,39 @@ func (g *fakeGit) setRunJobs(owner, name string, id int64, online []int64, jobs 
 			delete(g.releaseState().onlineRunners, runner)
 		}
 	})
+}
+
+// heldPoolPod gives ns's provider gitea a CI pool of one go runner and returns
+// a pod of it, held by a test finalizer so the pool's record of its fate
+// outlives the spec's reads (the pool drops its own after
+// testRunnerRecordKept).
+func heldPoolPod(ns string) *corev1.Pod {
+	GinkgoHelper()
+	const held = "c4.factory.io/test-held"
+	var provider c4v1alpha1.GitProvider
+	Expect(k8sClient.Get(ctx, key(ns, "gitea"), &provider)).To(Succeed())
+	provider.Spec.CI = &c4v1alpha1.CISpec{GiteaActions: &c4v1alpha1.GiteaActionsSpec{Runners: []c4v1alpha1.CIRunnerSpec{
+		{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1},
+	}}}
+	Expect(k8sClient.Update(ctx, &provider)).To(Succeed())
+	var pod corev1.Pod
+	Eventually(func(g Gomega) {
+		live := livePoolPods(ns)
+		g.Expect(live).NotTo(BeEmpty())
+		pod = live[0]
+	}).Should(Succeed())
+	orig := pod.DeepCopy()
+	pod.Finalizers = append(pod.Finalizers, held)
+	Expect(k8sClient.Patch(ctx, &pod, client.MergeFrom(orig))).To(Succeed())
+	DeferCleanup(func() {
+		if p := poolPod(ns, pod.Name); p != nil {
+			orig := p.DeepCopy()
+			if controllerutil.RemoveFinalizer(p, held) {
+				Expect(client.IgnoreNotFound(k8sClient.Patch(ctx, p, client.MergeFrom(orig)))).To(Succeed())
+			}
+		}
+	})
+	return &pod
 }
 
 var _ = Describe("A Task's checks", func() {
@@ -244,6 +280,74 @@ var _ = Describe("A Task's checks", func() {
 
 		By("starting a fix round once its runner is still online")
 		skewTaskClock(model.RunnerGoneAfter + time.Minute)
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
+			sandboxExists(g, ns, "add-crop-r2-implement")
+		}).Should(Succeed())
+		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
+	})
+
+	It("runs the job again at no round when its pool pod was lost mid-job (#1140)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		pod := heldPoolPod(ns)
+		// The pod is deleted mid-job: its runner cancels the job on its way
+		// down. The runner is still listed online, as a person's cancel would
+		// leave it: the pod's fate decides, not the runner.
+		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
+		cancelled.Conclusion = "cancelled"
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		gitFake.setRunJobs(ns, "orders-api", 962, []int64{31}, gitprovider.WorkflowJob{ID: 1, Status: "completed",
+			Conclusion: "cancelled", RunnerID: 31, RunnerName: pod.Name, Completed: time.Now()})
+		gitFake.setCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.setCheckLog, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(poolPod(ns, pod.Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+		}).Should(Succeed())
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
+			g.Expect(task.Status.Feedback).To(BeEmpty(), "the agent is told nothing")
+		}).Should(Succeed())
+	})
+
+	It("costs the round when the job's pool pod ended on its own after a cancel (#1140)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		pod := heldPoolPod(ns)
+		// A person cancels the run: the runner ends its one job and the pod
+		// exits on its own, and Gitea deletes the ephemeral runner, so it is
+		// offline, as a runner told to stop would be.
+		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
+		cancelled.Conclusion = "cancelled"
+		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		gitFake.setRunJobs(ns, "orders-api", 962, nil, gitprovider.WorkflowJob{ID: 1, Status: "completed",
+			Conclusion: "cancelled", RunnerID: 31, RunnerName: pod.Name, Completed: time.Now()})
+		gitFake.setCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.setCheckLog, "")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		setPodPhase(pod, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			g.Expect(poolPod(ns, pod.Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateEnded))
+		}).Should(Succeed())
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))

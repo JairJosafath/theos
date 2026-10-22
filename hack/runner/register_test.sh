@@ -39,6 +39,11 @@ check "  registers a new runner, not the one that stopped (#1143)" "$(calls)" \
 check "  replaces the runner file" "$(cat "$T/data/.runner")" '{"token":"runner-own"}'
 rm "$T/calls"
 
+register RUNNER_TOKEN=reg-token RUNNER_EPHEMERAL=1; check "register a single-job runner (#1140)" $? 0
+check "  passes --ephemeral" "$(calls)" \
+	"register --no-interactive --config $T/config.yaml --instance http://gitea:3000 --token reg-token --name runner-1 --labels go:host --ephemeral"
+rm "$T/calls"
+
 # The runner writes the file its config names; both scripts look for it there.
 file=$(sed -n 's/^  file: //p' "$DIR/config.yaml")
 for s in register.sh entrypoint.sh; do

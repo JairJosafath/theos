@@ -26,6 +26,7 @@ jobs:
     # On self-hosted runners (make gh-runner) only runner 1 of a device carries
     # c4factory-kind, so a device makes one Kind cluster at a time.
     runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 30
     # A cluster and image tags of its own: on a self-hosted runner (make
     # gh-runner) it shares the device's Docker with the Kind pool and its :dev
     # images.
@@ -71,7 +72,7 @@ jobs:
       - name: Build and load the images
         run: |
           docker build -t "$IMG" .
-          docker build -t "$UI_IMG" ui
+          docker build -t "$UI_IMG" -f ui/Dockerfile .
           docker build -t "$SEED_IMG" -f hack/seed/Dockerfile .
           docker build -t c4factory/base:chart-test hack/toolchain-base
           docker build -t "$RUNNER_IMG" --build-arg BASE=c4factory/base:chart-test -f hack/runner/Dockerfile .

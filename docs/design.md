@@ -233,10 +233,24 @@ seccomp and AppArmor `Unconfined`, which BuildKit's user namespaces need, as uid
 `make validate-yaml` checks that too. Each job starts its own BuildKit, its
 state in the job's temporary directory, removed from inside BuildKit's user
 namespace when the build ends, since the runner outside it can't remove a file
-a `RUN` step gave another user. Still open: one long-lived runner per label serves
-every project, so a job can leave something for the next; a pool of single-job
-runners per project closes it (#1076). Until then one install is one trust
-domain ([getting-started](getting-started.md#what-the-factory-trusts)).
+a `RUN` step gave another user.
+
+A project's checks run on its own pool of single-job runner pods, which the
+operator keeps in the project's namespace, one pool per label the project's
+GitProvider `ci` block names, registered `--ephemeral` to the project's Git
+organization so each pod takes one job and ends. The operator deletes an
+ended pod and starts a fresh one; the pool goes with the Project. The pods
+sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
+namespace and public HTTPS out), hold no ServiceAccount token, get the
+registration token only in an init container, and the `go` label's pods
+mount a Go build cache of the project's own on the node. The shared runners
+Helm installs register to the templates organization and serve the
+templates' checks only. Who cancelled a job is read from its pod: a pod that
+ended its one job on its own after the cancel was a person's; one deleted,
+evicted or killed before its job ended was the runner's, and the Task reruns
+the checks at no cost to a round (`model.Canceller`). The isolation left is
+the node's: the pods share it with everything else
+([getting-started](getting-started.md#what-the-factory-trusts)).
 
 ## Crews and releases
 
@@ -298,7 +312,13 @@ The operator moves bytes with credentials it holds; it builds nothing.
   proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
   and the Go Standard's CI fetch `c4factory.local/...` from the registry.
 - **npm and PyPI packages** (#1087, decided, not built): the release's npm
-  tarballs, wheels and sdists, published once to the Git host's registries
+  tarballs, wheels and sdists, published once to the npm registry and the
+  PyPI index `GitProvider.spec.packages` names, by default the Git host's
+  own. npm packages are named `<scope>/<container>`; the scope is a setting
+  there too, `@c4factory` by default. The factory claims no name on
+  npmjs.org or any public registry (#1234): by default nothing leaves the
+  cluster, and a user who publishes elsewhere sets a scope they hold, their
+  registry's and index's URLs and a credential Secret of their own
   ([plans/app-packages.md](plans/app-packages.md)).
 - **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
   (a repository and a token Secret for it alone) copies the tag, notes and
@@ -513,9 +533,13 @@ controllers call, not by one product's API;
   only shorten waits ([plans/git-events.md](plans/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
-  default to the host's own, a DeployTarget names each deploy's tool.
+  default to the host's own (`spec.packages` names another npm registry or
+  PyPI index, and the npm scope), a DeployTarget names each deploy's tool.
 - **A user's credential never reaches code the agents wrote:** only the
-  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets.
+  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets,
+  and a registry Secret's `token`. The one exception is a registry Secret's
+  `readToken`, which the user makes for installs alone: it reaches agent
+  pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its
   contract;** none is yet.
 
@@ -526,12 +550,18 @@ release to the tool that owns the target. It never builds, runs repository
 code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 - **A place is a `DeployTarget`,** shared by any number of Containers: one
-  member saying what it is (`github` today; `argoCD` with #1072,
+  member saying what it is (`github` and `argoCD` today;
   `cloudFormation` with #1071, `flux` later, each with its adapter), a
   `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`
   (`Required` or `None`; empty is `Required` in production) and non-secret
-  `parameters`. `Ready` says whether the target takes the credential.
+  `parameters`. `Ready` says whether the target takes the credential. A
+  `github` target's `tagPrefix` goes before each release's tag: unset, it is
+  the Container's name and `-` (`orders-cli-v0.1.0`), so any number of
+  Containers share a target; set, it is used as it is, `""` giving bare
+  tags. Its `latest` (default true) says whether each release becomes the
+  repository's Latest
+  ([plans/done/github-deploy-state.md](plans/done/github-deploy-state.md)).
 - **A Container names its targets in `spec.deploy`:** entries by `target`,
   with an optional `after` (an entry that runs a version first), `version` (a
   pinned tag, how a person rolls back) and `approved` (the version a person

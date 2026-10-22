@@ -5,8 +5,9 @@
 #   3. pushes and tags each template in versions.txt that is not tagged yet;
 #   4. stores an admin access token as Secret gitea-credentials in each project's
 #      namespace;
-#   5. stores a runner registration token as Secret gitea/gitea-runner, unless
-#      RUNNER_SECRET is empty (in the Helm chart, Gitea's pod makes that token);
+#   5. stores the templates organization's runner registration token as Secret
+#      gitea/gitea-runner for the shared CI runners, unless RUNNER_SECRET is
+#      empty;
 #   6. with PROJECT_OBJECTS=true (the Helm chart), creates Project PROJECT in
 #      each project's namespace when it has none, so the UI can take a Brief
 #      there; it never changes or deletes one;
@@ -282,17 +283,35 @@ ensure_credentials() {
   log "Stored the token as Secret $ns/$secret (keys username, token)"
 }
 
-# ensure_runner_token: Secret RUNNER_SECRET in RUNNER_NAMESPACE with a registration
-# token for the CI runner (config/runner).
+# ensure_runner_token: Secret RUNNER_SECRET in RUNNER_NAMESPACE with the
+# templates organization's runner registration token, for the shared CI
+# runners (config/runner, the chart's runners.yaml). Registered to that
+# organization, they serve the templates' checks and nothing else: a
+# project's checks run on the operator's per-project pool of single-job
+# runners (docs/plans/ci-runner-isolation.md). Gitea hands out the token it
+# has until it is reset, so a Secret holding it is kept (the upgrade check
+# sees it unchanged); the annotation c4.factory.io/token-owner says whose
+# token it is, and a Secret without it, an instance token an older seed or
+# chart stored, is replaced.
 ensure_runner_token() {
-  api POST /admin/actions/runners/registration-token
-  expect "Getting a runner registration token" 200 201
+  local ns=$RUNNER_NAMESPACE secret=$RUNNER_SECRET owner="org/$TEMPLATE_ORG"
+  api POST "/orgs/$TEMPLATE_ORG/actions/runners/registration-token"
+  expect "Getting the runner registration token of organization $TEMPLATE_ORG" 200 201
   local file="$WORK/runner-token"
   (umask 077 && jq -j .token <<<"$BODY" > "$file")
-  kubectl -n "$RUNNER_NAMESPACE" create secret generic "$RUNNER_SECRET" --from-file=token="$file" \
+  local held_owner held
+  held_owner=$(kubectl -n "$ns" get secret "$secret" \
+    -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-owner}' 2>/dev/null || true)
+  held=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d || true)
+  if [[ $held_owner == "$owner" && -n $held && $held == "$(cat "$file")" ]]; then
+    log "Secret $ns/$secret holds organization $TEMPLATE_ORG's runner registration token; keeping it"
+    return
+  fi
+  kubectl -n "$ns" create secret generic "$secret" --from-file=token="$file" \
     --dry-run=client -o yaml |
+    kubectl annotate --local -f - "c4.factory.io/token-owner=$owner" -o yaml |
     kubectl apply --server-side --field-manager=c4factory-seed --force-conflicts -f - >/dev/null
-  log "Stored a runner registration token as Secret $RUNNER_NAMESPACE/$RUNNER_SECRET"
+  log "Stored organization $TEMPLATE_ORG's runner registration token as Secret $ns/$secret"
 }
 
 # ensure_project PROJECT: Project PROJECT in namespace PROJECT, named after it

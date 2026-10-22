@@ -4,8 +4,10 @@ name: Release
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag,
-# with the c4session binaries the chart's --session-binary-url names, so a
-# scaffolded devcontainer downloads its Session client from the release (#1079).
+# with the c4session binaries and their SHA256SUMS for a chart whose UI is off
+# (#1079, #1175); with the UI on, a scaffolded devcontainer downloads its
+# Session client from the UI image, which carries the same files under
+# /downloads/ (#1151).
 # One job builds the images in order with the local Docker daemon, so the agent
 # and runner images build on the toolchains just built. It runs no tests:
 # releases are cut from main. The release's notes are hack/release-notes.sh's
@@ -33,6 +35,7 @@ jobs:
       packages: write
     name: Build and publish
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 180
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
       # What the build tags, pushed and then removed in that order.
@@ -71,7 +74,7 @@ jobs:
         run: |
           set -x
           docker build -t "$REGISTRY/operator:$VERSION" --build-arg VERSION="$VERSION" .
-          docker build -t "$REGISTRY/ui:$VERSION" --build-arg VERSION="$VERSION" ui
+          docker build -t "$REGISTRY/ui:$VERSION" --build-arg VERSION="$VERSION" -f ui/Dockerfile .
           docker build -t "$REGISTRY/seed:$VERSION" -f hack/seed/Dockerfile .
           docker build -t "$REGISTRY/base:$VERSION" hack/toolchain-base
           docker build -t "$REGISTRY/go:$VERSION" hack/toolchain-go
@@ -89,12 +92,16 @@ jobs:
           cache: false
 
       # The names are the chart's sessionBinaryURL with ${arch} filled in.
+      # SHA256SUMS goes with them: the c4session feature downloads it from next
+      # to the binary and refuses a binary it doesn't match (#1175).
       - name: Build the Session client
         run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "c4session-linux-$arch" ./cmd/c4session
           done
+          sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS
           ls -l c4session-linux-*
+          cat SHA256SUMS
 
       - name: Install Helm
         run: |
@@ -108,7 +115,7 @@ jobs:
           helm template c4-factory "c4-factory-$VERSION.tgz" >rendered.yaml
           grep "image: \"$REGISTRY/operator:$VERSION\"" rendered.yaml
           grep "image: \"$REGISTRY/ui:$VERSION\"" rendered.yaml
-          grep -F -- "--session-binary-url=https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/c4session-linux-\${arch}" rendered.yaml
+          grep -F -- "--session-binary-url=http://localhost:8080/downloads/c4session-linux-\${arch}" rendered.yaml
 
       - name: Push the images and the chart
         if: env.PUBLISH == 'true'
@@ -134,7 +141,7 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 \
+          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.

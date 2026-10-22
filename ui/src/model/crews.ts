@@ -24,6 +24,11 @@ export interface CrewSummary {
   reviewer: AgentRole
   /** spec.parallel: how many Tasks it runs at once (1 when unset). */
   parallel: number
+  /**
+   * spec.routes in order: the issues with a label go to these Agents, the
+   * Crew's own where the route leaves a role blank (design.md, "Routes by label").
+   */
+  routes: CrewRouteSummary[]
   /** The Tasks working on the Container now, one per place in use. */
   active: { name: string; key: string; issue?: number; headline?: string; found: boolean }[]
   /** Ready issues in pick-up order, and ready ones blocked by open dependencies. */
@@ -32,9 +37,20 @@ export interface CrewSummary {
   lastPolled?: string
 }
 
+/** A route as the Crew page lists it: who takes each role, and whether the route names them. */
+export interface CrewRouteSummary {
+  label: string
+  implementer: AgentRole
+  reviewer: AgentRole
+  /** Which roles the route names; the other shows the Crew's own Agent. */
+  names: { implementer: boolean; reviewer: boolean }
+}
+
 export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSummary {
   const namespace = crew.metadata.namespace ?? ''
   const readyCondition = findCondition(crew.status?.conditions, 'Ready')
+  const implementer = agentRole(agents, namespace, crew.spec.implementer.name)
+  const reviewer = agentRole(agents, namespace, crew.spec.reviewer.name)
   return {
     key: `${namespace}/${crew.metadata.name}`,
     namespace,
@@ -48,9 +64,15 @@ export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSum
       readyCondition?.status === 'False'
         ? { reason: readyCondition.reason, message: readyCondition.message?.trim() || undefined }
         : undefined,
-    implementer: agentRole(agents, namespace, crew.spec.implementer.name),
-    reviewer: agentRole(agents, namespace, crew.spec.reviewer.name),
+    implementer,
+    reviewer,
     parallel: crew.spec.parallel || 1,
+    routes: (crew.spec.routes ?? []).map((r) => ({
+      label: r.label,
+      implementer: r.implementer ? agentRole(agents, namespace, r.implementer.name) : implementer,
+      reviewer: r.reviewer ? agentRole(agents, namespace, r.reviewer.name) : reviewer,
+      names: { implementer: Boolean(r.implementer), reviewer: Boolean(r.reviewer) },
+    })),
     active: (crew.status?.activeTasks ?? []).map((name) => {
       const task = tasks.find((t) => t.metadata.name === name && (t.metadata.namespace ?? '') === namespace)
       return {

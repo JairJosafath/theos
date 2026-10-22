@@ -39,21 +39,22 @@ One install is one trust domain: run it on a device you own, for people you
 would hand the Claude token to, and never on a shared or production cluster.
 Anyone who can create a Project or a Brief in the cluster, the UI's users
 included, can have the factory run code: in an agent's sandbox, and in a CI
-job, on a runner every project shares. The sandbox holds no Claude token: the
-model proxy in the release namespace adds it to the agent's requests, so the
-agent's code never sees it
+job, on a runner pod of the project's own. The sandbox holds no Claude token:
+the model proxy in the release namespace adds it to the agent's requests, so
+the agent's code never sees it
 ([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closed that
-gap). One gap remains, and one issue closes it:
+gap). What the runners still share:
 
-- **The Gitea CI runners share one environment between jobs.** A
-  NetworkPolicy keeps their jobs to DNS, Gitea and public HTTPS (on a
-  network plugin that enforces them, which the agents' fence needs too), and the
-  runner registration token stays out of a job's reach, but each label's
-  runner runs every project's checks, and the releases, one after another in
-  host mode: a job can leave a process or a file for the next one, act with
-  the runner's own token and write the shared Go build cache. A fresh pod per
-  job, in a runner pool per project, closes this
-  ([#1076](https://github.com/JairJosafath/c4factory/issues/1076)).
+- **The Gitea CI runners share the node.** A project's checks run on its own
+  pool of single-job runner pods in its namespace, each registered to the
+  project's organization for one job and replaced after it, under a
+  NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS (on a network
+  plugin that enforces them, which the agents' fence needs too), with the
+  registration token out of a job's reach and a Go build cache of the
+  project's own; the shared runners Helm installs serve the templates'
+  checks only. What the pods still share is the node: its
+  kernel, and the cache directories on its disk, which only the kubelet's
+  mounts keep apart.
 
 ## 1. Install the factory
 
@@ -222,6 +223,16 @@ Open the UI:
 ```bash
 kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080 &   # http://localhost:8080
 ```
+
+The UI also serves the Session client, `c4session`, under `/downloads/`: a
+scaffolded devcontainer's build fetches it from there, by default
+`http://localhost:8080/downloads/c4session-linux-${arch}` (the port-forward
+above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
+with no GitHub login, and checks it against the `SHA256SUMS` served next to
+it. The build must reach that address: a port-forward's localhost is the
+laptop's, not a container's, so a laptop devcontainer needs the chart's
+`sessionBinaryURL` set to an address it reaches, or it starts without
+becoming a Session.
 
 Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
 box under *Describe an app*, and create the Brief. Or, the same without the UI,
@@ -593,6 +604,58 @@ True once every entry runs its wanted version, else False with the first of
 `WaitingForPrevious`, `Deploying` and `NoRelease`. Events: `Deployed` when an
 entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
 `DeployFailed` once per version and reason.
+
+## Deploy to a cluster with Argo CD
+
+A Container built with the `k8s-manifests` Deployment (a `service`, `worker`,
+`static-site` or `job`) ships to a Kubernetes cluster through Argo CD. The
+webshop's four services in [story.yaml](../config/samples/webshop/story.yaml)
+name `kind-cluster`, an `argoCD` DeployTarget that deploys into the cluster
+the factory runs on:
+
+1. **Argo CD.** The factory never installs it. Its core install (no API
+   server, UI or dex) is enough:
+
+   ```bash
+   kubectl create namespace argocd
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/core-install.yaml
+   ```
+
+2. **The target.** [deploytarget-argocd.yaml](../config/samples/webshop/deploytarget-argocd.yaml)
+   names Argo CD's namespace and project (`argocd` and `default`, the
+   defaults) and the destination namespace `webshop-apps`; the webshop's
+   kustomization applies it. It needs no Secret: the operator writes
+   Applications with its own ServiceAccount, and `Ready` says whether Argo
+   CD and the project are there.
+3. **The entry.** Each Container names the target in `spec.deploy`, as
+   above. A Container whose Deployment is not `k8s-manifests` (a `cli`, an
+   `operator`) gets `Incompatible`.
+
+Once a release's runs succeed, the operator writes one Argo CD Application
+per Container, named after the Container's namespace and name: the
+repository at the release tag, path `deploy/k8s`, the image CI pushed, by
+digest, and automated sync. Argo CD rolls it into `webshop-apps`, and the
+operator reads its sync and health back:
+
+```bash
+kubectl -n argocd get application webshop-orders-api
+kubectl -n webshop get container orders-api -o jsonpath='{.status.deploys}{"\n"}'
+kubectl -n webshop-apps get deployment,service
+```
+
+The entry's `phase` goes `Deploying` while Argo CD syncs, then `Deployed`,
+with `health` as Argo CD reports it (`Healthy`, `Progressing`, `Degraded`);
+a sync Argo CD gives up on is `Failed` with reason `SyncFailed` and Argo CD's
+message. Nothing is written to the repository at deploy; a rollback pins
+`version` in the entry.
+
+The cluster's nodes pull the image from the registry the Container's Git
+provider serves. In the Kind test environment that is the Gitea in the
+cluster, which the node can't resolve by its Service name, so `make cluster`
+maps it for containerd (`hack/kind.sh registry-hosts`) to the Service's fixed
+ClusterIP, over plain HTTP. That is the test environment's shortcut: a real
+cluster pulls from a registry with a real name and TLS, and the organization
+is public, so the pull and the clone need no credential.
 
 ## Release a Brief's app
 

@@ -46,7 +46,7 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 		return data
 	}
 
-	story, err := model.ParsePlan(map[string]string{model.PlanModelFile: string(read("story.yaml"))})
+	story, err := model.ParsePlan(map[string]string{model.PlanModelFile: string(withoutDeploy(t, read("story.yaml")))})
 	if err != nil {
 		t.Fatalf("story.yaml: %v", err)
 	}
@@ -119,6 +119,52 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 	if d := webshopNames(plan.Objects, model.KindDataStore); !slices.Equal(d, wantDataStores) {
 		t.Errorf("the stand-in's plan lists DataStores %v, want %v", d, wantDataStores)
 	}
+}
+
+// withoutDeploy is the sample's documents without their spec.deploy. Where a
+// Container's releases ship is the person's to say, not a plan's, so the
+// planner's reader refuses the field; the sample names its kind-cluster
+// DeployTarget on every k8s-manifests Container (#1589), and the stand-in
+// plans from the rest.
+func withoutDeploy(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	enc := yaml.NewEncoder(&out)
+	for {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if spec := mappingValue(doc.Content[0], "spec"); spec != nil {
+			for i := 0; i+1 < len(spec.Content); i += 2 {
+				if spec.Content[i].Value == "deploy" {
+					spec.Content = slices.Delete(spec.Content, i, i+2)
+					break
+				}
+			}
+		}
+		if err := enc.Encode(&doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out.Bytes()
+}
+
+// mappingValue is the value of key in mapping n, nil when n is no mapping or
+// has no such key.
+func mappingValue(n *yaml.Node, key string) *yaml.Node {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return n.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // webshopCatalog is the catalog entries of the sample's factory.yaml.

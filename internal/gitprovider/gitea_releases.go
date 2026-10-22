@@ -357,8 +357,11 @@ type WorkflowJob struct {
 	// completed job ended.
 	Status     string
 	Conclusion string
-	// RunnerID is the runner that ran it, zero when none started it.
-	RunnerID int64
+	// RunnerID is the runner that ran it, zero when none started it, and
+	// RunnerName that runner's name (a pool pod's, when the factory's pool
+	// registered it).
+	RunnerID   int64
+	RunnerName string
 	// Completed is when it ended, zero while it runs.
 	Completed time.Time
 }
@@ -382,6 +385,7 @@ func (g *gitea) RunJobs(ctx context.Context, repo Repository, id int64) ([]Workf
 				Status      string    `json:"status"`
 				Conclusion  string    `json:"conclusion"`
 				RunnerID    int64     `json:"runner_id"`
+				RunnerName  string    `json:"runner_name"`
 				CompletedAt time.Time `json:"completed_at"`
 			} `json:"jobs"`
 		}
@@ -396,7 +400,7 @@ func (g *gitea) RunJobs(ctx context.Context, repo Repository, id int64) ([]Workf
 				completed = time.Time{}
 			}
 			out = append(out, WorkflowJob{ID: j.ID, Status: j.Status, Conclusion: j.Conclusion,
-				RunnerID: j.RunnerID, Completed: completed})
+				RunnerID: j.RunnerID, RunnerName: j.RunnerName, Completed: completed})
 		}
 		if len(jobs.Jobs) < issuePageSize {
 			break

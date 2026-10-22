@@ -60,6 +60,7 @@ make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind'
 make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
 make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
+make argocd              # Argo CD core (config/argocd), where the webshop's Containers deploy to
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
 make toolchain-go runner-go agent-image-go  # Go, Node, uv and kubebuilder toolchain, CI runner (label go) and agent image
 make runner-image        # CI runner (label image): rootless BuildKit, which builds release images
@@ -155,8 +156,8 @@ It also fails when a CRD in `dist/chart/templates/crd` differs from
 Every CEL rule has an envtest spec that expects its message: a create-time rule's
 spec creates an object that breaks it, a rule on `oldSelf` creates, patches and
 expects the message. A new rule adds one.
-`config/agent-sandbox` and `config/metrics-server` fetch remote URLs and are
-skipped. What it rendered is in `bin/yaml/`.
+`config/agent-sandbox`, `config/argocd` and `config/metrics-server` fetch remote
+URLs and are skipped. What it rendered is in `bin/yaml/`.
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
 `build` pass `-trimpath`, which keeps the checkout's absolute directory out of Go's
@@ -540,7 +541,18 @@ around the steps that touch it:
    use-context`): every checkout shares `.dev/kube/config` of the main
    checkout, and plain kubectl in another session would follow it. The
    `cluster` target and `hack/up.sh` put it back after kind sets it
-   (`hack/kind.sh keep-context`). Images built for a deploy (`make deploy`,
+   (`hack/kind.sh keep-context`). After the create, `make cluster` writes
+   containerd's `hosts.toml` into every node (`hack/kind.sh registry-hosts`),
+   mapping `gitea.gitea.svc.cluster.local:3000` to the fixed ClusterIP of
+   `config/gitea/service.yaml` (`10.96.0.30`), so a node pulls a Container's
+   image from the in-cluster Gitea by the name the Deployment carries; the
+   test environment's shortcut, not the chart's. It can't live in
+   `hack/kind.yaml`: `extraMounts` needs an absolute host path, and the
+   `registry.mirrors` patch is ignored once containerd reads `certs.d`.
+   That `clusterIP` is immutable, so `make gitea` deletes a Gitea Service
+   from before the pin, one whose IP differs (`hack/kind.sh gitea-service`),
+   before it applies `config/gitea`; the apply recreates it (#1679).
+   Images built for a deploy (`make deploy`,
    the agent, runner, seed, session and UI images) are tagged per checkout
    (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
    so two checkouts building at once never share a tag; `hack/kind.sh load`
@@ -815,7 +827,11 @@ that the CRDs are the new chart's (`kubectl diff` against the CRDs it
 renders), that every earlier `c4` and `c4catalog` object is still
 there with its phase and its `Ready` condition, that the new manager logs no
 `Reconciler error` in its first two minutes (optimistic-lock conflicts
-aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged, and that
+aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged (one
+exception: a `gitea-runner` that held an instance token before, with no
+`c4.factory.io/token-owner` annotation, is replaced once by the templates
+organization's token the seed stores, and the check wants that one to be
+there after), and that
 every Gitea repository is still there with its earlier head commit (the seed
 may add template tags). The chart up to v0.12.0 recreated its GitProviders,
 catalog and Agents as hooks on every upgrade; later ones have the seed apply
@@ -1166,7 +1182,12 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   per-runner cluster names would still put two clusters in one device's
   memory. `hack/check-workflows.sh` (in `make check`) fails a job whose
   `runs-on` doesn't use `vars.RUNS_ON`, and a job that makes a Kind cluster
-  without the label.
+  without the label. Every job sets `timeout-minutes`, a few times its
+  normal duration (Lint 30, Tests 60, Release 180, the Kind jobs 60):
+  without one GitHub lets a hung job run 6 hours, and a hung Lint job on
+  main held its concurrency group, so every later run on main waited behind
+  it and nothing said whether main was green (#1655); the check fails a job
+  without one.
 - **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
   the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and

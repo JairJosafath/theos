@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/check-workflows.sh: the repository's workflows pass, and a job
-# off vars.RUNS_ON, without runs-on, or making a Kind cluster without the
-# c4factory-kind label fails, and so does a workflow on pushes to a branch
+# off vars.RUNS_ON, without runs-on, without timeout-minutes (#1655), or
+# making a Kind cluster without the c4factory-kind label fails, and so does a workflow on pushes to a branch
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
 # test-hack job (#1101), and Tests off pull requests or off pushes to main
@@ -24,8 +24,11 @@ check "the repository's workflows pass" "$?" 0
 
 # wf NAME BODY: a workflow with BODY as its jobs, alone in a directory.
 wf() { rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  push:\n\njobs:\n%s\n' "$2" >"$T/wf/$1.yml"; }
-good="    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}"
-kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"c4factory-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}"
+timeout="    timeout-minutes: 10"
+good="    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}
+$timeout"
+kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"c4factory-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+$timeout"
 
 wf ok "  a:
 $good
@@ -45,10 +48,21 @@ check "hosted runs-on fails" "$?" 1
 check "hosted runs-on names the job" "$(grep -c 'job b runs on ubuntu-latest' <<<"$out")" 1
 
 wf none "  a:
+$timeout
     steps:
       - run: true"
 "$CHECK" "$T/wf" 2>/dev/null
 check "no runs-on fails" "$?" 1
+
+# #1655: a hung Lint job without a timeout held main's concurrency group for
+# hours, and GitHub would have let it run 6.
+wf no-timeout "  a:
+    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - run: make lint"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "no timeout-minutes fails (#1655)" "$?" 1
+check "no timeout-minutes names the job" "$(grep -c 'job a has no timeout-minutes' <<<"$out")" 1
 
 wf kind "  a:
 $good

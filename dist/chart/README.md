@@ -115,13 +115,29 @@ kubectl -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 
 kubectl -n gitea port-forward service/gitea 3000:3000   # http://localhost:3000
 ```
 
-To rotate the admin's password or the runners' registration token, delete
-its Secret and restart the pods that use it; Gitea's pod makes a new one:
+To rotate the admin's password, delete its Secret and restart Gitea's pod,
+which makes a new one:
 
 ```bash
-kubectl -n gitea delete secret gitea-admin     # or gitea-runner
+kubectl -n gitea delete secret gitea-admin
 kubectl -n gitea rollout restart deployment/gitea
-kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-runner-go  # after gitea-runner
+```
+
+The shared runners register to the `templates` organization with the token
+in Secret `gitea/gitea-runner`, which the seed fetches from Gitea on every
+install and upgrade (Gitea hands out the same token until it is reset). They
+serve the templates' checks only; each project's checks run on a pool of
+single-job runner pods the operator keeps in the project's namespace. On an
+upgrade from a chart whose runners registered to the instance, the running
+runner pods keep that registration until restarted. To rotate the token,
+reset it in Gitea (its runners page under the `templates` organization), then
+delete the Secret, `helm upgrade` so the seed stores the new one, and restart
+the runner Deployments:
+
+```bash
+kubectl -n gitea delete secret gitea-runner
+helm upgrade ...   # the same command as the install
+kubectl -n gitea rollout restart deployment/gitea-runner-base deployment/gitea-runner-go
 ```
 
 With `gitea.admin.existingSecret` the admin is your Secret: change its
@@ -204,7 +220,7 @@ as the run's artifact); a failing release gets an issue titled
 | --- | --- |
 | `manager.image`, `ui.image` | repository, tag (default `Chart.appVersion`), pullPolicy |
 | `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind environment's |
-| `sessionBinaryURL` | where scaffolded devcontainers download `c4session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the binaries attached to this chart's GitHub release. While the repository is private they need a GitHub login to download, so point it at a server of your own; empty sets none |
+| `sessionBinaryURL` | where scaffolded devcontainers download `c4session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the UI, whose image carries the client under `/downloads/`: `http://localhost:<ui.service.port>/...` for the port-forward, `https://<ui.allowedHosts[0]>/...` behind an Ingress, so a private repository's release needs no GitHub login. The devcontainer's build must reach that address (a port-forward's localhost is the laptop's, not a container's), so set one it reaches when it doesn't. With `ui.enabled` false, the binaries attached to this chart's GitHub release. Both serve a `SHA256SUMS` next to the binaries, which the feature checks the download against; a URL of your own needs one too. Empty sets none |
 | `ui.enabled` | install the UI (default true); `ui.service` and `ui.resources` |
 | `ui.allowedHosts` | host names the UI answers besides localhost, for an Ingress in front of it; any other Host is refused |
 | `ui.actions.enabled` | off by default; on, the UI also sets Brief and Crew settings, re-runs a failed release, retries a scaffold, makes a Task from a goal and bumps a Standard's ref (design.md, *UI actions*). Over port-forward its ServiceAccount makes them; with `ui.allowedHosts` the chart needs `ui.auth.oidc` |
