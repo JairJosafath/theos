@@ -226,6 +226,9 @@ type ReleaseShipmentFacts struct {
 	// Type, Deployment and Framework are the Container's type, Deployment
 	// and Framework.
 	Type, Deployment, Framework string
+	// ScaffoldedFrom is the Container's status.scaffoldedFrom, name@ref per
+	// template, which says whether its release builds an image (#1797).
+	ScaffoldedFrom []string
 	// Files are the names of the release's files on the Git host.
 	Files []string
 	// Source says the target publishes the source and the release has one.
@@ -264,7 +267,7 @@ func ReleaseShipment(f ReleaseShipmentFacts) (plan ReleaseShipmentPlan, problem 
 			plan.Files = append(plan.Files, name)
 		}
 	}
-	plan.Image = f.Image && f.TakesImage && BuildsImage(f.Deployment, f.Framework, f.Type)
+	plan.Image = f.Image && f.TakesImage && BuildsImage(f.Deployment, f.Framework, f.Type, f.ScaffoldedFrom)
 	if !plan.Source && len(plan.Files) == 0 && !plan.Image {
 		return plan, NothingToPublish
 	}

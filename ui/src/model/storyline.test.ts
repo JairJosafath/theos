@@ -19,6 +19,7 @@ const empty = (): StoryData => ({
   deployments: [],
   gitProviders: [],
   deployTargets: [],
+  bundles: [],
   crews: [],
   agents: [],
   tasks: [],

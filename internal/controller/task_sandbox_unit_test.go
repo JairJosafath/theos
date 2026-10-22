@@ -662,7 +662,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 			npmSecret: "acme-npm", pySecret: "acme-pypi",
 			want: []corev1.EnvVar{
 				{Name: "C4_NPM_SCOPE", Value: "@acme"},
-				{Name: "C4_NPM_REGISTRY", Value: "https://npm.example.com/registry"},
+				{Name: "C4_NPM_REGISTRY", Value: "https://npm.example.com/registry/"},
 				readTokenEnv("C4_NPM_TOKEN", "acme-npm"),
 				{Name: "C4_PYPI_INDEX", Value: "https://pypi.example.com/simple"},
 				readTokenEnv("C4_PYPI_TOKEN", "acme-pypi"),

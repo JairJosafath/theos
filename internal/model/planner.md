@@ -17,7 +17,10 @@ can't apply it.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
   fits (`supportedFrameworks`) and whether it can run the full check only
-  before a release (`checksBeforeRelease`).
+  before a release (`checksBeforeRelease`). Its `bundles` list the namespace's
+  Bundles, a team's choice of one Framework, Standard, Compute and Deployment
+  under one name, each with its entries and the Container types every entry
+  supports (`supportedTypes`; empty when an entry isn't installed).
 - `model/containers.yaml`: each Container's repository, its open issues,
   whether it ships releases already (`released`) and when its CI runs the
   full check (`checks`).
@@ -80,11 +83,14 @@ Push the branch `plan/<round>` with these files:
    refused, so put them in an Internal one (the default, for a system the
    factory builds). A system's location is set by the round that creates
    it; a later round keeps it, whatever the plan says.
-2. **Use only the listed catalog.** A Container's `frameworkRef`,
-   `standardRef`, `computeRef` and `deploymentRef`, and a DataStore's
-   `connectorRef`, name entries of `model/catalog.yaml` that support the
-   Container's type. Every new Container names the Git provider `brief.md`
-   gives.
+2. **Use only the listed catalog, and prefer a Bundle.** When a Bundle of
+   `model/catalog.yaml`'s `bundles` supports the Container's type, name it:
+   `bundleRef` and none of `frameworkRef`, `standardRef`, `computeRef` and
+   `deploymentRef`; the operator expands it to its entries. When no Bundle
+   supports the type, name the sides: `frameworkRef`, `standardRef`,
+   `computeRef` and `deploymentRef`, and a DataStore's `connectorRef`, name
+   entries of `model/catalog.yaml` that support the Container's type. Every
+   new Container names the Git provider `brief.md` gives.
 3. **Choose the kind of app by the idea, not by the catalog.** Pick the
    Container type a person picturing the idea would expect, not the one the
    catalog makes easiest: a todo list people click in has a screen, so it is
@@ -488,8 +494,7 @@ spec:
   softwareSystemRef: {name: shop}
   type: static-site
   gitProviderRef: {name: gitea}
-  frameworkRef: {name: react-site}
-  standardRef: {name: web-standard}
+  bundleRef: {name: react-web} # a Bundle that supports static-site, in place of the sides (rule 2)
   checks: BeforeRelease # only when a new prompt asks (rule 16)
 ---
 apiVersion: c4.factory.io/v1alpha1
@@ -502,7 +507,8 @@ spec:
   softwareSystemRef: {name: shop}
   type: service
   gitProviderRef: {name: gitea}
-  frameworkRef: {name: go-service}
+  frameworkRef: {name: go-service} # no Bundle supports service, so the sides (rule 2)
+  standardRef: {name: go-standard}
   computeRef: {name: k8s}
   deploymentRef: {name: helm}
   operations: # only what the idea states, on a Framework that reads it (rule 17)
@@ -566,8 +572,9 @@ What each kind's `spec` takes, and nothing else:
 - Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
   `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`,
   `function`),
-  `gitProviderRef` and `frameworkRef`, and when you choose them
-  `standardRef`, `computeRef` and `deploymentRef`, and `checks`
+  `gitProviderRef`, and either `bundleRef` (rule 2) or `frameworkRef`
+  with, when you choose them, `standardRef`, `computeRef` and
+  `deploymentRef`, never both; `checks`
   (`EveryChange` or `BeforeRelease`) only as rule 16 says, and `operations`
   (`backups`, `recovery`, `alerts`) only as rule 17 says. Every `...Ref` is
   `{name: ...}` alone.

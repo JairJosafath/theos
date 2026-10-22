@@ -375,6 +375,22 @@ export interface Standard extends K8sObject {
 }
 
 /**
+ * A Bundle: the four catalog entries a team picked together, which a Container
+ * names instead of the four (docs/plans/catalog-bundles.md). It has no status:
+ * what it supports is computed from its entries (model/choices.ts).
+ */
+export interface Bundle extends K8sObject {
+  spec: {
+    displayName?: string
+    description?: string
+    frameworkRef: LocalRef
+    standardRef?: LocalRef
+    computeRef?: LocalRef
+    deploymentRef?: LocalRef
+  }
+}
+
+/**
  * Where repositories are created. Its Secret is named, never read: the UI's
  * proxy serves only c4.factory.io, so no Secret data reaches the browser.
  */
@@ -401,6 +417,7 @@ export const RESOURCES = {
   standards: 'standards',
   computes: 'computes',
   deployments: 'deployments',
+  bundles: 'bundles',
   gitProviders: 'gitproviders',
   deployTargets: 'deploytargets',
   tasks: 'tasks',

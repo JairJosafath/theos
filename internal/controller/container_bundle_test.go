@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 // newBundle returns a Bundle of framework with an optional compute and deployment.
@@ -152,6 +153,82 @@ var _ = Describe("Container naming a Bundle", func() {
 			g.Expect(bundled.Status.Bundle).To(Equal(want))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 		Expect(gitFake.repo(ns, "bundled").commits).To(HaveLen(1))
+	})
+
+	It("reports a changed or deleted Bundle, never applying it (#1621)", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		bundle := newBundle(ns, "web-service", "python-fastapi", "small", "k8s-manifests")
+		mustCreate(newSystem(ns, "webshop-core"), bundle,
+			newContainer(ns, "twin", "webshop-core", c4v1alpha1.ContainerTypeService),
+			newBundledContainer(ns, "bundled", "web-service"))
+		bundled := eventuallyContainer(ns, "bundled", c4v1alpha1.ContainerReady)
+		scaffoldedFrom, scaffoldedBundle := bundled.Status.ScaffoldedFrom, bundled.Status.Bundle.DeepCopy()
+		Expect(scaffoldedBundle).To(Equal(&c4v1alpha1.ContainerBundleStatus{Name: "web-service",
+			Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"}))
+
+		bundleCurrent := func(status metav1.ConditionStatus, reason, message string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, key(ns, "bundled"), bundled)).To(Succeed())
+				cond := condition(bundled.Status.Conditions, c4v1alpha1.ConditionBundleCurrent)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(status))
+				g.Expect(cond.Reason).To(Equal(reason))
+				g.Expect(cond.Message).To(Equal(message))
+			}).Should(Succeed())
+			Expect(bundled.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			Expect(bundled.Status.Bundle).To(Equal(scaffoldedBundle), "status.bundle keeps the expansion it scaffolded from")
+			Expect(bundled.Status.ScaffoldedFrom).To(Equal(scaffoldedFrom))
+			Expect(gitFake.repo(ns, "bundled").commits).To(HaveLen(1), "no second scaffold")
+		}
+
+		By("a Bundle still naming what it scaffolded from")
+		bundleCurrent(metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, "")
+
+		By("a Bundle changed since, naming the side")
+		Expect(patch(bundle, func() { bundle.Spec.ComputeRef.Name = "large" })).To(Succeed())
+		bundleCurrent(metav1.ConditionFalse, c4v1alpha1.ReasonBundleChanged, "compute: small, now large")
+
+		By("a Bundle deleted since")
+		Expect(k8sClient.Delete(ctx, bundle)).To(Succeed())
+		bundleCurrent(metav1.ConditionFalse, c4v1alpha1.ReasonBundleChanged, "Bundle web-service is gone")
+
+		By("a Container naming its sides reporting none")
+		twin := eventuallyContainer(ns, "twin", c4v1alpha1.ContainerReady)
+		Expect(condition(twin.Status.Conditions, c4v1alpha1.ConditionBundleCurrent)).To(BeNil())
+	})
+
+	It("recovers the expansion the earlier attempt pushed when the Bundle changed since (#1621)", func() {
+		ns := newProjectNamespace()
+		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api", Bundle: "web-service",
+			Framework: "python-fastapi", Standard: "python-standard", Compute: "small", Deployment: "k8s-manifests"}
+		from := []string{"python-fastapi@v1.6.0", "python-standard@v1.0.0", "small@v1.1.0", "k8s-manifests@v1.9.1"}
+		gitFake.seedRepo(ns, "orders-api", scaffold.CommitMessage(in, from, nil))
+		pushes := gitFake.pushCount()
+		createFactory(ns)
+		// The Bundle no longer names the Standard the push used.
+		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-standard", "python-fastapi"),
+			newBundle(ns, "web-service", "python-fastapi", "small", "k8s-manifests"),
+			newBundledContainer(ns, "orders-api", "web-service"))
+
+		container := eventuallyContainer(ns, "orders-api", c4v1alpha1.ContainerReady)
+		Expect(container.Status.Bundle).To(Equal(&c4v1alpha1.ContainerBundleStatus{Name: "web-service",
+			Framework: "python-fastapi", Standard: "python-standard", Compute: "small", Deployment: "k8s-manifests"}))
+		Expect(container.Status.Standard).To(SatisfyAll(
+			HaveField("Name", "python-standard"), HaveField("Ref", "v1.0.0")))
+		Expect(container.Status.ScaffoldedFrom).To(Equal(from))
+		Expect(gitFake.pushCount()).To(Equal(pushes))
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionBundleCurrent)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonBundleChanged))
+			g.Expect(cond.Message).To(Equal("standard: python-standard, now none"))
+		}).Should(Succeed())
+		Expect(container.Status.ScaffoldedFrom).To(Equal(from))
+		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1))
 	})
 
 	It("fails a Bundle whose entries don't fit the Container, naming the bundle", func() {

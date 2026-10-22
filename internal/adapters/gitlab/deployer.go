@@ -105,7 +105,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		names[i] = f.Name
 	}
 	plan, problem := model.ReleaseShipment(model.ReleaseShipmentFacts{Type: s.Type, Deployment: s.Deployment,
-		Framework: s.Framework, Files: names})
+		Framework: s.Framework, ScaffoldedFrom: s.ScaffoldedFrom, Files: names})
 	if problem != "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
 	}
