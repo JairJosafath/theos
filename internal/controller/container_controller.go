@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -86,6 +87,12 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
+
+// containerWorkers is how many Containers reconcile at once, so one
+// Container's long upload to a deploy target holds no other's scaffold,
+// checks or deploys (#1446); one Container never runs twice at once. The
+// reconciler's own state is sync.Maps keyed by the Container's UID.
+const containerWorkers = 4
 
 // defaultSecretRecheck is how often a Container waiting for its credentials
 // Secret looks again, unless SecretRecheck says.
@@ -360,6 +367,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Container{}, specOrAsked()).
+		WithOptions(controller.Options{MaxConcurrentReconciles: containerWorkers}).
 		Watches(&c4v1alpha1.Crew{}, crewContainer, lastReleaseChanges()).
 		Watches(&c4v1alpha1.DeployTarget{}, targetContainers, deployTargetReadyChanges()).
 		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).

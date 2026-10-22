@@ -28,6 +28,10 @@ type Deployer struct {
 	states  map[key]ports.DeployState
 	shipped []Shipped
 	checks  map[string]int
+	// blocked are the targets, by name, whose Ship waits until the gate
+	// closes; inShip counts the calls waiting there.
+	blocked map[string]chan struct{}
+	inShip  map[string]int
 }
 
 var _ ports.Deployer = (*Deployer)(nil)
@@ -72,6 +76,60 @@ func (d *Deployer) HoldAt(target string) {
 		d.held = map[string]bool{}
 	}
 	d.held[target] = true
+}
+
+// Block makes each Ship to target wait, as a long upload does, until the
+// returned release is called or the call's context ends.
+func (d *Deployer) Block(target string) (release func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.blocked == nil {
+		d.blocked = map[string]chan struct{}{}
+	}
+	gate := make(chan struct{})
+	d.blocked[target] = gate
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			d.mu.Lock()
+			defer d.mu.Unlock()
+			delete(d.blocked, target)
+			close(gate)
+		})
+	}
+}
+
+// Blocked counts the Ship calls to target waiting on its Block.
+func (d *Deployer) Blocked(target string) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.inShip[target]
+}
+
+// wait holds a Ship to target while it is blocked.
+func (d *Deployer) wait(ctx context.Context, target string) error {
+	d.mu.Lock()
+	gate := d.blocked[target]
+	if gate == nil {
+		d.mu.Unlock()
+		return nil
+	}
+	if d.inShip == nil {
+		d.inShip = map[string]int{}
+	}
+	d.inShip[target]++
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.inShip[target]--
+		d.mu.Unlock()
+	}()
+	select {
+	case <-gate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // SetState sets what target reports for app.
@@ -135,8 +193,11 @@ func (d *Deployer) Check(_ context.Context, t ports.Target) error {
 }
 
 // Ship starts a deploy of s unless the newest deploy of its app at t is of
-// its version and hasn't failed.
-func (d *Deployer) Ship(_ context.Context, t ports.Target, s ports.Shipment) error {
+// its version and hasn't failed. A blocked target's Ship waits first.
+func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
+	if err := d.wait(ctx, t.Name); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.failure(t.Name); err != nil {
