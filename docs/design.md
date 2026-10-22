@@ -381,12 +381,14 @@ naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
 refs, `status.standard` the current.
 
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
-([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447,
-decided, not built). The operator files `Standard <name> <ref> fails this
-repository's check`, `kind/bug` and `status/ready`, once per target ref,
-linking the pull request and the run. The fix lands on main in the Crew's own
-pull request; once main moves, the operator plans the update again from it.
-A check a Standard tightens says in its message what to write.
+([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).
+The fix lands on main in the Crew's own pull request; once main is no longer
+at the head the update was planned from (`status.standard.update.base`), the
+operator closes the update's pull request and plans it again from the new
+main (#1489). Decided, not built: the operator files `Standard <name> <ref>
+fails this repository's check`, `kind/bug` and `status/ready`, once per
+target ref, linking the pull request and the run (#1491). A check a Standard
+tightens says in its message what to write.
 
 **The templates** live in `templates/`; [templates.md](templates.md) scores
 each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
