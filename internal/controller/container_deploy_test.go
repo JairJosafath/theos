@@ -346,6 +346,30 @@ var _ = Describe("Container deploys", func() {
 		}, deployWait).Should(Succeed())
 	})
 
+	It("scaffolds another Container while one Container's Ship is still uploading (#1446)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		readyTarget(ns, "oss", c4v1alpha1.DeployTierDevelopment)
+		release := deployFake.Block(targetName(ns, "oss"))
+		DeferCleanup(release)
+		shipRelease(ns, "v0.1.0", true)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "oss"})
+		Eventually(func() int { return deployFake.Blocked(targetName(ns, "oss")) }, deployWait).Should(Equal(1))
+
+		other := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
+		other.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		mustCreate(other)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-cli"), other)).To(Succeed())
+			g.Expect(other.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		}).Should(Succeed())
+		Expect(deployFake.Blocked(targetName(ns, "oss"))).To(Equal(1))
+
+		By("finishing the upload, which deploys the first Container")
+		release()
+		deployIs(ns, "oss", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
+	})
+
 	It("ships to staging, then to prod once staging runs it and a person approves", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
