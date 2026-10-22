@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
@@ -103,6 +104,14 @@ func (f *fakeGitHub) addApp(appID, installation, repository string, public *rsa.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.apps[installation] = fakeGitHubApp{appID: appID, repository: repository, public: public}
+}
+
+// installations numbers the envtests' App installations, each its own.
+var installations atomic.Int64
+
+// newInstallation is the id of an App installation no other test uses.
+func newInstallation() string {
+	return strconv.FormatInt(5000+installations.Add(1), 10)
 }
 
 // appMints is how many tokens installation minted.

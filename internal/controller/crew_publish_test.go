@@ -79,6 +79,13 @@ func publishSecret(ns, token string) *corev1.Secret {
 		StringData: map[string]string{"token": token}}
 }
 
+// publishAppSecret is the Crew's Secret holding a GitHub App's keys.
+func publishAppSecret(ns, appID, installation string, privateKey []byte) *corev1.Secret {
+	return &corev1.Secret{ObjectMeta: objectMeta(ns, "orders-api-github"),
+		StringData: map[string]string{"appId": appID, "installationId": installation,
+			"privateKey": string(privateKey)}}
+}
+
 // publishFailedWith waits for the Crew's publish to fail with reason, with
 // one Warning Event saying message.
 func publishFailedWith(ns, reason, message string) {
@@ -419,6 +426,35 @@ var _ = Describe("Crew publishing releases", func() {
 
 		publishFailedWith(ns, "Unauthorized", "the token can't write releases to "+repository+". Check that "+
 			repository+" is where releases should go (set by the Crew's spec.publishReleases)")
+	})
+
+	It("publishes with a GitHub App's installation token (#1601)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		key, pemKey := newGitHubAppKey()
+		installation := newInstallation()
+		githubFake.addRepository(repository, rand.Text())
+		githubFake.addApp("crew-app-"+ns, installation, repository, &key.PublicKey)
+		mustCreate(publishAppSecret(ns, "crew-app-"+ns, installation, pemKey))
+		files := publishingCrew(ns, repository)
+
+		publishedTo(ns, repository, files)
+		Expect(githubFake.appMints(installation)).To(Equal(1), "the token is kept, not minted per call")
+	})
+
+	It("fails Unauthorized when GitHub refuses to mint the App's token (#1601)", func() {
+		ns := newProjectNamespace()
+		repository := "acme/" + ns
+		key, _ := newGitHubAppKey()
+		_, otherPEM := newGitHubAppKey()
+		installation := newInstallation()
+		githubFake.addRepository(repository, rand.Text())
+		githubFake.addApp("crew-app-"+ns, installation, repository, &key.PublicKey)
+		mustCreate(publishAppSecret(ns, "crew-app-"+ns, installation, otherPEM))
+		publishingCrew(ns, repository)
+
+		publishFailedWith(ns, "Unauthorized", "A JSON web token could not be decoded")
+		Expect(githubFake.releases(repository)).To(BeEmpty())
 	})
 
 	It("fails on a repository GitHub doesn't show the token", func() {
