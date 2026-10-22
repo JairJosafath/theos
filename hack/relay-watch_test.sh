@@ -666,9 +666,12 @@ case "$1 $2 $* " in
     n=$(($(jq length "$FAKE/issues.json") + 100))
     jq --argjson n "$n" '. + [input + {number: $n}]' "$FAKE/issues.json" - >"$FAKE/issues.new" &&
       mv "$FAKE/issues.new" "$FAKE/issues.json" && echo "$n" ;;
+  *"issues?state=closed"*) # the closed issues: those of $FAKE/issues.json with a closed_at (#1824)
+    jq '[.[] | select(.closed_at != null)]' "$FAKE/issues.json" | jq -r "$q" ;;
   *) # $FAKE/listed.json, when there, stands for a list of open issues that
     # lags behind the creates, or that a close took an issue out of.
-    if [ -f "$FAKE/listed.json" ]; then jq -r "$q" "$FAKE/listed.json"; else jq -r "$q" "$FAKE/issues.json"; fi ;;
+    if [ -f "$FAKE/listed.json" ]; then jq -r "$q" "$FAKE/listed.json"
+    else jq '[.[] | select(.closed_at == null)]' "$FAKE/issues.json" | jq -r "$q"; fi ;;
 esac
 GH
 chmod +x "$T/bin/gh"
@@ -983,6 +986,61 @@ flake_round
 FLAKE_RETRY=
 check "flake: rows without a streak count a run each" "$(jq -r '.[].title' "$T/issues.json")" "Flaky: Old spec"
 rm -f "$T/runs-.json" "$T"/log-*.txt "$T"/log-*.fail "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
+echo '[]' >"$T/issues.json"
+
+# A watch that starts fresh (an empty flakes-runs) reads every failed run of
+# the window again, the runs of a fixed flake among them: the runs its closed
+# bug already listed don't count, only those after it closed (#1824).
+closed_flaky() { # closed_flaky AGO: GitHub holds one issue, "Flaky: $SPEC", closed AGO ago
+  jq -n --arg t "Flaky: $SPEC" --arg c "$(ago "$1")" \
+    '[{number: 90, title: $t, closed_at: $c, labels: ["kind/bug", "source/dev"]}]' >"$T/issues.json"
+}
+open_issues() { jq '[.[] | select(.closed_at == null)] | length' "$T/issues.json"; }
+echo '[]' >"$T/runs-.json"
+: >"$LOG"
+cp "$HERE/testdata/ginkgo-fail.log" "$T/log-811.txt"
+cp "$HERE/testdata/ginkgo-fail.log" "$T/log-812.txt"
+failed 811 '3 days'
+passed 861 '2 days'
+failed 812 '1 hour'
+closed_flaky '30 minutes'
+flake_round
+check "flake: runs a closed bug already lists file nothing (#1824)" "$(open_issues)" 0
+check "flake: they are recorded (#1824)" "$(cut -f2 "$DIR/flakes.tsv" | tr '\n' ' ')" "811 812 "
+check "flake: logged with the closed bug (#1824)" "$(logged "a spec failed on main after its bug #90 closed at .*: $SPEC$")" 1
+# One failure after the fix is one, not a flake yet.
+cp "$T/log-811.txt" "$T/log-813.txt"
+passed 862 '20 minutes'
+failed 813 '10 minutes'
+flake_round
+check "flake: one failure after the fix files nothing (#1824)" "$(open_issues)" 0
+# The bug closed between the old runs: the old run after it and the new ones are its flake again.
+closed_flaky '1 day'
+cp "$T/log-811.txt" "$T/log-814.txt"
+passed 863 '7 minutes'
+failed 814 '5 minutes'
+flake_round
+check "flake: two failures after the fix file one bug (#1824)" "$(open_issues)" 1
+body=$(jq -r '.[] | select(.closed_at == null) | .body' "$T/issues.json")
+check "flake: the body names only the runs after the fix (#1824)" "$(grep -o 'actions/runs/81[0-9]' <<<"$body" | tr '\n' ' ')" "actions/runs/812 actions/runs/813 actions/runs/814 "
+check "flake: and the closed bug (#1824)" "$(grep -c 'failed on main 3 times in the last 7 days .* Its earlier bug #90 closed at ' <<<"$body")" 1
+# A closed bug that can't be read is tried again next round, not filed past.
+mv "$T/bin/gh" "$T/bin/gh.real"
+printf '#!/usr/bin/env bash\n[[ "$*" == *"issues?state=closed"* ]] && { echo "HTTP 502" >&2; exit 1; }\nexec "$0.real" "$@"\n' >"$T/bin/gh"
+chmod +x "$T/bin/gh"
+cp "$T/log-811.txt" "$T/log-815.txt"
+passed 864 '3 minutes'
+failed 815 '2 minutes'
+echo '[]' >"$T/issues.json"
+flake_round
+check "flake: an unreadable closed bug files nothing (#1824)" "$(open_issues)" 0
+check "flake: it is logged (#1824)" "$(logged "could not read its closed bug (exit 1): HTTP 502$")" 1
+check "flake: it is tried again (#1824)" "$FLAKE_RETRY" "$SPEC"$'\n'
+mv "$T/bin/gh.real" "$T/bin/gh"
+flake_round
+check "flake: the next round files it (#1824)" "$(open_issues)" 1
+FLAKE_SAID= FLAKE_RETRY=
+rm -f "$T/runs-.json" "$T"/log-*.txt "$DIR/flakes.tsv" "$DIR/flakes-runs" "$T/log-reads"
 echo '[]' >"$T/issues.json"
 
 # Runners offline: a run queued on main for 40 minutes puts the note in the
