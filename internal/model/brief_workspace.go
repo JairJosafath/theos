@@ -452,9 +452,17 @@ func workspaceCatalog(catalog []CatalogEntry, bundles []Bundle) catalogOut {
 	sortedBundles := slices.Clone(bundles)
 	slices.SortFunc(sortedBundles, func(a, b Bundle) int { return strings.Compare(a.Name, b.Name) })
 	for _, b := range sortedBundles {
+		// The types the operator would accept the Bundle for: every entry
+		// supports it, and CheckBundle passes (the Standard fits the Framework,
+		// a self-deploying Framework has no Compute), so the planner is never
+		// led to a Bundle the check refuses.
 		types := []string{}
 		if entries, missing := BundleEntries(b, catalog); missing == "" {
-			types = append(types, BundleSupportedTypes(entries)...)
+			for _, t := range BundleSupportedTypes(entries) {
+				if CheckBundle(b, t, entries) == nil {
+					types = append(types, t)
+				}
+			}
 			slices.Sort(types)
 		}
 		out.Bundles = append(out.Bundles, bundleOut{b.Name, strings.TrimSpace(b.Description), b.Framework, b.Standard,

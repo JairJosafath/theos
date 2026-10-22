@@ -1067,3 +1067,10 @@ func TestPlacedPrompts(t *testing.T) {
 		t.Errorf("got %q, want none", got)
 	}
 }
+
+// webOnBundle rewrites happyFiles' Container web onto the Bundle react-web
+// (react-site and web-standard) in place of its sides (#1622).
+func webOnBundle(modelFile string) string {
+	return strings.Replace(modelFile, "  frameworkRef: {name: react-site}\n  standardRef: {name: web-standard}\n",
+		"  bundleRef: {name: react-web}\n", 1)
+}

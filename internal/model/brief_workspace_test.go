@@ -257,9 +257,12 @@ bundles: []
 
 	// #1622: a Bundle lists its entries and the types they all support; one on
 	// an entry that isn't installed supports no type.
+	// A Bundle the operator's check refuses for every type, here a Standard
+	// that doesn't fit its Framework, supports no type either.
 	bundles := []Bundle{
 		{Name: "py-worker", Description: " Python jobs. ", Framework: "python-fastapi", Compute: "small"},
 		{Name: "go-web", Framework: "go-service", Standard: "go-standard"},
+		{Name: "py-misfit", Framework: "python-fastapi", Standard: "go-standard"},
 	}
 	got = workspaceFiles(t, BriefWorkspace{Catalog: catalog, Bundles: bundles})[WorkspaceCatalogFile]
 	want = `bundles:
@@ -268,6 +271,10 @@ bundles: []
       standard: go-standard
       supportedTypes:
         - service
+    - name: py-misfit
+      framework: python-fastapi
+      standard: go-standard
+      supportedTypes: []
     - name: py-worker
       description: Python jobs.
       framework: python-fastapi
