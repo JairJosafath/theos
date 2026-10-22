@@ -229,7 +229,8 @@ func (p *deployPass) ship(ctx context.Context, target ports.Target, deployer por
 	}
 	shipment := ports.Shipment{App: deployApp(p.container), DisplayName: displayName(p.container),
 		Type: string(p.container.Spec.Type), Deployment: p.container.Choices().Deployment,
-		Framework: p.container.Choices().Framework, Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
+		Framework: p.container.Choices().Framework, ScaffoldedFrom: p.container.Status.ScaffoldedFrom,
+		Version: version, Notes: release.Body, Repository: p.repo.CloneURL}
 	if sourcePath != "" {
 		if shipment.Source, err = p.source(ctx, target, version); err != nil {
 			return &model.DeployShipFailure{Reason: model.DeployGitHostUnreachable, Detail: err.Error()}

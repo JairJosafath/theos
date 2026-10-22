@@ -205,7 +205,7 @@ func TestGitHubShipment(t *testing.T) {
 			for _, source := range []bool{false, true} {
 				for _, token := range []bool{false, true} {
 					f := GitHubShipmentFacts{Type: typ, Deployment: deployment, Files: files(typ), Source: source,
-						Image: BuildsImage(deployment, "", typ), PackagesToken: token}
+						Image: BuildsImage(deployment, "", typ, nil), PackagesToken: token}
 					plan, problem := GitHubShipment(f)
 					name := typ + "/" + deployment
 					if plan.Source != source {
@@ -216,7 +216,7 @@ func TestGitHubShipment(t *testing.T) {
 							t.Errorf("%s: ships the image archive %s as a release file", name, file)
 						}
 					}
-					if want := token && BuildsImage(deployment, "", typ); plan.Image != want {
+					if want := token && BuildsImage(deployment, "", typ, nil); plan.Image != want {
 						t.Errorf("%s token=%v: plan.Image = %v, want %v", name, token, plan.Image, want)
 					}
 					wantProblem := !source && len(plan.Files) == 0 && !plan.Image

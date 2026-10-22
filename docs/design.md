@@ -646,8 +646,9 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   summed by `Deployed`.
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
-  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`, and
-  `gitea-release` for an `operator`), the
+  Container's choice builds one (`model.BuildsImage`: `k8s-manifests`,
+  `gitea-release` for an `operator`, and `gitea-release` with
+  `aws-fargate-ts`), the
   operator pushes `status.newestRelease`'s `*.oci.tar` to the owner's
   registry once and reports it in `status.image` (`tag`, `repository`,
   `digest`, `platforms`, `state`, `message`, `publishedTime`) and

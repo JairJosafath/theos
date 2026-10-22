@@ -403,8 +403,11 @@ var funcs = template.FuncMap{
 	"dart":       dartString,
 	"ts":         tsString,
 	// buildsImage says a release of the Container builds an image the
-	// operator pushes: {{ buildsImage .Deployment .Framework .Type }}.
-	"buildsImage": model.BuildsImage,
+	// operator pushes: {{ buildsImage .Deployment .Framework .Type }}. The
+	// templates rendering are the ones scaffolded, so they count as current.
+	"buildsImage": func(deployment, framework, typ string) bool {
+		return model.BuildsImage(deployment, framework, typ, nil)
+	},
 }
 
 // tsString quotes s as a TypeScript string literal the way Prettier, with
