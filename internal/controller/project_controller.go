@@ -61,12 +61,23 @@ type ProjectReconciler struct {
 	// UIServiceAccount is the UI's ServiceAccount, let read the pods of every
 	// project namespace (ensureUIPodReader); none when its name is empty.
 	UIServiceAccount types.NamespacedName
+	// Git makes the Provider of each GitProvider, for the CI runner pool's
+	// registration token.
+	Git GitClient
+	// CIGoCache is the node directory under which each project's CI Go cache
+	// lives (--ci-go-cache); empty, the pool pods mount no cache.
+	CIGoCache string
+	// RunnerRecordKept is how long an ended pool pod stays readable;
+	// DefaultRunnerRecordKept when zero.
+	RunnerRecordKept time.Duration
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;agents,verbs=get;list;watch;update;patch
@@ -109,9 +120,16 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
+	recordExpiry, err := r.ensureCIRunners(ctx, &project, status)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	recheck, err := r.shareSecrets(ctx, &project, status)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if recordExpiry > 0 && (recheck == 0 || recordExpiry < recheck) {
+		recheck = recordExpiry
 	}
 	if err := r.rollUp(ctx, &project, status); err != nil {
 		return ctrl.Result{}, err
@@ -234,6 +252,7 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.NetworkPolicy{}).
+		Owns(&corev1.Pod{}).
 		Watches(&c4v1alpha1.Person{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.SoftwareSystem{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.GitProvider{}, toProject, specChanged()).

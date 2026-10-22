@@ -10,8 +10,6 @@ package controller
 
 import (
 	"context"
-	"net/url"
-	"slices"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
@@ -33,17 +30,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}
-	var gitNamespaces []string
-	for _, p := range providers.Items {
-		u, err := url.Parse(p.Spec.URL)
-		if err != nil {
-			continue
-		}
-		if ns, ok := model.ClusterNamespace(u.Hostname()); ok && !slices.Contains(gitNamespaces, ns) {
-			gitNamespaces = append(gitNamespaces, ns)
-		}
-	}
-	slices.Sort(gitNamespaces)
+	gitNamespaces := gitNamespacesOf(providers.Items)
 
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
 		Name: AgentNetworkPolicyName, Namespace: project.Namespace}}

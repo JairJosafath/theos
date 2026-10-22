@@ -71,6 +71,7 @@ func main() {
 	var leaseDuration time.Duration
 	var workspaceMemory string
 	var sandboxGoCache string
+	var ciGoCache string
 	var goProxy string
 	var sessionFeature, sessionBinaryURL string
 	var sharedSecrets, sharedPullSecrets stringList
@@ -109,6 +110,10 @@ func main() {
 		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
 			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
 			"Never the CI runner's cache: agents run untrusted code, and Go trusts its cache.")
+	flag.StringVar(&ciGoCache, "ci-go-cache", "",
+		"When set, a directory on the node, such as /var/cache/c4factory/go/ci, under which each project's "+
+			"CI runner pods get their own Go and golangci-lint build cache, <dir>/<project namespace>; a job "+
+			"compiles only what changed. Never shared with the agent sandboxes' cache.")
 	flag.StringVar(&goProxy, "go-proxy", controller.DefaultGoProxy,
 		"The Go proxy asked whether go get finds a released Go module whose path is outside c4factory.local/; "+
 			"off asks none, and the Crew's own GitHub source tag is the answer.")
@@ -273,6 +278,8 @@ func main() {
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
+		Git:               gitprovider.Client{},
+		CIGoCache:         ciGoCache,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "project")
 		os.Exit(1)

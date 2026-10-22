@@ -51,6 +51,8 @@ const (
 	ciRunnerContainer = "runner"
 	// ciGoCacheMount is where a pool pod mounts the project's Go cache.
 	ciGoCacheMount = "/cache/go"
+	// ciRunnerTokenKey is the key of the registration token in its Secret.
+	ciRunnerTokenKey = "token"
 )
 
 // CIJobEnv is the job.env of CIJobEnvConfigMap: the caches under ciGoCacheMount.
