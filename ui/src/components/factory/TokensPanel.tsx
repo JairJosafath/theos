@@ -1,6 +1,7 @@
 // The Work area's "What agent runs use": each agent run's largest session by
 // its Task's round and outcome, against its Agent's sessionTokenLimit, with a
-// table of the same by outcome.
+// table of the same by outcome. The limit is the Agent's current one and the
+// Agent the Task's current one: a run records neither (#1268), and the note says so.
 
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import type { Problem } from '../../k8s/sources'
@@ -112,7 +113,10 @@ function limitNote(agent: AgentTokens, agentsUnread: boolean): string {
       ? `The Agents could not be read, so the limit of Agent ${agent.name} is unknown.`
       : `Agent ${agent.name} is gone, so its limit is unknown.`
   if (agent.limit === undefined) return `Agent ${agent.name} sets no session token limit.`
-  return `A run past ${formatTokens(agent.limit)} hands off to a fresh session; spec.sessionTokenLimit on Agent ${agent.name} sets it.`
+  return (
+    `A run past ${formatTokens(agent.limit)} hands off to a fresh session; spec.sessionTokenLimit on Agent ${agent.name} sets it. ` +
+    'The line and the runs past the limit use the limit as it is now and each Task’s Agent as named now: a run records neither, so changing either rejudges past runs.'
+  )
 }
 
 /** The narrowest band that fits "Round 10"; a narrower one says only the number. */

@@ -1,7 +1,9 @@
 // The Work area's chart of what agent runs use: each run's largest session, by
 // its Task's round and outcome, against its Agent's sessionTokenLimit, so a
-// reporter can judge the limit (docs/plans/done/token-chart.md). Plain
-// functions over Tasks and Agents, tested without React.
+// reporter can judge the limit (docs/plans/done/token-chart.md). The limit is
+// the Agent's current spec.sessionTokenLimit and the Agent the Task's current
+// agentRef/reviewerRef: a run records neither, so past runs are rejudged when
+// either changes (#1268). Plain functions over Tasks and Agents, tested without React.
 
 import type { Agent, Task, TaskAgentRun, TokenUsage } from '../k8s/types'
 import { formatTokens } from './brief'

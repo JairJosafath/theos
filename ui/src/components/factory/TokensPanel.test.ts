@@ -39,6 +39,13 @@ describe('What agent runs use (#1086)', () => {
     expect(html).toContain('Claude Code, Opus (reviewer) · limit 130k</option>')
   })
 
+  it('says the line and the counts use the Agent’s current limit and the Task’s current Agent (#1268)', () => {
+    expect(text(panel())).toContain(
+      'A run past 130k hands off to a fresh session; spec.sessionTokenLimit on Agent claude-implementer sets it. ' +
+        'The line and the runs past the limit use the limit as it is now and each Task’s Agent as named now: a run records neither, so changing either rejudges past runs.',
+    )
+  })
+
   it('marks each run by how its Task ended, and links it to the Task', () => {
     const html = panel()
     expect(html.match(/class="tokens-mark tokens-merged"/g)).toHaveLength(3 + 2) // the legend's Merged and Handed off keys
