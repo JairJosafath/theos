@@ -103,7 +103,7 @@
 # until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
 # session start is RELAY_ADMIT_GAP seconds old (default 120), and stops after
 # waiting RELAY_MEM_WAIT seconds (default 3600). It also waits while a watched
-# filesystem has less than RELAY_MIN_FREE_GB free (default 30): /, the
+# filesystem has less than RELAY_MIN_FREE_GB free (default 15): /, the
 # checkouts' and, under WSL, the Windows drives holding the distros' .vhdx
 # files, whose free space df / never shows (#1344); RELAY_DISK_PATHS overrides
 # the list. Heavy jobs (make check, test,
@@ -177,7 +177,7 @@ ADMIT_GAP=${RELAY_ADMIT_GAP:-120}  # seconds between session starts across worke
 MEM_WAIT=${RELAY_MEM_WAIT:-3600}   # seconds a worker waits for headroom before it stops
 MEM_POLL=${RELAY_MEM_POLL:-60}
 MEMINFO=${RELAY_MEMINFO:-/proc/meminfo}
-MIN_FREE_GB=${RELAY_MIN_FREE_GB:-30} # GB free each watched filesystem needs before a session starts (#1344)
+MIN_FREE_GB=${RELAY_MIN_FREE_GB:-15} # GB free each watched filesystem needs before a session starts (#1344, #1635)
 DISK_PATHS=${RELAY_DISK_PATHS:-}     # the watched paths, space-separated; empty: disk_paths finds them
 OSRELEASE=${RELAY_OSRELEASE:-/proc/sys/kernel/osrelease}
 LIMIT_WAIT=${RELAY_LIMIT_WAIT:-30m} # the pause after a limit whose message names no reset time
@@ -639,7 +639,7 @@ trim_caches() { "$CODE/hack/prune-caches.sh" 2>&1 | while read -r l; do log "$l"
 disk_wait() {
   local p free low= mark now said= hint=
   grep -qi microsoft "$OSRELEASE" 2>/dev/null &&
-    hint="; under WSL only compacting the .vhdx returns space to Windows: docs/dev/testenv.md, \"Disk space on WSL\""
+    hint="; under WSL the .vhdx files never shrink, and we no longer compact them: docs/dev/testenv.md, \"Disk space on WSL\""
   now=$(date +%s)
   while IFS=$'\t' read -r p free; do
     low=1
