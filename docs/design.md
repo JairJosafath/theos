@@ -245,7 +245,9 @@ namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
 mount a Go build cache of the project's own on the node. The shared runners
 Helm installs register to the templates organization and serve the
-templates' checks only. Who cancelled a job is read from its pod: a pod that
+templates' checks only; the GitProviders the chart renders carry a pool of a
+`base` and a `go` runner, the labels the templates' checks run on, so an
+install needs nothing added for a project's checks to run. Who cancelled a job is read from its pod: a pod that
 ended its one job on its own after the cancel was a person's; one deleted,
 evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is
