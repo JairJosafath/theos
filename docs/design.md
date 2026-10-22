@@ -298,7 +298,13 @@ The operator moves bytes with credentials it holds; it builds nothing.
   proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
   and the Go Standard's CI fetch `c4factory.local/...` from the registry.
 - **npm and PyPI packages** (#1087, decided, not built): the release's npm
-  tarballs, wheels and sdists, published once to the Git host's registries
+  tarballs, wheels and sdists, published once to the npm registry and the
+  PyPI index `GitProvider.spec.packages` names, by default the Git host's
+  own. npm packages are named `<scope>/<container>`; the scope is a setting
+  there too, `@c4factory` by default. The factory claims no name on
+  npmjs.org or any public registry (#1234): by default nothing leaves the
+  cluster, and a user who publishes elsewhere sets a scope they hold, their
+  registry's and index's URLs and a credential Secret of their own
   ([plans/app-packages.md](plans/app-packages.md)).
 - **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
   (a repository and a token Secret for it alone) copies the tag, notes and
@@ -509,9 +515,13 @@ controllers call, not by one product's API;
   only shorten waits ([plans/git-events.md](plans/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
-  default to the host's own, a DeployTarget names each deploy's tool.
+  default to the host's own (`spec.packages` names another npm registry or
+  PyPI index, and the npm scope), a DeployTarget names each deploy's tool.
 - **A user's credential never reaches code the agents wrote:** only the
-  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets.
+  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets,
+  and a registry Secret's `token`. The one exception is a registry Secret's
+  `readToken`, which the user makes for installs alone: it reaches agent
+  pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its
   contract;** none is yet.
 
