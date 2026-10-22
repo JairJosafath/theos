@@ -21,7 +21,7 @@ import (
 )
 
 // TestGiteaNpmIntegration checks what an agent's pod relies on to install the
-// factory's npm packages (docs/plans/app-packages.md, decision 5): a scoped
+// factory's npm packages (docs/plans/done/app-packages.md, decision 5): a scoped
 // package published to the owner's npm registry installs as the restricted
 // agent account through the .npmrc c4agent writes, over plain http as the
 // in-cluster Gitea is reached, and over TLS, as an external one is, where npm

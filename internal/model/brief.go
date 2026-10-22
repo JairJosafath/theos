@@ -1291,22 +1291,43 @@ func BriefIssueBody(issue PlanIssue, brief string, round int, buildsOn ...Builds
 	return BriefIssueBodyUsing(issue, brief, round, buildsOn, nil)
 }
 
-// UsedModule is a Go module a uses: issue builds on: the module a used
-// Container's release published, at that release's version.
-type UsedModule struct {
-	Path    string
-	Version string
+// UsedPackage is what a uses: issue builds on: one thing a used Container's
+// release published, at that release's version. Ecosystem is EcosystemGo for
+// its Go module (Name is the module path, Version the tag), EcosystemNpm for
+// an npm package (Name is scoped, Version the tag without its v) or
+// EcosystemPyPI for a PyPI package, whose Index is the simple index it is
+// installed from.
+type UsedPackage struct {
+	Ecosystem string
+	Name      string
+	Version   string
+	Index     string
 }
 
-// UsesLine is the body line that pins a used module's release.
-func UsesLine(m UsedModule) string {
-	return fmt.Sprintf("Uses %s %s: go get it at that version.", m.Path, m.Version)
+// UsesLine is the body line that pins one thing a used release published,
+// with the command the app's AGENTS.md has an agent run for it.
+func UsesLine(p UsedPackage) string {
+	switch p.Ecosystem {
+	case EcosystemNpm:
+		return fmt.Sprintf("Uses npm package %s %s: npm install --save-exact %s@%s.", p.Name, p.Version, p.Name, p.Version)
+	case EcosystemPyPI:
+		return fmt.Sprintf("Uses PyPI package %s %s from the c4factory index %s: uv add %s==%s, pinned to that index "+
+			"as AGENTS.md says.", p.Name, p.Version, p.Index, p.Name, p.Version)
+	}
+	return fmt.Sprintf("Uses %s %s: go get it at that version.", p.Name, p.Version)
 }
 
-// BriefIssueBodyUsing is BriefIssueBody with a line "Uses <module> <version>:
-// go get it at that version." for each module the issue uses, after the
-// Builds on lines.
-func BriefIssueBodyUsing(issue PlanIssue, brief string, round int, buildsOn []BuildsOn, uses []UsedModule) string {
+// UsesNothingPublished is what a uses: issue waits for when the used app's
+// release settled but published nothing another app installs: neither a Go
+// module (goMessage says why) nor a package (packagesMessage says why).
+func UsesNothingPublished(app, tag, goMessage, packagesMessage string) string {
+	return fmt.Sprintf("%s, whose release %s published nothing other apps install: %s; %s", app, tag, goMessage,
+		packagesMessage)
+}
+
+// BriefIssueBodyUsing is BriefIssueBody with a UsesLine for each thing the
+// issue uses, after the Builds on lines.
+func BriefIssueBodyUsing(issue PlanIssue, brief string, round int, buildsOn []BuildsOn, uses []UsedPackage) string {
 	var body strings.Builder
 	body.WriteString(strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n")
 	for _, b := range buildsOn {

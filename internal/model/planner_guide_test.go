@@ -122,14 +122,21 @@ func TestPlannerGuideExampleOrdersItsIssues(t *testing.T) {
 }
 
 func TestPlannerGuideShowsUses(t *testing.T) {
-	for _, want := range []string{"uses: [cel-lens-core]", "go get it at that version."} {
+	for _, want := range []string{"uses: [cel-lens-core]", "go get it at that version.",
+		"npm install --save-exact", "uv add"} {
 		if !strings.Contains(plannerGuideText, want) {
 			t.Errorf("PLANNER.md doesn't show %q", want)
 		}
 	}
-	if UsesLine(UsedModule{Path: "c4factory.local/<project>/cel-lens-core", Version: "v0.1.0"}) !=
-		"Uses c4factory.local/<project>/cel-lens-core v0.1.0: go get it at that version." {
-		t.Error("the guide's Uses line no longer matches the one the operator writes")
+	// #1233: the guide's lines are the operator's, one per ecosystem.
+	for _, line := range []string{
+		UsesLine(UsedPackage{Ecosystem: EcosystemGo, Name: "c4factory.local/<project>/cel-lens-core", Version: "v0.1.0"}),
+		UsesLine(UsedPackage{Ecosystem: EcosystemNpm, Name: "<scope>/cel-lens-core", Version: "0.1.0"}),
+		UsesLine(UsedPackage{Ecosystem: EcosystemPyPI, Name: "cel-lens-core", Version: "0.1.0", Index: "<index>"}),
+	} {
+		if !strings.Contains(plannerGuideText, line) {
+			t.Errorf("PLANNER.md doesn't show the operator's line %q", line)
+		}
 	}
 }
 

@@ -325,7 +325,7 @@ names as the owner's Actions variables and the read tokens as its Actions
 secrets, and deletes them when it returns to it
 (`internal/controller/project_packages.go`, `gitprovider.OwnerActions`), so a
 workflow reads them with the host's own as the fallback.
-[plans/app-packages.md](plans/app-packages.md), decision 5, has why.
+[plans/done/app-packages.md](plans/done/app-packages.md), decision 5, has why.
 
 ## Go build caches
 

@@ -322,15 +322,23 @@ The operator moves bytes with credentials it holds; it builds nothing.
   `c4factory.local/` path through the registry, any other through the public
   proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
   and the Go Standard's CI fetch `c4factory.local/...` from the registry.
-- **npm and PyPI packages** (#1087, decided, not built): the release's npm
-  tarballs, wheels and sdists, published once to the npm registry and the
-  PyPI index `GitProvider.spec.packages` names, by default the Git host's
-  own. npm packages are named `<scope>/<container>`; the scope is a setting
-  there too, `@c4factory` by default. The factory claims no name on
+- **npm and PyPI packages** (#1087): the release's npm tarballs, wheels and
+  sdists, published once to the npm registry and the PyPI index
+  `GitProvider.spec.packages` names, by default the Git host's own, by the
+  Crew once the release runs succeed. `status.lastRelease.packages` says how
+  it went (`Waiting`, `Published` with one `{ecosystem, name, version}` per
+  package, `NoPackage`, `Invalid` when a file's version isn't the tag's,
+  `Failed` while the host can't be reached, tried again each poll), and the
+  condition `PackagesPublished` turns True at `Published` or `NoPackage`; an
+  upload is a Normal Event `PackagePublished`, an invalid file a Warning
+  `InvalidPackage`, once per release. npm packages are named
+  `<scope>/<container>`; the scope is a setting there too, `@c4factory` by
+  default, and a tarball outside it is left alone and named in the message
+  with the scope it lacks. The factory claims no name on
   npmjs.org or any public registry (#1234): by default nothing leaves the
   cluster, and a user who publishes elsewhere sets a scope they hold, their
   registry's and index's URLs and a credential Secret of their own
-  ([plans/app-packages.md](plans/app-packages.md)).
+  ([plans/done/app-packages.md](plans/done/app-packages.md)).
 - **A copy on GitHub** (deprecated by #1070). `spec.publishReleases.github`
   (a repository and a token Secret for it alone) copies the tag, notes and
   files once the runs succeed; the operator does it, not CI, so the token
@@ -431,8 +439,12 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   `c4.factory.io/brief`. A failed step says where and why
   (`Planned=False`, `ApplyFailed`).
 - **One app uses another's release, never its branch.** An issue's `uses:`
-  names a related Container; it turns ready once that app has a published
-  version, and says how to fetch it.
+  names a related Container; it turns ready once that app's release has
+  settled and published something other apps install, a Go module, an npm
+  package or a PyPI package, and its body gets a line per thing published
+  saying how to fetch it (`go get`, `npm install --save-exact`, `uv add`
+  pinned to the Git host's index). A settled release that published nothing
+  keeps the issue waiting, and the Brief says why.
 - **It asks only for what costs money or touches access.** Agents, models,
   GitProviders and credentials are never the planner's; it says what it needs
   in `NeedsInput`. The Crews' `parallel` (`spec.parallel`, else a prompt's

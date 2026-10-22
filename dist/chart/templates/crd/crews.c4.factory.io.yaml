@@ -499,6 +499,67 @@ spec:
                     required:
                     - state
                     type: object
+                  packages:
+                    description: |-
+                      packages is how publishing the release's npm and PyPI packages, the
+                      tarballs, wheels and sdists its release run attached, to the registries
+                      the GitProvider's spec.packages names went.
+                    properties:
+                      message:
+                        description: |-
+                          message says what happened last: what was published, why a file wasn't,
+                          and an npm tarball under another scope, or none, left alone, with the
+                          scope it lacks.
+                        type: string
+                      published:
+                        description: |-
+                          published lists the packages the release has in its registries, one per
+                          package file published, now or before.
+                        items:
+                          description: CrewReleasePackage is one package a release
+                            published.
+                          properties:
+                            ecosystem:
+                              description: ecosystem is the package's registry kind,
+                                npm or PyPI.
+                              enum:
+                              - npm
+                              - PyPI
+                              type: string
+                            name:
+                              description: name is the package's name as its metadata
+                                declares it.
+                              type: string
+                            version:
+                              description: |-
+                                version is the package's version as its metadata declares it, the
+                                release's tag without its v.
+                              type: string
+                          required:
+                          - ecosystem
+                          - name
+                          - version
+                          type: object
+                        maxItems: 50
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      state:
+                        description: |-
+                          state is Waiting until the release runs succeed, Published once every
+                          package file of the release is in its registry, NoPackage when the
+                          release attached no package file, Invalid when a file can't be published
+                          at the tag's version, and Failed while the Git host can't be reached,
+                          tried again each poll.
+                        enum:
+                        - Waiting
+                        - Published
+                        - NoPackage
+                        - Invalid
+                        - Failed
+                        type: string
+                    required:
+                    - state
+                    type: object
                   publish:
                     description: |-
                       publish is how publishing the release went, when spec.publishReleases is

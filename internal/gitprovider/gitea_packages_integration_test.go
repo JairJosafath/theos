@@ -19,7 +19,7 @@ import (
 
 // TestGiteaPackagesIntegration publishes a release's npm tarball, wheel and
 // sdist to the local Gitea's registries and installs each with the real
-// tools, as decision 7 of docs/plans/app-packages.md has an app do: npm with
+// tools, as decision 7 of docs/plans/done/app-packages.md has an app do: npm with
 // the scope routed to the owner's registry, uv with the owner's index declared
 // explicit and the package pinned to it. A repeat publishes nothing.
 func TestGiteaPackagesIntegration(t *testing.T) {

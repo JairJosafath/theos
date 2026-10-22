@@ -173,19 +173,27 @@ Push the branch `plan/<round>` with these files:
    idea, which isn't ordered.
    **Say which app's release an issue builds on.** Each Container is its own
    repository, so one app never imports another's code from a branch or a
-   path: a Go app depends on a released version of the other's module, as
+   path: an app depends on a released version of the other's package, as
    separate repositories do. When an issue's code imports another
-   Container's Go module, list that Container in its `uses:`
-   (`uses: [cel-lens-core]`). The issue is filed but not ready until the used
-   Container's release has published its module, then it is readied with a
-   line naming the version to `go get`. The used Container must be another
+   Container's Go module, npm package or PyPI package, list that Container
+   in its `uses:` (`uses: [cel-lens-core]`). The issue is filed but not
+   ready until the used Container's release has published it, then it is
+   readied with a line naming the version and how to fetch it: `go get` for
+   a Go module, `npm install --save-exact` for an npm package, `uv add`
+   pinned to the factory's index for a PyPI package. `uses:` links apps of
+   one language: a Go app uses a Go module, a TypeScript app an npm package,
+   a Python app a PyPI package. A TypeScript app that others use is a
+   `node-cli` Container, whose package is named `<scope>/<name>` after the
+   Git host's npm scope, with the `gitea-release` Deployment; a Python app
+   that others use is a `python-cli` Container with `gitea-release`; the
+   release publishes the package. The used Container must be another
    Container of `plan/model.yaml`, a Relationship must go from the issue's
    Container to it, and it must have made a release or be released by this
    round (`releases.yaml`, with at least one issue of the round for it). Put
    the used Container's work for the release in this round's issues for it,
    and leave `after:` out for that work: `uses:` already waits for it. An
    issue that reuses another app's packages without `uses:` can't build: the
-   module isn't there to fetch.
+   package isn't there to fetch.
 7. **Explain each choice in `choices.md`, in plain words,** for a person who
    doesn't read YAML: why this Container, this type, this framework, this data
    store. One line each; `choices.md` is never empty. Say why the type fits
@@ -678,6 +686,22 @@ published `c4factory.local/<project>/cel-lens-core`, and its body then says:
 
 ```
 Uses c4factory.local/<project>/cel-lens-core v0.1.0: go get it at that version.
+```
+
+Were the engine a TypeScript `node-cli` with `gitea-release`, its release
+would publish the npm package `<scope>/cel-lens-core` (`<scope>` is the Git
+host's npm scope, `@c4factory` by default), and the line would read:
+
+```
+Uses npm package <scope>/cel-lens-core 0.1.0: npm install --save-exact <scope>/cel-lens-core@0.1.0.
+```
+
+Were it a Python `python-cli` with `gitea-release`, its release would publish
+the PyPI package `cel-lens-core` to the Git host's index (`<index>`), and the
+line would read:
+
+```
+Uses PyPI package cel-lens-core 0.1.0 from the c4factory index <index>: uv add cel-lens-core==0.1.0, pinned to that index as AGENTS.md says.
 ```
 
 `plan/releases.yaml`, releasing the web shop, which the example's issue is
