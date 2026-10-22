@@ -87,12 +87,12 @@ func coreModule(ns string) string {
 	return "c4factory.local/" + ns + "/core"
 }
 
-// releaseCore sets the core Crew's latest release as tagging it would, its
+// releaseCore sets the core Crew's latest release, v0.1.0, as tagging it would, its
 // release runs succeeded; the Crew then publishes its Go module, if it has
 // one, and the packages the Gitea release holds.
-func releaseCore(ns, tag string) {
+func releaseCore(ns string) {
 	GinkgoHelper()
-	releaseCoreRun(ns, tag, model.RunSucceeded)
+	releaseCoreRun(ns, "v0.1.0", model.RunSucceeded)
 }
 
 // releaseCoreRun is releaseCore with the release runs in state run.
@@ -158,7 +158,7 @@ var _ = Describe("Brief issues that use another app", func() {
 		}, "1s").Should(Succeed())
 
 		By("readying it with the module's version once the core's release publishes its module")
-		releaseCore(ns, "v0.1.0")
+		releaseCore(ns)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
@@ -182,7 +182,7 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
 		}).Should(Succeed())
 
-		releaseCore(ns, "v0.1.0")
+		releaseCore(ns)
 		Eventually(func(g Gomega) {
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
@@ -218,7 +218,7 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(cond).To(HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0")))
 		}).Should(Succeed())
 
-		releaseCore(ns, "v0.1.0")
+		releaseCore(ns)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
@@ -296,7 +296,7 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(cond).To(HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0")))
 		}).Should(Succeed())
 
-		releaseCore(ns, "v0.1.0")
+		releaseCore(ns)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
