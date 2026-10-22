@@ -28,6 +28,37 @@ func TestDeployApproval(t *testing.T) {
 	}
 }
 
+// TestGitHubTagPrefix: unset, a Container's tags carry its name; set, the
+// prefix is used as it is, "" giving bare tags (#1486).
+func TestGitHubTagPrefix(t *testing.T) {
+	empty, cli := "", "cli/"
+	tests := []struct {
+		name string
+		set  *string
+		want string
+	}{
+		{name: "unset", want: "orders-cli-"},
+		{name: "empty", set: &empty, want: ""},
+		{name: "set", set: &cli, want: "cli/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GitHubTagPrefix(tt.set, "orders-cli"); got != tt.want {
+				t.Errorf("GitHubTagPrefix(%v, orders-cli) = %q, want %q", tt.set, got, tt.want)
+			}
+		})
+	}
+	no, yes := false, true
+	for _, tt := range []struct {
+		latest *bool
+		want   bool
+	}{{nil, true}, {&yes, true}, {&no, false}} {
+		if got := GitHubTakesLatest(tt.latest); got != tt.want {
+			t.Errorf("GitHubTakesLatest(%v) = %v, want %v", tt.latest, got, tt.want)
+		}
+	}
+}
+
 func TestDeployMembers(t *testing.T) {
 	tests := []struct {
 		name     string

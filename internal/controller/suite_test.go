@@ -77,7 +77,8 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
-	// deployFake is the Deployer of every DeployTarget's member.
+	// deployFake is the Deployer of every DeployTarget's member, but for a
+	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
@@ -325,7 +326,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
-			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}, DeployMembers: testDeployMember,
+			Deployers: ports.Deployers{model.DeployMemberGitHub: routedDeployer{}}, DeployMembers: testDeployMember,
 			DeployPoll: time.Second},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
@@ -344,7 +345,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			GoProxy:   goProxyFake.server.URL,
 			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: deployFake}},
+			Deployers: ports.Deployers{model.DeployMemberGitHub: routedDeployer{}}},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
@@ -407,4 +408,29 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// routedDeployer is the github member's Deployer in the suite: the github
+// adapter against the fake GitHub for a target whose repository the fake
+// has, so a spec can watch what a deploy makes there, else deployFake,
+// whose state a spec sets by hand.
+type routedDeployer struct{}
+
+func (routedDeployer) of(t ports.Target) ports.Deployer {
+	if githubFake.hasRepository(t.Settings[model.GitHubSettingRepository]) {
+		return githubdeploy.New(githubFake)
+	}
+	return deployFake
+}
+
+func (r routedDeployer) Check(ctx context.Context, t ports.Target) error {
+	return r.of(t).Check(ctx, t)
+}
+
+func (r routedDeployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
+	return r.of(t).Ship(ctx, t, s)
+}
+
+func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
+	return r.of(t).State(ctx, t, app, version)
 }

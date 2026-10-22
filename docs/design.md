@@ -527,7 +527,13 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `credentialsSecretRef` (optional only for an in-cluster `argoCD` target), a
   `tier` (`development` by default, or `production`), an `approval`
   (`Required` or `None`; empty is `Required` in production) and non-secret
-  `parameters`. `Ready` says whether the target takes the credential.
+  `parameters`. `Ready` says whether the target takes the credential. A
+  `github` target's `tagPrefix` goes before each release's tag: unset, it is
+  the Container's name and `-` (`orders-cli-v0.1.0`), so any number of
+  Containers share a target; set, it is used as it is, `""` giving bare
+  tags. Its `latest` (default true) says whether each release becomes the
+  repository's Latest
+  ([plans/done/github-deploy-state.md](plans/done/github-deploy-state.md)).
 - **A Container names its targets in `spec.deploy`:** entries by `target`,
   with an optional `after` (an entry that runs a version first), `version` (a
   pinned tag, how a person rolls back) and `approved` (the version a person
