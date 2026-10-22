@@ -966,11 +966,32 @@ it runs: how long its backups are kept (`backups.retentionDays`, 0 for
 point-in-time recovery only) and the second AWS region they are copied to
 (`backups.copyToRegion`), its recovery objectives (`recovery.rpo` and
 `recovery.rto`, such as `15m` or `4h`), and who its alarms tell
-(`alerts.email`):
+(`alerts.email`). Only a Framework that says `readsOperations: true` renders
+the block: today the nine AWS Frameworks (`aws-lambda-ts`, `aws-lambda-go`,
+`aws-lambda-py`, `aws-ec2-ts`, `aws-fargate-ts`, `aws-static-site-ts`,
+`aws-queue-ts`, `aws-schedule-ts` and `aws-event-ts`), none of the
+Kubernetes ones. The webshop's Containers all run on Kubernetes Frameworks,
+so patching the block onto `orders-api` (`python-fastapi`) shows what the
+refusal looks like:
 
 ```bash
 kubectl -n webshop patch container orders-api --type merge \
   -p '{"spec":{"operations":{"recovery":{"rpo":"15m"},"alerts":{"email":"ops@webshop.example"}}}}'
+kubectl -n webshop get container orders-api \
+  -o jsonpath='{.status.conditions[?(@.type=="OperationsApplied")]}{"\n"}'
+```
+
+The Container's page shows the block, and its `OperationsApplied` condition
+is False, reason `NotReadByFramework`, naming `python-fastapi`: the
+repository holds none of it, so file an issue in the app that changes it, or
+leave the block out. A Container on such a Framework shows no
+`OperationsApplied` condition until the block is set, and a Brief's planner
+refuses `operations` on it. Take the block off again and the condition goes
+with it:
+
+```bash
+kubectl -n webshop patch container orders-api --type json \
+  -p '[{"op":"remove","path":"/spec/operations"}]'
 ```
 
 Leave out what you don't need to say: the factory fills in 35 days, `1h`,
@@ -978,16 +999,7 @@ Leave out what you don't need to say: the factory fills in 35 days, `1h`,
 is no tier: whether the app runs as `production` or `development` is the
 place it is deployed to, and a deploy that says nothing is `development`. A
 Brief's planner writes the block on a Container it makes, from what your idea
-states, and never a tier. The Container's page shows the block.
-
-Only a Framework that says `readsOperations: true` renders the block: today
-the nine AWS Frameworks (`aws-lambda-ts`, `aws-lambda-go`, `aws-lambda-py`,
-`aws-ec2-ts`, `aws-fargate-ts`, `aws-static-site-ts`, `aws-queue-ts`,
-`aws-schedule-ts` and `aws-event-ts`), none of the Kubernetes ones. A Container on any other Framework
-shows no `OperationsApplied` condition until the block is set, and then
-False, reason `NotReadByFramework`, naming the Framework: the repository
-holds none of it, so file an issue in the app that changes it, or leave the
-block out. A Brief's planner refuses `operations` on such a Container.
+states, and never a tier.
 
 On a Framework that reads it, the block renders into the repository when the
 Container is scaffolded, and its `OperationsApplied` condition is True.
