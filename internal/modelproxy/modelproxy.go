@@ -28,6 +28,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"golang.org/x/net/http/httpguts"
 )
 
 // The key files the proxy reads in its credentials directory. When both hold
@@ -68,8 +70,9 @@ type keyValue struct{ key, value string }
 
 // keyFile is what a key file held when it was last read.
 type keyFile struct {
-	info  os.FileInfo
-	value string
+	info   os.FileInfo
+	value  string
+	failed bool // whether the read failed, to read it again
 }
 
 // New returns a Proxy to upstream that reads its credential from the key
@@ -182,11 +185,15 @@ func (p *Proxy) credential() (name, value string) {
 	return name, value
 }
 
-// read returns the trimmed contents of key file name, "" when it is missing
-// or holds only white space. It reads the file again only when the file it
-// stats to (a kubelet's Secret volume links KEY to ..data/KEY and swaps
-// ..data) is another one, or its modification time or size changed. p.mu is
-// held.
+// read returns the trimmed contents of key file name, "" when it is missing,
+// can't be read, holds only white space or holds what can't be sent as a
+// header value (a newline inside it: the transport would refuse every request,
+// #1286). It reads the file again only when the file it stats to (a kubelet's
+// Secret volume links KEY to ..data/KEY and swaps ..data) is another one, or
+// its modification time or size changed, or its last read failed: a fixed
+// permission or a freed file descriptor changes none of those (#1286). Each
+// failure is logged once per change of the file, naming the file and never
+// what it holds. p.mu is held.
 func (p *Proxy) read(name string) string {
 	path := filepath.Join(p.dir, name)
 	info, err := os.Stat(path)
@@ -194,19 +201,28 @@ func (p *Proxy) read(name string) string {
 		delete(p.files, name)
 		return ""
 	}
-	if f, ok := p.files[name]; ok && os.SameFile(f.info, info) &&
-		f.info.ModTime().Equal(info.ModTime()) && f.info.Size() == info.Size() {
+	f, ok := p.files[name]
+	unchanged := ok && os.SameFile(f.info, info) &&
+		f.info.ModTime().Equal(info.ModTime()) && f.info.Size() == info.Size()
+	if unchanged && !f.failed {
 		return f.value
 	}
 	data, err := os.ReadFile(path) //nolint:gosec // a key file of the proxy's own directory
 	if err != nil {
-		// Logged once per change of the file: the failure is cached too.
-		p.log.Error("Failed to read a key file", "error", err)
-		data = nil
+		if !unchanged {
+			p.log.Error("Failed to read a key file", "key", name, "dir", p.dir, "error", err)
+		}
+		p.files[name] = keyFile{info: info, failed: true}
+		return ""
 	}
-	f := keyFile{info: info, value: strings.TrimSpace(string(data))}
-	p.files[name] = f
-	return f.value
+	value := strings.TrimSpace(string(data))
+	if !httpguts.ValidHeaderFieldValue(value) {
+		p.log.Error("A key file holds what can't be sent in a header, such as a line break inside it",
+			"key", name, "dir", p.dir)
+		value = ""
+	}
+	p.files[name] = keyFile{info: info, value: value}
+	return value
 }
 
 // withOAuthBeta returns the anthropic-beta values the client sent, in one

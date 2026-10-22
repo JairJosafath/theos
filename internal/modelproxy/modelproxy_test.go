@@ -619,3 +619,81 @@ func TestDrainFailsReadinessOnly(t *testing.T) {
 		t.Errorf("the upstream was sent %d requests after Drain; want 1", n)
 	}
 }
+
+// TestRetriesAFailedRead checks that a key file the proxy can't read gives 503
+// and, once it can be read again with its modification time and size
+// unchanged, 200 with no restart: the failed read isn't cached (#1286).
+func TestRetriesAFailedRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file of mode 000")
+	}
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	dir := t.TempDir()
+	writeKey(t, dir, OAuthTokenKey, rand.Text(), then)
+	path := filepath.Join(dir, OAuthTokenKey)
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	up := newUpstream(t)
+	proxy := newProxy(t, up.URL, dir, log)
+
+	for range 2 {
+		if status, body := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusServiceUnavailable {
+			t.Errorf("with an unreadable key file: %d %q; want 503", status, body)
+		}
+	}
+	if n := strings.Count(logs.String(), "Failed to read a key file"); n != 1 {
+		t.Errorf("the read failure was logged %d times; want once:\n%s", n, logs.String())
+	}
+
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || !info.ModTime().Equal(then) {
+		t.Fatalf("the key file's mtime changed with chmod: %v %v", info.ModTime(), err)
+	}
+	if status, body := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusOK {
+		t.Errorf("after the permission is fixed: %d %q; want 200", status, body)
+	}
+}
+
+// TestRefusesAValueNoHeaderCanHold checks that a key file with a line break
+// inside its value counts as no credential: 503 rather than the transport's
+// 502 on every request, and a log that names the file and holds no part of
+// the value (#1286).
+func TestRefusesAValueNoHeaderCanHold(t *testing.T) {
+	for _, key := range []string{OAuthTokenKey, APIKeyKey} {
+		t.Run(key, func(t *testing.T) {
+			logs := &syncBuffer{}
+			log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			dir := t.TempDir()
+			first, second := rand.Text(), rand.Text()
+			writeKey(t, dir, key, first+"\n"+second+"\n", then)
+			up := newUpstream(t)
+			proxy := newProxy(t, up.URL, dir, log)
+
+			if status, body := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusServiceUnavailable ||
+				!strings.Contains(body, "no credential") {
+				t.Errorf("with a line break inside the value: %d %q; want 503 saying it has no credential", status, body)
+			}
+			if n := len(up.requests()); n != 0 {
+				t.Errorf("the upstream was sent %d requests; want none", n)
+			}
+			out := logs.String()
+			if !strings.Contains(out, "can't be sent in a header") || !strings.Contains(out, key) {
+				t.Errorf("the log doesn't name %s as holding a value no header can hold:\n%s", key, out)
+			}
+			for _, part := range []string{first, second} {
+				if strings.Contains(out, part) {
+					t.Errorf("the log holds part of the value (%q):\n%s", part, out)
+				}
+			}
+
+			writeKey(t, dir, key, first, then.Add(time.Minute))
+			if status, body := send(t, proxy, "/v1/messages", clientHeader()); status != http.StatusOK {
+				t.Errorf("after the value is fixed: %d %q; want 200", status, body)
+			}
+		})
+	}
+}
