@@ -29,6 +29,7 @@ rules:
   - frameworks
   - computes
   - deployments
+  - bundles
   - connectors
   - gitproviders
   - deploytargets

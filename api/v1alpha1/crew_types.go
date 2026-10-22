@@ -501,6 +501,7 @@ type CrewStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
 // +kubebuilder:printcolumn:name="Implementer",type=string,JSONPath=".spec.implementer.name"
 // +kubebuilder:printcolumn:name="Reviewer",type=string,JSONPath=".spec.reviewer.name"

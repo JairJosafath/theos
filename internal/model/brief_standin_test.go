@@ -29,6 +29,10 @@ func TestStandInPlan(t *testing.T) {
 		{Side: SideStandard, Name: "c-standard", SupportedTypes: []string{TypeWorker}, SupportedFrameworks: []string{"c-tool"}},
 		{Side: SideDeployment, Name: "z-ship", SupportedTypes: []string{TypeService, TypeWorker}},
 	}
+	// #1622: a-web supports static-site only; c-ship supports worker, the type
+	// the stand-in picks from withDeployment, so it takes c-ship over the sides.
+	bundles := []Bundle{{Name: "c-ship", Framework: "c-tool", Standard: "c-standard", Deployment: "z-ship"},
+		{Name: "a-web", Framework: "b-web"}}
 	system := PlanObject{Kind: KindSoftwareSystem, Name: "tools"}
 	lend := PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeCLI,
 		GitProvider: "gitea", Framework: "go-cli"}
@@ -51,6 +55,26 @@ func TestStandInPlan(t *testing.T) {
 		{
 			name:    "idea, on the first Framework and type a Deployment ships, released (#1083)",
 			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: withDeployment, Objects: []PlanObject{system}},
+			created: []string{"Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeWorker,
+				GitProvider: "gitea", Framework: "c-tool", Standard: "c-standard", Deployment: "z-ship"},
+			issues:   []string{"lend: Stand-in: start lend"},
+			releases: []string{"lend"},
+		},
+		{
+			name: "idea, on the first Bundle that supports the type, released (#1622)",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: withDeployment, Bundles: bundles,
+				Objects: []PlanObject{system}},
+			created: []string{"Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeWorker,
+				GitProvider: "gitea", Bundle: "c-ship"},
+			issues:   []string{"lend: Stand-in: start lend"},
+			releases: []string{"lend"},
+		},
+		{
+			name: "idea, on the sides when no Bundle supports the type (#1622)",
+			ws: BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: withDeployment, Bundles: bundles[1:],
+				Objects: []PlanObject{system}},
 			created: []string{"Container/lend"},
 			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeWorker,
 				GitProvider: "gitea", Framework: "c-tool", Standard: "c-standard", Deployment: "z-ship"},
@@ -180,7 +204,8 @@ func TestStandInPlan(t *testing.T) {
 				}
 				return
 			}
-			current := CurrentModel{Objects: tc.ws.Objects, Catalog: tc.ws.Catalog, GitProvider: tc.ws.GitProvider}
+			current := CurrentModel{Objects: tc.ws.Objects, Catalog: tc.ws.Catalog, Bundles: tc.ws.Bundles,
+				GitProvider: tc.ws.GitProvider}
 			if refusals := CheckPlan(plan, current); len(refusals) > 0 {
 				t.Fatalf("CheckPlan refuses the stand-in's plan: %v\n%s", refusals, files[PlanModelFile])
 			}

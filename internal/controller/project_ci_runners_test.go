@@ -10,7 +10,9 @@ package controller
 
 import (
 	"crypto/rand"
+	"errors"
 	"path"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -62,6 +64,17 @@ func setPodPhase(pod *corev1.Pod, phase corev1.PodPhase) {
 	GinkgoHelper()
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
 	pod.Status.Phase = phase
+	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+}
+
+// failRegistration fails a pool pod as a registration that ended non-zero
+// does: its register init container exits 1 and the pod is Failed.
+func failRegistration(pod *corev1.Pod) {
+	GinkgoHelper()
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+	pod.Status.Phase = corev1.PodFailed
+	pod.Status.InitContainerStatuses = []corev1.ContainerStatus{{
+		Name: "register", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}}}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 }
 
@@ -305,5 +318,89 @@ var _ = Describe("CI runner pool", func() {
 				HaveField("Message", "gitea: secret missing of GitProvider gitea not found")))
 		}).Should(Succeed())
 		Expect(poolPods(ns)).To(BeEmpty())
+	})
+
+	It("backs off from a pod that failed at registration until a pod runs its job (#1699)", func() {
+		ns := newProjectNamespace()
+		newCIProvider(ns)
+		live := func() []corev1.Pod { return livePoolPods(ns) }
+		Eventually(live).Should(HaveLen(2))
+		failOne := func() {
+			GinkgoHelper()
+			failed := livePoolPods(ns)[0]
+			failRegistration(&failed)
+			Eventually(func(g Gomega) {
+				record := poolPod(ns, failed.Name)
+				g.Expect(record).NotTo(BeNil())
+				g.Expect(record.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+				g.Expect(record.Annotations).To(HaveKeyWithValue(AnnotationRunnerFailure, "register"))
+			}).Should(Succeed())
+		}
+
+		By("waiting the first backoff before replacing the first failed pod")
+		failOne()
+		Consistently(live, 250*time.Millisecond).Should(HaveLen(1))
+		Eventually(live).Should(HaveLen(2))
+
+		By("doubling the wait for the second failure in a row")
+		failOne()
+		Consistently(live, 600*time.Millisecond).Should(HaveLen(1))
+		Eventually(live).Should(HaveLen(2))
+
+		By("replacing a pod that ran its job at once, which ends the streak")
+		ended := livePoolPods(ns)[0]
+		setPodPhase(&ended, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			g.Expect(livePoolPods(ns)).To(HaveLen(2))
+			g.Expect(livePoolPods(ns)).NotTo(ContainElement(HaveField("Name", ended.Name)))
+		}).Should(Succeed())
+
+		By("waiting only the first backoff again after the streak ended")
+		failOne()
+		Consistently(live, 250*time.Millisecond).Should(HaveLen(1))
+		Eventually(live, 1500*time.Millisecond).Should(HaveLen(2))
+	})
+
+	It("reports a provider whose token call fails, keeps its pods and retries (#1699)", func() {
+		ns := newProjectNamespace()
+		provider := newCIProvider(ns)
+		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
+		ciRunners := func(g Gomega) *metav1.Condition {
+			var project c4v1alpha1.Project
+			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+			return condition(project.Status.Conditions, ConditionCIRunners)
+		}
+
+		By("saying the host gave no token, keeping the live pod and adding none")
+		gitFake.failRunnerToken(ns, errors.New("403 Forbidden"))
+		DeferCleanup(func() { gitFake.failRunnerToken(ns, nil) })
+		ended := livePoolPods(ns)[0]
+		setPodPhase(&ended, corev1.PodSucceeded)
+		Eventually(func(g Gomega) {
+			g.Expect(ciRunners(g)).To(And(
+				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", "ProviderUnavailable"),
+				HaveField("Message", "gitea: runner registration token: 403 Forbidden")))
+			g.Expect(livePoolPods(ns)).To(HaveLen(1))
+		}).Should(Succeed())
+		Consistently(func() []corev1.Pod { return livePoolPods(ns) }, 500*time.Millisecond).Should(HaveLen(1))
+
+		By("keeping a pod of an old image, since the host says no runner's job")
+		kept := livePoolPods(ns)[0]
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "c4factory/gitea-runner-go:next" })).To(Succeed())
+		Consistently(func() []string {
+			names := make([]string, 0, 1)
+			for _, pod := range livePoolPods(ns) {
+				names = append(names, pod.Name)
+			}
+			return names
+		}, 500*time.Millisecond).Should(ConsistOf(kept.Name))
+
+		By("filling the pool again once the host answers")
+		gitFake.failRunnerToken(ns, nil)
+		Eventually(func(g Gomega) {
+			g.Expect(ciRunners(g)).To(And(
+				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", "PoolKept")))
+			g.Expect(livePoolPods(ns)).To(HaveLen(2))
+		}).Should(Succeed())
 	})
 })

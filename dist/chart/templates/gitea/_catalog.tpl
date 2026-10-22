@@ -1,6 +1,6 @@
 {{/*
 The objects the seed applies in place (hack/seed/catalog.sh): each project's
-GitProvider, catalog and Agents, rendered into ConfigMap c4factory-catalog
+GitProvider, catalog entries and bundles, and Agents, rendered into ConfigMap c4factory-catalog
 (catalog-configmap.yaml). Not release objects: on an install their kinds exist
 only once the release's CRDs do. Not hooks: Helm re-creates a hook on every
 upgrade, so running Tasks would lose their Agent and Git steps their
@@ -52,6 +52,21 @@ spec:
   template:
     url: {{ printf "%s/templates/%s" (include "c4-factory.giteaURL" $) .name | quote }}
     ref: {{ required (printf "catalog.entries: %s needs a ref, a tag the seed pushes" .name) .ref | quote }}
+{{- end }}
+{{- range $.Values.catalog.bundles }}
+---
+# Project {{ $project }}'s bundle {{ .name }}: entries above picked together,
+# which a Container names with bundleRef instead of its four sides.
+apiVersion: c4.factory.io/v1alpha1
+kind: Bundle
+metadata:
+  name: {{ .name }}
+  namespace: {{ $project }}
+  labels:
+    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  {{- toYaml (required (printf "catalog.bundles: %s needs a spec with frameworkRef" .name) .spec) | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- end }}
