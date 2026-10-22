@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -23,11 +22,18 @@ const linux = "linux"
 // Platforms are the platforms TwoPlatforms builds for.
 var Platforms = []string{"linux/amd64", "linux/arm64"}
 
+// TB is what TwoPlatforms needs of a test: a *testing.T or Ginkgo's
+// GinkgoT().
+type TB interface {
+	Helper()
+	Fatal(args ...any)
+}
+
 // TwoPlatforms is the tar of an image index for linux/amd64 and
 // linux/arm64, each with a random layer, and an attestation manifest for
 // amd64 as BuildKit attaches one, and the index's digest. Each call makes
 // another image.
-func TwoPlatforms(t testing.TB) ([]byte, string) {
+func TwoPlatforms(t TB) ([]byte, string) {
 	t.Helper()
 	must := func(err error) {
 		if err != nil {

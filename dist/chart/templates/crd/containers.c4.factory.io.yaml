@@ -436,6 +436,12 @@ spec:
                       - Degraded
                       - Unknown
                       type: string
+                    image:
+                      description: |-
+                        image is the app's image as the target holds it, host/repository@digest,
+                        when the target copies the release's image: a github target with a
+                        packagesToken copies it to GHCR.
+                      type: string
                     message:
                       description: message says it for a person.
                       type: string
