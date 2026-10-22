@@ -7,7 +7,9 @@
 # merges it with a merge commit, and tags that commit; the pushed tag starts
 # Release, which checks the same thing (--check) before it builds anything.
 # The same pull request copies config/crd/bases to test/compat/baseline, the
-# CRDs make check holds the next release to (docs/design.md, "Compatibility").
+# CRDs make check holds the next release to (docs/design.md, "Compatibility"),
+# and empties test/compat/dropped.txt's entries, done with once the baseline
+# serves nothing dropped.
 #
 #   hack/release.sh X.Y.Z|patch|minor   bump, merge and tag vX.Y.Z (patch and
 #                                       minor count up from the chart's version)
@@ -31,6 +33,7 @@ CHART=dist/chart/Chart.yaml
 GUIDE=docs/getting-started.md
 CRDS=config/crd/bases
 BASELINE=test/compat/baseline
+DROPPED=test/compat/dropped.txt
 
 usage() {
   echo "usage: hack/release.sh X.Y.Z|patch|minor | --bump X.Y.Z | --check vX.Y.Z" >&2
@@ -67,6 +70,12 @@ bump() {
   rm -rf "${dir:?}/$BASELINE"
   mkdir -p "$dir/$BASELINE"
   cp "$dir/$CRDS"/*.yaml "$dir/$BASELINE/"
+  # The new baseline serves nothing the tree dropped: the entries of
+  # dropped.txt are done with, only its comments stay.
+  if [ -f "$dir/$DROPPED" ]; then
+    grep -E '^(#|$)' "$dir/$DROPPED" >"$dir/$DROPPED.new" || true
+    mv "$dir/$DROPPED.new" "$dir/$DROPPED"
+  fi
   sed -i "s/^version: .*/version: $to/" "$dir/$CHART"
   sed -i -e "s/^VERSION=.*/VERSION=$to/" \
     -e "s/The commands use the release \`[^\`]*\`/The commands use the release \`$to\`/" "$dir/$GUIDE"

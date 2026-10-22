@@ -847,6 +847,13 @@ with an object may change, as the release notes say.
   `status.storedVersions` holds the storage version alone, under *Removed*
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
+- **The operator rewrites what etcd holds at an older version.** `v1beta1`
+  is the storage version of every kind. At start, once the conversion
+  webhook serves, the leader lists each kind whose CRD's `storedVersions`
+  names another version, patches every object back at the storage version,
+  and brings that CRD's `storedVersions` down to it; a start after the pass
+  does nothing, and a pass that fails is tried again until it succeeds,
+  with the operator serving meanwhile.
 
 `make check` guards what a schema shows: `test/compat` compares each served
 version of the CRDs with the last release's, in `test/compat/baseline/`

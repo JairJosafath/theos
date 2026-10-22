@@ -84,7 +84,6 @@ type FactoryVersions struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Systems",type=integer,JSONPath=".status.softwareSystems"
 // +kubebuilder:printcolumn:name="Containers",type=integer,JSONPath=".status.containers"
 // +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=".status.readyContainers"

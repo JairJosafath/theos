@@ -366,7 +366,7 @@ spec:
         - spec
         type: object
     served: true
-    storage: true
+    storage: false
     subresources: {}
   - additionalPrinterColumns:
     - jsonPath: .spec.displayName
@@ -712,6 +712,6 @@ spec:
         - spec
         type: object
     served: true
-    storage: false
+    storage: true
     subresources: {}
 {{- end }}
