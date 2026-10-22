@@ -44,5 +44,6 @@ spec:
   owner: {{ required (printf "gitProviders[%d].owner is required" $i) $gp.owner | quote }}
   credentialsSecretRef:
     name: {{ required (printf "gitProviders[%d].existingSecret is required: a Secret you create with keys username and token" $i) $gp.existingSecret }}
+  {{- include "c4-factory.gitProviderCI" $ | nindent 2 }}
 {{- end }}
 {{- end }}

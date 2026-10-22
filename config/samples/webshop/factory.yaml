@@ -10,6 +10,21 @@ spec:
   owner: webshop
   credentialsSecretRef:
     name: gitea-credentials
+  # The project's own CI runners: a pool of single-job pods per label the
+  # Standards' check workflows run on (go and base), on the Kind test
+  # environment's runner images (config/runner). Without the block the
+  # project's checks have no runner: the shared runners serve the templates
+  # organization only (#1698).
+  ci:
+    giteaActions:
+      runners:
+        - label: base
+          image: c4factory/gitea-runner-base:dev
+          size: 1
+        - label: go
+          image: c4factory/gitea-runner-go:dev
+          size: 1
+          goCache: true
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: Framework
