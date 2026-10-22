@@ -158,7 +158,7 @@ func TestGitHubImageNotes(t *testing.T) {
 	}
 }
 
-// TestGitHubShipment covers docs/plans/github-deploy.md's Decisions 1 and 2
+// TestGitHubShipment covers docs/plans/done/github-deploy.md's Decisions 1 and 2
 // (#1599): every type ships to a github target, its source when the target
 // publishes it, its files without the image archive, its image only where
 // its Deployment builds one, and a release with none of the three is

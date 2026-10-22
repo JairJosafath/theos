@@ -1,9 +1,9 @@
 # Plan: publish a Container as open source on GitHub
 
 GitHub issue #1070, filed by the owner (`source/dev`, priority/4). Agents:
-otter-1070 (the plan), heron-1070 (the design change and the steps). It builds on the deploy model of [deploy.md](done/deploy.md)
-(#1068), the release images of [images.md](images.md) (#1069) and the two
-rules of [github-deploy-state.md](done/github-deploy-state.md) (#1445: `State`
+otter-1070 (the plan), heron-1070 (the design change and the steps). It builds on the deploy model of [deploy.md](deploy.md)
+(#1068), the release images of [images.md](../images.md) (#1069) and the two
+rules of [github-deploy-state.md](github-deploy-state.md) (#1445: `State`
 takes the wanted version; the `github` member's `tagPrefix` and `latest`).
 It plans what `docs/plans/done/deploy.md` decision 7 left to #1070: the
 source, the checks before publishing, images on GHCR, a GitHub App
@@ -37,7 +37,7 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
   folder through GitHub's Git Data API (`crew_publish_source.go`,
   `gitprovider.SourceTarget`), one commit per release on the default
   branch, tagged `<path>/vX.Y.Z`, the factory's own files left out
-  (`model.FactoryOwnPaths`, [release-source.md](done/release-source.md)).
+  (`model.FactoryOwnPaths`, [release-source.md](release-source.md)).
   The Crew still reads the repository, the release and the source itself.
 - `internal/oci.Copy` copies an image by digest from one registry to another
   with each side's credential, made for this plan (#1453); `status.image`
@@ -121,7 +121,7 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
    `publishReleases` readable and whose plan says how the objects move. A
    Brief's `releases[]` keeps inlining `CrewPublishReleases` and writing
    `publishReleases` on its Crews; a Brief naming DeployTargets is the
-   planner follow-up [deploy.md](done/deploy.md) decision 2 put after
+   planner follow-up [deploy.md](deploy.md) decision 2 put after
    #1070 to #1072, once all three members exist.
 
 4. **Checks before the source goes out, each release.** A pure rule in
@@ -278,6 +278,6 @@ real one.
   `FactoryOwnPaths`.
 - GitHub Enterprise and GitLab (decision 7), each its own proposed issue.
 - Dropping `publishReleases` (#1082's `v1beta1`) and a Brief naming
-  DeployTargets (the planner follow-up of [deploy.md](done/deploy.md)).
+  DeployTargets (the planner follow-up of [deploy.md](deploy.md)).
 - Scanning release files or images; signing them.
 - Images on GHCR from an App's installation token, until GitHub takes one.

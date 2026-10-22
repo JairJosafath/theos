@@ -17,6 +17,9 @@ import {
   approveCommand,
   deploysOf,
   describeApproval,
+  GITHUB_SECRET_KEYS,
+  githubImage,
+  githubSource,
   healthTone,
   memberOf,
   phaseTone,
@@ -55,6 +58,64 @@ function Where({ target }: { target: DeployTarget }) {
       </a>
     )
   return <span className="mono">{where}</span>
+}
+
+/** A github target's tags, source and image, each unset part as the operator fills it. */
+function GitHubFacts({ target }: { target: DeployTarget }) {
+  const github = target.spec.github
+  if (!github) return null
+  const source = githubSource(target)
+  return (
+    <>
+      <dt>Tags</dt>
+      <dd>
+        {github.tagPrefix === undefined ? (
+          <>
+            <span className="mono">&lt;container&gt;-v1.2.3</span>
+            <span className="muted"> (tagPrefix not set: the Container’s name and -)</span>
+          </>
+        ) : (
+          <span className="mono">{github.tagPrefix}v1.2.3</span>
+        )}
+        {github.latest === false ? <span className="muted"> · never marked Latest</span> : null}
+      </dd>
+      <dt>Source</dt>
+      <dd>
+        {source ? (
+          <>
+            folder <span className="mono">{source.path}</span>, tagged{' '}
+            <span className="mono">{source.tagPrefix}v1.2.3</span>
+            {github.source?.path === undefined ? (
+              <span className="muted"> (path not set: each Container’s name)</span>
+            ) : null}
+          </>
+        ) : (
+          <span className="muted">not published: the release only</span>
+        )}
+      </dd>
+      <dt>Image</dt>
+      <dd>
+        <span className="mono">{githubImage(target)}</span>
+        <span className="muted small">
+          {' '}
+          · copied, for a Container whose release builds an image, when the Secret holds {GITHUB_SECRET_KEYS.packages}
+        </span>
+      </dd>
+    </>
+  )
+}
+
+/** The keys the operator reads from a github target's Secret, by name only: never their values. */
+function GitHubKeys() {
+  const [appId, installationId, privateKey] = GITHUB_SECRET_KEYS.app
+  return (
+    <p className="muted small">
+      The operator reads its keys <span className="mono">{GITHUB_SECRET_KEYS.token}</span> (a fine-grained token), or{' '}
+      <span className="mono">{appId}</span>, <span className="mono">{installationId}</span> and{' '}
+      <span className="mono">{privateKey}</span> (a GitHub App); and{' '}
+      <span className="mono">{GITHUB_SECRET_KEYS.packages}</span>, when there, for images on GHCR.
+    </p>
+  )
 }
 
 /**
@@ -103,6 +164,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
           <dd>
             <Where target={target} />
           </dd>
+          {target.spec.github ? <GitHubFacts target={target} /> : null}
           <dt>Tier</dt>
           <dd>
             {tierOf(target)}
@@ -127,6 +189,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
               <>
                 Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
                 <span className="muted small"> · its name only: the UI never reads Secrets</span>
+                {target.spec.github ? <GitHubKeys /> : null}
               </>
             ) : (
               <span className="muted">none: the operator’s own ServiceAccount, in its cluster</span>
@@ -283,6 +346,12 @@ function DeployItem({
           <>
             <dt>Approved</dt>
             <dd className="mono">{row.approved}</dd>
+          </>
+        ) : null}
+        {s?.image ? (
+          <>
+            <dt>Image</dt>
+            <dd className="mono">{s.image}</dd>
           </>
         ) : null}
         {s?.url ? (

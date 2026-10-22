@@ -128,7 +128,7 @@ func GitHubDeployState(f GitHubDeployFacts) GitHubDeployReport {
 // The keys of a github target's Secret, or of the Crew's
 // publishReleases.github.tokenSecretRef, holding its credential: a token, or a
 // GitHub App's id, the id of its installation on the repository and its
-// private key in PEM (docs/plans/github-deploy.md, decision 6).
+// private key in PEM (docs/plans/done/github-deploy.md, decision 6).
 const (
 	GitHubSecretToken          = "token"
 	GitHubSecretAppID          = "appId"
@@ -164,7 +164,7 @@ func GitHubCredential(data map[string][]byte) (token string, app *GitHubApp, ok 
 // target's registry: owner/name/<container> of the target's repository,
 // lower-cased as GHCR wants it, or owner/name alone when the target's
 // tagPrefix is "", which gives the repository to one Container
-// (docs/plans/github-deploy.md, Decision 5).
+// (docs/plans/done/github-deploy.md, Decision 5).
 func GitHubImage(repository, container, tagPrefix string) string {
 	if tagPrefix == "" {
 		return strings.ToLower(repository)
@@ -191,7 +191,7 @@ func GitHubImageNotes(notes, image string) string {
 const GitHubNothingToPublish = "nothing to publish: no release files, no source, no image"
 
 // GitHubShipmentFacts are what a github target could ship of a release of a
-// Container (docs/plans/github-deploy.md, Decisions 1 and 2).
+// Container (docs/plans/done/github-deploy.md, Decisions 1 and 2).
 type GitHubShipmentFacts struct {
 	// Type and Deployment are the Container's type and Deployment.
 	Type, Deployment string

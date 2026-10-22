@@ -1,0 +1,31 @@
+# Where the webshop publishes on GitHub (docs/getting-started.md, "Publish a
+# service on GitHub"): each release of a Container naming webshop-oss in
+# spec.deploy becomes a GitHub release of your-name/webshop. source: {}
+# commits the app's own files at the release's tag into a folder named after
+# the Container (orders-api/), tagged orders-api/v0.1.0, and the release is
+# made of that commit. With packagesToken, the release's image (a
+# k8s-manifests Container's, or an operator's with gitea-release) is copied
+# to ghcr.io/your-name/webshop/orders-api and
+# status.deploys[].image names the copy.
+#
+# It needs Secret webshop-github, which you create yourself; only the
+# operator reads it. Its keys: token, a fine-grained token for the repository
+# alone with Contents read and write, or a GitHub App's appId,
+# installationId and privateKey; and, optional, packagesToken, a classic
+# token with write:packages and read:packages, for the image. Ready says whether GitHub takes
+# it. Not in ../webshop/kustomization.yaml, so `make sample` needs no GitHub account;
+# apply it with: kubectl apply -k config/samples/webshop-github
+apiVersion: c4.factory.io/v1alpha1
+kind: DeployTarget
+metadata:
+  name: webshop-oss
+spec:
+  github:
+    repository: your-name/webshop
+    # The folder is the Container's name and the tag prefix the folder's and
+    # "/"; set path (".", the whole repository, for one app) or tagPrefix to
+    # change them.
+    source: {}
+  credentialsSecretRef:
+    name: webshop-github
+  tier: development

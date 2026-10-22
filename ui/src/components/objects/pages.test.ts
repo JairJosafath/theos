@@ -7,13 +7,13 @@ import type { CrewWriter } from '../../k8s/crews'
 import type { Connection, StoryData } from '../../k8s/sources'
 import type { StandardWriter } from '../../k8s/standards'
 import type { UiSession } from '../../k8s/session'
-import type { DeployTarget, GitProvider } from '../../k8s/types'
+import type { Container, DeployTarget, GitProvider } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
 import { demoStory } from '../../demo/fixture'
 import { absoluteTime } from '../../model/format'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { GitProviderPage } from './CatalogPages'
-import { DeployTargetPage } from './DeployPages'
+import { ContainerDeploys, DeployTargetPage } from './DeployPages'
 import { ObjectPage } from './ObjectPage'
 
 const NOW = Date.parse('2026-06-01T12:00:00Z')
@@ -150,6 +150,102 @@ describe('the GitProvider page', () => {
     expect(text(html)).toContain('Secret gitea-credentials')
     expect(text(html)).toContain('the UI never reads Secrets')
     expect(html).not.toMatch(/sekrit|c2Vrcml0/)
+  })
+})
+
+describe('github targets (#1603)', () => {
+  const github = (member: DeployTarget['spec']['github']): DeployTarget => ({
+    metadata: { name: 'oss', namespace: 'webshop' },
+    spec: { github: member, credentialsSecretRef: { name: 'oss-github' } },
+  })
+  const shipped = (name: string, type: Container['spec']['type'], image?: string): Container => ({
+    metadata: { name, namespace: 'webshop' },
+    spec: {
+      softwareSystemRef: { name: 'webshop' },
+      type,
+      gitProviderRef: { name: 'gitea' },
+      frameworkRef: { name: 'go' },
+      deploy: [{ target: 'oss' }],
+    },
+    status: {
+      deploys: [
+        {
+          target: 'oss',
+          phase: 'Deployed',
+          version: 'v0.1.0',
+          wantedVersion: 'v0.1.0',
+          url: `https://github.com/webshop-co/webshop/releases/tag/${name}-v0.1.0`,
+          image,
+        },
+      ],
+    },
+  })
+  // text() spaces each tag and keeps entities; read it as a person does.
+  const plain = (html: string) => text(html).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/ ,/g, ',')
+  const deploys = (c: Container) =>
+    text(renderToStaticMarkup(createElement(ContainerDeploys, { container: c, targets: [], writer: CONTAINER_WRITER })))
+
+  it('shows the source, the tags, the image name and the Secret’s key names, unset parts as the operator fills them', () => {
+    const html = renderToStaticMarkup(
+      createElement(DeployTargetPage, {
+        target: github({ repository: 'Webshop-Co/Webshop', source: {} }),
+        containers: [],
+      }),
+    )
+    const t = plain(html)
+    expect(t).toContain('Tags <container>-v1.2.3 (tagPrefix not set: the Container’s name and -)')
+    expect(t).toContain('Source folder <container>, tagged <container>/v1.2.3 (path not set: each Container’s name)')
+    expect(t).toContain(
+      'Image ghcr.io/webshop-co/webshop/<container> · copied, for a Container whose release builds an image, when the Secret holds packagesToken',
+    )
+    expect(t).toContain('Secret oss-github')
+    expect(t).toMatch(
+      /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on GHCR\./,
+    )
+  })
+
+  it('shows a set source path and tagPrefix, the bare tags and image of a repository of one app, and no Latest', () => {
+    const t = plain(
+      renderToStaticMarkup(
+        createElement(DeployTargetPage, {
+          target: github({
+            repository: 'webshop-co/orders-cli',
+            tagPrefix: '',
+            latest: false,
+            source: { path: '.', tagPrefix: 'src-' },
+          }),
+          containers: [],
+        }),
+      ),
+    )
+    expect(t).toContain('Tags v1.2.3 · never marked Latest')
+    expect(t).toContain('Source folder ., tagged src-v1.2.3')
+    expect(t).not.toContain('path not set')
+    expect(t).toContain('Image ghcr.io/webshop-co/orders-cli ·')
+  })
+
+  it('says a target without source publishes the release only', () => {
+    const t = plain(
+      renderToStaticMarkup(
+        createElement(DeployTargetPage, { target: github({ repository: 'webshop-co/webshop' }), containers: [] }),
+      ),
+    )
+    expect(t).toContain('Source not published: the release only')
+  })
+
+  it('shows a Container of each artifact kind Deployed to a github target, with the image a k8s-manifests one copied', () => {
+    const cli = deploys(shipped('orders-cli', 'cli'))
+    const manifests = deploys(
+      shipped('orders-api', 'service', 'ghcr.io/webshop-co/webshop/orders-api@sha256:' + 'a'.repeat(64)),
+    )
+    const service = deploys(shipped('orders-svc', 'service'))
+    for (const t of [cli, manifests, service]) {
+      expect(t).toContain('oss Deployed')
+      expect(t).toContain('Runs v0.1.0 Wanted v0.1.0')
+    }
+    expect(manifests).toContain('Image ghcr.io/webshop-co/webshop/orders-api@sha256:' + 'a'.repeat(64))
+    expect(cli).not.toContain('Image')
+    expect(service).not.toContain('Image')
   })
 })
 

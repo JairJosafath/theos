@@ -30,6 +30,37 @@ export function memberOf(target: DeployTarget): { member: string; label: string;
   return { member, label: member, where: '' }
 }
 
+/** Where a github target puts each release's source, unset parts named as the operator fills them; undefined when it publishes none. */
+export function githubSource(target: DeployTarget): { path: string; tagPrefix: string } | undefined {
+  const source = target.spec.github?.source
+  if (!source) return undefined
+  const path = source.path ?? '<container>'
+  const tagPrefix = source.tagPrefix ?? (path === '.' ? '' : `${path}/`)
+  return { path, tagPrefix }
+}
+
+/**
+ * The keys a github target's Secret holds, by name: the operator reads them
+ * (internal/model, GitHubSecret*), the UI never does.
+ */
+export const GITHUB_SECRET_KEYS = {
+  token: 'token',
+  app: ['appId', 'installationId', 'privateKey'],
+  packages: 'packagesToken',
+} as const
+
+/**
+ * The image a Container's release goes to on GHCR at a github target:
+ * ghcr.io/owner/name/<container>, lower-cased, or ghcr.io/owner/name when
+ * the target's tagPrefix is "" (model.GitHubImage). Undefined for another member.
+ */
+export function githubImage(target: DeployTarget, container = '<container>'): string | undefined {
+  const github = target.spec.github
+  if (!github) return undefined
+  const repository = github.tagPrefix === '' ? github.repository : `${github.repository}/${container}`
+  return `ghcr.io/${repository.toLowerCase()}`
+}
+
 /** The target's tier as asked; unset is development, the CRD's documented default. */
 export function tierOf(target: DeployTarget): 'development' | 'production' {
   return target.spec.tier ?? 'development'

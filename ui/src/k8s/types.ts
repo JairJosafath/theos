@@ -260,6 +260,8 @@ export interface ContainerDeployStatus {
   message?: string
   /** When the phase, reason or wanted version last changed. */
   since?: string
+  /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR). */
+  image?: string
 }
 
 /**
@@ -269,8 +271,19 @@ export interface ContainerDeployStatus {
  */
 export interface DeployTarget extends K8sObject {
   spec: {
-    /** Ships each release as a GitHub release of a repository. */
-    github?: { repository: string }
+    /**
+     * Ships each release as a GitHub release of a repository: owner/name;
+     * tagPrefix before each tag (unset: the Container's name and "-");
+     * latest (default true) whether each release becomes Latest; source, set,
+     * commits the app's files at the tag into path (unset: the Container's
+     * name) under its own tagPrefix (unset: the path and "/").
+     */
+    github?: {
+      repository: string
+      tagPrefix?: string
+      latest?: boolean
+      source?: { path?: string; tagPrefix?: string }
+    }
     /**
      * Ships each release as one Argo CD Application, in the operator's
      * cluster: namespace (default argocd) and project (default default) are

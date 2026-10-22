@@ -13,7 +13,7 @@ import { briefTarget, type CrewWriter } from '../../k8s/crews'
 import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
 import { crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
-import { RELEASE_RUN, publishFailure } from '../../model/releases'
+import { PUBLISH_MIGRATION_URL, RELEASE_RUN, publishFailure } from '../../model/releases'
 import type { AgentRole } from '../../model/factory'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
@@ -155,6 +155,15 @@ export function CrewPage({
             />
           ) : null}
         </p>
+        {crew.spec.publishReleases ? (
+          <p className="panel-text muted small">
+            <span className="mono">publishReleases</span> is deprecated: a <span className="mono">github</span>{' '}
+            DeployTarget and a <span className="mono">spec.deploy</span> entry on the Container ship the same release.{' '}
+            <a href={PUBLISH_MIGRATION_URL} target="_blank" rel="noreferrer">
+              How to move over <ExternalLinkIcon size={12} />
+            </a>
+          </p>
+        ) : null}
         {release ? (
           <ReleaseFacts release={release} failure={publishFailure(crew)} />
         ) : (
