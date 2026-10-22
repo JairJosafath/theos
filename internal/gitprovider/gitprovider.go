@@ -337,6 +337,9 @@ type BranchRule struct {
 type Client struct {
 	// HTTP is used for API calls. Defaults to a client with a 30 second timeout.
 	HTTP *http.Client
+	// Now is the clock a GitHub App's token is minted and kept by; defaults to
+	// time.Now.
+	Now func() time.Time
 }
 
 // Provider returns the Provider for a GitProvider's settings.
