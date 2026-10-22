@@ -58,6 +58,14 @@ and the `make check` contract CI runs.
   ships. For `node-cli`, `make dist VERSION=v1.2.3` packs
   `dist/<container>-1.2.3.tgz` with `npm pack`, with the same tag check;
   `npm install --global` installs it.
+- **Factory packages:** the scope and registry come from the GitProvider's
+  `spec.packages` (`@c4factory` and the host's own npm registry by default);
+  the agent's pod and CI route the scope through a `~/.npmrc` they write
+  (since v1.6.0). On your own machine, route it the same way:
+  `npm config set <scope>:registry <registry>` and
+  `npm config set //<registry without its scheme>:_authToken <token>`, with
+  a token of yours that may read packages. `AGENTS.md` says how a package is
+  added.
 - **Framework contract:** the Framework owns `package.json`, which must list
   this Standard's tools with exact versions (`eslint`, `@eslint/js`,
   `typescript-eslint`, `prettier`, `typescript`, `vitest`, `@vscode/vsce`) and a

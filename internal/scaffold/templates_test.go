@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -840,6 +841,172 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 	}
 }
 
+// TestNodeCLINamesItsPackageUnderTheScope: node-cli names its package
+// <scope>/<container> in package.json and its lock, with the default scope
+// and with the GitProvider's own (#1231). It stays private: that only stops
+// npm publish to npmjs.org.
+func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
+	for _, scope := range []string{"@c4factory", "@acme"} {
+		t.Run(scope, func(t *testing.T) {
+			in, layers := loadCombo(t, "cli", []side{
+				{model.SideFramework, "node-cli"},
+				{model.SideStandard, "ts-standard"},
+				{model.SideDeployment, "gitea-release"},
+			}, "")
+			in.NpmScope = scope
+			result, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := scope + "/sample-app"
+			var pkg struct {
+				Name    string            `json:"name"`
+				Private bool              `json:"private"`
+				Bin     map[string]string `json:"bin"`
+			}
+			if err := json.Unmarshal(result.Files["package.json"].Data, &pkg); err != nil {
+				t.Fatal(err)
+			}
+			if pkg.Name != name || !pkg.Private || pkg.Bin["sample-app"] != "out/cli.js" {
+				t.Errorf("package.json: name %q, private %v, bin %v; want %q, private, bin sample-app",
+					pkg.Name, pkg.Private, pkg.Bin, name)
+			}
+			var lock struct {
+				Name     string `json:"name"`
+				Packages map[string]struct {
+					Name string `json:"name"`
+				} `json:"packages"`
+			}
+			if err := json.Unmarshal(result.Files["package-lock.json"].Data, &lock); err != nil {
+				t.Fatal(err)
+			}
+			if lock.Name != name || lock.Packages[""].Name != name {
+				t.Errorf("package-lock.json names %q and %q; want %q twice", lock.Name, lock.Packages[""].Name, name)
+			}
+		})
+	}
+}
+
+// TestStandardsCIWriteTheRegistryCredentials: the check workflows of
+// ts-standard, python-standard and aws-standard and gitea-release's release
+// workflow write ~/.npmrc and ~/.netrc from the owner's Actions variables
+// and secrets, falling back to the host's own registries and gitea.token,
+// before the step that installs (#1231). The step is one text in all four.
+func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
+	type workflow struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Env  map[string]string `yaml:"env"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	wantEnv := map[string]string{
+		"NPM_SCOPE":    "${{ vars.C4_NPM_SCOPE }}",
+		"NPM_REGISTRY": "${{ vars.C4_NPM_REGISTRY }}",
+		"NPM_TOKEN":    "${{ secrets.C4_NPM_TOKEN }}",
+		"PYPI_INDEX":   "${{ vars.C4_PYPI_INDEX }}",
+		"PYPI_TOKEN":   "${{ secrets.C4_PYPI_TOKEN }}",
+		"SERVER":       "${{ gitea.server_url }}",
+		"OWNER":        "${{ gitea.repository_owner }}",
+		"ACTOR":        "${{ gitea.actor }}",
+		"TOKEN":        "${{ gitea.token }}",
+	}
+	wantRun := []string{
+		`${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}`,
+		`${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}`,
+		`${NPM_SCOPE:-@c4factory}`, `${NPM_TOKEN:-$TOKEN}`, `${PYPI_TOKEN:-$TOKEN}`,
+		"umask 077", `:_authToken=`, `> "$HOME/.npmrc"`, `> "$HOME/.netrc"`,
+	}
+	cases := []struct {
+		name  string
+		typ   string
+		sides []side
+		file  string
+		// jobs maps a job to the step the credentials come before, and
+		// whether the credentials step is gated on the change touching code.
+		jobs map[string]struct {
+			before string
+			gated  bool
+		}
+	}{
+		{"ts-standard", "cli", []side{{model.SideFramework, "node-cli"}, {model.SideStandard, "ts-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"python-standard", "cli", []side{{model.SideFramework, "python-cli"}, {model.SideStandard, "python-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"aws-standard", "function", []side{{model.SideFramework, "aws-lambda-ts"}, {model.SideStandard, "aws-standard"}},
+			".gitea/workflows/check.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"check": {"make check-light", true}, "full": {"make check", false}}},
+		{"gitea-release", "cli", []side{{model.SideFramework, "node-cli"}, {model.SideStandard, "ts-standard"}, {model.SideDeployment, "gitea-release"}},
+			".gitea/workflows/release.yaml",
+			map[string]struct {
+				before string
+				gated  bool
+			}{"release": {"make dist", false}}},
+	}
+	runs := map[string]string{}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderComboChecks(t, c.typ, c.sides, "BeforeRelease")
+			var w workflow
+			if err := yaml.Unmarshal(result.Files[c.file].Data, &w); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range c.jobs {
+				job, ok := w.Jobs[name]
+				if !ok {
+					t.Fatalf("%s has no job %q", c.file, name)
+				}
+				wrote, installed := -1, -1
+				for i, step := range job.Steps {
+					if step.Name == "Credentials for the package registries" {
+						wrote = i
+						for k, v := range wantEnv {
+							if step.Env[k] != v {
+								t.Errorf("job %s: env %s=%q, want %q", name, k, step.Env[k], v)
+							}
+						}
+						assertContains(t, "job "+name+"'s credentials step", step.Run, wantRun)
+						if gated := step.If == "steps.changes.outputs.code == 'true'"; gated != want.gated {
+							t.Errorf("job %s: if %q; want gated %v", name, step.If, want.gated)
+						}
+						runs[c.name+"/"+name] = step.Run
+					}
+					if strings.Contains(step.Run, want.before) {
+						installed = i
+					}
+				}
+				if wrote < 0 || installed < wrote {
+					t.Errorf("job %s: the credentials step is #%d and %q #%d; want the credentials first",
+						name, wrote, want.before, installed)
+				}
+			}
+		})
+	}
+	var first string
+	for name, run := range runs {
+		if first == "" {
+			first = run
+		}
+		if run != first {
+			t.Errorf("%s's credentials step differs from the others:\n%s", name, run)
+		}
+	}
+}
+
 func assertContains(t *testing.T, name, got string, want []string) {
 	t.Helper()
 	for _, w := range want {
@@ -885,6 +1052,7 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		// the Container has none.
 		Operations: model.ResolveOperations(model.OperationsChoices{}),
 		CI:         giteaActions(t),
+		NpmScope:   "@c4factory",
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {

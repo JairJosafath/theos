@@ -80,6 +80,12 @@ type Input struct {
 	// CI is the CI system the Container's repository runs. A layer's
 	// .c4factory/ci/<CI.Name>/ folder renders at the repository root.
 	CI model.CI
+	// NpmScope is the npm scope the Container's package is named under
+	// (@c4factory by default; the GitProvider's spec.packages sets another).
+	// A Framework that publishes an npm package names it
+	// {{ .NpmScope }}/{{ .Container }}; the name is set at scaffold time and
+	// never again. The controller fills it: an empty scope is a bug there.
+	NpmScope string
 	// FrameworkFiles are the paths the Framework layer renders for the
 	// Container at the ref it was scaffolded at, sorted, so a later layer can
 	// tell what that version of the Framework has:

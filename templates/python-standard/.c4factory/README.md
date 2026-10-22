@@ -43,6 +43,13 @@ the `make check` contract CI runs.
 - **Releases:** `make dist VERSION=v1.2.3` builds `dist/<name>-1.2.3.tar.gz`
   and the wheel, and fails when the tag doesn't match `pyproject.toml`'s
   `version`; gitea-release attaches both for a CLI.
+- **Factory packages:** the index comes from the GitProvider's `spec.packages`
+  (the host's own PyPI index by default,
+  `<gitea>/api/packages/<owner>/pypi/simple`); the agent's pod and CI log in
+  to its host through a `~/.netrc` they write (since v1.5.0). On your own
+  machine, add `machine <index host> login <you> password <token>` to
+  `~/.netrc` (mode 0600) with a token of yours that may read packages.
+  `AGENTS.md` says how a package is declared in `pyproject.toml`.
 - **Framework contract:** the Framework owns `pyproject.toml`, `uv.lock` and
   `.python-version`. `pyproject.toml` lists this Standard's tools in its `dev`
   dependency group with exact versions (`ruff`, `mypy`, `pytest`), has a
