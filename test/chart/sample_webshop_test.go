@@ -121,7 +121,6 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 	}
 }
 
-// webshopCatalog is the catalog entries of the sample's factory.yaml.
 // withoutDeploy is the sample's documents without their spec.deploy. Where a
 // Container's releases ship is the person's to say, not a plan's, so the
 // planner's reader refuses the field; the sample names its kind-cluster
@@ -168,6 +167,7 @@ func mappingValue(n *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+// webshopCatalog is the catalog entries of the sample's factory.yaml.
 func webshopCatalog(t *testing.T, data []byte) []model.CatalogEntry {
 	t.Helper()
 	var entries []model.CatalogEntry
