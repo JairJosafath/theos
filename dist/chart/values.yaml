@@ -792,7 +792,7 @@ catalog:
       ref: v1.6.0
       spec:
         displayName: Gitea release
-        description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml) on a Gitea release for each version tag.
+        description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml, an AWS Framework's cloud assembly) on a Gitea release for each version tag.
         supportedTypes: [cli, extension, operator, function, service, static-site]
     - kind: Connector
       name: postgres
