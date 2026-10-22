@@ -508,38 +508,88 @@ func TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt(t *testing.T) {
 		t.Fatalf("no make dist step in the release job: %+v", w.Jobs["release"].Steps)
 	}
 	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const held = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 	cases := []struct {
 		name, serverURL, digest string
-		wantIMG                 string // "" when the step must fail before make
+		// code is the registry's answer to HEAD on the tag's manifest, 404
+		// by default; held the Docker-Content-Digest header it sends.
+		code, held string
+		wantIMG    string // "" when the step must fail before make dist
+		wantSays   string // in the step's output when it fails
+		wantAsks   string // the manifest URL the step asks the registry; "" for never
 	}{
-		{"a host alone", "https://git.example.com", digest,
-			"git.example.com/owner/repo@" + digest},
-		{"a host with a port", "http://gitea.local:3000", digest,
-			"gitea.local:3000/owner/repo@" + digest},
-		{"a ROOT_URL with a sub-path", "https://git.example.com/gitea", digest,
-			"git.example.com/owner/repo@" + digest},
-		{"a ROOT_URL with a trailing slash", "https://git.example.com/", digest,
-			"git.example.com/owner/repo@" + digest},
-		{"an empty digest", "https://git.example.com", "", ""},
-		{"a null digest", "https://git.example.com", "null", ""},
-		{"a digest without its algorithm", "https://git.example.com", digest[len("sha256:"):], ""},
-		{"a short digest", "https://git.example.com", "sha256:0123456789abcdef", ""},
-		{"a digest that is not hex", "https://git.example.com", "sha256:" + strings.Repeat("xy", 32), ""},
+		{name: "a host alone", serverURL: "https://git.example.com", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a host with a port", serverURL: "http://gitea.local:3000", digest: digest,
+			wantIMG:  "gitea.local:3000/owner/repo@" + digest,
+			wantAsks: "http://gitea.local:3000/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a ROOT_URL with a sub-path", serverURL: "https://git.example.com/gitea", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a ROOT_URL with a trailing slash", serverURL: "https://git.example.com/", digest: digest,
+			wantIMG:  "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "an empty digest", serverURL: "https://git.example.com", wantSays: "gave no digest"},
+		{name: "a null digest", serverURL: "https://git.example.com", digest: "null", wantSays: "gave no digest"},
+		{name: "a digest without its algorithm", serverURL: "https://git.example.com",
+			digest: digest[len("sha256:"):], wantSays: "gave no digest"},
+		{name: "a short digest", serverURL: "https://git.example.com", digest: "sha256:0123456789abcdef",
+			wantSays: "gave no digest"},
+		{name: "a digest that is not hex", serverURL: "https://git.example.com",
+			digest: "sha256:" + strings.Repeat("xy", 32), wantSays: "gave no digest"},
+		// #1583: the operator pushes a tag once, so the release files name
+		// the digest the registry holds for the tag when it holds one, and
+		// the one just built only on a first run.
+		{name: "a tag the registry holds", serverURL: "https://git.example.com", digest: digest,
+			code: "200", held: held, wantIMG: "git.example.com/owner/repo@" + held,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a tag the registry holds as the digest just built", serverURL: "https://git.example.com",
+			digest: digest, code: "200", held: digest, wantIMG: "git.example.com/owner/repo@" + digest,
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a tag the registry holds without a digest", serverURL: "https://git.example.com",
+			digest: digest, code: "200", wantSays: "gave no digest for it",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a registry that fails", serverURL: "https://git.example.com", digest: digest,
+			code: "500", wantSays: "HTTP 500",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
+		{name: "a registry that refuses the token", serverURL: "https://git.example.com", digest: digest,
+			code: "401", wantSays: "HTTP 401",
+			wantAsks: "https://git.example.com/v2/owner/repo/manifests/v1.2.3"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			bin := filepath.Join(dir, "bin")
 			got := filepath.Join(dir, "make.args")
+			asked := filepath.Join(dir, "curl.url")
 			write(t, bin, "make", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+got+"\"\n")
-			if err := os.Chmod(filepath.Join(bin, "make"), 0o755); err != nil {
-				t.Fatal(err)
+			// The registry: records the URL asked (curl's last argument),
+			// writes the headers to -D's file and prints the status code.
+			code := c.code
+			if code == "" {
+				code = "404"
+			}
+			write(t, bin, "curl", "#!/bin/sh\n"+
+				"for a; do url=$a; done\nprintf '%s\\n' \"$url\" > \""+asked+"\"\n"+
+				"while [ $# -gt 0 ]; do if [ \"$1\" = -D ]; then headers=$2; fi; shift; done\n"+
+				"printf 'HTTP/1.1 "+code+"\\r\\n' > \"$headers\"\n"+
+				"[ -n '"+c.held+"' ] && printf 'Docker-Content-Digest: "+c.held+"\\r\\n' >> \"$headers\"\n"+
+				"printf '"+code+"'\n")
+			for _, f := range []string{"make", "curl"} {
+				if err := os.Chmod(filepath.Join(bin, f), 0o755); err != nil {
+					t.Fatal(err)
+				}
 			}
 			cmd := exec.Command("sh", "-e", "-c", script)
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TAG=v1.2.3",
+			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "TAG=v1.2.3", "TOKEN=t0k3n",
 				"SERVER_URL="+c.serverURL, "REPOSITORY=Owner/Repo", "DIGEST="+c.digest)
 			out, err := cmd.CombinedOutput()
+			url, _ := os.ReadFile(asked)
+			if strings.TrimSpace(string(url)) != c.wantAsks {
+				t.Errorf("the step asked the registry %q; want %q:\n%s", strings.TrimSpace(string(url)), c.wantAsks, out)
+			}
 			if c.wantIMG == "" {
 				if err == nil {
 					t.Fatalf("the step passed with digest %q; want it to fail before make dist:\n%s", c.digest, out)
@@ -547,8 +597,8 @@ func TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt(t *testing.T) {
 				if _, statErr := os.Stat(got); statErr == nil {
 					t.Errorf("make dist ran with digest %q:\n%s", c.digest, out)
 				}
-				if !strings.Contains(string(out), "gave no digest") {
-					t.Errorf("the step's failure doesn't say the digest is missing:\n%s", out)
+				if !strings.Contains(string(out), c.wantSays) {
+					t.Errorf("the step's failure doesn't say %q:\n%s", c.wantSays, out)
 				}
 				return
 			}
