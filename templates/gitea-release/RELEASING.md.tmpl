@@ -6,7 +6,9 @@
 {{- if eq .Framework "go-kubebuilder" }}{{ $files = "the manager image (an `.oci.tar` the factory pushes to the Git host's registry), the manager binaries, `install.yaml` naming that image by digest, and `SHA256SUMS`" }}{{ end -}}
 {{- $aws := ne (trimPrefix "aws-" .Framework) .Framework -}}
 {{- if $aws }}{{ $files = "both tiers' CloudFormation cloud assemblies, flat: each tier's `manifest.json`, each stack's template and asset manifest, and each asset (`asset.<hash>.zip` for a folder)" }}{{ end -}}
+{{- if eq .Framework "aws-fargate-ts" }}{{ $files = printf "%s, and the service's image (an `.oci.tar` the factory pushes to the Git host's registry; a deploy copies it, by digest, to the cloud)" $files }}{{ end -}}
 {{- $operator := eq .Type "operator" -}}
+{{- $image := buildsImage .Deployment .Framework .Type -}}
 {{- $watch := 3 -}}
 {{- $manifest := "" -}}
 {{- if eq .Framework "python-cli" }}{{ $manifest = "pyproject.toml" }}{{ end -}}
@@ -50,7 +52,7 @@ people download the files from the release page.
    the release page lists the files.
 
 The workflow runs on a runner labelled `go`, the one the checks use, with the
-workflow's own token: no secrets to set.{{ if $operator }} The `image` job runs on the
+workflow's own token: no secrets to set.{{ if $image }} The `image` job runs on the
 runner labelled `image`; the factory pushes the image it attaches to the Git
 host's registry under the tag, once: a tag's image is never replaced.{{ end }}
 
@@ -77,11 +79,11 @@ Every file directly in `dist/` is what the release would get; folders in
 
 ## When a run fails
 
-The run's log says which step failed: `make dist`, or attaching the files{{ if $operator }};
-for an operator, the `image` job before them, which builds the image and
+The run's log says which step failed: `make dist`, or attaching the files{{ if $image }};
+or the `image` job before them, which builds the image and
 attaches it{{ end }}.
 
-{{ if $operator -}}
+{{ if $image -}}
 - **The `image` job failed** (no `Dockerfile` at the root, a build error, or
   the upload of the `.oci.tar` broke): nothing was attached and no image was
   pushed. Fix it on main, then move the tag to the fixed commit and push it
@@ -89,7 +91,7 @@ attaches it{{ end }}.
 
 {{ end -}}
 - **`make dist` failed** (a build error{{ if $manifest }}, or the tag doesn't
-  match `{{ $manifest }}`{{ end }}): nothing was attached{{ if $operator }} but the
+  match `{{ $manifest }}`{{ end }}): nothing was attached{{ if $image }} but the
   image archive, which the factory pushes to the registry{{ end }}. Fix it on
   main, then move the tag to the fixed commit and push it again:
 
@@ -99,11 +101,11 @@ attaches it{{ end }}.
 
   Or, when the tag was already shared, leave it and tag the fix as the next
   version (`v0.2.1`).
-{{- if $operator }}
+{{- if $image }}
 
   Moving the tag does not re-push the image: the registry keeps the image
   first pushed under a tag, the new run attaches its rebuild but the factory
-  leaves it unpushed, and `install.yaml` names the digest the registry holds.
+  leaves it unpushed, and {{ if $operator }}`install.yaml` names{{ else }}a deploy ships{{ end }} the digest the registry holds.
   When the fix changes what goes into the image, tag it as the next version.
 {{- end }}
 

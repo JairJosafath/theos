@@ -1,10 +1,13 @@
 {{- /*
-  For a Container of type operator, the image job builds the image on the
-  image runner and attaches it to the release before the release job runs,
-  so make dist names it by digest on the Git host's registry, where the
-  operator pushes it. Any other type releases files only. {{`${{ … }}`}}
-  writes a Gitea expression as is.
+  For a Container whose release builds an image (an operator, or an
+  aws-fargate-ts service), the image job builds it on the image runner and
+  attaches it to the release, and the operator pushes it to the Git host's
+  registry. An operator's release job runs after it, so make dist names the
+  image by digest there; a Fargate stack takes it as a deploy parameter
+  instead. Any other Container releases files only. {{`${{ … }}`}} writes a
+  Gitea expression as is.
 */ -}}
+{{- $image := buildsImage .Deployment .Framework .Type -}}
 {{- $operator := eq .Type "operator" -}}
 {{- /* registries: the step that routes the factory's npm and PyPI packages to
   the owner's registries. */ -}}
@@ -46,17 +49,21 @@
 # Builds the release files with `make dist` when a version tag (v1.2.3) is
 # pushed, and attaches every file in dist/ but dotfiles to the Gitea release of that tag,
 # creating the release when it is missing. Running it again replaces the files.
-{{- if $operator }}
+{{- if $image }}
 #
-# An operator's release builds its image first: rootless BuildKit, on the
+# The release builds its image first: rootless BuildKit, on the
 # image runner, builds the Dockerfile at the root for linux/amd64 and
 # linux/arm64 with an SBOM and provenance, into an OCI image layout archive,
 # <repository>-<tag>.oci.tar, attached to the release; the operator pushes it
 # from there to the Git host's container registry. Nothing emulates the other
 # platform: the Dockerfile RUNs only in stages FROM --platform=$BUILDPLATFORM.
+{{- end }}
+{{- if $operator }}
 # The release files name that image by digest, where the push puts it. The
 # operator pushes a tag once, so a rerun names the digest the registry
 # already holds for the tag, not the one it rebuilt.
+{{- else if $image }}
+# The deployer copies the image, by digest, from there to the cloud.
 {{- end }}
 name: release
 
@@ -65,7 +72,7 @@ on:
     tags: ["v*"]
 
 jobs:
-{{- if $operator }}
+{{- if $image }}
   image:
     runs-on: image
     outputs:
@@ -88,7 +95,7 @@ jobs:
       - name: Build the image
         id: build
         run: |
-          test -f Dockerfile || { echo "No Dockerfile at the root: an operator's release needs one." >&2; exit 1; }
+          test -f Dockerfile || { echo "No Dockerfile at the root: a release that builds an image needs one." >&2; exit 1; }
           archive="$RUNNER_TEMP/${REPOSITORY##*/}-$TAG.oci.tar"
           buildctl-daemonless.sh build \
             --frontend dockerfile.v0 \
@@ -126,7 +133,7 @@ jobs:
 {{- end }}
   release:
     runs-on: go
-{{- if $operator }}
+{{- if $image }}
     needs: image
 {{- end }}
     env:

@@ -342,6 +342,31 @@ describe('ServiceStack', () => {
     }
   });
 
+  it('runs the release’s image by digest, pulled from the bootstrap’s repository only', () => {
+    production.hasParameter('ImageUri', {
+      Type: 'String',
+      AllowedPattern: Match.stringLikeRegexp('@sha256:'),
+    });
+    production.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({ Name: 'App', Image: { Ref: 'ImageUri' } }),
+      ]),
+    });
+    production.hasResourceProperties('AWS::IAM::Policy', {
+      Roles: [{ Ref: Match.stringLikeRegexp('^TaskExecutionRole') }],
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+            Resource: {
+              'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp(':repository/cdk-hnb659fds-container-assets-')])],
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
   it('serves HTTPS with the deployer’s certificate, and redirects HTTP to it', () => {
     production.hasParameter('CertificateArn', { Type: 'String' });
     production.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {

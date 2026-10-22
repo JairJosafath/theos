@@ -439,7 +439,7 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 		"runs-on: image", "needs: image", "digest: ${{ steps.build.outputs.digest }}",
 		"DIGEST: ${{ needs.image.outputs.digest }}", "buildctl-daemonless.sh build",
 		"platform=linux/amd64,linux/arm64", `${REPOSITORY##*/}-$TAG.oci.tar`,
-		"an operator's release needs one", `host=${SERVER_URL#*://}`,
+		"a release that builds an image needs one", `host=${SERVER_URL#*://}`,
 		`repository=$(printf '%s' "$REPOSITORY" | tr A-Z a-z)`,
 		`image="${host%%/*}/$repository@$DIGEST"`, `make dist VERSION="$TAG" IMG="$image"`,
 		// #1581: the registry is at the host's root, whatever path ROOT_URL
@@ -472,6 +472,28 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 	// Gitea's ${{ }} expressions stay; a Go template action would not parse.
 	if strings.Contains(strings.ReplaceAll(string(f.Data), "${{", ""), "{{") {
 		t.Errorf("operator %s keeps a template action:\n%s", workflow, f.Data)
+	}
+
+	// #1610: a Fargate service's release builds its image too, before the
+	// release job, and its make dist names none: the stack takes it as a
+	// deploy parameter.
+	_, result = renderCombo(t, "service", []side{
+		{model.SideFramework, model.FrameworkAWSFargate},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+	})
+	f, ok = result.Files[workflow]
+	if !ok {
+		t.Fatalf("%s not written for a Fargate service; files: %v", workflow, result.Files.Paths())
+	}
+	assertContains(t, "fargate "+workflow, string(f.Data), []string{
+		"runs-on: image", "needs: image", "buildctl-daemonless.sh build", `${REPOSITORY##*/}-$TAG.oci.tar`,
+		`make dist VERSION="$TAG"`,
+	})
+	for _, never := range []string{"IMG=", "DIGEST:", "/v2/"} {
+		if strings.Contains(string(f.Data), never) {
+			t.Errorf("fargate %s contains %q, an operator's make dist:\n%s", workflow, never, f.Data)
+		}
 	}
 
 	_, result = renderCombo(t, "cli", []side{

@@ -2,6 +2,7 @@ import {
   CfnOutput,
   CfnParameter,
   CfnResource,
+  DefaultStackSynthesizer,
   Duration,
   RemovalPolicy,
   Stack,
@@ -23,7 +24,6 @@ import {
   SubnetType,
   Vpc,
 } from 'aws-cdk-lib/aws-ec2';
-import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import {
   AlarmBehavior,
   Cluster,
@@ -52,7 +52,6 @@ import type { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import type { CustomThreshold } from 'cdk-monitoring-constructs';
 import type { Construct } from 'constructs';
-import path from 'node:path';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
@@ -60,8 +59,6 @@ import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 import { Users } from './user_pool';
 
-// The repository root: the Dockerfile and the service's code are there.
-const ROOT = path.join(import.meta.dirname, '..');
 // The port the service listens on in its container: src/main.ts's default.
 const PORT = 8080;
 // The Availability Zones the VPC spans.
@@ -142,6 +139,15 @@ export class ServiceStack extends Stack {
       description: 'The ARN of the ACM certificate the load balancer serves HTTPS with.',
       allowedPattern: '^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$',
     });
+    // The release's image, by digest: the release builds and pushes it, and
+    // the deployer copies it into the bootstrap's container-assets repository
+    // and passes it here, so synth needs no Docker.
+    const imageUri = new CfnParameter(this, 'ImageUri', {
+      type: 'String',
+      description:
+        'The image the service runs, <account>.dkr.ecr.<region>.amazonaws.com/<repository>@sha256:<digest>.',
+      allowedPattern: '^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$',
+    });
 
     // The table holds data: kept, protected and recoverable where the tier
     // keeps data, thrown away with the stack where it doesn't.
@@ -200,9 +206,7 @@ export class ServiceStack extends Stack {
       },
     });
     const app = taskDefinition.addContainer('App', {
-      // Synth only stages the build context in cdk.out/; `cdk deploy` builds
-      // and pushes the image, with Docker, on the deployer's machine.
-      image: ContainerImage.fromAsset(ROOT, { platform: Platform.LINUX_ARM64 }),
+      image: ContainerImage.fromRegistry(imageUri.valueAsString),
       cpu: APP_CPU,
       memoryReservationMiB: APP_MEMORY_MIB,
       portMappings: [{ containerPort: PORT }],
@@ -223,10 +227,25 @@ export class ServiceStack extends Stack {
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');
-    // ECS pulls the image with the execution role, which CDK grants pulls from
-    // the asset's repository only, and ecr:GetAuthorizationToken, an action
-    // that takes no resource but "*".
+    // ECS pulls the image with the execution role: pulls from the bootstrap's
+    // container-assets repository only, and ecr:GetAuthorizationToken, an
+    // action that takes no resource but "*".
     const executionRole = taskDefinition.obtainExecutionRole();
+    executionRole.addToPrincipalPolicy(
+      new PolicyStatement({ actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }),
+    );
+    executionRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        actions: ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+        resources: [
+          this.formatArn({
+            service: 'ecr',
+            resource: 'repository',
+            resourceName: `cdk-${DefaultStackSynthesizer.DEFAULT_QUALIFIER}-container-assets-${this.account}-${this.region}`,
+          }),
+        ],
+      }),
+    );
     Validations.of(executionRole).acknowledge({
       id: 'AwsSolutions-IAM5[Resource::*]',
       reason:
