@@ -594,6 +594,58 @@ True once every entry runs its wanted version, else False with the first of
 entry turns Deployed, `ApprovalNeeded` once per version, and a Warning
 `DeployFailed` once per version and reason.
 
+## Deploy to a cluster with Argo CD
+
+A Container built with the `k8s-manifests` Deployment (a `service`, `worker`,
+`static-site` or `job`) ships to a Kubernetes cluster through Argo CD. The
+webshop's four services in [story.yaml](../config/samples/webshop/story.yaml)
+name `kind-cluster`, an `argoCD` DeployTarget that deploys into the cluster
+the factory runs on:
+
+1. **Argo CD.** The factory never installs it. Its core install (no API
+   server, UI or dex) is enough:
+
+   ```bash
+   kubectl create namespace argocd
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/core-install.yaml
+   ```
+
+2. **The target.** [deploytarget-argocd.yaml](../config/samples/webshop/deploytarget-argocd.yaml)
+   names Argo CD's namespace and project (`argocd` and `default`, the
+   defaults) and the destination namespace `webshop-apps`; the webshop's
+   kustomization applies it. It needs no Secret: the operator writes
+   Applications with its own ServiceAccount, and `Ready` says whether Argo
+   CD and the project are there.
+3. **The entry.** Each Container names the target in `spec.deploy`, as
+   above. A Container whose Deployment is not `k8s-manifests` (a `cli`, an
+   `operator`) gets `Incompatible`.
+
+Once a release's runs succeed, the operator writes one Argo CD Application
+per Container, named after the Container's namespace and name: the
+repository at the release tag, path `deploy/k8s`, the image CI pushed, by
+digest, and automated sync. Argo CD rolls it into `webshop-apps`, and the
+operator reads its sync and health back:
+
+```bash
+kubectl -n argocd get application webshop-orders-api
+kubectl -n webshop get container orders-api -o jsonpath='{.status.deploys}{"\n"}'
+kubectl -n webshop-apps get deployment,service
+```
+
+The entry's `phase` goes `Deploying` while Argo CD syncs, then `Deployed`,
+with `health` as Argo CD reports it (`Healthy`, `Progressing`, `Degraded`);
+a sync Argo CD gives up on is `Failed` with reason `SyncFailed` and Argo CD's
+message. Nothing is written to the repository at deploy; a rollback pins
+`version` in the entry.
+
+The cluster's nodes pull the image from the registry the Container's Git
+provider serves. In the Kind test environment that is the Gitea in the
+cluster, which the node can't resolve by its Service name, so `make cluster`
+maps it for containerd (`hack/kind.sh registry-hosts`) to the Service's fixed
+ClusterIP, over plain HTTP. That is the test environment's shortcut: a real
+cluster pulls from a registry with a real name and TLS, and the organization
+is public, so the pull and the clone need no credential.
+
 ## Release a Brief's app
 
 A Brief's app is released when its plan says so: the planner names the

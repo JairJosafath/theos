@@ -9,10 +9,11 @@ set -euo pipefail
 
 : "${KUBECTL_VALIDATE:?}" "${KUSTOMIZE:?}" "${K8S_OPENAPI:?}" "${KUBECTL_VALIDATE_K8S_VERSION:?}" "${OUT:?}"
 
-# The kustomize overlays that build offline. config/agent-sandbox and
-# config/metrics-server fetch remote URLs, so they are left out.
+# The kustomize overlays that build offline. config/agent-sandbox,
+# config/argocd and config/metrics-server fetch remote URLs, so they are left
+# out.
 OVERLAYS=(default gitea ui)
-echo "Skipped, they fetch remote URLs: config/agent-sandbox, config/metrics-server"
+echo "Skipped, they fetch remote URLs: config/agent-sandbox, config/argocd, config/metrics-server"
 
 mkdir -p "$OUT"
 rm -f "$OUT"/kustomize-*.yaml

@@ -42,6 +42,7 @@ cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
 	else \
 		hack/kind.sh keep-context $(KIND) create cluster --name '$(KIND_CLUSTER)' --config hack/kind.yaml --wait 120s; \
 	fi
+	@hack/kind.sh registry-hosts '$(KIND_CLUSTER)'
 
 GITEA_ADMIN ?= c4admin
 GITEA_ADMIN_EMAIL ?= c4admin@c4.factory.io
@@ -233,6 +234,12 @@ agent-image-base: ## Build the agent image on the minimal toolchain and load it 
 agent-sandbox: ## Install Agent Sandbox (config/agent-sandbox, v1.0.4), which runs the agents.
 	$(TESTENV_KUBECTL) apply --server-side -k config/agent-sandbox
 	$(TESTENV_KUBECTL) -n agent-sandbox-system rollout status deployment --timeout=300s
+
+.PHONY: argocd
+argocd: ## Install Argo CD core (config/argocd, v3.5.6), which deploys the webshop's Containers in the cluster.
+	$(TESTENV_KUBECTL) apply --server-side -k config/argocd
+	$(TESTENV_KUBECTL) -n argocd rollout status deployment --timeout=300s
+	$(TESTENV_KUBECTL) -n argocd rollout status statefulset --timeout=300s
 
 # Where make claude-secret stores the token: the operator's namespace, from
 # which it copies Secret claude-credentials into every project namespace labeled
