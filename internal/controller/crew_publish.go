@@ -61,7 +61,7 @@ type ReleaseTargets interface {
 	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
 	// GitHubToken is the token a Secret's data gives: its token, or its
 	// GitHub App's installation token.
-	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
+	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
 }
 
 // publishRelease takes the next steps of publishing the Crew's last release
@@ -101,7 +101,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 	if facts.Published {
 		return
 	}
-	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret)
+	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret, spec.GitHub.Repository)
 	facts.SecretFound = token != ""
 	_, refused := errors.AsType[*gitprovider.ReleaseError](err)
 	switch {
@@ -367,9 +367,9 @@ func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1alpha1.Crew
 
 // publishToken reads the token from the Secret named name, live, so a Secret
 // created after a failure is used on the next poll: its token, or its GitHub
-// App's installation token; "" when there is neither. A mint GitHub refuses is
-// a *gitprovider.ReleaseError.
-func (r *CrewReconciler) publishToken(ctx context.Context, ns, name string) (string, error) {
+// App's installation token for repository alone; "" when there is neither. A
+// mint GitHub refuses is a *gitprovider.ReleaseError.
+func (r *CrewReconciler) publishToken(ctx context.Context, ns, name, repository string) (string, error) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
 	if apierrors.IsNotFound(err) {
@@ -378,7 +378,7 @@ func (r *CrewReconciler) publishToken(ctx context.Context, ns, name string) (str
 	if err != nil {
 		return "", err
 	}
-	return r.releaseTargets().GitHubToken(ctx, "", secret.Data)
+	return r.releaseTargets().GitHubToken(ctx, "", repository, secret.Data)
 }
 
 // sourceRelease is the Gitea release as the rule reads it.

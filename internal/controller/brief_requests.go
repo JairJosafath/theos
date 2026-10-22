@@ -39,7 +39,7 @@ type IssueTrackers interface {
 	GitHubIssues(cfg gitprovider.GitHubConfig) (gitprovider.IssueTracker, error)
 	// GitHubToken is a GitHub Secret's token, or its GitHub App's
 	// installation token, as gitprovider.Client.GitHubToken mints it.
-	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
+	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
 }
 
 const (
@@ -142,7 +142,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 	repository := entry.GitHub.Repository
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
 	secret := entry.GitHub.TokenSecretRef.Name
-	token, err := r.requestsToken(ctx, brief.Namespace, secret)
+	token, err := r.requestsToken(ctx, brief.Namespace, secret, repository)
 	var mint *gitprovider.ReleaseError
 	switch {
 	case errors.As(err, &mint):
@@ -386,9 +386,9 @@ func requestsKey(brief *c4v1alpha1.Brief, repository string) string {
 }
 
 // requestsToken reads the token from the Secret named name, live, so a
-// Secret created later is used on the next read, or mints its GitHub App's;
-// "" when there is none or it holds neither whole.
-func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name string) (string, error) {
+// Secret created later is used on the next read, or mints its GitHub App's
+// for repository alone; "" when there is none or it holds neither whole.
+func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name, repository string) (string, error) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
 	if apierrors.IsNotFound(err) {
@@ -400,7 +400,7 @@ func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name string) (s
 	if _, _, ok := model.GitHubCredential(secret.Data); !ok {
 		return "", nil
 	}
-	return r.issueTrackers().GitHubToken(ctx, "", secret.Data)
+	return r.issueTrackers().GitHubToken(ctx, "", repository, secret.Data)
 }
 
 // recordRequests sets status.requests to all, oldest first, keeping what a
