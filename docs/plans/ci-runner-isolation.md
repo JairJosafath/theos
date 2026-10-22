@@ -124,6 +124,84 @@ rule and no longer calls the runner open. `make check` passes on each.
    once a pod is replaced. A human's Kind run checks those; nothing waits for
    it.
 
+## Step 3 choices (#1140, wren-1140, 2026-10-22)
+
+Decided before building, from the code as it stands after #1138 and #1139:
+
+- **Picked by `GitProvider.spec.ci.giteaActions.runners`.** A new optional
+  `ci` block whose only member is `giteaActions` (the member name
+  [ci-system-input](ci-system-input.md) reserved; a CEL rule allows exactly
+  one member once there is a second). Its `runners` list has one entry per
+  label: `label`, `image`, `size` (idle pods kept, default 1), `resources`,
+  `goCache` (bool: mount the project's cache). No block, no pool: the Helm
+  runners serve as today. The root of the per-project Go caches is an
+  operator flag `--ci-go-cache` (as `--sandbox-go-cache`), the pods
+  mounting `<root>/<project namespace>`; empty root, no cache mount.
+- **The ProjectReconciler keeps the pool** (`project_ci_runners.go`), owning
+  the pods (`Owns(&corev1.Pod{})`, controller reference to the Project so
+  deletion cascades) and reconciling on GitProvider spec changes, which it
+  already watches. Pods are named by `GenerateName` `ci-<provider>-<label>-`
+  and labelled `c4.factory.io/ci-runner: "true"`, `c4.factory.io/git-provider`
+  and `c4.factory.io/ci-label`. The pool counts pods not ended (Pending or
+  Running, no deletionTimestamp) per provider and label, creates up to
+  `size`, deletes ended ones, and deletes pods of a provider or label that is
+  no longer in any `ci` block. RBAC: pods `create;delete` added to the
+  Project's markers (the Task's already has get/list/watch).
+- **The registration token is a Secret per GitProvider** in the project's
+  namespace, `c4-ci-runner-<provider>`, key `token`, written by the
+  reconciler from `OwnerRunners.RunnerRegistrationToken` (through
+  `providerFor`, `container_checks.go:63`); a provider without
+  `OwnerRunners` fails the Project's condition `CIRunners` with reason
+  `UnsupportedCI`. The init container alone gets it
+  (`secretKeyRef`), with `RUNNER_EPHEMERAL=1` and `RUNNER_NAME` from the
+  downward API (`metadata.name`), so Gitea names the runner after the pod.
+  `hack/runner/register.sh` adds `--ephemeral` when `RUNNER_EPHEMERAL` is set
+  (`register_test.sh` case).
+- **The pod spec is a pure function** `buildRunnerPod(runnerPodInput)` in
+  `internal/controller/ci_runner_pod.go`, table-tested as `buildSandbox` is:
+  `restartPolicy: Never`, `automountServiceAccountToken: false`, the init
+  container `register`, the `go-cache` init container when `goCache`, the
+  `runner` container with no `RUNNER_TOKEN`, `work` and `tmp` emptyDirs in
+  memory, the cache as `hostPath` `<root>/<namespace>` `DirectoryOrCreate`
+  and the `job.env` variables as literal env (no ConfigMap: the runner reads
+  `env_file`, so a ConfigMap `c4-ci-runner-env` per project, as the chart's,
+  is the fallback if the runner ignores the environment).
+- **The CI NetworkPolicy** `c4-ci-runner` selects
+  `c4.factory.io/ci-runner: "true"`; `ensureAgentNetwork`'s egress build
+  moves into `fenceEgress(gitNamespaces)` so both policies share it,
+  table-tested.
+- **Who cancelled (the folded-in #1261).** `gitprovider.WorkflowJob` and
+  `model.CIJob` gain `RunnerName` (Gitea's `runner_name`; the fake's jobs name
+  their runner). Each pool pod carries the finalizer
+  `c4.factory.io/ci-runner-record`, so a pod deleted by anyone stays, with its
+  final status, until the pool removes the finalizer `RunnerRecordKept`
+  (2h) after it ended; the Task reads the pod by the job's runner name. The
+  pool classifies a pod the first time it sees it ended, in a pure function
+  `runnerPodFate(pod)`, and writes the verdict as annotation
+  `c4.factory.io/runner-fate`: `lost` when the pod has a deletionTimestamp
+  and no verdict yet (someone deleted it before it ended), `podDisrupted`,
+  phase Failed or a runner container that ended non-zero; `ended` when phase
+  Succeeded. The pool annotates before it deletes an ended pod, so its own
+  delete never reads as someone else's. The Task's `canceller`
+  (`task_controller.go`) looks each cancelled job's runner name up as a pod
+  of its namespace: `CIJob.PodFate` ended means a person cancelled, lost the
+  runner, and a job with no pod keeps today's online rule. A pod gone past
+  `RunnerRecordKept` reads as unknown, today's rule.
+- **Helm's shared runners** register to the templates organization: the
+  Gitea credentials container makes Secret `gitea-runner` from
+  `POST /orgs/templates/actions/runners/registration-token` instead of a
+  random instance token (`deployment.yaml:66`); `hack/seed/seed.sh:288` does
+  the same for the seed's token.
+- **envtest.** No kubelet: a test moves a pod's status by the status
+  subresource (Succeeded, Failed, Evicted) and deletes pods; an unscheduled
+  pod with no finalizer goes at once, one with the finalizer stays, which is
+  what the record relies on.
+
+Order of work: the API block and `make manifests`; `buildRunnerPod`,
+`fenceEgress` and their tables; `register.sh`; the pool reconciler, Secret,
+policy and envtest; `RunnerName`, `PodFate`, `Canceller` tables and the Task
+envtest; the chart and seed; `docs/design.md`.
+
 ## Steps
 
 | Step | Issue | Depends on | How we know |
