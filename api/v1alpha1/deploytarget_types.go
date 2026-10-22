@@ -37,7 +37,7 @@ const (
 // DeployTargetSpec is a place Containers are shipped to: exactly one member,
 // keyed by field name, says which tool owns the place and where in it. Each
 // member is added with the adapter that ships to it (docs/plans/done/deploy.md).
-// +kubebuilder:validation:XValidation:rule="[has(self.github), has(self.argoCD)].exists_one(x, x)",message="set exactly one target member: github or argoCD"
+// +kubebuilder:validation:XValidation:rule="[has(self.github), has(self.argoCD), has(self.cloudFormation)].exists_one(x, x)",message="set exactly one target member: github, argoCD or cloudFormation"
 // +kubebuilder:validation:XValidation:rule="has(self.credentialsSecretRef) || has(self.argoCD)",message="set credentialsSecretRef unless the member is argoCD"
 type DeployTargetSpec struct {
 	// github ships each release as a GitHub release of a repository: its tag,
@@ -53,12 +53,20 @@ type DeployTargetSpec struct {
 	// +optional
 	ArgoCD *DeployTargetArgoCD `json:"argoCD,omitempty"`
 
+	// cloudFormation ships each release of an AWS Container, the CDK
+	// assembly its release carries, as CloudFormation stacks in an AWS
+	// account and region, through the roles of the account's CDK bootstrap
+	// (docs/plans/aws-deploy.md).
+	// +optional
+	CloudFormation *DeployTargetCloudFormation `json:"cloudFormation,omitempty"`
+
 	// credentialsSecretRef names a Secret in the DeployTarget's namespace that
 	// the user creates; its keys are the member's. For github: token, a
 	// fine-grained token, or a GitHub App's appId, installationId and
 	// privateKey (its PEM), token winning when both are set; packagesToken
-	// is optional. Only the operator reads it: it is never mounted in a
-	// sandbox or passed to a CI job.
+	// is optional. For cloudFormation: accessKeyId, secretAccessKey and an
+	// optional sessionToken. Only the operator reads it: it is never mounted
+	// in a sandbox or passed to a CI job.
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
@@ -142,6 +150,24 @@ type DeployTargetGitHubSource struct {
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
 	// +optional
 	TagPrefix *string `json:"tagPrefix,omitempty"`
+}
+
+// DeployTargetCloudFormation is an AWS account and region whose
+// CloudFormation stacks are the deploys. No role is named: the roles are
+// the CDK bootstrap's, and the release's assembly names them.
+type DeployTargetCloudFormation struct {
+	// region is the AWS region the stacks run in, such as eu-west-1.
+	// +kubebuilder:validation:MaxLength=30
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]{2}(-[a-z]+)+-[0-9]+$')",message="region must be an AWS region, such as eu-west-1"
+	// +required
+	Region string `json:"region"`
+	// account is the twelve-digit AWS account id the credential must be
+	// in: set, a credential of another account is refused, so a key for the
+	// wrong account never deploys.
+	// +kubebuilder:validation:MaxLength=12
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{12}$')",message="account must be a twelve-digit AWS account id"
+	// +optional
+	Account string `json:"account,omitempty"`
 }
 
 // DeployTargetArgoCD is an Argo CD whose Applications are the deploys, one
@@ -228,6 +254,7 @@ type DeployTargetStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
+// +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].reason"

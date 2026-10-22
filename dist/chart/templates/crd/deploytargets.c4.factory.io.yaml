@@ -23,6 +23,10 @@ spec:
     - jsonPath: .spec.github.repository
       name: Repository
       type: string
+    - jsonPath: .spec.cloudFormation.region
+      name: Region
+      priority: 1
+      type: string
     - jsonPath: .spec.tier
       name: Tier
       type: string
@@ -137,14 +141,43 @@ spec:
                 required:
                 - destination
                 type: object
+              cloudFormation:
+                description: |-
+                  cloudFormation ships each release of an AWS Container, the CDK
+                  assembly its release carries, as CloudFormation stacks in an AWS
+                  account and region, through the roles of the account's CDK bootstrap
+                  (docs/plans/aws-deploy.md).
+                properties:
+                  account:
+                    description: |-
+                      account is the twelve-digit AWS account id the credential must be
+                      in: set, a credential of another account is refused, so a key for the
+                      wrong account never deploys.
+                    maxLength: 12
+                    type: string
+                    x-kubernetes-validations:
+                    - message: account must be a twelve-digit AWS account id
+                      rule: self.matches('^[0-9]{12}$')
+                  region:
+                    description: region is the AWS region the stacks run in, such
+                      as eu-west-1.
+                    maxLength: 30
+                    type: string
+                    x-kubernetes-validations:
+                    - message: region must be an AWS region, such as eu-west-1
+                      rule: self.matches('^[a-z]{2}(-[a-z]+)+-[0-9]+$')
+                required:
+                - region
+                type: object
               credentialsSecretRef:
                 description: |-
                   credentialsSecretRef names a Secret in the DeployTarget's namespace that
                   the user creates; its keys are the member's. For github: token, a
                   fine-grained token, or a GitHub App's appId, installationId and
                   privateKey (its PEM), token winning when both are set; packagesToken
-                  is optional. Only the operator reads it: it is never mounted in a
-                  sandbox or passed to a CI job.
+                  is optional. For cloudFormation: accessKeyId, secretAccessKey and an
+                  optional sessionToken. Only the operator reads it: it is never mounted
+                  in a sandbox or passed to a CI job.
                   An argoCD target needs none: the operator uses its own ServiceAccount.
                   Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
                   when that is not the operator's) and registryUsername and
@@ -249,8 +282,9 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one target member: github or argoCD'
-              rule: '[has(self.github), has(self.argoCD)].exists_one(x, x)'
+            - message: 'set exactly one target member: github, argoCD or cloudFormation'
+              rule: '[has(self.github), has(self.argoCD), has(self.cloudFormation)].exists_one(x,
+                x)'
             - message: set credentialsSecretRef unless the member is argoCD
               rule: has(self.credentialsSecretRef) || has(self.argoCD)
           status:

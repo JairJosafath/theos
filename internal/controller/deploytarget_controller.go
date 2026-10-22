@@ -172,6 +172,15 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 		return target, fmt.Sprintf("project %s in namespace %s (destination %s)", a.Project, a.Namespace,
 			a.Destination.Namespace)
 	}
+	if cf := dt.Spec.CloudFormation; cf != nil {
+		target.Member = model.DeployMemberCloudFormation
+		target.Settings = map[string]string{model.CloudFormationSettingRegion: cf.Region,
+			model.CloudFormationSettingAccount: cf.Account}
+		if cf.Account == "" {
+			return target, "region " + cf.Region
+		}
+		return target, fmt.Sprintf("account %s in region %s", cf.Account, cf.Region)
+	}
 	return target, ""
 }
 

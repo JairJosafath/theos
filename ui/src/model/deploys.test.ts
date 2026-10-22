@@ -40,10 +40,17 @@ describe('memberOf', () => {
     expect(memberOf(far).where).toBe('apps on https://far.example')
   })
 
+  it('names the cloudFormation member by its region, and the account when it guards one (#1609)', () => {
+    const t = target({ github: undefined, cloudFormation: { region: 'eu-west-1' } })
+    expect(memberOf(t)).toEqual({ member: 'cloudFormation', label: 'AWS CloudFormation', where: 'eu-west-1' })
+    const guarded = target({ github: undefined, cloudFormation: { region: 'eu-west-1', account: '123456789012' } })
+    expect(memberOf(guarded).where).toBe('eu-west-1, account 123456789012')
+  })
+
   it('names a member this UI doesn’t know by its field, showing nothing of it', () => {
     const t = target({ github: undefined })
-    ;(t.spec as Record<string, unknown>).cloudFormation = { region: 'eu-west-1' }
-    expect(memberOf(t)).toEqual({ member: 'cloudFormation', label: 'cloudFormation', where: '' })
+    ;(t.spec as Record<string, unknown>).terraform = { workspace: 'shop' }
+    expect(memberOf(t)).toEqual({ member: 'terraform', label: 'terraform', where: '' })
   })
 })
 
