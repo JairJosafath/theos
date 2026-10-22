@@ -32,9 +32,9 @@ func newBundle(ns, name, framework, compute, deployment string) *c4v1alpha1.Bund
 	return b
 }
 
-// newBundledContainer returns newContainer naming bundle instead of its four sides.
-func newBundledContainer(ns, name, system, bundle string) *c4v1alpha1.Container {
-	c := newContainer(ns, name, system, c4v1alpha1.ContainerTypeService)
+// newBundledContainer returns a webshop-core service naming bundle instead of its four sides.
+func newBundledContainer(ns, name, bundle string) *c4v1alpha1.Container {
+	c := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
 	c.Spec.FrameworkRef, c.Spec.ComputeRef, c.Spec.DeploymentRef = c4v1alpha1.LocalRef{}, nil, nil
 	c.Spec.BundleRef = &c4v1alpha1.LocalRef{Name: bundle}
 	return c
@@ -56,7 +56,7 @@ var _ = Describe("Container naming a Bundle", func() {
 		ns := newProjectNamespace()
 
 		By("naming neither")
-		neither := newBundledContainer(ns, "neither", "webshop-core", "web-service")
+		neither := newBundledContainer(ns, "neither", "web-service")
 		neither.Spec.BundleRef = nil
 		Expect(k8sClient.Create(ctx, neither)).To(MatchError(ContainSubstring("name a bundleRef or a frameworkRef")))
 
@@ -67,14 +67,14 @@ var _ = Describe("Container naming a Bundle", func() {
 			"compute":    func(c *c4v1alpha1.Container) { c.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "small"} },
 			"deployment": func(c *c4v1alpha1.Container) { c.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: "k8s-manifests"} },
 		} {
-			c := newBundledContainer(ns, "with-"+side, "webshop-core", "web-service")
+			c := newBundledContainer(ns, "with-"+side, "web-service")
 			set(c)
 			Expect(k8sClient.Create(ctx, c)).To(MatchError(ContainSubstring(
 				"bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef")), side)
 		}
 
 		By("changing, removing or adding a bundleRef")
-		bundled := newBundledContainer(ns, "bundled", "webshop-core", "web-service")
+		bundled := newBundledContainer(ns, "bundled", "web-service")
 		plain := newContainer(ns, "plain", "webshop-core", c4v1alpha1.ContainerTypeService)
 		mustCreate(bundled, plain)
 		Expect(patch(bundled, func() { bundled.Spec.BundleRef.Name = "another" })).
@@ -92,7 +92,7 @@ var _ = Describe("Container naming a Bundle", func() {
 	It("waits for a missing Bundle, naming it", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		mustCreate(newSystem(ns, "webshop-core"), newBundledContainer(ns, "orders-api", "webshop-core", "web-service"))
+		mustCreate(newSystem(ns, "webshop-core"), newBundledContainer(ns, "orders-api", "web-service"))
 
 		Eventually(func(g Gomega) {
 			var container c4v1alpha1.Container
@@ -114,7 +114,7 @@ var _ = Describe("Container naming a Bundle", func() {
 		bundle := newBundle(ns, "web-service", "python-fastapi", "medium", "k8s-manifests")
 		mustCreate(newSystem(ns, "webshop-core"), bundle,
 			newContainer(ns, "twin", "webshop-core", c4v1alpha1.ContainerTypeService),
-			newBundledContainer(ns, "bundled", "webshop-core", "web-service"))
+			newBundledContainer(ns, "bundled", "web-service"))
 
 		By("expanding afresh while it waits: medium is no Compute of the catalog")
 		Eventually(func(g Gomega) {
@@ -158,7 +158,7 @@ var _ = Describe("Container naming a Bundle", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
 		mustCreate(newSystem(ns, "webshop-core"), newBundle(ns, "operator-kit", "go-kubebuilder", "small", ""),
-			newBundledContainer(ns, "orders-api", "webshop-core", "operator-kit"))
+			newBundledContainer(ns, "orders-api", "operator-kit"))
 
 		container := eventuallyContainer(ns, "orders-api", c4v1alpha1.ContainerFailed)
 		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionChoicesValid)
