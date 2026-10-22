@@ -38,11 +38,15 @@ readable inside the agent sandbox ([docs/design.md](../design.md#the-fence)).
 3. **The proxy reads the token on every request** (the file, cached by its
    modification time). A rotated token reaches the next request within the
    kubelet's sync period; neither the proxy nor any sandbox restarts. Until
-   the file holds a token the proxy answers 503 and its readiness probe
-   fails.
+   the file holds a token the proxy answers 503 and says so in its log; its
+   readiness probe passes all the same and the Secret volume is `optional`,
+   because the guide makes the Secret after `helm install --wait`, which a
+   pod waiting on the Secret would time out (#1627).
 4. **The sandbox gets the proxy's address and a placeholder.** For an Agent
    on the shared token, `buildSandbox` sets no `envFrom` and instead
-   `ANTHROPIC_BASE_URL=http://c4-model-proxy.<release namespace>.svc:8080` and
+   `ANTHROPIC_BASE_URL=http://c4-model-proxy.<release namespace>.svc:8080` (under
+   kustomize, `config/default`'s `namePrefix: c4-factory-` names the Service
+   `c4-factory-model-proxy`, so its `--model-proxy-url` says that) and
    `ANTHROPIC_AUTH_TOKEN=c4-model-proxy` (not a secret; Claude Code needs some
    credential to start and sends it as `Authorization: Bearer`). The proxy
    drops whatever `Authorization` and `x-api-key` the client sent and adds the

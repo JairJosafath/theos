@@ -40,6 +40,8 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
+        # /readyz fails only while a stop drains; without a token the pod is
+        # ready and answers 503 (#1627).
         readinessProbe:
           httpGet:
             path: /readyz
@@ -72,3 +74,6 @@ spec:
       - name: credentials
         secret:
           secretName: claude-credentials
+          # The Secret may come after the deploy; the kubelet fills the
+          # directory when it appears (#1627).
+          optional: true

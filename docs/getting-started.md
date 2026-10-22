@@ -110,7 +110,9 @@ pushed, pinned to their tags: Frameworks `aws-ec2-ts`, `aws-event-ts`, `aws-farg
 Deployments `k8s-manifests` and `gitea-release`, Connector `postgres`) and four
 Agents on the release's `agent-go` image: `planner`, `designer` and `reviewer`
 on Opus, `implementer` on Sonnet. The Agents read Secret `claude-credentials`,
-which you make in step 2. A fifth, `stand-in`, needs no token: it plans from
+which you make in step 2; the model proxy that hands them its token starts
+without the Secret and answers 503 to every request until it exists, so the
+install doesn't wait for it. A fifth, `stand-in`, needs no token: it plans from
 the catalog and makes a scripted change, to show the loop
 ([without a token](#without-a-token)). `catalog.enabled=false` and `agents.enabled=false`
 leave them out ([the chart's README](../dist/chart/README.md#values)). On a fresh cluster Gitea's image may still be pulling
@@ -282,7 +284,8 @@ Brief's history, so a prompt can overrule it.
 ### Without a token
 
 To watch the loop before making the token Secret, name Agent `stand-in` for
-every role. [config/samples/brief/stand-in.yaml](../config/samples/brief/stand-in.yaml)
+every role; the install runs without the Secret, and the model proxy's pods
+are ready without it. [config/samples/brief/stand-in.yaml](../config/samples/brief/stand-in.yaml)
 does that in `webshop`. The stand-in reads only the catalog: it adds Container
 `stand-in-demo` on the first Framework a Deployment ships, `go-cli` with
 `gitea-release`, releases it and files one issue for it, and the Container's
