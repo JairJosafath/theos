@@ -208,13 +208,13 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: agentrunner.EnvNpmScope, Value: run.npmScope},
 			corev1.EnvVar{Name: agentrunner.EnvNpmRegistry, Value: run.npmRegistry})
 		if run.npmSecret != "" {
-			env = append(env, optionalSecretEnv(agentrunner.EnvNpmToken, run.npmSecret, packagesReadTokenKey))
+			env = append(env, readTokenEnv(agentrunner.EnvNpmToken, run.npmSecret))
 		}
 	}
 	if run.pypiIndex != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvPyPIIndex, Value: run.pypiIndex})
 		if run.pypiSecret != "" {
-			env = append(env, optionalSecretEnv(agentrunner.EnvPyPIToken, run.pypiSecret, packagesReadTokenKey))
+			env = append(env, readTokenEnv(agentrunner.EnvPyPIToken, run.pypiSecret))
 		}
 	}
 	env = append(env, agent.Spec.Env...)
@@ -378,10 +378,10 @@ func secretEnv(name, secret, key string) corev1.EnvVar {
 // installs; the Secret's token publishes, and only the operator reads it.
 const packagesReadTokenKey = "readToken"
 
-// optionalSecretEnv is secretEnv for a key the Secret may lack: the env is
-// then unset.
-func optionalSecretEnv(name, secret, key string) corev1.EnvVar {
-	env := secretEnv(name, secret, key)
+// readTokenEnv is secretEnv for a package registry Secret's readToken, which
+// the Secret may lack: the env is then unset.
+func readTokenEnv(name, secret string) corev1.EnvVar {
+	env := secretEnv(name, secret, packagesReadTokenKey)
 	env.ValueFrom.SecretKeyRef.Optional = new(true)
 	return env
 }
