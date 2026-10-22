@@ -161,12 +161,17 @@ func TestSourceTag(t *testing.T) {
 			t.Errorf("SourceTag(%+v) = %q, want %q", tt.source, got, tt.want)
 		}
 	}
-	if got := SourceURL("JairJosafath/cel-lens", "engine", "engine/v0.6.1"); got !=
+	if got := SourceURL("", "JairJosafath/cel-lens", "engine", "engine/v0.6.1"); got !=
 		"https://github.com/JairJosafath/cel-lens/tree/engine/v0.6.1/engine" {
 		t.Errorf("SourceURL(engine) = %q", got)
 	}
-	if got := SourceURL("JairJosafath/cel-lens", ".", "v0.6.1"); got != "https://github.com/JairJosafath/cel-lens/tree/v0.6.1" {
+	if got := SourceURL("", "JairJosafath/cel-lens", ".", "v0.6.1"); got != "https://github.com/JairJosafath/cel-lens/tree/v0.6.1" {
 		t.Errorf("SourceURL(.) = %q", got)
+	}
+	// #1605: a GitHub Enterprise Server's source is on its own site.
+	if got := SourceURL("https://ghe.example.com/", "acme/orders", "orders", "orders/v1.0.0"); got !=
+		"https://ghe.example.com/acme/orders/tree/orders/v1.0.0/orders" {
+		t.Errorf("SourceURL(ghe) = %q", got)
 	}
 	if got, want := SourceMessage("CEL engine", "cel-lens/engine", "v0.6.1", "core-v0.6.1"),
 		"CEL engine v0.6.1: source\n\nC4factory-Source: cel-lens/engine core-v0.6.1\n"; got != want {

@@ -124,7 +124,9 @@ type GitHubConfig struct {
 	// Repository is owner/name.
 	Repository string
 	Token      string
-	// APIURL and UploadURL default to github.com's; tests point them elsewhere.
+	// APIURL and UploadURL default to github.com's; a GitHub Enterprise
+	// Server's are its own (model.GitHubHostsOf), and tests point them at a
+	// fake.
 	APIURL    string
 	UploadURL string
 }

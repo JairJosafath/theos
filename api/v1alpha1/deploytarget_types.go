@@ -95,7 +95,18 @@ type DeployTargetSpec struct {
 
 // DeployTargetGitHub is a GitHub repository whose releases are the deploys.
 type DeployTargetGitHub struct {
-	// repository is owner/name on github.com.
+	// url is a GitHub Enterprise Server's address, https://host, for a
+	// repository there; unset, the repository is on github.com. The
+	// operator calls its API under /api/v3 and copies images to its
+	// registry at containers.<host>, which needs the server's subdomain
+	// isolation on.
+	// +kubebuilder:validation:MaxLength=200
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')",message="url must be https://host, with no path: the server's address, not its API's"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// repository is owner/name, on github.com or the server at url.
 	// +kubebuilder:validation:MaxLength=140
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$')",message="repository must be owner/name"
 	// +required

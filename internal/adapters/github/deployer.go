@@ -32,7 +32,8 @@ type Releases interface {
 // write per call.
 type Deployer struct {
 	releases Releases
-	// registry is where images go, host[:port]: GHCR, a fake one in tests.
+	// registry is where images go, host[:port], a fake one in tests; "" is
+	// the target's own, GHCR or its GitHub Enterprise Server's.
 	registry string
 }
 
@@ -41,33 +42,49 @@ var _ ports.Deployer = (*Deployer)(nil)
 // Option configures a Deployer.
 type Option func(*Deployer)
 
-// WithImageRegistry sends images to host instead of GHCR, for tests.
+// WithImageRegistry sends images to host instead of the target's registry,
+// for tests.
 func WithImageRegistry(host string) Option {
 	return func(d *Deployer) { d.registry = host }
 }
 
-// New returns the github member's Deployer, on github.com and GHCR when
-// releases is nil.
+// New returns the github member's Deployer, on github.com or the target's
+// GitHub Enterprise Server when releases is nil.
 func New(releases Releases, opts ...Option) *Deployer {
 	if releases == nil {
 		releases = gitprovider.Client{}
 	}
-	d := &Deployer{releases: releases, registry: model.GHCRHost}
+	d := &Deployer{releases: releases}
 	for _, o := range opts {
 		o(d)
 	}
 	return d
 }
 
+// hosts are the places t talks to: github.com's, or its url's.
+func hosts(t ports.Target) model.GitHubHosts {
+	return model.GitHubHostsOf(t.Settings[model.GitHubSettingURL])
+}
+
 // client is the target's repository, with the Secret's token or its GitHub
-// App's installation token. A mint GitHub refuses is CredentialRefused.
+// App's installation token, minted at the target's API. A mint GitHub
+// refuses is CredentialRefused.
 func (d *Deployer) client(ctx context.Context, t ports.Target) (gitprovider.ReleaseTarget, error) {
-	token, err := d.releases.GitHubToken(ctx, "", t.Secret)
+	h := hosts(t)
+	token, err := d.releases.GitHubToken(ctx, h.API, t.Secret)
 	if err != nil {
 		return nil, portError(err)
 	}
 	return d.releases.GitHubReleases(gitprovider.GitHubConfig{Repository: t.Settings[model.GitHubSettingRepository],
-		Token: token})
+		Token: token, APIURL: h.API, UploadURL: h.Upload})
+}
+
+// registry is where t's images go: the Deployer's when set, else t's own.
+func (d *Deployer) registryOf(t ports.Target) string {
+	if d.registry != "" {
+		return d.registry
+	}
+	return hosts(t).Registry
 }
 
 // Check reads the repository with the target's token.
@@ -85,7 +102,7 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // first; then create the draft, retarget it, upload a file or publish it;
 // nothing once the release is out. A release of the tag that the factory didn't make is left alone and
 // fails with reason TagTaken. With a packagesToken and an image, the image is
-// copied to GHCR before the draft is made, and the release's notes name it.
+// copied to the target's registry before the draft is made, and the release's notes name it.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
 	tag := model.GitHubTag(t.Settings[model.GitHubSettingTagPrefix], s.Version)
 	names := make([]string, len(s.Files))
@@ -155,16 +172,16 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	return portError(d.write(ctx, c, s, step))
 }
 
-// packages is the login of t's packagesToken at the Deployer's registry; ok
+// packages is the login of t's packagesToken at t's registry; ok
 // is false when t's Secret has none. GHCR takes any username with a classic
 // token; the repository's owner is the one it names.
 func (d *Deployer) packages(t ports.Target) (r oci.Registry, ok bool) {
 	token := strings.TrimSpace(string(t.Secret[model.GitHubSecretPackagesToken]))
 	owner, _, _ := strings.Cut(t.Settings[model.GitHubSettingRepository], "/")
-	return oci.Registry{Host: d.registry, Username: owner, Password: token}, token != ""
+	return oci.Registry{Host: d.registryOf(t), Username: owner, Password: token}, token != ""
 }
 
-// imageRepository is where t keeps app's image at the Deployer's registry.
+// imageRepository is where t keeps app's image at its registry.
 func imageRepository(t ports.Target, app string) string {
 	_, container, _ := strings.Cut(app, "/")
 	return model.GitHubImage(t.Settings[model.GitHubSettingRepository], container,
@@ -322,7 +339,7 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, 
 	if err != nil {
 		return nil, err
 	}
-	step, done := model.NextSourceStep(model.SourceShip{Source: src, Files: s.Source,
+	step, done := model.NextSourceStep(model.SourceShip{Source: src, Files: s.Source, Web: hosts(t).Web,
 		Repository: t.Settings[model.GitHubSettingRepository], App: s.DisplayName, Owner: s.App, Tag: s.Version,
 		GitHubTag: tag}, gh.Facts)
 	if done != nil {
@@ -479,7 +496,7 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 		}
 		if commit != "" {
 			state.Source = &model.PublishedSource{Commit: commit, Tag: sourceTag,
-				URL: model.SourceURL(t.Settings[model.GitHubSettingRepository], src.Path, sourceTag)}
+				URL: model.SourceURL(hosts(t).Web, t.Settings[model.GitHubSettingRepository], src.Path, sourceTag)}
 		}
 	}
 	return state, nil

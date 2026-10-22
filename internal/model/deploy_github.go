@@ -160,6 +160,35 @@ func GitHubCredential(data map[string][]byte) (token string, app *GitHubApp, ok 
 		PrivateKey:     data[GitHubSecretPrivateKey]}, true
 }
 
+// GitHubHosts are the places a github target talks to: github.com's, or a
+// GitHub Enterprise Server's when the target sets url.
+type GitHubHosts struct {
+	// API and Upload are the REST API's and the release uploads' bases;
+	// "" is github.com's, which the client defaults to.
+	API, Upload string
+	// Web is where people browse the repository.
+	Web string
+	// Registry is the container registry, host[:port], images go to.
+	Registry string
+}
+
+// GitHubWeb is github.com, where a target without url publishes.
+const GitHubWeb = "https://github.com"
+
+// GitHubHostsOf are the hosts of a github target whose url is url: github.com
+// and GHCR when "", else the GitHub Enterprise Server at https://host, its
+// API under /api/v3, its uploads under /api/uploads and its registry at
+// containers.<host>, the one the server takes with subdomain isolation on
+// (docs/plans/done/github-enterprise.md).
+func GitHubHostsOf(url string) GitHubHosts {
+	url = strings.TrimRight(url, "/")
+	if url == "" {
+		return GitHubHosts{Web: GitHubWeb, Registry: GHCRHost}
+	}
+	return GitHubHosts{API: url + "/api/v3", Upload: url + "/api/uploads", Web: url,
+		Registry: "containers." + strings.TrimPrefix(url, "https://")}
+}
+
 // GitHubImage is the repository a Container's image goes to at a github
 // target's registry: owner/name/<container> of the target's repository,
 // lower-cased as GHCR wants it, or owner/name alone when the target's

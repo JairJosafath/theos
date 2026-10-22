@@ -476,7 +476,7 @@ func doneStep(f PublishFacts, tag, url string) PublishStep {
 	// A tag on another folder tree isn't this release's source.
 	if c := f.GitHubSource.TagCommit; c != "" && f.SourceFiles != nil && f.GitHubSource.TagTree == f.SourceFiles.Tree {
 		sourceTag := SourceTag(*f.Source, f.Tag)
-		step.Source = &PublishedSource{Commit: c, Tag: sourceTag, URL: SourceURL(f.Repository, f.Source.Path, sourceTag)}
+		step.Source = &PublishedSource{Commit: c, Tag: sourceTag, URL: SourceURL("", f.Repository, f.Source.Path, sourceTag)}
 		step.Message += fmt.Sprintf(", its source at %s", step.Source.URL)
 	}
 	return step

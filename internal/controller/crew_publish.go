@@ -660,7 +660,7 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 // read of the repository.
 func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
 	step model.PublishStep, private *bool) *c4v1alpha1.CrewReleaseSource {
-	url := model.SourceURL(facts.Repository, facts.Source.Path, step.Tag)
+	url := model.SourceURL("", facts.Repository, facts.Source.Path, step.Tag)
 	allowed := 0
 	if facts.SourceFiles != nil {
 		allowed = facts.SourceFiles.Allowed
