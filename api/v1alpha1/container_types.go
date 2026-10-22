@@ -396,6 +396,11 @@ type StandardUpdateStatus struct {
 	// +optional
 	Commit string `json:"commit,omitempty"`
 
+	// base is main's head the update was planned from. An update whose CI
+	// failed is planned again once main is no longer at it.
+	// +optional
+	Base string `json:"base,omitempty"`
+
 	// pullRequest is the number of the update's pull request, and pullRequestURL
 	// its address.
 	// +optional

@@ -27,6 +27,8 @@ type StandardUpdateFacts struct {
 	CI CI
 	// Files are the paths the pull request changes, nil until read.
 	Files *UpdateFiles
+	// Main is main's head, "" until read.
+	Main string
 }
 
 // StandardUpdateInFlight is an update's state in status.
@@ -41,8 +43,10 @@ type StandardUpdateInFlight struct {
 	PullRequest    int
 	PullRequestURL string
 	Branch         string
-	// Commit is the update's commit, the head the operator pushed.
-	Commit string
+	// Commit is the update's commit, the head the operator pushed, and Base
+	// main's head it was planned from; "" for an update planned before it was
+	// recorded.
+	Commit, Base string
 	// Paths are the paths the update planned to change.
 	Paths []string
 	// Take says the pull request takes the Standard's version at Ref of the
@@ -82,6 +86,8 @@ const (
 	StandardReadPR StandardAction = "ReadPR"
 	// StandardReadChecks reads the CI state on the update's commit into Checks.
 	StandardReadChecks StandardAction = "ReadChecks"
+	// StandardReadMain reads main's head into Main.
+	StandardReadMain StandardAction = "ReadMain"
 	// StandardReadFiles reads the pull request's changed paths into Files.
 	StandardReadFiles StandardAction = "ReadFiles"
 	// StandardUpToDate reports the Standard's files at its ref and checks.
@@ -111,7 +117,8 @@ const (
 	StandardRefuseMerge StandardAction = "RefuseMerge"
 	// StandardWaitForChecks waits for CI on the update's commit.
 	StandardWaitForChecks StandardAction = "WaitForChecks"
-	// StandardChecksFailed reports failed CI; the update merges once a re-run passes.
+	// StandardChecksFailed reports failed CI; the update merges once a re-run
+	// passes, and is planned again once main moves.
 	StandardChecksFailed StandardAction = "ChecksFailed"
 	// StandardForceMerge merges the pull request with the admin override.
 	StandardForceMerge StandardAction = "ForceMerge"
@@ -201,6 +208,14 @@ func followStep(f StandardUpdateFacts) StandardStep {
 		return StandardStep{Action: StandardReadChecks}
 	case checkSuccess:
 	case checkFailure, checkError:
+		// A fix that lands on main meets the new Standard only in a new plan.
+		switch {
+		case u.Base != "" && f.Main == "":
+			return StandardStep{Action: StandardReadMain}
+		case u.Base != "" && f.Main != u.Base:
+			return StandardStep{Action: StandardDrop,
+				Message: "Closed a Standard update whose CI failed, to plan it again from main's new head"}
+		}
 		return StandardStep{Action: StandardChecksFailed, Message: fmt.Sprintf(
 			"CI is %s on %s; the update merges once a re-run passes, or close %s to drop it",
 			f.Checks, f.ChecksURL, u.PullRequestURL)}

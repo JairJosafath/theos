@@ -49,10 +49,85 @@ export async function runCommand(command: string, ...args: unknown[]): Promise<u
 /** The messages shown with window.showInformationMessage, oldest first. */
 export const shownMessages: string[] = [];
 
+/** A line written to a LogOutputChannel. */
+export interface LogLine {
+  level: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  args: unknown[];
+}
+
+/** Fails a test that uses a part of the API the stand-in doesn't have yet. */
+function missing(member: string): never {
+  throw new Error(`the vscode stand-in has no ${member} yet: add it in test/vscode.ts`);
+}
+
+/** Keeps what is logged to it in `lines`, oldest first, instead of showing it. */
+export class LogOutputChannel implements vscode.LogOutputChannel {
+  readonly lines: LogLine[] = [];
+  disposed = false;
+
+  constructor(readonly name: string) {}
+
+  get logLevel(): vscode.LogLevel {
+    return missing('LogOutputChannel.logLevel');
+  }
+  onDidChangeLogLevel(): vscode.Disposable {
+    return missing('LogOutputChannel.onDidChangeLogLevel');
+  }
+  trace(message: string, ...args: unknown[]): void {
+    this.lines.push({ level: 'trace', message, args });
+  }
+  debug(message: string, ...args: unknown[]): void {
+    this.lines.push({ level: 'debug', message, args });
+  }
+  info(message: string, ...args: unknown[]): void {
+    this.lines.push({ level: 'info', message, args });
+  }
+  warn(message: string, ...args: unknown[]): void {
+    this.lines.push({ level: 'warn', message, args });
+  }
+  error(error: string | Error, ...args: unknown[]): void {
+    this.lines.push({ level: 'error', message: String(error), args });
+  }
+  append(): void {
+    missing('LogOutputChannel.append');
+  }
+  appendLine(): void {
+    missing('LogOutputChannel.appendLine');
+  }
+  replace(): void {
+    missing('LogOutputChannel.replace');
+  }
+  clear(): void {
+    missing('LogOutputChannel.clear');
+  }
+  show(): void {
+    missing('LogOutputChannel.show');
+  }
+  hide(): void {
+    missing('LogOutputChannel.hide');
+  }
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
+/** The channels made with window.createOutputChannel, oldest first. */
+export const outputChannels: LogOutputChannel[] = [];
+
 export const window = {
   showInformationMessage(message: string): Promise<undefined> {
     shownMessages.push(message);
     return Promise.resolve(undefined);
+  },
+  // Only the { log: true } form: an extension logs, it doesn't print.
+  createOutputChannel(name: string, options?: string | { log: true }): LogOutputChannel {
+    if (typeof options !== 'object') {
+      missing('createOutputChannel without { log: true }');
+    }
+    const channel = new LogOutputChannel(name);
+    outputChannels.push(channel);
+    return channel;
   },
 } satisfies Partial<typeof vscode.window>;
 
@@ -60,8 +135,9 @@ export const env = {
   appName: 'Visual Studio Code',
 } satisfies Partial<typeof vscode.env>;
 
-/** Forgets every registration and message, for the next test. */
+/** Forgets every registration, message and channel, for the next test. */
 export function reset(): void {
   registry.clear();
   shownMessages.length = 0;
+  outputChannels.length = 0;
 }

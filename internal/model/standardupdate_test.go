@@ -33,6 +33,12 @@ func TestNextStandardStep(t *testing.T) {
 		}
 		return f
 	}
+	// planned is following, of an update planned from main at base.
+	planned := func(base string, f StandardUpdateFacts) StandardUpdateFacts {
+		f = following(f)
+		f.Update.Base = base
+		return f
+	}
 
 	tests := []struct {
 		name  string
@@ -144,6 +150,16 @@ func TestNextStandardStep(t *testing.T) {
 				" to drop it"},
 		{name: "errored checks are reported",
 			facts: following(StandardUpdateFacts{Checks: "error"}), want: StandardChecksFailed, message: "CI is error"},
+		{name: "#1447: a failed update reads main's head",
+			facts: planned("m1", StandardUpdateFacts{Checks: "failure"}), want: StandardReadMain},
+		{name: "#1447: a failed update stays reported while main stays put",
+			facts: planned("m1", StandardUpdateFacts{Checks: "failure", ChecksURL: "http://ci/1", Main: "m1"}),
+			want:  StandardChecksFailed, message: "CI is failure on http://ci/1"},
+		{name: "#1447: a failed update is dropped once main moved",
+			facts: planned("m1", StandardUpdateFacts{Checks: "error", Main: "m2"}), want: StandardDrop,
+			message: "Closed a Standard update whose CI failed, to plan it again from main's new head"},
+		{name: "#1447: a pending update doesn't read main",
+			facts: planned("m1", StandardUpdateFacts{Checks: "pending"}), want: StandardWaitForChecks},
 
 		{name: "the changed paths are read next",
 			facts: following(StandardUpdateFacts{Checks: "success", Contexts: green}), want: StandardReadFiles},

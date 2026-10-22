@@ -493,6 +493,43 @@ var _ = Describe("Container Standard update", func() {
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
 	})
 
+	It("plans an update whose CI failed again once main moves (#1447)", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		bumpStandard(ns, "v1.1.0")
+		first := openedUpdate(ns, "v1.1.0")
+		Expect(first.Base).To(Equal(gitFake.mainHead(ns, "orders-api").Hash))
+
+		gitFake.setChecks(ns, "orders-api", first.Commit, "failure")
+		Eventually(func(g Gomega) {
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1alpha1.ReasonChecksFailed))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).
+				To(PointTo(HaveField("PullRequest", Equal(first.PullRequest))), "main stays put")
+		}).WithTimeout(2 * time.Second).Should(Succeed())
+
+		// The Crew's fix lands on main in its own pull request.
+		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		fixed := gitFake.mainHead(ns, "orders-api").Hash
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).
+				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
+		}).Should(Succeed())
+		second := openedUpdate(ns, "v1.1.0")
+		Expect(second.Base).To(Equal(fixed))
+		Expect(second.Commit).NotTo(Equal(first.Commit))
+		Expect(second.Paths).To(Equal(first.Paths))
+		Expect(gitFake.pullRequests(ns, "orders-api")).To(ContainElement(MatchFields(IgnoreExtras, Fields{
+			"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"), "Merged": BeFalse()})))
+		Expect(standardCondition(Default, getContainer(Default, ns)).Reason).NotTo(Equal(c4v1alpha1.ReasonChecksFailed))
+
+		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		eventuallyAt(ns, "v1.1.0")
+		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
+		Expect(mainFile(ns, "src/app.py")).To(Equal("fixed = True\n"))
+	})
+
 	It("refuses an update someone else pushed to", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)

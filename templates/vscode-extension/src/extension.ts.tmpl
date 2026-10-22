@@ -5,15 +5,26 @@ import { greeting } from './greeting';
 /** The say-hello command, as contributed in package.json. */
 export const SAY_HELLO_COMMAND = '{{ .Container }}.sayHello';
 
+/** The name of the extension's log, in the Output panel. */
+export const LOG_NAME = {{ ts (or .DisplayName .Container) }};
+
 /**
  * Activates the extension. VS Code calls it once, on the first activation
  * event. Everything it registers goes into `context.subscriptions`, so VS Code
  * disposes it when the extension deactivates; no deactivate() is needed.
  */
 export function activate(context: Pick<vscode.ExtensionContext, 'subscriptions'>): void {
+  const log = vscode.window.createOutputChannel(LOG_NAME, { log: true });
   context.subscriptions.push(
+    log,
     vscode.commands.registerCommand(SAY_HELLO_COMMAND, async () => {
-      await vscode.window.showInformationMessage(greeting(vscode.env.appName));
+      log.info(`${SAY_HELLO_COMMAND} runs`);
+      try {
+        await vscode.window.showInformationMessage(greeting(vscode.env.appName));
+      } catch (error) {
+        log.error(`${SAY_HELLO_COMMAND} failed`, error);
+        throw error;
+      }
     }),
   );
 }

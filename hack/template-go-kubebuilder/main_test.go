@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -92,9 +93,7 @@ var data = map[string]any{
 // with returns data with the given keys changed.
 func with(kv ...any) map[string]any {
 	d := map[string]any{}
-	for k, v := range data {
-		d[k] = v
-	}
+	maps.Copy(d, data)
 	for i := 0; i < len(kv); i += 2 {
 		d[kv[i].(string)] = kv[i+1]
 	}
@@ -317,8 +316,9 @@ func TestReadme(t *testing.T) {
 func TestFrameworkFilesWritesTheFactorysReadme(t *testing.T) {
 	dir := t.TempDir()
 	for p, s := range map[string]string{
-		"go.mod":                            "module " + placeholderRepo + "\n\ngo 1.25.3\n",
-		"README.md":                         "# " + placeholderContainer + "\n// TODO(user): Add simple overview of use/purpose\n",
+		"go.mod": "module " + placeholderRepo + "\n\ngo 1.25.3\n",
+		"README.md": "# " + placeholderContainer +
+			"\n// TODO(user): Add simple overview of use/purpose\n",
 		"config/manager/kustomization.yaml": "resources:\n- manager.yaml\n",
 		".gitignore":                        "bin/\n",
 	} {
