@@ -388,7 +388,7 @@ func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name string) (s
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(secret.Data[publishTokenKey])), nil
+	return strings.TrimSpace(string(secret.Data[model.GitHubSecretToken])), nil
 }
 
 // recordRequests sets status.requests to all, oldest first, keeping what a

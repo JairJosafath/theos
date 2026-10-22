@@ -19,13 +19,12 @@ import (
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
-// tokenKey is the key of the token in the target's Secret.
-const tokenKey = "token"
-
-// Releases builds the release client of a GitHub repository:
-// gitprovider.Client on github.com, a fake GitHub in tests.
+// Releases builds the release client of a GitHub repository, and the token
+// a target's Secret gives: gitprovider.Client on github.com, a fake GitHub in
+// tests.
 type Releases interface {
 	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
+	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
 }
 
 // Deployer ships releases to GitHub. It is the tool itself, so Ship takes one
@@ -44,14 +43,20 @@ func New(releases Releases) *Deployer {
 	return &Deployer{releases: releases}
 }
 
-func (d *Deployer) client(t ports.Target) (gitprovider.ReleaseTarget, error) {
+// client is the target's repository, with the Secret's token or its GitHub
+// App's installation token. A mint GitHub refuses is CredentialRefused.
+func (d *Deployer) client(ctx context.Context, t ports.Target) (gitprovider.ReleaseTarget, error) {
+	token, err := d.releases.GitHubToken(ctx, "", t.Secret)
+	if err != nil {
+		return nil, portError(err)
+	}
 	return d.releases.GitHubReleases(gitprovider.GitHubConfig{Repository: t.Settings[model.GitHubSettingRepository],
-		Token: strings.TrimSpace(string(t.Secret[tokenKey]))})
+		Token: token})
 }
 
 // Check reads the repository with the target's token.
 func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
-	c, err := d.client(t)
+	c, err := d.client(ctx, t)
 	if err != nil {
 		return err
 	}
@@ -76,7 +81,7 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	if problem != "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
 	}
-	c, err := d.client(t)
+	c, err := d.client(ctx, t)
 	if err != nil {
 		return err
 	}
@@ -359,7 +364,7 @@ func (e *FileError) Unwrap() error { return e.Err }
 // another of the app's releases holds it, which Ship moves back; with no
 // release of version, the app's newest.
 func (d *Deployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
-	c, err := d.client(t)
+	c, err := d.client(ctx, t)
 	if err != nil {
 		return ports.DeployState{}, err
 	}

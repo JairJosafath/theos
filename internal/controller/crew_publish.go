@@ -15,7 +15,6 @@ import (
 	"io"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,9 +52,6 @@ const (
 	publishFailed     = "Failed"
 )
 
-// publishTokenKey is the key of the token in the Secret publishReleases names.
-const publishTokenKey = "token"
-
 // publishTimeout bounds one publishing pass: an upload streams a whole file.
 const publishTimeout = 30 * time.Minute
 
@@ -63,6 +59,9 @@ const publishTimeout = 30 * time.Minute
 // releases to.
 type ReleaseTargets interface {
 	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
+	// GitHubToken is the token a Secret's data gives: its token, or its
+	// GitHub App's installation token.
+	GitHubToken(ctx context.Context, apiURL string, secret map[string][]byte) (string, error)
 }
 
 // publishRelease takes the next steps of publishing the Crew's last release
@@ -103,11 +102,17 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		return
 	}
 	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret)
-	if err != nil {
+	facts.SecretFound = token != ""
+	_, refused := errors.AsType[*gitprovider.ReleaseError](err)
+	switch {
+	case refused:
+		// GitHub refused to mint the GitHub App's token: the credential is
+		// there, and refused.
+		facts.SecretFound, facts.Failure = true, publishFailure(err)
+	case err != nil:
 		// Not NotFound: a fact, so the Crew says why publishing stopped.
 		facts.SecretError = err.Error()
 	}
-	facts.SecretFound = token != ""
 	if facts.Source != nil {
 		if facts.Overlaps, err = r.sourceOverlaps(ctx, crew); err != nil {
 			log.Error(err, "Failed to list the Crews publishing source")
@@ -355,7 +360,9 @@ func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1alpha1.Crew
 }
 
 // publishToken reads the token from the Secret named name, live, so a Secret
-// created after a failure is used on the next poll; "" when there is none.
+// created after a failure is used on the next poll: its token, or its GitHub
+// App's installation token; "" when there is neither. A mint GitHub refuses is
+// a *gitprovider.ReleaseError.
 func (r *CrewReconciler) publishToken(ctx context.Context, ns, name string) (string, error) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
@@ -365,7 +372,7 @@ func (r *CrewReconciler) publishToken(ctx context.Context, ns, name string) (str
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(secret.Data[publishTokenKey])), nil
+	return r.releaseTargets().GitHubToken(ctx, "", secret.Data)
 }
 
 // sourceRelease is the Gitea release as the rule reads it.
@@ -471,7 +478,7 @@ func (p *publishPass) ship(ctx context.Context, step model.PublishStep) (bool, e
 		}
 	}
 	target := ports.Target{Name: p.crew.Namespace + "/" + p.crew.Name, Member: model.DeployMemberGitHub,
-		Settings: settings, Secret: map[string][]byte{publishTokenKey: []byte(p.token)}}
+		Settings: settings, Secret: map[string][]byte{model.GitHubSecretToken: []byte(p.token)}}
 	shipment := ports.Shipment{App: p.crew.Namespace + "/" + p.facts.Container, DisplayName: p.facts.App,
 		Version: p.tag, Commit: model.ShipCommit(*p.facts), Notes: p.gitea.Body}
 	shipment.Files = releaseFiles(p.provider, p.repo, p.gitea.Assets)
