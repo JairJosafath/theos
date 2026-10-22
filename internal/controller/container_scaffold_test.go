@@ -463,6 +463,25 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 	})
 
+	It("scaffolds npm packages under the GitProvider's spec.packages.npm.scope (#1728)", func() {
+		ns := newProjectNamespace()
+		gitFake.addTemplate(templatesURL+"scoped-compute", "v1.0.0", scaffold.Tree{
+			"package.json.tmpl": {Data: []byte("{\n  \"name\": \"{{ .NpmScope }}/{{ .Container }}\"\n}\n")},
+		})
+		createFactory(ns)
+		setNpmScope(ns, "@acme")
+		mustCreate(&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "scoped"),
+			Spec: newCatalogSpec(templatesURL+"scoped-compute", "v1.0.0", c4v1alpha1.ContainerTypeService)})
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "scoped"}
+		mustCreate(newSystem(ns, "webshop-core"), container)
+
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("package.json",
+			HaveField("Data", BeEquivalentTo("{\n  \"name\": \"@acme/orders-api\"\n}\n"))),
+			"the scaffold's provider Config carries the GitProvider's packages")
+	})
+
 	It("fails when two layers write the same path, naming it", func() {
 		ns := newProjectNamespace()
 		gitFake.addTemplate(templatesURL+"clashing-compute", "v1.0.0", scaffold.Tree{

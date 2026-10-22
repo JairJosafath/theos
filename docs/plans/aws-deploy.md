@@ -74,7 +74,9 @@ with its image. No test uses an AWS account.
 
 2. **The release carries the cloud assembly, flat.** `aws-standard` gets a
    `dist` target, and `gitea-release` gains the AWS types (`function`,
-   `service`, `static-site`), so an AWS Container ships its release through
+   `service`, `static-site`; `worker` and `job` since #1773, so the
+   `aws-queue-ts`, `aws-event-ts` and `aws-schedule-ts` Containers ship one
+   too), so an AWS Container ships its release through
    the Deployment it already could have picked; the `.gitea/workflows/
    release.yaml` path stays `gitea-release`'s, so no two layers write it.
    `make dist VERSION=<tag>` synthesizes both tiers and writes to `dist/`:

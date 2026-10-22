@@ -138,9 +138,9 @@ func (e *SelfDeployError) Error() string {
 // itself and the Container names a Compute, or a Deployment other than
 // DeploymentGiteaRelease, each "" when unset. And it refuses
 // DeploymentGiteaRelease for a Container of type typ that is a function,
-// service or static-site when its Framework doesn't deploy itself: only a
-// self-deploying Framework's make dist writes a release that ships one
-// (#1607).
+// service, static-site, worker or job when its Framework doesn't deploy
+// itself: only a self-deploying Framework's make dist writes a release that
+// ships one (#1607, #1773).
 func CheckDeploysItself(framework CatalogEntry, typ, compute, deployment string) error {
 	if !framework.DeploysItself {
 		if deployment == DeploymentGiteaRelease && slices.Contains(releasedByCloudAssembly, typ) {
@@ -163,8 +163,9 @@ func CheckDeploysItself(framework CatalogEntry, typ, compute, deployment string)
 }
 
 // releasedByCloudAssembly are the Container types DeploymentGiteaRelease
-// supports only for a Framework that deploys itself.
-var releasedByCloudAssembly = []string{TypeFunction, TypeService, TypeStaticSite}
+// supports only for a Framework that deploys itself: the AWS types (#1607;
+// worker and job since #1773).
+var releasedByCloudAssembly = []string{TypeFunction, TypeService, TypeStaticSite, TypeWorker, TypeJob}
 
 // Element kinds a Relationship can connect, mirroring the API.
 const (

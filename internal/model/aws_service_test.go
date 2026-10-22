@@ -106,6 +106,8 @@ func TestCheckDeploysItself(t *testing.T) {
 	fastapi := CatalogEntry{Side: SideFramework, Name: "python-fastapi"}
 	reactVite := CatalogEntry{Side: SideFramework, Name: "react-vite"}
 	pythonCLI := CatalogEntry{Side: SideFramework, Name: "python-cli"}
+	queue := CatalogEntry{Side: SideFramework, Name: "aws-queue-ts", DeploysItself: true}
+	schedule := CatalogEntry{Side: SideFramework, Name: "aws-schedule-ts", DeploysItself: true}
 	for name, c := range map[string]struct {
 		framework                CatalogEntry
 		typ, compute, deployment string
@@ -121,7 +123,13 @@ func TestCheckDeploysItself(t *testing.T) {
 			"gitea-release ships a service only for a Framework that deploys itself, its cloud assembly; python-fastapi doesn't"},
 		"gitea-release for a static site that doesn't deploy itself (#1607)": {reactVite, "static-site", "", "gitea-release",
 			"gitea-release ships a static-site only for a Framework that deploys itself"},
-		"gitea-release for a CLI": {pythonCLI, "cli", "", "gitea-release", ""},
+		"gitea-release for a CLI":                 {pythonCLI, "cli", "", "gitea-release", ""},
+		"gitea-release for an AWS worker (#1773)": {queue, "worker", "", "gitea-release", ""},
+		"gitea-release for an AWS job (#1773)":    {schedule, "job", "", "gitea-release", ""},
+		"gitea-release for a worker that doesn't deploy itself (#1773)": {pythonCLI, "worker", "small", "gitea-release",
+			"gitea-release ships a worker only for a Framework that deploys itself, its cloud assembly; python-cli doesn't"},
+		"gitea-release for a job that doesn't deploy itself (#1773)": {pythonCLI, "job", "small", "gitea-release",
+			"gitea-release ships a job only for a Framework that deploys itself, its cloud assembly; python-cli doesn't"},
 		"both": {fargate, "service", "small", "k8s-manifests",
 			"aws-fargate-ts deploys itself: its template's app (on AWS, its CDK app) is the Container's deployment, " +
 				"so it takes no Compute and no Deployment but gitea-release, which ships its cloud assembly; remove computeRef small and deploymentRef k8s-manifests"},

@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it once, at the scaffold, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092, decided, not built). |
+| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092; the planner naming one is not built yet). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -80,6 +80,18 @@ status:
   repositoryURL: http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api
   scaffoldedFrom: [python-fastapi@v1.3.0, python-standard@v1.0.0, small@v1.0.1, k8s-manifests@v1.2.0, postgres@v1.1.0]
 ```
+
+A Container names a Bundle instead of its four sides: `bundleRef: {name:
+python-service}` in place of `frameworkRef`, `standardRef`, `computeRef` and
+`deploymentRef` (a CEL rule asks for exactly one of `bundleRef` and
+`frameworkRef`, refuses a side beside `bundleRef`, and keeps `bundleRef`
+immutable). Until the scaffold every reconcile expands the Bundle afresh and
+writes the entry names to `status.bundle` (`name`, `framework`, `standard`,
+`compute`, `deployment`); from the scaffold on the operator reads
+`status.bundle` and never the Bundle again, so a Bundle changed later changes
+no scaffolded Container. A missing Bundle keeps the Container `Pending`,
+reason `NotFound`; the checks below run on the expanded entries, and their
+message starts with `bundle <name>: `.
 
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
@@ -716,7 +728,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy.
+  `registryPassword`, and `kustomize.images` names the copy. The copy
+  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
+  plain HTTP). It resolves the destination tag first: a tag already
+  naming the digest is left alone and nothing is written, so a registry
+  with immutable tags takes a retried Ship; a tag naming another image
+  fails the deploy with that reason, and is not retried as transient.
+  `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
+  `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
+  (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
+  one segment under the namespace) (#1770).
 - **AWS targets** (#1071, [plans/aws-deploy.md](plans/aws-deploy.md)): a
   `cloudFormation` target names a region and, as a guard, an account. CI
   synthesizes the CDK app and the release carries the cloud assembly
