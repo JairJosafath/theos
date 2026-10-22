@@ -41,7 +41,7 @@ draws the story on top.
 
 ## The model
 
-Eighteen namespaced kinds in `c4.factory.io/v1alpha1`. Every child names its
+Nineteen namespaced kinds in `c4.factory.io/v1alpha1`. Every child names its
 parent in `spec`; the operator turns that into the ownerReference, so deletion
 follows the tree. `metadata.name` is the stable id; `displayName` and
 `description` are on every story kind.
@@ -60,6 +60,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Brief | nothing | none | An app idea in plain words and its prompts, which a planner Agent turns into the model |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Standard, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template and the Container types it supports |
+| Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
 

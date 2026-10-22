@@ -93,7 +93,7 @@ type ProjectReconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;agents,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;bundles;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.
 func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -165,6 +165,7 @@ func (r *ProjectReconciler) adoptChildren(ctx context.Context, project *c4v1alph
 		&c4v1alpha1.ComputeList{},
 		&c4v1alpha1.DeploymentList{},
 		&c4v1alpha1.ConnectorList{},
+		&c4v1alpha1.BundleList{},
 		&c4v1alpha1.AgentList{},
 	}
 	labels := projectLabels(project.Namespace)
@@ -276,6 +277,7 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Compute{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Deployment{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Connector{}, toProject, createOrDelete()).
+		Watches(&c4v1alpha1.Bundle{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Standard{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Agent{}, toProject, createOrDelete()).
 		Watches(&c4v1alpha1.Container{}, toProject, containerPhaseChanges()).
