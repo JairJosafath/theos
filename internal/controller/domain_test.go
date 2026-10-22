@@ -12,6 +12,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 )
 
@@ -77,8 +79,11 @@ var _ = Describe("SoftwareSystem domainRefs", func() {
 
 		provider.Spec.DomainRefs = nil
 		mustCreate(provider)
+		// A patch sends no resourceVersion, so the Project adopting the
+		// system meanwhile cannot fail it with a conflict.
+		orig := provider.DeepCopy()
 		provider.Spec.DomainRefs = []string{"payments"}
-		Expect(k8sClient.Update(ctx, provider)).To(MatchError(ContainSubstring(
+		Expect(k8sClient.Patch(ctx, provider, client.MergeFrom(orig))).To(MatchError(ContainSubstring(
 			"an External system names no domainRefs")))
 	})
 })
