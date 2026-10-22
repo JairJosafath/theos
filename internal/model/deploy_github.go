@@ -160,9 +160,31 @@ func GitHubCredential(data map[string][]byte) (token string, app *GitHubApp, ok 
 		PrivateKey:     data[GitHubSecretPrivateKey]}, true
 }
 
-// GitHubSecretPackagesToken is the key of a github target's Secret holding
-// the token that writes its image to GitHub's container registry.
-const GitHubSecretPackagesToken = "packagesToken"
+// GitHubImage is the repository a Container's image goes to at a github
+// target's registry: owner/name/<container> of the target's repository,
+// lower-cased as GHCR wants it, or owner/name alone when the target's
+// tagPrefix is "", which gives the repository to one Container
+// (docs/plans/github-deploy.md, Decision 5).
+func GitHubImage(repository, container, tagPrefix string) string {
+	if tagPrefix == "" {
+		return strings.ToLower(repository)
+	}
+	return strings.ToLower(repository + "/" + container)
+}
+
+// GitHubImageNotes are a release's notes with a line naming its image,
+// host/repository@digest, as the github target copied it; notes alone when
+// image is "".
+func GitHubImageNotes(notes, image string) string {
+	if image == "" {
+		return notes
+	}
+	line := "Image: `" + image + "`"
+	if strings.TrimSpace(notes) == "" {
+		return line + "\n"
+	}
+	return strings.TrimRight(notes, "\n") + "\n\n" + line + "\n"
+}
 
 // GitHubNothingToPublish is the ArtifactMissing message of a release a
 // github target has nothing of to ship.

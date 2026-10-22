@@ -82,6 +82,10 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
+	// ghcrFake stands in for GHCR, where the github member copies a
+	// release's image; registryFake is the owner's registry a spec pushes
+	// that image to first (#1600).
+	ghcrFake, registryFake *fakeRegistry
 	// deployFake is the Deployer of every DeployTarget's member, but for a
 	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
@@ -304,6 +308,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
+	ghcrFake, registryFake = newFakeRegistry(), newFakeRegistry()
+	DeferCleanup(ghcrFake.server.Close)
+	DeferCleanup(registryFake.server.Close)
 	deployFake = &fake.Deployer{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
@@ -434,7 +441,7 @@ type routedDeployer struct{}
 
 func (routedDeployer) of(t ports.Target) ports.Deployer {
 	if githubFake.hasRepository(t.Settings[model.GitHubSettingRepository]) {
-		return githubdeploy.New(githubFake)
+		return githubdeploy.New(githubFake, githubdeploy.WithImageRegistry(ghcrFake.host))
 	}
 	return deployFake
 }

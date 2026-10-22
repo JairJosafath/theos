@@ -90,6 +90,15 @@ const (
 	GitHubSettingSourceTagPrefix = "source.tagPrefix"
 )
 
+// GitHubSecretPackagesToken is the optional key of a github target's Secret
+// holding a classic token with write:packages and read:packages: GHCR takes
+// neither a fine-grained token nor an installation token. With it the
+// release's image is copied to GHCR too; without it no image is copied.
+const GitHubSecretPackagesToken = "packagesToken" //nolint:gosec // a key name, not a credential
+
+// GHCRHost is GitHub's container registry, where a github target's images go.
+const GHCRHost = "ghcr.io"
+
 // Settings of a cloudFormation target, as its adapter reads them.
 const (
 	// CloudFormationSettingRegion is the AWS region the stacks ship to.

@@ -187,6 +187,12 @@ type ContainerDeployStatus struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 
+	// image is the app's image as the target holds it, host/repository@digest,
+	// when the target copies the release's image: a github target with a
+	// packagesToken copies it to GHCR.
+	// +optional
+	Image string `json:"image,omitempty"`
+
 	// reason says why the entry is in its phase, in CamelCase.
 	// +optional
 	Reason string `json:"reason,omitempty"`

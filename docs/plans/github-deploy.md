@@ -175,6 +175,11 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
    The copy is a step of the ship sequence before publish, so a published
    release always has its image. The DeployTarget page shows which keys the
    Secret has (`token` or the App's, `packagesToken`), never a value.
+   Landed in #1600: `model.GitHubImage` names the image, the adapter's
+   `WithImageRegistry` points tests at an in-memory registry standing in
+   for GHCR, and `State` resolves the tag to fill the image. Until #1599
+   says which types ship files, a release with an image and no files still
+   ships; that is the smallest piece of decision 1 this step needs.
 
 6. **A GitHub App instead of a personal token.** The Secret holds either
    `token` or the three keys `appId`, `installationId` and `privateKey` (the

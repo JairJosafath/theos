@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -22,7 +23,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/oci"
+	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
@@ -359,6 +363,52 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(published(shared)).To(ConsistOf("orders-api-v0.1.0", "orders-cli-v0.1.0"))
 			g.Expect(published(bare)).To(ConsistOf("v0.1.0"))
 		}, deployWait).Should(Succeed())
+	})
+
+	It("copies the published image to GHCR by digest and reports it, and copies nothing without a packagesToken (#1600)", func() {
+		ns := newProjectNamespace()
+		deployingContainer(ns)
+		archive, digest := ocitest.TwoPlatforms(GinkgoT())
+		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
+			bytes.NewReader(archive))
+		Expect(err).NotTo(HaveOccurred())
+		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
+		withImage, without := "Acme/"+ns+"-Shop", "acme/"+ns+"-plain"
+		for name, repository := range map[string]string{"oss": withImage, "plain": without} {
+			githubFake.addRepository(repository, "t0ken")
+			data := map[string]string{"token": "t0ken"}
+			if name == "oss" {
+				data[model.GitHubSecretPackagesToken] = "pkg-" + strings.Repeat("x", 8)
+			}
+			dt := newDeployTarget(ns, name, name+"-github")
+			dt.Spec.GitHub.Repository = repository
+			mustCreate(newDeploySecret(ns, name+"-github", data), dt)
+			deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
+		}
+		shipRelease(ns, "v0.1.0", true)
+		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "oss"}, c4v1alpha1.ContainerDeploy{Target: "plain"})
+
+		ghcrRepo := strings.ToLower(withImage) + "/orders-api"
+		want := ghcrFake.host + "/" + ghcrRepo + "@" + digest
+		Eventually(func(g Gomega) {
+			for _, name := range []string{"oss", "plain"} {
+				d, cond := deployOfContainer(g, ns, "orders-api", name)
+				g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed), d.Message)
+				g.Expect(cond.Reason).To(Equal(model.DeployDeployed), cond.Message)
+			}
+			d, _ := deployOfContainer(g, ns, "orders-api", "oss")
+			g.Expect(d.Image).To(Equal(want))
+			d, _ = deployOfContainer(g, ns, "orders-api", "plain")
+			g.Expect(d.Image).To(BeEmpty())
+		}, deployWait).Should(Succeed())
+		got, err := oci.Resolve(ctx, oci.Registry{Host: ghcrFake.host}, ghcrRepo, "v0.1.0")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(digest))
+		rels := githubFake.releases(withImage)
+		Expect(rels).To(HaveLen(1))
+		Expect(rels[0].Body).To(ContainSubstring("Image: `" + want + "`"))
+		Expect(gitFake.imageCopy(ghcrFake.host + "/" + strings.ToLower(without) + "/orders-api:v0.1.0")).To(BeEmpty())
 	})
 
 	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
