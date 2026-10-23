@@ -35,7 +35,7 @@ draws the story on top.
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
 | Container | An application with its own new repository; no monorepos, no adopted repositories. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/catalog-bundles.md](plans/catalog-bundles.md), #1092). |
+| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -680,7 +680,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 - **GitHub targets** (#1070, [plans/done/github-deploy.md](plans/done/github-deploy.md)):
   a `github` target is how a Container is published as open source, for
   every type. It ships three things of each release, each by its own rule
-  (`model.GitHubShipment`): the app's source at the tag, when the member's
+  (`model.ReleaseShipment`): the app's source at the tag, when the member's
   `source` is set; a GitHub release of the tag, always, with its notes and
   the files when the release has them, its image archive (`*.oci.tar`) left
   out; and the release's image on GHCR, when the Container publishes one
@@ -763,12 +763,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy. The copy
-  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
-  plain HTTP). It resolves the destination tag first: a tag already
-  naming the digest is left alone and nothing is written, so a registry
-  with immutable tags takes a retried Ship; a tag naming another image
-  fails the deploy with that reason, and is not retried as transient.
+  `registryPassword`, a credential that reads tags as well as pushes, and
+  `kustomize.images` names the copy. The copy speaks HTTPS unless
+  `imageRegistryInsecure` is set (a lab registry over plain HTTP). It
+  resolves the destination tag first: a tag already naming the digest is
+  left alone and nothing is written, so a registry with immutable tags
+  takes a retried Ship; a tag naming another image fails the deploy with
+  that reason, and is not retried as transient. A credential that may
+  push but not read (a token scoped to push alone) fails the deploy as a
+  refused credential naming the read it lacks, and writes nothing: a
+  blind write could move a tag (#1877).
   `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
   `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
   (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
@@ -782,7 +786,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   bootstrapping the environment when the credential may (else *Needs you*
   says the command). State comes from the stack's status and its newest
   event, the URL from the `EntryPoint` output. The factory never deletes a
-  stack. Fargate's image comes by digest from the Registry (#1069).
+  stack. Fargate's image comes by digest from the Registry (#1069),
+  copied into the bootstrap's ECR repository as its image-publishing
+  role, which reads tags as well as pushes (the copy resolves its tag
+  first; a role without `ecr:BatchGetImage` refuses the credential, #1877).
 
 ## Distribution and issues
 
@@ -840,6 +847,13 @@ with an object may change, as the release notes say.
   `status.storedVersions` holds the storage version alone, under *Removed*
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
+- **The operator rewrites what etcd holds at an older version.** `v1beta1`
+  is the storage version of every kind. At start, once the conversion
+  webhook serves, the leader lists each kind whose CRD's `storedVersions`
+  names another version, patches every object back at the storage version,
+  and brings that CRD's `storedVersions` down to it; a start after the pass
+  does nothing, and a pass that fails is tried again until it succeeds,
+  with the operator serving meanwhile.
 
 `make check` guards what a schema shows: `test/compat` compares each served
 version of the CRDs with the last release's, in `test/compat/baseline/`

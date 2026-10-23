@@ -9,18 +9,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.22.0
   name: frameworks.c4.factory.io
 spec:
-  {{- if .Values.webhook.enabled }}
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: {{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-          namespace: {{ .Release.Namespace }}
-          path: /convert
-      conversionReviewVersions:
-      - v1
-  {{- end }}
+    strategy: None
   group: c4.factory.io
   names:
     categories:
@@ -144,7 +134,7 @@ spec:
         - spec
         type: object
     served: true
-    storage: true
+    storage: false
     subresources: {}
   - additionalPrinterColumns:
     - jsonPath: .spec.displayName
@@ -258,6 +248,6 @@ spec:
         - spec
         type: object
     served: true
-    storage: false
+    storage: true
     subresources: {}
 {{- end }}

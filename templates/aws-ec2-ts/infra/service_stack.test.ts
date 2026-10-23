@@ -1,8 +1,11 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { copyVaultName } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import {
   bootCommands,
   INSTALL_COMMAND,
@@ -19,18 +22,42 @@ const OPERATIONS: Operations = {
   alerts: { email: '' },
 };
 
-/** The stack's template for `tier`, with `operations` changed as given. */
+/**
+ * The stack's template for `tier`, with `operations` changed as given, and
+ * `dataStores` in place of the Connectors' (none, unless a test names them).
+ */
 function synth(
   tier: Tier,
   backups: Partial<Operations['backups']> = {},
   alerts: Partial<Operations['alerts']> = {},
+  dataStores: readonly (readonly [string, Connect])[] = [],
 ): Template {
   const operations: Operations = {
     ...OPERATIONS,
     backups: { ...OPERATIONS.backups, ...backups },
     alerts: { ...OPERATIONS.alerts, ...alerts },
   };
-  return Template.fromStack(new ServiceStack(new App(), 'test', { tier, operations }));
+  return Template.fromStack(new ServiceStack(new App(), 'test', { tier, operations, dataStores }));
+}
+
+/** The IAM actions the policies of the instance role in `template` allow, sorted. */
+function instanceRoleActions(template: Template): string[] {
+  const [roleId, ...others] = Object.keys(
+    template.findResources('AWS::IAM::Role', {
+      Properties: {
+        AssumeRolePolicyDocument: Match.objectLike({
+          Statement: [Match.objectLike({ Principal: { Service: 'ec2.amazonaws.com' } })],
+        }),
+      },
+    }),
+  );
+  expect(others).toEqual([]);
+  const policies = template.findResources('AWS::IAM::Policy', {
+    Properties: { Roles: [{ Ref: roleId }] },
+  });
+  return Object.values(policies)
+    .flatMap((policy: unknown) => JSON.stringify(policy).match(/"[a-z0-9]+:[A-Za-z]+"/g) ?? [])
+    .sort();
 }
 
 /** The one resource of `type` in `template`, with its logical id. */
@@ -410,6 +437,49 @@ describe('ServiceStack', () => {
         },
       },
     );
+  });
+});
+
+describe('ServiceStack data stores', () => {
+  it("connects the instances to each Connector's data store and alarms on its table", () => {
+    const connected: string[] = [];
+    const connect: Connect = (scope, user, rules) => {
+      const store = new Table(scope, 'Store', {
+        partitionKey: { name: 'pk', type: AttributeType.STRING },
+        deletionProtection: rules.keepData,
+      });
+      store.grant(user, 'dynamodb:Query');
+      user.addEnvironment('STORE_TABLE_NAME', store.tableName);
+      connected.push(scope.node.id);
+      return store;
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    // Connected once, in the stack; the instance role is what the table
+    // grants to, and the server's unit is what gets the table's name.
+    expect(connected).toEqual(['test']);
+    expect(instanceRoleActions(template)).toContain('"dynamodb:Query"');
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    const storeId = tables.find((id) => id.startsWith('Store'));
+    const [, launchTemplate] = onlyOf(template, 'AWS::EC2::LaunchTemplate');
+    const userData = JSON.stringify(launchTemplate);
+    expect(userData).toContain('Environment=STORE_TABLE_NAME=');
+    expect(userData).toContain(`{"Ref":"${String(storeId)}"}`);
+    template.resourceCountIs('AWS::DynamoDB::Table', 2);
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 2 + 3 * 2);
+    // Its table is data: backed up with the stack's own (#1267).
+    const backedUp = ['Items', 'Store'].map((name) => tables.find((id) => id.startsWith(name)));
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
+      }),
+    });
+  });
+
+  it('connects the data stores of the rendered infra/connectors.ts by default', () => {
+    const template = Template.fromStack(
+      new ServiceStack(new App(), 'test', { tier: 'production', operations: OPERATIONS }),
+    );
+    template.resourceCountIs('AWS::DynamoDB::Table', 1 + DATA_STORES.length);
   });
 });
 

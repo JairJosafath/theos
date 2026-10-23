@@ -126,19 +126,40 @@ to every address.
 - ipBlock:
     cidr: {{ $cidr }}
 {{- else if contains "/" $entry }}
+{{- /* The namespace and labels pass exactly the operator's checks on
+--cluster-dns (internal/controller/cluster_dns.go: IsDNS1123Label,
+IsQualifiedName, IsValidLabelValue), length limits included, so what the
+chart renders the manager starts with (#1763). */}}
 {{- $parts := splitn "/" 2 $entry }}
-{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $parts._0) }}
-{{- fail (printf "clusterDNS entry %q: namespace %q: want a DNS label" $entry $parts._0) }}
+{{- $dnsLabel := "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" }}
+{{- if or (not (regexMatch $dnsLabel $parts._0)) (gt (len $parts._0) 63) }}
+{{- fail (printf "clusterDNS entry %q: namespace %q: want a DNS label: lowercase alphanumerics and -, starting and ending with an alphanumeric, at most 63 characters" $entry $parts._0) }}
 {{- end }}
 - namespaceSelector:
     matchLabels: {kubernetes.io/metadata.name: {{ $parts._0 | quote }}}
   podSelector:
     matchLabels:
+      {{- $labelName := "^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$" }}
+      {{- $subdomain := "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" }}
       {{- range splitList "," $parts._1 }}
-      {{- if not (regexMatch "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)?=[A-Za-z0-9._-]*$" .) }}
+      {{- if not (regexMatch "^[^=]+=[^=]*$" .) }}
       {{- fail (printf "clusterDNS entry %q: pod label %q: want key=value" $entry .) }}
       {{- end }}
       {{- $kv := splitn "=" 2 . }}
+      {{- $name := $kv._0 }}
+      {{- if contains "/" $name }}
+      {{- $kp := splitn "/" 2 $name }}
+      {{- if or (contains "/" $kp._1) (not (regexMatch $subdomain $kp._0)) (gt (len $kp._0) 253) }}
+      {{- fail (printf "clusterDNS entry %q: pod label key %q: want an optional prefix (a DNS subdomain, at most 253 characters), one slash, and a name" $entry $kv._0) }}
+      {{- end }}
+      {{- $name = $kp._1 }}
+      {{- end }}
+      {{- if or (not (regexMatch $labelName $name)) (gt (len $name) 63) }}
+      {{- fail (printf "clusterDNS entry %q: pod label key %q: the name must consist of alphanumerics, -, _ or ., start and end with an alphanumeric, and be at most 63 characters" $entry $kv._0) }}
+      {{- end }}
+      {{- if or (not (regexMatch "^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$" $kv._1)) (gt (len $kv._1) 63) }}
+      {{- fail (printf "clusterDNS entry %q: pod label value %q: must be empty or consist of alphanumerics, -, _ or ., start and end with an alphanumeric, and be at most 63 characters" $entry $kv._1) }}
+      {{- end }}
       {{ $kv._0 | quote }}: {{ $kv._1 | quote }}
       {{- end }}
 {{- else }}

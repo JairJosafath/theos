@@ -3,9 +3,11 @@ package controller
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -315,5 +317,40 @@ func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
 	}
 	if pred.Create(event.CreateEvent{Object: brief(c4v1alpha1.ReasonNotFound)}) {
 		t.Error("a creation passed; the spec predicate passes those")
+	}
+}
+
+// A round's apply split over two reconciles: the second one's create of an
+// object the first made meets AlreadyExists while the cache's list doesn't
+// show it yet. Status.Created still names the object (#1870).
+func TestCreatedNamesAnObjectAnEarlierReconcileMade(t *testing.T) {
+	scheme := briefScheme(t)
+	brief := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
+				opts ...client.GetOption) error {
+				return apierrors.NewNotFound(c4v1alpha1.GroupVersion.WithResource("persons").GroupResource(), key.Name)
+			},
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				return apierrors.NewAlreadyExists(c4v1alpha1.GroupVersion.WithResource("persons").GroupResource(),
+					obj.GetName())
+			},
+		}).Build()
+	r := &BriefReconciler{Client: c, Scheme: scheme}
+	ctx := context.Background()
+	run := &roundApply{brief: brief, orig: brief.DeepCopy(), round: "1"}
+
+	isNew, err := r.applyObject(ctx, run, model.PlanObject{Kind: model.KindPerson, Name: "rule-author"})
+	if err != nil || !isNew {
+		t.Fatalf("applyObject = %v, %v; want new and no error", isNew, err)
+	}
+	created, err := r.createdObjects(ctx, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := c4v1alpha1.BriefObject{Kind: model.KindPerson, Name: "rule-author"}
+	if !slices.Contains(created, want) {
+		t.Errorf("Status.Created = %v, want %v in it", created, want)
 	}
 }

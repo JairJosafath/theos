@@ -102,6 +102,23 @@ const GitHubSecretPackagesToken = "packagesToken" //nolint:gosec // a key name, 
 // GHCRHost is GitHub's container registry, where a github target's images go.
 const GHCRHost = "ghcr.io"
 
+// DeployMemberGitLab ships each release as a GitLab release on gitlab.com or
+// a self-hosted GitLab: its files to the project's generic package registry,
+// then the release linking them (docs/plans/gitlab-deploy.md).
+const DeployMemberGitLab = "gitlab"
+
+// Settings of a gitlab target, as its adapter reads them
+// (docs/plans/gitlab-deploy.md, Decision 1).
+const (
+	// GitLabSettingURL is a self-hosted GitLab's https://host[:port][/path],
+	// unset for gitlab.com (GitLabHostsOf).
+	GitLabSettingURL = "url"
+	// GitLabSettingProject is the project's full path, group/project or deeper.
+	GitLabSettingProject = "project"
+	// GitLabSettingTagPrefix goes before the version in the GitLab tag.
+	GitLabSettingTagPrefix = "tagPrefix"
+)
+
 // DeployMemberCloudFormation ships each release's CDK assembly as
 // CloudFormation stacks in an AWS account and region (docs/plans/aws-deploy.md).
 // A Container needs a Framework that deploys itself, whose synth is the

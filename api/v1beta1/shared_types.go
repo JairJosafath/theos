@@ -43,6 +43,14 @@ type ElementRef struct {
 	Name string `json:"name"`
 }
 
+// License is the SPDX id of a license the operator holds the text of, the
+// set a Project's or a Container's spec.license may name. The scaffold writes
+// that text as the repository's LICENSE (docs/design.md, "Write LICENSE");
+// the schema refuses any other id at admission. Adding one is its text under
+// internal/scaffold/licenses and an entry here.
+// +kubebuilder:validation:Enum=MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;MPL-2.0;GPL-2.0-only;GPL-3.0-only;LGPL-3.0-only;AGPL-3.0-only;Unlicense
+type License string
+
 // ContainerType is the fixed list of application shapes a Container can take.
 // +kubebuilder:validation:Enum=static-site;service;job;worker;mobile-app;cli;extension;operator;function
 type ContainerType string
