@@ -18,11 +18,11 @@ existing roles run the plan, plus one new one, the verifier watch.
 
 | Role | Who | Does |
 | --- | --- | --- |
-| Owner | the person | Runs [the one command](#the-one-command) once. After that, only a change to the fence waits for them (rule 5). |
+| Owner | the person | Runs [the one command](#the-one-command), `self-hosting/start.sh`, once. After that, only a change to the fence waits for them (rule 5). |
 | Planning session | the session that wrote this | Writes the plan with every decision made. Never executes it. |
-| Step-0 session | one headless session, started by the one command | Files the parent and the steps, readies the relay's steps, checks the relay runs, hands off, ends. |
+| Step-0 session | one headless session that `start.sh` starts | Files the parent and the steps, readies the relay's steps, checks the relay runs, hands off, ends. |
 | Relay workers and maintainer | `hack/relay.sh`, as today | Work steps 1 to 7, one per session. The maintainer closes what finishes, decides escalations and keeps main green. Step 8 retires them. |
-| Verifier watch | [`self-hosting/verifier-watch.sh`](self-hosting/verifier-watch.sh), a systemd user timer the one command installs | Hourly: starts one verifier session when a `Verifier:` step has every `Depends on` closed. Turns itself off when the parent is closed. |
+| Verifier watch | [`self-hosting/verifier-watch.sh`](self-hosting/verifier-watch.sh), a systemd user timer that `start.sh` installs | Hourly: starts one verifier session when a `Verifier:` step has every `Depends on` closed. Turns itself off when the parent is closed. |
 | Verifier sessions | the sessions the watch starts, with `C4_HUMAN_CLUSTER=1` | Steps 8 to 10. The only agents that touch a cluster, Gitea's admin API or the GitHub repository's settings. |
 | The factory's Crew | Agents in cluster `c4factory-self` | From step 8 on, works the factory's own issues in Gitea. |
 
@@ -566,27 +566,33 @@ passes.
 
 ## The one command
 
-From a plain shell in the main checkout, on main, on the device that runs
-the relay:
+[`self-hosting/start.sh`](self-hosting/start.sh) is the owner's one command.
+[`self-hosting/README.md`](self-hosting/README.md) has the owner's steps:
+check the device, start, leave it. Run it from a plain shell in the main
+checkout, on main, on the device that runs the relay:
 
 ```bash
-cd ~/c4factory && hack/pull.sh \
-  && ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" claude -p --permission-mode auto --model opus \
-       "Run step 0 of docs/plans/self-hosting.md, then end. Project commands bare, as the plan says." \
-  && gh issue comment "$(cat .dev/self-hosting-parent)" --body binding \
-  && install -D -m 644 -t ~/.config/systemd/user \
-       docs/plans/self-hosting/c4factory-verifier.service docs/plans/self-hosting/c4factory-verifier.timer \
-  && systemctl --user daemon-reload \
-  && systemctl --user enable --now c4factory-verifier.timer
+cd ~/c4factory && git pull --ff-only origin main && docs/plans/self-hosting/start.sh
 ```
 
-It runs these in order, each only when the one before it succeeded:
-1. step 0;
-2. the owner's `binding` comment on the parent, which is the owner's own
-   comment from the owner's own shell;
-3. installing the verifier watch.
+First it checks what the plan uses and can't make itself, and starts nothing
+while one is missing:
+- Claude Code's login at `~/.claude`;
+- `.dev/secrets/claude-token`;
+- a GitHub token from the git credential helper;
+- Docker, Kind, kubectl and Helm;
+- a systemd user manager in the `docker` group.
 
-The watch logs to `.dev/self-hosting-verifier.log`. To stop it at any time:
+Then it does these in order, each only when the one before it succeeded,
+skipping any that are already done:
+1. **Step 0.**
+2. **The owner's `binding` comment on the parent.** It is the owner's own
+   comment, from the owner's account, in a script the owner ran.
+3. **The verifier watch.** It installs the timer and turns on
+   `loginctl enable-linger`, so the watch survives a reboot.
+
+`start.sh --check` only checks. The watch logs to
+`.dev/self-hosting-verifier.log`. To stop it at any time:
 `systemctl --user disable --now c4factory-verifier.timer`.
 
 ## What can still reach the owner
