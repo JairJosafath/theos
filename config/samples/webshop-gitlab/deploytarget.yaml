@@ -1,0 +1,24 @@
+# Where the webshop publishes on GitLab (docs/design.md, "GitLab targets"):
+# each release of a Container naming webshop-gitlab in spec.deploy becomes a
+# GitLab release of your-group/webshop, tagged orders-api-v0.1.0, its files
+# uploaded to the project's generic package orders-api at v0.1.0 and linked
+# from the release. Leave url unset for gitlab.com; set it to a self-hosted
+# GitLab's https address.
+#
+# It needs Secret webshop-gitlab, which you create yourself; only the
+# operator reads it. Its key: token, a project access token with the
+# Maintainer role and the scopes api, read_registry and write_registry (a
+# group or personal access token works the same). Ready says whether GitLab
+# takes it. Not in ../webshop/kustomization.yaml, so `make sample` needs no
+# GitLab account; apply it with: kubectl apply -k config/samples/webshop-gitlab
+apiVersion: c4.factory.io/v1alpha1
+kind: DeployTarget
+metadata:
+  name: webshop-gitlab
+spec:
+  gitlab:
+    url: https://gitlab.example.com
+    project: your-group/webshop
+  credentialsSecretRef:
+    name: webshop-gitlab
+  tier: development

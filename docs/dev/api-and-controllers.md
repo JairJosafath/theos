@@ -67,7 +67,8 @@ which fails when a generated file differs from what is committed.
   `metadata.name` is the stable id.
 - **A `DeployTarget` has exactly one member** (CEL), each with its adapter
   ([architecture.md](../architecture.md), Deployer): `github` (`repository`,
-  `latest`) needs `credentialsSecretRef`; `argoCD` is an Argo CD in the
+  `latest`) and `gitlab` (`project`, and `url` for a self-hosted GitLab,
+  unset for gitlab.com) need `credentialsSecretRef`; `argoCD` is an Argo CD in the
   operator's cluster and needs none (the rule reads "set credentialsSecretRef
   unless the member is argoCD"): `namespace` where Argo CD runs and its
   Applications live (default `argocd`), `project` (default `default`),

@@ -1,0 +1,19 @@
+# The webshop with orders-api also published on GitLab: its release and its
+# files (deploytarget.yaml), after it ships to the Argo CD in the cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webshop
+resources:
+- ../webshop
+- deploytarget.yaml
+patches:
+- target:
+    group: c4.factory.io
+    kind: Container
+    name: orders-api
+  patch: |-
+    - op: add
+      path: /spec/deploy/-
+      value:
+        target: webshop-gitlab
+        after: kind-cluster
