@@ -326,6 +326,12 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 		return window(fmt.Sprintf("Its Standard change #%d is in review.", t.StandardChange), acts,
 			fmt.Sprintf("Task `%s` has waited %s for Standard change #%d.", t.Name, waited, t.StandardChange),
 			"Review the change, or close it.", "Blocked until the Standard change is merged or closed.")
+	case t.Reason == ReasonBaseRed:
+		// No window: only a person mends main. The item goes when the Task starts.
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` has waited %s for main to turn green.", t.Name, waited),
+			"Fix main's checks, or revert the change that broke them.",
+			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
 	case t.Stage == StageChecks:
 		return &Healing{AttentionTask, t.Name, ChecksBound(t.Message),
 			time.Time{}}, nil

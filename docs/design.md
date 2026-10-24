@@ -196,6 +196,11 @@ on a Standard change), then `Merged` or `Failed`.
 - **The implementer runs the check in its sandbox,** sent back twice while it
   fails. One that fails on the base commit too (`CheckFailsOnBase`) is left
   to CI, with the output on the pull request.
+- **Round 1 starts only on a green base.** Before round 1 the Task reads the
+  CI state of `main`'s head for the Container's check contexts: red, and it
+  waits with reason `BaseRed`, a Needs-you item on the Brief at once; pending,
+  and it waits; green or no status yet, and it starts. A check that then fails
+  on the base in the sandbox only is the workspace's, which the prompts say.
 - **Blocked is said, not guessed.** An implementer that can't do the issue
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
   the Task fails at once, reason `Blocked`, with those words on the issue. A round
@@ -234,7 +239,7 @@ on a Standard change), then `Merged` or `Failed`.
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot. The Work area charts the runs against their Agent's
+  an agent slot, and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
   `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.

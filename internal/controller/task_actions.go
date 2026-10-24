@@ -175,6 +175,9 @@ func (r *TaskReconciler) wait(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStat
 	if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
 		reason = "AgentUnavailable"
 	}
+	if step.Reason != "" {
+		reason = step.Reason
+	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 	if status.Phase == c4v1alpha1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}

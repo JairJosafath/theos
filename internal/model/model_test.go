@@ -326,6 +326,43 @@ func TestTouchedPaths(t *testing.T) {
 	}
 }
 
+func TestBaseState(t *testing.T) {
+	const pr, push = "check / check (pull_request)", "check / check (push)"
+	tests := []struct {
+		name     string
+		required []string
+		state    string
+		contexts map[string]string
+		want     string
+	}{
+		{name: "green", required: []string{"check*"}, state: "success", contexts: map[string]string{push: "success"},
+			want: "success"},
+		{name: "no status yet", required: []string{"check*"}, want: ""},
+		{name: "only skipped checks", required: []string{"check*"}, contexts: map[string]string{push: "skipped"}, want: ""},
+		{name: "no check matches", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{"lint / lint (push)": "failure"}, want: ""},
+		{name: "red", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{push: "failure", "lint / lint (push)": "success"}, want: "failure"},
+		{name: "errored", required: []string{"check*"}, state: "error", contexts: map[string]string{push: "error"},
+			want: "failure"},
+		{name: "red beats pending", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{push: "failure", pr: "pending"}, want: "failure"},
+		{name: "pending", required: []string{"check*"}, state: "pending",
+			contexts: map[string]string{push: "pending", pr: "success"}, want: "pending"},
+		{name: "a skipped check next to a passing one", required: []string{"check*"}, state: "success",
+			contexts: map[string]string{push: "success", pr: "skipped"}, want: "success"},
+		{name: "no required checks: the combined state", state: "failure", contexts: map[string]string{push: "failure"},
+			want: "failure"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BaseState(tt.required, tt.state, tt.contexts); got != tt.want {
+				t.Errorf("BaseState(%v, %q, %v) = %q, want %q", tt.required, tt.state, tt.contexts, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUnpassedChecks(t *testing.T) {
 	const pr, push = "check / check (pull_request)", "check / check (push)"
 	tests := []struct {

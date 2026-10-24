@@ -109,10 +109,10 @@ How to work:
 `)
 	}
 	fmt.Fprintf(&b, `- Run %[1]q and fix every failure until it passes. Fix lint findings instead of
-  silencing them. If it fails on %[2]s too, before your change, for a reason
-  outside it (a download, a service this workspace can't reach), that is the
-  workspace's, not a blocker: fix what your change causes, leave the rest to CI,
-  which runs the same check, and say so in your summary.
+  silencing them. %[2]s was green in CI when this Task started, so a failure it
+  has here too, before your change, is this workspace's (a download, a service
+  it can't reach), not a blocker: fix what your change causes, say so in your
+  summary, and leave that one to CI, which runs the same check.
 - Keep the change focused on the goal.
 `, check, job.Base)
 	b.WriteString(`- Never make up evidence: no drawn or generated image, recording or sample output
@@ -215,8 +215,9 @@ The change is on the current branch, %[1]s. See it with: git diff origin/%[2]s..
 Read AGENTS.md and docs/style/ for the rules the code must follow.
 `+projectNotes+`
 You may read and run anything in the repository, including %[3]q, but do not change files.
-CI runs %[3]q on this head too: a failure of it that %[2]s has here as well is
-the workspace's, not the change's.
+%[2]s was green in CI when this Task started, and CI runs %[3]q on this head
+too: a failure of it that %[2]s has here as well is the workspace's, not the
+change's.
 
 Approve only if you would merge the change as it is:
 - it achieves the goal completely, with nothing stubbed or left out;

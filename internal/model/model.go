@@ -399,6 +399,10 @@ func joinAnd(items []string) string {
 // checkSuccess is the state of a check, or of all of a commit's checks, that passed.
 const checkSuccess = "success"
 
+// checkPending is the state of a check, or of all of a commit's checks, that
+// has not ended.
+const checkPending = "pending"
+
 // checkSkipped is the state of a check that did not run, such as a workflow's
 // push run off main.
 const checkSkipped = "skipped"
@@ -435,6 +439,38 @@ func UnpassedChecks(required []string, contexts map[string]string) []string {
 		}
 	}
 	return out
+}
+
+// BaseState returns the CI state of a commit, main's head, for required, a CI
+// system's CheckContexts, from state, the commit's combined state, and contexts,
+// the state of each check by its context. Of the checks that match a required
+// pattern, skipped ones aside: any failed is "failure", else any pending is
+// "pending", else "success" (a warning does not hold a Task back); none is "",
+// no status yet. With no required patterns it is state.
+func BaseState(required []string, state string, contexts map[string]string) string {
+	if len(required) == 0 {
+		return state
+	}
+	matched, pending := false, false
+	for context, s := range contexts {
+		if s == checkSkipped || !slices.ContainsFunc(required, func(p string) bool { return matchGlob(p, context) }) {
+			continue
+		}
+		matched = true
+		switch {
+		case checksFailed(s):
+			return checkFailure
+		case s == checkPending:
+			pending = true
+		}
+	}
+	switch {
+	case !matched:
+		return ""
+	case pending:
+		return checkPending
+	}
+	return checkSuccess
 }
 
 // matchGlob reports whether s matches pattern, in which * stands for any run of
