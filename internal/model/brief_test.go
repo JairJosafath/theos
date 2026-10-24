@@ -1011,8 +1011,9 @@ func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Fields a plan never writes: a Brief names no deploy target
-			// (docs/plans/done/deploy.md, decision 2).
-			unplanned := map[string]bool{"deploy": kind == KindContainer}
+			// (docs/plans/done/deploy.md, decision 2), and no Domains until
+			// the planner picks them (docs/plans/domains.md, step 5, #1760).
+			unplanned := map[string]bool{"deploy": kind == KindContainer, "domainRefs": kind == KindSoftwareSystem}
 			want := map[string]string{}
 			for field, schema := range crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties {
 				switch {
