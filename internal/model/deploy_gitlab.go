@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -148,4 +149,94 @@ func GitLabDeployState(f GitLabDeployFacts) DeployRun {
 		}
 	}
 	return DeployRun{}
+}
+
+// GitLabSourceURL is the source folder at its tag on GitLab: web the
+// instance (gitlab.com when ""), project its path.
+func GitLabSourceURL(web, project, path, tag string) string {
+	if web == "" {
+		web = GitLabWeb
+	}
+	url := strings.TrimRight(web, "/") + "/" + project + "/-/tree/" + tag
+	if path != "." {
+		url += "/" + path
+	}
+	return url
+}
+
+// The actions of a GitLab source commit, as the Commits API names them.
+const (
+	GitLabActionCreate = "create"
+	GitLabActionUpdate = "update"
+	GitLabActionDelete = "delete"
+	// GitLabActionChmod sets or clears the execute bit: the one action the
+	// Commits API reads execute_filemode on, so a mode change is its own
+	// action, after the create or update of the same path when there is one.
+	GitLabActionChmod = "chmod"
+)
+
+// GitLabSourceAction is one change of a source commit on GitLab: Action on
+// File's path, File the file wanted there (its path alone for a delete).
+type GitLabSourceAction struct {
+	Action string
+	File   SourceFile
+}
+
+// GitLabSourceActions are the actions of the one commit that turns the
+// folder holding have into want, both with paths from the folder's root,
+// sorted by path: create for a file not there, update for one whose blob
+// differs, delete for one want lacks, and chmod for one whose mode differs
+// (after the create or update of its path, since the Commits API reads the
+// mode on chmod alone and a create is 100644). Nil when nothing differs.
+func GitLabSourceActions(want, have []SourceFile) []GitLabSourceAction {
+	held := make(map[string]SourceFile, len(have))
+	for _, f := range have {
+		held[f.Path] = f
+	}
+	var out []GitLabSourceAction
+	for _, f := range want {
+		h, ok := held[f.Path]
+		delete(held, f.Path)
+		switch {
+		case !ok:
+			out = append(out, GitLabSourceAction{Action: GitLabActionCreate, File: f})
+			if f.Mode != ModeFile {
+				out = append(out, GitLabSourceAction{Action: GitLabActionChmod, File: f})
+			}
+			continue
+		case h.Blob != f.Blob:
+			out = append(out, GitLabSourceAction{Action: GitLabActionUpdate, File: f})
+		}
+		if h.Mode != f.Mode {
+			out = append(out, GitLabSourceAction{Action: GitLabActionChmod, File: f})
+		}
+	}
+	for path := range held {
+		out = append(out, GitLabSourceAction{Action: GitLabActionDelete, File: SourceFile{Path: path}})
+	}
+	// Sorted by path; the actions of one path keep their order (create or
+	// update, then chmod).
+	slices.SortStableFunc(out, func(a, b GitLabSourceAction) int { return strings.Compare(a.File.Path, b.File.Path) })
+	return out
+}
+
+// NextGitLabSourceStep is NextSourceStep for a GitLab project, have what it
+// holds at the default branch's head and the source tag (nil before it is
+// read). A source with a symlink fails SourceUnsupported before any read,
+// since the Commits API can't carry one; done's URL is the folder on
+// GitLab, and no step warns about go install, which GoInstallProblem judges
+// for github.com.
+func NextGitLabSourceStep(s SourceShip, have *GitHubSource) (step PublishStep, done *PublishedSource) {
+	for _, f := range s.Files.Files {
+		if f.Mode == ModeSymlink {
+			return fail(PublishSourceUnsupported, "%s is a symlink, which GitLab's Commits API can't carry; "+
+				"the source of %s isn't published", f.Path, s.Tag), nil
+		}
+	}
+	step, done = NextSourceStep(s, have)
+	step.Warning = ""
+	if done != nil {
+		done.URL = GitLabSourceURL(s.Web, s.Repository, s.Source.Path, done.Tag)
+	}
+	return step, done
 }

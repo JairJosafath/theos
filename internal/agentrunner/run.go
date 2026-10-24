@@ -395,7 +395,7 @@ func sendBackBlocked(ctx context.Context, job Job, agent Agent, dir string, base
 		return summary, nil
 	}
 	prompt := fmt.Sprintf("You stopped with a %q line. %q fails on %s in this workspace too, before any change:\n%s\n"+
-		"That is not a reason to block the issue: CI runs the check and decides it. Do the issue now, "+
+		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the check and decides it. Do the issue now, "+
 		"and end your summary with a %q line again only if something else blocks it.",
 		model.BlockedPrefix, strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
 	return agent.Run(ctx, dir, prompt)
@@ -417,7 +417,7 @@ func checkAndFix(ctx context.Context, job Job, agent Agent, dir string, base *ba
 			check, tail(checkOutput, 6000))
 		if baseOutput != "" {
 			prompt = fmt.Sprintf("%q fails. It fails on %s in this workspace too, before your change:\n%s\n"+
-				"Fix the failures your change causes, and leave the rest to CI, which runs the check and decides it. "+
+				"It was green in CI when this Task started, so that failure is the workspace's. Fix the failures your change causes, and leave the rest to CI, which runs the check and decides it. "+
 				"Then run it again. Output on your branch:\n%s",
 				check, job.Base, tail(baseOutput, 2000), tail(checkOutput, 6000))
 		}
