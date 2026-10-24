@@ -144,6 +144,15 @@ func TestStandInPlan(t *testing.T) {
 			issues: []string{"lend: Stand-in: start lend"},
 		},
 		{
+			// The Namespace section names the namespace; it is not the idea.
+			name:    "idea with no prompts, the namespace named like a Domain: no Domain (#1760)",
+			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Namespace: "webshop", Catalog: withDomains},
+			created: []string{"SoftwareSystem/lend", "Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
 			name:    "idea naming a Domain, in an existing SoftwareSystem: its Domains stay (#1760)",
 			ws:      BriefWorkspace{Idea: "A webshop for plants.", Catalog: withDomains, Objects: []PlanObject{system}},
 			created: []string{"Container/lend"},

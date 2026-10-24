@@ -180,15 +180,17 @@ func standInBrief(brief string) (ideaText string, ideaNew bool, prompts []string
 	if idea < 0 || end < idea {
 		return "", ideaNew, nil
 	}
-	ideaText = brief[idea:end]
 	if i := strings.LastIndex(brief, "\n## Prompts\n"); i > idea && end > i {
-		ideaText = brief[idea:i]
 		for _, p := range briefNewPrompt.FindAllStringSubmatch(brief[i:end], -1) {
 			prompts = append(prompts, p[1])
 		}
 	}
-	// Without the heading line, whose words aren't the idea's.
-	_, ideaText, _ = strings.Cut(ideaText, "\n\n")
+	// Without the heading line, and up to the next heading (the Prompts, the
+	// Requests, the Namespace...): their words aren't the idea's (#1760).
+	_, ideaText, _ = strings.Cut(brief[idea:end], "\n\n")
+	if i := strings.Index(ideaText, "\n## "); i >= 0 {
+		ideaText = ideaText[:i]
+	}
 	return ideaText, ideaNew, prompts
 }
 

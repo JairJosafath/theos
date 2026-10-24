@@ -1,6 +1,8 @@
 package model
 
 import (
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,5 +85,26 @@ func TestParsePlanDomains(t *testing.T) {
 	o, _ := findObject(plan.Objects, Ref{KindSoftwareSystem, "shop"})
 	if got := strings.Join(o.Domains, ","); got != "webshop,catalog" {
 		t.Errorf("shop's Domains = %q, want webshop,catalog", got)
+	}
+}
+
+// #1760: a Domain gone between the plan check and apply is missing from the
+// catalog; an existing system's Domains aren't asked for.
+func TestMissingCatalogDomains(t *testing.T) {
+	files := happyFiles()
+	files[PlanModelFile] = strings.Replace(files[PlanModelFile], "  needs: [orders]\n",
+		"  needs: [orders]\n  domainRefs: [webshop, catalog]\n", 1)
+	plan, err := ParsePlan(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := happyCurrent()
+	current.Catalog = append(current.Catalog, CatalogEntry{Side: SideDomain, Name: "webshop"})
+	if got := MissingCatalog(plan, current); got != nil {
+		t.Errorf("MissingCatalog with shop existing = %q, want none", got)
+	}
+	current.Objects = slices.DeleteFunc(current.Objects, func(o PlanObject) bool { return o.Kind == KindSoftwareSystem })
+	if got, want := MissingCatalog(plan, current), []string{"Domain catalog"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("MissingCatalog with shop new = %q, want %q", got, want)
 	}
 }
