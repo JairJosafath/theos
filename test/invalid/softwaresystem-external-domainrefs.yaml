@@ -1,0 +1,10 @@
+# expect: an External system names no domainRefs
+apiVersion: c4.factory.io/v1alpha1
+kind: SoftwareSystem
+metadata:
+  name: payment-provider
+  namespace: webshop
+spec:
+  displayName: Payment provider
+  location: External
+  domainRefs: [webshop]
