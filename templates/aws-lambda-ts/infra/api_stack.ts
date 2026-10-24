@@ -48,9 +48,38 @@ export const ACCESS_LOG_FIELDS = {
 // The function's time limit, which its duration alarm is a share of.
 const TIMEOUT = Duration.seconds(10);
 
-// The connections an Aurora PostgreSQL cluster allows per ACU (2 GiB each):
-// its max_connections, DBInstanceClassMemory / 9531392.
-const CONNECTIONS_PER_ACU = 225;
+// Aurora PostgreSQL's max_connections at a Serverless v2 cluster's largest
+// capacity, the lowest column of the table in the Aurora User Guide's
+// "Maximum connections for Aurora Serverless v2", interpolated between its
+// rows: the documented formula, LEAST(DBInstanceClassMemory / 9531392, 5000),
+// counts memory after what the OS keeps, so 2 GiB an ACU overstates it.
+const MAX_CONNECTIONS_BY_ACU: readonly (readonly [number, number])[] = [
+  [1, 189],
+  [4, 823],
+  [8, 1669],
+  [16, 3360],
+  [32, 5000],
+];
+// A cluster whose minimum is 0 or 0.5 ACU stops at 2,000 whatever its largest.
+const LOW_MINIMUM_MAX_CONNECTIONS = 2000;
+
+/** The documented max_connections at `acu`, the first row's below it and the last's above. */
+function documentedMaxConnections(acu: number): number {
+  let previous: readonly [number, number] | undefined;
+  for (const row of MAX_CONNECTIONS_BY_ACU) {
+    const [rowAcu, rowConnections] = row;
+    if (acu >= rowAcu) {
+      previous = row;
+      continue;
+    }
+    if (previous === undefined) {
+      return rowConnections;
+    }
+    const [belowAcu, below] = previous;
+    return Math.floor(below + ((rowConnections - below) * (acu - belowAcu)) / (rowAcu - belowAcu));
+  }
+  return previous === undefined ? 0 : previous[1];
+}
 
 /**
  * Nine tenths of the connections `cluster` allows at its largest, from the
@@ -62,14 +91,17 @@ export function maxConnections(cluster: DatabaseCluster): number {
   const scaling: unknown = Stack.of(cluster).resolve(
     (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration,
   );
-  const maxCapacity =
+  const capacity = (name: 'minCapacity' | 'maxCapacity'): number =>
     typeof scaling === 'object' &&
     scaling !== null &&
-    'maxCapacity' in scaling &&
-    typeof scaling.maxCapacity === 'number'
-      ? scaling.maxCapacity
+    name in scaling &&
+    typeof (scaling as Record<string, unknown>)[name] === 'number'
+      ? ((scaling as Record<string, unknown>)[name] as number)
       : 1;
-  return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);
+  const documented = documentedMaxConnections(capacity('maxCapacity'));
+  const connections =
+    capacity('minCapacity') < 1 ? Math.min(documented, LOW_MINIMUM_MAX_CONNECTIONS) : documented;
+  return Math.floor(connections * 0.9);
 }
 
 /** What the stack is built for. */
@@ -245,7 +277,8 @@ export class ApiStack extends Stack {
       });
     }
     // A cluster near its CPU or its connections is one the function will soon
-    // find slow or closed; both roll a deploy back like the function's own.
+    // find slow or closed; both alarms page like the function's own (this
+    // Framework deploys with no rollback, so none of its alarms rolls one back).
     for (const [name, cluster] of clusters) {
       alarms.monitoring.monitorAuroraCluster({
         // The cluster itself, not its identifier: the monitoring reads its

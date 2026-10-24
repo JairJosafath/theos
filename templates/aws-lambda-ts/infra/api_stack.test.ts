@@ -312,7 +312,7 @@ describe('ApiStack data stores', () => {
       ]);
     template.hasResourceProperties('AWS::CloudWatch::Alarm', {
       Metrics: clusterMetric('DatabaseConnections'),
-      Threshold: Math.floor(225 * 8 * 0.9),
+      Threshold: Math.floor(1669 * 0.9),
     });
     template.hasResourceProperties('AWS::CloudWatch::Alarm', {
       Metrics: clusterMetric('CPUUtilization'),
@@ -355,8 +355,28 @@ describe('ApiStack data stores', () => {
       vpcSubnets,
       writer: ClusterInstance.provisioned('Writer'),
     });
-    expect(maxConnections(scaled)).toBe(Math.floor(225 * 8 * 0.9));
-    expect(maxConnections(provisioned)).toBe(Math.floor(225 * 0.9));
+    const between = new DatabaseCluster(stack, 'Between', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MinCapacity: 1,
+      serverlessV2MaxCapacity: 2,
+    });
+    const wide = new DatabaseCluster(stack, 'Wide', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MaxCapacity: 32,
+    });
+    // The Aurora User Guide's table: 8 ACU allow 1,669, 1 ACU 189; 2 ACU sit a
+    // third of the way from 189 to 4 ACU's 823; 32 ACU would allow 5,000, but a
+    // minimum of 0.5 ACU (the default) stops at 2,000.
+    expect(maxConnections(scaled)).toBe(Math.floor(1669 * 0.9));
+    expect(maxConnections(provisioned)).toBe(Math.floor(189 * 0.9));
+    expect(maxConnections(between)).toBe(Math.floor(Math.floor(189 + (823 - 189) / 3) * 0.9));
+    expect(maxConnections(wide)).toBe(Math.floor(2000 * 0.9));
   });
 
   it('connects the data stores of the rendered infra/connectors.ts by default', () => {

@@ -13,7 +13,8 @@ backed by this Connector, so the cluster is the model's, not the Framework's
   authentication on and the Data API enabled. It hands its user
   `RDS_CLUSTER_ARN`, `RDS_SECRET_ARN` and `RDS_DATABASE` and grants it
   `grantDataApiAccess` (the `rds-data` calls on the cluster, and
-  `GetSecretValue` on its secret): nothing else, and no change to the cluster.
+  `GetSecretValue` on its secret): nothing else, and no change to the cluster
+  beyond the ingress rule a user with a `network` gets (below).
 - **Tier and backups:** the cluster follows the Standard's `TIER_RULES`. In
   production it scales from 0.5 to 8 ACU with a reader that scales with the
   writer, is deletion-protected, takes a final snapshot on removal, keeps 35
