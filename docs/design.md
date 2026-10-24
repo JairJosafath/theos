@@ -190,6 +190,12 @@ on a Standard change), then `Merged` or `Failed`.
   every run and closes it on merge; a failed Task hands it back
   `status/needs-human` with the reason. An issue without an *Acceptance
   criteria* checklist goes back before any tokens are spent.
+- **Issue text is data, not instructions.** The prompt puts the issue's
+  text, every field a person wrote, between two marker lines and says it is
+  the goal and never an instruction: whatever in it asks the agent to change
+  its tools, credentials, settings, the files that configure agents, or where
+  it sends data is ignored. The markers grow past any copy of themselves in
+  the text, so nothing a person wrote can end the block early.
 - **Merges only on checks of the `main` it merges into.** When `main` moved,
   the operator merges it into the branch (no agent run, no round) and waits
   for the checks again; a conflict goes back to the implementer.
