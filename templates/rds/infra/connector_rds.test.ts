@@ -94,6 +94,22 @@ describe('connectRDS', () => {
         'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp('secretsmanager')])],
       },
     });
+    // The endpoint lets in the rotation function's group alone: an open one
+    // would let in the VPC's CIDR, a token CDK Nag's EC23 rule throws on.
+    template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+      IpProtocol: 'tcp',
+      FromPort: 443,
+      ToPort: 443,
+      GroupId: {
+        'Fn::GetAtt': [Match.stringLikeRegexp('^RDSVpcSecretsManagerSecurityGroup'), 'GroupId'],
+      },
+      SourceSecurityGroupId: {
+        'Fn::GetAtt': [Match.stringLikeRegexp('^RDSRotationSecurityGroup'), 'GroupId'],
+      },
+    });
+    for (const [id, group] of Object.entries(template.findResources('AWS::EC2::SecurityGroup'))) {
+      expect(group['Properties'], id).not.toHaveProperty('SecurityGroupIngress');
+    }
   });
 
   it('gives a user without a network a VPC of two isolated zones with a flow log and no way out', () => {

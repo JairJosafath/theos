@@ -4,12 +4,14 @@ import {
   FlowLogDestination,
   FlowLogTrafficType,
   InterfaceVpcEndpointAwsService,
+  SecurityGroup,
   SubnetType,
   Vpc,
 } from 'aws-cdk-lib/aws-ec2';
 import type {
   Connections,
   IInterfaceVpcEndpoint,
+  ISecurityGroup,
   IVpc,
   SubnetSelection,
 } from 'aws-cdk-lib/aws-ec2';
@@ -106,7 +108,7 @@ export function connectRDS(
   user: DataStoreUser,
   rules: TierRules,
 ): DatabaseCluster {
-  const { vpc, vpcSubnets, endpoint } = user.network
+  const { vpc, vpcSubnets, rotation } = user.network
     ? frameworkNetwork(user.network)
     : ownNetwork(scope, rules);
   const key = new Key(scope, 'RDSKey', {
@@ -153,7 +155,7 @@ export function connectRDS(
   if (rules.pointInTimeRecovery) {
     cluster.addRotationSingleUser({
       automaticallyAfter: ROTATION,
-      ...(endpoint === undefined ? {} : { endpoint }),
+      ...rotation,
     });
   }
   Validations.of(cluster).acknowledge({
@@ -178,8 +180,15 @@ export function connectRDS(
 interface ClusterNetwork {
   readonly vpc: IVpc;
   readonly vpcSubnets: SubnetSelection;
-  /** The Secrets Manager endpoint of the Connector's own VPC; the Framework's VPC has its own way out. */
-  readonly endpoint?: IInterfaceVpcEndpoint;
+  /**
+   * In the Connector's own VPC, the Secrets Manager endpoint and the security
+   * group of the rotation function, the only one the endpoint lets in; the
+   * Framework's VPC has its own way out.
+   */
+  readonly rotation?: {
+    readonly endpoint: IInterfaceVpcEndpoint;
+    readonly securityGroup: ISecurityGroup;
+  };
 }
 
 /** The user's VPC: its private subnets when it has them, else its isolated ones. */
@@ -227,9 +236,17 @@ function ownNetwork(scope: Construct, rules: TierRules): ClusterNetwork {
   if (!rules.pointInTimeRecovery) {
     return { vpc, vpcSubnets };
   }
+  // An open endpoint lets the whole VPC's CIDR in, a token CDK Nag's EC23
+  // rule cannot read; this one lets in the rotation function's group alone.
   const endpoint = vpc.addInterfaceEndpoint('SecretsManager', {
     service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
     subnets: vpcSubnets,
+    open: false,
   });
-  return { vpc, vpcSubnets, endpoint };
+  const securityGroup = new SecurityGroup(scope, 'RDSRotationSecurityGroup', {
+    vpc,
+    description: 'The secret rotation function, the one way into the Secrets Manager endpoint.',
+  });
+  endpoint.connections.allowDefaultPortFrom(securityGroup, 'The secret rotation function');
+  return { vpc, vpcSubnets, rotation: { endpoint, securityGroup } };
 }
