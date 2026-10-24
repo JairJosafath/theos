@@ -332,6 +332,12 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for main to turn green.", t.Name, waited),
 			"Fix main's checks, or revert the change that broke them.",
 			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
+	case t.Reason == ReasonOverBudget:
+		// Nothing heals a cost cap: only a person raises it (#1893).
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` reached its Crew's cost cap: %s.", t.Name, strings.TrimSuffix(t.Message, ".")),
+			"Raise the Crew's taskBudgetUSD, or delete the Task.",
+			"It starts no run until the cap is raised.", t.Since}
 	case t.Stage == StageChecks:
 		return &Healing{AttentionTask, t.Name, ChecksBound(t.Message),
 			time.Time{}}, nil

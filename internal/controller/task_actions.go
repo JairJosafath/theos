@@ -176,6 +176,8 @@ func (r *TaskReconciler) wait(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStat
 		reason = "AgentUnavailable"
 	}
 	if step.Reason != "" {
+		// At its Crew's cost cap (OverBudget): the Crew watch wakes the Task
+		// when the cap is raised, so it needs no requeue. BaseRed rechecks.
 		reason = step.Reason
 	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)

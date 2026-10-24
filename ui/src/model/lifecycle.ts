@@ -371,6 +371,24 @@ export function containerNextStep(container: Container): NextStep | undefined {
           text: 'Two templates write the same file. Change the templates or the catalog entries so each file has one, then retry.',
           command,
         }
+      case 'NothingToAdopt':
+        return {
+          text: 'The repository to adopt is empty. Push its history first, then retry.',
+          command,
+          link: repo,
+        }
+      case 'IdentityMismatch':
+        return {
+          text: 'Make main’s .c4factory.yaml name this project and container, then retry.',
+          command,
+          link: repo,
+        }
+      case 'StandardFilesDiffer':
+        return {
+          text: 'Bring the paths the condition names to what the Standard renders, then retry.',
+          command,
+          link: repo,
+        }
       case 'UnpinnedRef':
         return { text: 'Pin the template’s ref to a tag or commit, never a branch, then retry.', command }
       case 'UnsupportedCI':

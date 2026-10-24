@@ -273,6 +273,10 @@ type TaskFacts struct {
 	// AgentBackIn is how long until an unavailable agent is tried again; zero or
 	// less means now.
 	AgentBackIn time.Duration
+	// CostMilliUSD is what the Task's runs cost so far, in thousandths of a US
+	// dollar, and BudgetMilliUSD its Crew's cap on it; zero means no cap.
+	CostMilliUSD   int64
+	BudgetMilliUSD int64
 	// Unmergeable means the Git host doesn't say the pull request merges. It is
 	// no conflict by itself: the host says so too while it tests the pull
 	// request against a main that just moved. Only merging main into the
@@ -496,6 +500,11 @@ const ReasonRunnerLost = "RunnerLost"
 // cap keeps a runner that is always short of memory, or keeps dying, from
 // looping forever.
 const MaxChecksReruns = 2
+
+// ReasonOverBudget is the reason of a Task waiting at its Crew's cost cap:
+// its runs cost at least taskBudgetUSD, so it starts no further run until
+// the cap is raised.
+const ReasonOverBudget = "OverBudget"
 
 // ReasonApprovalRanOut is the reason of a Task whose approved Standard change
 // was reviewed again maxReviewAgains times in a round and whose approval ran
@@ -972,7 +981,7 @@ type TaskStep struct {
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
 	// Reason is a failed Task's reason, when not ReasonFailed, or a waiting
-	// Task's Progressing reason, when not plain Waiting.
+	// one's when it is not a plain wait (ReasonOverBudget, ReasonBaseRed).
 	Reason string
 }
 
@@ -981,6 +990,11 @@ type TaskStep struct {
 func NextTaskStep(f TaskFacts) TaskStep {
 	step := nextTaskStep(f)
 	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
+	if starts && f.BudgetMilliUSD > 0 && f.CostMilliUSD >= f.BudgetMilliUSD {
+		return TaskStep{Action: ActionWait, Reason: ReasonOverBudget, Message: fmt.Sprintf(
+			"The Task's runs cost $%.2f, at its Crew's cap of $%d; raise the Crew's taskBudgetUSD to go on",
+			float64(f.CostMilliUSD)/1000, f.BudgetMilliUSD/1000)}
+	}
 	if starts && f.AgentBackIn > 0 {
 		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is unavailable; trying again in %s",
 			f.AgentBackIn.Round(time.Second))}
