@@ -7,10 +7,6 @@ import (
 	"unicode/utf8"
 )
 
-// AgentNeverPaths are the protected paths no agent may change, even through a
-// Standard change: the agents' own rules and the platform's contract.
-var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".c4factory.yaml"}
-
 const (
 	// MaxStandardChanges caps the Standard changes one Task may propose.
 	MaxStandardChanges = 2
