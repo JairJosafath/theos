@@ -1,9 +1,17 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
+import type { IVpc } from 'aws-cdk-lib/aws-ec2';
+import {
+  AuroraPostgresEngineVersion,
+  ClusterInstance,
+  DatabaseCluster,
+  DatabaseClusterEngine,
+} from 'aws-cdk-lib/aws-rds';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiStack } from './api_stack';
+import { ApiStack, maxConnections } from './api_stack';
 import { copyVaultName } from './backups';
 import { DATA_STORES } from './connectors';
 import type { Connect } from './connectors';
@@ -265,6 +273,90 @@ describe('ApiStack data stores', () => {
         Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
       }),
     });
+  });
+
+  it('alarms on a cluster store by its CPU and connections, and backs it up by ARN', () => {
+    // A stand-in for what the rds Connector builds: a Serverless v2 cluster
+    // that scales to 8 ACU, in a VPC of its own.
+    const connect: Connect = (scope) => {
+      const vpc = new Vpc(scope, 'StoreVpc', {
+        natGateways: 0,
+        subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
+      }) as IVpc;
+      return new DatabaseCluster(scope, 'Store', {
+        engine: DatabaseClusterEngine.auroraPostgres({
+          version: AuroraPostgresEngineVersion.VER_16_6,
+        }),
+        writer: ClusterInstance.serverlessV2('Writer'),
+        serverlessV2MaxCapacity: 8,
+        vpc,
+        vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      });
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    template.resourceCountIs('AWS::RDS::DBCluster', 1);
+    // The API's, the function's three, the two tables' three each, and the cluster's two.
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 2 * 3 + 2);
+    const [clusterId] = Object.keys(template.findResources('AWS::RDS::DBCluster'));
+    const clusterMetric = (name: string) =>
+      Match.arrayWith([
+        Match.objectLike({
+          MetricStat: Match.objectLike({
+            Metric: {
+              Namespace: 'AWS/RDS',
+              MetricName: name,
+              Dimensions: [{ Name: 'DBClusterIdentifier', Value: { Ref: clusterId } }],
+            },
+          }),
+        }),
+      ]);
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      Metrics: clusterMetric('DatabaseConnections'),
+      Threshold: Math.floor(225 * 8 * 0.9),
+    });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      Metrics: clusterMetric('CPUUtilization'),
+      Threshold: 90,
+    });
+    // Backed up with the tables, after them (#1923).
+    const [itemsId] = Object.keys(template.findResources('AWS::DynamoDB::Table')).filter((id) =>
+      id.startsWith('Items'),
+    );
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: [
+          { 'Fn::GetAtt': [itemsId, 'Arn'] },
+          { 'Fn::GetAtt': [clusterId, 'DBClusterArn'] },
+        ],
+      }),
+    });
+  });
+
+  it('reads the connections limit from the cluster scaling, and takes 1 ACU without one', () => {
+    const stack = new ApiStack(new App(), 'test', { tier: 'development', operations: OPERATIONS });
+    const vpc = new Vpc(stack, 'Vpc', {
+      natGateways: 0,
+      subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
+    }) as IVpc;
+    const engine = DatabaseClusterEngine.auroraPostgres({
+      version: AuroraPostgresEngineVersion.VER_16_6,
+    });
+    const vpcSubnets = { subnetType: SubnetType.PRIVATE_ISOLATED };
+    const scaled = new DatabaseCluster(stack, 'Scaled', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MaxCapacity: 8,
+    });
+    const provisioned = new DatabaseCluster(stack, 'Provisioned', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.provisioned('Writer'),
+    });
+    expect(maxConnections(scaled)).toBe(Math.floor(225 * 8 * 0.9));
+    expect(maxConnections(provisioned)).toBe(Math.floor(225 * 0.9));
   });
 
   it('connects the data stores of the rendered infra/connectors.ts by default', () => {

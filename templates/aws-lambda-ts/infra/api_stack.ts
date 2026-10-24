@@ -58,9 +58,15 @@ const CONNECTIONS_PER_ACU = 225;
  * has none the stack can read.
  */
 export function maxConnections(cluster: DatabaseCluster): number {
-  const scaling = (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration;
+  // The configuration is a lazy token until resolved; a provisioned cluster has none.
+  const scaling: unknown = Stack.of(cluster).resolve(
+    (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration,
+  );
   const maxCapacity =
-    scaling !== undefined && 'maxCapacity' in scaling && typeof scaling.maxCapacity === 'number'
+    typeof scaling === 'object' &&
+    scaling !== null &&
+    'maxCapacity' in scaling &&
+    typeof scaling.maxCapacity === 'number'
       ? scaling.maxCapacity
       : 1;
   return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);

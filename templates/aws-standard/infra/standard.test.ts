@@ -1281,6 +1281,12 @@ function probeFunction(
 }
 
 /**
+ * Overrides of a probe cluster's props: a key set to `undefined` leaves it
+ * out, which `Partial` forbids under `exactOptionalPropertyTypes`.
+ */
+type ClusterOverrides = { [K in keyof DatabaseClusterProps]?: DatabaseClusterProps[K] | undefined };
+
+/**
  * An Aurora cluster in `stack` as the rds Connector builds it for `tier`
  * (docs/plans/aws-rds.md), as far as the Standard's rules read it; `props`
  * override any of it, and `keyPolicy` is its key's removal policy.
@@ -1288,7 +1294,7 @@ function probeFunction(
 function probeCluster(
   stack: Stack,
   tier: Tier,
-  props: Partial<DatabaseClusterProps> = {},
+  props: ClusterOverrides = {},
   keyPolicy = TIER_RULES[tier].keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
 ): DatabaseCluster {
   const rules = TIER_RULES[tier];
@@ -1297,7 +1303,7 @@ function probeCluster(
     subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
   });
   const key = new Key(stack, 'Key', { enableKeyRotation: true, removalPolicy: keyPolicy });
-  return new DatabaseCluster(stack, 'Cluster', {
+  const clusterProps = {
     engine: DatabaseClusterEngine.auroraPostgres({ version: AuroraPostgresEngineVersion.VER_16_6 }),
     writer: ClusterInstance.serverlessV2('Writer'),
     vpc,
@@ -1310,7 +1316,8 @@ function probeCluster(
     removalPolicy: rules.keepData ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
     backup: { retention: Duration.days(rules.pointInTimeRecovery ? 35 : 1) },
     ...props,
-  });
+  } as DatabaseClusterProps;
+  return new DatabaseCluster(stack, 'Cluster', clusterProps);
 }
 
 // The cluster branch of the rules on a stack with an Aurora cluster, in
@@ -1319,7 +1326,7 @@ function probeCluster(
 describe.each(TIERS)('an Aurora cluster, in %s', (tier) => {
   const rules = TIER_RULES[tier];
   const faultsOf = (
-    props: Partial<DatabaseClusterProps> | ((stack: Stack) => Partial<DatabaseClusterProps>) = {},
+    props: ClusterOverrides | ((stack: Stack) => ClusterOverrides) = {},
     keyPolicy?: RemovalPolicy,
   ): ClusterFaults => {
     const probe = new App({ context: { ...cdkContext(), tier } });
