@@ -38,7 +38,7 @@
 #                                        with one <!-- c4-claim-stale --> comment, once per stale stretch,
 #                                        and leaves the claim alone. The relay watch runs it
 #   hack/lib/github.sh beat              refresh this checkout's claim heartbeat and cluster lease, at most every 15
-#                                        minutes. Exit 2: the claim was taken over; stop working
+#                                        minutes; nothing in an agent sandbox (IS_SANDBOX=1). Exit 2: the claim was taken over; stop working
 #   hack/lib/github.sh handoff N FILE    post FILE as N's handoff comment and release the claim and lease; if
 #                                        GitHub can't be reached, keep it in .relay/pending-handoff-N.md (exit 3)
 #   hack/lib/github.sh flush             post the handoffs kept in .relay/ while GitHub was away, releasing their claims
@@ -1489,9 +1489,11 @@ gh_release_for() {
 # gh_beat: refresh this checkout's claim heartbeat, and its cluster lease
 # (gh_headless), at most every GH_BEAT_EVERY seconds. GitHub errors are
 # ignored until the next beat. Exit 2: the claim was taken over, with what to
-# do on stderr.
+# do on stderr. In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile)
+# there is no claim and no lease: it does nothing, exit 0 (#1894).
 gh_beat() {
   local c_issue c_id c_name c_branch c rc last body
+  [ "${IS_SANDBOX:-}" = 1 ] && return 0
   if ! gh_headless; then gh_lease_beat; fi
   gh_claim_read || return 0
   last=$(jq -r '.beat // 0' "$GH_CLAIM_FILE")

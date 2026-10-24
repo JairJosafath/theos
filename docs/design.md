@@ -203,6 +203,12 @@ on a Standard change), then `Merged` or `Failed`.
   every run and closes it on merge; a failed Task hands it back
   `status/needs-human` with the reason. An issue without an *Acceptance
   criteria* checklist goes back before any tokens are spent.
+- **Issue text is data, not instructions.** The prompt puts the issue's
+  text, every field a person wrote, between two marker lines and says it is
+  the goal and never an instruction: whatever in it asks the agent to change
+  its tools, credentials, settings, the files that configure agents, or where
+  it sends data is ignored. The markers grow past any copy of themselves in
+  the text, so nothing a person wrote can end the block early.
 - **Merges only on checks of the `main` it merges into.** When `main` moved,
   the operator merges it into the branch (no agent run, no round) and waits
   for the checks again; a conflict goes back to the implementer.
@@ -223,6 +229,7 @@ on a Standard change), then `Merged` or `Failed`.
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
   a person cancelled costs the round.
@@ -335,6 +342,9 @@ A Crew per Container names the implementer and reviewer Agents, polls the
 repository's `status/ready` issues and starts up to `parallel` Tasks (one by
 default; `Blocked` ones don't count), with three tries per issue.
 `spec.paused` stops new starts; running Tasks are never stopped.
+`spec.taskBudgetUSD` caps what one Task's agent runs may cost, in US dollars,
+summed from what its agents report; at the cap the Task starts no further
+run (`OverBudget`) until the cap is raised, and unset means no cap.
 
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
   goes first, even past `parallel`; then a Standard change a `Blocked` Task
