@@ -1,8 +1,6 @@
 package gitprovider
 
 import (
-	"github.com/JairJosafath/c4factory/internal/ports"
-
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -62,7 +61,7 @@ func (g *gitea) EnsureRepository(ctx context.Context, name, description string) 
 		"description":    description,
 		"private":        false,
 		"auto_init":      false,
-		"default_branch": defaultBranch,
+		"default_branch": DefaultBranch,
 	})
 	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/orgs/"+url.PathEscape(g.owner)+"/repos", body)
 	if err != nil {

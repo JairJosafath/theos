@@ -1,8 +1,6 @@
 package gitprovider
 
 import (
-	"github.com/JairJosafath/c4factory/internal/ports"
-
 	"context"
 	"errors"
 	"fmt"
@@ -29,10 +27,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
-const (
-	defaultBranch = ports.DefaultBranch
-	remoteName    = "origin"
-)
+const remoteName = "origin"
 
 var commitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
@@ -209,7 +204,7 @@ func historyBranch(refs []*plumbing.Reference) (plumbing.ReferenceName, bool) {
 	if len(branches) == 0 {
 		return "", false
 	}
-	if main := plumbing.NewBranchReferenceName(defaultBranch); slices.Contains(branches, main) {
+	if main := plumbing.NewBranchReferenceName(DefaultBranch); slices.Contains(branches, main) {
 		return main, true
 	}
 	slices.Sort(branches)
@@ -222,7 +217,7 @@ func pushInitialCommit(ctx context.Context, repoURL string, creds *Credentials, 
 	message string, author Signature) (string, error) {
 	worktree := memfs.New()
 	repo, err := git.InitWithOptions(memory.NewStorage(), worktree, git.InitOptions{
-		DefaultBranch: plumbing.NewBranchReferenceName(defaultBranch),
+		DefaultBranch: plumbing.NewBranchReferenceName(DefaultBranch),
 	})
 	if err != nil {
 		return "", err
@@ -263,7 +258,7 @@ func pushInitialCommit(ctx context.Context, repoURL string, creds *Credentials, 
 	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{repoURL}}); err != nil {
 		return "", err
 	}
-	branch := plumbing.NewBranchReferenceName(defaultBranch)
+	branch := plumbing.NewBranchReferenceName(DefaultBranch)
 	err = repo.PushContext(ctx, &git.PushOptions{
 		RemoteName: remoteName,
 		Auth:       auth(creds),
@@ -404,8 +399,8 @@ func treeEntry(tree *object.Tree, name string) (object.TreeEntry, bool) {
 // with ErrEmptyChange and pushes nothing.
 func pushBranch(ctx context.Context, repoURL string, creds *Credentials, base, branch string, files scaffold.Tree,
 	removes []string, message string, author Signature) (string, error) {
-	if branch == defaultBranch {
-		return "", fmt.Errorf("won't force-push the default branch %s of %s", defaultBranch, repoURL)
+	if branch == DefaultBranch {
+		return "", fmt.Errorf("won't force-push the default branch %s of %s", DefaultBranch, repoURL)
 	}
 	return commitAndPush(ctx, repoURL, creds, base, branch, files, removes, message, author, true)
 }
@@ -416,7 +411,7 @@ func pushBranch(ctx context.Context, repoURL string, creds *Credentials, base, b
 // as it is fails with ErrEmptyChange and pushes nothing.
 func pushDefaultBranch(ctx context.Context, repoURL string, creds *Credentials, base string, files scaffold.Tree,
 	removes []string, message string, author Signature) (string, error) {
-	return commitAndPush(ctx, repoURL, creds, base, defaultBranch, files, removes, message, author, false)
+	return commitAndPush(ctx, repoURL, creds, base, DefaultBranch, files, removes, message, author, false)
 }
 
 // commitAndPush is pushBranch and pushDefaultBranch: one commit on base,
@@ -444,7 +439,7 @@ func commitAndPush(ctx context.Context, repoURL string, creds *Credentials, base
 	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
 		URL:           repoURL,
 		Auth:          auth(creds),
-		ReferenceName: plumbing.NewBranchReferenceName(defaultBranch),
+		ReferenceName: plumbing.NewBranchReferenceName(DefaultBranch),
 		SingleBranch:  true,
 		NoCheckout:    true,
 		Tags:          git.NoTags,
@@ -454,7 +449,7 @@ func commitAndPush(ctx context.Context, repoURL string, creds *Credentials, base
 	}
 	parent, err := repo.CommitObject(plumbing.NewHash(base))
 	if err != nil {
-		return "", fmt.Errorf("find base %s on %s of %s: %w", base, defaultBranch, repoURL, err)
+		return "", fmt.Errorf("find base %s on %s of %s: %w", base, DefaultBranch, repoURL, err)
 	}
 	baseTree, err := parent.Tree()
 	if err != nil {

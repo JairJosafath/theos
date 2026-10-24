@@ -26,7 +26,7 @@ func bareRepo(t *testing.T) string {
 	dir := filepath.Join(t.TempDir(), "repo.git")
 	if _, err := git.PlainInitWithOptions(dir, &git.PlainInitOptions{
 		Bare:        true,
-		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName(defaultBranch)},
+		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName(DefaultBranch)},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestHistoryOnAnotherBranch(t *testing.T) {
 
 	// #1908: main itself is missing, which readFiles reports as such, so a
 	// caller fails instead of retrying.
-	if _, _, err := readFiles(ctx, dir, nil, defaultBranch, []string{"README.md"}); !errors.Is(err, ErrBranchNotFound) {
+	if _, _, err := readFiles(ctx, dir, nil, DefaultBranch, []string{"README.md"}); !errors.Is(err, ErrBranchNotFound) {
 		t.Fatalf("readFiles(main) error = %v, want ErrBranchNotFound", err)
 	}
 	files, _, err := readFiles(ctx, dir, nil, "master", []string{"README.md"})

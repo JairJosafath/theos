@@ -31,8 +31,8 @@ type Label struct {
 	// Exclusive makes a scoped label ("scope/value") one of a kind: the port's
 	// rule is that adding an exclusive label to an issue removes the issue's
 	// other labels of its scope. An adapter whose host has exclusive labels
-	// (Gitea) hands the rule to the host; one whose host lacks them does it
-	// itself, in AddIssueLabel.
+	// hands the rule to the host; one whose host lacks them does it itself,
+	// in AddIssueLabel.
 	Exclusive bool
 }
 

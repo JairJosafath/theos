@@ -142,7 +142,9 @@ type PullRequest struct {
 	MergeCommit string
 }
 
-// Review events of ReviewPullRequest.
+// Review events of ReviewPullRequest, with the wire values of the first host
+// (APPROVED, not APPROVE); an adapter whose host names them otherwise
+// translates.
 const (
 	ReviewApprove        = "APPROVED"
 	ReviewRequestChanges = "REQUEST_CHANGES"

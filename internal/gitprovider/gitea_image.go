@@ -1,8 +1,6 @@
 package gitprovider
 
 import (
-	"github.com/JairJosafath/c4factory/internal/ports"
-
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // PublishImage pushes the image archive of repo's release of tag, its one
