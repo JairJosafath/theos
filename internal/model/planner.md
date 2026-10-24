@@ -17,7 +17,9 @@ can't apply it.
 - `model/catalog.yaml`: the installed catalog. Each entry lists the Container
   types it supports (`supportedTypes`); a Standard also lists the Frameworks it
   fits (`supportedFrameworks`) and whether it can run the full check only
-  before a release (`checksBeforeRelease`). Its `bundles` list the namespace's
+  before a release (`checksBeforeRelease`); a Connector may list the
+  Frameworks whose templates call its files (`wiredBy`), and only a Container
+  on one of them can link to its DataStore. Its `bundles` list the namespace's
   Bundles, a team's choice of one Framework, Standard, Compute and Deployment
   under one name, each with its entries and the Container types every entry
   supports (`supportedTypes`; empty when an entry isn't installed). Its
