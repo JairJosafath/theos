@@ -29,7 +29,7 @@ func RenderLayer(in Input, layer Layer) (Tree, error) {
 		return nil, err
 	}
 	for _, p := range files.Paths() {
-		if isOperatorPath(p) {
+		if in.isOperatorPath(p) {
 			return nil, &ConflictError{Path: p, Owners: [2]string{layer.Name, operatorOwner}}
 		}
 	}

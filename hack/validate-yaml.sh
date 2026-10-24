@@ -22,6 +22,8 @@ for o in "${OVERLAYS[@]}"; do
 done
 # The webshop with orders-api also published on GitHub (#1603).
 "$KUSTOMIZE" build config/samples/webshop-github >"$OUT/kustomize-webshop-github.yaml"
+# The webshop with orders-api also published on GitLab (#1804).
+"$KUSTOMIZE" build config/samples/webshop-gitlab >"$OUT/kustomize-webshop-gitlab.yaml"
 
 # The webshop sample's orders-api repository, as the operator scaffolds it.
 rm -rf "$OUT/orders-api"

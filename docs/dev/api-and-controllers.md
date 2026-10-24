@@ -79,7 +79,8 @@ which fails when a generated file differs from what is committed.
   `metadata.name` is the stable id.
 - **A `DeployTarget` has exactly one member** (CEL), each with its adapter
   ([architecture.md](../architecture.md), Deployer): `github` (`repository`,
-  `latest`) needs `credentialsSecretRef`; `argoCD` is an Argo CD in the
+  `latest`) and `gitlab` (`project`, and `url` for a self-hosted GitLab,
+  unset for gitlab.com) need `credentialsSecretRef`; `argoCD` is an Argo CD in the
   operator's cluster and needs none (the rule reads "set credentialsSecretRef
   unless the member is argoCD"): `namespace` where Argo CD runs and its
   Applications live (default `argocd`), `project` (default `default`),
@@ -118,6 +119,14 @@ the spec that makes it, with `forbidden` in the reconciler's log.
   expansion in `status.bundle`. Only `resolve` reads the Bundle to expand it,
   and only until the Container is scaffolded; after that `reportBundleCurrent`
   reads it to report `BundleCurrent`, never to apply it.
+- **A Ready Container only reports.** `resolve` reads the system's
+  `spec.domainRefs` once, for the scaffold; after that `reportDomainsApplied`
+  (`container_domains.go`) compares them with `status.scaffoldedDomains`, the
+  names the scaffold recorded (and its commit's `Scaffolded-Domain` trailers,
+  for a recovered one), and reports `DomainsApplied`, never rescaffolds. The
+  Standard update renders with those same Domains, not the system's current
+  ones. They are recorded, never inferred from `scaffoldedFrom`: a changed
+  choice or a Domain named like a Connector would be misread.
 
 ## Logging
 

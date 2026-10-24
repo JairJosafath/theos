@@ -126,6 +126,12 @@ const (
 	// full check when the Container's spec.checks asks, and its repository's CI
 	// already does; False with the update in flight or its stop while not.
 	ConditionChecksApplied = "ChecksApplied"
+	// ConditionDomainsApplied is True when a Ready Container's system names the
+	// Domains the Container was scaffolded with; False with reason
+	// AddedAfterScaffold listing the names added and removed since (a Domain is
+	// written once, at the scaffold). Absent when the system names none and
+	// none was scaffolded.
+	ConditionDomainsApplied = "DomainsApplied"
 	// ConditionOperationsApplied is True when a scaffolded Container's
 	// spec.operations is the block its repository's infra/operations.ts was
 	// last rendered with; False with reason Updating while the pull request
@@ -156,17 +162,37 @@ const (
 	ReasonFailed               = "Failed"
 	ReasonGitError             = "GitError"
 	ReasonForeignCommits       = "ForeignCommits"
-	ReasonLayerConflict        = "LayerConflict"
-	ReasonUnpinnedRef          = "UnpinnedRef"
-	ReasonWaiting              = "WaitingForScaffold"
-	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
-	ReasonUpToDate             = "UpToDate"
-	ReasonUpdating             = "Updating"
-	ReasonChecksFailed         = "ChecksFailed"
-	ReasonUpdateClosed         = "UpdateClosed"
-	ReasonUpdateRefused        = "UpdateRefused"
-	ReasonFilesBehind          = "FilesBehind"
+	// ReasonNothingToAdopt: the Container has spec.adopt set but its
+	// repository has no commits; there is nothing to take over.
+	ReasonNothingToAdopt = "NothingToAdopt"
+	// ReasonNoDefaultBranch: an adopted repository has commits but no main
+	// branch to read the identity and the Standard's files from; rename its
+	// default branch to main before adopting it.
+	ReasonNoDefaultBranch = "NoDefaultBranch"
+	// ReasonIdentityMismatch: an adopted repository's main has no
+	// .c4factory.yaml, or one naming another project or Container.
+	ReasonIdentityMismatch = "IdentityMismatch"
+	// ReasonStandardFilesDiffer: an adopted repository's main is missing a
+	// file of the Container's Standard, or holds one with other content than
+	// the Standard renders for this Container at its ref.
+	ReasonStandardFilesDiffer = "StandardFilesDiffer"
+	ReasonLayerConflict       = "LayerConflict"
+	// ReasonDomainNotMarkdown: a Domain's template renders a file that is not
+	// Markdown; a Domain holds only *.md files. The message names the file.
+	ReasonDomainNotMarkdown = "DomainNotMarkdown"
+	// ReasonDomainNoReadme: a Domain's template renders no README.md, the
+	// index the Standards' guides point at.
+	ReasonDomainNoReadme     = "DomainNoReadme"
+	ReasonUnpinnedRef        = "UnpinnedRef"
+	ReasonWaiting            = "WaitingForScaffold"
+	ReasonAppliedAtScaffold  = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold = "AddedAfterScaffold"
+	ReasonUpToDate           = "UpToDate"
+	ReasonUpdating           = "Updating"
+	ReasonChecksFailed       = "ChecksFailed"
+	ReasonUpdateClosed       = "UpdateClosed"
+	ReasonUpdateRefused      = "UpdateRefused"
+	ReasonFilesBehind        = "FilesBehind"
 	// ReasonExternalSystem: the Container or DataStore names an External
 	// SoftwareSystem, which the factory never builds.
 	ReasonExternalSystem = "ExternalSystem"

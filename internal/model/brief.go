@@ -76,6 +76,10 @@ type PlanObject struct {
 	Needs    []string
 	KPIs     []string
 	Location string
+	// Domains are a SoftwareSystem's domainRefs: the installed Domains it is
+	// about, picked by the round that creates it and never changed by a later
+	// one (#1760).
+	Domains []string
 
 	// SoftwareSystem is a Container's or DataStore's.
 	SoftwareSystem string
@@ -353,10 +357,11 @@ type planElementRef struct {
 }
 
 type planSystemSpec struct {
-	planText `yaml:",inline"`
-	Needs    []string `yaml:"needs"`
-	KPIs     []string `yaml:"kpis"`
-	Location string   `yaml:"location"`
+	planText   `yaml:",inline"`
+	Needs      []string `yaml:"needs"`
+	KPIs       []string `yaml:"kpis"`
+	Location   string   `yaml:"location"`
+	DomainRefs []string `yaml:"domainRefs"`
 }
 
 type planContainerSpec struct {
@@ -501,7 +506,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 			return err
 		}
 		o.DisplayName, o.Description, o.Needs, o.KPIs = spec.DisplayName, spec.Description, spec.Needs, spec.KPIs
-		o.Location = cmp.Or(spec.Location, LocationInternal)
+		o.Location, o.Domains = cmp.Or(spec.Location, LocationInternal), spec.DomainRefs
 	case KindContainer:
 		if hasTier(node) {
 			return errPlanTier
@@ -719,6 +724,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	checkParallel(plan, current, refuse)
 	checkChecks(plan, current, refuse)
 	checkOperations(plan, current, refuse)
+	checkDomains(plan, current, refuse)
 	return out
 }
 
@@ -813,7 +819,8 @@ func specLimits(kind string) []specLimit {
 	case KindSoftwareSystem:
 		return []specLimit{displayName, description,
 			{"needs", 20, true, func(o PlanObject) any { return o.Needs }},
-			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }}}
+			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }},
+			{"domainRefs", 5, true, func(o PlanObject) any { return o.Domains }}}
 	case KindRelationship:
 		return []specLimit{{"description", 200, false, func(o PlanObject) any { return o.Description }}}
 	}

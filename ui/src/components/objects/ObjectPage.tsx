@@ -10,7 +10,7 @@ import { RESOURCES, type K8sObject } from '../../k8s/types'
 import { problemsOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { LifecycleKind } from '../../model/lifecycle'
 import { BriefPage } from './BriefPage'
-import { BundlePage, CatalogPage, GitProviderPage } from './CatalogPages'
+import { BundlePage, CatalogPage, DomainPage, GitProviderPage } from './CatalogPages'
 import { ContainerPage } from './ContainerPage'
 import { DeployTargetPage } from './DeployPages'
 import { CrewPage } from './CrewPage'
@@ -34,6 +34,7 @@ const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resour
   Compute: { list: (d) => d.computes, resource: RESOURCES.computes },
   Deployment: { list: (d) => d.deployments, resource: RESOURCES.deployments },
   Bundle: { list: (d) => d.bundles, resource: RESOURCES.bundles },
+  Domain: { list: (d) => d.domains, resource: RESOURCES.domains },
   GitProvider: { list: (d) => d.gitProviders, resource: RESOURCES.gitProviders },
   DeployTarget: { list: (d) => d.deployTargets, resource: RESOURCES.deployTargets },
 }
@@ -111,6 +112,7 @@ function pageFor(
             briefs={data.briefs}
             crews={data.crews}
             deployTargets={data.deployTargets}
+            domains={data.domains}
             writer={containerWriter}
           />
         )
@@ -179,6 +181,10 @@ function pageFor(
       return (
         bundle && <BundlePage bundle={bundle} catalog={data} containers={data.containers} connection={connection} />
       )
+    }
+    case 'Domain': {
+      const domain = named(data.domains)
+      return domain && <DomainPage domain={domain} systems={data.systems} containers={data.containers} />
     }
     case 'GitProvider': {
       const provider = named(data.gitProviders)

@@ -463,7 +463,7 @@ func isGiteaError(err error) bool {
 func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
 	target, _ := deployTarget(dt)
 	if gh := dt.Spec.GitHub; gh != nil {
-		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
+		target.Settings[model.GitHubSettingTagPrefix] = model.ReleaseTagPrefix(gh.TagPrefix, container.Name)
 		if !model.GitHubTakesLatest(gh.Latest) {
 			target.Settings[model.GitHubSettingLatest] = "false"
 		}
@@ -476,6 +476,12 @@ func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Containe
 				target.Settings[model.GitHubSettingSourceTagPrefix] = *src.TagPrefix
 			}
 		}
+	}
+	// A gitlab target's source is step 3 of docs/plans/gitlab-deploy.md
+	// (#1805): until it lands the source setting stays unset, and a release
+	// to a gitlab target with source set ships without its source.
+	if gl := dt.Spec.GitLab; gl != nil {
+		target.Settings[model.GitLabSettingTagPrefix] = model.ReleaseTagPrefix(gl.TagPrefix, container.Name)
 	}
 	return target
 }

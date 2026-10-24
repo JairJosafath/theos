@@ -39,6 +39,7 @@ export type LifecycleKind =
   | 'Standard'
   | 'Compute'
   | 'Bundle'
+  | 'Domain'
   | 'Deployment'
   | 'GitProvider'
   | 'DeployTarget'
@@ -239,6 +240,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
     'The four catalog entries a team picked together. A Container names it instead of the four; the factory expands it into the Container’s status until the scaffold, and marks a Ready Container BundleCurrent=False when the Bundle changes afterwards.',
     'Nothing: a Ready Container keeps what the Bundle named when it was scaffolded, and a Bundle fix reaches a Container not yet scaffolded by itself. To follow a changed Bundle after the scaffold, create a new Container.',
   ),
+  Domain: phaseless(
+    'A catalog entry: what a system is about. Its system names it, and it is rendered into each of the system’s Containers once, at their scaffold, under docs/agents/domain/<name>/.',
+    'Nothing: a scaffolded Container keeps the Domains it was scaffolded with, and a new template ref or a Domain named later reaches only new Containers; the Container reports the difference as DomainsApplied.',
+  ),
   GitProvider: phaseless(
     'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',
     'Nothing, unless a Container fails to create its repository: then check the Secret it names, in the cluster.',
@@ -370,6 +375,24 @@ export function containerNextStep(container: Container): NextStep | undefined {
         return {
           text: 'Two templates write the same file. Change the templates or the catalog entries so each file has one, then retry.',
           command,
+        }
+      case 'NothingToAdopt':
+        return {
+          text: 'The repository to adopt is empty. Push its history first, then retry.',
+          command,
+          link: repo,
+        }
+      case 'IdentityMismatch':
+        return {
+          text: 'Make main’s .c4factory.yaml name this project and container, then retry.',
+          command,
+          link: repo,
+        }
+      case 'StandardFilesDiffer':
+        return {
+          text: 'Bring the paths the condition names to what the Standard renders, then retry.',
+          command,
+          link: repo,
         }
       case 'UnpinnedRef':
         return { text: 'Pin the template’s ref to a tag or commit, never a branch, then retry.', command }

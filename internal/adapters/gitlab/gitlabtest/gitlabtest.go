@@ -38,11 +38,37 @@ type Server struct {
 
 // New starts a fake GitLab, closed when t ends.
 func New(t testing.TB) *Server {
-	s := &Server{projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
-	t.Cleanup(s.srv.Close)
+	s := Start()
+	t.Cleanup(s.Close)
 	return s
 }
+
+// Start starts a fake GitLab the caller closes with Close: for a suite
+// without a testing.TB, such as Ginkgo's.
+func Start() *Server {
+	s := newServer()
+	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
+	return s
+}
+
+// StartTLS starts a fake GitLab over TLS, so its URL() is an https one a
+// DeployTarget's url takes; only Client() trusts its certificate. The caller
+// closes it with Close.
+func StartTLS() *Server {
+	s := newServer()
+	s.srv = httptest.NewTLSServer(http.HandlerFunc(s.serve))
+	return s
+}
+
+func newServer() *Server {
+	return &Server{projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+}
+
+// Client is an HTTP client that trusts the fake's certificate.
+func (s *Server) Client() *http.Client { return s.srv.Client() }
+
+// Close stops the fake.
+func (s *Server) Close() { s.srv.Close() }
 
 // URL is the instance's address, without /api/v4: a GitLabConfig's URL.
 func (s *Server) URL() string { return s.srv.URL }

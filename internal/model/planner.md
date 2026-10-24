@@ -20,7 +20,9 @@ can't apply it.
   before a release (`checksBeforeRelease`). Its `bundles` list the namespace's
   Bundles, a team's choice of one Framework, Standard, Compute and Deployment
   under one name, each with its entries and the Container types every entry
-  supports (`supportedTypes`; empty when an entry isn't installed).
+  supports (`supportedTypes`; empty when an entry isn't installed). Its
+  `domains` list the installed Domains, what a system may be about, each
+  with its name and description (rule 1).
 - `model/containers.yaml`: each Container's repository, its open issues,
   whether it ships releases already (`released`) and when its CI runs the
   full check (`checks`).
@@ -83,6 +85,15 @@ Push the branch `plan/<round>` with these files:
    refused, so put them in an Internal one (the default, for a system the
    factory builds). A system's location is set by the round that creates
    it; a later round keeps it, whatever the plan says.
+   **Name the Domains a new Internal system is about.** On each new
+   Internal system, `domainRefs` names the installed Domains of
+   `model/catalog.yaml`'s `domains` the idea is about, such as `webshop`
+   for a shop; none when none fits. Each of its Containers is scaffolded
+   with them. A Domain that isn't installed is refused, and so is a Domain
+   on an External system. Never set or change `domainRefs` on a system that
+   exists: its Domains are picked when it is made; a later Domain is a
+   prompt for a new system, or a person's edit. Say in `summary.md` which
+   Domains each new system names.
 2. **Use only the listed catalog, and prefer a Bundle.** When a Bundle of
    `model/catalog.yaml`'s `bundles` supports the Container's type, name it:
    `bundleRef` and none of `frameworkRef`, `standardRef`, `computeRef` and
@@ -105,35 +116,43 @@ Push the branch `plan/<round>` with these files:
    `aws-lambda-py` (Python: pick it when the idea asks for Python), with the
    Standard that fits it; it takes no `computeRef` and no `deploymentRef`:
    its CDK app is its deployment (the catalog says `deploysItself: true`,
-   and the plan check refuses either ref), and the table it keeps data in
-   is in that app, so plan no DataStore for it. An idea that asks for EC2,
+   and the plan check refuses either ref). An idea that asks for EC2,
    virtual machines or servers you run on AWS is a `service` on the
    Framework that supports it, such as `aws-ec2-ts`, the same way: the
-   Standard that fits it, no `computeRef`, no `deploymentRef` and no
-   DataStore. An idea that asks for a container service on AWS, ECS or
-   Fargate is a `service` on the Framework that supports it, such as
-   `aws-fargate-ts`, the same way: no
-   `computeRef`, no `deploymentRef` and no DataStore. An idea that asks for
-   a website or web page on AWS, S3 or CloudFront is a `static-site` on the
+   Standard that fits it, no `computeRef` and no `deploymentRef`. An idea
+   that asks for a container service on AWS, ECS or Fargate is a `service`
+   on the Framework that supports it, such as `aws-fargate-ts`, the same
+   way: no `computeRef` and no `deploymentRef`. An idea that asks for a
+   website or web page on AWS, S3 or CloudFront is a `static-site` on the
    Framework that supports it, such as `aws-static-site-ts`, the same way:
-   no `computeRef`, no `deploymentRef` and no DataStore. An idea that runs
-   on a schedule on AWS (every night, every hour, a cron, EventBridge
-   Scheduler) is a `job` on the Framework that supports it, such as
-   `aws-schedule-ts`, the same way: no `computeRef`, no `deploymentRef` and
-   no DataStore, since the schedule and the table are in its CDK app. An
-   idea that reacts to events on AWS, names an EventBridge rule or event
-   bus (not a rule on a schedule or EventBridge Scheduler, which is the
-   `job` above), or consumes
-   events another service puts on an event bus is a `worker` on the Framework that
-   supports it, such as `aws-event-ts`, the same way: no `computeRef`, no
-   `deploymentRef` and no DataStore, since the rule and the table are in its
-   CDK app. An idea that consumes a queue on AWS, names SQS, or works through messages
-   in the background on AWS is a `worker` on the Framework that supports
-   it, such as `aws-queue-ts`, the same way: no `computeRef`, no
-   `deploymentRef` and no DataStore, since the queue and the table are in
-   its CDK app. A `service`, `static-site`, `worker` or `job` that names no
-   AWS runs in the cluster, on its other Frameworks. When no
-   Framework in
+   no `computeRef` and no `deploymentRef`. An idea that runs on a schedule
+   on AWS (every night, every hour, a cron, EventBridge Scheduler) is a
+   `job` on the Framework that supports it, such as `aws-schedule-ts`, the
+   same way: no `computeRef` and no `deploymentRef`, since the schedule is
+   in its CDK app. An idea that reacts to events on AWS, names an
+   EventBridge rule or event bus (not a rule on a schedule or EventBridge
+   Scheduler, which is the `job` above), or consumes events another
+   service puts on an event bus is a `worker` on the Framework that
+   supports it, such as `aws-event-ts`, the same way: no `computeRef` and
+   no `deploymentRef`, since the rule is in its CDK app. An idea that
+   consumes a queue on AWS, names SQS, or works through messages in the
+   background on AWS is a `worker` on the Framework that supports it, such
+   as `aws-queue-ts`, the same way: no `computeRef` and no `deploymentRef`,
+   since the queue is in its CDK app. An AWS Container that keeps data
+   (orders, notes, anything it reads back later) gets one DataStore on the
+   `dynamodb` Connector and a Relationship from the Container to it, the
+   way `api-keeps-orders` below links `api` to `orders-db`: the table is
+   in the Container's CDK stack, named in `DYNAMODB_TABLE_NAME`. Plan one
+   per Container: two DataStores on `dynamodb` for one Container are one
+   table, so a second says nothing. The `dynamodb` Connector goes only on
+   the `aws-*` Frameworks (`aws-lambda-ts`, `aws-lambda-py`,
+   `aws-lambda-go`, `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts`,
+   `aws-event-ts` and `aws-schedule-ts`); a Framework that doesn't wire it
+   fails the Container, so never put it on a Container that runs in the
+   cluster, and plan no DataStore for a `static-site` on
+   `aws-static-site-ts`: it has no Lambda or task to read one. A
+   `service`, `static-site`, `worker` or `job` that names no AWS runs in
+   the cluster, on its other Frameworks. When no Framework in
    `model/catalog.yaml` supports that type, write `needs-input.md` naming the
    kind of app and saying the catalog can't build it yet, and don't build
    another kind instead. A prompt that settles it ("a CLI is fine") lets you
@@ -474,6 +493,7 @@ spec:
   kpis:
     - Orders per day
   location: Internal # the default: the factory builds it
+  domainRefs: [webshop] # the installed Domains the idea is about (rule 1)
 ---
 apiVersion: c4.factory.io/v1alpha1
 kind: SoftwareSystem
@@ -568,7 +588,8 @@ What each kind's `spec` takes, and nothing else:
 
 - Project and Person: `displayName`, `description`.
 - SoftwareSystem: those two, `needs` and `kpis`, each a list of strings,
-  and `location` (`Internal`, the default, or `External`, rule 1).
+  `location` (`Internal`, the default, or `External`, rule 1), and
+  `domainRefs`, the installed Domains it is about (rule 1; at most 5).
 - Container: those two, `softwareSystemRef`, `type` (one of `static-site`,
   `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`,
   `function`),
