@@ -134,7 +134,7 @@ func GitLabDeployState(f GitLabDeployFacts) DeployRun {
 			Health: DeployHealthHealthy, URL: r.URL}
 	}
 	if f.Version != "" {
-		if wanted := GitHubMarkedRelease(f.App, GitHubTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
+		if wanted := GitHubMarkedRelease(f.App, ReleaseTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
 			return deployed(wanted)
 		}
 		if f.Shipping {

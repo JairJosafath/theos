@@ -128,3 +128,16 @@ spec:
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/postgres
     ref: v1.2.0
+---
+# What the webshop is about: carts, stock and payments, their common mistakes
+# and the choices to make. A SoftwareSystem names it in spec.domainRefs.
+apiVersion: c4.factory.io/v1alpha1
+kind: Domain
+metadata:
+  name: webshop
+spec:
+  displayName: Webshop
+  description: Carts, stock, orders and payments; the practices, the common mistakes and the choices to make in each.
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/webshop-domain
+    ref: v1.0.0

@@ -37,13 +37,19 @@ const (
 // DeployTargetSpec is a place Containers are shipped to: exactly one member,
 // keyed by field name, says which tool owns the place and where in it. Each
 // member is added with the adapter that ships to it (docs/plans/done/deploy.md).
-// +kubebuilder:validation:XValidation:rule="[has(self.github), has(self.argoCD), has(self.cloudFormation)].exists_one(x, x)",message="set exactly one target member: github, argoCD or cloudFormation"
+// +kubebuilder:validation:XValidation:rule="[has(self.github), has(self.gitlab), has(self.argoCD), has(self.cloudFormation)].exists_one(x, x)",message="set exactly one target member: github, gitlab, argoCD or cloudFormation"
 // +kubebuilder:validation:XValidation:rule="has(self.credentialsSecretRef) || has(self.argoCD)",message="set credentialsSecretRef unless the member is argoCD"
 type DeployTargetSpec struct {
 	// github ships each release as a GitHub release of a repository: its tag,
 	// notes and files.
 	// +optional
 	GitHub *DeployTargetGitHub `json:"github,omitempty"`
+
+	// gitlab ships each release as a GitLab release of a project, on
+	// gitlab.com or a self-hosted GitLab: its tag, notes and files, the files
+	// in the project's generic package registry (docs/plans/gitlab-deploy.md).
+	// +optional
+	GitLab *DeployTargetGitLab `json:"gitlab,omitempty"`
 
 	// argoCD ships each release of a Container with the k8s-manifests
 	// Deployment as one Argo CD Application, in the cluster the operator runs
@@ -64,8 +70,10 @@ type DeployTargetSpec struct {
 	// the user creates; its keys are the member's. For github: token, a
 	// fine-grained token, or a GitHub App's appId, installationId and
 	// privateKey (its PEM), token winning when both are set; packagesToken
-	// is optional. For cloudFormation: accessKeyId, secretAccessKey and an
-	// optional sessionToken. Only the operator reads it: it is never mounted
+	// is optional. For gitlab: token, a project access token with the
+	// Maintainer role and the scopes api, read_registry and write_registry (a
+	// group or personal access token works the same). For cloudFormation:
+	// accessKeyId, secretAccessKey and an optional sessionToken. Only the operator reads it: it is never mounted
 	// in a sandbox or passed to a CI job.
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
@@ -136,12 +144,12 @@ type DeployTargetGitHub struct {
 	// the repository and tagged, with the GitHub release made of that commit.
 	// Unset, no source is published.
 	// +optional
-	Source *DeployTargetGitHubSource `json:"source,omitempty"`
+	Source *DeployTargetSource `json:"source,omitempty"`
 }
 
-// DeployTargetGitHubSource is where a github target publishes each release's
-// source.
-type DeployTargetGitHubSource struct {
+// DeployTargetSource is where a github or gitlab target publishes each
+// release's source.
+type DeployTargetSource struct {
 	// path is the folder, such as orders-cli; "." is the whole repository.
 	// Unset, it is the Container's name, so any number of Containers share
 	// the target. The folder is the app's: each release replaces what it
@@ -162,6 +170,46 @@ type DeployTargetGitHubSource struct {
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
 	// +optional
 	TagPrefix *string `json:"tagPrefix,omitempty"`
+}
+
+// DeployTargetGitLab is a GitLab project whose releases are the deploys
+// (docs/plans/gitlab-deploy.md, decision 1).
+type DeployTargetGitLab struct {
+	// url is a self-hosted GitLab's address, https://host[:port], with a
+	// path when the instance runs under a relative URL root
+	// (https://example.com/gitlab); unset, the project is on gitlab.com. The
+	// operator calls its API under /api/v4.
+	// +kubebuilder:validation:MaxLength=200
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$')",message="url must be https://host[:port], with at most the instance's relative URL root as its path: the instance's address, not its API's"
+	// +kubebuilder:validation:XValidation:rule="!self.lowerAscii().matches('^https://(www[.])?gitlab[.]com(:443)?/?$')",message="url is for a self-hosted GitLab; leave it unset for gitlab.com"
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// project is the project's full path, group/project or deeper
+	// (group/sub/project), on gitlab.com or the instance at url.
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$')",message="project must be the project's full path, group/project or deeper"
+	// +required
+	Project string `json:"project"`
+
+	// tagPrefix goes before the version in each release's tag. Unset, it is
+	// the Container's name and "-" (orders-cli-v0.1.0), so any number of
+	// Containers share the target; set, it is used as it is for every
+	// Container shipping there, "" giving bare tags (v0.1.0) on a project of
+	// one app.
+	// +kubebuilder:validation:MaxLength=40
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[./-]|//|/[.]|[.][.]|[.]lock(/|$)')",message="tagPrefix must make a git tag name: no leading '.', '/' or '-', no '..', '//' or '/.', and no folder ending in .lock"
+	// +optional
+	TagPrefix *string `json:"tagPrefix,omitempty"`
+
+	// source publishes each release's source too: the app's files at the
+	// release's tag, the factory's own left out, committed into a folder of
+	// the project and tagged, with the GitLab release made of that commit.
+	// Unset, no source is published. A gitlab target has no latest: GitLab's
+	// latest release is simply the newest.
+	// +optional
+	Source *DeployTargetSource `json:"source,omitempty"`
 }
 
 // DeployTargetCloudFormation is an AWS account and region whose
