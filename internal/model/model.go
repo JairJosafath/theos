@@ -92,6 +92,9 @@ func (e *ChoiceError) Error() string {
 func CheckChoices(containerType string, entries []CatalogEntry) error {
 	var unsupported []CatalogEntry
 	for _, entry := range entries {
+		if entry.Side == SideDomain {
+			continue // what a system is about does not depend on a Container's type
+		}
 		if !entry.Supports(containerType) {
 			unsupported = append(unsupported, entry)
 		}

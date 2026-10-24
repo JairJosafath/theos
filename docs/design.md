@@ -115,13 +115,22 @@ Container's type. A SoftwareSystem names the Domains it is about in
 `spec.domainRefs`: at most 5, unique, and none on an External system (CEL:
 the factory builds nothing there). Every Container of the system is
 scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
-the last layer, after the Connectors; the Standard's agent guide tells the
-implementer and the reviewer to read it. A Domain is written once, at the
-scaffold: a later bump of its `ref` does not reach a scaffolded Container.
-The planner names the installed Domains an idea is about on each new
-Internal system. [plans/domains.md](plans/domains.md) (#1512) has the
-decisions; the kind and `domainRefs` are built, the layer, the Standards'
-guides, the webshop Domain and the planner are its later steps.
+the last layer, after the Connectors, sorted by name; the Standard's agent
+guide tells the implementer and the reviewer to read it. A Domain's template
+renders Markdown only and a `README.md`: another file fails the scaffold
+with `Scaffolded=False`, reason `DomainNotMarkdown`, naming the file; no
+`README.md` fails it with `DomainNoReadme`. Each Domain's `name@ref` ends
+`status.scaffoldedFrom` and its name joins `status.scaffoldedDomains`. A
+Domain is written once, at the scaffold: a later
+bump of its `ref` does not reach a scaffolded Container, and a Ready
+Container reports `DomainsApplied=True` while its system still names the
+Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`
+naming what was added or removed since (an adopted Container, scaffolded
+with none, names them all). The Standard's update renders with the Domains
+the scaffold used. The planner names the installed Domains an idea is about
+on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
+has the decisions; the kind, `domainRefs` and the layer are built, the
+Standards' guides, the webshop Domain and the planner are its later steps.
 
 ## Scaffolding a Container
 
@@ -183,7 +192,9 @@ saying what the file holds. Every file the Container's Standard renders for
 it at its ref is there with that content; else it fails
 `StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
 and goes `Ready`, recording the Standard at its ref. An empty repository
-fails `NothingToAdopt`. A Container without a Standard adopts on the
+fails `NothingToAdopt`; one with commits but no `main` branch fails
+`NoDefaultBranch`, telling the user to rename its default branch to `main`
+first (#1908). A Container without a Standard adopts on the
 identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
 
 **Relationships.** Container to DataStore applies the DataStore's Connector at

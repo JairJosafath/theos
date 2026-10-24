@@ -517,7 +517,12 @@ while [ $# -gt 0 ]; do [ "$1" = --session-id ] && id=$2; shift; done
 t=$CLAUDE_CONFIG_DIR/projects/${PWD//[^a-zA-Z0-9]/-}/$id.jsonl
 case $(cat "$FAKE") in
   leftover) sleep 600 >/dev/null 2>&1 & echo $! >"$FAKE.child"; echo '{"is_error":false,"result":"left","num_turns":1}' ;;
-  pidfile) cp "${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
+  # The relay writes the pid file after it starts the session, so wait for it
+  # (#1910: under load the fake read it first and copied nothing); bounded, so a
+  # relay that never writes it fails the case instead of hanging it.
+  pidfile) f=${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid
+    for _ in $(seq 50); do [ -s "$f" ] && break; sleep 0.1; done
+    cp "$f" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
   busy) mkdir -p "${t%/*}"; for _ in $(seq 30); do echo '{}' >>"$t"; sleep 0.2; done
     echo '{"is_error":false,"result":"busy","num_turns":9}' ;;
@@ -1052,7 +1057,7 @@ kill "$(cat "$FAKE.child")" 2>/dev/null
 : >"$LOG"
 echo pidfile >"$FAKE"
 work
-check "stray #1341: the session's pid file names timeout, while it runs" "$(cut -d' ' -f1 "$FAKE.pidfile") $(cut -d' ' -f2 "$FAKE.pidfile" | grep -c '^[0-9]\+$')" "$(cat "$FAKE.ppid") 1"
+check "stray #1341 #1910: the session's pid file names timeout, while it runs" "$(cut -d' ' -f1 "$FAKE.pidfile") $(cut -d' ' -f2 "$FAKE.pidfile" | grep -c '^[0-9]\+$')" "$(cat "$FAKE.ppid") 1"
 check "stray #1341: the pid file goes with the session" "$(test -e "$DIR/session-$K.pid" && echo kept)" ""
 # A process group like timeout's, with a child, that dies on SIGTERM.
 setsid bash -c 'sleep 600 & echo $! >"$1"; wait' _ "$T/stray.child" &

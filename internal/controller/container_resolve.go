@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,8 +29,11 @@ type resolved struct {
 	// creds come from the GitProvider's credentials Secret.
 	creds gitprovider.Credentials
 	// entries are the catalog entries in layer order: Framework, Standard,
-	// Compute, Deployment, then each Connector.
+	// Compute, Deployment, each Connector, then each Domain.
 	entries []model.CatalogEntry
+	// domains are the names of the system's Domains, sorted and unique: the
+	// Domain layers at the end of entries.
+	domains []string
 	// standard is the Standard's entry, or nil when the Container picks none.
 	standard *model.CatalogEntry
 	// use is what the Container picks up through its Relationships to DataStores.
@@ -44,7 +48,8 @@ type resolved struct {
 
 // resolve looks up every object the Container's scaffold needs. missing names the
 // ones that don't exist yet, such as "Framework python-fastapi".
-func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1.Container) (resolved, []string, error) {
+func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1.Container,
+	system *c4v1alpha1.SoftwareSystem) (resolved, []string, error) {
 	var res resolved
 	var missing []string
 	ns := container.Namespace
@@ -151,7 +156,28 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1alpha1
 		}
 		res.entries = append(res.entries, catalogEntry(model.SideConnector, &connector))
 	}
+	// The system's Domains render last, sorted by name (docs/plans/domains.md).
+	for _, name := range domainNames(system) {
+		var domain c4v1alpha1.Domain
+		found, err := r.lookup(ctx, ns, name, &domain)
+		if err != nil {
+			return res, nil, err
+		}
+		if !found {
+			missing = append(missing, "Domain "+name)
+			continue
+		}
+		res.entries = append(res.entries, catalogEntry(model.SideDomain, &domain))
+		res.domains = append(res.domains, name)
+	}
 	return res, missing, nil
+}
+
+// domainNames are the Domains a system names, sorted and unique.
+func domainNames(system *c4v1alpha1.SoftwareSystem) []string {
+	names := slices.Clone(system.Spec.DomainRefs)
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // credentials reads a GitProvider's Secret. It goes straight to the API server
@@ -187,7 +213,7 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 	return err == nil, err
 }
 
-// catalogEntry converts any of the five catalog kinds into a model.CatalogEntry.
+// catalogEntry converts any of the six catalog kinds into a model.CatalogEntry.
 func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	var spec c4v1alpha1.CatalogEntrySpec
 	var frameworks []string
