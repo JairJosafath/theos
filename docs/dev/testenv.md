@@ -322,7 +322,17 @@ hack/relay.sh --workers 2          # two relay workers side by side, each in its
 hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
 hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cron) across crashes and reboots
 touch .relay/stop                  # stop the watch, and every worker after its current session
+rm -f .relay/stop; hack/relay-watch.sh  # restore it: starts the installed unit, with its own worker count
 ```
+
+Every session the watch starts runs under the login `--install` recorded:
+`CLAUDE_CONFIG_DIR` as it was in the installer's shell (`~/.claude` when
+unset), written into the unit and the crontab lines, so `./dev run` cannot
+point the sessions at `.dev/claude` (#1435). A `hack/relay.sh` started from
+anywhere else, a maintainer session or another `claude -p` session, runs
+outside that login and its sessions answer `Not logged in`; a quiet window
+for one issue goes through the watch's own workers and the stop file (the
+`maintainer` skill, Health).
 
 The relay picks the issue its worker's last session reserved (`create --next`,
 below), else by `priority/N`, 1 first: an issue with no priority label counts
