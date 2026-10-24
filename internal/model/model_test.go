@@ -31,6 +31,8 @@ func TestCheckChoices(t *testing.T) {
 		{"connector reached through a relationship rejects", TypeJob, []CatalogEntry{small, postgres, manifests},
 			"k8s-manifests does not support job"},
 		{"no entries", TypeWorker, nil, ""},
+		{"a Domain supports no type and is skipped", TypeService,
+			[]CatalogEntry{fastapi, small, manifests, postgres, entry(SideDomain, "webshop")}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

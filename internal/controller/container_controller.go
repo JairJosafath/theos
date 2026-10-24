@@ -93,7 +93,7 @@ type ContainerReconciler struct {
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles;domains,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets;projects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -192,6 +192,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
 		}
 		r.reportBundleCurrent(ctx, &container, status)
+		reportDomainsApplied(&container, status, &system)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
 		// were: the pass would act on a newest release it couldn't read (#1570).
@@ -225,7 +226,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
 
-	res, missing, err := r.resolve(ctx, &container)
+	res, missing, err := r.resolve(ctx, &container, &system)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -419,6 +420,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).
+		Watches(&c4v1alpha1.Domain{}, waitingContainers, specChanged()).
 		Watches(&c4v1alpha1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1alpha1.DataStore{}, waitingContainers, specChanged()).
 		Named("container").

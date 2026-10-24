@@ -1169,6 +1169,11 @@ func (in *ContainerStatus) DeepCopyInto(out *ContainerStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ScaffoldedDomains != nil {
+		in, out := &in.ScaffoldedDomains, &out.ScaffoldedDomains
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.AppliedRelationships != nil {
 		in, out := &in.AppliedRelationships, &out.AppliedRelationships
 		*out = make([]string, len(*in))

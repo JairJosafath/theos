@@ -58,6 +58,7 @@ const (
 	trailerFrom         = "Scaffolded-From"
 	trailerRelationship = "Applied-Relationship"
 	trailerBundle       = "Scaffolded-Bundle"
+	trailerDomain       = "Scaffolded-Domain"
 )
 
 // Author of the initial commit.
@@ -86,6 +87,9 @@ func CommitMessage(in Input, scaffoldedFrom []string, relationships []model.Appl
 	if in.Bundle != "" {
 		fmt.Fprintf(&b, "%s: %s\n", trailerBundle, scaffoldedBundle(in))
 	}
+	for _, d := range in.Domains {
+		fmt.Fprintf(&b, "%s: %s\n", trailerDomain, d)
+	}
 	return b.String()
 }
 
@@ -105,6 +109,9 @@ type CommitInfo struct {
 	// were at the scaffold; nil for a Container naming its sides, or a commit
 	// made before it was recorded.
 	Bundle *model.Bundle
+	// Domains are the Domains the scaffold wrote, by name, sorted; empty for a
+	// Container whose system named none.
+	Domains []string
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
@@ -131,6 +138,8 @@ func ParseCommitMessage(msg string) (CommitInfo, error) {
 		case trailerBundle:
 			bundle := model.ParseBundle(value)
 			info.Bundle = &bundle
+		case trailerDomain:
+			info.Domains = append(info.Domains, strings.TrimSpace(value))
 		}
 	}
 	if info.Container == "" {
