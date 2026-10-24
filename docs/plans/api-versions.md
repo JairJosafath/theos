@@ -155,8 +155,10 @@ with a warning naming the release that may drop it. Test output goes to
 4. **`v1beta1` becomes the storage version, and the operator rewrites what
    was stored at `v1alpha1`.** Once every CRD stores `v1beta1`, objects
    written before the upgrade stay at `v1alpha1` in etcd until something
-   writes them. The operator does it: at start, once the webhook is ready,
-   a migrator lists each kind at the hub version, page by page, and issues
+   writes them. The operator does it: at start, whatever the webhook
+   setting (#1884), a migrator lists each kind at the hub version, page by
+   page (a kind that converts by the webhook waits for it to be ready
+   first; one at strategy `None` converts in the API server), and issues
    an empty patch for each object whose CRD's `storedVersions` still lists
    a version other than the storage one; when a kind's objects are done it
    patches that CRD's `status.storedVersions` down to the storage version.

@@ -80,6 +80,16 @@ func (s *Server) Close() { s.srv.Close() }
 // URL is the instance's address, without /api/v4: a GitLabConfig's URL.
 func (s *Server) URL() string { return s.srv.URL }
 
+// host is the fake's host and port, the registry host its projects name
+// unless a test sets Project.RegistryHost.
+func (s *Server) host() string {
+	u, err := url.Parse(s.srv.URL)
+	if err != nil {
+		return s.srv.URL
+	}
+	return u.Host
+}
+
 // Project is a project on the fake. Its exported fields are knobs a test sets
 // before it calls the fake.
 type Project struct {
@@ -90,6 +100,9 @@ type Project struct {
 	// RegistryEnabled is whether its container registry is on; true to begin
 	// with.
 	RegistryEnabled bool
+	// RegistryHost is the host of its container_registry_image_prefix: the
+	// fake's own to begin with; a test points it at a fake registry.
+	RegistryHost string
 	// PackagesEnabled is whether its package registry is on; true to begin
 	// with. Off, the generic upload and the package listing are a 403.
 	PackagesEnabled bool
@@ -153,7 +166,7 @@ func (s *Server) AddProject(path, token string) *Project {
 	defer s.mu.Unlock()
 	s.nextID++
 	p := &Project{ID: s.nextID, Path: path, Scopes: slices.Clone(DefaultScopes), RegistryEnabled: true,
-		PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
+		RegistryHost: s.host(), PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
 		s: s, token: token, tags: map[string]string{}, commits: map[string]map[string]blob{}}
 	p.commits[p.DefaultBranchHead] = map[string]blob{}
 	s.projects[path] = p
@@ -420,10 +433,9 @@ func (p *Project) info(w http.ResponseWriter) {
 	if !p.RegistryEnabled {
 		level = "disabled"
 	}
-	host := strings.TrimPrefix(p.s.srv.URL, "http://")
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID, "path_with_namespace": p.Path,
 		"web_url": p.s.srv.URL + "/" + p.Path, "default_branch": p.DefaultBranch,
-		"container_registry_image_prefix": strings.ToLower(host + "/" + p.Path),
+		"container_registry_image_prefix": strings.ToLower(p.RegistryHost + "/" + p.Path),
 		"container_registry_access_level": level})
 }
 
@@ -708,10 +720,25 @@ func (p *Project) pkgByID(id string) *pkg {
 	return nil
 }
 
+// GitLab's rules for a generic package's name and version
+// (lib/gitlab/regex/packages.rb): letters, digits, '.', '_', '+' and '-',
+// and no ".." in a version. The file name's rule is not modelled: the
+// gitprovider tests upload a name with a space to see it escaped.
+var packageKeyRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
+
 // upload adds a file to the package, making the package when it is new. A
 // file of a name already there is added beside it, as GitLab keeps
-// duplicates.
+// duplicates. A name or version outside GitLab's rule is a 400, as GitLab
+// answers (#1873: a tag prefix with '/' must not reach it as the version).
 func (p *Project) upload(w http.ResponseWriter, r *http.Request, name, version, fileName string) {
+	switch {
+	case !packageKeyRe.MatchString(name):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_name is invalid"))
+		return
+	case !packageKeyRe.MatchString(version), strings.Contains(version, ".."):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_version is invalid"))
+		return
+	}
 	size, err := io.Copy(io.Discard, r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
