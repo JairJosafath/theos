@@ -756,6 +756,17 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true
     - kind: Standard
+      name: factory-self
+      ref: v1.0.0
+      spec:
+        displayName: The factory's own standard
+        description: "For the C4 Factory's own repository, adopted: the make check CI and nothing else. Its protected paths are the fence agents may not change (docs/plans/self-hosting.md, decision 5)."
+        supportedTypes: [operator]
+        supportedFrameworks: [go-kubebuilder]
+        # The fence: the runner and prompt, the model credential, the sandbox and
+        # its network, branch protection, the chart, the check and the agents' rules.
+        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/gitprovider/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
+    - kind: Standard
       name: ts-standard
       ref: v1.6.2
       spec:

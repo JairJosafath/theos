@@ -52,6 +52,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | go-operator-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
+| factory-self | Standard | | yes | n/a | n/a | n/a | n/a | n/a | n/a |
 | aws-lambda-ts | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-go | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-py | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
@@ -430,6 +431,18 @@ envtest).
   (actionable, no secrets, return or log, never both); go-operator-standard's
   `AGENTS.md.tmpl` (`log.FromContext`, key-value pairs).
 - README, Deploy, Auth: n/a: Standards.
+
+### factory-self (v1.0.0)
+
+The Standard of the factory's own repository, adopted by Container
+`c4factory` ([self-hosting.md](plans/self-hosting.md), decision 5). Its only
+file is a plain `.gitea/workflows/check.yaml`, the same bytes in the
+repository; its `protectedPaths` are the fence agents may not change.
+
+- CI: its job `check` runs `make check` on runner `go`;
+  `TestFactorySelfWritesItsCheckAsIs` checks the file and its bytes.
+- Tests, Lint, Logging: the factory's own `make check`.
+- README, Deploy, Auth: n/a: a Standard.
 
 ### The AWS Frameworks
 
