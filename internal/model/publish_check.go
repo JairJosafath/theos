@@ -46,7 +46,10 @@ type PublishProblem struct {
 func (p PublishProblem) String() string {
 	switch p.Reason {
 	case PublishLicenseMissing:
-		return "no license: add a non-empty " + orList(licenseNames) + " at the root"
+		// #1788: the message names the setting, and the one way for a Container
+		// already scaffolded.
+		return "no license: set spec.license on the Project or the Container before it is scaffolded, " +
+			"or commit a non-empty " + orList(licenseNames) + " at the root, the only way once scaffolded"
 	case PublishReadmeMissing:
 		return "no README: add a non-empty " + orList(readmeNames) + " at the root"
 	}
