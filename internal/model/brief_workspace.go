@@ -424,6 +424,10 @@ type catalogEntryOut struct {
 	// DeploysItself says a Framework is its Container's deployment, so the
 	// Container names no Compute and no Deployment but gitea-release.
 	DeploysItself bool `yaml:"deploysItself,omitempty"`
+	// WiredBy lists the Frameworks whose templates call a Connector's files;
+	// a Container on another Framework can't link to its DataStore. Empty
+	// when the Connector takes any Framework.
+	WiredBy []string `yaml:"wiredBy,omitempty"`
 	// ReadsOperations says a Framework renders infra/operations.ts from a
 	// Container's operations; a plan sets operations only on such a Container.
 	ReadsOperations bool `yaml:"readsOperations,omitempty"`
@@ -454,8 +458,10 @@ func workspaceCatalog(catalog []CatalogEntry, bundles []Bundle) catalogOut {
 		slices.Sort(types)
 		frameworks := slices.Clone(e.SupportedFrameworks)
 		slices.Sort(frameworks)
+		wiredBy := slices.Clone(e.WiredBy)
+		slices.Sort(wiredBy)
 		*list = append(*list, catalogEntryOut{e.Name, strings.TrimSpace(e.Description), types, frameworks,
-			e.ChecksBeforeRelease, e.DeploysItself, e.ReadsOperations})
+			e.ChecksBeforeRelease, e.DeploysItself, wiredBy, e.ReadsOperations})
 	}
 	for _, list := range sides {
 		if *list == nil {
