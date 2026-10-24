@@ -41,6 +41,9 @@ func (*DeployTarget) Hub() {}
 // Hub marks Deployment as the conversion hub.
 func (*Deployment) Hub() {}
 
+// Hub marks Domain as the conversion hub.
+func (*Domain) Hub() {}
+
 // Hub marks Framework as the conversion hub.
 func (*Framework) Hub() {}
 

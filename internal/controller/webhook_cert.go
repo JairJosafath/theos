@@ -62,14 +62,14 @@ const (
 var WebhookCRDs = []string{
 	"agents.c4.factory.io", "briefs.c4.factory.io", "bundles.c4.factory.io", "computes.c4.factory.io",
 	"connectors.c4.factory.io", "containers.c4.factory.io", "crews.c4.factory.io",
-	"datastores.c4.factory.io", "deployments.c4.factory.io", "deploytargets.c4.factory.io",
+	"datastores.c4.factory.io", "deployments.c4.factory.io", "deploytargets.c4.factory.io", "domains.c4.factory.io",
 	"frameworks.c4.factory.io", "gitproviders.c4.factory.io", "people.c4.factory.io",
 	"projects.c4.factory.io", "relationships.c4.factory.io", "sessions.c4.factory.io",
 	"softwaresystems.c4.factory.io", "standards.c4.factory.io", "tasks.c4.factory.io",
 }
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;domains.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
 
 // WebhookCert keeps the webhook server's certificate: it reads the Secret
 // Namespace/Secret or issues a CA and a serving certificate for

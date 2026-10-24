@@ -25,6 +25,10 @@ spec:
     - jsonPath: .spec.location
       name: Location
       type: string
+    - jsonPath: .spec.domainRefs
+      name: Domains
+      priority: 1
+      type: string
     - jsonPath: .status.containers
       name: Containers
       type: integer
@@ -73,6 +77,17 @@ spec:
                   Core".
                 maxLength: 100
                 type: string
+              domainRefs:
+                description: |-
+                  domainRefs name the Domains the system is about, such as webshop. Each
+                  of its Containers is scaffolded with them under docs/agents/domain/.
+                items:
+                  maxLength: 253
+                  minLength: 1
+                  type: string
+                maxItems: 5
+                type: array
+                x-kubernetes-list-type: set
               kpis:
                 description: kpis are how you know the system delivers.
                 items:
@@ -99,6 +114,11 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
             type: object
+            x-kubernetes-validations:
+            - message: 'an External system names no domainRefs: the factory builds
+                nothing there'
+              rule: '!has(self.domainRefs) || size(self.domainRefs) == 0 || !has(self.location)
+                || self.location != ''External'''
           status:
             description: status defines the observed state of SoftwareSystem
             properties:
@@ -197,6 +217,10 @@ spec:
     - jsonPath: .spec.location
       name: Location
       type: string
+    - jsonPath: .spec.domainRefs
+      name: Domains
+      priority: 1
+      type: string
     - jsonPath: .status.containers
       name: Containers
       type: integer
@@ -245,6 +269,17 @@ spec:
                   Core".
                 maxLength: 100
                 type: string
+              domainRefs:
+                description: |-
+                  domainRefs name the Domains the system is about, such as webshop. Each
+                  of its Containers is scaffolded with them under docs/agents/domain/.
+                items:
+                  maxLength: 253
+                  minLength: 1
+                  type: string
+                maxItems: 5
+                type: array
+                x-kubernetes-list-type: set
               kpis:
                 description: kpis are how you know the system delivers.
                 items:
@@ -271,6 +306,11 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
             type: object
+            x-kubernetes-validations:
+            - message: 'an External system names no domainRefs: the factory builds
+                nothing there'
+              rule: '!has(self.domainRefs) || size(self.domainRefs) == 0 || !has(self.location)
+                || self.location != ''External'''
           status:
             description: status defines the observed state of SoftwareSystem
             properties:

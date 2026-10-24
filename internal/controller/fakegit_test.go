@@ -130,6 +130,17 @@ func (g *fakeGit) seedRepo(owner, name, message string) {
 	g.repos[owner+"/"+name] = &fakeRepo{commits: []gitprovider.Commit{{Hash: "c0ffee", Message: message}}}
 }
 
+// seedRepoFiles creates a repository with one commit, as if someone else made
+// it, whose main holds files.
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) seedRepoFiles(owner, name, message string, files scaffold.Tree) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.repos[owner+"/"+name] = &fakeRepo{commits: []gitprovider.Commit{{Hash: "c0ffee", Message: message}},
+		files: maps.Clone(files)}
+}
+
 // clearRepo removes a repository's commits, as someone fixing it by hand would.
 func (g *fakeGit) clearRepo(owner, name string) {
 	g.mu.Lock()

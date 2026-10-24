@@ -33,9 +33,9 @@ draws the story on top.
 | --- | --- |
 | Scope | One Project per namespace; no references across namespaces, reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
-| Container | An application with its own new repository; no monorepos, no adopted repositories. |
+| Container | An application with its own repository: a new one, or an existing one it adopts with `spec.adopt`; no monorepos. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
+| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -60,6 +60,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Brief | nothing | none | An app idea in plain words and its prompts, which a planner Agent turns into the model |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Standard, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template and the Container types it supports |
+| Domain | Project | none | A catalog entry: a pinned template of what a system is about (a webshop's carts, stock and payments), its practices, common mistakes and choices; a SoftwareSystem names it in `spec.domainRefs` |
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
@@ -105,6 +106,22 @@ it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
 `Pending`, `ReferencesResolved=False`, reason `ExternalSystem`, and links to
 and from it are story only.
+
+**Domains.** A Standard tells the implementer how to build in a stack; a
+Domain tells it about what the system is for. It is its own catalog kind,
+`Domain`: a `displayName`, a `description` and a `template` at a pinned ref,
+and no `supportedTypes`, since what a system is about does not depend on a
+Container's type. A SoftwareSystem names the Domains it is about in
+`spec.domainRefs`: at most 5, unique, and none on an External system (CEL:
+the factory builds nothing there). Every Container of the system is
+scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
+the last layer, after the Connectors; the Standard's agent guide tells the
+implementer and the reviewer to read it. A Domain is written once, at the
+scaffold: a later bump of its `ref` does not reach a scaffolded Container.
+The planner names the installed Domains an idea is about on each new
+Internal system. [plans/domains.md](plans/domains.md) (#1512) has the
+decisions; the kind and `domainRefs` are built, the layer, the Standards'
+guides, the webshop Domain and the planner are its later steps.
 
 ## Scaffolding a Container
 
@@ -155,6 +172,19 @@ Container, naming it. An empty existing repository gets the commit again; one
 with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
 `c4.factory.io/retry` annotation is set or changed.
+
+**Adopting a repository.** A Container with `spec.adopt: true` (set at
+creation, immutable) takes over a repository that already has commits and
+is never scaffolded: the operator writes nothing. It checks main for two
+things. `.c4factory.yaml` carries the identity file's fields, naming this
+project and Container, with `scaffoldedFrom` empty since nothing was
+scaffolded; a missing file or another identity fails `IdentityMismatch`,
+saying what the file holds. Every file the Container's Standard renders for
+it at its ref is there with that content; else it fails
+`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
+and goes `Ready`, recording the Standard at its ref. An empty repository
+fails `NothingToAdopt`. A Container without a Standard adopts on the
+identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
 
 **Relationships.** Container to DataStore applies the DataStore's Connector at
 scaffold. Container to Container with `spec.bundles: true` says the source
@@ -893,7 +923,8 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 
 ## Out of scope and open points
 
-- **Out of scope:** existing repositories and monorepos; Component and Code
+- **Out of scope:** monorepos (an existing repository of one application
+  may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
   it writes may run the store, as postgres's StatefulSet or dynamodb's table,
   but the operator creates none); monitoring the apps beyond what a deploy
