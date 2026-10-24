@@ -1,8 +1,9 @@
 // The pages of the catalog and the Git hosts: a Standard, Compute or
 // Deployment (its template, what it supports, the Containers that name it;
 // with UI actions on, a Standard's ref bump, StandardActions), a Bundle (its
-// four entries, the types they share, the Containers that name it), a
-// GitProvider (where repositories go, and its Secret's name: the UI never
+// four entries, the types they share, the Containers that name it), a Domain
+// (its template, the systems that name it and how many of their Containers
+// were scaffolded with it), a GitProvider (where repositories go, and its Secret's name: the UI never
 // reads Secrets), and the Project page's list of them, where a refused read
 // of any of these kinds says so.
 
@@ -13,7 +14,9 @@ import {
   type Bundle,
   type CatalogEntry,
   type Container,
+  type Domain,
   type GitProvider,
+  type SoftwareSystem,
   type Standard,
 } from '../../k8s/types'
 import { bundleEntries, bundleTypes, choicesOf, type BundleSide, type Catalog } from '../../model/choices'
@@ -195,6 +198,74 @@ export function BundlePage({
   )
 }
 
+/** The systems that name this Domain, each with how many of its Containers were scaffolded with it. */
+function namedBy(name: string, systems: SoftwareSystem[], containers: Container[]): ChildRef[] {
+  return systems
+    .filter((s) => s.spec?.domainRefs?.includes(name))
+    .map((s) => {
+      const own = containers.filter((c) => c.spec.softwareSystemRef.name === s.metadata.name)
+      const scaffolded = own.filter((c) => c.status?.scaffoldedDomains?.includes(name)).length
+      return {
+        kind: 'SoftwareSystem',
+        name: s.metadata.name,
+        href: pageHref(s.metadata.namespace ?? '', 'SoftwareSystem', s.metadata.name),
+        note: `${scaffolded} of ${own.length} Containers scaffolded with it`,
+      }
+    })
+}
+
+/**
+ * A Domain's page: its template, and the systems that name it, each noted
+ * with how many of its Containers were scaffolded with it. A Domain is
+ * rendered once, at the scaffold (docs/plans/domains.md, decision 5), so
+ * the Container page says which Domains a repository holds, and its
+ * DomainsApplied condition says when its system's differ.
+ */
+export function DomainPage({
+  domain,
+  systems,
+  containers,
+}: {
+  domain: Domain
+  systems: SoftwareSystem[]
+  containers: Container[]
+}) {
+  const ns = domain.metadata.namespace ?? ''
+  const name = domain.metadata.name
+  return (
+    <main className="shell-page object-page">
+      <ObjectHeader
+        kind="Domain"
+        name={name}
+        namespace={ns}
+        title={domain.spec.displayName}
+        breadcrumb={[projectCrumb(ns)]}
+        childrenTitle="Systems that name it"
+        children={namedBy(name, systems, containers)}
+        links={[]}
+      />
+
+      <section className="panel" aria-labelledby="domain-template">
+        <h2 className="panel-title small-title" id="domain-template">
+          Its template
+        </h2>
+        {domain.spec.description ? <p className="panel-text">{domain.spec.description}</p> : null}
+        <dl className="facts">
+          <dt>Template</dt>
+          <dd className="mono">{domain.spec.template.url}</dd>
+          <dt>Pinned at</dt>
+          <dd className="mono">{domain.spec.template.ref}</dd>
+          <dt>Lands under</dt>
+          <dd>
+            <span className="mono">docs/agents/domain/{name}/</span>
+            <span className="muted small"> · in each of its systems’ Containers, once, at their scaffold</span>
+          </dd>
+        </dl>
+      </section>
+    </main>
+  )
+}
+
 /**
  * A GitProvider's page. It shows the fields it names one by one, never the
  * object whole, and of its credentials only the Secret's name.
@@ -248,6 +319,7 @@ const CATALOG: {
   { title: 'Computes', kind: 'Compute', resource: RESOURCES.computes, list: (d) => d.computes },
   { title: 'Deployments', kind: 'Deployment', resource: RESOURCES.deployments, list: (d) => d.deployments },
   { title: 'Bundles', kind: 'Bundle', resource: RESOURCES.bundles, list: (d) => d.bundles },
+  { title: 'Domains', kind: 'Domain', resource: RESOURCES.domains, list: (d) => d.domains },
   { title: 'Connectors', kind: 'Connector', resource: RESOURCES.connectors, list: (d) => d.connectors },
   { title: 'Git providers', kind: 'GitProvider', resource: RESOURCES.gitProviders, list: (d) => d.gitProviders },
 ]

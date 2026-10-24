@@ -171,11 +171,19 @@ const WORDING: Record<string, Wording> = {
     no: 'Its Bundle has changed since it was scaffolded',
     unknown: 'Not checked yet whether its Bundle still names what it was scaffolded from',
   },
+  DomainsApplied: {
+    yes: 'Its system’s Domains are the ones it was scaffolded with',
+    no: 'Its system’s Domains changed since it was scaffolded',
+    unknown: 'Not checked yet whether its system’s Domains are the ones it was scaffolded with',
+  },
 }
 
-// Reasons that change the wording of a False condition.
+// Reasons that change the wording of a False condition, keyed by reason, or by
+// `<type>.<reason>` where one reason reads differently per condition.
 const REASON_WORDING: Record<string, string> = {
   AddedAfterScaffold: 'Added after scaffolding, so the repository does not include it',
+  'DomainsApplied.AddedAfterScaffold':
+    'Its system’s Domains changed after the scaffold; the repository keeps the ones it was scaffolded with',
   BundleChanged: 'Its Bundle changed or is gone since the scaffold; the repository keeps what it was scaffolded from',
   WaitingForScaffold: 'Will be built in when the container is scaffolded',
   Scaffolding: 'Being scaffolded right now',
@@ -218,7 +226,9 @@ export function describeCondition(condition: Condition): ConditionInfo {
     return { title: wording?.yes ?? `${splitWords(condition.type)}: yes`, tone: 'ok', detail }
   }
   if (condition.status === 'False') {
-    const reasonText = condition.reason ? REASON_WORDING[condition.reason] : undefined
+    const reasonText = condition.reason
+      ? (REASON_WORDING[`${condition.type}.${condition.reason}`] ?? REASON_WORDING[condition.reason])
+      : undefined
     const tone: Tone = condition.reason && WAITING_REASONS.has(condition.reason) ? 'waiting' : 'error'
     return { title: reasonText ?? wording?.no ?? `${splitWords(condition.type)}: no`, tone, detail }
   }
