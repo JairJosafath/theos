@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -260,5 +262,138 @@ func TestCheckConfig(t *testing.T) {
 	err := New(nil).Check(ctx, tg)
 	if err == nil || errors.Is(err, ports.ErrCredentialRefused) || !strings.Contains(err.Error(), "full path") {
 		t.Fatalf("Check() with a one-segment project = %v, want a config error, not a refused credential", err)
+	}
+}
+
+// source is a release's source of files, by path, and a ReadSource that
+// streams them; a path in links is a symlink to its content.
+func source(files map[string]string, links ...string) (*model.ReleaseSource, func(context.Context,
+	func(string, int64, io.Reader) error) error) {
+	paths := slices.Sorted(maps.Keys(files))
+	hashed := make([]model.SourceFile, 0, len(paths))
+	for _, p := range paths {
+		mode := model.ModeFile
+		if slices.Contains(links, p) {
+			mode = model.ModeSymlink
+		}
+		hashed = append(hashed, model.SourceFile{Path: p, Mode: mode, Size: int64(len(files[p])),
+			Blob: model.BlobSHA([]byte(files[p]))})
+	}
+	src, err := model.NewSource(model.CI{}, hashed, "")
+	if err != nil {
+		panic(err)
+	}
+	return src, func(_ context.Context, each func(string, int64, io.Reader) error) error {
+		for _, p := range paths {
+			if err := each(p, int64(len(files[p])), strings.NewReader(files[p])); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// shipAll ships s until its release is out, at most n writes.
+func shipAll(t *testing.T, d *Deployer, tg ports.Target, p *gitlabtest.Project, s ports.Shipment, n int) {
+	t.Helper()
+	for i := 0; i < n && marked(p, s.App) == 0; i++ {
+		if err := d.Ship(context.Background(), tg, s); err != nil {
+			t.Fatalf("Ship() %s %d = %v", s.Version, i, err)
+		}
+	}
+	if marked(p, s.App) == 0 {
+		t.Fatalf("no release of %s after %d writes", s.Version, n)
+	}
+}
+
+// A target with a source folder publishes each release's source first, as
+// one commit on the default branch under the folder and a source tag at it,
+// and the release is of that commit (#1805, docs/plans/gitlab-deploy.md
+// Decision 4). The next release's commit updates and deletes, and State
+// reports the folder at its tag.
+func TestShipSource(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
+	d := New(nil)
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n",
+		"main.go": "package main // v1.0.0\n", "cmd/run.sh": "#!/bin/sh\n"})
+	shipAll(t, d, tg, p, s, 5)
+
+	commit := p.Tag("orders-api/v1.0.0")
+	if len(commit) != 40 {
+		t.Fatalf("source tag names %q, want a commit", commit)
+	}
+	want := map[string]string{"orders-api/go.mod": "module example.com/orders\n",
+		"orders-api/main.go": "package main // v1.0.0\n", "orders-api/cmd/run.sh": "#!/bin/sh\n"}
+	if got := p.Folder("orders-api/v1.0.0", "orders-api"); !maps.Equal(got, want) {
+		t.Errorf("folder at the source tag = %v, want %v", got, want)
+	}
+	if rels := p.Releases(); len(rels) != 1 || p.Tag(rels[0].Tag) != commit {
+		t.Errorf("releases = %+v, want one whose tag is at the source commit %s", rels, commit)
+	}
+	state, err := d.State(ctx, tg, s.App, "v1.0.0")
+	if err != nil || state.Phase != ports.PhaseDeployed || state.Source == nil || state.Source.Commit != commit ||
+		state.Source.Tag != "orders-api/v1.0.0" ||
+		state.Source.URL != gl.URL()+"/"+tg.Settings[model.GitLabSettingProject]+"/-/tree/orders-api/v1.0.0/orders-api" {
+		t.Fatalf("State() = %+v, %v, want Deployed with the source at its tag", state, err)
+	}
+
+	// v1.1.0 changes main.go, drops cmd/run.sh and adds README.md.
+	s2 := shipment(file("orders-cli_linux.tar.gz", "bin2"))
+	s2.Version, s2.Notes = "v1.1.0", "notes v1.1.0"
+	s2.Source, s2.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n",
+		"main.go": "package main // v1.1.0\n", "README.md": "# orders\n"})
+	for i := 0; i < 5 && len(p.Releases()) < 2; i++ {
+		if err := d.Ship(ctx, tg, s2); err != nil {
+			t.Fatalf("Ship() v1.1.0 %d = %v", i, err)
+		}
+	}
+	want = map[string]string{"orders-api/go.mod": "module example.com/orders\n",
+		"orders-api/main.go": "package main // v1.1.0\n", "orders-api/README.md": "# orders\n"}
+	if got := p.Folder("orders-api/v1.1.0", "orders-api"); !maps.Equal(got, want) {
+		t.Errorf("folder at orders-api/v1.1.0 = %v, want %v", got, want)
+	}
+	if got := p.Folder("orders-api/v1.0.0", "orders-api"); got["orders-api/main.go"] != "package main // v1.0.0\n" {
+		t.Errorf("folder at orders-api/v1.0.0 = %v, want v1.0.0's still", got)
+	}
+	if c2 := p.Tag("orders-api/v1.1.0"); c2 == "" || c2 == commit || p.Tag("cli/v1.1.0") != c2 {
+		t.Errorf("source tag v1.1.0 at %q, release tag at %q, want a new commit both name", c2, p.Tag("cli/v1.1.0"))
+	}
+}
+
+// A source with a symlink fails SourceUnsupported, naming it, before
+// anything is written: GitLab's Commits API carries none (#1805).
+func TestShipSourceSymlink(t *testing.T) {
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"main.go": "package main\n", "run": "main.go"}, "run")
+	err := New(nil).Ship(context.Background(), tg, s)
+	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	if !ok || re.Reason != model.PublishSourceUnsupported || !strings.Contains(re.Message, "run is a symlink") {
+		t.Fatalf("Ship() = %v, want a ReleaseError SourceUnsupported naming run", err)
+	}
+	if got := p.Folder(p.DefaultBranch, ""); len(got) != 0 || len(p.Files("orders-cli", "v1.0.0")) != 0 {
+		t.Errorf("written: folder %v, files %v; want nothing", got, p.Files("orders-cli", "v1.0.0"))
+	}
+}
+
+// Without a source folder the shipment's source is ignored: the release goes
+// on the default branch and no commit is made.
+func TestShipNoSourceSetting(t *testing.T) {
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"main.go": "package main\n"})
+	shipAll(t, New(nil), tg, p, s, 5)
+	if got := p.Folder(p.DefaultBranch, ""); len(got) != 0 || p.Tag("orders-api/v1.0.0") != "" {
+		t.Errorf("folder %v, source tag %q; want the branch untouched", got, p.Tag("orders-api/v1.0.0"))
+	}
+	if state, err := New(nil).State(context.Background(), tg, s.App, "v1.0.0"); err != nil || state.Source != nil {
+		t.Errorf("State() = %+v, %v, want no source", state, err)
 	}
 }
