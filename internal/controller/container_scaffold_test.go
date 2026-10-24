@@ -42,6 +42,13 @@ func createWebshop(ns string) {
 // createWebshopWith is createWebshop with orders-api changed by mutate first.
 func createWebshopWith(ns string, mutate func(*c4v1beta1.Container)) {
 	GinkgoHelper()
+	createWebshopOn(ns, newSystem(ns, "webshop-core"), mutate)
+}
+
+// createWebshopOn is createWebshopWith on the given webshop-core system, for a
+// story whose system names Domains.
+func createWebshopOn(ns string, system *c4v1beta1.SoftwareSystem, mutate func(*c4v1beta1.Container)) {
+	GinkgoHelper()
 	createFactory(ns)
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 	container.Spec.DisplayName = "Orders API"
@@ -49,7 +56,7 @@ func createWebshopWith(ns string, mutate func(*c4v1beta1.Container)) {
 		mutate(container)
 	}
 	mustCreate(
-		newSystem(ns, "webshop-core"),
+		system,
 		newOrdersDB(ns),
 		newRelationship(ns, "orders-api-to-orders-db",
 			element(c4v1beta1.ElementContainer, "orders-api"),

@@ -21,10 +21,17 @@ and the reviewer to read them before they plan or review a change.
   installs them from `catalog.entries` (`dist/chart/templates/gitea/_catalog.tpl`),
   and `make validate-yaml` pairs each with `templates/versions.txt`.
 - `scaffold.Build` (`internal/scaffold/scaffold.go`) renders the layers in
-  `sideOrder` (Framework, Standard, Compute, Deployment, Connectors),
+  `sideOrder` (Framework, Standard, Compute, Deployment, Connectors, Domains),
   `checkLayers` holds the order, the owner map fails two layers on one path
   (`ConflictError`), and each layer's `name@ref` goes to `scaffoldedFrom`.
-  `resolve` (`internal/controller/container_resolve.go`) loads the entries.
+  `resolve` (`internal/controller/container_resolve.go`) loads the entries,
+  the system's Domains last. Step 2 (#1757) built the Domain layer:
+  `domainTree` prefixes a Domain's files with `docs/agents/domain/<name>/`
+  and fails a non-Markdown file (`DomainNotMarkdownError`) or a missing
+  `README.md` (`DomainNoReadmeError`); `reportDomainsApplied`
+  (`internal/controller/container_domains.go`) sets `DomainsApplied` on a
+  Ready Container from `model.ScaffoldedDomains` against the system's
+  `domainRefs`.
 - `model.AgentNeverPaths` (`internal/model/fence.go`) is `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml`: the fence refuses an agent's change
   there and the plan check refuses an issue asking for one. A file under
@@ -73,7 +80,9 @@ and the reviewer to read them before they plan or review a change.
    you touch; follow their practices, and where they list a choice, make
    theirs unless the issue says otherwise." The reviewer guide says to check
    the change against each domain's common mistakes. A Standard update
-   renders with the same `Domains` (read from `scaffoldedFrom`), so it does
+   renders with the same `Domains` (read from `status.scaffoldedDomains`,
+   which the scaffold records by name: inferring them from `scaffoldedFrom`
+   misreads a changed choice or a Domain named like a Connector), so it does
    not drop the paragraph.
 5. **Scaffold once, no update path.** A Domain is written at scaffold and a
    later bump of its `ref` does not reach a scaffolded Container; not the way
@@ -84,8 +93,8 @@ and the reviewer to read them before they plan or review a change.
    hand. When the reference app shows stale domain text costs something, a
    follow-up proposes a Domain update on the Standard's machinery.
 6. **A Domain named after the scaffold is reported, never applied.** A Ready
-   Container whose system's `domainRefs` differ from the Domains in its
-   `scaffoldedFrom` gets `DomainsApplied=False`, reason `AddedAfterScaffold`,
+   Container whose system's `domainRefs` differ from its
+   `status.scaffoldedDomains` gets `DomainsApplied=False`, reason `AddedAfterScaffold`,
    listing the names added and removed; `True` when they agree; absent when
    the system names none and none was scaffolded. As with Relationships.
    A missing Domain keeps an unscaffolded Container `Pending`,

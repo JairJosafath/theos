@@ -586,6 +586,14 @@ type ContainerStatus struct {
 	// +optional
 	ScaffoldedFrom []string `json:"scaffoldedFrom,omitempty"`
 
+	// scaffoldedDomains names the Domains the scaffold wrote under
+	// docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+	// with them, and a Standard update renders with them. An adopted Container
+	// has none.
+	// +listType=set
+	// +optional
+	ScaffoldedDomains []string `json:"scaffoldedDomains,omitempty"`
+
 	// appliedRelationships lists the Relationships whose Connectors were part of the scaffold.
 	// +listType=set
 	// +optional
