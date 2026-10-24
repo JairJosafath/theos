@@ -3,6 +3,7 @@ package gitprovider_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -53,6 +54,9 @@ func TestGitLabSequence(t *testing.T) {
 	scopes, err := gl.TokenScopes(ctx)
 	if err != nil || !slices.Equal(scopes, gitlabtest.DefaultScopes) {
 		t.Errorf("scopes %v, %v", scopes, err)
+	}
+	if user, err := gl.User(ctx); err != nil || user != fmt.Sprintf("project_%d_bot", fp.ID) {
+		t.Errorf("user %q, %v", user, err)
 	}
 
 	if rel, err := gl.Release(ctx, "web-1.0.0"); err != nil || rel != nil {

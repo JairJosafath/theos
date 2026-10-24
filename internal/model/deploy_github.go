@@ -189,16 +189,18 @@ func GitHubHostsOf(url string) GitHubHosts {
 		Registry: "containers." + strings.TrimPrefix(url, "https://")}
 }
 
-// GitHubImage is the repository a Container's image goes to at a github
-// target's registry: owner/name/<container> of the target's repository,
-// lower-cased as GHCR wants it, or owner/name alone when the target's
-// tagPrefix is "", which gives the repository to one Container
-// (docs/plans/done/github-deploy.md, Decision 5).
-func GitHubImage(repository, container, tagPrefix string) string {
+// ImageRepository is the repository a Container's image goes to at a github
+// or gitlab target's registry: home/<container>, lower-cased as registries
+// want it, or home alone when the target's tagPrefix is "", which gives the
+// repository to one Container. home is a github target's owner/name
+// (docs/plans/done/github-deploy.md, Decision 5) or a gitlab project's
+// container_registry_image_prefix without its host
+// (docs/plans/gitlab-deploy.md, Decision 5).
+func ImageRepository(home, container, tagPrefix string) string {
 	if tagPrefix == "" {
-		return strings.ToLower(repository)
+		return strings.ToLower(home)
 	}
-	return strings.ToLower(repository + "/" + container)
+	return strings.ToLower(home + "/" + container)
 }
 
 // GitHubImageNotes are a release's notes with a line naming its image,

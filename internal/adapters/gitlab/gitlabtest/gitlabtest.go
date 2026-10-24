@@ -73,6 +73,16 @@ func (s *Server) Close() { s.srv.Close() }
 // URL is the instance's address, without /api/v4: a GitLabConfig's URL.
 func (s *Server) URL() string { return s.srv.URL }
 
+// host is the fake's host and port, the registry host its projects name
+// unless a test sets Project.RegistryHost.
+func (s *Server) host() string {
+	u, err := url.Parse(s.srv.URL)
+	if err != nil {
+		return s.srv.URL
+	}
+	return u.Host
+}
+
 // Project is a project on the fake. Its exported fields are knobs a test sets
 // before it calls the fake.
 type Project struct {
@@ -83,6 +93,9 @@ type Project struct {
 	// RegistryEnabled is whether its container registry is on; true to begin
 	// with.
 	RegistryEnabled bool
+	// RegistryHost is the host of its container_registry_image_prefix: the
+	// fake's own to begin with; a test points it at a fake registry.
+	RegistryHost string
 	// PackagesEnabled is whether its package registry is on; true to begin
 	// with. Off, the generic upload and the package listing are a 403.
 	PackagesEnabled bool
@@ -138,7 +151,7 @@ func (s *Server) AddProject(path, token string) *Project {
 	defer s.mu.Unlock()
 	s.nextID++
 	p := &Project{ID: s.nextID, Path: path, Scopes: slices.Clone(DefaultScopes), RegistryEnabled: true,
-		PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
+		RegistryHost: s.host(), PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
 		s: s, token: token, tags: map[string]string{}}
 	s.projects[path] = p
 	return p
@@ -346,10 +359,9 @@ func (p *Project) info(w http.ResponseWriter) {
 	if !p.RegistryEnabled {
 		level = "disabled"
 	}
-	host := strings.TrimPrefix(p.s.srv.URL, "http://")
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID, "path_with_namespace": p.Path,
 		"web_url": p.s.srv.URL + "/" + p.Path, "default_branch": p.DefaultBranch,
-		"container_registry_image_prefix": strings.ToLower(host + "/" + p.Path),
+		"container_registry_image_prefix": strings.ToLower(p.RegistryHost + "/" + p.Path),
 		"container_registry_access_level": level})
 }
 

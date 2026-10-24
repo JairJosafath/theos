@@ -88,6 +88,9 @@ type GitLabProject interface {
 	Project(ctx context.Context) (GitLabProjectInfo, error)
 	// TokenScopes returns the scopes of the token the client calls with.
 	TokenScopes(ctx context.Context) ([]string, error)
+	// User returns the username of the token's user: the login at the
+	// project's container registry (docs/plans/gitlab-deploy.md, Decision 5).
+	User(ctx context.Context) (string, error)
 	// Release returns the release of tag, nil when there is none. Its Target
 	// is the commit the tag names, Body the description and URL its page.
 	Release(ctx context.Context, tag string) (*model.TargetRelease, error)
@@ -202,6 +205,15 @@ func (g *gitlabProject) TokenScopes(ctx context.Context) ([]string, error) {
 		re.Message = "gitlab: the instance has no record of the token: " + re.Message
 	}
 	return t.Scopes, err
+}
+
+// User reads the token's user, GET /user.
+func (g *gitlabProject) User(ctx context.Context) (string, error) {
+	var u struct {
+		Username string `json:"username"`
+	}
+	err := g.call(ctx, http.MethodGet, "/user", nil, http.StatusOK, "reading the token's user", &u)
+	return u.Username, err
 }
 
 func (g *gitlabProject) Release(ctx context.Context, tag string) (*model.TargetRelease, error) {
