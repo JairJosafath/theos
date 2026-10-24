@@ -25,6 +25,13 @@ const templatesURL = "http://gitea.gitea.svc.cluster.local:3000/templates/"
 // exercises every layer, with the supported types from the design.
 func createFactory(ns string) {
 	GinkgoHelper()
+	createFactoryAt(ns, "v1.6.0")
+}
+
+// createFactoryAt creates the factory createFactory does, with the Framework
+// python-fastapi at frameworkRef.
+func createFactoryAt(ns, frameworkRef string) {
+	GinkgoHelper()
 	service, worker, job := c4v1beta1.ContainerTypeService, c4v1beta1.ContainerTypeWorker, c4v1beta1.ContainerTypeJob
 	operator := c4v1beta1.ContainerTypeOperator
 	mustCreate(
@@ -41,7 +48,7 @@ func createFactory(ns string) {
 			},
 		},
 		&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
-			Spec: newFrameworkSpec(templatesURL+"python-fastapi", "v1.6.0", service)},
+			Spec: newFrameworkSpec(templatesURL+"python-fastapi", frameworkRef, service)},
 		&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "go-kubebuilder"),
 			Spec: newFrameworkSpec(templatesURL+"go-kubebuilder", "v1.0.0", operator)},
 		&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "small"),

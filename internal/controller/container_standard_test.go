@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -463,6 +464,75 @@ var _ = Describe("Container Standard update", func() {
 			"the Standard sees the Framework at v1.3.0, the scaffold's, not at its newest ref")
 	})
 
+	// frameworkStopped waits until orders-api's update stopped on its Framework
+	// with reason, and no update in flight, and returns the condition's message.
+	frameworkStopped := func(ns, reason string) string {
+		GinkgoHelper()
+		var message string
+		Eventually(func(g Gomega) {
+			container := getContainer(g, ns)
+			g.Expect(container.Status.Standard).To(PointTo(HaveField("Update", BeNil())))
+			cond := standardCondition(g, container)
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(reason))
+			message = cond.Message
+		}).Should(Succeed())
+		return message
+	}
+
+	It("stops an update whose Framework is gone, naming it, and plans again once it is back (#1249)", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+
+		By("deleting the Framework the Container was scaffolded from")
+		framework := &c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi")}
+		Expect(k8sClient.Delete(ctx, framework)).To(Succeed())
+		Eventually(func() error {
+			return managerClient.Get(ctx, key(ns, "python-fastapi"), &c4v1beta1.Framework{})
+		}).Should(MatchError(apierrors.IsNotFound, "IsNotFound"), "the operator's cache saw the deletion")
+
+		bumpStandard(ns, "v1.1.0")
+		Expect(frameworkStopped(ns, c4v1beta1.ReasonNotFound)).To(Equal("Framework python-fastapi not found"))
+
+		By("putting the Framework back")
+		mustCreate(&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "python-fastapi"),
+			Spec: newFrameworkSpec(templatesURL+"python-fastapi", "v1.6.0", c4v1beta1.ContainerTypeService)})
+		Eventually(func() error {
+			return managerClient.Get(ctx, key(ns, "python-fastapi"), &c4v1beta1.Framework{})
+		}).Should(Succeed())
+		bumpStandard(ns, "v1.2.0")
+		update := openedUpdate(ns, "v1.2.0")
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAt(ns, "v1.2.0")
+	})
+
+	It("stops an update whose Framework fails to render at the scaffold's ref, until it renders again (#1249)", func() {
+		ns := newProjectNamespace()
+		url := templatesURL + "python-fastapi"
+		const ref = "v1.6.0-1443"
+		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
+		Expect(err).NotTo(HaveOccurred())
+		gitFake.addTemplate(url, ref, files)
+		createFactoryAt(ns, ref)
+		standardContainer(ns, nil)
+		Expect(getContainer(Default, ns).Status.ScaffoldedFrom).To(ContainElement("python-fastapi@" + ref))
+
+		By("breaking the Framework's template at the ref the Container was scaffolded from")
+		broken := maps.Clone(files)
+		broken["docs/broken.md.tmpl"] = scaffold.File{Data: []byte("{{ end }}\n")}
+		gitFake.addTemplate(url, ref, broken)
+		bumpStandard(ns, "v1.1.0")
+		message := frameworkStopped(ns, c4v1beta1.ReasonFailed)
+		Expect(message).To(HavePrefix("Could not render the Framework python-fastapi at " + ref + ": "))
+		Expect(message).To(ContainSubstring("docs/broken.md.tmpl"))
+
+		By("mending the template")
+		gitFake.addTemplate(url, ref, files)
+		bumpStandard(ns, "v1.2.0")
+		update := openedUpdate(ns, "v1.2.0")
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAt(ns, "v1.2.0")
+	})
 	It("renders an update with the license the repository was scaffolded with, not the current one (#1788)", func() {
 		ns := newProjectNamespace()
 		setProjectLicense(ns, "MIT")
