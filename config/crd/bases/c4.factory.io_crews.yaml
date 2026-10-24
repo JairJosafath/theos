@@ -293,6 +293,15 @@ spec:
                   most recently merged issue, and the milestone is then closed. Releases go
                   out in order, and an existing tag is never moved.
                 type: boolean
+              taskBudgetUSD:
+                description: |-
+                  taskBudgetUSD is the most a Task's agent runs may cost, in US dollars,
+                  summed over its rounds from what the agents report (status.costMilliUSD).
+                  At the cap the Task starts no further run, reason OverBudget, until the
+                  cap is raised. Unset means no cap.
+                format: int32
+                minimum: 1
+                type: integer
             required:
             - containerRef
             - implementer
@@ -988,6 +997,15 @@ spec:
                   most recently merged issue, and the milestone is then closed. Releases go
                   out in order, and an existing tag is never moved.
                 type: boolean
+              taskBudgetUSD:
+                description: |-
+                  taskBudgetUSD is the most a Task's agent runs may cost, in US dollars,
+                  summed over its rounds from what the agents report (status.costMilliUSD).
+                  At the cap the Task starts no further run, reason OverBudget, until the
+                  cap is raised. Unset means no cap.
+                format: int32
+                minimum: 1
+                type: integer
             required:
             - containerRef
             - implementer
