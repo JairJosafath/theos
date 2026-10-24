@@ -92,6 +92,8 @@ describe('agentRuns', () => {
         step('Implementing', 1, 'Running'),
         step('Implementing', 1, 'Waiting'),
         step('Checking', 1, 'Checking'),
+        step('Checking', 1, 'OverBudget'),
+        step('Reviewing', 1, 'OverBudget'),
         step('Reviewing', 1, 'Running'),
         step('Implementing', 2, 'NextRound'),
         step('Reviewing', 2, 'Running'),
