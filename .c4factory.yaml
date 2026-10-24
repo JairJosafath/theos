@@ -1,0 +1,8 @@
+# C4 Factory's identity file. Container c4factory adopted this repository
+# (spec.adopt): nothing was scaffolded, so scaffoldedFrom is empty.
+# The Session client reads it to find this repository's Container.
+project: factory
+softwareSystem: c4factory
+container: c4factory
+type: operator
+scaffoldedFrom: []
