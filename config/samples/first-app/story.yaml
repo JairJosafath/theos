@@ -1,6 +1,6 @@
 # Who uses what, and what it is made of: the shop's staff use orders-cli, a Go
 # command-line tool in webshop-core.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: staff
@@ -8,7 +8,7 @@ spec:
   displayName: Shop staff
   description: Someone who packs and ships the shop's orders.
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: webshop-core
@@ -20,7 +20,7 @@ spec:
   kpis:
   - Checkout conversion
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: orders-cli
@@ -56,7 +56,7 @@ spec:
   deploy:
     - target: orders-cli-releases
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: staff-uses-webshop-core
@@ -69,7 +69,7 @@ spec:
     name: webshop-core
   description: Packs and ships orders
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: staff-uses-orders-cli

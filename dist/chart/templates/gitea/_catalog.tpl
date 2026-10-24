@@ -12,7 +12,7 @@ GitProvider, and hand edits would be lost (docs/plans/done/upgrade-in-place.md).
 ---
 # Project {{ .name }} scaffolds into its organization in the release's Gitea,
 # with the token the seed stored.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: gitea
@@ -41,7 +41,7 @@ spec:
 # pushed to the templates organization, pinned to its tag. The template is
 # named like the entry unless the entry's template says otherwise (the Domain
 # webshop is templates/webshop-domain).
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: {{ .kind }}
 metadata:
   name: {{ .name }}
@@ -59,7 +59,7 @@ spec:
 ---
 # Project {{ $project }}'s bundle {{ .name }}: entries above picked together,
 # which a Container names with bundleRef instead of its four sides.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Bundle
 metadata:
   name: {{ .name }}
@@ -84,7 +84,7 @@ spec:
 ---
 # Project {{ $project }}'s {{ $role }}: Claude Code reading Secret
 # {{ $a.credentialsSecret }}, which the person creates.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Agent
 metadata:
   name: {{ $role }}
@@ -111,7 +111,7 @@ spec:
 {{- if .enabled }}
 ---
 # Project {{ $project }}'s stand-in: no model and no token, for trying the loop.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Agent
 metadata:
   name: stand-in

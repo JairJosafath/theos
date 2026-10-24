@@ -31,7 +31,7 @@ const lens: BriefRelease = {
 }
 const repo = 'gray-lenovo/cel-lens'
 const brief: Brief = {
-  apiVersion: 'c4.factory.io/v1alpha1',
+  apiVersion: 'c4.factory.io/v1beta1',
   kind: 'Brief',
   metadata: { name: 'lens', namespace: 'p', resourceVersion: '7' },
   spec: { idea: 'A lens on CEL', releases: [lens] },

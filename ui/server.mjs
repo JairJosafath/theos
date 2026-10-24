@@ -77,8 +77,12 @@ export const DOWNLOADS = ['c4session-linux-amd64', 'c4session-linux-arm64', 'SHA
 /** Request headers passed upstream. Everything else, auth and cookies included, is dropped. */
 const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
 
-/** Response headers passed back to the browser. */
-const FORWARDED_RESPONSE_HEADERS = ['content-type', 'cache-control', 'date', 'audit-id']
+/**
+ * Response headers passed back to the browser. `warning` carries the API
+ * server's deprecation notice for a request at a deprecated version
+ * (c4.factory.io/v1alpha1, #1618), which the project page shows.
+ */
+const FORWARDED_RESPONSE_HEADERS = ['content-type', 'cache-control', 'date', 'audit-id', 'warning']
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -285,7 +289,7 @@ const isObject = (value) => typeof value === 'object' && value !== null && !Arra
 /** A namespaced c4.factory.io resource path: the collection, or one object with `one`. */
 const resourcePath = (plural, one = false) =>
   new RegExp(
-    `^/apis/c4\\.factory\\.io/v1alpha1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
+    `^/apis/c4\\.factory\\.io/v1beta1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
   )
 
 const JSON_MEDIA = 'application/json'
@@ -342,7 +346,7 @@ function setsAnnotation(key) {
  */
 function createsObject(kind, specFields, fixed = {}) {
   return (body, namespace) => {
-    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1alpha1' || body.kind !== kind) return undefined
+    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1beta1' || body.kind !== kind) return undefined
     const meta = isObject(body.metadata) ? body.metadata : {}
     if (meta.namespace !== undefined && meta.namespace !== namespace) return undefined
     if (specFields && !(isObject(body.spec) && Object.keys(body.spec).every((f) => specFields.includes(f)))) {
@@ -631,7 +635,7 @@ async function actionWrite(req, res, apiPath, upstream, log, table, mode, oidc) 
 
 /** Creates a Brief, once the namespace is known to hold a Project. */
 async function createBrief({ res, upstream, log, apiPath, namespace, body, as }) {
-  const projects = await requestJson(upstream, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/projects`)
+  const projects = await requestJson(upstream, `/apis/c4.factory.io/v1beta1/namespaces/${namespace}/projects`)
   if (projects.status !== 200) return send(res, projects.status, `${JSON.stringify(projects.body)}\n`, JSON_TYPE)
   if (!projects.body?.items?.length) {
     return sendStatus(res, 403, 'Forbidden', `Namespace ${namespace} holds no Project, so the UI makes no Brief there`)

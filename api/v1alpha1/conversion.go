@@ -25,7 +25,7 @@ import (
 )
 
 // Every kind converts to and from its v1beta1 hub through one generic
-// converter (docs/plans/api-versions.md, decision 3): an unstructured round
+// converter (docs/plans/done/api-versions.md, decision 3): an unstructured round
 // trip, since the shapes match, with a per-kind hook for what differs. A
 // field the target version has no home for rides in the annotation
 // FieldsAnnotation of the version it came from, as JSON, and comes back when
@@ -44,7 +44,7 @@ type conversionHook func(obj map[string]any) error
 // v1beta1 changes no shape. The change that adds a kind's first hook also
 // marks its hub type +kubebuilder:metadata:annotations="c4.factory.io/conversion=webhook",
 // which switches that CRD alone from strategy None to the webhook (#1830,
-// docs/plans/api-versions.md, decision 3); a test in internal/controller
+// docs/plans/done/api-versions.md, decision 3); a test in internal/controller
 // keeps the mark and the schemas in step.
 var toHubHooks, fromHubHooks = map[string]conversionHook{}, map[string]conversionHook{}
 

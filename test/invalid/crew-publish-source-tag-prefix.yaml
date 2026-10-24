@@ -1,5 +1,5 @@
 # expect: tagPrefix must make a git tag name
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Crew
 metadata:
   name: engine
