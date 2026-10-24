@@ -571,7 +571,12 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   and files the issues once it is Ready, ordered by their `after:` front
   matter as Git host dependencies. What it made carries the label
   `c4.factory.io/brief`. A failed step says where and why
-  (`Planned=False`, `ApplyFailed`).
+  (`Planned=False`, `ApplyFailed`). A round that waits for a Container that
+  stopped (phase `Failed`) keeps waiting and says why: its `Planned` message
+  carries the Container's failing condition's reason and message after the
+  phase ("Container x (Failed: UnpinnedRef, Framework y: ...)"), so a fix
+  to the Container (a pinned ref, a Markdown domain, a layer moved) lets the
+  round go on without a retry.
 - **One app uses another's release, never its branch.** An issue's `uses:`
   names a related Container; it turns ready once that app's release has
   settled and published something other apps install, a Go module, an npm
