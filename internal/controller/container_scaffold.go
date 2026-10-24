@@ -184,7 +184,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 }
 
 // adopt takes over a repository that already has commits (#1888, spec.adopt).
-// Nothing is written: main must carry a .c4factory.yaml naming this project
+// Nothing is written: main must exist and carry a .c4factory.yaml naming this project
 // and Container, and every file of the Container's Standard with the content
 // the Standard renders for it at its ref. Then main is protected and the
 // Container is Ready, its Standard recorded at that ref and nothing recorded
@@ -216,6 +216,14 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
 	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, []string{scaffold.IdentityPath})
+	if errors.Is(err, gitprovider.ErrBranchNotFound) {
+		// #1908: the commits History found are on another branch; no retry
+		// makes main appear.
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonNoDefaultBranch,
+			fmt.Sprintf("Repository %s has commits but no %s branch; an adopted repository names its project and "+
+				"Container and carries its Standard's files on %s, so rename its default branch to %s first",
+				repo.WebURL, gitprovider.DefaultBranch, gitprovider.DefaultBranch, gitprovider.DefaultBranch))
+	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}

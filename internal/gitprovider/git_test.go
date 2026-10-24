@@ -243,6 +243,19 @@ func TestHistoryOnAnotherBranch(t *testing.T) {
 	if len(commits) != 1 || commits[0].Hash != hash.String() {
 		t.Fatalf("history() = %+v, want their commit %s on master", commits, hash)
 	}
+
+	// #1908: main itself is missing, which readFiles reports as such, so a
+	// caller fails instead of retrying.
+	if _, _, err := readFiles(ctx, dir, nil, defaultBranch, []string{"README.md"}); !errors.Is(err, ErrBranchNotFound) {
+		t.Fatalf("readFiles(main) error = %v, want ErrBranchNotFound", err)
+	}
+	files, _, err := readFiles(ctx, dir, nil, "master", []string{"README.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(files["README.md"].Data) != "# theirs\n" {
+		t.Fatalf("readFiles(master) = %q, want their README", files["README.md"].Data)
+	}
 }
 
 func TestSameHost(t *testing.T) {

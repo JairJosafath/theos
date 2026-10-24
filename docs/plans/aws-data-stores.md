@@ -24,7 +24,8 @@ keeps data instead of planning none.
 - `aws-queue-ts`, `aws-event-ts` (`worker`), `aws-schedule-ts` (`job`),
   `aws-fargate-ts` and `aws-ec2-ts` (`service`) can't take it at all.
   `aws-static-site-ts` has no Lambda or task and is left out.
-- `internal/model/planner.md` says to plan no DataStore for any AWS Container.
+- `internal/model/planner.md` said to plan no DataStore for any AWS Container
+  (step 5 changes that).
 - The only check between a Connector and a Container is the type
   (`CatalogEntry.Supports`). Widening `dynamodb` to `service`, `worker` and
   `job` would let a `python-fastapi` service or a `go-cli` worker take it,

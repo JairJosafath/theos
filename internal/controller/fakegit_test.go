@@ -52,6 +52,10 @@ type fakeRepo struct {
 	// files is main's tree. It is replaced, never changed in place, so a test
 	// can keep reading the tree it got.
 	files scaffold.Tree
+	// branch is the name of the only branch when it is not main (#1908):
+	// History reads it, as the real provider falls back to another branch,
+	// and ReadFiles finds no main. Empty means main.
+	branch string
 }
 
 func newFakeGit(templatesDir string) (*fakeGit, error) {
@@ -139,6 +143,17 @@ func (g *fakeGit) seedRepoFiles(owner, name, message string, files scaffold.Tree
 	defer g.mu.Unlock()
 	g.repos[owner+"/"+name] = &fakeRepo{commits: []gitprovider.Commit{{Hash: "c0ffee", Message: message}},
 		files: maps.Clone(files)}
+}
+
+// seedRepoBranch creates a repository with one commit on branch, not main,
+// holding files, as an import whose default branch kept another name (#1908).
+//
+//nolint:unparam // takes owner and name like the other helpers
+func (g *fakeGit) seedRepoBranch(owner, name, branch, message string, files scaffold.Tree) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.repos[owner+"/"+name] = &fakeRepo{commits: []gitprovider.Commit{{Hash: "c0ffee", Message: message}},
+		files: maps.Clone(files), branch: branch}
 }
 
 // clearRepo removes a repository's commits, as someone fixing it by hand would.
@@ -256,7 +271,8 @@ func (g *fakeGit) newSHA() string {
 
 // ReadFiles reads main, or a branch the fake has: main's files with the
 // edits PushBranch recorded for it, at the branch's head. A path ending in "/"
-// reads every file below that directory.
+// reads every file below that directory. A branch the fake doesn't have, main
+// of a repository seeded on another branch included, is ErrBranchNotFound.
 func (p *fakeProvider) ReadFiles(_ context.Context, repo gitprovider.Repository, branch string,
 	paths []string) (scaffold.Tree, string, error) {
 	p.git.mu.Lock()
@@ -264,14 +280,17 @@ func (p *fakeProvider) ReadFiles(_ context.Context, repo gitprovider.Repository,
 	key := repo.Owner + "/" + repo.Name
 	r := p.git.repos[key]
 	if r == nil || len(r.commits) == 0 {
-		return nil, "", fmt.Errorf("clone %s at %s: branch not found", repo.CloneURL, branch)
+		return nil, "", fmt.Errorf("clone %s at %s: %w", repo.CloneURL, branch, gitprovider.ErrBranchNotFound)
 	}
 	tree, sha := r.files, r.commits[len(r.commits)-1].Hash
-	if branch != gitprovider.DefaultBranch {
+	if branch == gitprovider.DefaultBranch && r.branch != "" {
+		return nil, "", fmt.Errorf("clone %s at %s: %w", repo.CloneURL, branch, gitprovider.ErrBranchNotFound)
+	}
+	if branch != gitprovider.DefaultBranch && branch != r.branch {
 		s := p.git.agentState()
 		head, ok := s.branches[key+"@"+branch]
 		if !ok {
-			return nil, "", fmt.Errorf("clone %s at %s: branch not found", repo.CloneURL, branch)
+			return nil, "", fmt.Errorf("clone %s at %s: %w", repo.CloneURL, branch, gitprovider.ErrBranchNotFound)
 		}
 		tree, sha = withEdits(r.files, s.edits[key+"@"+branch]), head
 	}
