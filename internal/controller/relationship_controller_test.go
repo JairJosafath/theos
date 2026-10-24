@@ -13,23 +13,23 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Relationship", func() {
 	It("can't point to itself", func() {
 		ns := newProjectNamespace()
 		rel := newRelationship(ns, "loop",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementContainer, "orders-api"))
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementContainer, "orders-api"))
 		Expect(k8sClient.Create(ctx, rel)).To(MatchError(ContainSubstring("a Relationship cannot point to itself")))
 	})
 
 	It("keeps its source for life", func() {
 		ns := newProjectNamespace()
 		rel := newRelationship(ns, "uses",
-			element(c4v1alpha1.ElementPerson, "customer"),
-			element(c4v1alpha1.ElementSoftwareSystem, "webshop-core"))
+			element(c4v1beta1.ElementPerson, "customer"),
+			element(c4v1beta1.ElementSoftwareSystem, "webshop-core"))
 		mustCreate(rel)
 		Expect(patch(rel, func() { rel.Spec.Source.Name = "admin" })).
 			To(MatchError(ContainSubstring("source is immutable")))
@@ -40,8 +40,8 @@ var _ = Describe("Relationship", func() {
 	It("keeps its target for life", func() {
 		ns := newProjectNamespace()
 		rel := newRelationship(ns, "orders-api-to-orders-db",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "orders-db"))
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "orders-db"))
 		mustCreate(rel)
 		Expect(patch(rel, func() { rel.Spec.Target.Name = "cache-db" })).
 			To(MatchError(ContainSubstring("target is immutable")))
@@ -51,43 +51,43 @@ var _ = Describe("Relationship", func() {
 		ns := newProjectNamespace()
 		person := newPerson(ns, "customer")
 		rel := newRelationship(ns, "customer-uses-webshop",
-			element(c4v1alpha1.ElementPerson, "customer"),
-			element(c4v1alpha1.ElementSoftwareSystem, "webshop-core"))
+			element(c4v1beta1.ElementPerson, "customer"),
+			element(c4v1beta1.ElementSoftwareSystem, "webshop-core"))
 		mustCreate(person, rel)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, rel.Name), rel)).To(Succeed())
 			g.Expect(controlledBy(rel, person)).To(BeTrue())
-			cond := condition(rel.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			cond := condition(rel.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(Equal("SoftwareSystem webshop-core not found"))
-			g.Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)).To(BeNil(),
+			g.Expect(condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)).To(BeNil(),
 				"story-only links have no Applied condition")
 		}).Should(Succeed())
 
 		mustCreate(newSystem(ns, "webshop-core"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, rel.Name), rel)).To(Succeed())
-			g.Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+			g.Expect(condition(rel.Status.Conditions, c4v1beta1.ConditionReferencesResolved)).
 				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})
 
 	It("waits for the scaffold before a Container to DataStore link counts as applied", func() {
 		ns := newProjectNamespace()
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		rel := newRelationship(ns, "orders-api-to-orders-db",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "orders-db"))
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "orders-db"))
 		mustCreate(newSystem(ns, "webshop-core"), container, newOrdersDB(ns), rel)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, rel.Name), rel)).To(Succeed())
 			g.Expect(controlledBy(rel, container)).To(BeTrue())
-			cond := condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)
+			cond := condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonWaiting))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonWaiting))
 		}).Should(Succeed())
 	})
 })
@@ -118,16 +118,16 @@ var _ = Describe("DataStore", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), store)).To(Succeed())
 			g.Expect(controlledBy(store, system)).To(BeTrue())
-			cond := condition(store.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			cond := condition(store.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(Equal("Connector postgres not found"))
 		}).Should(Succeed())
 
-		mustCreate(&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1alpha1.ContainerTypeService)})
+		mustCreate(&c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
+			Spec: c4v1beta1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1beta1.ContainerTypeService)}})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), store)).To(Succeed())
-			g.Expect(condition(store.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+			g.Expect(condition(store.Status.Conditions, c4v1beta1.ConditionReferencesResolved)).
 				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 	})

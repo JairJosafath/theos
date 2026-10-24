@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // adopt makes owner the controller of obj and merges the ancestor labels, then
@@ -69,7 +69,7 @@ func setCondition(conds *[]metav1.Condition, generation int64, typ string,
 
 // projectLabels are the ancestor labels for anything in a project's namespace.
 func projectLabels(namespace string) map[string]string {
-	return map[string]string{c4v1alpha1.LabelProject: namespace}
+	return map[string]string{c4v1beta1.LabelProject: namespace}
 }
 
 // requestFor returns a reconcile request for a named object in a namespace.

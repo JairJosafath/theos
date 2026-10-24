@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
@@ -34,8 +34,8 @@ const (
 // ensureAgentNetwork fences agent sandboxes in the project: no traffic in, and
 // out only what fenceEgress allows, the in-cluster Git hosts being those of the
 // project's GitProviders, and, when the operator has one, the model proxy.
-func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v1alpha1.Project) error {
-	var providers c4v1alpha1.GitProviderList
+func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v1beta1.Project) error {
+	var providers c4v1beta1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}

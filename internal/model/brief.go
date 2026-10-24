@@ -21,8 +21,15 @@ const (
 	KindRelationship = "Relationship"
 )
 
-// PlanAPIVersion is the apiVersion of every object in a plan.
-const PlanAPIVersion = "c4.factory.io/v1alpha1"
+// PlanAPIVersion is the apiVersion the planner writes on every object in a
+// plan: the storage version (docs/plans/api-versions.md, decision 5).
+const PlanAPIVersion = "c4.factory.io/v1beta1"
+
+// planAPIVersions are the apiVersions a plan may carry: every served version,
+// since a plan a person wrote by hand, or one written before the upgrade, may
+// still say v1alpha1, and the operator applies it through conversion as it
+// would any older client's object (docs/design.md, "Compatibility").
+var planAPIVersions = []string{PlanAPIVersion, "c4.factory.io/v1alpha1"}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"
@@ -76,6 +83,10 @@ type PlanObject struct {
 	Needs    []string
 	KPIs     []string
 	Location string
+	// Domains are a SoftwareSystem's domainRefs: the installed Domains it is
+	// about, picked by the round that creates it and never changed by a later
+	// one (#1760).
+	Domains []string
 
 	// SoftwareSystem is a Container's or DataStore's.
 	SoftwareSystem string
@@ -353,10 +364,11 @@ type planElementRef struct {
 }
 
 type planSystemSpec struct {
-	planText `yaml:",inline"`
-	Needs    []string `yaml:"needs"`
-	KPIs     []string `yaml:"kpis"`
-	Location string   `yaml:"location"`
+	planText   `yaml:",inline"`
+	Needs      []string `yaml:"needs"`
+	KPIs       []string `yaml:"kpis"`
+	Location   string   `yaml:"location"`
+	DomainRefs []string `yaml:"domainRefs"`
 }
 
 type planContainerSpec struct {
@@ -501,7 +513,7 @@ func decodePlanSpec(node *yaml.Node, o *PlanObject) error {
 			return err
 		}
 		o.DisplayName, o.Description, o.Needs, o.KPIs = spec.DisplayName, spec.Description, spec.Needs, spec.KPIs
-		o.Location = cmp.Or(spec.Location, LocationInternal)
+		o.Location, o.Domains = cmp.Or(spec.Location, LocationInternal), spec.DomainRefs
 	case KindContainer:
 		if hasTier(node) {
 			return errPlanTier
@@ -669,7 +681,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 			continue
 		}
 		seen[o.Ref()] = true
-		if !slices.Contains(planKinds, o.Kind) || o.APIVersion != PlanAPIVersion {
+		if !slices.Contains(planKinds, o.Kind) || !slices.Contains(planAPIVersions, o.APIVersion) {
 			refuse(subject, "a plan writes only %s objects of %s; "+
 				"anything else (a GitProvider, Secret, Agent, Crew, catalog entry, Task or Brief) is the person's to make",
 				joinAnd(planKinds), PlanAPIVersion)
@@ -719,6 +731,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 	checkParallel(plan, current, refuse)
 	checkChecks(plan, current, refuse)
 	checkOperations(plan, current, refuse)
+	checkDomains(plan, current, refuse)
 	return out
 }
 
@@ -803,7 +816,7 @@ type specLimit struct {
 }
 
 // specLimits are the limits of kind's spec, as its CRD's markers in
-// api/v1alpha1 set them; a test holds the two together.
+// api/v1beta1 set them; a test holds the two together.
 func specLimits(kind string) []specLimit {
 	displayName := specLimit{"displayName", 100, false, func(o PlanObject) any { return o.DisplayName }}
 	description := specLimit{"description", 1000, false, func(o PlanObject) any { return o.Description }}
@@ -813,7 +826,8 @@ func specLimits(kind string) []specLimit {
 	case KindSoftwareSystem:
 		return []specLimit{displayName, description,
 			{"needs", 20, true, func(o PlanObject) any { return o.Needs }},
-			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }}}
+			{"kpis", 20, true, func(o PlanObject) any { return o.KPIs }},
+			{"domainRefs", 5, true, func(o PlanObject) any { return o.Domains }}}
 	case KindRelationship:
 		return []specLimit{{"description", 200, false, func(o PlanObject) any { return o.Description }}}
 	}

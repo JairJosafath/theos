@@ -13,23 +13,23 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Bundle", func() {
 	It("takes a frameworkRef alone or with the three optional sides", func() {
 		ns := newProjectNamespace()
 		mustCreate(
-			&c4v1alpha1.Bundle{ObjectMeta: objectMeta(ns, "bare"),
-				Spec: c4v1alpha1.BundleSpec{FrameworkRef: c4v1alpha1.LocalRef{Name: "python-fastapi"}}},
-			&c4v1alpha1.Bundle{ObjectMeta: objectMeta(ns, "python-service"),
-				Spec: c4v1alpha1.BundleSpec{
+			&c4v1beta1.Bundle{ObjectMeta: objectMeta(ns, "bare"),
+				Spec: c4v1beta1.BundleSpec{FrameworkRef: c4v1beta1.LocalRef{Name: "python-fastapi"}}},
+			&c4v1beta1.Bundle{ObjectMeta: objectMeta(ns, "python-service"),
+				Spec: c4v1beta1.BundleSpec{
 					DisplayName:   "Python service",
 					Description:   "A FastAPI service on the cluster",
-					FrameworkRef:  c4v1alpha1.LocalRef{Name: "python-fastapi"},
-					StandardRef:   &c4v1alpha1.LocalRef{Name: "python-standard"},
-					ComputeRef:    &c4v1alpha1.LocalRef{Name: "small"},
-					DeploymentRef: &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
+					FrameworkRef:  c4v1beta1.LocalRef{Name: "python-fastapi"},
+					StandardRef:   &c4v1beta1.LocalRef{Name: "python-standard"},
+					ComputeRef:    &c4v1beta1.LocalRef{Name: "small"},
+					DeploymentRef: &c4v1beta1.LocalRef{Name: "k8s-manifests"},
 				}},
 		)
 	})
@@ -37,7 +37,7 @@ var _ = Describe("Bundle", func() {
 	It("is refused without a frameworkRef", func() {
 		ns := newProjectNamespace()
 		bundle := &unstructured.Unstructured{Object: map[string]any{
-			"apiVersion": c4v1alpha1.GroupVersion.String(),
+			"apiVersion": c4v1beta1.GroupVersion.String(),
 			"kind":       "Bundle",
 			"metadata":   map[string]any{"name": "no-framework", "namespace": ns},
 			"spec": map[string]any{

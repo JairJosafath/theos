@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -45,18 +45,18 @@ func releaseRun(ns, status, conclusion string) {
 // waits until it is Ready.
 func bundlerContainer(ns, name string) {
 	GinkgoHelper()
-	container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
+	container := newContainer(ns, name, "webshop-core", c4v1beta1.ContainerTypeService)
 	mustCreate(container)
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
-		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 	}).Should(Succeed())
 }
 
 // bundles links source to orders-api, bundling it when bundling is true.
-func bundles(ns, source string, bundling bool) *c4v1alpha1.Relationship {
-	rel := newRelationship(ns, source+"-to-orders-api", element(c4v1alpha1.ElementContainer, source),
-		element(c4v1alpha1.ElementContainer, "orders-api"))
+func bundles(ns, source string, bundling bool) *c4v1beta1.Relationship {
+	rel := newRelationship(ns, source+"-to-orders-api", element(c4v1beta1.ElementContainer, source),
+		element(c4v1beta1.ElementContainer, "orders-api"))
 	rel.Spec.Bundles = bundling
 	rel.Spec.Description = "Ships the orders API"
 	return rel
@@ -87,8 +87,8 @@ var _ = Describe("Crew release bumps", func() {
 		gitFake.setIssueMilestone(ns, "web", n, model.FollowUpMilestone)
 		n = gitFake.addIssue(ns, "web", "Next work", clearIssue, nil)
 		gitFake.setIssueRelease(ns, "web", n, "v0.5.0", releaseDue)
-		broken := newContainer(ns, "broken", "webshop-core", c4v1alpha1.ContainerTypeService)
-		broken.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: "missing"}
+		broken := newContainer(ns, "broken", "webshop-core", c4v1beta1.ContainerTypeService)
+		broken.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: "missing"}
 		mustCreate(broken, bundles(ns, "web", true), bundles(ns, "client", false), bundles(ns, "broken", true))
 		mergedIssue(ns)
 		releaseRun(ns, "completed", "success")
@@ -105,7 +105,7 @@ var _ = Describe("Crew release bumps", func() {
 			g.Expect(issues[0].Body).To(ContainSubstring("orders-api released v0.1.0 at `5a-merge`"))
 			release := getCrew(g, ns).Status.LastRelease
 			g.Expect(release).NotTo(BeNil())
-			g.Expect(release.Bumps).To(ConsistOf(c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
+			g.Expect(release.Bumps).To(ConsistOf(c4v1beta1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
 			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
 				HaveField("Reason", "BumpFiled"))))
 		}).Should(Succeed())
@@ -137,7 +137,7 @@ var _ = Describe("Crew release bumps", func() {
 		Eventually(func(g Gomega) {
 			release := getCrew(g, ns).Status.LastRelease
 			g.Expect(release).NotTo(BeNil())
-			g.Expect(release.Bumps).To(ConsistOf(c4v1alpha1.CrewReleaseBump{Container: "web",
+			g.Expect(release.Bumps).To(ConsistOf(c4v1beta1.CrewReleaseBump{Container: "web",
 				IssueURL: gitFake.issue(ns, "web", filed).URL}))
 		}).Should(Succeed())
 		Expect(bumpIssues(ns, "web")).To(HaveLen(1))
@@ -228,7 +228,7 @@ var _ = Describe("Crew release bumps", func() {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
 			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(ConsistOf(
-				c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
+				c4v1beta1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(bumpIssues(ns, "web")).To(HaveLen(1))
@@ -260,7 +260,7 @@ var _ = Describe("Crew release bumps", func() {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
 			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(ConsistOf(
-				c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
+				c4v1beta1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(bumpIssues(ns, "web")).To(HaveLen(1))
@@ -273,7 +273,7 @@ var _ = Describe("Crew release bumps", func() {
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
 		// The bundler and its link come before the Crew tags the release.
-		files := publishingCrew(ns, repository, func(*c4v1alpha1.Crew) {
+		files := publishingCrew(ns, repository, func(*c4v1beta1.Crew) {
 			bundlerContainer(ns, "web")
 			mustCreate(bundles(ns, "web", true))
 		})
@@ -292,7 +292,7 @@ var _ = Describe("Crew release bumps", func() {
 			g.Expect(issues).To(HaveLen(1))
 			g.Expect(issues[0].Title).To(Equal("Bump orders-api to v0.1.0"))
 			g.Expect(getCrew(g, ns).Status.LastRelease.Bumps).To(ConsistOf(
-				c4v1alpha1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
+				c4v1beta1.CrewReleaseBump{Container: "web", IssueURL: issues[0].URL}))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(bumpIssues(ns, "web")).To(HaveLen(1))
@@ -301,8 +301,8 @@ var _ = Describe("Crew release bumps", func() {
 
 	It("refuses bundles on a link that isn't Container to Container", func() {
 		ns := newProjectNamespace()
-		rel := newRelationship(ns, "orders-api-to-db", element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "orders-db"))
+		rel := newRelationship(ns, "orders-api-to-db", element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "orders-db"))
 		rel.Spec.Bundles = true
 		Expect(k8sClient.Create(ctx, rel)).To(MatchError(ContainSubstring("only a Container to Container link can bundle")))
 	})

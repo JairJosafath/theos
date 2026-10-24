@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,8 +21,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/smithy-go"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/contract"
 )
@@ -664,6 +668,32 @@ func TestShipImage(t *testing.T) {
 	shipUntilDeployed(t, w.d, tt, w.withImage(shipment("aws-fargate-ts", "v1.0.1", files)))
 	if len(a.copies) != 1 {
 		t.Errorf("copies after a release of the same image = %d, want 1", len(a.copies))
+	}
+}
+
+// TestShipImageReadRefused (#1877): a registry that refuses the tag's read
+// refuses the credential, with the read the credential lacks named, and the
+// deploy is not retried as unreachable; nothing is published.
+func TestShipImageReadRefused(t *testing.T) {
+	w := newWorld(t)
+	a, tt := w.bootstrapped()
+	files := fixtureFiles(t, "aws-fargate-ts")
+	tt.Parameters = map[string]string{"CertificateArn": "arn:aws:acm:eu-west-1:1:certificate/x"}
+	s := w.withImage(shipment("aws-fargate-ts", "v1.0.0", files))
+	s.CopyImage = func(context.Context, ports.ImageRegistry, string, string) error {
+		return fmt.Errorf("gitea: %w: %s answered 403 Forbidden to the tag's read; it must read tags as well as "+
+			"push: %w", oci.ErrReadRefused, "1.dkr.ecr.eu-west-1.amazonaws.com/assets:0123",
+			&transport.Error{StatusCode: http.StatusForbidden})
+	}
+
+	err := w.d.Ship(context.Background(), tt, s)
+	if !errors.Is(err, ports.ErrCredentialRefused) || errors.Is(err, ports.ErrUnreachable) ||
+		!strings.Contains(err.Error(), "must read tags as well as push") {
+		t.Errorf("Ship() = %v, want ErrCredentialRefused, not unreachable, naming the read the credential lacks", err)
+	}
+	if len(a.copies) != 0 || len(a.appChangeSets()) != 0 {
+		t.Errorf("after the refused read: %d copies, %d change sets; want none", len(a.copies),
+			len(a.appChangeSets()))
 	}
 }
 

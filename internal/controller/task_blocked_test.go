@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -38,7 +38,7 @@ var _ = Describe("Task whose agent can't start its issue", func() {
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "no more rounds are spent")
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal(model.ReasonBlocked),

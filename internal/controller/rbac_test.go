@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // Every reconciler in this suite runs as the operator's ServiceAccount, bound to
@@ -27,7 +27,7 @@ var _ = Describe("The operator's RBAC", func() {
 	It("is the generated role, not the test's admin", func() {
 		manager, err := client.New(managerCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(manager.List(ctx, &c4v1alpha1.ProjectList{})).To(Succeed())
+		Expect(manager.List(ctx, &c4v1beta1.ProjectList{})).To(Succeed())
 		err = manager.List(ctx, &corev1.NodeList{})
 		Expect(apierrors.IsForbidden(err)).To(BeTrue(), "listing nodes: %v", err)
 		Expect(err.Error()).To(ContainSubstring(managerUser))

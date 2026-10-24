@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -80,7 +80,7 @@ const CIJobEnv = "GOCACHE=" + ciGoCacheMount + "/build\nGOLANGCI_LINT_CACHE=" + 
 // live (the operator's --ci-go-cache), empty for none.
 type runnerPodInput struct {
 	namespace, provider, gitURL, tokenSecret string
-	runner                                   c4v1alpha1.CIRunnerSpec
+	runner                                   c4v1beta1.CIRunnerSpec
 	goCacheRoot                              string
 }
 

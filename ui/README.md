@@ -59,8 +59,8 @@ else on _Story_:
   and release notes, and to the repository.
 
 **Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
-Relationship, Session, Standard, Compute, Deployment, GitProvider and
-DeployTarget each have
+Relationship, Session, Standard, Compute, Deployment, Bundle, Domain,
+GitProvider and DeployTarget each have
 a page that opens with the same header
 ([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
 name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
@@ -75,7 +75,7 @@ False, with a choice that sets it when actions are on; and where it ships:
 each `spec.deploy` entry's target, the version running and wanted, phase,
 health and URL, and for a version waiting for approval the `kubectl patch`
 line, or with actions on an Approve button. The DeployTarget page shows its
-tool and where (the `github` repository), tier, approval, `Ready` and the
+tool and where (the `github` repository or the `gitlab` project), tier, approval, `Ready` and the
 Containers that ship to it, and of its credentials the Secret's name only; the
 Project page lists its DeployTargets.
 

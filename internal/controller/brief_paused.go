@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -32,17 +32,17 @@ const (
 
 // pausedByBrief reports whether the Brief paused the Crew, so its resume
 // unpauses it.
-func pausedByBrief(crew *c4v1alpha1.Crew) bool {
-	return crew.Annotations[c4v1alpha1.AnnotationPausedBy] == c4v1alpha1.PausedByBrief
+func pausedByBrief(crew *c4v1beta1.Crew) bool {
+	return crew.Annotations[c4v1beta1.AnnotationPausedBy] == c4v1beta1.PausedByBrief
 }
 
 // markPaused pauses a Crew for its Brief, marking it so.
-func markPaused(crew *c4v1alpha1.Crew) {
+func markPaused(crew *c4v1beta1.Crew) {
 	crew.Spec.Paused = true
 	if crew.Annotations == nil {
 		crew.Annotations = map[string]string{}
 	}
-	crew.Annotations[c4v1alpha1.AnnotationPausedBy] = c4v1alpha1.PausedByBrief
+	crew.Annotations[c4v1beta1.AnnotationPausedBy] = c4v1beta1.PausedByBrief
 }
 
 // syncPaused brings the Crews the Brief made in line with its spec.paused,
@@ -52,10 +52,10 @@ func markPaused(crew *c4v1alpha1.Crew) {
 // paused by hand and is left unmarked. A resumed Brief unpauses only the
 // Crews it marked and removes the mark. A Crew the Brief didn't make is never
 // touched.
-func (r *BriefReconciler) syncPaused(ctx context.Context, brief *c4v1alpha1.Brief) error {
-	var crews c4v1alpha1.CrewList
+func (r *BriefReconciler) syncPaused(ctx context.Context, brief *c4v1beta1.Brief) error {
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return err
 	}
 	paused := brief.Spec.Paused
@@ -67,7 +67,7 @@ func (r *BriefReconciler) syncPaused(ctx context.Context, brief *c4v1alpha1.Brie
 			markPaused(crew)
 		case !paused && pausedByBrief(crew):
 			crew.Spec.Paused = false
-			delete(crew.Annotations, c4v1alpha1.AnnotationPausedBy)
+			delete(crew.Annotations, c4v1beta1.AnnotationPausedBy)
 		default:
 			continue
 		}
@@ -82,12 +82,12 @@ func (r *BriefReconciler) syncPaused(ctx context.Context, brief *c4v1alpha1.Brie
 // setPausedCondition sets the Paused condition of a paused Brief to the Tasks
 // still running in its Crews and its planner Task, and to False once the
 // Brief is resumed. A Brief that was never paused has none.
-func (r *BriefReconciler) setPausedCondition(ctx context.Context, brief *c4v1alpha1.Brief,
-	crews []c4v1alpha1.Crew) error {
+func (r *BriefReconciler) setPausedCondition(ctx context.Context, brief *c4v1beta1.Brief,
+	crews []c4v1beta1.Crew) error {
 	status := &brief.Status
 	if !brief.Spec.Paused {
-		if meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionPaused) != nil {
-			setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPaused,
+		if meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionPaused) != nil {
+			setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionPaused,
 				metav1.ConditionFalse, reasonBriefResumed, "Not paused")
 		}
 		return nil
@@ -96,29 +96,29 @@ func (r *BriefReconciler) setPausedCondition(ctx context.Context, brief *c4v1alp
 	if err != nil {
 		return err
 	}
-	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPaused,
+	setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionPaused,
 		metav1.ConditionTrue, reasonBriefPaused, model.BriefPausedMessage(running))
 	return nil
 }
 
 // runningTasks names the Tasks that are not final in the Brief's Crews and
 // its planner's, sorted.
-func (r *BriefReconciler) runningTasks(ctx context.Context, brief *c4v1alpha1.Brief,
-	crews []c4v1alpha1.Crew) ([]string, error) {
+func (r *BriefReconciler) runningTasks(ctx context.Context, brief *c4v1beta1.Brief,
+	crews []c4v1beta1.Crew) ([]string, error) {
 	mine := make(map[string]bool, len(crews))
 	for _, crew := range crews {
 		mine[crew.Name] = true
 	}
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.List(ctx, &tasks, client.InNamespace(brief.Namespace)); err != nil {
 		return nil, err
 	}
 	var running []string
 	for _, t := range tasks.Items {
-		if t.Status.Phase == c4v1alpha1.TaskMerged || t.Status.Phase == c4v1alpha1.TaskFailed {
+		if t.Status.Phase == c4v1beta1.TaskMerged || t.Status.Phase == c4v1beta1.TaskFailed {
 			continue
 		}
-		planner := t.Labels[c4v1alpha1.LabelBrief] == brief.Name && t.Spec.Kind == c4v1alpha1.TaskPlan
+		planner := t.Labels[c4v1beta1.LabelBrief] == brief.Name && t.Spec.Kind == c4v1beta1.TaskPlan
 		if planner || mine[t.Labels[LabelCrew]] {
 			running = append(running, t.Name)
 		}

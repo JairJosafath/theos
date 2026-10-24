@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -81,14 +81,14 @@ func failedRelease(ctx context.Context, provider gitprovider.Provider, repo gitp
 
 // issueTasks are the namespace's Tasks on an issue, by Container, as
 // model.FailedReason sees them.
-func issueTasks(tasks []c4v1alpha1.Task) map[string][]model.IssueTask {
+func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 	out := map[string][]model.IssueTask{}
 	for _, t := range tasks {
 		if t.Spec.Issue == 0 || t.Spec.ContainerRef.Name == "" {
 			continue
 		}
-		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1alpha1.TaskMerged,
-			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, NoCI: failedNoCI(&t.Status), Created: t.CreationTimestamp.Time}
+		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,
+			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status), Created: t.CreationTimestamp.Time}
 		if t.Status.CompletedAt != nil {
 			it.Completed = t.Status.CompletedAt.Time
 		}
@@ -107,7 +107,7 @@ func issueTasks(tasks []c4v1alpha1.Task) map[string][]model.IssueTask {
 // listed for it, so the count doesn't go down. Each listed issue the status
 // didn't list before gets an IssueFailed Event, and IssuesFailed says the
 // first and how many more wait.
-func (r *BriefReconciler) recordFailed(ctx context.Context, brief *c4v1alpha1.Brief, found []model.FailedIssue,
+func (r *BriefReconciler) recordFailed(ctx context.Context, brief *c4v1beta1.Brief, found []model.FailedIssue,
 	partial bool) {
 	found = slices.Clone(found)
 	slices.SortFunc(found, func(a, b model.FailedIssue) int {
@@ -119,12 +119,12 @@ func (r *BriefReconciler) recordFailed(ctx context.Context, brief *c4v1alpha1.Br
 	count := int32(len(found))
 	found = found[:min(len(found), model.MaxFailedIssues)]
 	status := &brief.Status
-	listed := make([]c4v1alpha1.BriefFailedIssue, 0, len(found))
+	listed := make([]c4v1beta1.BriefFailedIssue, 0, len(found))
 	for _, f := range found {
-		listed = append(listed, c4v1alpha1.BriefFailedIssue{Container: f.Container, Number: int32(f.Number),
+		listed = append(listed, c4v1beta1.BriefFailedIssue{Container: f.Container, Number: int32(f.Number),
 			Title: model.Clip(f.Title, 255), URL: f.URL, Kind: f.Kind, Reason: model.Clip(f.Reason, 1000),
 			Tries: int32(f.Tries)})
-		if !slices.ContainsFunc(status.Failed, func(s c4v1alpha1.BriefFailedIssue) bool {
+		if !slices.ContainsFunc(status.Failed, func(s c4v1beta1.BriefFailedIssue) bool {
 			return s.Container == f.Container && int(s.Number) == f.Number
 		}) {
 			logf.FromContext(ctx).Info("An issue was handed back to the person", "container", f.Container,
@@ -146,17 +146,17 @@ func (r *BriefReconciler) recordFailed(ctx context.Context, brief *c4v1alpha1.Br
 	}
 	switch {
 	case count > 0:
-		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionIssuesFailed, metav1.ConditionTrue,
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionIssuesFailed, metav1.ConditionTrue,
 			reasonIssuesWaiting, model.FailedMessage(found, int(count)))
-	case meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionIssuesFailed) != nil:
-		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionIssuesFailed, metav1.ConditionFalse,
-			c4v1alpha1.ReasonResolved, "No failed issue waits for the person")
+	case meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionIssuesFailed) != nil:
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionIssuesFailed, metav1.ConditionFalse,
+			c4v1beta1.ReasonResolved, "No failed issue waits for the person")
 	}
 }
 
 // lastFailed are the failed issues the Brief last saw in Container name,
 // without their bodies, which the status doesn't keep.
-func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
+func lastFailed(brief *c4v1beta1.Brief, name string) []model.FailedIssue {
 	var out []model.FailedIssue
 	for _, f := range brief.Status.Failed {
 		if f.Container == name {
@@ -176,7 +176,7 @@ func lastFailed(brief *c4v1alpha1.Brief, name string) []model.FailedIssue {
 // open. A Standard change the answers retry, or recommend retrying, is
 // checked for its proposal branch: a retry of one whose branch is gone has
 // nothing to merge. One that is gone is checked without its body.
-func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1beta1.Brief,
 	answers []model.FailedAnswer) ([]model.FailedIssue, error) {
 	out := make([]model.FailedIssue, 0, len(brief.Status.Failed))
 	for _, f := range brief.Status.Failed {
@@ -197,7 +197,7 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 		if !retries && !closes {
 			continue
 		}
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: f.Container}, &c)
 		if apierrors.IsNotFound(err) {
 			continue
@@ -227,7 +227,7 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 			continue
 		}
 		if tasks == nil {
-			var list c4v1alpha1.TaskList
+			var list c4v1beta1.TaskList
 			if err := r.List(ctx, &list, client.InNamespace(brief.Namespace)); err != nil {
 				return nil, fmt.Errorf("listing Tasks: %w", err)
 			}
@@ -251,7 +251,7 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1alpha1.B
 // after them is refused: it gets a comment saying why and stays handed back,
 // and the rest of the round goes on. It returns how many it retried and
 // closed now, and the refused closes as "container#3 (waits on #4)".
-func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1beta1.Brief,
 	answers []model.FailedAnswer) (retried, closed int, refused []string, err error) {
 	if len(answers) == 0 {
 		return 0, 0, nil, nil
@@ -357,9 +357,9 @@ type answering struct {
 
 // openFailed reads the failed issue an answer is to. It is not ok when the
 // issue or its Container is gone, or it is no longer handed back.
-func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1beta1.Brief,
 	a model.FailedAnswer) (answering, bool, error) {
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
 	if apierrors.IsNotFound(err) {
 		return answering{}, false, nil // gone, and its issues with it
@@ -425,10 +425,10 @@ func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo 
 }
 
 // forgetFailed takes an answered failed issue off the Brief's list.
-func forgetFailed(brief *c4v1alpha1.Brief, container string, number int) {
+func forgetFailed(brief *c4v1beta1.Brief, container string, number int) {
 	status := &brief.Status
 	before := len(status.Failed)
-	status.Failed = slices.DeleteFunc(status.Failed, func(f c4v1alpha1.BriefFailedIssue) bool {
+	status.Failed = slices.DeleteFunc(status.Failed, func(f c4v1beta1.BriefFailedIssue) bool {
 		return f.Container == container && int(f.Number) == number
 	})
 	if len(status.Failed) < before && status.FailedWaiting > 0 {

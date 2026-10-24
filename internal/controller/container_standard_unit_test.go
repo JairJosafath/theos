@@ -9,11 +9,13 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"testing"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -21,11 +23,11 @@ import (
 func TestScaffoldedConnectors(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
-		applied []c4v1alpha1.AppliedConnector
+		applied []c4v1beta1.AppliedConnector
 		want    []string
 	}{
 		{name: "none"},
-		{name: "unique and sorted, as the scaffold passed them", applied: []c4v1alpha1.AppliedConnector{
+		{name: "unique and sorted, as the scaffold passed them", applied: []c4v1beta1.AppliedConnector{
 			{Relationship: "a-to-orders-db", DataStore: "orders-db", Connector: "postgres"},
 			{Relationship: "b-to-cache", DataStore: "cache", Connector: "redis"},
 			{Relationship: "c-to-audit-db", DataStore: "audit-db", Connector: "postgres"},
@@ -33,7 +35,7 @@ func TestScaffoldedConnectors(t *testing.T) {
 		}, want: []string{"kafka", "postgres", "redis"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := scaffoldedConnectors(&c4v1alpha1.ContainerStatus{AppliedConnectors: tt.applied})
+			got := scaffoldedConnectors(&c4v1beta1.ContainerStatus{AppliedConnectors: tt.applied})
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("scaffoldedConnectors() = %q, want %q", got, tt.want)
 			}
@@ -54,19 +56,19 @@ func TestScaffoldedConnectors(t *testing.T) {
 }
 
 func TestScaffoldInput(t *testing.T) {
-	container := &c4v1alpha1.Container{
+	container := &c4v1beta1.Container{
 		ObjectMeta: objectMeta("webshop", "orders-api"),
-		Spec: c4v1alpha1.ContainerSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: "webshop-core"},
+		Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
 			DisplayName:       "Orders API",
 			Description:       "Takes and lists the shop's orders.",
-			Type:              c4v1alpha1.ContainerTypeService,
-			FrameworkRef:      c4v1alpha1.LocalRef{Name: "python-fastapi"},
-			StandardRef:       &c4v1alpha1.LocalRef{Name: "python-strict"},
-			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
-			Operations: &c4v1alpha1.OperationsSpec{
-				Recovery: &c4v1alpha1.OperationsRecovery{RPO: "15m"},
-				Alerts:   &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			Type:              c4v1beta1.ContainerTypeService,
+			FrameworkRef:      c4v1beta1.LocalRef{Name: "python-fastapi"},
+			StandardRef:       &c4v1beta1.LocalRef{Name: "python-strict"},
+			DeploymentRef:     &c4v1beta1.LocalRef{Name: "k8s-manifests"},
+			Operations: &c4v1beta1.OperationsSpec{
+				Recovery: &c4v1beta1.OperationsRecovery{RPO: "15m"},
+				Alerts:   &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 			},
 		},
 	}
@@ -79,7 +81,7 @@ func TestScaffoldInput(t *testing.T) {
 		Project: "webshop", SoftwareSystem: "webshop-core", Container: "orders-api", DisplayName: "Orders API",
 		Description: "Takes and lists the shop's orders.",
 		Type:        "service", Framework: "python-fastapi", Standard: "python-strict", Deployment: "k8s-manifests",
-		Connectors: []string{"postgres"}, Checks: "BeforeRelease",
+		Connectors: []string{"postgres"}, Domains: []string{"webshop"}, Checks: "BeforeRelease",
 		Operations: model.Operations{
 			Backups:  model.OperationsBackups{RetentionDays: model.DefaultRetentionDays},
 			Recovery: model.OperationsRecovery{RPO: "15m", RTO: model.DefaultRTO},
@@ -88,15 +90,24 @@ func TestScaffoldInput(t *testing.T) {
 		NpmScope: "@c4factory",
 	}
 	// An empty scope (a provider that sets none) is the default (#1231).
-	got := scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container), "")
+	got := scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "",
+		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
 	}
 	// The GitProvider's own scope is passed through (#1231).
 	want.NpmScope = "@acme"
-	got = scaffoldInput(container, ci, []string{"postgres"}, model.ChecksBeforeRelease, specOperations(container), "@acme")
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(@acme) = %+v, want %+v", got, want)
+	}
+	// The resolved license is carried as is (#1788).
+	want.License = scaffold.License{ID: "MIT", Holder: "Web Shop", Year: 2026}
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+		want.License)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scaffoldInput(license) = %+v, want %+v", got, want)
 	}
 }
 
@@ -124,26 +135,97 @@ func TestNoLightCheck(t *testing.T) {
 	const tail = ", which make check-light on each change needs; CI keeps running the full check on every change " +
 		"until the Makefile has one"
 	const head = "CI can't change to run the full check only before a release: the repository's Makefile "
-	behind := &c4v1alpha1.ContainerStandardStatus{Name: "go-standard", Ref: "v1.2.1",
-		Behind: []c4v1alpha1.StandardFile{{Path: "go.mod", Ref: "v1.0.0"}, {Path: "Makefile", Ref: "v1.1.6"}}}
+	behind := &c4v1beta1.ContainerStandardStatus{Name: "go-standard", Ref: "v1.2.1",
+		Behind: []c4v1beta1.StandardFile{{Path: "go.mod", Ref: "v1.0.0"}, {Path: "Makefile", Ref: "v1.1.6"}}}
 	for _, tc := range []struct {
 		name string
-		s    *c4v1alpha1.ContainerStandardStatus
+		s    *c4v1beta1.ContainerStandardStatus
 		plan scaffold.Update
 		want string
 	}{
-		{"its own", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"}, scaffold.Update{},
+		{"its own", &c4v1beta1.ContainerStandardStatus{Name: "go-standard"}, scaffold.Update{},
 			"has no check-light target"},
 		// The reporter's case: an earlier update left the Makefile out.
 		{"left out before", behind, scaffold.Update{},
 			"was left out of the go-standard updates (at v1.1.6) and has no check-light target"},
-		{"left out now", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"},
+		{"left out now", &c4v1beta1.ContainerStandardStatus{Name: "go-standard"},
 			scaffold.Update{LeftOut: []string{"Makefile"}},
 			"is left out of this go-standard update and has no check-light target"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := noLightCheck(tc.s, tc.plan); got != head+tc.want+tail {
 				t.Errorf("noLightCheck =\n%s\nwant\n%s", got, head+tc.want+tail)
+			}
+		})
+	}
+}
+
+// A Standard update renders with the Domains the Container was scaffolded
+// with, from status.scaffoldedDomains, sorted and unique, as the scaffold
+// passed them: the bump pull request's files name the same Domains the
+// repository's docs/agents/domain/ holds (#1757, #1935).
+func TestStandardUpdateRendersWithScaffoldedDomains(t *testing.T) {
+	ci, err := model.HostCI("gitea")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: "http://gitea", Owner: "apps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	container := &c4v1beta1.Container{
+		ObjectMeta: objectMeta("webshop", "orders-api"),
+		Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
+			DisplayName:       "Orders API",
+			Type:              c4v1beta1.ContainerTypeService,
+			FrameworkRef:      c4v1beta1.LocalRef{Name: "python-fastapi"},
+			StandardRef:       &c4v1beta1.LocalRef{Name: "python-strict"},
+		},
+	}
+	for _, tc := range []struct {
+		name       string
+		scaffolded []string
+		want       []string
+		agents     string
+	}{
+		{name: "none", agents: "# Orders API\n"},
+		{name: "sorted and unique, as the scaffold passed them",
+			scaffolded: []string{"webshop", "billing", "webshop"}, want: []string{"billing", "webshop"},
+			agents: "# Orders API\nThis system is about billing, webshop.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := &standardUpdate{
+				r:         &ContainerReconciler{},
+				container: container,
+				status:    &c4v1beta1.ContainerStatus{ScaffoldedDomains: tc.scaffolded},
+				// The repository's license and Framework files were read; the
+				// render needs no Git.
+				licenseRead: true, frameworkRead: true,
+			}
+			git := &gitAccess{gitProvider: &c4v1beta1.GitProvider{Spec: c4v1beta1.GitProviderSpec{URL: "http://gitea"}},
+				provider: provider, ci: ci}
+			standard := &c4v1beta1.Standard{ObjectMeta: objectMeta("webshop", "python-strict"),
+				Spec: c4v1beta1.StandardSpec{CatalogEntrySpec: c4v1beta1.CatalogEntrySpec{
+					Template: c4v1beta1.TemplateSource{URL: "http://gitea/templates/python-standard"}}}}
+			renders, err := u.renders(t.Context(), t.Context(), git, standard)
+			if err != nil {
+				t.Fatalf("renders() = %v", err)
+			}
+			if !slices.Equal(renders.in.Domains, tc.want) {
+				t.Errorf("renders().in.Domains = %q, want %q", renders.in.Domains, tc.want)
+			}
+			// What the Standard's own templates see, as templates/*-standard/AGENTS.md.tmpl reads it.
+			renders.fetch = func(context.Context, string) (scaffold.Tree, error) {
+				return scaffold.Tree{"AGENTS.md.tmpl": {Data: []byte("# {{ .DisplayName }}\n{{ if .Domains -}}\n" +
+					"This system is about {{ range $i, $d := .Domains }}{{ if $i }}, {{ end }}{{ $d }}{{ end }}.\n{{ end -}}\n")}}, nil
+			}
+			tree, err := renders.at(t.Context(), "v1.1.0")
+			if err != nil {
+				t.Fatalf("at(v1.1.0) = %v", err)
+			}
+			if got := string(tree["AGENTS.md"].Data); got != tc.agents {
+				t.Errorf("AGENTS.md at v1.1.0 = %q, want %q", got, tc.agents)
 			}
 		})
 	}

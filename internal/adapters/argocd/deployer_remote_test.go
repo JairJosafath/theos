@@ -192,8 +192,10 @@ func TestDeployerContractOnAnotherCluster(t *testing.T) {
 }
 
 // copyImage's errors: no CopyImage is a missing artifact, the target's
-// registry refusing the login refuses the credential, a failure to read the
-// image keeps the caller's error, a tag that names another image fails for
+// registry refusing the login refuses the credential, and so does one that
+// refuses the tag's read, with the read the credential lacks named and no
+// retry as transient (#1877), a failure to read the image keeps the
+// caller's error, a tag that names another image fails for
 // good and is no port error, so the deploy isn't retried as transient
 // (#1770), and any other failure is unreachable; the copy goes under the
 // imageRegistry's path, tagged the version, with the Secret's login (#1590),
@@ -205,15 +207,21 @@ func TestCopyImage(t *testing.T) {
 	refusedErr := fmt.Errorf("write: %w", &transport.Error{StatusCode: http.StatusUnauthorized})
 	sourceErr := fmt.Errorf("%w: read: boom", oci.ErrSource)
 	takenErr := fmt.Errorf("gitea: %w: mirror/webshop/orders-api:v1.2.0 names sha256:ff, not sha256:ab", oci.ErrTagTaken)
+	readErr := fmt.Errorf("gitea: %w: mirror/webshop/orders-api:v1.2.0 answered 403 Forbidden to the tag's read; "+
+		"it must read tags as well as push: %w", oci.ErrReadRefused, &transport.Error{StatusCode: http.StatusForbidden})
 	for _, tc := range []struct {
 		name     string
 		copy     func(context.Context, ports.ImageRegistry, string, string) error
 		wantKind error
 		want     error
+		say      string
 	}{
 		{name: "no CopyImage", wantKind: ports.ErrArtifactMissing},
 		{name: "a refused login", copy: func(context.Context, ports.ImageRegistry, string, string) error { return refusedErr },
 			wantKind: ports.ErrCredentialRefused},
+		{name: "a credential that may not read the tag (#1877)",
+			copy:     func(context.Context, ports.ImageRegistry, string, string) error { return readErr },
+			wantKind: ports.ErrCredentialRefused, say: "must read tags as well as push"},
 		{name: "the source unread", copy: func(context.Context, ports.ImageRegistry, string, string) error { return sourceErr },
 			want: sourceErr},
 		{name: "a tag naming another image (#1770)",
@@ -230,6 +238,12 @@ func TestCopyImage(t *testing.T) {
 			}
 			if tc.want != nil && err != tc.want {
 				t.Errorf("copyImage() = %v, want %v as it is", err, tc.want)
+			}
+			if tc.say != "" && !strings.Contains(err.Error(), tc.say) {
+				t.Errorf("copyImage() = %v, want it to say %q", err, tc.say)
+			}
+			if tc.wantKind == ports.ErrCredentialRefused && errors.Is(err, ports.ErrUnreachable) {
+				t.Errorf("copyImage() = %v is unreachable too; a refusal is no transient failure", err)
 			}
 			var perr *ports.Error
 			if tc.wantKind == oci.ErrTagTaken && errors.As(err, &perr) {

@@ -22,6 +22,8 @@ for o in "${OVERLAYS[@]}"; do
 done
 # The webshop with orders-api also published on GitHub (#1603).
 "$KUSTOMIZE" build config/samples/webshop-github >"$OUT/kustomize-webshop-github.yaml"
+# The webshop with orders-api also published on GitLab (#1804).
+"$KUSTOMIZE" build config/samples/webshop-gitlab >"$OUT/kustomize-webshop-gitlab.yaml"
 
 # The webshop sample's orders-api repository, as the operator scaffolds it.
 rm -rf "$OUT/orders-api"
@@ -172,7 +174,7 @@ if [ "$pinned" != "$want" ]; then
 	exit 1
 fi
 if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
-	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Bundle)$'; then
+	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Domain|Bundle)$'; then
 	echo "The chart renders catalog entries, bundles or Agents with catalog.enabled=false and agents.enabled=false" >&2
 	exit 1
 fi

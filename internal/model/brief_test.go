@@ -11,14 +11,14 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const happyModel = `apiVersion: c4.factory.io/v1alpha1
+const happyModel = `apiVersion: c4.factory.io/v1beta1
 kind: Project
 metadata:
   name: shop
 spec:
   displayName: Shop
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
@@ -27,7 +27,7 @@ spec:
   needs: [orders]
   kpis: [orders per day]
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: api
@@ -37,7 +37,7 @@ spec:
   gitProviderRef: {name: gitea}
   frameworkRef: {name: go-service}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: web
@@ -49,7 +49,7 @@ spec:
   frameworkRef: {name: react-site}
   standardRef: {name: web-standard}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: db
@@ -57,7 +57,7 @@ spec:
   softwareSystemRef: {name: shop}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-to-db
@@ -169,7 +169,7 @@ func TestParsePlan(t *testing.T) {
 // one the planner leaves out is Internal (#1150).
 func TestParsePlanLocation(t *testing.T) {
 	system := func(location string) string {
-		return "apiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem\nmetadata:\n  name: payments\nspec:\n" +
+		return "apiVersion: c4.factory.io/v1beta1\nkind: SoftwareSystem\nmetadata:\n  name: payments\nspec:\n" +
 			"  description: Takes the money\n" + location
 	}
 	tests := []struct {
@@ -243,7 +243,7 @@ func TestParsePlanErrors(t *testing.T) {
 		{"model isn't YAML", map[string]string{PlanModelFile: "kind: [Container"}, PlanModelFile},
 		{"a document without a name", map[string]string{PlanModelFile: "kind: Person\n"}, PlanModelFile},
 		{"a field the kind doesn't have", map[string]string{
-			PlanModelFile: "apiVersion: c4.factory.io/v1alpha1\nkind: Person\nmetadata: {name: ann}\nspec: {type: service}\n"},
+			PlanModelFile: "apiVersion: c4.factory.io/v1beta1\nkind: Person\nmetadata: {name: ann}\nspec: {type: service}\n"},
 			PlanModelFile},
 		{"an empty needs-input", map[string]string{PlanNeedsInputFile: " \n", PlanModelFile: ""}, PlanNeedsInputFile},
 		{"an issue file badly named", map[string]string{PlanModelFile: "", "plan/issues/web.md": readyIssue},
@@ -361,6 +361,10 @@ func TestCheckPlan(t *testing.T) {
 		{"a story kind of another group", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").APIVersion = "example.com/v1"
 		}, "Container/web", PlanAPIVersion},
+		// #1617: a plan at a served older version applies through conversion.
+		{"a story kind at the served v1alpha1", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").APIVersion = "c4.factory.io/v1alpha1"
+		}, "", ""},
 		{"a name that isn't a DNS label", func(p *Plan, _ *CurrentModel) {
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "Ann_B"})
 		}, "Person/Ann_B", "not a DNS label"},
@@ -979,7 +983,7 @@ func TestIssueMarker(t *testing.T) {
 }
 
 // TestSpecLimitsMatchTheCRDs holds the plan check's limits to the CRDs' own,
-// both ways, so a marker changed in api/v1alpha1 can't drift from them (#382).
+// both ways, so a marker changed in api/v1beta1 can't drift from them (#382).
 func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 	plural := map[string]string{KindProject: "projects", KindPerson: "people", KindSoftwareSystem: "softwaresystems",
 		KindContainer: "containers", KindDataStore: "datastores", KindRelationship: "relationships"}

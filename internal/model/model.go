@@ -8,7 +8,6 @@ package model
 
 import (
 	"fmt"
-	"net/netip"
 	"slices"
 	"strings"
 )
@@ -33,6 +32,9 @@ const (
 	SideCompute    = "Compute"
 	SideDeployment = "Deployment"
 	SideConnector  = "Connector"
+	// SideDomain renders last, after the Connectors, into
+	// docs/agents/domain/<name>/; it has no supported types.
+	SideDomain = "Domain"
 )
 
 // CatalogEntry is one side of a Container: a pinned template plus the Container
@@ -46,6 +48,9 @@ type CatalogEntry struct {
 	TemplateRef    string
 	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
 	SupportedFrameworks []string
+	// WiredBy lists the Frameworks whose templates call a Connector's files;
+	// empty when the Connector sets no restriction, and for other sides.
+	WiredBy []string
 	// ChecksBeforeRelease says a Standard can run the full check only before a
 	// release; false for other sides.
 	ChecksBeforeRelease bool
@@ -90,6 +95,9 @@ func (e *ChoiceError) Error() string {
 func CheckChoices(containerType string, entries []CatalogEntry) error {
 	var unsupported []CatalogEntry
 	for _, entry := range entries {
+		if entry.Side == SideDomain {
+			continue // what a system is about does not depend on a Container's type
+		}
 		if !entry.Supports(containerType) {
 			unsupported = append(unsupported, entry)
 		}
@@ -117,6 +125,31 @@ func CheckStandard(framework string, standard *CatalogEntry) error {
 		return nil
 	}
 	return &FitError{Standard: standard.Name, Framework: framework}
+}
+
+// WiringError says a Connector lists the Frameworks that wire it and the
+// Container's Framework is not among them.
+type WiringError struct {
+	Connector string
+	Framework string
+	WiredBy   []string
+}
+
+func (e *WiringError) Error() string {
+	return fmt.Sprintf("%s is not wired by %s, only by %s", e.Connector, e.Framework, joinAnd(e.WiredBy))
+}
+
+// CheckWiring returns a *WiringError for the first Connector among entries
+// whose WiredBy is set and doesn't list the Container's Framework. A Connector
+// with no WiredBy takes any Framework.
+func CheckWiring(framework string, entries []CatalogEntry) error {
+	for _, entry := range entries {
+		if entry.Side != SideConnector || len(entry.WiredBy) == 0 || slices.Contains(entry.WiredBy, framework) {
+			continue
+		}
+		return &WiringError{Connector: entry.Name, Framework: framework, WiredBy: entry.WiredBy}
+	}
+	return nil
 }
 
 // SelfDeployError says a Container names a Compute, or a Deployment other
@@ -316,14 +349,26 @@ const (
 	// HistoryForeign means commits the factory didn't make: it only scaffolds
 	// into a new, empty repository.
 	HistoryForeign
+	// HistoryAdopt means the Container adopts the repository's existing
+	// commits: nothing is scaffolded, main is checked and protected.
+	HistoryAdopt
+	// HistoryNothingToAdopt means the Container asked to adopt a repository
+	// that has no commits.
+	HistoryNothingToAdopt
 )
 
 // ScaffoldHistory decides what to do with a repository's history before
 // scaffolding container (project/container). commits is how many commits the
 // repository has, counted up to two; initialFor is the Container the newest
-// commit's trailers name, empty when the factory didn't make it.
-func ScaffoldHistory(commits int, initialFor, container string) ExistingHistory {
+// commit's trailers name, empty when the factory didn't make it; adopt is the
+// Container's spec.adopt: it takes over whatever history there is and is never
+// scaffolded.
+func ScaffoldHistory(commits int, initialFor, container string, adopt bool) ExistingHistory {
 	switch {
+	case adopt && commits > 0:
+		return HistoryAdopt
+	case adopt:
+		return HistoryNothingToAdopt
 	case commits == 0:
 		return HistoryEmpty
 	case commits == 1 && initialFor != "" && initialFor == container:
@@ -399,6 +444,10 @@ func joinAnd(items []string) string {
 // checkSuccess is the state of a check, or of all of a commit's checks, that passed.
 const checkSuccess = "success"
 
+// checkPending is the state of a check, or of all of a commit's checks, that
+// has not ended.
+const checkPending = "pending"
+
 // checkSkipped is the state of a check that did not run, such as a workflow's
 // push run off main.
 const checkSkipped = "skipped"
@@ -437,6 +486,38 @@ func UnpassedChecks(required []string, contexts map[string]string) []string {
 	return out
 }
 
+// BaseState returns the CI state of a commit, main's head, for required, a CI
+// system's CheckContexts, from state, the commit's combined state, and contexts,
+// the state of each check by its context. Of the checks that match a required
+// pattern, skipped ones aside: any failed is "failure", else any pending is
+// "pending", else "success" (a warning does not hold a Task back); none is "",
+// no status yet. With no required patterns it is state.
+func BaseState(required []string, state string, contexts map[string]string) string {
+	if len(required) == 0 {
+		return state
+	}
+	matched, pending := false, false
+	for context, s := range contexts {
+		if s == checkSkipped || !slices.ContainsFunc(required, func(p string) bool { return matchGlob(p, context) }) {
+			continue
+		}
+		matched = true
+		switch {
+		case checksFailed(s):
+			return checkFailure
+		case s == checkPending:
+			pending = true
+		}
+	}
+	switch {
+	case !matched:
+		return ""
+	case pending:
+		return checkPending
+	}
+	return checkSuccess
+}
+
 // matchGlob reports whether s matches pattern, in which * stands for any run of
 // characters, slashes included, as in the Git host's status check patterns.
 func matchGlob(pattern, s string) bool {
@@ -472,13 +553,6 @@ const ProjectNotesPath = "docs/project-notes.md"
 // Git user may push such tags, since release jobs hold the signing keys.
 const ReleaseTags = "v*"
 
-// AgentProtectedPaths returns the paths agents may not change in a Container:
-// the platform's for its CI system and its Standard's, sorted and without
-// duplicates.
-func AgentProtectedPaths(ci CI, standard []string) []string {
-	return sortedPaths(PlatformProtectedPaths(ci), standard)
-}
-
 // TouchedPaths returns the changed paths that fall under a protected path: equal
 // to a file, or inside a directory ending in "/".
 func TouchedPaths(changed, protected []string) []string {
@@ -498,27 +572,6 @@ func TouchedPaths(changed, protected []string) []string {
 // directory (a path ending in "/").
 func covers(prot, path string) bool {
 	return path == prot || (strings.HasSuffix(prot, "/") && strings.HasPrefix(path, prot))
-}
-
-// PrivateRanges are the addresses the fences keep agents and CI jobs from over
-// HTTPS: the cluster's pods, services and nodes, and anything else on a
-// private network (docs/design.md, "The fence" and "The CI fence").
-func PrivateRanges() []string {
-	return []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
-}
-
-// PrivateBlock reports whether cidr is an address block (10.96.0.10/32,
-// 169.254.20.10/32) that lies inside one of PrivateRanges: an address the
-// cluster's own services answer on, which is where cluster DNS runs (#1257).
-func PrivateBlock(cidr string) bool {
-	block, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return false
-	}
-	return slices.ContainsFunc(PrivateRanges(), func(r string) bool {
-		private := netip.MustParsePrefix(r)
-		return private.Bits() <= block.Bits() && private.Contains(block.Addr())
-	})
 }
 
 // ClusterNamespace returns the namespace of an in-cluster service address, such

@@ -102,6 +102,23 @@ const GitHubSecretPackagesToken = "packagesToken" //nolint:gosec // a key name, 
 // GHCRHost is GitHub's container registry, where a github target's images go.
 const GHCRHost = "ghcr.io"
 
+// DeployMemberGitLab ships each release as a GitLab release on gitlab.com or
+// a self-hosted GitLab: its files to the project's generic package registry,
+// then the release linking them (docs/plans/gitlab-deploy.md).
+const DeployMemberGitLab = "gitlab"
+
+// Settings of a gitlab target, as its adapter reads them
+// (docs/plans/gitlab-deploy.md, Decision 1).
+const (
+	// GitLabSettingURL is a self-hosted GitLab's https://host[:port][/path],
+	// unset for gitlab.com (GitLabHostsOf).
+	GitLabSettingURL = "url"
+	// GitLabSettingProject is the project's full path, group/project or deeper.
+	GitLabSettingProject = "project"
+	// GitLabSettingTagPrefix goes before the version in the GitLab tag.
+	GitLabSettingTagPrefix = "tagPrefix"
+)
+
 // DeployMemberCloudFormation ships each release's CDK assembly as
 // CloudFormation stacks in an AWS account and region (docs/plans/aws-deploy.md).
 // A Container needs a Framework that deploys itself, whose synth is the
@@ -117,11 +134,11 @@ const (
 	CloudFormationSettingAccount = "account"
 )
 
-// GitHubTagPrefix is the prefix a Container's tags carry at a github target:
-// the target's tagPrefix as it is when set ("" giving bare tags), else the
-// Container's name and "-", so any number of Containers share a target with
-// no setting (docs/plans/github-deploy-state.md, decision 3).
-func GitHubTagPrefix(set *string, container string) string {
+// ReleaseTagPrefix is the prefix a Container's tags carry at a github or
+// gitlab target: the target's tagPrefix as it is when set ("" giving bare
+// tags), else the Container's name and "-", so any number of Containers share
+// a target with no setting (docs/plans/github-deploy-state.md, decision 3).
+func ReleaseTagPrefix(set *string, container string) string {
 	if set != nil {
 		return *set
 	}
@@ -145,6 +162,13 @@ var deployMembers = map[string]DeployMember{
 	DeployMemberArgoCD: {Name: DeployMemberArgoCD, Tool: "Argo CD",
 		Needs: []DeployNeed{{What: "a Deployment that writes " + ArgoCDManifestsPath + "/",
 			Met: func(c DeployContainer) bool { return c.Deployment == DeploymentK8sManifests }}}},
+	// Any GitLab access token works: a project access token with the
+	// Maintainer role is the narrowest (docs/plans/gitlab-deploy.md,
+	// Decision 2). A GitLab release needs nothing of a Container but its
+	// releases.
+	DeployMemberGitLab: {Name: DeployMemberGitLab, Tool: "GitLab", SecretKeys: []string{GitLabSecretToken},
+		Holds: "a project access token with the Maintainer role and the scopes api, read_registry and " +
+			"write_registry (a group or personal access token works the same)"},
 	// sessionToken is optional, so it isn't a key the Secret must hold.
 	DeployMemberCloudFormation: {Name: DeployMemberCloudFormation, Tool: "AWS",
 		SecretKeys: []string{"accessKeyId", "secretAccessKey"},

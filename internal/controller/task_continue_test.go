@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -32,7 +32,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
 		n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
-		issueTask := func(name string) *c4v1alpha1.Task {
+		issueTask := func(name string) *c4v1beta1.Task {
 			task := newTask(ns, name, "")
 			task.Spec.Issue = int32(n)
 			return task
@@ -49,7 +49,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1", &agentrunner.Result{Role: "review",
 			Verdict: "changes", Summary: "The code is fine; say in the description how to try it."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 		}).Should(Succeed())
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 
@@ -81,7 +81,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Complete, and the description says how."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-2")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 		pulls := gitFake.pullRequests(ns, "orders-api")
@@ -134,7 +134,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		n := failTryWithOpenPull(ns)
 		gitFake.failPullReads(ns, "orders-api", 1, 2)
 		key := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
-		taskStatusFaults.failNext(key, 2, func(t *c4v1alpha1.Task) bool { return t.Status.Sandbox != "" })
+		taskStatusFaults.failNext(key, 2, func(t *c4v1beta1.Task) bool { return t.Status.Sandbox != "" })
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -175,8 +175,8 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 			ContainSubstring("this try doesn't count towards the limit")))
 		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
 		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
-		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool {
-			return t.Status.Phase == c4v1alpha1.TaskChecking
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool {
+			return t.Status.Phase == c4v1beta1.TaskChecking
 		})
 
 		second := newTask(ns, "orders-api-2", "")
@@ -192,7 +192,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-2-r1-implement"), newSandbox())).NotTo(Succeed(),
 			"no implement run")
 		Expect(getTask(Default, ns, "orders-api-2").Status.History).To(ContainElement(And(
-			HaveField("Phase", c4v1alpha1.TaskChecking),
+			HaveField("Phase", c4v1beta1.TaskChecking),
 			HaveField("Message", ContainSubstring("which Task orders-api-1 pushed and no one reviewed")))))
 		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
 		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
@@ -204,7 +204,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		finishSandbox(ns, "orders-api-2-r1-review-a1", "orders-api-2",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Complete."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
 	})
 
@@ -220,7 +220,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 			sandboxExists(g, ns, "orders-api-2-r1-implement")
 			task := getTask(g, ns, "orders-api-2")
 			g.Expect(task.Status.Continues).To(Equal("orders-api-1"))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 		}).Should(Succeed())
 	})
 })
@@ -255,12 +255,12 @@ func failTryNoCI(ns string) int {
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 	}).Should(Succeed())
 	skewTaskClock(45 * time.Minute)
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, "orders-api-1")
-		g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 		g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Reason", model.ReasonNoCIResult))
 	}).Should(Succeed())
 	taskSkew.Store(0)
@@ -283,7 +283,7 @@ func failTryWithOpenPull(ns string) int {
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 	}).Should(Succeed())
 	ExpectWithOffset(1, gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 	return n

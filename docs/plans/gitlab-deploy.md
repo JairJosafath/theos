@@ -30,7 +30,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
   (what ships, by type), `ShipMarker` and `ReleaseBody` (finding our
   release), `NextSourceStep` with `SourceShip` (the snapshot, its commit and
   its tag), `PublishChecks`, `FactoryOwnPaths`, `SourceOverlaps`,
-  `GitHubTagPrefix`, `GitHubImage` and `GitHubImageNotes`.
+  `ReleaseTagPrefix`, `ImageRepository` (`GitHubImage` before step 4) and
+  `GitHubImageNotes`.
 - `NextReleaseStep` is GitHub's: a draft, retargeted, files uploaded to it,
   then published. GitLab has no drafts.
 - The GitHub client and its fake are in `internal/gitprovider` and in
@@ -53,7 +54,7 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
      deeper (`group/sub/project`), at most 255 characters, the pattern a
      GitLab namespace path allows. The API names it URL-encoded.
    - `tagPrefix` (`*string`): `github`'s field, rule and default
-     (`model.GitHubTagPrefix`, the Container's name and `-`).
+     (`model.ReleaseTagPrefix`, the Container's name and `-`).
    - `source`: `github`'s shape. Its Go type is renamed from
      `DeployTargetGitHubSource` to `DeployTargetSource`, shared by both
      members; the schema does not change.
@@ -80,7 +81,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    tokens answer too): a 401, a 403 or a 404 is `CredentialRefused` with
    GitLab's message ("can't see the project" for a 404), and a token
    without `api` is `CredentialRefused` naming the scope. A token without
-   `write_registry` is ready: the target ships no image (decision 5).
+   `read_registry` or `write_registry` is ready: the target ships no image
+   (decision 5).
 
 3. **The release is the last write, since GitLab has no drafts.** The ship
    sequence is the source commit and its tag (decision 4), the release's
@@ -97,10 +99,22 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
      without it, or the tag at another commit with no release, fails
      `TagTaken`, as on GitHub.
    - The files go to the project's generic package registry, package the
-     Container's name, version the release's version
-     (`PUT /projects/:id/packages/generic/<name>/<version>/<file>`), since a
+     Container's name, version the release's tag
+     (`PUT /projects/:id/packages/generic/<name>/<tag>/<file>`), since a
      GitLab release holds links and no files, and the project upload
-     endpoint is capped for attachments. `*.oci.tar` is left out, as on
+     endpoint is capped for attachments. The version is the tag and not the
+     bare version so that two Containers of one name (`ns1/web` and
+     `ns2/web`), with different tag prefixes, shipping one version to one
+     project keep their files apart (#1873): the tag is already the one key
+     that tells two apps' releases apart in a project, and `TagTaken` guards
+     it; the default prefix is the Container's name and `-`, so prefixing
+     the package *name* instead would read `web-web` on every default
+     target. GitLab's rule for a version (`lib/gitlab/regex/packages.rb`:
+     letters, digits, `.`, `_`, `+` and `-`, no `..`) refuses `/`, which
+     `tagPrefix` allows (a tag folder, `cli/`), so the tag is encoded by
+     `model.GitLabPackageVersion`: `_` is `__` and any other byte outside
+     the rule is `_` and two hex digits (`cli/v1.0.0` is `cli_2fv1.0.0`); a
+     tag within the rule, the default `<name>-vX.Y.Z` included, is itself. `*.oci.tar` is left out, as on
      GitHub. A file there with the same name and size is kept; another size
      is deleted and uploaded again. Each link is `link_type: package` with
      `direct_asset_path: /<file>`. The package registry being off fails the
@@ -142,10 +156,14 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    another fails `TagTaken`, naming the image. The copy comes before the
    release, which names the image in its notes, and
    `status.deploys[].image` reports it. When the project's registry is off
-   (`container_registry_access_level` `disabled`) or the token lacks
-   `write_registry`, no image is copied and the release ships without one,
-   as a `github` target without `packagesToken`; the DeployTarget page says
-   which.
+   (`container_registry_access_level` `disabled`; the project's
+   `container_registry_enabled` is deprecated and not read) or the token
+   lacks `read_registry` or `write_registry` (the copy's first call pulls
+   the source tag, which GitLab grants with `read_registry`;
+   `write_registry` grants the push alone, #1956), no image is copied and
+   the release ships without one, as a `github` target without
+   `packagesToken`; the DeployTarget page says which, and the log line names
+   the missing scope.
 
 6. **A fake GitLab, shared by the adapter's and the controllers' tests.**
    The fake is an `httptest` server in `internal/adapters/gitlab/gitlabtest`

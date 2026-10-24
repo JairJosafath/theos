@@ -67,11 +67,21 @@ synthesizes the CloudFormation offline.
   `sqs:SendMessage` names) and `AlarmTopicArn`.
   `infra/queue_stack.test.ts` asserts it with `Template.fromStack` for both
   tiers.
+- **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
+  `DATA_STORES`: one entry per Connector of a DataStore the Container's
+  Relationships name that this Framework knows (`dynamodb`, whose
+  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  stack calls each entry with the function and the tier's `TIER_RULES`, so the
+  Connector makes its table, grants the function its calls and hands it the
+  table's name; the stack alarms on the table like its own and backs it up
+  by ARN. The `Items` table stays beside it as the starter's example; the
+  README says new data goes in the DataStore's table. `infra/connectors.ts`
+  is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/`, `infra/stacks.ts`,
   `infra/queue_stack.ts`, `infra/queue_stack.test.ts`, `infra/alarms.ts`,
-  `infra/backups.ts`, `infra/operations.ts`, `README.md`, `CHANGELOG.md`,
-  `.gitignore`
+  `infra/backups.ts`, `infra/operations.ts`, `infra/connectors.ts`,
+  `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
   `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients and
   Powertools' `batch`, `logger`, `metrics` and `idempotency` 2.36.0 are
@@ -107,6 +117,8 @@ synthesizes the CloudFormation offline.
   out.
   v1.1.1's README deploys production with `--all`, as a `copyToRegion`
   makes a second stack, `<name>-backup-copy` (#1465).
+  v1.2.0 renders `infra/connectors.ts` and connects the function to each
+  `dynamodb` DataStore's table, alarming on it and backing it up (#1741).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

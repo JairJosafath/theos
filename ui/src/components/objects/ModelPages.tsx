@@ -72,6 +72,12 @@ export function ProjectPage({
           </dd>
           <dt>Active sessions</dt>
           <dd>{count(status?.activeSessions)}</dd>
+          {project.spec?.license ? (
+            <>
+              <dt>License</dt>
+              <dd className="mono">{project.spec.license}</dd>
+            </>
+          ) : null}
           {status?.summary ? (
             <>
               <dt>Summary</dt>
@@ -146,6 +152,30 @@ export function SystemPage({ system, data }: { system: SoftwareSystem; data: Sto
           <dd>{list(system.spec?.needs, 'None written down.')}</dd>
           <dt>KPIs</dt>
           <dd>{list(system.spec?.kpis, 'None written down.')}</dd>
+          <dt>Domains</dt>
+          <dd>
+            {/* Each linked to its page, with the catalog's pinned ref; a Domain is rendered into its Containers at their scaffold. */}
+            {system.spec?.domainRefs?.length ? (
+              <ul className="object-list">
+                {system.spec.domainRefs.map((d) => {
+                  const entry = data.domains.find((e) => e.metadata.name === d)
+                  const href = pageHref(ns, 'Domain', d)
+                  return (
+                    <li key={d} className="mono">
+                      {href ? <a href={href}>{d}</a> : d}
+                      {entry ? (
+                        <span className="muted"> @ {entry.spec.template.ref}</span>
+                      ) : (
+                        <span className="muted small"> · not in the catalog</span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <span className="muted">None.</span>
+            )}
+          </dd>
           <dt>Containers</dt>
           <dd>
             {status?.containers === undefined

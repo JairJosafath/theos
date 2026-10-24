@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,13 +21,16 @@ import (
 	"testing"
 	"time"
 
+	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
 )
 
 var webhookCertStart = time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
@@ -228,6 +232,109 @@ func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
 	}
 }
 
+// #1830: a CRD converts by the operator's webhook only while its kind's
+// versions differ in shape; the mark is the annotation
+// c4.factory.io/conversion: webhook on the base, from a +kubebuilder:metadata
+// marker on the kind's hub type. A kind whose versions' schemas match carries
+// no mark, and one whose schemas differ carries it: the change that first
+// makes a shape differ switches the kind to the webhook.
+func TestConversionMarkFollowsTheShapes(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var crd apiextensionsv1.CustomResourceDefinition
+		if err := yaml.Unmarshal(raw, &crd); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if len(crd.Spec.Versions) < 2 {
+			t.Errorf("%s: serves %d version(s), want v1alpha1 and v1beta1", crd.Name, len(crd.Spec.Versions))
+			continue
+		}
+		differs := false
+		for _, v := range crd.Spec.Versions[1:] {
+			if !equality.Semantic.DeepEqual(shapeOf(t, v.Schema), shapeOf(t, crd.Spec.Versions[0].Schema)) {
+				differs = true
+			}
+		}
+		hooked := slices.Contains(c4v1alpha1.HookedKinds(), crd.Spec.Names.Kind)
+		marked := crd.Annotations["c4.factory.io/conversion"] == "webhook"
+		switch {
+		case differs && !marked:
+			t.Errorf("%s: its versions differ in shape but its hub type lacks the marker "+
+				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+		case hooked && !marked:
+			t.Errorf("%s: has a conversion hook, which strategy None never runs, but its hub type lacks the marker "+
+				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+		case marked && !differs && !hooked:
+			t.Errorf("%s: marked c4.factory.io/conversion: webhook, but its versions share a shape and no hook: "+
+				"drop the marker, strategy None serves them (#1830)", crd.Name)
+		}
+	}
+}
+
+// shapeOf is a version's schema with every description dropped: a doc
+// comment that differs between the versions is no difference in shape. A
+// field named description (Crew's, Bundle's) is one, and stays (#1830).
+func shapeOf(t *testing.T, s *apiextensionsv1.CustomResourceValidation) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	// fields says v is a properties map, whose keys name fields, not a schema.
+	var strip func(v any, fields bool)
+	strip = func(v any, fields bool) {
+		switch v := v.(type) {
+		case map[string]any:
+			if !fields {
+				delete(v, "description")
+			}
+			for k, c := range v {
+				strip(c, !fields && (k == "properties" || k == "patternProperties"))
+			}
+		case []any:
+			for _, c := range v {
+				strip(c, false)
+			}
+		}
+	}
+	strip(m, false)
+	return m
+}
+
+// #1830: a field named description is part of the shape; only the doc
+// comments are not.
+func TestShapeOfKeepsAFieldNamedDescription(t *testing.T) {
+	schema := func(fieldType, doc string) *apiextensionsv1.CustomResourceValidation {
+		return &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+			Type: "object", Description: doc,
+			Properties: map[string]apiextensionsv1.JSONSchemaProps{
+				"description": {Type: fieldType, Description: doc},
+			},
+		}}
+	}
+	if !equality.Semantic.DeepEqual(shapeOf(t, schema("string", "one")), shapeOf(t, schema("string", "two"))) {
+		t.Error("schemas that differ only in their doc comments differ in shape")
+	}
+	if equality.Semantic.DeepEqual(shapeOf(t, schema("string", "one")), shapeOf(t, schema("integer", "one"))) {
+		t.Error("a field named description changed type and the shapes still compare equal")
+	}
+	fields, _ := shapeOf(t, schema("string", ""))["openAPIV3Schema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := fields["description"]; !ok {
+		t.Error("the field named description was stripped as a doc comment")
+	}
+}
+
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them
 // name every CRD in config/crd/bases.
 func TestWebhookCRDsAreEveryCRD(t *testing.T) {
@@ -249,5 +356,22 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	}
 	if !strings.Contains(string(src), "resourceNames="+strings.Join(want, ";")+"\n") {
 		t.Error("the customresourcedefinitions RBAC marker doesn't name exactly WebhookCRDs")
+	}
+	// #1884: the migrator's two markers are the other hand-kept lists: the
+	// CRDs whose status it patches, and the kinds it lists and rewrites.
+	src, err = os.ReadFile("storage_migrator.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		"resources=customresourcedefinitions/status,verbs=patch,resourceNames="+strings.Join(want, ";")+"\n") {
+		t.Error("storage_migrator.go's customresourcedefinitions/status RBAC marker doesn't name exactly WebhookCRDs")
+	}
+	plurals := make([]string, 0, len(want))
+	for _, name := range want {
+		plurals = append(plurals, strings.TrimSuffix(name, ".c4.factory.io"))
+	}
+	if !strings.Contains(string(src), "groups=c4.factory.io,resources="+strings.Join(plurals, ";")+",verbs=list;patch\n") {
+		t.Error("storage_migrator.go's c4.factory.io RBAC marker doesn't name exactly WebhookCRDs' kinds")
 	}
 }

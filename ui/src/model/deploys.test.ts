@@ -5,11 +5,16 @@ import {
   approvePatch,
   deploysOf,
   describeApproval,
+  githubHosts,
   githubImage,
-  githubSource,
+  githubReleasesURL,
+  gitlabHosts,
+  gitlabImage,
+  gitlabReleasesURL,
   memberOf,
   readinessOf,
   shippingTo,
+  sourceOf,
 } from './deploys'
 
 const target = (spec: Partial<DeployTarget['spec']>, status?: DeployTarget['status']): DeployTarget => ({
@@ -34,6 +39,11 @@ const container = (deploy: Container['spec']['deploy'], deploys?: NonNullable<Co
 describe('memberOf', () => {
   it('names the github member and its repository', () => {
     expect(memberOf(target({}))).toEqual({ member: 'github', label: 'GitHub releases', where: 'acme/api' })
+  })
+
+  it('names the gitlab member and its project (#1807)', () => {
+    const t = target({ github: undefined, gitlab: { project: 'acme/apps/api' } })
+    expect(memberOf(t)).toEqual({ member: 'gitlab', label: 'GitLab releases', where: 'acme/apps/api' })
   })
 
   it('names the argoCD member and its destination, the server only when it is another cluster (#1588, #1675)', () => {
@@ -147,22 +157,22 @@ describe('the approval', () => {
   })
 })
 
-describe('githubSource and githubImage (#1603)', () => {
+describe('sourceOf and githubImage (#1603)', () => {
   it('fills the source as the operator does: the Container’s name, the folder and /, nothing for the whole repository', () => {
-    expect(githubSource(target({}))).toBeUndefined()
-    expect(githubSource(target({ github: { repository: 'acme/api', source: {} } }))).toEqual({
+    expect(sourceOf(target({}))).toBeUndefined()
+    expect(sourceOf(target({ github: { repository: 'acme/api', source: {} } }))).toEqual({
       path: '<container>',
       tagPrefix: '<container>/',
     })
-    expect(githubSource(target({ github: { repository: 'acme/api', source: { path: 'cli' } } }))).toEqual({
+    expect(sourceOf(target({ github: { repository: 'acme/api', source: { path: 'cli' } } }))).toEqual({
       path: 'cli',
       tagPrefix: 'cli/',
     })
-    expect(githubSource(target({ github: { repository: 'acme/api', source: { path: '.' } } }))).toEqual({
+    expect(sourceOf(target({ github: { repository: 'acme/api', source: { path: '.' } } }))).toEqual({
       path: '.',
       tagPrefix: '',
     })
-    expect(githubSource(target({ github: { repository: 'acme/api', source: { tagPrefix: '' } } }))).toEqual({
+    expect(sourceOf(target({ github: { repository: 'acme/api', source: { tagPrefix: '' } } }))).toEqual({
       path: '<container>',
       tagPrefix: '',
     })
@@ -177,5 +187,70 @@ describe('githubSource and githubImage (#1603)', () => {
       'ghcr.io/acme/api',
     )
     expect(githubImage(target({ github: undefined, argoCD: { destination: { namespace: 'a' } } }))).toBeUndefined()
+  })
+})
+
+describe('a GitHub Enterprise Server target (#1809)', () => {
+  const ghes = target({ github: { url: 'https://ghe.example.com', repository: 'Acme/API' } })
+
+  it('builds the releases link and the registry from url, as model.GitHubHostsOf does', () => {
+    expect(githubHosts(ghes)).toEqual({ web: 'https://ghe.example.com', registry: 'containers.ghe.example.com' })
+    expect(githubReleasesURL(ghes)).toBe('https://ghe.example.com/Acme/API/releases')
+    expect(githubImage(ghes, 'Orders')).toBe('containers.ghe.example.com/acme/api/orders')
+    const port = target({ github: { url: 'https://ghe.example.com:8443/', repository: 'acme/api', tagPrefix: '' } })
+    expect(githubReleasesURL(port)).toBe('https://ghe.example.com:8443/acme/api/releases')
+    expect(githubImage(port)).toBe('containers.ghe.example.com:8443/acme/api')
+  })
+
+  it('keeps github.com and ghcr.io while url is unset', () => {
+    const dotcom = target({ github: { repository: 'Acme/API' } })
+    expect(githubHosts(dotcom)).toEqual({ web: 'https://github.com', registry: 'ghcr.io' })
+    expect(githubReleasesURL(dotcom)).toBe('https://github.com/Acme/API/releases')
+    expect(githubImage(dotcom, 'Orders')).toBe('ghcr.io/acme/api/orders')
+    expect(
+      githubReleasesURL(target({ github: undefined, argoCD: { destination: { namespace: 'a' } } })),
+    ).toBeUndefined()
+  })
+})
+
+describe('a gitlab target (#1807)', () => {
+  const gitlab = (member: NonNullable<DeployTarget['spec']['gitlab']>) => target({ github: undefined, gitlab: member })
+
+  it('publishes to gitlab.com and registry.gitlab.com when url is unset', () => {
+    const t = gitlab({ project: 'Acme/Apps/API' })
+    expect(gitlabHosts(t)).toEqual({ web: 'https://gitlab.com', registry: 'registry.gitlab.com' })
+    expect(gitlabReleasesURL(t)).toBe('https://gitlab.com/Acme/Apps/API/-/releases')
+    expect(gitlabImage(t, 'Orders')).toBe('registry.gitlab.com/acme/apps/api/orders')
+    expect(gitlabImage(t)).toBe('registry.gitlab.com/acme/apps/api/<container>')
+  })
+
+  it('publishes to the instance at url, a trailing slash or a relative URL root kept, whose registry only the project tells', () => {
+    const t = gitlab({ url: 'https://git.example.com/', project: 'acme/api' })
+    expect(gitlabHosts(t)).toEqual({ web: 'https://git.example.com' })
+    expect(gitlabReleasesURL(t)).toBe('https://git.example.com/acme/api/-/releases')
+    expect(gitlabImage(t, 'orders')).toBe('<registry>/acme/api/orders')
+    const rooted = gitlab({ url: 'https://example.com:8443/gitlab', project: 'acme/api', tagPrefix: '' })
+    expect(gitlabReleasesURL(rooted)).toBe('https://example.com:8443/gitlab/acme/api/-/releases')
+    expect(gitlabImage(rooted, 'orders')).toBe('<registry>/acme/api')
+  })
+
+  it('reads the source as a github target’s, and none when unset', () => {
+    expect(sourceOf(gitlab({ project: 'acme/api' }))).toBeUndefined()
+    expect(sourceOf(gitlab({ project: 'acme/api', source: {} }))).toEqual({
+      path: '<container>',
+      tagPrefix: '<container>/',
+    })
+    expect(sourceOf(gitlab({ project: 'acme/api', source: { path: '.', tagPrefix: 'src-' } }))).toEqual({
+      path: '.',
+      tagPrefix: 'src-',
+    })
+  })
+
+  it('is undefined for another member', () => {
+    const gh = target({})
+    expect(gitlabHosts(gh)).toBeUndefined()
+    expect(gitlabReleasesURL(gh)).toBeUndefined()
+    expect(gitlabImage(gh)).toBeUndefined()
+    expect(githubImage(gitlab({ project: 'acme/api' }))).toBeUndefined()
   })
 })

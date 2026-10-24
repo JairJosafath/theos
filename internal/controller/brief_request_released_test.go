@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -34,7 +34,7 @@ func takeAll(ns, repository string, numbers []int, plan scaffold.Tree) map[int][
 	Eventually(func(g Gomega) {
 		g.Expect(getBrief(g, ns).Status.Requests).To(HaveLen(len(numbers)))
 	}).Should(Succeed())
-	setRequests(ns, func(r *c4v1alpha1.BriefRequests) { r.Accepted = accepted })
+	setRequests(ns, func(r *c4v1beta1.BriefRequests) { r.Accepted = accepted })
 	Eventually(func(g Gomega) {
 		g.Expect(getBrief(g, ns).Status.RoundRequests).To(HaveLen(len(numbers)))
 	}).Should(Succeed())
@@ -76,8 +76,8 @@ func publishLinter(ns, repository, tag string) string {
 	url := "https://github.com/" + repository + "/releases/tag/" + tag
 	Eventually(func(g Gomega) {
 		crew := linterCrew(g, ns)
-		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(),
-			Run: model.RunSucceeded, Publish: &c4v1alpha1.CrewReleasePublish{State: model.PublishPublished, URL: url}}
+		crew.Status.LastRelease = &c4v1beta1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(),
+			Run: model.RunSucceeded, Publish: &c4v1beta1.CrewReleasePublish{State: model.PublishPublished, URL: url}}
 		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
 	}).Should(Succeed())
 	return url
@@ -89,11 +89,11 @@ var _ = Describe("Brief requests shipped", func() {
 	BeforeEach(func() { ns = newProjectNamespace() })
 
 	It("says where a planned request shipped once its release is published, once, and closes it as completed", func() {
-		repository, _ := requestsBrief(ns, c4v1alpha1.BriefRequests{Mode: model.RequestsAsk,
+		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"gray-lenovo"}})
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
@@ -175,7 +175,7 @@ var _ = Describe("Brief requests shipped", func() {
 	})
 
 	It("says a request was done in its issue when its Container publishes nowhere", func() {
-		repository, _ := requestsBrief(ns, c4v1alpha1.BriefRequests{Mode: model.RequestsAsk,
+		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"gray-lenovo"}})
 		Eventually(func(g Gomega) {
 			brief := getBrief(g, ns)
@@ -183,7 +183,7 @@ var _ = Describe("Brief requests shipped", func() {
 		}).Should(Succeed())
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")

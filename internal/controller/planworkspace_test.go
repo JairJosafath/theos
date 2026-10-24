@@ -10,11 +10,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -26,6 +27,29 @@ var planBriefs = &planWorkspaces{briefs: map[client.ObjectKey]string{}}
 type planWorkspaces struct {
 	mu     sync.Mutex
 	briefs map[client.ObjectKey]string
+	// refused are the namespaces whose Plan Task creates fail, as an API
+	// server that refuses them would.
+	refused map[string]bool
+}
+
+// errPlanCreateFault is the error a refused Plan Task create returns.
+var errPlanCreateFault = errors.New("plan Task create refused by the test")
+
+// refuseCreates makes the Plan Task creates in namespace ns fail while
+// refuse is set.
+func (p *planWorkspaces) refuseCreates(ns string, refuse bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.refused == nil {
+		p.refused = map[string]bool{}
+	}
+	p.refused[ns] = refuse
+}
+
+func (p *planWorkspaces) refuses(ns string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.refused[ns]
 }
 
 // briefAt returns main's brief.md when Plan Task key was made.
@@ -47,9 +71,12 @@ type planRecordingClient struct {
 }
 
 func (c planRecordingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	task, ok := obj.(*c4v1alpha1.Task)
-	if !ok || task.Spec.Kind != c4v1alpha1.TaskPlan || task.Spec.BriefRef == nil {
+	task, ok := obj.(*c4v1beta1.Task)
+	if !ok || task.Spec.Kind != c4v1beta1.TaskPlan || task.Spec.BriefRef == nil {
 		return c.Client.Create(ctx, obj, opts...)
+	}
+	if c.plans.refuses(task.Namespace) {
+		return errPlanCreateFault
 	}
 	gitFake.mu.Lock()
 	var brief string

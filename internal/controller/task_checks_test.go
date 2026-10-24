@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -78,9 +78,9 @@ func (g *fakeGit) setRunJobs(owner, name string, id int64, online []int64, jobs 
 func heldPoolPod(ns string) *corev1.Pod {
 	GinkgoHelper()
 	const held = "c4.factory.io/test-held"
-	var provider c4v1alpha1.GitProvider
+	var provider c4v1beta1.GitProvider
 	Expect(k8sClient.Get(ctx, key(ns, "gitea"), &provider)).To(Succeed())
-	provider.Spec.CI = &c4v1alpha1.CISpec{GiteaActions: &c4v1alpha1.GiteaActionsSpec{Runners: []c4v1alpha1.CIRunnerSpec{
+	provider.Spec.CI = &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
 		{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1},
 	}}}
 	Expect(k8sClient.Update(ctx, &provider)).To(Succeed())
@@ -118,26 +118,26 @@ var _ = Describe("A Task's checks", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
 
 		By("waiting past 30 minutes while the run is queued behind other jobs")
 		skewTaskClock(45 * time.Minute)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
 				To(HaveField("Message", HavePrefix("Waiting for checks: queued behind other jobs since ")))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}, 3*time.Second).Should(Succeed(), "the checks are rechecked every second, and keep waiting")
 
 		By("failing once no runner is online")
 		gitFake.setRunnersOnline(0)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
 				HaveField("Reason", model.ReasonNoCIResult),
 				HaveField("Message", ContainSubstring("is queued and no runner is online"))))
@@ -165,7 +165,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
@@ -175,7 +175,7 @@ var _ = Describe("A Task's checks", func() {
 		By("waiting while the commit's status is still the killed run's failure")
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
@@ -188,7 +188,7 @@ var _ = Describe("A Task's checks", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}).Should(Succeed())
 	})
@@ -215,7 +215,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
@@ -241,7 +241,7 @@ var _ = Describe("A Task's checks", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}).Should(Succeed())
 	})
@@ -270,7 +270,7 @@ var _ = Describe("A Task's checks", func() {
 		By("waiting while a runner that went away wouldn't show offline yet")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
 				To(HaveField("Message", ContainSubstring("was cancelled; waiting to tell whether its runner went away")))
 		}).Should(Succeed())
@@ -283,7 +283,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
@@ -317,7 +317,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 			g.Expect(task.Status.Feedback).To(BeEmpty(), "the agent is told nothing")
@@ -351,7 +351,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
@@ -375,7 +375,7 @@ var _ = Describe("A Task's checks", func() {
 		}
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(
 				HaveField("Reason", model.ReasonRunnerOutOfMemory))
@@ -391,13 +391,13 @@ var _ = Describe("A Task's checks", func() {
 		killedChecks(ns, lint, killedRun(ns, time.Now().Add(-20*time.Minute)))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
 				To(HaveField("Message", HavePrefix("Waiting for checks: running since ")))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero())
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}, 2*time.Second).Should(Succeed(), "the Git host runs a run's jobs again only once it ended")
 
 		By("running the killed jobs again once the other run ended")
@@ -407,7 +407,7 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 			g.Expect(gitFake.reruns(ns, "orders-api", 963)).To(BeZero())
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
 		}).Should(Succeed())
 	})
@@ -418,7 +418,7 @@ var _ = Describe("A Task's checks", func() {
 		killedChecks(ns, killedRun(ns, time.Now().Add(-20*time.Minute)))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
 				HaveField("Reason", model.ReasonNoCIResult),
 				HaveField("Message", ContainSubstring("refused to run its failed jobs again"))))
@@ -439,7 +439,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
 		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a real failure goes back to the agent")
@@ -450,7 +450,7 @@ var _ = Describe("A Task's checks", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
 			g.Expect(task.Status.ChecksRerunDue).To(BeFalse())
@@ -458,7 +458,7 @@ var _ = Describe("A Task's checks", func() {
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
 		}, 3*time.Second).Should(Succeed(), "the failure from round 1 is not read again")
@@ -470,7 +470,7 @@ var _ = Describe("A Task's checks", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 		}).Should(Succeed())
 	})

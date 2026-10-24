@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -41,7 +41,7 @@ var _ = Describe("Brief parallel", func() {
 
 		By("making the Crew with parallel 3 when the Brief says nothing")
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(model.BriefParallelDefault))
 		Eventually(func(g Gomega) {
@@ -76,9 +76,9 @@ var _ = Describe("Brief parallel", func() {
 	It("makes new Crews with spec.parallel and leaves a Crew it didn't make alone", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		mustCreate(&c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, "other"), Spec: c4v1alpha1.CrewSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: "other"},
-			Implementer:  c4v1alpha1.LocalRef{Name: "implementer"}, Reviewer: c4v1alpha1.LocalRef{Name: "reviewer"},
+		mustCreate(&c4v1beta1.Crew{ObjectMeta: objectMeta(ns, "other"), Spec: c4v1beta1.CrewSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: "other"},
+			Implementer:  c4v1beta1.LocalRef{Name: "implementer"}, Reviewer: c4v1beta1.LocalRef{Name: "reviewer"},
 			Parallel: 4}})
 		brief := newBrief(ns, "cel-lens")
 		brief.Spec.Parallel = 2
@@ -86,10 +86,10 @@ var _ = Describe("Brief parallel", func() {
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(int32(2)))
-		other := &c4v1alpha1.Crew{}
+		other := &c4v1beta1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "other"), other)).To(Succeed())
 		Expect(other.Spec.Parallel).To(Equal(int32(4)))
 	})
@@ -101,7 +101,7 @@ var _ = Describe("Brief parallel", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(model.BriefParallelDefault))
 
@@ -112,7 +112,7 @@ var _ = Describe("Brief parallel", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.Parallel).To(Equal(int32(2)))
 			g.Expect(b.Status.ParallelRound).To(Equal(int32(2)))
 		}).Should(Succeed())
@@ -160,7 +160,7 @@ var _ = Describe("Brief parallel", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, parallelPlan(ns, 1, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(linterCrew(Default, ns).Spec.Parallel).To(Equal(int32(1)))
 		Expect(getBrief(Default, ns).Status.Parallel).To(Equal(int32(1)))

@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -51,22 +51,22 @@ func eventuallyAnswered(ns string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		annotations := getContainer(g, ns).Annotations
-		g.Expect(annotations).NotTo(HaveKey(c4v1alpha1.AnnotationStandardTake))
-		g.Expect(annotations).NotTo(HaveKey(c4v1alpha1.AnnotationStandardKeep))
+		g.Expect(annotations).NotTo(HaveKey(c4v1beta1.AnnotationStandardTake))
+		g.Expect(annotations).NotTo(HaveKey(c4v1beta1.AnnotationStandardKeep))
 	}).Should(Succeed())
 }
 
 // openedTake waits for a take in flight, and returns it.
-func openedTake(ns string) c4v1alpha1.StandardUpdateStatus {
+func openedTake(ns string) c4v1beta1.StandardUpdateStatus {
 	GinkgoHelper()
-	var take c4v1alpha1.StandardUpdateStatus
+	var take c4v1beta1.StandardUpdateStatus
 	Eventually(func(g Gomega) {
 		container := getContainer(g, ns)
 		g.Expect(container.Status.Standard.Update).To(PointTo(MatchFields(IgnoreExtras, Fields{
 			"Take": BeTrue(), "Stopped": BeEmpty(), "PullRequest": Not(BeZero())})))
 		take = *container.Status.Standard.Update
 		cond := standardCondition(g, container)
-		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
+		g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdating))
 		g.Expect(cond.Message).To(Equal("Pull request " + take.PullRequestURL +
 			" takes the version of python-strict at v1.2.0 of Makefile; it merges once CI passes"))
 	}).Should(Succeed())
@@ -78,7 +78,7 @@ var _ = Describe("Container Standard files behind", func() {
 		ns := newProjectNamespace()
 		makefileBehind(ns)
 
-		answer(ns, c4v1alpha1.AnnotationStandardTake, "v1.2.0")
+		answer(ns, c4v1beta1.AnnotationStandardTake, "v1.2.0")
 		take := openedTake(ns)
 		Expect(take.Ref).To(Equal("v1.2.0"))
 		Expect(take.Branch).To(Equal("standard-take/python-strict-v1.2.0"))
@@ -107,7 +107,7 @@ var _ = Describe("Container Standard files behind", func() {
 		ns := newProjectNamespace()
 		makefileBehind(ns)
 
-		answer(ns, c4v1alpha1.AnnotationStandardTake, "v1.2.0")
+		answer(ns, c4v1beta1.AnnotationStandardTake, "v1.2.0")
 		take := openedTake(ns)
 		gitFake.closePull(ns, "orders-api", int(take.PullRequest))
 		eventuallyAt(ns, "v1.2.0", makefile)
@@ -117,21 +117,21 @@ var _ = Describe("Container Standard files behind", func() {
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("ignoring an answer for another ref")
-		answer(ns, c4v1alpha1.AnnotationStandardKeep, "v1.0.0")
+		answer(ns, c4v1beta1.AnnotationStandardKeep, "v1.0.0")
 		eventuallyAnswered(ns)
 		eventuallyAt(ns, "v1.2.0", makefile)
 
 		By("keeping the repository's version")
-		answer(ns, c4v1alpha1.AnnotationStandardKeep, "v1.2.0")
+		answer(ns, c4v1beta1.AnnotationStandardKeep, "v1.2.0")
 		eventuallyAnswered(ns)
 		Eventually(func(g Gomega) {
 			container := getContainer(g, ns)
 			g.Expect(container.Status.Standard.Behind).To(BeEmpty())
 			g.Expect(container.Status.Standard.LeftOut).To(BeEmpty())
-			g.Expect(container.Status.Standard.Kept).To(Equal([]c4v1alpha1.StandardFile{{Path: makefile, Ref: "v1.2.0"}}))
+			g.Expect(container.Status.Standard.Kept).To(Equal([]c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.2.0"}}))
 			cond := standardCondition(g, container)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpToDate))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpToDate))
 		}).Should(Succeed())
 		Expect(mainFile(ns, makefile)).To(Equal("# Ours.\ncheck:\n\tpytest\n"))
 
@@ -141,7 +141,7 @@ var _ = Describe("Container Standard files behind", func() {
 		Expect(update.LeftOut).To(Equal([]string{makefile}))
 		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.4.0", makefile)
-		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal([]c4v1alpha1.StandardFile{
+		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal([]c4v1beta1.StandardFile{
 			{Path: makefile, Ref: "v1.2.0", PullRequestURL: update.PullRequestURL,
 				Change: "--- Makefile (v1.2.0)\n+++ Makefile (v1.4.0)\n@@ -1,2 +1,5 @@\n+lint:\n+\truff check\n+\n" +
 					" check:\n-\tmake lint test\n+\ttrue\n\nThe repository's lines taking it drops:\n-# Ours.\n@@\n-\tpytest"}}),

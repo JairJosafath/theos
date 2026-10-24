@@ -160,6 +160,11 @@ const (
 	// PublishUploadAsset streams Gitea's Asset to the draft Release, deleting
 	// the draft's Replace first when it is set.
 	PublishUploadAsset PublishAction = "UploadAsset"
+	// PublishCreateRelease creates the release Tag, named Name, with Body, on
+	// the ref Target ("" for the default branch), in one call: GitLab has no
+	// drafts, so it is the last write of a release (docs/plans/gitlab-deploy.md,
+	// Decision 3).
+	PublishCreateRelease PublishAction = "CreateRelease"
 	// PublishDraft publishes the draft Release, as the repository's Latest
 	// when Latest is set.
 	PublishDraft PublishAction = "PublishDraft"
@@ -188,6 +193,9 @@ const (
 	PublishBranchProtected    = "BranchProtected"
 	PublishRepositoryRenamed  = "RepositoryRenamed"
 	PublishRepositoryReplaced = "RepositoryReplaced"
+	// PublishSourceUnsupported is a source a target can't hold: a symlink,
+	// which GitLab's Commits API doesn't carry.
+	PublishSourceUnsupported = "SourceUnsupported"
 )
 
 // PublishBranchMoved is the failure of a fast-forward GitHub refused because
@@ -230,10 +238,33 @@ type PublishStep struct {
 	Source *PublishedSource
 }
 
-// GitHubTag is the tag a release goes out under on GitHub: the prefix, then
-// the Crew's tag.
-func GitHubTag(prefix, tag string) string {
+// ReleaseTag is the tag a release goes out under on GitHub or GitLab: the
+// prefix, then the Crew's tag.
+func ReleaseTag(prefix, tag string) string {
 	return prefix + tag
+}
+
+// GitLabPackageVersion is the version of the generic package a GitLab
+// release's files go to: the release's tag, so two Containers of one name
+// that ship one version to one project (their tag prefixes differ) keep
+// their files apart (#1873). GitLab's rule for a version allows only
+// letters, digits, '.', '_', '+' and '-', and a git tag can hold more ('/'
+// above all), so every other byte is '_' and two hex digits, and '_' itself
+// is "__": "cli/v1.0.0" is "cli_2fv1.0.0", and a tag of allowed bytes only
+// is itself.
+func GitLabPackageVersion(tag string) string {
+	var b strings.Builder
+	for i := 0; i < len(tag); i++ {
+		switch c := tag[i]; {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '.', c == '+', c == '-':
+			b.WriteByte(c)
+		case c == '_':
+			b.WriteString("__")
+		default:
+			fmt.Fprintf(&b, "_%02x", c)
+		}
+	}
+	return b.String()
 }
 
 // ReleaseName is the name a published release goes by: the app, then the
@@ -291,7 +322,7 @@ func MergedReleaseIssues(closed []ReleaseIssue, merged []int) []ReleaseIssue {
 // goes into Failure, and the next poll starts over, carrying on where the last
 // one stopped.
 func NextPublishStep(f PublishFacts) PublishStep {
-	tag := GitHubTag(f.TagPrefix, f.Tag)
+	tag := ReleaseTag(f.TagPrefix, f.Tag)
 	switch {
 	case !f.Configured:
 		return PublishStep{Action: PublishNone}
@@ -586,7 +617,7 @@ func ShipCommit(f PublishFacts) string {
 	if f.Source == nil {
 		return ""
 	}
-	if _, src := sourceStep(f, GitHubTag(f.TagPrefix, f.Tag)); src != nil {
+	if _, src := sourceStep(f, ReleaseTag(f.TagPrefix, f.Tag)); src != nil {
 		return src.Commit
 	}
 	return ""

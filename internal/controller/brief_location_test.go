@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -23,7 +23,7 @@ import (
 func paymentsPlan(ns, location, description string) scaffold.Tree {
 	files := linterPlan(ns, 1)
 	files[model.PlanModelFile] = scaffold.File{Data: append(files[model.PlanModelFile].Data, []byte(`---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
@@ -31,7 +31,7 @@ spec:
   description: `+description+`
   location: `+location+`
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: linter-bills
@@ -43,8 +43,8 @@ spec:
 	return files
 }
 
-func paymentsSystem(g Gomega, ns string) *c4v1alpha1.SoftwareSystem {
-	s := &c4v1alpha1.SoftwareSystem{}
+func paymentsSystem(g Gomega, ns string) *c4v1beta1.SoftwareSystem {
+	s := &c4v1beta1.SoftwareSystem{}
 	g.Expect(k8sClient.Get(ctx, key(ns, "payments"), s)).To(Succeed())
 	return s
 }
@@ -61,20 +61,20 @@ var _ = Describe("Brief location", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, paymentsPlan(ns, "External", "Takes the money"))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
-		Expect(paymentsSystem(Default, ns).Spec.Location).To(Equal(c4v1alpha1.SystemExternal))
-		cel := &c4v1alpha1.SoftwareSystem{}
+		Expect(paymentsSystem(Default, ns).Spec.Location).To(Equal(c4v1beta1.SystemExternal))
+		cel := &c4v1beta1.SoftwareSystem{}
 		Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), cel)).To(Succeed())
-		Expect(cel.Spec.Location).To(Equal(c4v1alpha1.SystemInternal))
+		Expect(cel.Spec.Location).To(Equal(c4v1beta1.SystemInternal))
 
 		By("building nothing for it")
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		Expect(k8sClient.List(ctx, &containers, client.InNamespace(ns))).To(Succeed())
 		for _, c := range containers.Items {
 			Expect(c.Spec.SoftwareSystemRef.Name).NotTo(Equal("payments"), "Container %s", c.Name)
 		}
-		var stores c4v1alpha1.DataStoreList
+		var stores c4v1beta1.DataStoreList
 		Expect(k8sClient.List(ctx, &stores, client.InNamespace(ns))).To(Succeed())
 		for _, d := range stores.Items {
 			Expect(d.Spec.SoftwareSystemRef.Name).NotTo(Equal("payments"), "DataStore %s", d.Name)
@@ -95,10 +95,10 @@ var _ = Describe("Brief location", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		payments := paymentsSystem(Default, ns)
 		Expect(payments.Spec.Description).To(Equal("Takes the money by card"))
-		Expect(payments.Spec.Location).To(Equal(c4v1alpha1.SystemExternal))
+		Expect(payments.Spec.Location).To(Equal(c4v1beta1.SystemExternal))
 	})
 })

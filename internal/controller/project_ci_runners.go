@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -92,7 +92,7 @@ func (p *ciPool) backoff(base time.Duration, now time.Time) time.Duration {
 // GitProviders, and an error to retry with when a host gave no token.
 type ciRunners struct {
 	recheck   time.Duration
-	providers []c4v1alpha1.GitProvider
+	providers []c4v1beta1.GitProvider
 	retry     error
 }
 
@@ -101,7 +101,7 @@ type poolKey struct{ provider, label string }
 
 // gitNamespacesOf are the in-cluster namespaces of the providers' Git hosts,
 // sorted, each once: what a fenced pod may reach besides DNS and public HTTPS.
-func gitNamespacesOf(providers []c4v1alpha1.GitProvider) []string {
+func gitNamespacesOf(providers []c4v1beta1.GitProvider) []string {
 	var namespaces []string
 	for _, p := range providers {
 		u, err := url.Parse(p.Spec.URL)
@@ -151,9 +151,9 @@ func (r *ProjectReconciler) runnerBackoffBase() time.Duration {
 // returned recheck says when the next record expires or a backoff ends,
 // zero for none, and the namespace's GitProviders are returned for
 // ensurePackagesActions.
-func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1alpha1.Project,
-	status *c4v1alpha1.ProjectStatus) (ciRunners, error) {
-	var providers c4v1alpha1.GitProviderList
+func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1beta1.Project,
+	status *c4v1beta1.ProjectStatus) (ciRunners, error) {
+	var providers c4v1beta1.GitProviderList
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
 		return ciRunners{}, err
 	}
@@ -401,7 +401,7 @@ func (r *ProjectReconciler) trimPools(ctx context.Context, pools map[poolKey]*ci
 }
 
 // fillPools creates the pods each pool not held is short of, pools in name order.
-func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1alpha1.Project, pools map[poolKey]*ciPool) error {
+func (r *ProjectReconciler) fillPools(ctx context.Context, project *c4v1beta1.Project, pools map[poolKey]*ciPool) error {
 	log := logf.FromContext(ctx)
 	for _, key := range sortedPoolKeys(pools) {
 		pool := pools[key]
@@ -494,7 +494,7 @@ func (r *ProjectReconciler) deleteCINetwork(ctx context.Context, ns string) erro
 
 // ensureRunnerTokenSecret writes a GitProvider's runner registration token to
 // the Secret the pool's init containers read.
-func (r *ProjectReconciler) ensureRunnerTokenSecret(ctx context.Context, project *c4v1alpha1.Project,
+func (r *ProjectReconciler) ensureRunnerTokenSecret(ctx context.Context, project *c4v1beta1.Project,
 	provider, token string) error {
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: ciRunnerTokenSecret(provider), Namespace: project.Namespace}}
@@ -506,7 +506,7 @@ func (r *ProjectReconciler) ensureRunnerTokenSecret(ctx context.Context, project
 }
 
 // ensureCINetwork fences the pool's pods and gives them the job.env ConfigMap.
-func (r *ProjectReconciler) ensureCINetwork(ctx context.Context, project *c4v1alpha1.Project, gitNamespaces []string) error {
+func (r *ProjectReconciler) ensureCINetwork(ctx context.Context, project *c4v1beta1.Project, gitNamespaces []string) error {
 	env := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: CIJobEnvConfigMap, Namespace: project.Namespace}}
 	if err := r.createOrUpdateUncached(ctx, env, func() error {
 		env.Labels = projectLabels(project.Namespace)

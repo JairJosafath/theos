@@ -16,14 +16,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
 // packagesOf is a GitProvider's spec.packages as the Provider's settings:
 // the registries it names, with "" for each it leaves to the host's own.
 // The tokens are not here: packagesWithTokens adds the ones that publish.
-func packagesOf(gp *c4v1alpha1.GitProvider) gitprovider.Packages {
+func packagesOf(gp *c4v1beta1.GitProvider) gitprovider.Packages {
 	var p gitprovider.Packages
 	if gp.Spec.Packages == nil {
 		return p
@@ -39,7 +39,7 @@ func packagesOf(gp *c4v1alpha1.GitProvider) gitprovider.Packages {
 
 // packagesSecrets names the Secrets of a GitProvider's npm registry and
 // PyPI index, "" for one without.
-func packagesSecrets(gp *c4v1alpha1.GitProvider) (npm, pypi string) {
+func packagesSecrets(gp *c4v1beta1.GitProvider) (npm, pypi string) {
 	if gp.Spec.Packages == nil {
 		return "", ""
 	}
@@ -60,7 +60,7 @@ const packagesTokenKey = "token"
 // gp names, read straight from the API server: the Crew publishes with it to
 // a registry on another host (#1729). No Secret, or none with the key, leaves
 // the token "", which publishes with the host's own credentials.
-func packagesWithTokens(ctx context.Context, apiReader client.Reader, gp *c4v1alpha1.GitProvider) (
+func packagesWithTokens(ctx context.Context, apiReader client.Reader, gp *c4v1beta1.GitProvider) (
 	gitprovider.Packages, error) {
 	p := packagesOf(gp)
 	npm, pypi := packagesSecrets(gp)

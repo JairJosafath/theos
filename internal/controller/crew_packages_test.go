@@ -17,7 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -59,16 +59,16 @@ func setNpmScope(ns, scope string) {
 	// The GitProvider's reconciler may write its status meanwhile: a
 	// conflict reads it again.
 	Eventually(func(g Gomega) {
-		provider := &c4v1alpha1.GitProvider{}
+		provider := &c4v1beta1.GitProvider{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
-		provider.Spec.Packages = &c4v1alpha1.PackagesSpec{NPM: &c4v1alpha1.NpmPackagesSpec{Scope: scope}}
+		provider.Spec.Packages = &c4v1beta1.PackagesSpec{NPM: &c4v1beta1.NpmPackagesSpec{Scope: scope}}
 		g.Expect(k8sClient.Update(ctx, provider)).To(Succeed())
 	}).Should(Succeed())
 }
 
 // releasePackages is the Crew's last release's packages once the state is
 // reached, with the condition's value and reason checked.
-func releasePackages(g Gomega, ns, state string, value metav1.ConditionStatus, reason string) *c4v1alpha1.CrewReleasePackages {
+func releasePackages(g Gomega, ns, state string, value metav1.ConditionStatus, reason string) *c4v1beta1.CrewReleasePackages {
 	crew := getCrew(g, ns)
 	g.Expect(crew.Status.LastRelease).NotTo(BeNil())
 	packages := crew.Status.LastRelease.Packages
@@ -99,7 +99,7 @@ var _ = Describe("Crew release packages", func() {
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
 			g.Expect(packages.Message).To(Equal("Published npm @c4factory/orders-api 0.1.0 and PyPI orders-api 0.1.0"))
-			g.Expect(packages.Published).To(Equal([]c4v1alpha1.CrewReleasePackage{
+			g.Expect(packages.Published).To(Equal([]c4v1beta1.CrewReleasePackage{
 				{Ecosystem: "npm", Name: "@c4factory/orders-api", Version: "0.1.0"},
 				{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}))
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(ConsistOf(
@@ -151,7 +151,7 @@ var _ = Describe("Crew release packages", func() {
 			packages := releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
 			g.Expect(packages.Message).To(Equal("Published PyPI orders-api 0.1.0; left orders-api-0.1.0.tgz alone: " +
 				"orders-api is not under the scope @c4factory"))
-			g.Expect(packages.Published).To(Equal([]c4v1alpha1.CrewReleasePackage{
+			g.Expect(packages.Published).To(Equal([]c4v1beta1.CrewReleasePackage{
 				{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}))
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(HaveLen(1))
 		}).Should(Succeed())
@@ -172,7 +172,7 @@ var _ = Describe("Crew release packages", func() {
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Invalid", metav1.ConditionFalse, "InvalidPackage")
 			g.Expect(packages.Message).To(Equal(message))
-			g.Expect(packages.Published).To(Equal([]c4v1alpha1.CrewReleasePackage{
+			g.Expect(packages.Published).To(Equal([]c4v1beta1.CrewReleasePackage{
 				{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}), "the good files are still published")
 			g.Expect(moduleEvents(g, ns, "InvalidPackage")).To(ConsistOf(And(HaveField("Type", "Warning"),
 				HaveField("Note", message))))
@@ -235,13 +235,13 @@ var _ = Describe("Crew release packages", func() {
 			Data: map[string][]byte{"token": []byte(npmToken), "readToken": []byte("npm-read")}})).To(Succeed())
 		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: objectMeta(ns, "acme-pypi"),
 			Data: map[string][]byte{"readToken": []byte("pypi-read")}})).To(Succeed())
-		provider := &c4v1alpha1.GitProvider{}
+		provider := &c4v1beta1.GitProvider{}
 		Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
-		provider.Spec.Packages = &c4v1alpha1.PackagesSpec{
-			NPM: &c4v1alpha1.NpmPackagesSpec{Scope: "@c4factory", Registry: "https://npm.example.com/",
-				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-npm"}},
-			PyPI: &c4v1alpha1.PyPIPackagesSpec{Index: "https://pypi.example.com/simple",
-				Upload: "https://pypi.example.com/legacy/", CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-pypi"}}}
+		provider.Spec.Packages = &c4v1beta1.PackagesSpec{
+			NPM: &c4v1beta1.NpmPackagesSpec{Scope: "@c4factory", Registry: "https://npm.example.com/",
+				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-npm"}},
+			PyPI: &c4v1beta1.PyPIPackagesSpec{Index: "https://pypi.example.com/simple",
+				Upload: "https://pypi.example.com/legacy/", CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-pypi"}}}
 		Expect(k8sClient.Update(ctx, provider)).To(Succeed())
 		packagedReleaseOf(ns, "completed", "success", []fakeFile{ordersTarball, ordersWheel}, ordersNpm, ordersPyPI)
 

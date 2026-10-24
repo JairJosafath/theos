@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -38,8 +38,8 @@ import (
 // operationsUpdate is one pass over a Container's operations update.
 type operationsUpdate struct {
 	r         *ContainerReconciler
-	container *c4v1alpha1.Container
-	status    *c4v1alpha1.ContainerStatus
+	container *c4v1beta1.Container
+	status    *c4v1beta1.ContainerStatus
 	// git reaches the Container's Git host; it is built on first use.
 	git *gitAccess
 	// failed says the pass ended on a Git error, which the next recheck retries.
@@ -51,8 +51,8 @@ type operationsUpdate struct {
 // live says whether the cached Container is the one on the API server: the
 // steps act in Git from the update in status, so they are taken only then. It
 // reports whether the pass ended on a Git error, for the caller to retry.
-func (r *ContainerReconciler) updateOperations(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, live func() bool) bool {
+func (r *ContainerReconciler) updateOperations(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus, live func() bool) bool {
 	if r.reportOperationsApplied(container, status) || !live() {
 		return false
 	}
@@ -68,9 +68,9 @@ func (r *ContainerReconciler) updateOperations(ctx context.Context, container *c
 // that hasn't merged or stopped, which the operator reads again at each
 // recheck. A stopped one is read again only when the Container is reconciled
 // for another reason, as a stopped Standard update is.
-func operationsInFlight(status *c4v1alpha1.ContainerStatus) bool {
+func operationsInFlight(status *c4v1beta1.ContainerStatus) bool {
 	u := status.OperationsUpdate
-	return status.Phase == c4v1alpha1.ContainerReady && u != nil && u.PullRequest != 0 && u.Stopped == "" &&
+	return status.Phase == c4v1beta1.ContainerReady && u != nil && u.PullRequest != 0 && u.Stopped == "" &&
 		!operationsMerged(status)
 }
 
@@ -79,7 +79,7 @@ func operationsInFlight(status *c4v1alpha1.ContainerStatus) bool {
 // rendered with. Only a merge records an update's block, and a new update is
 // planned only for a block other than the recorded one, so the second holds
 // for a merge the host named no commit for.
-func operationsMerged(status *c4v1alpha1.ContainerStatus) bool {
+func operationsMerged(status *c4v1beta1.ContainerStatus) bool {
 	u := status.OperationsUpdate
 	if u == nil {
 		return false
@@ -91,13 +91,13 @@ func operationsMerged(status *c4v1alpha1.ContainerStatus) bool {
 
 // operationsFacts are the facts of the Container's operations update before
 // anything is read. status records the block the repository was rendered with.
-func operationsFacts(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) model.OperationsUpdateFacts {
+func operationsFacts(container *c4v1beta1.Container, status *c4v1beta1.ContainerStatus) model.OperationsUpdateFacts {
 	return model.OperationsUpdateFacts{Target: specOperations(container),
 		Recorded: scaffoldedOperations(container, status), Update: operationsInStatus(status)}
 }
 
 // operationsInStatus is the update in status as the model sees it, or nil.
-func operationsInStatus(status *c4v1alpha1.ContainerStatus) *model.OperationsUpdateInFlight {
+func operationsInStatus(status *c4v1beta1.ContainerStatus) *model.OperationsUpdateInFlight {
 	update := status.OperationsUpdate
 	if update == nil {
 		return nil
@@ -180,19 +180,19 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 			u.stopClosed(ctx, gitCtx, step.Message)
 			return
 		case model.OperationsStopPushed:
-			u.status.OperationsUpdate.Stopped = c4v1alpha1.ReasonUpdateRefused
-			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, step.Message)
+			u.status.OperationsUpdate.Stopped = c4v1beta1.ReasonUpdateRefused
+			u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUpdateRefused, step.Message)
 			log.Info("Stopped an operations update someone else pushed to",
 				"url", u.status.OperationsUpdate.PullRequestURL, "head", f.PR.HeadSHA)
 			return
 		case model.OperationsRefuseMerge:
-			u.status.OperationsUpdate.Stopped = c4v1alpha1.ReasonUpdateRefused
-			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateRefused, step.Message)
+			u.status.OperationsUpdate.Stopped = c4v1beta1.ReasonUpdateRefused
+			u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUpdateRefused, step.Message)
 			log.Info("Refused to merge an operations update", "url", u.status.OperationsUpdate.PullRequestURL,
 				"reason", step.Why)
 			return
 		case model.OperationsChecksFailed:
-			u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonChecksFailed, step.Message)
+			u.condition(metav1.ConditionFalse, c4v1beta1.ReasonChecksFailed, step.Message)
 			return
 		case model.OperationsWaitForChecks:
 			u.updating()
@@ -217,25 +217,34 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	name := u.container.Choices().Framework
 	from, to := scaffoldedOperations(u.container, u.status), specOperations(u.container)
 	stopped := func(reason, message string) {
-		u.status.OperationsUpdate = &c4v1alpha1.OperationsUpdateStatus{Operations: operationsStatus(to),
+		u.status.OperationsUpdate = &c4v1beta1.OperationsUpdateStatus{Operations: operationsStatus(to),
 			Stopped: reason}
 		u.condition(metav1.ConditionFalse, reason, message)
 	}
+	// #1909: an adopted repository was never scaffolded, so nothing says
+	// whether the operations file on its main is one the Framework renders.
+	if u.container.Spec.Adopt {
+		stopped(c4v1beta1.ReasonAdoptedRepository, fmt.Sprintf("spec.operations changed after the adoption of "+
+			"the repository, which the factory never scaffolded, so it can't know whether the Framework %s "+
+			"renders the %s there; change it by a Task", name, model.OperationsFile))
+		log.Info("Did not carry a changed spec.operations to an adopted repository", "framework", name)
+		return
+	}
 	ref := model.ScaffoldedRef(u.status.ScaffoldedFrom, name)
 	if ref == "" {
-		stopped(c4v1alpha1.ReasonChangedAfterScaffold, fmt.Sprintf("spec.operations changed after the scaffold, "+
+		stopped(c4v1beta1.ReasonChangedAfterScaffold, fmt.Sprintf("spec.operations changed after the scaffold, "+
 			"which doesn't record the Framework %s's ref, so the factory can't render %s again; change it by a Task",
 			name, model.OperationsFile))
 		return
 	}
-	var framework c4v1alpha1.Framework
+	var framework c4v1beta1.Framework
 	found, err := u.r.lookup(ctx, u.container.Namespace, name, &framework)
 	if err != nil {
 		log.Info("Could not read Framework", "framework", name, "error", err.Error())
 		return
 	}
 	if !found {
-		u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage([]string{"Framework " + name}))
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonNotFound, notFoundMessage([]string{"Framework " + name}))
 		return
 	}
 	git, ok := u.access(ctx)
@@ -251,16 +260,21 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status), to,
-		git.provider.Repository(u.container.Name).NpmScope)
+	license, err := u.r.scaffoldedLicense(ctx, gitCtx, git, u.container)
+	if err != nil {
+		u.gitError(ctx, err)
+		return
+	}
+	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status), to,
+		git.provider.Repository(u.container.Name).NpmScope, license)
 	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref, Files: files})
 	if err != nil {
-		stopped(c4v1alpha1.ReasonFailed, fmt.Sprintf("Could not render the Framework %s at %s: %v", name, ref, err))
+		stopped(c4v1beta1.ReasonFailed, fmt.Sprintf("Could not render the Framework %s at %s: %v", name, ref, err))
 		return
 	}
 	file, ok := tree[model.OperationsFile]
 	if !ok {
-		stopped(c4v1alpha1.ReasonChangedAfterScaffold, fmt.Sprintf("spec.operations changed after the scaffold, "+
+		stopped(c4v1beta1.ReasonChangedAfterScaffold, fmt.Sprintf("spec.operations changed after the scaffold, "+
 			"and the Framework %s at %s renders no %s for the factory to render again; change the repository "+
 			"by a Task", name, ref, model.OperationsFile))
 		log.Info("Did not carry a changed spec.operations to a Framework that renders no operations file",
@@ -298,7 +312,7 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	u.status.OperationsUpdate = &c4v1alpha1.OperationsUpdateStatus{Operations: operationsStatus(to), Branch: branch,
+	u.status.OperationsUpdate = &c4v1beta1.OperationsUpdateStatus{Operations: operationsStatus(to), Branch: branch,
 		Commit: commit, PullRequest: int32(pr.Number), PullRequestURL: pr.URL}
 	u.updating()
 	log.Info("Opened an operations update", "url", pr.URL, "operations", model.OperationsSummary(to))
@@ -308,7 +322,7 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 // commit base, already renders it.
 func (u *operationsUpdate) alreadyUpToDate(ctx context.Context, to model.Operations, base string) {
 	u.status.Operations = operationsStatus(to)
-	u.status.OperationsUpdate = &c4v1alpha1.OperationsUpdateStatus{Operations: operationsStatus(to),
+	u.status.OperationsUpdate = &c4v1beta1.OperationsUpdateStatus{Operations: operationsStatus(to),
 		MergeCommit: base}
 	u.r.operationsUpToDate(u.container, u.status)
 	logf.FromContext(ctx).Info("Found infra/operations.ts already rendered from spec.operations", "commit", base)
@@ -351,8 +365,8 @@ func (u *operationsUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bo
 func (u *operationsUpdate) stopClosed(ctx, gitCtx context.Context, message string) {
 	log := logf.FromContext(ctx)
 	update := u.status.OperationsUpdate
-	update.Stopped = c4v1alpha1.ReasonUpdateClosed
-	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdateClosed, message)
+	update.Stopped = c4v1beta1.ReasonUpdateClosed
+	u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUpdateClosed, message)
 	if git, ok := u.access(ctx); ok {
 		if err := git.provider.DeleteBranch(gitCtx, git.provider.Repository(u.container.Name),
 			update.Branch); err != nil {
@@ -371,8 +385,8 @@ func (u *operationsUpdate) forceMerge(ctx, gitCtx context.Context) bool {
 	if !ok {
 		return false
 	}
-	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), recordedChecks(u.status),
-		model.ResolveOperations(operationsChoices(update.Operations)), "")
+	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
+		model.ResolveOperations(operationsChoices(update.Operations)), "", scaffold.License{})
 	title := model.OperationsUpdateTitle()
 	message, _ := strings.CutPrefix(scaffold.OperationsMessage(in, scaffoldedOperations(u.container, u.status)),
 		title+"\n\n")
@@ -471,7 +485,7 @@ func (u *operationsUpdate) access(ctx context.Context) (*gitAccess, bool) {
 
 // updating reports the update's pull request waiting for CI.
 func (u *operationsUpdate) updating() {
-	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonUpdating, fmt.Sprintf(
+	u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUpdating, fmt.Sprintf(
 		"Pull request %s renders %s from spec.operations; it merges once CI passes",
 		u.status.OperationsUpdate.PullRequestURL, model.OperationsFile))
 }
@@ -479,7 +493,7 @@ func (u *operationsUpdate) updating() {
 // keep sets the condition as it stands for the Container's generation, for a
 // pass that ends without changing it.
 func (u *operationsUpdate) keep() {
-	if c := meta.FindStatusCondition(u.status.Conditions, c4v1alpha1.ConditionOperationsApplied); c != nil {
+	if c := meta.FindStatusCondition(u.status.Conditions, c4v1beta1.ConditionOperationsApplied); c != nil {
 		u.condition(c.Status, c.Reason, c.Message)
 	}
 }
@@ -488,10 +502,10 @@ func (u *operationsUpdate) keep() {
 // recheck tries again.
 func (u *operationsUpdate) gitError(ctx context.Context, err error) {
 	u.failed = true
-	u.condition(metav1.ConditionFalse, c4v1alpha1.ReasonGitError, err.Error()+"; retrying")
+	u.condition(metav1.ConditionFalse, c4v1beta1.ReasonGitError, err.Error()+"; retrying")
 	logf.FromContext(ctx).Info("Could not update infra/operations.ts", "error", err.Error())
 }
 
 func (u *operationsUpdate) condition(s metav1.ConditionStatus, reason, message string) {
-	u.r.condition(u.container, u.status, c4v1alpha1.ConditionOperationsApplied, s, reason, message)
+	u.r.condition(u.container, u.status, c4v1beta1.ConditionOperationsApplied, s, reason, message)
 }

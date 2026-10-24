@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 const apps = "apps"
@@ -33,11 +33,11 @@ const standard = "hello-html-standard"
 func waitStandardAt(ref string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		g.Expect(k8s.Get(ctx, key(apps, "hello"), &c)).To(Succeed())
 		g.Expect(c.Status.Standard).NotTo(BeNil())
 		g.Expect(c.Status.Standard.Ref).To(Equal(ref), "status: %+v", c.Status.Standard)
-		cond := meta.FindStatusCondition(c.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+		cond := meta.FindStatusCondition(c.Status.Conditions, c4v1beta1.ConditionStandardUpdated)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s: %s", cond.Reason, cond.Message)
 	}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
@@ -57,11 +57,11 @@ func patchStandardRef(ref string) {
 var _ = Describe("Hello page", Ordered, ContinueOnFailure, func() {
 	It("scaffolds a Container from hello-html and protects main", func() {
 		Eventually(func(g Gomega) {
-			var list c4v1alpha1.ContainerList
+			var list c4v1beta1.ContainerList
 			g.Expect(k8s.List(ctx, &list, client.InNamespace(apps))).To(Succeed())
 			g.Expect(list.Items).To(HaveLen(1))
 			for _, c := range list.Items {
-				g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady), c.Name)
+				g.Expect(c.Status.Phase).To(Equal(c4v1beta1.ContainerReady), c.Name)
 				// The refs move (templates/versions.txt), and a cluster kept from
 				// an earlier run holds the hello Container from then.
 				g.Expect(c.Status.ScaffoldedFrom).To(HaveExactElements(
@@ -85,11 +85,11 @@ var _ = Describe("Hello page", Ordered, ContinueOnFailure, func() {
 		kubectl("apply", "-f", "test/e2e/testdata/apps/tasks/stand-in.yaml")
 		DeferCleanup(func() { kubectl("-n", apps, "delete", "task", "stand-in-loop", "--ignore-not-found") })
 
-		var task c4v1alpha1.Task
+		var task c4v1beta1.Task
 		Eventually(func(g Gomega) {
 			g.Expect(k8s.Get(ctx, key(apps, "stand-in-loop"), &task)).To(Succeed())
-			g.Expect(task.Status.Phase).NotTo(Equal(c4v1alpha1.TaskFailed), "task: %+v", task.Status)
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).NotTo(Equal(c4v1beta1.TaskFailed), "task: %+v", task.Status)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).WithTimeout(40 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
 		Expect(task.Status.Round).To(Equal(int32(2)), "the stand-in reviewer asks for changes once")
 		Expect(task.Status.Review).To(HaveField("Verdict", "approve"))
@@ -111,7 +111,7 @@ var _ = Describe("Hello page", Ordered, ContinueOnFailure, func() {
 
 	It("carries a Standard bump to main through a pull request it merges", func() {
 		By("waiting until the Standard's files are at the ref the fixture pins")
-		var std c4v1alpha1.Standard
+		var std c4v1beta1.Standard
 		Expect(k8s.Get(ctx, key(apps, standard), &std)).To(Succeed())
 		pinned := std.Spec.Template.Ref
 		waitStandardAt(pinned)

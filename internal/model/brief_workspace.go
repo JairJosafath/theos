@@ -239,7 +239,7 @@ func renderBrief(ws BriefWorkspace) string {
 		slices.SortFunc(releases, func(a, b WorkspaceRelease) int { return strings.Compare(a.Container, b.Container) })
 		for _, r := range releases {
 			fmt.Fprintf(&b, "- `%s`, published by the factory to github.com/%s as `%s`\n",
-				r.Container, r.Repository, GitHubTag(r.TagPrefix, "vX.Y.Z"))
+				r.Container, r.Repository, ReleaseTag(r.TagPrefix, "vX.Y.Z"))
 		}
 	}
 	return b.String()
@@ -295,10 +295,11 @@ type elementRefOut struct {
 }
 
 type systemOut struct {
-	textOut  `yaml:",inline"`
-	Needs    []string `yaml:"needs,omitempty"`
-	KPIs     []string `yaml:"kpis,omitempty"`
-	Location string   `yaml:"location"`
+	textOut    `yaml:",inline"`
+	Needs      []string `yaml:"needs,omitempty"`
+	KPIs       []string `yaml:"kpis,omitempty"`
+	Location   string   `yaml:"location"`
+	DomainRefs []string `yaml:"domainRefs,omitempty"`
 }
 
 type containerOut struct {
@@ -354,7 +355,7 @@ func renderWorkspaceModel(objects []PlanObject) (string, error) {
 		text := textOut{o.DisplayName, o.Description}
 		switch o.Kind {
 		case KindSoftwareSystem:
-			m.Spec = systemOut{text, o.Needs, o.KPIs, SystemLocation(o)}
+			m.Spec = systemOut{text, o.Needs, o.KPIs, SystemLocation(o), o.Domains}
 		case KindContainer:
 			spec := containerOut{textOut: text, SoftwareSystemRef: refOut{o.SoftwareSystem}, Type: o.Type,
 				GitProviderRef: refOut{o.GitProvider}, BundleRef: optionalRef(o.Bundle)}
@@ -387,9 +388,17 @@ type catalogOut struct {
 	Computes    []catalogEntryOut `yaml:"computes"`
 	Deployments []catalogEntryOut `yaml:"deployments"`
 	Connectors  []catalogEntryOut `yaml:"connectors"`
+	// Domains are the installed Domains, what a system may be about; a new
+	// Internal system names the ones the idea is about (#1760).
+	Domains []domainOut `yaml:"domains"`
 	// Bundles are the namespace's Bundles, each with the entries it names and
 	// the types they all support.
 	Bundles []bundleOut `yaml:"bundles"`
+}
+
+type domainOut struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description,omitempty"`
 }
 
 type bundleOut struct {
@@ -431,7 +440,12 @@ func workspaceCatalog(catalog []CatalogEntry, bundles []Bundle) catalogOut {
 		SideFramework: &out.Frameworks, SideStandard: &out.Standards, SideCompute: &out.Computes,
 		SideDeployment: &out.Deployments, SideConnector: &out.Connectors,
 	}
+	out.Domains = []domainOut{}
 	for _, e := range sorted {
+		if e.Side == SideDomain {
+			out.Domains = append(out.Domains, domainOut{e.Name, strings.TrimSpace(e.Description)})
+			continue
+		}
 		list, ok := sides[e.Side]
 		if !ok {
 			continue

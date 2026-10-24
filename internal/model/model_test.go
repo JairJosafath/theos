@@ -31,6 +31,8 @@ func TestCheckChoices(t *testing.T) {
 		{"connector reached through a relationship rejects", TypeJob, []CatalogEntry{small, postgres, manifests},
 			"k8s-manifests does not support job"},
 		{"no entries", TypeWorker, nil, ""},
+		{"a Domain supports no type and is skipped", TypeService,
+			[]CatalogEntry{fastapi, small, manifests, postgres, entry(SideDomain, "webshop")}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,19 +226,25 @@ func TestScaffoldHistory(t *testing.T) {
 		name       string
 		commits    int
 		initialFor string
+		adopt      bool
 		want       ExistingHistory
 	}{
-		{"a new repository is scaffolded", 0, "", HistoryEmpty},
-		{"our own initial commit is recovered", 1, container, HistoryRecover},
-		{"one commit we didn't make is foreign", 1, "", HistoryForeign},
-		{"another Container's initial commit is foreign", 1, "shop/billing-api", HistoryForeign},
-		{"a second commit after ours is foreign", 2, container, HistoryForeign},
-		{"two commits we didn't make are foreign", 2, "", HistoryForeign},
+		{"a new repository is scaffolded", 0, "", false, HistoryEmpty},
+		{"our own initial commit is recovered", 1, container, false, HistoryRecover},
+		{"one commit we didn't make is foreign", 1, "", false, HistoryForeign},
+		{"another Container's initial commit is foreign", 1, "shop/billing-api", false, HistoryForeign},
+		{"a second commit after ours is foreign", 2, container, false, HistoryForeign},
+		{"two commits we didn't make are foreign", 2, "", false, HistoryForeign},
+		// #1888: spec.adopt takes over whatever history there is.
+		{"an adopted repository with commits is adopted", 2, "", true, HistoryAdopt},
+		{"an adopted repository with one foreign commit is adopted", 1, "", true, HistoryAdopt},
+		{"an adopted repository holding our own initial commit is adopted, not recovered", 1, container, true, HistoryAdopt},
+		{"an adopted repository with no commits has nothing to adopt", 0, "", true, HistoryNothingToAdopt},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ScaffoldHistory(tt.commits, tt.initialFor, container); got != tt.want {
-				t.Errorf("ScaffoldHistory(%d, %q) = %v, want %v", tt.commits, tt.initialFor, got, tt.want)
+			if got := ScaffoldHistory(tt.commits, tt.initialFor, container, tt.adopt); got != tt.want {
+				t.Errorf("ScaffoldHistory(%d, %q, adopt=%t) = %v, want %v", tt.commits, tt.initialFor, tt.adopt, got, tt.want)
 			}
 		})
 	}
@@ -273,6 +281,47 @@ func TestCheckStandard(t *testing.T) {
 	}
 }
 
+func TestCheckWiring(t *testing.T) {
+	framework := CatalogEntry{Side: SideFramework, Name: "aws-lambda-ts", SupportedTypes: []string{TypeFunction}}
+	dynamodb := CatalogEntry{Side: SideConnector, Name: "dynamodb", WiredBy: []string{"aws-lambda-ts", "aws-lambda-go"}}
+	postgres := CatalogEntry{Side: SideConnector, Name: "postgres"}
+	tests := []struct {
+		name      string
+		framework string
+		entries   []CatalogEntry
+		want      string
+	}{
+		{"no connector", "python-fastapi", []CatalogEntry{framework}, ""},
+		{"wiredBy unset", "python-fastapi", []CatalogEntry{framework, postgres}, ""},
+		{"framework inside wiredBy", "aws-lambda-go", []CatalogEntry{framework, postgres, dynamodb}, ""},
+		{"framework outside wiredBy", "python-fastapi", []CatalogEntry{framework, postgres, dynamodb},
+			"dynamodb is not wired by python-fastapi, only by aws-lambda-ts and aws-lambda-go"},
+		{"only connectors are checked", "python-fastapi",
+			[]CatalogEntry{{Side: SideStandard, Name: "aws-standard", WiredBy: []string{"aws-lambda-ts"}}}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckWiring(tt.framework, tt.entries)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("CheckWiring() = %v, want nil", err)
+				}
+				return
+			}
+			wiring, ok := errors.AsType[*WiringError](err)
+			if !ok {
+				t.Fatalf("CheckWiring() = %v, want *WiringError", err)
+			}
+			if wiring.Connector != "dynamodb" || wiring.Framework != tt.framework {
+				t.Errorf("WiringError = %+v, want Connector dynamodb and Framework %s", wiring, tt.framework)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("message = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
 func TestClusterNamespace(t *testing.T) {
 	tests := []struct {
 		host string
@@ -292,22 +341,6 @@ func TestClusterNamespace(t *testing.T) {
 	}
 }
 
-func TestAgentProtectedPaths(t *testing.T) {
-	got := AgentProtectedPaths(giteaActions, []string{"Makefile", ".gitea/", "docs/style/"})
-	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "docs/style/"}
-	if !slices.Equal(got, want) {
-		t.Errorf("AgentProtectedPaths() = %v, want %v", got, want)
-	}
-	if got := AgentProtectedPaths(giteaActions, nil); !slices.Equal(got, PlatformProtectedPaths(giteaActions)) {
-		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", got)
-	}
-	other := CI{Name: "other", ProtectedPaths: []string{".other-ci.yml"}}
-	want = []string{".c4factory.yaml", ".devcontainer/", ".other-ci.yml", "Makefile"}
-	if got := AgentProtectedPaths(other, []string{"Makefile"}); !slices.Equal(got, want) {
-		t.Errorf("AgentProtectedPaths(other) = %v, want %v", got, want)
-	}
-}
-
 func TestTouchedPaths(t *testing.T) {
 	protected := []string{".gitea/", "Makefile"}
 	tests := []struct {
@@ -323,6 +356,43 @@ func TestTouchedPaths(t *testing.T) {
 		if got := TouchedPaths(tt.changed, protected); !slices.Equal(got, tt.want) {
 			t.Errorf("TouchedPaths(%v) = %v, want %v", tt.changed, got, tt.want)
 		}
+	}
+}
+
+func TestBaseState(t *testing.T) {
+	const pr, push = "check / check (pull_request)", "check / check (push)"
+	tests := []struct {
+		name     string
+		required []string
+		state    string
+		contexts map[string]string
+		want     string
+	}{
+		{name: "green", required: []string{"check*"}, state: "success", contexts: map[string]string{push: "success"},
+			want: "success"},
+		{name: "no status yet", required: []string{"check*"}, want: ""},
+		{name: "only skipped checks", required: []string{"check*"}, contexts: map[string]string{push: "skipped"}, want: ""},
+		{name: "no check matches", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{"lint / lint (push)": "failure"}, want: ""},
+		{name: "red", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{push: "failure", "lint / lint (push)": "success"}, want: "failure"},
+		{name: "errored", required: []string{"check*"}, state: "error", contexts: map[string]string{push: "error"},
+			want: "failure"},
+		{name: "red beats pending", required: []string{"check*"}, state: "failure",
+			contexts: map[string]string{push: "failure", pr: "pending"}, want: "failure"},
+		{name: "pending", required: []string{"check*"}, state: "pending",
+			contexts: map[string]string{push: "pending", pr: "success"}, want: "pending"},
+		{name: "a skipped check next to a passing one", required: []string{"check*"}, state: "success",
+			contexts: map[string]string{push: "success", pr: "skipped"}, want: "success"},
+		{name: "no required checks: the combined state", state: "failure", contexts: map[string]string{push: "failure"},
+			want: "failure"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BaseState(tt.required, tt.state, tt.contexts); got != tt.want {
+				t.Errorf("BaseState(%v, %q, %v) = %q, want %q", tt.required, tt.state, tt.contexts, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -369,30 +439,6 @@ func TestMatchGlob(t *testing.T) {
 	for _, tt := range tests {
 		if got := matchGlob(tt.pattern, tt.s); got != tt.want {
 			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
-		}
-	}
-}
-
-// A cluster DNS address block (#1257) is one inside the private ranges the
-// fences keep HTTPS from; a public resolver or anywhere is not.
-func TestPrivateBlock(t *testing.T) {
-	for _, tt := range []struct {
-		cidr string
-		want bool
-	}{
-		{"169.254.20.10/32", true}, // NodeLocal DNSCache
-		{"10.96.0.10/32", true},    // a kube-dns Service address
-		{"172.20.0.0/16", true},
-		{"10.0.0.0/8", true},
-		{"8.8.8.8/32", false},
-		{"0.0.0.0/0", false},
-		{"10.0.0.0/7", false}, // wider than 10/8
-		{"169.254.20.10", false},
-		{"fd00::10/128", false},
-		{"", false},
-	} {
-		if got := PrivateBlock(tt.cidr); got != tt.want {
-			t.Errorf("PrivateBlock(%q) = %v, want %v", tt.cidr, got, tt.want)
 		}
 	}
 }

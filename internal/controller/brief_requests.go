@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -75,7 +75,7 @@ func (r *BriefReconciler) issueTrackers() IssueTrackers {
 }
 
 // requestsMode is a releases entry's requests mode, Off when it has none.
-func requestsMode(entry *c4v1alpha1.BriefRelease) string {
+func requestsMode(entry *c4v1beta1.BriefRelease) string {
 	if entry.Requests == nil || entry.Requests.Mode == "" {
 		return model.RequestsOff
 	}
@@ -94,7 +94,7 @@ type requestsFailure struct {
 // ones, and sets the Requests condition. A repository that fails keeps the
 // requests it had; nothing it does fails the reconcile. It reports whether a
 // repository takes requests, to read again.
-func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Brief) bool {
+func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1beta1.Brief) bool {
 	status := &brief.Status
 	now := r.now()
 	r.shipRequests(ctx, brief)
@@ -128,6 +128,7 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Br
 		}
 	}
 	r.recordRequests(ctx, brief, all)
+	dropRequestsNeedsYou(brief)
 	recordSettled(brief, reading, settled)
 	r.setRequestsCondition(ctx, brief, reading, failure)
 	return len(reading) > 0
@@ -136,8 +137,8 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1alpha1.Br
 // readRepository reads one entry's repository and answers its declined
 // requests. It returns the repository's requests: those known when it can't
 // be read. A read puts the entry's settled answers in settled.
-func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.Brief,
-	entry *c4v1alpha1.BriefRelease, known []model.Request, settled map[string][]int32,
+func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.Brief,
+	entry *c4v1beta1.BriefRelease, known []model.Request, settled map[string][]int32,
 	now time.Time) ([]model.Request, *requestsFailure) {
 	repository := entry.GitHub.Repository
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
@@ -209,7 +210,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1alpha1.
 // passed: the open issues, asked with the last ETag, and the teams of the
 // authors not named in authors. owed are the requests the Brief has to
 // answer on GitHub, which it reads again first.
-func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1alpha1.Brief, entry *c4v1alpha1.BriefRelease,
+func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief, entry *c4v1beta1.BriefRelease,
 	tracker gitprovider.IssueTracker, owed []int, now time.Time) *requestsRead {
 	spec := entry.Requests
 	key := requestsKey(brief, entry.GitHub.Repository)
@@ -261,7 +262,7 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1alpha1.Brie
 // readMembers finds which authors of the open issues, not named in authors,
 // are members of one of the entry's teams. An author already found keeps
 // the answer while the list is the same.
-func (r *BriefReconciler) readMembers(ctx context.Context, spec *c4v1alpha1.BriefRequests,
+func (r *BriefReconciler) readMembers(ctx context.Context, spec *c4v1beta1.BriefRequests,
 	tracker gitprovider.IssueTracker, read *requestsRead) {
 	if len(spec.Teams) == 0 {
 		read.members = nil
@@ -308,7 +309,7 @@ func inTeams(ctx context.Context, tracker gitprovider.IssueTracker, teams []stri
 // declineRequests says on each declined request that the app's owners didn't
 // take it, once, and closes it as not planned; a closed one leaves the list.
 // It goes on past a request it fails, and returns the first failure.
-func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1beta1.Brief,
 	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
@@ -352,7 +353,7 @@ func declineRequest(ctx context.Context, tracker gitprovider.IssueTracker, brief
 
 // forgetIssue takes an issue the Brief closed out of what it last read, so it
 // isn't answered again before the next read.
-func (r *BriefReconciler) forgetIssue(brief *c4v1alpha1.Brief, repository string, number int) {
+func (r *BriefReconciler) forgetIssue(brief *c4v1beta1.Brief, repository string, number int) {
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
 	if last := r.requestsReads[requestsKey(brief, repository)]; last != nil {
@@ -364,7 +365,7 @@ func (r *BriefReconciler) forgetIssue(brief *c4v1alpha1.Brief, repository string
 
 // forgetReads drops what the Brief read of repositories it no longer reads,
 // and when it last looked whether their requests shipped.
-func (r *BriefReconciler) forgetReads(brief *c4v1alpha1.Brief, read map[string]bool) {
+func (r *BriefReconciler) forgetReads(brief *c4v1beta1.Brief, read map[string]bool) {
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
 	prefix := requestsKey(brief, "")
@@ -381,7 +382,7 @@ func (r *BriefReconciler) forgetReads(brief *c4v1alpha1.Brief, read map[string]b
 	}
 }
 
-func requestsKey(brief *c4v1alpha1.Brief, repository string) string {
+func requestsKey(brief *c4v1beta1.Brief, repository string) string {
 	return brief.Namespace + "/" + brief.Name + " " + repository
 }
 
@@ -405,14 +406,14 @@ func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name, repositor
 
 // recordRequests sets status.requests to all, oldest first, keeping what a
 // round recorded of the requests it took.
-func (r *BriefReconciler) recordRequests(ctx context.Context, brief *c4v1alpha1.Brief, all []model.Request) {
+func (r *BriefReconciler) recordRequests(ctx context.Context, brief *c4v1beta1.Brief, all []model.Request) {
 	status := &brief.Status
-	before := map[string]c4v1alpha1.BriefRequest{}
+	before := map[string]c4v1beta1.BriefRequest{}
 	for _, s := range status.Requests {
 		before[model.RequestName(s.Repository, int(s.Number))] = s
 	}
 	listed, count := model.ListRequests(all)
-	requests := make([]c4v1alpha1.BriefRequest, 0, len(listed))
+	requests := make([]c4v1beta1.BriefRequest, 0, len(listed))
 	for _, req := range listed {
 		name := model.RequestName(req.Repository, req.Number)
 		prev, seen := before[name]
@@ -424,7 +425,7 @@ func (r *BriefReconciler) recordRequests(ctx context.Context, brief *c4v1alpha1.
 			logf.FromContext(ctx).Info("A request changed stage", "request", name, "stage", req.Stage)
 		}
 		since := metav1.NewTime(req.Since)
-		requests = append(requests, c4v1alpha1.BriefRequest{Repository: req.Repository, Number: int32(req.Number),
+		requests = append(requests, c4v1beta1.BriefRequest{Repository: req.Repository, Number: int32(req.Number),
 			Author: req.Author, Title: req.Title, Body: req.Body, URL: req.URL, Stage: req.Stage,
 			Round: int32(req.Round), Since: &since})
 	}
@@ -438,19 +439,19 @@ func (r *BriefReconciler) recordRequests(ctx context.Context, brief *c4v1alpha1.
 // recordSettled keeps status.requestsSettled: each repository read now gets
 // what its read found, one that couldn't be read keeps what it had, and one
 // no longer read goes.
-func recordSettled(brief *c4v1alpha1.Brief, reading []string, settled map[string][]int32) {
+func recordSettled(brief *c4v1beta1.Brief, reading []string, settled map[string][]int32) {
 	before := map[string][]int32{}
 	for _, s := range brief.Status.RequestsSettled {
 		before[s.Repository] = s.Numbers
 	}
-	var out []c4v1alpha1.BriefRequestsSettled
+	var out []c4v1beta1.BriefRequestsSettled
 	for _, repository := range reading {
 		numbers, read := settled[repository]
 		if !read {
 			numbers = before[repository]
 		}
 		if len(numbers) > 0 {
-			out = append(out, c4v1alpha1.BriefRequestsSettled{Repository: repository, Numbers: numbers})
+			out = append(out, c4v1beta1.BriefRequestsSettled{Repository: repository, Numbers: numbers})
 		}
 	}
 	brief.Status.RequestsSettled = out
@@ -459,30 +460,30 @@ func recordSettled(brief *c4v1alpha1.Brief, reading []string, settled map[string
 // setRequestsCondition says whether the repositories that take requests are
 // read, with a Warning Event when it goes False for a new reason. With none,
 // the condition goes.
-func (r *BriefReconciler) setRequestsCondition(ctx context.Context, brief *c4v1alpha1.Brief, reading []string,
+func (r *BriefReconciler) setRequestsCondition(ctx context.Context, brief *c4v1beta1.Brief, reading []string,
 	failure *requestsFailure) {
 	status := &brief.Status
 	if len(reading) == 0 {
-		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionRequests)
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionRequests)
 		return
 	}
 	if failure == nil {
-		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionRequests, metav1.ConditionTrue,
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionRequests, metav1.ConditionTrue,
 			reasonRequestsReading, "Reading the issues of "+strings.Join(reading, ", "))
 		return
 	}
-	prev := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionRequests)
+	prev := meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionRequests)
 	message := model.Clip(failure.message, 32768)
 	if prev == nil || prev.Status != metav1.ConditionFalse || prev.Reason != failure.reason {
 		logf.FromContext(ctx).Info("Could not read or answer requests", "reason", failure.reason, "message", message)
 		r.event(brief, corev1.EventTypeWarning, eventRequests, "ReadRequests", failure.reason+": "+message)
 	}
-	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionRequests, metav1.ConditionFalse,
+	setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionRequests, metav1.ConditionFalse,
 		failure.reason, message)
 }
 
 // modelRequests are the Brief's requests as its status keeps them.
-func modelRequests(requests []c4v1alpha1.BriefRequest) []model.Request {
+func modelRequests(requests []c4v1beta1.BriefRequest) []model.Request {
 	out := make([]model.Request, 0, len(requests))
 	for _, s := range requests {
 		req := model.Request{Repository: s.Repository, Number: int(s.Number), Author: s.Author, Title: s.Title,
@@ -511,9 +512,42 @@ func knownRepositories(known []model.Request) []string {
 	return out
 }
 
+// dropRequestsNeedsYou takes out of status.needsYou the requests no longer
+// waiting in status.requests, so the two never disagree in a status the
+// reconcile writes before it tends the Brief: a round's start writes the
+// status as soon as it has begun, and a step that fails leaves what it had
+// (#1930). The count and the NeedsYou condition follow; the next tend lists
+// anew what the drop made room for.
+func dropRequestsNeedsYou(brief *c4v1beta1.Brief) {
+	status := &brief.Status
+	waiting := waitingRequests(brief)
+	kept := make([]c4v1beta1.BriefNeedsYou, 0, len(status.NeedsYou))
+	for _, n := range status.NeedsYou {
+		if n.Kind == model.AttentionRequest && !slices.ContainsFunc(waiting, func(w model.NeedsYou) bool {
+			return w.Name == n.Name
+		}) {
+			continue
+		}
+		kept = append(kept, n)
+	}
+	dropped := len(status.NeedsYou) - len(kept)
+	if dropped == 0 {
+		return
+	}
+	status.NeedsYou = nil
+	if len(kept) > 0 {
+		status.NeedsYou = kept
+	}
+	listed := make([]model.NeedsYou, 0, len(kept))
+	for _, n := range kept {
+		listed = append(listed, model.NeedsYou{Kind: n.Kind, Name: n.Name, Question: n.Question, Recommend: n.Recommend})
+	}
+	setNeedsYouWaiting(brief, listed, max(int(status.NeedsYouWaiting)-dropped, len(kept)))
+}
+
 // waitingRequests are the status.needsYou items of the requests waiting in
 // Ask.
-func waitingRequests(brief *c4v1alpha1.Brief) []model.NeedsYou {
+func waitingRequests(brief *c4v1beta1.Brief) []model.NeedsYou {
 	var out []model.NeedsYou
 	for _, req := range modelRequests(brief.Status.Requests) {
 		if req.Stage == model.RequestWaiting {

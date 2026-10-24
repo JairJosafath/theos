@@ -129,7 +129,7 @@ func TestBriefWorkspaceBriefNamesWhatNoIssueCanChange(t *testing.T) {
 
 func TestBriefWorkspaceModelRoundTrip(t *testing.T) {
 	objects, err := parsePlanModel(happyModel + `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: worker
@@ -145,7 +145,7 @@ spec:
   computeRef: {name: small}
   deploymentRef: {name: k8s}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: mailer
@@ -156,14 +156,14 @@ spec:
   gitProviderRef: {name: gitea}
   bundleRef: {name: go-worker}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: ann
 spec:
   displayName: Ann
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
@@ -226,6 +226,8 @@ func TestBriefWorkspaceCatalog(t *testing.T) {
 		{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{"service"},
 			SupportedFrameworks: []string{"go-service"}},
 		{Side: SideConnector, Name: "postgres", SupportedTypes: []string{"service"}},
+		// #1760: a Domain lists its name and description, no types.
+		{Side: SideDomain, Name: "webshop", Description: " Sells things online. ", SupportedTypes: nil},
 	}
 	got := workspaceFiles(t, BriefWorkspace{Catalog: catalog})[WorkspaceCatalogFile]
 	want := `frameworks:
@@ -249,6 +251,9 @@ connectors:
     - name: postgres
       supportedTypes:
         - service
+domains:
+    - name: webshop
+      description: Sells things online.
 bundles: []
 `
 	if got != want {
@@ -354,6 +359,7 @@ func TestPlannerGuide(t *testing.T) {
 		"## Acceptance criteria",
 		"Explain each choice in `choices.md`, in plain words",
 		"Write `needs-input.md` only for what costs money or touches access",
+		"Name the Domains a new Internal system is about", // #1760
 	} {
 		if !strings.Contains(plannerGuideText, s) {
 			t.Errorf("PLANNER.md lacks %q", s)
@@ -377,5 +383,23 @@ func TestPlannerGuideChoosesTheKindOfAppByTheIdea(t *testing.T) {
 		if !strings.Contains(guide, s) {
 			t.Errorf("PLANNER.md lacks %q", s)
 		}
+	}
+}
+
+// TestPlannerGuideWritesPlanAPIVersion holds every apiVersion the planner's
+// guide shows to PlanAPIVersion, what the planner writes (#1617).
+func TestPlannerGuideWritesPlanAPIVersion(t *testing.T) {
+	found := 0
+	for i, line := range strings.Split(plannerGuideText, "\n") {
+		if !strings.Contains(line, "apiVersion: ") {
+			continue
+		}
+		found++
+		if !strings.Contains(line, PlanAPIVersion) {
+			t.Errorf("planner.md:%d: %q, want %s", i+1, line, PlanAPIVersion)
+		}
+	}
+	if found == 0 {
+		t.Fatal("planner.md shows no apiVersion")
 	}
 }

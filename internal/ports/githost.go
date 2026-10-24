@@ -193,6 +193,11 @@ type ReleaseAsset struct {
 	UUID string
 }
 
+// ErrBranchNotFound means ReadFiles asked for a branch the repository doesn't
+// have. A repository with commits but no default branch is one: no retry
+// makes the branch appear.
+var ErrBranchNotFound = errors.New("branch not found")
+
 // ErrTooManyFiles means a pull request changes more files than the host can
 // list in full; no retry reads them all.
 var ErrTooManyFiles = errors.New("too many changed files to list in full")
@@ -225,7 +230,8 @@ type GitHost interface {
 	// ReadFiles returns branch's copy of those of paths it has, and the commit it
 	// read them at. A path it doesn't have is left out, not an error. A path
 	// ending in "/" reads every regular file below that directory, keyed by its
-	// full path; a missing directory gives nothing.
+	// full path; a missing directory gives nothing. A branch the repository
+	// doesn't have is ErrBranchNotFound.
 	ReadFiles(ctx context.Context, repo Repository, branch string, paths []string) (scaffold.Tree, string, error)
 	// PushBranch commits files, and the removal of removes, on top of commit base
 	// of the default branch, and force-pushes the commit as branch, creating or

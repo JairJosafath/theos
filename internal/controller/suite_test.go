@@ -48,6 +48,9 @@ import (
 	"github.com/JairJosafath/c4factory/features"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
@@ -88,10 +91,18 @@ var (
 	gitFake *fakeGit
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
+	// gitlabFake is the GitLab a gitlab DeployTarget ships to: a target's
+	// url names it, and the adapter follows the url.
+	gitlabFake *gitlabtest.Server
+	// gitlabRootFake is a second fake GitLab, served under the relative URL
+	// root /gitlab: a target whose url ends in a path (#1916). It shares
+	// httptest's certificate with gitlabFake, so gitlabProjects trusts both.
+	gitlabRootFake *gitlabtest.Server
 	// ghcrFake stands in for GHCR, where the github member copies a
 	// release's image; registryFake is the owner's registry a spec pushes
-	// that image to first (#1600).
-	ghcrFake, registryFake *fakeRegistry
+	// that image to first (#1600). gitlabRegistryFake stands in for a
+	// GitLab project's container registry (#1806).
+	ghcrFake, registryFake, gitlabRegistryFake *fakeRegistry
 	// deployFake is the Deployer of every DeployTarget's member, but for a
 	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
@@ -328,9 +339,14 @@ var _ = BeforeSuite(func() {
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
 	DeferCleanup(githubFake.enterprise.Close)
-	ghcrFake, registryFake = newFakeRegistry(), newFakeRegistry()
+	gitlabFake = gitlabtest.StartTLS()
+	DeferCleanup(gitlabFake.Close)
+	gitlabRootFake = gitlabtest.StartTLSUnder("/gitlab")
+	DeferCleanup(gitlabRootFake.Close)
+	ghcrFake, registryFake, gitlabRegistryFake = newFakeRegistry(), newFakeRegistry(), newFakeRegistry()
 	DeferCleanup(ghcrFake.server.Close)
 	DeferCleanup(registryFake.server.Close)
+	DeferCleanup(gitlabRegistryFake.server.Close)
 	deployFake = &fake.Deployer{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
@@ -357,6 +373,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		return err
 	}
 	deployers := ports.Deployers{model.DeployMemberGitHub: routedDeployer{},
+		// The gitlab adapter follows the target's url, so a target on
+		// gitlabFake's URL ships to the fake.
+		model.DeployMemberGitLab: gitlab.New(gitlabProjects{}),
 		model.DeployMemberArgoCD: argocd.New(argoClient),
 		// The cloudFormation member's adapter is tested on its fake AWS in
 		// internal/adapters/cloudformation; the suite stands deployFake in.
@@ -455,6 +474,13 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// gitlabProjects is the real GitLab client, trusting gitlabFake's certificate.
+type gitlabProjects struct{}
+
+func (gitlabProjects) GitLab(cfg gitprovider.GitLabConfig) (gitprovider.GitLabProject, error) {
+	return gitprovider.Client{HTTP: gitlabFake.Client()}.GitLab(cfg)
 }
 
 // routedDeployer is the github member's Deployer in the suite: the github

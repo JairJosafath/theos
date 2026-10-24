@@ -15,7 +15,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // crewListFaults fails the Container reconciler's Crew lists in chosen
@@ -59,7 +59,7 @@ type listFaultyClient struct {
 }
 
 func (c listFaultyClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	if _, ok := list.(*c4v1alpha1.CrewList); ok {
+	if _, ok := list.(*c4v1beta1.CrewList); ok {
 		var lo client.ListOptions
 		lo.ApplyOptions(opts)
 		if c.faults.take(lo.Namespace) {

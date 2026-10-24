@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -52,7 +52,7 @@ func (r secretReader) Get(ctx context.Context, key client.ObjectKey, obj client.
 // with files in Gitea, and a Crew that tags it and publishes it to repository
 // with the token in Secret orders-api-github, changed by change when given. It
 // returns the files.
-func publishingCrew(ns, repository string, change ...func(*c4v1alpha1.Crew)) []fakeFile {
+func publishingCrew(ns, repository string, change ...func(*c4v1beta1.Crew)) []fakeFile {
 	GinkgoHelper()
 	readyContainer(ns)
 	crewAgents(ns, 1)
@@ -65,8 +65,8 @@ func publishingCrew(ns, repository string, change ...func(*c4v1alpha1.Crew)) []f
 		Workflow: "release.yaml", Status: "completed", Conclusion: "success"})
 	crew := newCrew(ns)
 	crew.Spec.TagReleases = true
-	crew.Spec.PublishReleases = &c4v1alpha1.CrewPublishReleases{GitHub: c4v1alpha1.CrewPublishGitHub{
-		Repository: repository, TokenSecretRef: c4v1alpha1.LocalRef{Name: "orders-api-github"}}}
+	crew.Spec.PublishReleases = &c4v1beta1.CrewPublishReleases{GitHub: c4v1beta1.CrewPublishGitHub{
+		Repository: repository, TokenSecretRef: c4v1beta1.LocalRef{Name: "orders-api-github"}}}
 	for _, c := range change {
 		c(crew)
 	}
@@ -163,8 +163,8 @@ var _ = Describe("Crew publishing releases", func() {
 	It("needs tagReleases and an owner/name repository", func() {
 		ns := newProjectNamespace()
 		crew := newCrew(ns)
-		crew.Spec.PublishReleases = &c4v1alpha1.CrewPublishReleases{GitHub: c4v1alpha1.CrewPublishGitHub{
-			Repository: "acme/orders", TokenSecretRef: c4v1alpha1.LocalRef{Name: "orders-api-github"}}}
+		crew.Spec.PublishReleases = &c4v1beta1.CrewPublishReleases{GitHub: c4v1beta1.CrewPublishGitHub{
+			Repository: "acme/orders", TokenSecretRef: c4v1beta1.LocalRef{Name: "orders-api-github"}}}
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("publishReleases needs tagReleases")))
 
 		crew.Spec.TagReleases = true
@@ -193,7 +193,7 @@ var _ = Describe("Crew publishing releases", func() {
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
 		mustCreate(publishSecret(ns, token))
-		files := publishingCrew(ns, repository, func(*c4v1alpha1.Crew) {
+		files := publishingCrew(ns, repository, func(*c4v1beta1.Crew) {
 			// Closed by prompt, as not doable: no Task merged it.
 			n := gitFake.addIssue(ns, "orders-api", "Check the cost of every expression", clearIssue, nil)
 			gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
@@ -210,13 +210,13 @@ var _ = Describe("Crew publishing releases", func() {
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
 		// No Secret yet, so nothing is drafted before the display name is set.
-		files := publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
+		files := publishingCrew(ns, repository, func(crew *c4v1beta1.Crew) {
 			crew.Spec.PublishReleases.Latest = new(false)
 		})
 		// The Container controller may still be writing orders-api, so the
 		// Update retries on a conflict (#1518).
 		Eventually(func(g Gomega) {
-			var container c4v1alpha1.Container
+			var container c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
 			container.Spec.DisplayName = "Orders API"
 			g.Expect(k8sClient.Update(ctx, &container)).To(Succeed())
@@ -236,15 +236,15 @@ var _ = Describe("Crew publishing releases", func() {
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
 		mustCreate(publishSecret(ns, token))
-		files := publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
-			crew.Labels = map[string]string{c4v1alpha1.LabelBrief: "orders"}
-			crew.Annotations = map[string]string{c4v1alpha1.AnnotationBriefPublishReleases: `{"github":` +
+		files := publishingCrew(ns, repository, func(crew *c4v1beta1.Crew) {
+			crew.Labels = map[string]string{c4v1beta1.LabelBrief: "orders"}
+			crew.Annotations = map[string]string{c4v1beta1.AnnotationBriefPublishReleases: `{"github":` +
 				`{"repository":"acme/old-orders","tokenSecretRef":{"name":"orders-api-github"}}}`}
 		})
 
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			target := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+			target := condition(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget)
 			g.Expect(target).NotTo(BeNil())
 			g.Expect(target.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(target.Reason).To(Equal("DiffersFromBrief"))
@@ -269,19 +269,19 @@ var _ = Describe("Crew publishing releases", func() {
 
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] = publishJSON(crew.Spec.PublishReleases)
+			crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] = publishJSON(crew.Spec.PublishReleases)
 			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
 		}).Should(Succeed())
 		publishedTo(ns, repository, files)
-		target := condition(getCrew(Default, ns).Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+		target := condition(getCrew(Default, ns).Status.Conditions, c4v1beta1.ConditionReleaseTarget)
 		Expect(target.Reason).To(Equal("SetByBrief"))
 	})
 
 	It("drops a held release's Pending publish once the hold is settled to publish nowhere (#1021)", func() {
 		ns := newProjectNamespace()
-		publishingCrew(ns, "acme/"+ns, func(crew *c4v1alpha1.Crew) {
-			crew.Labels = map[string]string{c4v1alpha1.LabelBrief: "orders"}
-			crew.Annotations = map[string]string{c4v1alpha1.AnnotationBriefPublishReleases: publishJSON(
+		publishingCrew(ns, "acme/"+ns, func(crew *c4v1beta1.Crew) {
+			crew.Labels = map[string]string{c4v1beta1.LabelBrief: "orders"}
+			crew.Annotations = map[string]string{c4v1beta1.AnnotationBriefPublishReleases: publishJSON(
 				crew.Spec.PublishReleases)}
 			crew.Spec.PublishReleases = nil
 		})
@@ -300,7 +300,7 @@ var _ = Describe("Crew publishing releases", func() {
 		By("removing the Brief's entry")
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+			delete(crew.Annotations, c4v1beta1.AnnotationBriefPublishReleases)
 			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
@@ -309,8 +309,8 @@ var _ = Describe("Crew publishing releases", func() {
 			g.Expect(release).NotTo(BeNil())
 			g.Expect(release.Publish).To(BeNil())
 			g.Expect(condition(crew.Status.Conditions, ConditionPublished)).To(BeNil())
-			app := c4v1alpha1.BriefApp{Releases: releasesOn,
-				LastRelease: &c4v1alpha1.BriefAppRelease{Tag: release.Tag, Run: release.Run}}
+			app := c4v1beta1.BriefApp{Releases: releasesOn,
+				LastRelease: &c4v1beta1.BriefAppRelease{Tag: release.Tag, Run: release.Run}}
 			g.Expect(appMessage(&app, true)).To(Equal("Released v0.1.0."))
 		}).Should(Succeed())
 	})
@@ -358,7 +358,7 @@ var _ = Describe("Crew publishing releases", func() {
 
 		publishedTo(ns, repository, files)
 		Eventually(func(g Gomega) {
-			g.Expect(getCrew(g, ns).Status.PublishTarget).To(Equal(&c4v1alpha1.CrewPublishTarget{
+			g.Expect(getCrew(g, ns).Status.PublishTarget).To(Equal(&c4v1beta1.CrewPublishTarget{
 				Repository: repository, ID: githubFake.repositoryID(repository)}))
 		}).Should(Succeed())
 	})
@@ -375,7 +375,7 @@ var _ = Describe("Crew publishing releases", func() {
 		publishFailedWith(ns, "SecretMissing", "Secret orders-api-github with the key token (or a GitHub App's appId, installationId, privateKey) is missing")
 		crew := getCrew(Default, ns)
 		orig := crew.DeepCopy()
-		crew.Status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id + 500}
+		crew.Status.PublishTarget = &c4v1beta1.CrewPublishTarget{Repository: repository, ID: id + 500}
 		Expect(k8sClient.Status().Patch(ctx, crew, client.MergeFrom(orig))).To(Succeed())
 
 		mustCreate(publishSecret(ns, token))
@@ -388,13 +388,13 @@ var _ = Describe("Crew publishing releases", func() {
 
 		crew = getCrew(Default, ns)
 		orig = crew.DeepCopy()
-		crew.Annotations = map[string]string{c4v1alpha1.AnnotationAcceptRepository: strconv.FormatInt(id, 10)}
+		crew.Annotations = map[string]string{c4v1beta1.AnnotationAcceptRepository: strconv.FormatInt(id, 10)}
 		Expect(k8sClient.Patch(ctx, crew, client.MergeFrom(orig))).To(Succeed())
 		publishedTo(ns, repository, files)
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			g.Expect(crew.Status.PublishTarget).To(Equal(&c4v1alpha1.CrewPublishTarget{Repository: repository, ID: id}))
-			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationAcceptRepository),
+			g.Expect(crew.Status.PublishTarget).To(Equal(&c4v1beta1.CrewPublishTarget{Repository: repository, ID: id}))
+			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1beta1.AnnotationAcceptRepository),
 				"the annotation goes once the id is recorded")
 			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
 				HaveField("Reason", "PublishRepositoryAccepted"))))

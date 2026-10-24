@@ -183,7 +183,10 @@ certManager:
 
 ## Webhook server configuration. The operator issues its own certificate
 ## into the Secret <release>-webhook-cert and patches the CA into the CRDs
-## that convert by webhook; cert-manager is not needed.
+## that convert by webhook; cert-manager is not needed. A CRD converts by
+## webhook only while its kind's versions differ in shape (none today); the
+## rest convert by the API server, and a kind that needs the webhook refuses
+## to render without it.
 ##
 webhook:
   enabled: true
@@ -572,15 +575,17 @@ runners:
 
 ## For each of gitea.projects, the catalog its Containers pick from: the
 ## templates the seed pushes to the templates organization, each pinned to its
-## tag in templates/versions.txt (make validate-yaml checks they match), and
-## the bundles of them a Container may name instead. The seed's hello,
+## tag in templates/versions.txt (make validate-yaml checks they match), the
+## Domains a SoftwareSystem may name, and the bundles of them a Container may
+## name instead. The seed's hello,
 ## hello-standard, hello-html and hello-html-standard are for the end-to-end
 ## tests and left out.
 ## Off: make your own catalog entries and bundles in the project's namespace.
 ##
 catalog:
   enabled: true
-  ## kind, name (also the template's), ref (the tag) and spec, without template.
+  ## kind, name (also the template's, unless template names it), ref (the tag)
+  ## and spec, without template.
   entries:
     - kind: Framework
       name: go-cli
@@ -630,10 +635,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-ec2-ts
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Service on AWS EC2 (TypeScript)
-        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development."
+        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -641,10 +646,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-fargate-ts
-      ref: v2.0.0
+      ref: v2.1.0
       spec:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
-        description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development."
+        description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -685,10 +690,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
-        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -696,10 +701,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
-        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [job]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -707,10 +712,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.1.1
+      ref: v1.2.0
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
-        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development."
+        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -732,7 +737,7 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.3.0
+      ref: v1.4.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -744,7 +749,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.3.1
+      ref: v1.4.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -753,8 +758,19 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true
     - kind: Standard
+      name: factory-self
+      ref: v1.0.0
+      spec:
+        displayName: The factory's own standard
+        description: "For the C4 Factory's own repository, adopted: the make check CI and nothing else. Its protected paths are the fence agents may not change (docs/plans/self-hosting.md, decision 5)."
+        supportedTypes: [operator]
+        supportedFrameworks: [go-kubebuilder]
+        # The fence: the runner and prompt, the model credential, the sandbox and
+        # its network, branch protection, the chart, the check and the agents' rules.
+        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/gitprovider/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
+    - kind: Standard
       name: ts-standard
-      ref: v1.6.2
+      ref: v1.7.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -764,7 +780,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.19.1
+      ref: v1.20.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -775,7 +791,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.6.0
+      ref: v1.7.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
@@ -813,11 +829,26 @@ catalog:
         supportedTypes: [service, worker, job]
     - kind: Connector
       name: dynamodb
-      ref: v1.1.0
+      ref: v1.3.0
       spec:
         displayName: Amazon DynamoDB
-        description: "An on-demand DynamoDB table in the Container's CDK stack, kept, protected and backed up in production like the Framework's own, with its name in DYNAMODB_TABLE_NAME and grants for the item calls to whatever the Framework connects (a function's role, a task's). aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it; a Framework that doesn't fails the Container."
-        supportedTypes: [function]
+        description: "An on-demand DynamoDB table in the Container's CDK stack, kept, protected and backed up in production like the Framework's own, with its name in DYNAMODB_TABLE_NAME and grants for the item calls to whatever the Framework connects (a function's role, a task's, an instance's). aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-fargate-ts, aws-ec2-ts, aws-queue-ts, aws-event-ts and aws-schedule-ts wire it; a Framework that doesn't fails the Container."
+        supportedTypes: [function, service, worker, job]
+        ## The Frameworks whose infra/connectors.ts calls connectDynamoDB; a
+        ## Container on any other is refused at ChoicesValid (NotWired)
+        ## instead of getting a file nothing calls (docs/plans/aws-rds.md,
+        ## decision 7).
+        wiredBy: [aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-fargate-ts, aws-ec2-ts, aws-queue-ts, aws-event-ts, aws-schedule-ts]
+    ## A Domain is what a SoftwareSystem is about (spec.domainRefs); every
+    ## Container of that system gets it under docs/agents/domain/<name>/,
+    ## whatever its type, so it has no supportedTypes (docs/plans/domains.md).
+    - kind: Domain
+      name: webshop
+      template: webshop-domain
+      ref: v1.0.0
+      spec:
+        displayName: Webshop
+        description: "What a webshop is about, for the agents that build and review one: catalog and search, cart, checkout and orders, stock, payments, pricing and money, accounts and personal data, each with its practices, common mistakes, the controversies and the choice made in each, and sources."
   ## Bundles: a Framework, Standard, Compute and Deployment picked together, which
   ## a Container names with bundleRef instead of its four sides
   ## (docs/plans/done/catalog-bundles.md). No template and no ref: each names entries

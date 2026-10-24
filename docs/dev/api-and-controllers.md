@@ -7,10 +7,10 @@ How to add or change a kind, a reconciler or a log line. The rules in
 
 ### Create API (a new kind in this project)
 ```bash
-kubebuilder create api --group c4 --version v1alpha1 --kind <Kind> --resource --controller
+kubebuilder create api --group c4 --version v1beta1 --kind <Kind> --resource --controller
 ```
 
-Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Agent) and
+Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Domain, Agent) and
 GitProvider have no reconciler of their own; create them with `--controller=false`.
 
 ### Controller for Core Kubernetes Types
@@ -23,11 +23,24 @@ kubebuilder create api --group core --version v1 --kind Pod \
 v1 has no webhooks by design: CEL rules and a ValidatingAdmissionPolicy cover
 validation, and the operator checks compatibility after creation. If one is added
 later, create all types together with
-`kubebuilder create webhook --group c4 --version v1alpha1 --kind <Kind> --defaulting --programmatic-validation`.
+`kubebuilder create webhook --group c4 --version v1beta1 --kind <Kind> --defaulting --programmatic-validation`.
 
 ## API design
 
-**Key markers for** `api/v1alpha1/*_types.go`:
+Every kind has a type in `api/v1alpha1` and in `api/v1beta1`; `v1beta1` is
+the hub and the storage version (`+kubebuilder:storageversion` sits on its
+types alone; `TestEveryCRDStoresTheHub` in `internal/controller` holds every
+generated CRD to that), and each `v1alpha1` type converts to it
+([plans/api-versions.md](../plans/api-versions.md)). A field change goes to
+both versions, with the conversion, and `test/compat` holds each served
+version to the last release's schema. Moving the storage marker to a newer
+version needs nothing else: `StorageMigrator` (`internal/controller`) rewrites
+the stored objects at the next start and logs `Rewriting the stored objects at
+the storage version` and `Rewrote the stored objects at the storage version`
+per CRD, with `storedVersions`, `storage` and `objects`; a failed pass logs
+`Failed to migrate the stored objects; trying again` and the wait.
+
+**Key markers for** `api/*/*_types.go`:
 
 ```go
 // +kubebuilder:object:root=true
@@ -67,7 +80,8 @@ which fails when a generated file differs from what is committed.
   `metadata.name` is the stable id.
 - **A `DeployTarget` has exactly one member** (CEL), each with its adapter
   ([architecture.md](../architecture.md), Deployer): `github` (`repository`,
-  `latest`) needs `credentialsSecretRef`; `argoCD` is an Argo CD in the
+  `latest`) and `gitlab` (`project`, and `url` for a self-hosted GitLab,
+  unset for gitlab.com) need `credentialsSecretRef`; `argoCD` is an Argo CD in the
   operator's cluster and needs none (the rule reads "set credentialsSecretRef
   unless the member is argoCD"): `namespace` where Argo CD runs and its
   Applications live (default `argocd`), `project` (default `default`),
@@ -106,6 +120,14 @@ the spec that makes it, with `forbidden` in the reconciler's log.
   expansion in `status.bundle`. Only `resolve` reads the Bundle to expand it,
   and only until the Container is scaffolded; after that `reportBundleCurrent`
   reads it to report `BundleCurrent`, never to apply it.
+- **A Ready Container only reports.** `resolve` reads the system's
+  `spec.domainRefs` once, for the scaffold; after that `reportDomainsApplied`
+  (`container_domains.go`) compares them with `status.scaffoldedDomains`, the
+  names the scaffold recorded (and its commit's `Scaffolded-Domain` trailers,
+  for a recovered one), and reports `DomainsApplied`, never rescaffolds. The
+  Standard update renders with those same Domains, not the system's current
+  ones. They are recorded, never inferred from `scaffoldedFrom`: a changed
+  choice or a Domain named like a Connector would be misread.
 
 ## Logging
 

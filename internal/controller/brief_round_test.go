@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -34,14 +34,14 @@ const briefRepo = "brief-cel-lens"
 func briefAgents(ns string, rounds int32) {
 	GinkgoHelper()
 	for _, name := range []string{"planner", "implementer", "reviewer"} {
-		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, name),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
+		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, name),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
 	}
 }
 
 // projectDoc is the namespace's Project as a plan holds it, unchanged.
 func projectDoc(ns string) string {
-	return fmt.Sprintf(`apiVersion: c4.factory.io/v1alpha1
+	return fmt.Sprintf(`apiVersion: c4.factory.io/v1beta1
 kind: Project
 metadata:
   name: %s
@@ -55,21 +55,21 @@ spec:
 // between them. A real planner's model starts with a Person, which the
 // operator's role must let it create (#371).
 const linterDocs = `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: rule-author
 spec:
   displayName: Rule author
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: cel-lens
 spec:
   displayName: CEL lens
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: linter
@@ -82,7 +82,7 @@ spec:
   computeRef: {name: small}
   deploymentRef: {name: k8s-manifests}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: rules-db
@@ -90,7 +90,7 @@ spec:
   softwareSystemRef: {name: cel-lens}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: linter-to-rules-db
@@ -137,8 +137,8 @@ func quietPlan(ns string) scaffold.Tree {
 	}
 }
 
-func getBrief(g Gomega, ns string) *c4v1alpha1.Brief {
-	brief := &c4v1alpha1.Brief{}
+func getBrief(g Gomega, ns string) *c4v1beta1.Brief {
+	brief := &c4v1beta1.Brief{}
 	g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
 	return brief
 }
@@ -218,6 +218,34 @@ var _ = Describe("Brief rounds", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
 
+	It("says why a round's Container stopped while it waits for it, and goes on once it is fixed (#1941)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		var framework c4v1beta1.Framework
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		pinned := framework.Spec.Template.Ref
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+
+		By("naming the linter's reason and message after its phase, and keeping the round waiting")
+		Eventually(func(g Gomega) {
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
+			g.Expect(cond).To(And(HaveField("Reason", "Applying"), HaveField("Message", And(
+				ContainSubstring("Round 1 waits for Container linter (Failed: UnpinnedRef, "),
+				ContainSubstring("Framework python-fastapi")))))
+		}, orderWait).Should(Succeed())
+		Expect(getBrief(Default, ns).Status.Phase).To(Equal(c4v1beta1.BriefApplying), "the round isn't Failed")
+
+		By("going on once the Framework's ref is pinned again")
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = pinned })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}, orderWait).Should(Succeed())
+		Expect(gitFake.openIssues(ns, "linter")).To(HaveLen(1))
+	})
+
 	It("plans the idea, applies the model, makes the Crew and files the issues", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
@@ -228,13 +256,13 @@ var _ = Describe("Brief rounds", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
 			g.Expect(controlledBy(task, getBrief(g, ns))).To(BeTrue())
-			g.Expect(task.Spec.Kind).To(Equal(c4v1alpha1.TaskPlan))
+			g.Expect(task.Spec.Kind).To(Equal(c4v1beta1.TaskPlan))
 			g.Expect(task.Spec.AgentRef.Name).To(Equal("planner"))
-			g.Expect(task.Labels).To(And(HaveKeyWithValue(c4v1alpha1.LabelBrief, "cel-lens"),
-				HaveKeyWithValue(c4v1alpha1.LabelBriefRound, "1")))
+			g.Expect(task.Labels).To(And(HaveKeyWithValue(c4v1beta1.LabelBrief, "cel-lens"),
+				HaveKeyWithValue(c4v1beta1.LabelBriefRound, "1")))
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
 		}).Should(Succeed())
 
 		sha := planRound(ns, 1, 1, linterPlan(ns, 2))
@@ -242,27 +270,27 @@ var _ = Describe("Brief rounds", func() {
 		By("applying the plan, waiting for the linter to be Ready, then making its Crew and filing its issues")
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonApplied)))
 		}).Should(Succeed())
 		brief = getBrief(Default, ns)
-		Expect(brief.Status.History).To(Equal([]c4v1alpha1.BriefRound{{Round: 1,
+		Expect(brief.Status.History).To(Equal([]c4v1beta1.BriefRound{{Round: 1,
 			Summary: "Planned cel-lens, a linter for CEL rules: one Container and its first issues.",
 			Choices: []string{"A service lints the rules", "Postgres keeps them"}, CostMilliUSD: planCost,
-			Tokens: new(c4v1alpha1.TokenUsage(planTokens)), Outcome: model.ReasonApplied}}))
+			Tokens: new(c4v1beta1.TokenUsage(planTokens)), Outcome: model.ReasonApplied}}))
 		Expect(brief.Status.CostMilliUSD).To(Equal(planCost), "what the planner said the round cost")
 		Expect(brief.Status.RunsWithoutCost).To(BeZero())
-		Expect(brief.Status.Tokens).To(Equal(new(c4v1alpha1.TokenUsage(planTokens))), "and used")
+		Expect(brief.Status.Tokens).To(Equal(new(c4v1beta1.TokenUsage(planTokens))), "and used")
 		Expect(brief.Status.Choices).To(Equal([]string{"A service lints the rules", "Postgres keeps them"}))
 		Expect(brief.Status.PromptsPlanned).To(BeZero())
 		Expect(brief.Status.Created).To(ConsistOf(
-			c4v1alpha1.BriefObject{Kind: "Person", Name: "rule-author"},
-			c4v1alpha1.BriefObject{Kind: "SoftwareSystem", Name: "cel-lens"},
-			c4v1alpha1.BriefObject{Kind: "Container", Name: "linter"},
-			c4v1alpha1.BriefObject{Kind: "DataStore", Name: "rules-db"},
-			c4v1alpha1.BriefObject{Kind: "Relationship", Name: "linter-to-rules-db"},
-			c4v1alpha1.BriefObject{Kind: "Crew", Name: "linter"},
+			c4v1beta1.BriefObject{Kind: "Person", Name: "rule-author"},
+			c4v1beta1.BriefObject{Kind: "SoftwareSystem", Name: "cel-lens"},
+			c4v1beta1.BriefObject{Kind: "Container", Name: "linter"},
+			c4v1beta1.BriefObject{Kind: "DataStore", Name: "rules-db"},
+			c4v1beta1.BriefObject{Kind: "Relationship", Name: "linter-to-rules-db"},
+			c4v1beta1.BriefObject{Kind: "Crew", Name: "linter"},
 		))
 		Expect(brief.Status.Issues).To(HaveLen(2))
 		for i, issue := range brief.Status.Issues {
@@ -277,25 +305,25 @@ var _ = Describe("Brief rounds", func() {
 
 		By("accepting the plan on the Task, and merging it into the repository's main")
 		task := getTask(Default, ns, "cel-lens-plan-1")
-		Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
-		Expect(task.Annotations).To(And(HaveKeyWithValue(c4v1alpha1.AnnotationPlanChecked, sha),
-			Not(HaveKey(c4v1alpha1.AnnotationPlanRefusals))))
+		Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+		Expect(task.Annotations).To(And(HaveKeyWithValue(c4v1beta1.AnnotationPlanChecked, sha),
+			Not(HaveKey(c4v1beta1.AnnotationPlanRefusals))))
 		main := gitFake.mainFiles(ns, briefRepo)
 		Expect(main).To(HaveKey("plan/issues/02-linter.md"))
 		Expect(string(main[model.PlanChoicesFile].Data)).To(ContainSubstring("Postgres keeps them"))
 
 		By("scaffolding the linter with its DataStore's Connector, the Relationship being there first")
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), container)).To(Succeed())
-		Expect(container.Status.AppliedConnectors).To(ConsistOf(c4v1alpha1.AppliedConnector{
+		Expect(container.Status.AppliedConnectors).To(ConsistOf(c4v1beta1.AppliedConnector{
 			Relationship: "linter-to-rules-db", DataStore: "rules-db", Connector: "postgres"}))
-		rel := &c4v1alpha1.Relationship{}
+		rel := &c4v1beta1.Relationship{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter-to-rules-db"), rel)).To(Succeed())
-		Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)).
-			NotTo(HaveField("Reason", c4v1alpha1.ReasonAddedAfterScaffold))
+		Expect(condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)).
+			NotTo(HaveField("Reason", c4v1beta1.ReasonAddedAfterScaffold))
 
 		By("giving the Crew the Brief's Agents, three Tasks at a time by default")
-		crew := &c4v1alpha1.Crew{}
+		crew := &c4v1beta1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 		Expect(crew.Spec.ContainerRef.Name).To(Equal("linter"))
 		Expect(crew.Spec.Implementer.Name).To(Equal("implementer"))
@@ -304,20 +332,20 @@ var _ = Describe("Brief rounds", func() {
 		Expect(crew.Spec.TagReleases || crew.Spec.PrepareReleases).To(BeFalse())
 
 		By("labelling what it made with the Brief and the round, owned by none of it (B16)")
-		person := &c4v1alpha1.Person{}
+		person := &c4v1beta1.Person{}
 		Expect(k8sClient.Get(ctx, key(ns, "rule-author"), person)).To(Succeed())
-		system := &c4v1alpha1.SoftwareSystem{}
+		system := &c4v1beta1.SoftwareSystem{}
 		Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), system)).To(Succeed())
-		store := &c4v1alpha1.DataStore{}
+		store := &c4v1beta1.DataStore{}
 		Expect(k8sClient.Get(ctx, key(ns, "rules-db"), store)).To(Succeed())
 		for _, obj := range []client.Object{person, system, container, store, rel, crew} {
-			Expect(obj.GetLabels()).To(And(HaveKeyWithValue(c4v1alpha1.LabelBrief, "cel-lens"),
-				HaveKeyWithValue(c4v1alpha1.LabelBriefRound, "1")), obj.GetName())
+			Expect(obj.GetLabels()).To(And(HaveKeyWithValue(c4v1beta1.LabelBrief, "cel-lens"),
+				HaveKeyWithValue(c4v1beta1.LabelBriefRound, "1")), obj.GetName())
 			Expect(ownedByBrief(obj)).To(BeFalse(), obj.GetName())
 		}
-		project := &c4v1alpha1.Project{}
+		project := &c4v1beta1.Project{}
 		Expect(k8sClient.Get(ctx, key(ns, ns), project)).To(Succeed())
-		Expect(project.Labels).NotTo(HaveKey(c4v1alpha1.LabelBrief), "an object it didn't make")
+		Expect(project.Labels).NotTo(HaveKey(c4v1beta1.LabelBrief), "an object it didn't make")
 
 		Eventually(func(g Gomega) { g.Expect(briefEvents(g, ns)).To(ContainElement("Planned")) }).Should(Succeed())
 		Consistently(func(g Gomega) {
@@ -353,12 +381,12 @@ var _ = Describe("Brief rounds", func() {
 			g.Expect(b.Status.PromptsPlanned).To(BeZero())
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
 			g.Expect(b.Status.RoundPrompts).To(Equal(int32(1)))
-			g.Expect(getTask(g, ns, "cel-lens-plan-2").Labels).To(HaveKeyWithValue(c4v1alpha1.LabelBriefRound, "2"))
+			g.Expect(getTask(g, ns, "cel-lens-plan-2").Labels).To(HaveKeyWithValue(c4v1beta1.LabelBriefRound, "2"))
 		}).Should(Succeed())
 		planRound(ns, 2, 1, quietPlan(ns))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
 		Expect(getBrief(Default, ns).Status.History).To(HaveEach(HaveField("Summary",
@@ -374,7 +402,7 @@ var _ = Describe("Brief rounds", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(3)))
 			g.Expect(b.Status.RoundPrompts).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
 			getTask(g, ns, "cel-lens-plan-3")
 		}).Should(Succeed())
 	})
@@ -387,13 +415,13 @@ var _ = Describe("Brief rounds", func() {
 		bad[model.PlanChoicesFile] = scaffold.File{Data: []byte("\n")}
 		bad["plan/issues/01-linter.md"] = scaffold.File{Data: []byte("---\ntitle: Lint\n---\nJust lint.\n")}
 		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: rule-author
 spec:
   description: %s
-`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem"):])}
+`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1beta1\nkind: SoftwareSystem"):])}
 
 		By("refusing the first try, whose planner doesn't say what it cost")
 		planRoundCosting(ns, 1, 1, bad, nil)
@@ -406,7 +434,7 @@ spec:
 				ContainSubstring("Person/rule-author: spec.description is 1001 characters; it may be at most 1000")))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) { g.Expect(briefEvents(g, ns)).To(ContainElement("PlanRefused")) }).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{}))).
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1beta1.Container{}))).
 			To(BeTrue(), "a refused plan applies nothing")
 
 		By("failing the Brief when the last try is refused too")
@@ -414,11 +442,11 @@ spec:
 		planRound(ns, 1, 2, bad)
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefFailed))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefFailed))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonRoundFailed),
 				HaveField("Message", And(HavePrefix("Round 1 failed: "), ContainSubstring("Failed after 2 rounds")))))
-			tokens := c4v1alpha1.TokenUsage(planTokens)
+			tokens := c4v1beta1.TokenUsage(planTokens)
 			tokens.RunsWithout = 1
 			g.Expect(b.Status.History).To(ConsistOf(And(HaveField("CostMilliUSD", planCost),
 				HaveField("RunsWithoutCost", int32(1)), HaveField("Tokens", &tokens))),
@@ -432,7 +460,7 @@ spec:
 		brief := getBrief(Default, ns)
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Keep it simple."} })).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
 			getTask(g, ns, "cel-lens-plan-2")
 		}).Should(Succeed())
 		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(And(
@@ -456,9 +484,9 @@ spec:
 			g.Expect(task.Status.Feedback).To(ContainSubstring(
 				"Project/other: a Project is named after its namespace; name it " + ns))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "other"), &c4v1alpha1.Project{}))).
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "other"), &c4v1beta1.Project{}))).
 			To(BeTrue(), "a refused plan applies nothing")
-		Expect(getBrief(Default, ns).Status.Phase).NotTo(Equal(c4v1alpha1.BriefApplying))
+		Expect(getBrief(Default, ns).Status.Phase).NotTo(Equal(c4v1beta1.BriefApplying))
 	})
 
 	It("refuses a plan the brief repository doesn't show once the Task waited long enough", func() {
@@ -486,31 +514,31 @@ spec:
 
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonPlannerNeedsInput),
 				HaveField("Message", "Which CRDs should it lint first?")))
 			g.Expect(briefEvents(g, ns)).To(ContainElement("NeedsInput"))
 		}).Should(Succeed())
-		Expect(getTask(Default, ns, "cel-lens-plan-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		Expect(getTask(Default, ns, "cel-lens-plan-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		Expect(getBrief(Default, ns).Status.History).To(ConsistOf(HaveField("Summary", "Asked for input before planning.")))
 		Consistently(func(g Gomega) {
-			err := k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{})
+			err := k8sClient.Get(ctx, key(ns, "linter"), &c4v1beta1.Container{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "nothing is applied")
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput), "the operator keeps the planner's question")
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput), "the operator keeps the planner's question")
 		}, "2s").Should(Succeed())
 
 		By("showing the operator's own wait over the question, then the question again")
-		provider := &c4v1alpha1.GitProvider{}
+		provider := &c4v1beta1.GitProvider{}
 		Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, provider)).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
-				HaveField("Reason", c4v1alpha1.ReasonNotFound), HaveField("Message", HavePrefix("GitProvider gitea"))))
+			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(And(
+				HaveField("Reason", c4v1beta1.ReasonNotFound), HaveField("Message", HavePrefix("GitProvider gitea"))))
 		}).Should(Succeed())
-		mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea"), Spec: provider.Spec})
+		mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "gitea"), Spec: provider.Spec})
 		Eventually(func(g Gomega) {
-			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
+			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonPlannerNeedsInput),
 				HaveField("Message", "Which CRDs should it lint first?")))
 		}).Should(Succeed())
@@ -520,8 +548,8 @@ spec:
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"The Gateway API CRDs."} })).To(Succeed())
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Status", metav1.ConditionFalse))
 		}).Should(Succeed())
 	})
@@ -531,17 +559,17 @@ spec:
 		// message is the one for an operator that shares nothing.
 		createFactory(ns)
 		for _, name := range []string{"planner", "implementer", "reviewer"} {
-			mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.AgentSpec{
+			mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.AgentSpec{
 				Image: "c4factory/agent-go:dev", MaxRounds: 3,
-				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "claude-credentials"}}})
+				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "claude-credentials"}}})
 		}
 		mustCreate(newBrief(ns, "cel-lens"))
 
 		By("naming the missing Secret, with no round started")
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(HaveField("Message",
 				Equal("Secret claude-credentials of Agent planner is missing: make it in namespace "+ns+
 					" with the Agents' token, so the Brief's planner can start")))
 			g.Expect(b.Status.Round).To(BeZero())
@@ -553,8 +581,8 @@ spec:
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Status", metav1.ConditionFalse))
 		}).Should(Succeed())
 	})
@@ -581,37 +609,37 @@ spec:
 		DeferCleanup(stopPolling, shared)
 		createFactory(shared)
 		for _, name := range []string{"planner", "implementer", "reviewer"} {
-			mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(shared, name), Spec: c4v1alpha1.AgentSpec{
+			mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(shared, name), Spec: c4v1beta1.AgentSpec{
 				Image: "c4factory/agent-go:dev", MaxRounds: 3,
-				CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: sharedToken}}})
+				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: sharedToken}}})
 		}
 		mustCreate(newBrief(shared, "cel-lens"))
 
 		By("naming the label a namespace that hasn't opted in needs")
 		Eventually(func(g Gomega) {
 			b := getBrief(g, shared)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(HaveField("Message",
 				Equal("Agent planner is on the factory's shared Secret "+sharedToken+": label namespace "+shared+" "+
-					c4v1alpha1.LabelSharedSecrets+"=true, so its agents reach the factory's model proxy")))
+					c4v1beta1.LabelSharedSecrets+"=true, so its agents reach the factory's model proxy")))
 		}).Should(Succeed())
 
 		By("naming the operator's namespace once it has opted in, while the source is missing")
 		Expect(k8sClient.Get(ctx, key("", shared), namespace)).To(Succeed())
 		Expect(patch(namespace, func() {
-			namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}
+			namespace.Labels = map[string]string{c4v1beta1.LabelSharedSecrets: "true"}
 		})).To(Succeed())
 		Eventually(func(g Gomega) {
 			b := getBrief(g, shared)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(HaveField("Message",
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(HaveField("Message",
 				Equal("Secret "+sharedToken+" of Agent planner is missing: make it in namespace "+operatorNamespace+
 					" with the Agents' token, which the factory's model proxy uses for every project")))
 			g.Expect(b.Status.Round).To(BeZero())
 		}).Should(Succeed())
 
 		By("starting round 1 once the source is there, copying nothing in")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, shared), &c4v1alpha1.Project{}))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, shared), &c4v1beta1.Project{}))).To(BeTrue())
 		mine := &corev1.Secret{ObjectMeta: objectMeta(operatorNamespace, sharedToken),
 			Data: map[string][]byte{"token": []byte("first")}}
 		Expect(k8sClient.Create(ctx, mine)).To(Succeed())
@@ -619,7 +647,7 @@ spec:
 		Eventually(func(g Gomega) {
 			b := getBrief(g, shared)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanning))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(shared, sharedToken), &corev1.Secret{}))).To(BeTrue())
@@ -637,36 +665,36 @@ spec:
 		By("naming the missing implementer, with nothing applied")
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).To(And(
-				HaveField("Reason", c4v1alpha1.ReasonNotFound),
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).To(And(
+				HaveField("Reason", c4v1beta1.ReasonNotFound),
 				HaveField("Message", HavePrefix("Agent late-implementer is missing"))))
 		}).Should(Succeed())
-		Expect(getTask(Default, ns, "cel-lens-plan-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+		Expect(getTask(Default, ns, "cel-lens-plan-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.SoftwareSystem{}))).
 			To(BeTrue(), "nothing is applied")
 
 		By("naming a catalog entry the plan needs that went since it was checked")
-		Expect(k8sClient.Delete(ctx, &c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres")})).To(Succeed())
-		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev"}})
+		Expect(k8sClient.Delete(ctx, &c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres")})).To(Succeed())
+		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}})
 		Eventually(func(g Gomega) {
-			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Message", HavePrefix("The plan of round 1 needs Connector postgres, missing")))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.SoftwareSystem{}))).
 			To(BeTrue(), "nothing is applied")
 
 		By("resuming the round once it is there")
-		mustCreate(&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", c4v1alpha1.ContainerTypeService)})
+		mustCreate(&c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
+			Spec: c4v1beta1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", c4v1beta1.ContainerTypeService)}})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Status", metav1.ConditionFalse))
 		}).Should(Succeed())
-		crew := &c4v1alpha1.Crew{}
+		crew := &c4v1beta1.Crew{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 		Expect(crew.Spec.Implementer.Name).To(Equal("late-implementer"))
 	})
@@ -676,12 +704,12 @@ spec:
 		briefAgents(ns, 3)
 		// checker's template is missing, so it never gets Ready and the round
 		// keeps applying, reconcile after reconcile.
-		mustCreate(&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "broken"),
-			Spec: newFrameworkSpec(templatesURL+"missing", "v1.0.0", c4v1alpha1.ContainerTypeService)})
+		mustCreate(&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "broken"),
+			Spec: newFrameworkSpec(templatesURL+"missing", "v1.0.0", c4v1beta1.ContainerTypeService)})
 		mustCreate(newBrief(ns, "cel-lens"))
 		plan := linterPlan(ns, 1)
 		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data, []byte(`---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: checker
@@ -697,7 +725,7 @@ spec:
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Issues).To(HaveLen(1))
 			g.Expect(b.Status.Issues[0]).To(And(HaveField("Round", int32(1)), HaveField("N", int32(1))))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(
 				HaveField("Message", ContainSubstring("Container checker")))
 		}).Should(Succeed())
 		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
@@ -706,18 +734,18 @@ spec:
 		stale := getBrief(Default, ns)
 		recorded := stale.Status.Issues
 		stale.Status.Issues = nil
-		linter := &c4v1alpha1.Container{}
+		linter := &c4v1beta1.Container{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
 		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: gitFake}
 		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
-		Expect(r.fileIssues(ctx, run, map[string]*c4v1alpha1.Container{"linter": linter}, []model.PlanIssue{
+		Expect(r.fileIssues(ctx, run, map[string]*c4v1beta1.Container{"linter": linter}, []model.PlanIssue{
 			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
 		Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
 
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefApplying))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefApplying))
 		}, "3s").Should(Succeed())
 	})
 
@@ -729,23 +757,23 @@ spec:
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
 		}).Should(Succeed())
 
 		By("a person making a Container of the planned name meanwhile")
-		mustCreate(newContainer(ns, "linter", "cel-lens", c4v1alpha1.ContainerTypeWorker))
-		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev"}})
+		mustCreate(newContainer(ns, "linter", "cel-lens", c4v1beta1.ContainerTypeWorker))
+		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefFailed))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefFailed))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Reason", model.ReasonRoundFailed),
 				HaveField("Message", And(ContainSubstring("no longer fits the namespace"),
 					ContainSubstring("Container/linter: type can't change")))))
 			g.Expect(b.Status.History).To(ConsistOf(HaveField("Outcome", model.ReasonRoundFailed)))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.SoftwareSystem{}))).
 			To(BeTrue(), "nothing is applied")
 	})
 
@@ -764,15 +792,15 @@ spec:
 
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefApplying))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefApplying))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", And(ContainSubstring("Round 1 could not be applied at Person/rule-author"),
 					ContainSubstring("exceeded quota: no-people"), ContainSubstring("tries again")))))
 			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(ContainElement(
 				ContainSubstring("at Person/rule-author")))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.SoftwareSystem{}))).
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.SoftwareSystem{}))).
 			To(BeTrue(), "the objects after the Person wait for it")
 		Consistently(func(g Gomega) {
 			g.Expect(briefEventNotes(g, ns, "ApplyFailed")).To(HaveLen(1), "one Event while the message holds")
@@ -789,15 +817,15 @@ spec:
 			gitFake.addIssue(ns, "linter", fmt.Sprintf("Lint rule %d", n), model.BriefIssueBody(issue, "cel-lens", 1),
 				[]string{"status/ready"})
 		}
-		mustCreate(&c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, "linter"), Spec: c4v1alpha1.CrewSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: "linter"},
-			Implementer:  c4v1alpha1.LocalRef{Name: "implementer"}, Reviewer: c4v1alpha1.LocalRef{Name: "reviewer"},
+		mustCreate(&c4v1beta1.Crew{ObjectMeta: objectMeta(ns, "linter"), Spec: c4v1beta1.CrewSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: "linter"},
+			Implementer:  c4v1beta1.LocalRef{Name: "implementer"}, Reviewer: c4v1beta1.LocalRef{Name: "reviewer"},
 			Parallel: 2}})
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 4))
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		brief := getBrief(Default, ns)
 		Expect(brief.Status.Issues).To(HaveLen(4))
@@ -812,7 +840,7 @@ spec:
 			}
 			Expect(marked).To(Equal(1), "issue %d", n)
 		}
-		var crews c4v1alpha1.CrewList
+		var crews c4v1beta1.CrewList
 		Expect(k8sClient.List(ctx, &crews, client.InNamespace(ns))).To(Succeed())
 		Expect(crews.Items).To(HaveLen(1))
 		Expect(crews.Items[0].Spec.Parallel).To(Equal(int32(2)), "the Crew there is left alone")

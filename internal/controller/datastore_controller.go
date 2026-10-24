@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // DataStoreReconciler makes a DataStore a child of its SoftwareSystem and checks
@@ -40,14 +40,14 @@ type DataStoreReconciler struct {
 
 // Reconcile adopts the DataStore and reports whether its references resolve.
 func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var store c4v1alpha1.DataStore
+	var store c4v1beta1.DataStore
 	if err := r.Get(ctx, req.NamespacedName, &store); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	var missing []string
 	external := false
-	var system c4v1alpha1.SoftwareSystem
+	var system c4v1beta1.SoftwareSystem
 	err := r.Get(ctx, types.NamespacedName{Namespace: store.Namespace, Name: store.Spec.SoftwareSystemRef.Name}, &system)
 	switch {
 	case apierrors.IsNotFound(err):
@@ -56,14 +56,14 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	default:
 		labels := projectLabels(store.Namespace)
-		labels[c4v1alpha1.LabelSoftwareSystem] = system.Name
+		labels[c4v1beta1.LabelSoftwareSystem] = system.Name
 		if err := adopt(ctx, r.Client, r.Scheme, &system, &store, labels); err != nil {
 			return ctrl.Result{}, err
 		}
-		external = system.Spec.Location == c4v1alpha1.SystemExternal
+		external = system.Spec.Location == c4v1beta1.SystemExternal
 	}
 
-	var connector c4v1alpha1.Connector
+	var connector c4v1beta1.Connector
 	err = r.Get(ctx, types.NamespacedName{Namespace: store.Namespace, Name: store.Spec.ConnectorRef.Name}, &connector)
 	switch {
 	case apierrors.IsNotFound(err):
@@ -74,14 +74,14 @@ func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	status := store.Status.DeepCopy()
 	if len(missing) > 0 {
-		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
+		setCondition(&status.Conditions, store.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonNotFound, notFoundMessage(missing))
 	} else if external {
-		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonExternalSystem, externalMessage(system.Name))
+		setCondition(&status.Conditions, store.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonExternalSystem, externalMessage(system.Name))
 	} else {
-		setCondition(&status.Conditions, store.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
+		setCondition(&status.Conditions, store.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionTrue, c4v1beta1.ReasonResolved, "")
 	}
 	if equality.Semantic.DeepEqual(&store.Status, status) {
 		return ctrl.Result{}, nil
@@ -106,7 +106,7 @@ func notFoundMessage(missing []string) string {
 func (r *DataStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A SoftwareSystem or Connector appearing can resolve a waiting DataStore.
 	allInNamespace := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var stores c4v1alpha1.DataStoreList
+		var stores c4v1beta1.DataStoreList
 		if err := mgr.GetClient().List(ctx, &stores, client.InNamespace(obj.GetNamespace())); err != nil {
 			return nil
 		}
@@ -117,9 +117,9 @@ func (r *DataStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return reqs
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.DataStore{}).
-		Watches(&c4v1alpha1.SoftwareSystem{}, allInNamespace, specChanged()).
-		Watches(&c4v1alpha1.Connector{}, allInNamespace, createOrDelete()).
+		For(&c4v1beta1.DataStore{}).
+		Watches(&c4v1beta1.SoftwareSystem{}, allInNamespace, specChanged()).
+		Watches(&c4v1beta1.Connector{}, allInNamespace, createOrDelete()).
 		Named("datastore").
 		Complete(r)
 }

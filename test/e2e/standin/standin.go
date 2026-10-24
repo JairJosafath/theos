@@ -24,18 +24,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // Check fails for every Agent that doesn't run on the stand-in, with the harness
 // set explicitly, or that references a Secret: its model credentials or one of
 // its environment variables.
-func Check(agents []c4v1alpha1.Agent) error {
+func Check(agents []c4v1beta1.Agent) error {
 	var errs []error
 	for _, a := range agents {
-		if a.Spec.Harness != c4v1alpha1.HarnessStandIn {
+		if a.Spec.Harness != c4v1beta1.HarnessStandIn {
 			errs = append(errs, fmt.Errorf("agent %s: harness is %q, not %q", a.Name, a.Spec.Harness,
-				c4v1alpha1.HarnessStandIn))
+				c4v1beta1.HarnessStandIn))
 		}
 		if a.Spec.CredentialsSecretRef != nil {
 			errs = append(errs, fmt.Errorf("agent %s: references the credentials Secret %s", a.Name,
@@ -52,8 +52,8 @@ func Check(agents []c4v1alpha1.Agent) error {
 }
 
 // Agents reads every Agent in the YAML files under dir.
-func Agents(dir string) ([]c4v1alpha1.Agent, error) {
-	var agents []c4v1alpha1.Agent
+func Agents(dir string) ([]c4v1beta1.Agent, error) {
+	var agents []c4v1beta1.Agent
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || (!strings.HasSuffix(p, ".yaml") && !strings.HasSuffix(p, ".yml")) {
 			return err
@@ -71,10 +71,10 @@ func Agents(dir string) ([]c4v1alpha1.Agent, error) {
 			} else if err != nil {
 				return fmt.Errorf("%s: %w", p, err)
 			}
-			if obj.GetKind() != "Agent" || obj.GroupVersionKind().Group != c4v1alpha1.GroupVersion.Group {
+			if obj.GetKind() != "Agent" || obj.GroupVersionKind().Group != c4v1beta1.GroupVersion.Group {
 				continue
 			}
-			var a c4v1alpha1.Agent
+			var a c4v1beta1.Agent
 			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &a); err != nil {
 				return fmt.Errorf("%s: agent %s: %w", p, obj.GetName(), err)
 			}

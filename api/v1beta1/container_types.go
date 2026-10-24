@@ -16,6 +16,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef)",message="name a bundleRef or a frameworkRef"
 // +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
+// +kubebuilder:validation:XValidation:rule="(has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)",message="adopt is immutable"
 type ContainerSpec struct {
 	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
@@ -76,6 +77,16 @@ type ContainerSpec struct {
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
 
+	// adopt says the Container takes over a repository that already has
+	// commits instead of scaffolding a new one. The operator writes nothing:
+	// it checks that main's .c4factory.yaml names this project and Container
+	// and that every file of the Container's Standard is there with the
+	// content the Standard renders at its ref, then protects main and goes
+	// Ready. An adopted Container is never scaffolded; an empty repository
+	// fails NothingToAdopt. Set at creation and immutable.
+	// +optional
+	Adopt bool `json:"adopt,omitempty"`
+
 	// operations is what the application promises whatever tier runs it: how
 	// long its backups are kept and where they are copied, its recovery
 	// objectives and who its alarms tell. The tier itself is the deploy
@@ -86,6 +97,14 @@ type ContainerSpec struct {
 	// where it stands.
 	// +optional
 	Operations *OperationsSpec `json:"operations,omitempty"`
+
+	// license is the SPDX id of the license the repository is scaffolded
+	// with, over the Project's spec.license: the operator writes its text as
+	// LICENSE. It is read at scaffold only: changing it later rewrites
+	// nothing, and a Container already scaffolded gets its license by a
+	// commit. With neither set, the repository gets no LICENSE.
+	// +optional
+	License License `json:"license,omitempty"`
 
 	// deploy names the DeployTargets each release of the Container's Crew
 	// ships to, in order. The operator ships the newest release whose runs
@@ -567,6 +586,14 @@ type ContainerStatus struct {
 	// +optional
 	ScaffoldedFrom []string `json:"scaffoldedFrom,omitempty"`
 
+	// scaffoldedDomains names the Domains the scaffold wrote under
+	// docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+	// with them, and a Standard update renders with them. An adopted Container
+	// has none.
+	// +listType=set
+	// +optional
+	ScaffoldedDomains []string `json:"scaffoldedDomains,omitempty"`
+
 	// appliedRelationships lists the Relationships whose Connectors were part of the scaffold.
 	// +listType=set
 	// +optional
@@ -645,6 +672,7 @@ type ContainerStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"
@@ -684,4 +712,40 @@ func init() {
 		s.AddKnownTypes(SchemeGroupVersion, &Container{}, &ContainerList{})
 		return nil
 	})
+}
+
+// ContainerChoices are the catalog entries a Container picked, by name, ""
+// for a side it picks none of. Bundle names the Bundle they came from, if any.
+type ContainerChoices struct {
+	Bundle     string
+	Framework  string
+	Standard   string
+	Compute    string
+	Deployment string
+}
+
+// Choices gives the Container's effective catalog choices: its spec's refs,
+// or, when it names a Bundle, what status.bundle says the bundle expanded to.
+// Before the operator first expands the bundle only Bundle is set.
+func (c *Container) Choices() ContainerChoices {
+	if c.Spec.BundleRef == nil {
+		return ContainerChoices{
+			Framework:  c.Spec.FrameworkRef.Name,
+			Standard:   refName(c.Spec.StandardRef),
+			Compute:    refName(c.Spec.ComputeRef),
+			Deployment: refName(c.Spec.DeploymentRef),
+		}
+	}
+	out := ContainerChoices{Bundle: c.Spec.BundleRef.Name}
+	if b := c.Status.Bundle; b != nil {
+		out.Framework, out.Standard, out.Compute, out.Deployment = b.Framework, b.Standard, b.Compute, b.Deployment
+	}
+	return out
+}
+
+func refName(ref *LocalRef) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
 }

@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // poolPods lists a namespace's CI runner pool pods, the kept records included.
@@ -80,19 +80,19 @@ func failRegistration(pod *corev1.Pod) {
 
 // newCIProvider is a Gitea GitProvider for ns, with credentials, whose ci block
 // asks for a pool of two go runners with the Go cache.
-func newCIProvider(ns string) *c4v1alpha1.GitProvider {
+func newCIProvider(ns string) *c4v1beta1.GitProvider {
 	GinkgoHelper()
 	mustCreate(&corev1.Secret{
 		ObjectMeta: objectMeta(ns, "gitea-credentials"),
 		StringData: map[string]string{"username": "c4admin", "token": rand.Text()},
 	})
-	provider := &c4v1alpha1.GitProvider{
+	provider := &c4v1beta1.GitProvider{
 		ObjectMeta: objectMeta(ns, "gitea"),
-		Spec: c4v1alpha1.GitProviderSpec{
+		Spec: c4v1beta1.GitProviderSpec{
 			URL:                  "http://gitea.gitea.svc.cluster.local:3000",
 			Owner:                ns,
-			CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "gitea-credentials"},
-			CI: &c4v1alpha1.CISpec{GiteaActions: &c4v1alpha1.GiteaActionsSpec{Runners: []c4v1alpha1.CIRunnerSpec{
+			CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
+			CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
 				{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 2, GoCache: true},
 			}}},
 		},
@@ -104,7 +104,7 @@ func newCIProvider(ns string) *c4v1alpha1.GitProvider {
 var _ = Describe("CI runner pool", func() {
 	It("keeps a pool per GitProvider label, replaces ended pods and keeps their fate (#1140)", func() {
 		ns := newProjectNamespace()
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 		provider := newCIProvider(ns)
 
@@ -186,7 +186,7 @@ var _ = Describe("CI runner pool", func() {
 
 	It("follows the ci block: a lowered size trims idle pods, a new image rolls them, a dropped block removes the pool's objects (#1700)", func() {
 		ns := newProjectNamespace()
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 		provider := newCIProvider(ns)
 		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
@@ -215,13 +215,17 @@ var _ = Describe("CI runner pool", func() {
 
 		By("trimming idle pods above a lowered size, the busy one kept")
 		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Size = 1 })).To(Succeed())
-		Eventually(func() []string { return names(livePoolPods(ns)) }).Should(ConsistOf(busy.Name))
-		for _, pod := range poolPods(ns) {
-			if pod.Name != busy.Name {
-				Expect(pod.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
-				Expect(pod.DeletionTimestamp).NotTo(BeNil())
+		// The pool records a pod lost before it deletes it, so a pod is out of
+		// livePoolPods a moment before it is deleting: wait for both (#1886).
+		Eventually(func(g Gomega) {
+			g.Expect(names(livePoolPods(ns))).To(ConsistOf(busy.Name))
+			for _, pod := range poolPods(ns) {
+				if pod.Name != busy.Name {
+					g.Expect(pod.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+					g.Expect(pod.DeletionTimestamp).NotTo(BeNil())
+				}
 			}
-		}
+		}).Should(Succeed())
 		Consistently(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(1))
 
 		By("not replacing the busy pod once it ends, the pool being at size")
@@ -277,7 +281,7 @@ var _ = Describe("CI runner pool", func() {
 
 	It("takes the pool down with its Project, kept records included (#1697)", func() {
 		ns := newProjectNamespace()
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 		newCIProvider(ns)
 		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
@@ -300,18 +304,18 @@ var _ = Describe("CI runner pool", func() {
 
 	It("reports a provider whose credentials it cannot read instead of a pool", func() {
 		ns := newProjectNamespace()
-		mustCreate(&c4v1alpha1.GitProvider{
+		mustCreate(&c4v1beta1.GitProvider{
 			ObjectMeta: objectMeta(ns, "gitea"),
-			Spec: c4v1alpha1.GitProviderSpec{
+			Spec: c4v1beta1.GitProviderSpec{
 				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: ns,
-				CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "missing"},
-				CI: &c4v1alpha1.CISpec{GiteaActions: &c4v1alpha1.GiteaActionsSpec{Runners: []c4v1alpha1.CIRunnerSpec{
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "missing"},
+				CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
 					{Label: "go", Image: "c4factory/gitea-runner-go:dev"},
 				}}},
 			},
 		})
 		Eventually(func(g Gomega) {
-			var project c4v1alpha1.Project
+			var project c4v1beta1.Project
 			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 			g.Expect(condition(project.Status.Conditions, ConditionCIRunners)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Reason", "ProviderUnavailable"),
@@ -366,7 +370,7 @@ var _ = Describe("CI runner pool", func() {
 		provider := newCIProvider(ns)
 		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
 		ciRunners := func(g Gomega) *metav1.Condition {
-			var project c4v1alpha1.Project
+			var project c4v1beta1.Project
 			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 			return condition(project.Status.Conditions, ConditionCIRunners)
 		}

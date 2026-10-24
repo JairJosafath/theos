@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -64,7 +64,7 @@ type moduleAnswer struct {
 // of a c4factory.local/ path, or the first time any other path turns
 // fetchable, is a Normal Event; a module Go can't take, or can't fetch, a
 // Warning Event, once per release.
-func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil {
@@ -91,7 +91,7 @@ func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1alpha1.C
 		gitCtx, cancel := context.WithTimeout(ctx, goModuleTimeout)
 		out, err := provider.PublishGoModule(gitCtx, repo, release.Tag)
 		cancel()
-		m = &c4v1alpha1.CrewReleaseGoModule{Path: out.Path, Version: release.Tag}
+		m = &c4v1beta1.CrewReleaseGoModule{Path: out.Path, Version: release.Tag}
 		switch {
 		case err != nil:
 			registry, detail = model.RegistryFailed, err.Error()
@@ -144,8 +144,8 @@ func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1alpha1.C
 // when a factory path is uploaded or another path turns fetchable now, a
 // Warning one when Go can't take it, and when it first turns not fetchable,
 // once per release.
-func (r *CrewReconciler) reportModule(ctx context.Context, crew *c4v1alpha1.Crew, prev,
-	m *c4v1alpha1.CrewReleaseGoModule, d model.ModuleDecision, now bool) {
+func (r *CrewReconciler) reportModule(ctx context.Context, crew *c4v1beta1.Crew, prev,
+	m *c4v1beta1.CrewReleaseGoModule, d model.ModuleDecision, now bool) {
 	log := logf.FromContext(ctx).WithValues("module", m.Path, "version", m.Version)
 	switch d.State {
 	case model.ModuleStateFailed:
@@ -175,8 +175,8 @@ func (r *CrewReconciler) reportModule(ctx context.Context, crew *c4v1alpha1.Crew
 // registry's outcome, its GitHub target and source, the Published condition
 // and the Go proxy's last answer. A checked version whose answer the Reconciler
 // doesn't remember, since it restarted, is asked again, unless it was found.
-func (r *CrewReconciler) moduleFacts(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
-	m *c4v1alpha1.CrewReleaseGoModule, registry model.ModuleRegistry, detail string) model.ModuleFacts {
+func (r *CrewReconciler) moduleFacts(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
+	m *c4v1beta1.CrewReleaseGoModule, registry model.ModuleRegistry, detail string) model.ModuleFacts {
 	release := status.LastRelease
 	f := model.ModuleFacts{Path: m.Path, Version: m.Version, Registry: registry, RegistryDetail: detail,
 		Source: publishSource(crew), Proxy: r.GoProxy, Now: r.now()}
@@ -206,7 +206,7 @@ func (r *CrewReconciler) moduleFacts(crew *c4v1alpha1.Crew, status *c4v1alpha1.C
 // whose source went out before the operator recorded it, once: the module
 // rule needs it, and the publish, done, reads GitHub no more. A failed read
 // leaves it unknown, read as public, and is tried again on the next poll.
-func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1alpha1.Crew, release *c4v1alpha1.CrewRelease) {
+func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1beta1.Crew, release *c4v1beta1.CrewRelease) {
 	spec := crew.Spec.PublishReleases
 	if spec == nil || release.Publish == nil || release.Publish.Source == nil ||
 		release.Publish.Source.Private != nil {

@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // createOrDelete passes only creations and deletions: enough for watches that
@@ -35,8 +35,8 @@ func createOrDelete() builder.WatchesOption {
 func specOrAsked() builder.Predicates {
 	asked := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			for _, key := range []string{c4v1alpha1.AnnotationRetry, c4v1alpha1.AnnotationStandardTake,
-				c4v1alpha1.AnnotationStandardKeep} {
+			for _, key := range []string{c4v1beta1.AnnotationRetry, c4v1beta1.AnnotationStandardTake,
+				c4v1beta1.AnnotationStandardKeep} {
 				if e.ObjectOld.GetAnnotations()[key] != e.ObjectNew.GetAnnotations()[key] {
 					return true
 				}
@@ -52,8 +52,8 @@ func specOrAsked() builder.Predicates {
 func sessionPhaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldSession, ok1 := e.ObjectOld.(*c4v1alpha1.Session)
-			newSession, ok2 := e.ObjectNew.(*c4v1alpha1.Session)
+			oldSession, ok1 := e.ObjectOld.(*c4v1beta1.Session)
+			newSession, ok2 := e.ObjectNew.(*c4v1beta1.Session)
 			return !ok1 || !ok2 || oldSession.Status.Phase != newSession.Status.Phase
 		},
 	})
@@ -70,8 +70,8 @@ func specChanged() builder.WatchesOption {
 func containerPhaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldContainer, ok1 := e.ObjectOld.(*c4v1alpha1.Container)
-			newContainer, ok2 := e.ObjectNew.(*c4v1alpha1.Container)
+			oldContainer, ok1 := e.ObjectOld.(*c4v1beta1.Container)
+			newContainer, ok2 := e.ObjectNew.(*c4v1beta1.Container)
 			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase
 		},
 	})
@@ -81,7 +81,7 @@ func containerPhaseChanges() builder.WatchesOption {
 // a change of the Container's Standard files waiting on a person: its Brief
 // lists them under Needs you.
 func containerPhaseOrBehindChanges() builder.WatchesOption {
-	behind := func(c *c4v1alpha1.Container) string {
+	behind := func(c *c4v1beta1.Container) string {
 		if cond := filesBehind(c); cond != nil {
 			return cond.Message
 		}
@@ -89,8 +89,8 @@ func containerPhaseOrBehindChanges() builder.WatchesOption {
 	}
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldContainer, ok1 := e.ObjectOld.(*c4v1alpha1.Container)
-			newContainer, ok2 := e.ObjectNew.(*c4v1alpha1.Container)
+			oldContainer, ok1 := e.ObjectOld.(*c4v1beta1.Container)
+			newContainer, ok2 := e.ObjectNew.(*c4v1beta1.Container)
 			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase ||
 				behind(oldContainer) != behind(newContainer)
 		},
@@ -102,9 +102,23 @@ func containerPhaseOrBehindChanges() builder.WatchesOption {
 func taskPhaseChanges() builder.Predicates {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldTask, ok1 := e.ObjectOld.(*c4v1alpha1.Task)
-			newTask, ok2 := e.ObjectNew.(*c4v1alpha1.Task)
+			oldTask, ok1 := e.ObjectOld.(*c4v1beta1.Task)
+			newTask, ok2 := e.ObjectNew.(*c4v1beta1.Task)
 			return !ok1 || !ok2 || oldTask.Status.Phase != newTask.Status.Phase
+		},
+	})
+}
+
+// crewBudgetChanges passes a Crew's deletion and a change of its cost cap
+// (spec.taskBudgetUSD), which resume its Tasks waiting at the cap (#1893).
+func crewBudgetChanges() builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldCrew, ok1 := e.ObjectOld.(*c4v1beta1.Crew)
+			newCrew, ok2 := e.ObjectNew.(*c4v1beta1.Crew)
+			return !ok1 || !ok2 || oldCrew.Spec.TaskBudgetUSD != newCrew.Spec.TaskBudgetUSD
 		},
 	})
 }
@@ -156,8 +170,8 @@ func startsOperatorWait() predicate.Funcs {
 		DeleteFunc:  func(event.DeleteEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldBrief, ok1 := e.ObjectOld.(*c4v1alpha1.Brief)
-			newBrief, ok2 := e.ObjectNew.(*c4v1alpha1.Brief)
+			oldBrief, ok1 := e.ObjectOld.(*c4v1beta1.Brief)
+			newBrief, ok2 := e.ObjectNew.(*c4v1beta1.Brief)
 			return ok1 && ok2 && !operatorWaits(&oldBrief.Status) && operatorWaits(&newBrief.Status)
 		},
 	}

@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Package registry Actions", func() {
@@ -26,13 +26,13 @@ var _ = Describe("Package registry Actions", func() {
 				StringData: map[string]string{"token": "npm-publish", "readToken": "npm-read"}},
 			&corev1.Secret{ObjectMeta: objectMeta(ns, "acme-pypi"), StringData: map[string]string{"token": "pypi-publish"}},
 		)
-		provider := &c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea"), Spec: c4v1alpha1.GitProviderSpec{
+		provider := &c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "gitea"), Spec: c4v1beta1.GitProviderSpec{
 			URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: ns,
-			CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "gitea-credentials"},
-			Packages: &c4v1alpha1.PackagesSpec{
-				NPM: &c4v1alpha1.NpmPackagesSpec{Scope: "@acme", Registry: "https://npm.example.com/registry/",
-					CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-npm"}},
-				PyPI: &c4v1alpha1.PyPIPackagesSpec{CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: "acme-pypi"}},
+			CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
+			Packages: &c4v1beta1.PackagesSpec{
+				NPM: &c4v1beta1.NpmPackagesSpec{Scope: "@acme", Registry: "https://npm.example.com/registry/",
+					CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-npm"}},
+				PyPI: &c4v1beta1.PyPIPackagesSpec{CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-pypi"}},
 			},
 		}}
 		mustCreate(provider)

@@ -66,7 +66,7 @@ func GitHubReadsLatest(f GitHubDeployFacts) bool {
 	if !f.TakesLatest {
 		return false
 	}
-	wanted := GitHubMarkedRelease(f.App, GitHubTag(f.TagPrefix, f.Version), f.Releases)
+	wanted := GitHubMarkedRelease(f.App, ReleaseTag(f.TagPrefix, f.Version), f.Releases)
 	return wanted != nil && !wanted.Draft
 }
 
@@ -90,7 +90,7 @@ func GitHubDeployState(f GitHubDeployFacts) GitHubDeployReport {
 		return GitHubDeployReport{DeployRun: DeployRun{Version: version(r), Phase: DeployPhaseDeployed,
 			Health: DeployHealthHealthy, URL: r.URL}}
 	}
-	if wanted := GitHubMarkedRelease(f.App, GitHubTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
+	if wanted := GitHubMarkedRelease(f.App, ReleaseTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
 		switch {
 		case wanted.Draft:
 			return deploying(wanted)
@@ -189,16 +189,18 @@ func GitHubHostsOf(url string) GitHubHosts {
 		Registry: "containers." + strings.TrimPrefix(url, "https://")}
 }
 
-// GitHubImage is the repository a Container's image goes to at a github
-// target's registry: owner/name/<container> of the target's repository,
-// lower-cased as GHCR wants it, or owner/name alone when the target's
-// tagPrefix is "", which gives the repository to one Container
-// (docs/plans/done/github-deploy.md, Decision 5).
-func GitHubImage(repository, container, tagPrefix string) string {
+// ImageRepository is the repository a Container's image goes to at a github
+// or gitlab target's registry: home/<container>, lower-cased as registries
+// want it, or home alone when the target's tagPrefix is "", which gives the
+// repository to one Container. home is a github target's owner/name
+// (docs/plans/done/github-deploy.md, Decision 5) or a gitlab project's
+// container_registry_image_prefix without its host
+// (docs/plans/gitlab-deploy.md, Decision 5).
+func ImageRepository(home, container, tagPrefix string) string {
 	if tagPrefix == "" {
-		return strings.ToLower(repository)
+		return strings.ToLower(home)
 	}
-	return strings.ToLower(repository + "/" + container)
+	return strings.ToLower(home + "/" + container)
 }
 
 // GitHubImageNotes are a release's notes with a line naming its image,
@@ -215,13 +217,14 @@ func GitHubImageNotes(notes, image string) string {
 	return strings.TrimRight(notes, "\n") + "\n\n" + line + "\n"
 }
 
-// GitHubNothingToPublish is the ArtifactMissing message of a release a
-// github target has nothing of to ship.
-const GitHubNothingToPublish = "nothing to publish: no release files, no source, no image"
+// NothingToPublish is the ArtifactMissing message of a release a github or
+// gitlab target has nothing of to ship.
+const NothingToPublish = "nothing to publish: no release files, no source, no image"
 
-// GitHubShipmentFacts are what a github target could ship of a release of a
-// Container (docs/plans/done/github-deploy.md, Decisions 1 and 2).
-type GitHubShipmentFacts struct {
+// ReleaseShipmentFacts are what a github or gitlab target could ship of a
+// release of a Container (docs/plans/done/github-deploy.md, Decisions 1 and 2;
+// docs/plans/gitlab-deploy.md, Decision 3).
+type ReleaseShipmentFacts struct {
 	// Type, Deployment and Framework are the Container's type, Deployment
 	// and Framework.
 	Type, Deployment, Framework string
@@ -234,36 +237,41 @@ type GitHubShipmentFacts struct {
 	Source bool
 	// Image says the release's image is published, by digest, for its version.
 	Image bool
-	// PackagesToken says the target's Secret holds GitHubSecretPackagesToken.
-	PackagesToken bool
+	// TakesImage says the target takes the image: a github target's Secret
+	// holds GitHubSecretPackagesToken; a gitlab target's project registry is
+	// on and its token may write to it (docs/plans/gitlab-deploy.md,
+	// Decision 5).
+	TakesImage bool
 }
 
-// GitHubShipmentPlan is what a github target ships of a release, besides the
-// GitHub release itself, which always goes with the release's notes.
-type GitHubShipmentPlan struct {
+// ReleaseShipmentPlan is what a github or gitlab target ships of a release,
+// besides the release itself, which always goes with the release's notes.
+type ReleaseShipmentPlan struct {
 	// Source says the release's source goes to the target's folder.
 	Source bool
-	// Files are the release files the GitHub release carries.
+	// Files are the release files the release carries.
 	Files []string
-	// Image says the release's image goes to GitHub's container registry.
+	// Image says the release's image goes to the target's container registry.
 	Image bool
 }
 
-// GitHubShipment decides what a github target ships of a release: the source
-// when the target publishes it; the release's files, its image archive left
-// out, as the image goes to a registry; and the image when the Container's
-// Deployment builds one, it is published and the target holds a packages
-// token. With none of the three, problem is GitHubNothingToPublish.
-func GitHubShipment(f GitHubShipmentFacts) (plan GitHubShipmentPlan, problem string) {
+// ReleaseShipment decides what a github or gitlab target ships of a release:
+// the source when the target publishes it; the release's files, its image
+// archive left out, as the image goes to a registry; and the image when the
+// Container's Deployment builds one, it is published and the target takes
+// it. With none of the three, problem is NothingToPublish. Both members share
+// the rule, so a Container ships the same things to either
+// (docs/plans/gitlab-deploy.md, Decision 3).
+func ReleaseShipment(f ReleaseShipmentFacts) (plan ReleaseShipmentPlan, problem string) {
 	plan.Source = f.Source
 	for _, name := range f.Files {
 		if !IsImageArchive(name) {
 			plan.Files = append(plan.Files, name)
 		}
 	}
-	plan.Image = f.Image && f.PackagesToken && BuildsImage(f.Deployment, f.Framework, f.Type, f.ScaffoldedFrom)
+	plan.Image = f.Image && f.TakesImage && BuildsImage(f.Deployment, f.Framework, f.Type, f.ScaffoldedFrom)
 	if !plan.Source && len(plan.Files) == 0 && !plan.Image {
-		return plan, GitHubNothingToPublish
+		return plan, NothingToPublish
 	}
 	return plan, ""
 }

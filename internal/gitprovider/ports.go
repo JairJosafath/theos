@@ -100,6 +100,7 @@ const (
 
 // The ports' errors.
 var (
+	ErrBranchNotFound      = ports.ErrBranchNotFound
 	ErrTooManyFiles        = ports.ErrTooManyFiles
 	ErrEmptyChange         = ports.ErrEmptyChange
 	ErrConflict            = ports.ErrConflict

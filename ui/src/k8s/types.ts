@@ -70,8 +70,28 @@ export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
 
+/** The SPDX id of a license the scaffold can write; the schema's enum (api/v1alpha1/shared_types.go). */
+export type License =
+  | 'MIT'
+  | 'Apache-2.0'
+  | 'BSD-2-Clause'
+  | 'BSD-3-Clause'
+  | 'ISC'
+  | '0BSD'
+  | 'MPL-2.0'
+  | 'GPL-2.0-only'
+  | 'GPL-3.0-only'
+  | 'LGPL-3.0-only'
+  | 'AGPL-3.0-only'
+  | 'Unlicense'
+
 export interface Project extends K8sObject {
-  spec?: { displayName?: string; description?: string }
+  spec?: {
+    displayName?: string
+    description?: string
+    /** The license its Containers are scaffolded with, unless their own spec.license says otherwise. */
+    license?: License
+  }
   status?: {
     softwareSystems?: number
     containers?: number
@@ -96,6 +116,8 @@ export interface SoftwareSystem extends K8sObject {
     description?: string
     needs?: string[]
     kpis?: string[]
+    /** The Domains it is about, rendered into each of its Containers at their scaffold. */
+    domainRefs?: string[]
   }
   status?: {
     containers?: number
@@ -162,6 +184,8 @@ export interface Container extends K8sObject {
     operations?: Operations
     /** The DeployTargets each release ships to, in order (docs/plans/done/deploy.md). */
     deploy?: ContainerDeploy[]
+    /** The license it is scaffolded with, over the Project's; read at the scaffold only (docs/plans/license.md). */
+    license?: License
   }
   status?: {
     phase?: ContainerPhase
@@ -185,6 +209,8 @@ export interface Container extends K8sObject {
     }
     repositoryURL?: string
     scaffoldedFrom?: string[]
+    /** The Domains its system named when it was scaffolded, by name; their refs are in scaffoldedFrom. */
+    scaffoldedDomains?: string[]
     /** What spec.bundleRef expanded to: the entries' names. */
     bundle?: { name: string; framework: string; standard?: string; compute?: string; deployment?: string }
     appliedRelationships?: string[]
@@ -264,7 +290,7 @@ export interface ContainerDeployStatus {
   message?: string
   /** When the phase, reason or wanted version last changed. */
   since?: string
-  /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR). */
+  /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR, a gitlab target's project registry). */
   image?: string
 }
 
@@ -276,16 +302,35 @@ export interface ContainerDeployStatus {
 export interface DeployTarget extends K8sObject {
   spec: {
     /**
-     * Ships each release as a GitHub release of a repository: owner/name;
+     * Ships each release as a GitHub release of a repository: owner/name, on
+     * github.com or, when url is set (https://host, a GitHub Enterprise
+     * Server), on that server, whose registry is containers.<host>;
      * tagPrefix before each tag (unset: the Container's name and "-");
      * latest (default true) whether each release becomes Latest; source, set,
      * commits the app's files at the tag into path (unset: the Container's
      * name) under its own tagPrefix (unset: the path and "/").
      */
     github?: {
+      url?: string
       repository: string
       tagPrefix?: string
       latest?: boolean
+      source?: { path?: string; tagPrefix?: string }
+    }
+    /**
+     * Ships each release as a GitLab release of a project: its full path
+     * (group/sub/project), on gitlab.com or, when url is set
+     * (https://host[:port], a path allowed for an instance under a relative
+     * URL root), on that instance; tagPrefix and source as github's, the
+     * source committed through the Commits API and the release made of that
+     * commit; the files go to the project's generic package registry and the
+     * image to its container registry. No latest: GitLab's latest release is
+     * the newest (docs/plans/gitlab-deploy.md, decision 1).
+     */
+    gitlab?: {
+      url?: string
+      project: string
+      tagPrefix?: string
       source?: { path?: string; tagPrefix?: string }
     }
     /**
@@ -364,6 +409,14 @@ export interface CatalogEntry extends K8sObject {
   }
 }
 
+/** A Connector: a catalog entry that may name the Frameworks whose templates wire its files. */
+export interface Connector extends K8sObject {
+  spec: CatalogEntry['spec'] & {
+    /** The Frameworks, by name, that wire it; a Container on any other is refused. Unset means no restriction. */
+    wiredBy?: string[]
+  }
+}
+
 /** A Standard: a catalog entry with the coding rules and checks of a Container. */
 export interface Standard extends K8sObject {
   spec: CatalogEntry['spec'] & {
@@ -387,6 +440,20 @@ export interface Bundle extends K8sObject {
     standardRef?: LocalRef
     computeRef?: LocalRef
     deploymentRef?: LocalRef
+  }
+}
+
+/**
+ * A Domain: what a system is about, a template of Markdown rendered into each
+ * of the system's Containers once, at their scaffold, under
+ * docs/agents/domain/<name>/ (docs/plans/domains.md). It supports every
+ * Container type, so it has no supportedTypes, and it has no status.
+ */
+export interface Domain extends K8sObject {
+  spec: {
+    displayName?: string
+    description?: string
+    template: { url: string; ref: string }
   }
 }
 
@@ -418,6 +485,7 @@ export const RESOURCES = {
   computes: 'computes',
   deployments: 'deployments',
   bundles: 'bundles',
+  domains: 'domains',
   gitProviders: 'gitproviders',
   deployTargets: 'deploytargets',
   tasks: 'tasks',

@@ -6,14 +6,14 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // gitProviderCI returns the CI system of a GitProvider's Git host: the host's
 // own, since no GitProvider names another yet.
-func gitProviderCI(gp *c4v1alpha1.GitProvider) (model.CI, error) {
+func gitProviderCI(gp *c4v1beta1.GitProvider) (model.CI, error) {
 	ci, err := model.HostCI(string(gp.Spec.Provider))
 	if err != nil {
 		return model.CI{}, fmt.Errorf("GitProvider %s: %w", gp.Name, err)
@@ -22,8 +22,8 @@ func gitProviderCI(gp *c4v1alpha1.GitProvider) (model.CI, error) {
 }
 
 // containerCI returns the CI system the Container's repository runs.
-func containerCI(ctx context.Context, c client.Reader, container *c4v1alpha1.Container) (model.CI, error) {
-	var gp c4v1alpha1.GitProvider
+func containerCI(ctx context.Context, c client.Reader, container *c4v1beta1.Container) (model.CI, error) {
+	var gp c4v1beta1.GitProvider
 	key := client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name}
 	if err := c.Get(ctx, key, &gp); err != nil {
 		return model.CI{}, fmt.Errorf("GitProvider %s: %w", key.Name, err)
@@ -33,21 +33,21 @@ func containerCI(ctx context.Context, c client.Reader, container *c4v1alpha1.Con
 
 // protectedPaths returns the paths agents may not change in the Container: the
 // platform's for its CI system and its Standard's.
-func protectedPaths(ctx context.Context, c client.Reader, container *c4v1alpha1.Container) ([]string, error) {
+func protectedPaths(ctx context.Context, c client.Reader, container *c4v1beta1.Container) ([]string, error) {
 	_, paths, err := protection(ctx, c, container)
 	return paths, err
 }
 
 // protection returns the Container's CI system and the paths agents may not
 // change in it.
-func protection(ctx context.Context, c client.Reader, container *c4v1alpha1.Container) (model.CI, []string, error) {
+func protection(ctx context.Context, c client.Reader, container *c4v1beta1.Container) (model.CI, []string, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
 		return model.CI{}, nil, err
 	}
 	var standard []string
 	if name := container.Choices().Standard; name != "" {
-		var s c4v1alpha1.Standard
+		var s c4v1beta1.Standard
 		if err := c.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: name}, &s); err != nil {
 			return model.CI{}, nil, fmt.Errorf("reading Standard %s: %w", name, err)
 		}
@@ -62,7 +62,7 @@ func protection(ctx context.Context, c client.Reader, container *c4v1alpha1.Cont
 // nothing for a Container without a Standard, which has no checks to require.
 // It is safe to repeat, so it also brings older repositories up to date.
 func protectRepository(ctx context.Context, c client.Reader, provider gitprovider.Provider,
-	repo gitprovider.Repository, container *c4v1alpha1.Container) error {
+	repo gitprovider.Repository, container *c4v1beta1.Container) error {
 	if !model.Protected(container.Choices().Standard != "") {
 		return nil
 	}

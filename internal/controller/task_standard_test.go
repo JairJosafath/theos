@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -37,7 +37,7 @@ import (
 var _ = Describe("Task allowedProtectedPaths", func() {
 	It("takes eligible paths on an issue Task only, and never changes", func() {
 		ns := newProjectNamespace()
-		gated := func(name string, paths ...string) *c4v1alpha1.Task {
+		gated := func(name string, paths ...string) *c4v1beta1.Task {
 			t := newTask(ns, name, "")
 			t.Spec.Issue = 2
 			t.Spec.AllowedProtectedPaths = paths
@@ -106,7 +106,7 @@ var _ = Describe("Task with a Standard change", func() {
 		m := n + 1 // the next issue the fake files
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(task.Status.Commit).To(Equal("sha-1"))
@@ -116,7 +116,7 @@ var _ = Describe("Task with a Standard change", func() {
 				"Paths": Equal([]string{"Makefile"}), "Branch": Equal("standard/orders-api-1"), "Count": Equal(int32(1))})))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing).Reason).To(Equal("WaitingForStandardChange"))
 			g.Expect(task.Status.History).To(ContainElement(MatchFields(IgnoreExtras, Fields{
-				"Phase": Equal(c4v1alpha1.TaskBlocked), "Reason": Equal("WaitingForStandardChange")})))
+				"Phase": Equal(c4v1beta1.TaskBlocked), "Reason": Equal("WaitingForStandardChange")})))
 		}).Should(Succeed())
 
 		By("filing the issue as the operator, in the waiting issue's milestone")
@@ -139,7 +139,7 @@ var _ = Describe("Task with a Standard change", func() {
 		By("running no agent while it waits")
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing).Reason).To(Equal("WaitingForStandardChange"))
 		}, "3s").Should(Succeed())
@@ -157,7 +157,7 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 			g.Expect(task.Status.StandardChange).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Issue": Equal(int32(filed)), "Count": Equal(int32(1))})))
 		}).Should(Succeed())
@@ -173,7 +173,7 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(task.Status.StandardChange).To(BeNil())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
@@ -195,7 +195,7 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
@@ -219,7 +219,7 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(task.Status.StandardChange).To(BeNil())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
@@ -237,13 +237,13 @@ var _ = Describe("Task with a Standard change", func() {
 		finishWithProposal(ns)
 		m := n + 1 // the Standard change the Task files
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 		}).Should(Succeed())
 
 		Expect(gitFake.closeIssue(ns, "orders-api", m)).To(Succeed())
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
 				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
@@ -266,7 +266,7 @@ var _ = Describe("Task with a Standard change", func() {
 		By("resuming the round it was in, told the change merged")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.Feedback).To(ContainSubstring(fmt.Sprintf("#%d", m)))
 			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
@@ -278,10 +278,10 @@ var _ = Describe("Task with a Standard change", func() {
 
 		By("ending it Merged when the resumed run finds the branch equals main")
 		finishResumed(ns, 1)
-		var task *c4v1alpha1.Task
+		var task *c4v1beta1.Task
 		Eventually(func(g Gomega) {
 			task = getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("DoneByStandardChange"),
@@ -305,14 +305,14 @@ var _ = Describe("Task with a Standard change", func() {
 		n, m := blockedBesideChange(ns, 2)
 		mergeChange(ns, 1)
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 		}).Should(Succeed())
 
 		other := gitFake.addIssue(ns, "orders-api", "Sign the package", clearIssue, nil)
 		gitFake.blockOnClose(ns, "orders-api", n, fmt.Sprintf("#%d", other))
 		finishResumed(ns, 1)
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
 		issue := gitFake.issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
@@ -358,7 +358,7 @@ var _ = Describe("Task with a Standard change", func() {
 			Commit: "sha-1", Summary: "make dist needs the Makefile.", Proposal: &p}, "")
 		m := n + 1
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 			g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
 			sandboxExists(g, ns, "orders-api-2-r1-implement")
 		}).Should(Succeed())
@@ -368,7 +368,7 @@ var _ = Describe("Task with a Standard change", func() {
 		finishResumed(ns, 2)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded).Reason).To(Equal("DoneByStandardChange"))
 		}).Should(Succeed())
@@ -404,7 +404,7 @@ var _ = Describe("Task with a Standard change", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(0))))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
@@ -420,9 +420,9 @@ var _ = Describe("Task with a Standard change", func() {
 			&agentrunner.Result{Role: "implement", Error: "make dist fails on a clean checkout"}, "")
 
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(getTask(g, ns, "orders-api-2").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("Failed"),
@@ -449,7 +449,7 @@ var _ = Describe("Task with a Standard change", func() {
 		By("deleting the proposal once the retry merged the Standard change")
 		mergeChangeTask(ns, "orders-api-2-2", 1)
 		Expect(gitFake.issue(ns, "orders-api", m).State).To(Equal("closed"))
-		Expect(getTask(Default, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed), "nothing resumed it")
+		Expect(getTask(Default, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed), "nothing resumed it")
 		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 
@@ -466,13 +466,13 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			change := getTask(g, ns, "orders-api-2")
-			g.Expect(change.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(change.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(change.Status.Round).To(Equal(int32(2)))
 			g.Expect(condition(change.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Reason":  Equal(model.ReasonBlocked),
 				"Message": And(ContainSubstring("Two rounds in a row"), ContainSubstring("ruff.toml"))})))
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Reason": Equal(model.ReasonBlocked),
 				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
@@ -493,12 +493,12 @@ var _ = Describe("Task with a Standard change", func() {
 
 		Eventually(func(g Gomega) {
 			change := getTask(g, ns, "orders-api-2")
-			g.Expect(change.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(change.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(change.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Reason":  Equal(model.ReasonBlocked),
 				"Message": ContainSubstring("leaves Makefile as on main")})))
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Reason": Equal(model.ReasonBlocked),
 				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
@@ -525,7 +525,7 @@ func blockedBesideChange(ns string, rounds int32) (n, m int) {
 	finishWithProposal(ns)
 	m = n + 1 // the Standard change the Task files
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 		g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
 		sandboxExists(g, ns, "orders-api-2-r1-implement")
 	}).Should(Succeed())
@@ -556,7 +556,7 @@ func mergeChangeTask(ns, task string, pr int) {
 	finishSandbox(ns, task+"-r1-review-a1", task,
 		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+		g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 	}).Should(Succeed())
 	Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{pr}))
 }
@@ -593,7 +593,7 @@ var _ = Describe("Crew with a Standard change", func() {
 
 		m := n + 1 // the Standard change the Task files
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 			gated := getTask(g, ns, "orders-api-2")
 			g.Expect(gated.Spec.Issue).To(Equal(int32(m)))
 			g.Expect(gated.Spec.AllowedProtectedPaths).To(Equal([]string{"Makefile"}))
@@ -618,7 +618,7 @@ var _ = Describe("Crew with a Standard change", func() {
 			g.Expect(crew.Status.ActiveTasks).To(BeEmpty())
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			var tasks c4v1alpha1.TaskList
+			var tasks c4v1beta1.TaskList
 			g.Expect(k8sClient.List(ctx, &tasks, client.InNamespace(ns))).To(Succeed())
 			g.Expect(tasks.Items).To(BeEmpty())
 		}, "3s").Should(Succeed())
@@ -636,7 +636,7 @@ func gatedTaskInReview(ns string, files ...string) int {
 		[]string{model.LabelStandardChange, model.LabelReady})
 	task := newTask(ns, "orders-api-1", "")
 	task.Spec.Issue = int32(n)
-	task.Spec.ReviewerRef = &c4v1alpha1.LocalRef{Name: "reviewer"}
+	task.Spec.ReviewerRef = &c4v1beta1.LocalRef{Name: "reviewer"}
 	task.Spec.AllowedProtectedPaths = []string{"Makefile"}
 	mustCreate(task)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
@@ -692,7 +692,7 @@ var _ = Describe("Task with a gated merge", func() {
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
 			g.Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 		}, "2s").Should(Succeed())
@@ -703,7 +703,7 @@ var _ = Describe("Task with a gated merge", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("Merged")})))
 		}).Should(Succeed())
@@ -730,7 +730,7 @@ var _ = Describe("Task with a gated merge", func() {
 		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
 			g.Expect(task.Status.Commit).To(Equal("sha-1"))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
@@ -739,7 +739,7 @@ var _ = Describe("Task with a gated merge", func() {
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
 		}, "2s").Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
@@ -754,7 +754,7 @@ var _ = Describe("Task with a gated merge", func() {
 		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Still only the dist target."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
@@ -769,7 +769,7 @@ var _ = Describe("Task with a gated merge", func() {
 		var head string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
 			g.Expect(task.Status.Commit).NotTo(Equal("sha-1"))
 			head = task.Status.Commit
@@ -782,7 +782,7 @@ var _ = Describe("Task with a gated merge", func() {
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, "orders-api-1-r1-review-a2")
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "an approval that ran out costs no round")
 			g.Expect(task.Status.Commit).To(Equal(head))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
@@ -794,7 +794,7 @@ var _ = Describe("Task with a gated merge", func() {
 		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Still only the dist target."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
@@ -809,7 +809,7 @@ var _ = Describe("Task with a gated merge", func() {
 		approveGated(ns)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
 				"Message": ContainSubstring(`no passing check matches "check*"`)})))
@@ -825,7 +825,7 @@ var _ = Describe("Task with a gated merge", func() {
 		n := gatedTaskInReview(ns, "Makefile", "tests/test_release.py")
 		approveGated(ns)
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
 		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
@@ -855,15 +855,15 @@ var _ = Describe("Task with a gated merge", func() {
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictChanges, Summary: "CI must pass."}, "")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
-		taskStatusFaults.failNext(taskKey, 1, func(t *c4v1alpha1.Task) bool {
-			return t.Status.Phase == c4v1alpha1.TaskChecking && t.Status.Round == 2
+		taskStatusFaults.failNext(taskKey, 1, func(t *c4v1beta1.Task) bool {
+			return t.Status.Phase == c4v1beta1.TaskChecking && t.Status.Round == 2
 		})
 		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
 		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
 			Commit: "sha-2", Summary: "Updated the test.", Extra: []string{"tests/test_release.py"}}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).NotTo(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).NotTo(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 		}).Should(Succeed())
 		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
@@ -884,7 +884,7 @@ var _ = Describe("Task with a gated merge", func() {
 		approveGated(ns)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Sandbox).To(BeEmpty())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
@@ -934,11 +934,11 @@ func (p *gateProvider) ForceMergePullRequest(_ context.Context, _ gitprovider.Re
 
 func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 	makefile := []string{"Makefile"}
-	approved := &c4v1alpha1.TaskReview{Verdict: model.VerdictApprove}
+	approved := &c4v1beta1.TaskReview{Verdict: model.VerdictApprove}
 	for _, tt := range []struct {
 		name     string
 		provider gateProvider
-		review   *c4v1alpha1.TaskReview
+		review   *c4v1beta1.TaskReview
 		pending  bool
 		refusal  string // in the refusal, if any
 		err      string // in the error, if any
@@ -964,17 +964,17 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p := tt.provider
-			task := &c4v1alpha1.Task{Spec: c4v1alpha1.TaskSpec{Issue: 2, AllowedProtectedPaths: makefile}}
-			status := &c4v1alpha1.TaskStatus{Commit: "sha-1", PullRequest: 1, Review: tt.review}
+			task := &c4v1beta1.Task{Spec: c4v1beta1.TaskSpec{Issue: 2, AllowedProtectedPaths: makefile}}
+			status := &c4v1beta1.TaskStatus{Commit: "sha-1", PullRequest: 1, Review: tt.review}
 			scheme := runtime.NewScheme()
-			if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+			if err := c4v1beta1.AddToScheme(scheme); err != nil {
 				t.Fatal(err)
 			}
-			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&c4v1alpha1.GitProvider{
-				ObjectMeta: objectMeta("apps", "gitea"), Spec: c4v1alpha1.GitProviderSpec{Provider: c4v1alpha1.GitProviderGitea}}).
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&c4v1beta1.GitProvider{
+				ObjectMeta: objectMeta("apps", "gitea"), Spec: c4v1beta1.GitProviderSpec{Provider: c4v1beta1.GitProviderGitea}}).
 				Build()
-			container := &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
-				Spec: c4v1alpha1.ContainerSpec{GitProviderRef: c4v1alpha1.LocalRef{Name: "gitea"}}}
+			container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
+				Spec: c4v1beta1.ContainerSpec{GitProviderRef: c4v1beta1.LocalRef{Name: "gitea"}}}
 			refusal, err := (&TaskReconciler{Client: c}).gatedMerge(context.Background(), &p, gitprovider.Repository{},
 				task, status, container, nil)
 			if p.merges != 0 {
@@ -1031,23 +1031,23 @@ func TestStandardChangeToReuse(t *testing.T) {
 }
 
 func TestResumedRun(t *testing.T) {
-	resumedIn := func(round int32) *c4v1alpha1.TaskStandardChange {
-		return &c4v1alpha1.TaskStandardChange{Issue: 2, Count: 1, ResumedRound: round}
+	resumedIn := func(round int32) *c4v1beta1.TaskStandardChange {
+		return &c4v1beta1.TaskStandardChange{Issue: 2, Count: 1, ResumedRound: round}
 	}
 	for _, tt := range []struct {
 		name   string
-		status c4v1alpha1.TaskStatus
+		status c4v1beta1.TaskStatus
 		want   bool
 	}{
 		{name: "an implement run of the round it resumed in", want: true,
-			status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing, Round: 2, StandardChange: resumedIn(2)}},
-		{name: "not the next round", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing, Round: 3,
+			status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 2, StandardChange: resumedIn(2)}},
+		{name: "not the next round", status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 3,
 			StandardChange: resumedIn(2)}},
-		{name: "not a review", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskReviewing, Round: 2,
+		{name: "not a review", status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskReviewing, Round: 2,
 			StandardChange: resumedIn(2)}},
-		{name: "not before it resumed", status: c4v1alpha1.TaskStatus{
-			Phase: c4v1alpha1.TaskImplementing, Round: 1, StandardChange: resumedIn(0)}},
-		{name: "not without a Standard change", status: c4v1alpha1.TaskStatus{Phase: c4v1alpha1.TaskImplementing,
+		{name: "not before it resumed", status: c4v1beta1.TaskStatus{
+			Phase: c4v1beta1.TaskImplementing, Round: 1, StandardChange: resumedIn(0)}},
+		{name: "not without a Standard change", status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing,
 			Round: 1}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1059,8 +1059,8 @@ func TestResumedRun(t *testing.T) {
 }
 
 func TestPullBodyNamesAStandardChangesExtras(t *testing.T) {
-	agents := taskAgents{implementer: &c4v1alpha1.Agent{}, reviewer: &c4v1alpha1.Agent{}}
-	task := &c4v1alpha1.Task{Spec: c4v1alpha1.TaskSpec{Issue: 53, AllowedProtectedPaths: []string{"Makefile"}}}
+	agents := taskAgents{implementer: &c4v1beta1.Agent{}, reviewer: &c4v1beta1.Agent{}}
+	task := &c4v1beta1.Task{Spec: c4v1beta1.TaskSpec{Issue: 53, AllowedProtectedPaths: []string{"Makefile"}}}
 	body := pullBody(task, agents, 1, "Renamed the dist outputs.", []string{"release_test.go"})
 	want := "This Standard change may change `Makefile`. It also changes `release_test.go`, which no Standard " +
 		"protects, so the repository's checks pass with it."

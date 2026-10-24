@@ -21,17 +21,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // newBrief makes a Brief whose autopilot is Off, so a handed-back issue starts
 // no tending round in the specs of other things; brief_tend_test.go covers
 // Ask, On and none set.
-func newBrief(ns, name string, prompts ...string) *c4v1alpha1.Brief {
-	return &c4v1alpha1.Brief{
+func newBrief(ns, name string, prompts ...string) *c4v1beta1.Brief {
+	return &c4v1beta1.Brief{
 		ObjectMeta: objectMeta(ns, name),
-		Spec: c4v1alpha1.BriefSpec{Idea: "A linter for CEL rules in CRDs.", Prompts: prompts,
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter for CEL rules in CRDs.", Prompts: prompts,
 			Autopilot: model.AutopilotOff},
 	}
 }
@@ -44,17 +44,17 @@ var _ = Describe("Brief", func() {
 		createFactory(ns)
 		brief := newBrief(ns, "cel-lens")
 		mustCreate(brief)
-		Expect(brief.Spec.Agents).To(Equal(c4v1alpha1.BriefAgents{
-			Planner:     c4v1alpha1.LocalRef{Name: "planner"},
-			Implementer: c4v1alpha1.LocalRef{Name: "implementer"},
-			Reviewer:    c4v1alpha1.LocalRef{Name: "reviewer"},
-			Designer:    c4v1alpha1.LocalRef{Name: "designer"},
+		Expect(brief.Spec.Agents).To(Equal(c4v1beta1.BriefAgents{
+			Planner:     c4v1beta1.LocalRef{Name: "planner"},
+			Implementer: c4v1beta1.LocalRef{Name: "implementer"},
+			Reviewer:    c4v1beta1.LocalRef{Name: "reviewer"},
+			Designer:    c4v1beta1.LocalRef{Name: "designer"},
 		}))
 		Expect(brief.Spec.GitProviderRef.Name).To(Equal("gitea"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-			g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-			g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			g.Expect(brief.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+			g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Message", HavePrefix("Agent planner is missing: make it in namespace "+ns)))
 		}).Should(Succeed())
 		Expect(brief.Status.Round).To(BeZero(), "no round starts without a planner")
@@ -83,8 +83,8 @@ var _ = Describe("Brief", func() {
 				g.Expect(brief.Status.RepositoryURL).To(Equal(
 					"http://gitea.gitea.svc.cluster.local:3000/" + ns + "/" + repo))
 			}).Should(Succeed())
-			Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput), "it has no planner Agent")
-			Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+			Expect(brief.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput), "it has no planner Agent")
+			Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Message", HavePrefix("Agent planner is missing")))
 
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
@@ -109,13 +109,13 @@ var _ = Describe("Brief", func() {
 			Expect(controlledBy(secret, brief)).To(BeTrue())
 			Expect(secret.Data["username"]).To(BeEquivalentTo(model.AgentUsername(ns, repo)))
 			Expect(secret.Data["token"]).NotTo(BeEmpty())
-			Expect(secret.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelBrief, "cel-lens"))
+			Expect(secret.Labels).To(HaveKeyWithValue(c4v1beta1.LabelBrief, "cel-lens"))
 
 			By("writing nothing new when nothing changed")
 			token := string(secret.Data["token"])
 			reads := gitFake.historyCount(ns, repo)
-			mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "another"), Spec: c4v1alpha1.GitProviderSpec{
-				URL: "http://gitea.invalid", Owner: ns, CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "none"}}})
+			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "another"), Spec: c4v1beta1.GitProviderSpec{
+				URL: "http://gitea.invalid", Owner: ns, CredentialsSecretRef: c4v1beta1.LocalRef{Name: "none"}}})
 			Eventually(func() int { return gitFake.historyCount(ns, repo) }).Should(BeNumerically(">", reads),
 				"the Brief was not reconciled again")
 			Consistently(func() int { return gitFake.commitCount(ns, repo) }, "1s").Should(Equal(1))
@@ -135,9 +135,9 @@ var _ = Describe("Brief", func() {
 			Eventually(func() int { return gitFake.commitCount(ns, repo) }).Should(Equal(1))
 
 			moved := ns + "-moved"
-			mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "moved"), Spec: c4v1alpha1.GitProviderSpec{
+			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "moved"), Spec: c4v1beta1.GitProviderSpec{
 				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: moved,
-				CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "gitea-credentials"}}})
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"}}})
 			Expect(patch(brief, func() { brief.Spec.GitProviderRef.Name = "moved" })).To(Succeed())
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
@@ -155,12 +155,12 @@ var _ = Describe("Brief", func() {
 		It("won't share a Container's repository", func() {
 			createFactory(ns)
 			mustCreate(newSystem(ns, "webshop-core"),
-				newContainer(ns, repo, "webshop-core", c4v1alpha1.ContainerTypeService), newBrief(ns, "cel-lens"))
-			brief := &c4v1alpha1.Brief{}
+				newContainer(ns, repo, "webshop-core", c4v1beta1.ContainerTypeService), newBrief(ns, "cel-lens"))
+			brief := &c4v1beta1.Brief{}
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-				g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-				g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+				g.Expect(brief.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+				g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 					To(HaveField("Message", HavePrefix("Container "+repo+" has the repository the Brief needs")))
 			}).Should(Succeed())
 			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty())
@@ -176,7 +176,7 @@ var _ = Describe("Brief", func() {
 
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func() bool {
-				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).Should(BeTrue(), "the finalizer was not removed")
 			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty(), "the bot is still there")
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1), "the repository went")
@@ -188,15 +188,15 @@ var _ = Describe("Brief", func() {
 			mustCreate(brief)
 			Eventually(func() string { return gitFake.agentUser(ns, repo) }).ShouldNot(BeEmpty())
 
-			Expect(k8sClient.Delete(ctx, &c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "gitea")})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "gitea")})).To(Succeed())
 			// The reconciler reads GitProviders from the cache, which may lag the
 			// delete; with the GitProvider still in view, deleting the bot is right (#1300).
 			Eventually(func() bool {
-				return apierrors.IsNotFound(managerClient.Get(ctx, key(ns, "gitea"), &c4v1alpha1.GitProvider{}))
+				return apierrors.IsNotFound(managerClient.Get(ctx, key(ns, "gitea"), &c4v1beta1.GitProvider{}))
 			}).Should(BeTrue(), "the cache still holds the GitProvider")
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func() bool {
-				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).Should(BeTrue(), "the finalizer held the Brief")
 			Expect(gitFake.agentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
 		})
@@ -218,13 +218,13 @@ var _ = Describe("Brief", func() {
 			// The deletion timestamp has whole seconds, so the wait may end up
 			// to a second early; past that, the Brief may rightly be gone.
 			if time.Since(deleted) < testBotDeleteTimeout-2*time.Second {
-				Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{})).To(Succeed(),
+				Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{})).To(Succeed(),
 					"the Brief went before its wait was over")
 			}
 
 			// The wait runs from the deletion, then a requeue lets the Brief go.
 			Eventually(func() bool {
-				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).Should(BeTrue(), "the finalizer held the Brief past its wait")
 			Eventually(func(g Gomega) {
 				g.Expect(briefEventNotes(g, ns, "BotLeft")).To(ContainElement(And(ContainSubstring(user),
@@ -246,7 +246,7 @@ var _ = Describe("Brief", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func() bool {
-				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1alpha1.Brief{}))
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).WithTimeout(3*time.Second).Should(BeTrue(), "the Brief waited out the timeout")
 			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
 		})
@@ -257,8 +257,8 @@ var _ = Describe("Brief", func() {
 			mustCreate(brief)
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-				g.Expect(brief.Status.Phase).To(Equal(c4v1alpha1.BriefNeedsInput))
-				cond := condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)
+				g.Expect(brief.Status.Phase).To(Equal(c4v1beta1.BriefNeedsInput))
+				cond := condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)
 				g.Expect(cond).NotTo(BeNil())
 				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(cond.Message).To(HavePrefix("GitProvider forgejo is missing"))
@@ -266,11 +266,11 @@ var _ = Describe("Brief", func() {
 			Expect(gitFake.commitCount(ns, repo)).To(BeZero())
 
 			By("going on once it exists, waiting for its Secret first")
-			mustCreate(&c4v1alpha1.GitProvider{ObjectMeta: objectMeta(ns, "forgejo"), Spec: c4v1alpha1.GitProviderSpec{
-				URL: "http://forgejo.invalid", Owner: ns, CredentialsSecretRef: c4v1alpha1.LocalRef{Name: "forgejo-token"}}})
+			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "forgejo"), Spec: c4v1beta1.GitProviderSpec{
+				URL: "http://forgejo.invalid", Owner: ns, CredentialsSecretRef: c4v1beta1.LocalRef{Name: "forgejo-token"}}})
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-				g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+				g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 					To(HaveField("Message", HavePrefix("Secret forgejo-token of GitProvider forgejo is missing")))
 			}).Should(Succeed())
 			mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "forgejo-token"),
@@ -278,7 +278,7 @@ var _ = Describe("Brief", func() {
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
 				g.Expect(brief.Status.RepositoryURL).To(Equal("http://forgejo.invalid/" + ns + "/" + repo))
-				g.Expect(condition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)).
+				g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 					To(HaveField("Message", HavePrefix("Agent planner is missing")), "the next thing it needs")
 			}).Should(Succeed())
 			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
@@ -287,7 +287,7 @@ var _ = Describe("Brief", func() {
 
 	Describe("idea", func() {
 		It("is required", func() {
-			Expect(k8sClient.Create(ctx, &c4v1alpha1.Brief{ObjectMeta: objectMeta(ns, "no-idea")})).
+			Expect(k8sClient.Create(ctx, &c4v1beta1.Brief{ObjectMeta: objectMeta(ns, "no-idea")})).
 				To(MatchError(ContainSubstring("spec.idea")))
 		})
 
@@ -431,7 +431,7 @@ var _ = Describe("Brief", func() {
 
 // planned records in brief's status that rounds planned n of its prompts, as
 // an applied round does.
-func planned(brief *c4v1alpha1.Brief, n int32) {
+func planned(brief *c4v1beta1.Brief, n int32) {
 	GinkgoHelper()
 	orig := brief.DeepCopy()
 	brief.Status.PromptsPlanned = n

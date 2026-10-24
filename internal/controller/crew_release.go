@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -60,9 +60,9 @@ const runOverdueNote = "; its runs have not ended an hour after tagging"
 // once per release and reason. It returns the prepare issue it filed, as a
 // ready issue, or nil, and the release whose prepare issue waits for the Tasks
 // at work to end, or "".
-func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
-	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) (*model.Issue, string) {
+func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	status *c4v1beta1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1beta1.Task) (*model.Issue, string) {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -113,7 +113,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 		log.Info("Released milestone", "tag", step.Tag, "commit", step.Commit, "created", step.CreateTag)
 		r.event(crew, corev1.EventTypeNormal, reasonReleased, "TagRelease", message)
 		r.notePublishSkipped(ctx, crew, status.LastRelease)
-		status.LastRelease = &c4v1alpha1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now()),
+		status.LastRelease = &c4v1beta1.CrewRelease{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now()),
 			Run: model.RunWaiting}
 		r.releaseSaid.Store(crew.UID, reasonReleased+"\n"+message)
 		r.tagged.Store(crew.UID, step.Tag)
@@ -152,8 +152,8 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1alpha1.Crew, 
 // check passed there when the Container's checks are BeforeRelease, then
 // deletes the full check's branch and settles the milestones. It returns the
 // step that holds the release instead while its full check hasn't passed.
-func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1alpha1.Crew,
-	container *c4v1alpha1.Container, status *c4v1alpha1.CrewStatus, provider gitprovider.Provider,
+func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1beta1.Crew,
+	container *c4v1beta1.Container, status *c4v1beta1.CrewStatus, provider gitprovider.Provider,
 	repo gitprovider.Repository, step model.ReleaseStep, release *model.ReleaseMilestone) (model.ReleaseStep, error) {
 	var err error
 	if step.CreateTag && checksBeforeRelease(container) {
@@ -177,7 +177,7 @@ func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1alpha1.C
 
 // endFullCheck deletes the branch of release tag's full check once the tag is
 // made, whoever made it, and forgets the check.
-func endFullCheck(ctx context.Context, status *c4v1alpha1.CrewStatus, provider gitprovider.Provider,
+func endFullCheck(ctx context.Context, status *c4v1beta1.CrewStatus, provider gitprovider.Provider,
 	repo gitprovider.Repository, tag string) error {
 	if status.FullCheck == nil || status.FullCheck.Tag != tag {
 		return nil
@@ -259,7 +259,7 @@ const maxPreviousTags = 5
 // tagged closed release before them, and the Tasks' merges, and the titles of
 // the releases' issues.
 func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) (model.ReleaseFacts, map[int]string, error) {
+	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, error) {
 	var facts model.ReleaseFacts
 	titles := map[int]string{}
 	milestones, err := provider.ListAllMilestones(ctx, repo)
@@ -317,14 +317,14 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 		}
 	}
 	for _, t := range tasks {
-		if !isFinal(t.Status.Phase) && t.Status.Phase != c4v1alpha1.TaskBlocked {
+		if !isFinal(t.Status.Phase) && t.Status.Phase != c4v1beta1.TaskBlocked {
 			facts.Working = append(facts.Working, t.Name)
 		}
 		switch {
 		case t.Spec.Issue == 0:
 		case !isFinal(t.Status.Phase):
 			facts.Active = append(facts.Active, int(t.Spec.Issue))
-		case t.Status.Phase == c4v1alpha1.TaskMerged:
+		case t.Status.Phase == c4v1beta1.TaskMerged:
 			merged := model.MergedTask{Name: t.Name, Issue: int(t.Spec.Issue), Commit: t.Status.MergeCommit}
 			if t.Status.CompletedAt != nil {
 				merged.At = t.Status.CompletedAt.Time
@@ -339,12 +339,12 @@ func releaseFacts(ctx context.Context, provider gitprovider.Provider, repo gitpr
 	return facts, titles, nil
 }
 
-func (r *CrewReconciler) setReleased(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	value metav1.ConditionStatus, reason, message string) {
 	setCondition(&status.Conditions, crew.Generation, ConditionReleased, value, reason, message)
 }
 
-func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action, note string) {
+func (r *CrewReconciler) event(crew *c4v1beta1.Crew, eventType, reason, action, note string) {
 	if r.Recorder != nil {
 		r.Recorder.Eventf(crew, nil, eventType, reason, action, "%s", note)
 	}
@@ -358,9 +358,9 @@ func (r *CrewReconciler) event(crew *c4v1alpha1.Crew, eventType, reason, action,
 // re-run the Git host refuses is a Warning Event, and a new value tries again:
 // when it refused only some runs, the release stays Failed, and a new value
 // re-runs those.
-func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
-	value := crew.Annotations[c4v1alpha1.AnnotationRerunRelease]
+	value := crew.Annotations[c4v1beta1.AnnotationRerunRelease]
 	release := status.LastRelease
 	run := ""
 	if release != nil {
@@ -417,11 +417,11 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew
 	if err != nil {
 		log.Error(err, "Failed to re-run the release runs", "tag", release.Tag, "rerun", rerun, "refused", refused)
 		note := fmt.Sprintf("Could not re-run the failed runs of %s: %v; set a new %s value to try again",
-			release.Tag, err, c4v1alpha1.AnnotationRerunRelease)
+			release.Tag, err, c4v1beta1.AnnotationRerunRelease)
 		if len(rerun) > 0 {
 			note = fmt.Sprintf("Re-ran %s of %s, but could not re-run %s: %v; set a new %s value to try those again",
 				strings.Join(rerun, ", "), release.Tag, strings.Join(refused, ", "), err,
-				c4v1alpha1.AnnotationRerunRelease)
+				c4v1beta1.AnnotationRerunRelease)
 		}
 		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease", note)
 		return
@@ -441,7 +441,7 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1alpha1.Crew
 // watchReleaseRun reads how the CI workflow runs on the Crew's last release
 // went, until they all ended well, and reports a run that failed with a Warning
 // Event and one that ended well with a Normal Event, once per change.
-func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil || release.Run == model.RunSucceeded {
@@ -493,7 +493,7 @@ func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1alpha1.C
 // Warning Event per release, and while the Released condition names that
 // release, a note on its message until the runs end. The watch carries on, so
 // a later end is reported as usual.
-func (r *CrewReconciler) noteOverdueRun(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
+func (r *CrewReconciler) noteOverdueRun(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) {
 	release := status.LastRelease
 	if release == nil {
 		return

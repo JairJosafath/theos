@@ -21,7 +21,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -35,7 +35,7 @@ import (
 // by Container and number; the status holds the first model.MaxSuggestions.
 // When a repository couldn't be read (partial), found has only the ones the
 // status listed for it, so the count doesn't go down.
-func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []model.Suggestion, partial bool) {
+func recordSuggestions(ctx context.Context, brief *c4v1beta1.Brief, found []model.Suggestion, partial bool) {
 	found = slices.Clone(found)
 	slices.SortFunc(found, func(a, b model.Suggestion) int {
 		if c := strings.Compare(a.Container, b.Container); c != 0 {
@@ -43,9 +43,9 @@ func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []mod
 		}
 		return a.Number - b.Number
 	})
-	listed := make([]c4v1alpha1.BriefSuggestion, 0, min(len(found), model.MaxSuggestions))
+	listed := make([]c4v1beta1.BriefSuggestion, 0, min(len(found), model.MaxSuggestions))
 	for _, s := range found[:min(len(found), model.MaxSuggestions)] {
-		listed = append(listed, c4v1alpha1.BriefSuggestion{Container: s.Container, Number: int32(s.Number),
+		listed = append(listed, c4v1beta1.BriefSuggestion{Container: s.Container, Number: int32(s.Number),
 			Title: model.Clip(s.Title, 255), URL: s.URL, Criteria: s.Criteria})
 	}
 	status := &brief.Status
@@ -64,7 +64,7 @@ func recordSuggestions(ctx context.Context, brief *c4v1alpha1.Brief, found []mod
 }
 
 // waitingSuggestions are the Brief's waiting suggestions, as its status lists them.
-func waitingSuggestions(brief *c4v1alpha1.Brief) []model.Suggestion {
+func waitingSuggestions(brief *c4v1beta1.Brief) []model.Suggestion {
 	out := make([]model.Suggestion, 0, len(brief.Status.Suggestions))
 	for _, s := range brief.Status.Suggestions {
 		out = append(out, model.Suggestion{Container: s.Container, Number: int(s.Number), Title: s.Title, URL: s.URL,
@@ -75,14 +75,14 @@ func waitingSuggestions(brief *c4v1alpha1.Brief) []model.Suggestion {
 
 // waitingSuggestion is open issue i of Container c, a reviewer's suggestion
 // that waits for an answer.
-func waitingSuggestion(c *c4v1alpha1.Container, i gitprovider.Issue) model.Suggestion {
+func waitingSuggestion(c *c4v1beta1.Container, i gitprovider.Issue) model.Suggestion {
 	return model.Suggestion{Container: c.Name, Repository: repositoryName(c), Number: i.Number, Title: i.Title,
 		URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""}
 }
 
 // repositoryName is the name of Container c's repository on the Git host, the
 // last part of its address.
-func repositoryName(c *c4v1alpha1.Container) string {
+func repositoryName(c *c4v1beta1.Container) string {
 	if name := path.Base(strings.TrimSuffix(c.Status.RepositoryURL, "/")); name != "." && name != "/" {
 		return name
 	}
@@ -96,7 +96,7 @@ func repositoryName(c *c4v1alpha1.Container) string {
 // list's length (#1019) and a refusal can say where the number does wait.
 // Past model.MaxSuggestionAnswers answers it reads nothing: the check refuses
 // the plan.
-func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1beta1.Brief,
 	answers []model.SuggestionAnswer) ([]model.Suggestion, error) {
 	out := waitingSuggestions(brief)
 	listed := func(container string, number int) bool {
@@ -113,9 +113,9 @@ func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1alp
 	if len(numbers) == 0 || len(answers) > model.MaxSuggestionAnswers {
 		return out, nil
 	}
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return nil, fmt.Errorf("listing Containers: %w", err)
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
@@ -149,7 +149,7 @@ func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1alp
 }
 
 // lastSuggestions are the suggestions the Brief last saw in Container name.
-func lastSuggestions(brief *c4v1alpha1.Brief, name string) []model.Suggestion {
+func lastSuggestions(brief *c4v1beta1.Brief, name string) []model.Suggestion {
 	return slices.DeleteFunc(waitingSuggestions(brief), func(s model.Suggestion) bool { return s.Container != name })
 }
 
@@ -184,7 +184,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 			continue
 		}
 		listed := forgetSuggestion(brief, a.Container, a.Issue)
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
 		if apierrors.IsNotFound(err) {
 			continue // gone, and its suggestions with it
@@ -235,9 +235,9 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 // foundMissing says what the operator finds of the suggestion answer a names
 // missing: a Container the Brief has no more, or an issue its repository
 // doesn't have, doesn't exist.
-func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1beta1.Brief,
 	a model.SuggestionAnswer) (string, error) {
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: a.Container}, &c)
 	if apierrors.IsNotFound(err) {
 		return model.FoundGone, nil
@@ -289,10 +289,10 @@ func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo g
 
 // forgetSuggestion takes an answered suggestion off the Brief's list, and
 // reports whether the list had it.
-func forgetSuggestion(brief *c4v1alpha1.Brief, container string, number int) bool {
+func forgetSuggestion(brief *c4v1beta1.Brief, container string, number int) bool {
 	status := &brief.Status
 	before := len(status.Suggestions)
-	status.Suggestions = slices.DeleteFunc(status.Suggestions, func(s c4v1alpha1.BriefSuggestion) bool {
+	status.Suggestions = slices.DeleteFunc(status.Suggestions, func(s c4v1beta1.BriefSuggestion) bool {
 		return s.Container == container && int(s.Number) == number
 	})
 	if len(status.Suggestions) < before && status.SuggestionsWaiting > 0 {
@@ -310,16 +310,16 @@ func forgetSuggestion(brief *c4v1alpha1.Brief, container string, number int) boo
 // Plan Task is the Brief's own and left to Owns.
 func briefOfTaskContainer(c client.Reader) func(context.Context, client.Object) []reconcile.Request {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
-		task, ok := obj.(*c4v1alpha1.Task)
+		task, ok := obj.(*c4v1beta1.Task)
 		if !ok || task.Spec.ContainerRef.Name == "" {
 			return nil
 		}
-		var container c4v1alpha1.Container
+		var container c4v1beta1.Container
 		if err := c.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.ContainerRef.Name},
 			&container); err != nil {
 			return nil
 		}
-		if name := container.Labels[c4v1alpha1.LabelBrief]; name != "" {
+		if name := container.Labels[c4v1beta1.LabelBrief]; name != "" {
 			return []reconcile.Request{requestFor(task.Namespace, name)}
 		}
 		return nil

@@ -157,6 +157,23 @@ unanswered for 14 days.
      Copy it as it is.
    - The relay: errors and pauses in `.relay/watch.log` and `.relay/relay-*.log`
      (`tail`, `grep`; never whole files), and in `.relay/paused-until`.
+   - A quiet window, one issue's session alone on the device (a release
+     check, a migration, an issue that fails next to other sessions), is
+     given through the watch's own workers only (#1960). Label the issue
+     `priority/1`, so the watch's next free worker picks it, and wait for
+     its claim (`hack/lib/github.sh claims`); then `touch .relay/stop` in
+     the main checkout, so the watch and the other workers end after their
+     current sessions and start no new one. The window is that one
+     session: the stop file ends the issue's worker too when its session
+     ends. When the issue closes, or needs a second session, restore the
+     watch with `rm -f .relay/stop; hack/relay-watch.sh` (it starts the
+     installed unit, with its own worker count), and repeat the stop for a
+     second window once the issue's session has started again. Never start
+     `hack/relay.sh` or `hack/relay-watch.sh --workers N` from a
+     maintainer session, a helper, or any other `claude -p` session: it
+     runs outside the login `--install` recorded (`CLAUDE_CONFIG_DIR`), its
+     worker's `claude -p` answers `Not logged in`, the claim is released
+     and the window is lost (#1617's first try).
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
      with no activity for 6 hours (a `status/waiting` parent is not stale: it
      waits on its steps, which `hack/lib/github.sh parents` lists), and the same issue failing session after

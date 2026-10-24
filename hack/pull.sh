@@ -20,6 +20,10 @@
 # each session.
 set -uo pipefail
 
+# In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile) there is no main
+# to keep current: exit 0 at once (#1894).
+[ "${IS_SANDBOX:-}" = 1 ] && exit 0
+
 REPO=${C4_PULL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 cd "$REPO" || exit 1
 export GIT_TERMINAL_PROMPT=0

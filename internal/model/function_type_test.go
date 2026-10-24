@@ -8,14 +8,14 @@ import (
 
 // functionPlan is a planner's plan for a serverless API on AWS: a function on
 // aws-lambda-ts with aws-standard, and no Compute or Deployment.
-const functionPlan = `apiVersion: c4.factory.io/v1alpha1
+const functionPlan = `apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: notes
 spec:
   description: Keeps notes
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: notes-api
@@ -51,7 +51,7 @@ func TestPlannerGuideStatesTheFunctionCue(t *testing.T) {
 	guide := strings.Join(strings.Fields(plannerGuideText), " ")
 	for _, rule := range []string{
 		"An idea that asks for AWS Lambda, or serverless on AWS, is a `function`",
-		"so plan no DataStore for it",
+		"and the plan check refuses either ref)",
 		"such as `aws-lambda-ts` (TypeScript), `aws-lambda-go` (Go: pick it when the idea asks for Go)",
 		"or `aws-lambda-py` (Python: pick it when the idea asks for Python)",
 		"it takes no `computeRef` and no `deploymentRef`",

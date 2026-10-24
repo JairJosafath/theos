@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -26,14 +26,14 @@ import (
 // gone. It changes nothing else: a changed Bundle is reported, never applied
 // (docs/plans/done/catalog-bundles.md, decision 6; #1621). A Container naming its
 // sides has no such condition.
-func (r *ContainerReconciler) reportBundleCurrent(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) {
+func (r *ContainerReconciler) reportBundleCurrent(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) {
 	scaffolded := status.Bundle
 	if container.Spec.BundleRef == nil || scaffolded == nil {
-		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionBundleCurrent)
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionBundleCurrent)
 		return
 	}
-	var bundle c4v1alpha1.Bundle
+	var bundle c4v1beta1.Bundle
 	found, err := r.lookup(ctx, container.Namespace, container.Spec.BundleRef.Name, &bundle)
 	if err != nil {
 		// Left as it was: the next pass reads it again.
@@ -41,8 +41,8 @@ func (r *ContainerReconciler) reportBundleCurrent(ctx context.Context, container
 		return
 	}
 	if !found {
-		r.condition(container, status, c4v1alpha1.ConditionBundleCurrent, metav1.ConditionFalse,
-			c4v1alpha1.ReasonBundleChanged, "Bundle "+container.Spec.BundleRef.Name+" is gone")
+		r.condition(container, status, c4v1beta1.ConditionBundleCurrent, metav1.ConditionFalse,
+			c4v1beta1.ReasonBundleChanged, "Bundle "+container.Spec.BundleRef.Name+" is gone")
 		return
 	}
 	changes := model.BundleChanges(
@@ -51,9 +51,9 @@ func (r *ContainerReconciler) reportBundleCurrent(ctx context.Context, container
 		model.Bundle{Name: bundle.Name, Framework: bundle.Spec.FrameworkRef.Name, Standard: refName(bundle.Spec.StandardRef),
 			Compute: refName(bundle.Spec.ComputeRef), Deployment: refName(bundle.Spec.DeploymentRef)})
 	if len(changes) > 0 {
-		r.condition(container, status, c4v1alpha1.ConditionBundleCurrent, metav1.ConditionFalse,
-			c4v1alpha1.ReasonBundleChanged, strings.Join(changes, "; "))
+		r.condition(container, status, c4v1beta1.ConditionBundleCurrent, metav1.ConditionFalse,
+			c4v1beta1.ReasonBundleChanged, strings.Join(changes, "; "))
 		return
 	}
-	r.condition(container, status, c4v1alpha1.ConditionBundleCurrent, metav1.ConditionTrue, c4v1alpha1.ReasonUpToDate, "")
+	r.condition(container, status, c4v1beta1.ConditionBundleCurrent, metav1.ConditionTrue, c4v1beta1.ReasonUpToDate, "")
 }

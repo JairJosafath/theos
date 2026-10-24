@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -36,14 +36,14 @@ var (
 func usesPlan(ns string) scaffold.Tree {
 	return scaffold.Tree{
 		model.PlanModelFile: {Data: []byte(projectDoc(ns) + `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: cel-lens
 spec:
   displayName: CEL lens
 ` + engineContainer("core", "Core") + engineContainer("cli", "CLI") + `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: cli-to-core
@@ -99,9 +99,9 @@ func releaseCore(ns string) {
 func releaseCoreRun(ns, tag, run string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		crew := &c4v1alpha1.Crew{}
+		crew := &c4v1beta1.Crew{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "core"), crew)).To(Succeed())
-		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(), Run: run}
+		crew.Status.LastRelease = &c4v1beta1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(), Run: run}
 		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -122,7 +122,7 @@ func corePyPIIndex(ns string) string {
 // does only once the issue is labelled ready; the Crew may hand it back
 // before a spec reads the label.
 func cliTaskStarted(ns string) bool {
-	return k8sClient.Get(ctx, key(ns, "cli-1"), &c4v1alpha1.Task{}) == nil
+	return k8sClient.Get(ctx, key(ns, "cli-1"), &c4v1beta1.Task{}) == nil
 }
 
 // Step 4 of docs/plans/done/app-modules.md: an issue that uses another app is
@@ -144,7 +144,7 @@ var _ = Describe("Brief issues that use another app", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
 			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0"))))
 		}).Should(Succeed())
@@ -154,13 +154,13 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(cliTaskStarted(ns)).To(BeFalse())
 			g.Expect(cli.Body).NotTo(ContainSubstring("Uses "))
 			g.Expect(getBrief(g, ns).Status.Issues).To(ConsistOf(HaveField("Repository", ns+"/core")))
-			g.Expect(getBrief(g, ns).Status.Phase).NotTo(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).NotTo(Equal(c4v1beta1.BriefPlanned))
 		}, "1s").Should(Succeed())
 
 		By("readying it with the module's version once the core's release publishes its module")
 		releaseCore(ns)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
 		cli := gitFake.issue(ns, "cli", 1)
@@ -184,7 +184,7 @@ var _ = Describe("Brief issues that use another app", func() {
 
 		releaseCore(ns)
 		Eventually(func(g Gomega) {
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core, whose release v0.1.0 "+
 					"published nothing other apps install: v0.1.0 has no go.mod at the repository's root; no Go module to publish; "+
@@ -214,13 +214,13 @@ var _ = Describe("Brief issues that use another app", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
 		Eventually(func(g Gomega) {
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0")))
 		}).Should(Succeed())
 
 		releaseCore(ns)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
 		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
@@ -247,7 +247,7 @@ var _ = Describe("Brief issues that use another app", func() {
 		coreReleaseRun(ns, "in_progress", "")
 		releaseCoreRun(ns, "v0.1.0", model.RunRunning)
 		Eventually(func(g Gomega) {
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0 "+
 					"to publish its packages"))))
@@ -262,7 +262,7 @@ var _ = Describe("Brief issues that use another app", func() {
 		By("readying it with the npm line once the runs succeed and the package is published")
 		coreReleaseRun(ns, "completed", "success")
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
 		cli := gitFake.issue(ns, "cli", 1)
@@ -292,13 +292,13 @@ var _ = Describe("Brief issues that use another app", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
 		Eventually(func(g Gomega) {
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0")))
 		}).Should(Succeed())
 
 		releaseCore(ns)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
 		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))

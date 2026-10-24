@@ -27,7 +27,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 # name|type|container|display name|layers, the layers as hack/render takes them.
 combos=(
-	"fastapi service with postgres|service|orders|Orders|Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres"
+	"fastapi service with postgres|service|orders|Orders|Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres Domain=webshop-domain"
 	"python cli|cli|shop-admin|Shop Admin|Framework=python-cli Standard=python-standard Deployment=gitea-release"
 	"python job on kubernetes|job|nightly-report|Nightly Report|Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests"
 	"react web app on kubernetes|static-site|storefront|Storefront|Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests"
@@ -42,9 +42,14 @@ combos=(
 	"aws python lambda function with dynamodb|function|invoice-fn|Invoice Fn|Framework=aws-lambda-py Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
 	"aws ec2 service|service|search|Search|Framework=aws-ec2-ts Standard=aws-standard Deployment=gitea-release"
 	"aws fargate service|service|checkout|Checkout|Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release"
+	"aws ec2 service with dynamodb|service|catalog|Catalog|Framework=aws-ec2-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws fargate service with dynamodb|service|basket|Basket|Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
 	"aws queue consumer|worker|mailer|Mailer|Framework=aws-queue-ts Standard=aws-standard Deployment=gitea-release"
 	"aws scheduled job|job|nightly-report|Nightly Report|Framework=aws-schedule-ts Standard=aws-standard Deployment=gitea-release"
 	"aws event consumer|worker|audit|Audit|Framework=aws-event-ts Standard=aws-standard Deployment=gitea-release"
+	"aws queue consumer with dynamodb|worker|notifier|Notifier|Framework=aws-queue-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws scheduled job with dynamodb|job|cleanup|Cleanup|Framework=aws-schedule-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws event consumer with dynamodb|worker|ledger|Ledger|Framework=aws-event-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
 	"aws static site|static-site|landing|Landing|Framework=aws-static-site-ts Standard=aws-standard Deployment=gitea-release"
 )
 

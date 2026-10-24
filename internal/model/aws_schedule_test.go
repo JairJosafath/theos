@@ -8,14 +8,14 @@ import (
 
 // schedulePlan is a planner's plan for a scheduled job on AWS: a job on
 // aws-schedule-ts with aws-standard, and no Compute or Deployment.
-const schedulePlan = `apiVersion: c4.factory.io/v1alpha1
+const schedulePlan = `apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: nightly-report
@@ -61,7 +61,7 @@ func TestPlannerGuideStatesTheAWSScheduleCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that runs on a schedule on AWS (every night, every hour, a cron, EventBridge Scheduler) is a `job`",
 		"such as `aws-schedule-ts`",
-		"since the schedule and the table are in its CDK app",
+		"since the schedule is in its CDK app",
 		"A `service`, `static-site`, `worker` or `job` that names no AWS runs in the cluster",
 	} {
 		if !strings.Contains(guide, rule) {
