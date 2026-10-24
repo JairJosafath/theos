@@ -63,7 +63,7 @@ changes how they work.
    Triage gives it to a proposed issue of that kind. Since #1329 the
    priority labels are a scale, `priority/1` to `priority/10`, 1 first and
    none counting as 5: velocity is `priority/3` and urgent is `priority/1`
-   ([docs/dev/testenv.md](../dev/testenv.md)).
+   ([docs/dev/testenv.md](../../dev/testenv.md)).
 2. **`land` is optimistic.** The check runs on the merged tree before the
    turn is queued for; the turn is taken to confirm `origin/main` is still
    the SHA that was merged, and the merge follows at once. Only when main
@@ -137,6 +137,9 @@ issues closed per hour over a day, from `gh issue list --search closed:`.
 | `internal/controller` suite | about 730 s; 834 s at 1 proc on gray-lenovo, 2026-10-16 | 484 s at 2 procs (the default), 242 s at 4, same device and day (#1283) |
 | Session length, 3st8JJ | 68 min median, 140 p90 | |
 | Issues closed an hour, 6 workers | 2 to 5 | |
+
+The After column stays as it is: the turn it would have measured went with
+[ci-gate.md](ci-gate.md) (#1323 closed as superseded, 2026-10-19).
 
 ## Done when
 
