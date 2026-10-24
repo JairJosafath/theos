@@ -23,6 +23,7 @@ import {
   DatabaseCluster,
   DatabaseClusterEngine,
 } from 'aws-cdk-lib/aws-rds';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import type { Construct } from 'constructs';
 
 import type { TierRules } from './standard';
@@ -140,11 +141,15 @@ export function connectRDS(
     removalPolicy: rules.keepData ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
     backup: { retention: Duration.days(rules.pointInTimeRecovery ? BACKUP_RETENTION_DAYS : 1) },
   });
+  // `cluster.secret` is the attachment that binds the generated secret to the
+  // cluster; the secret itself is the cluster's `Secret` child, and that is
+  // what outlives the stack where the tier keeps data.
   const secret = cluster.secret;
-  if (secret === undefined) {
-    throw new Error('the RDS cluster has no secret: its credentials must be generated');
+  const generated = cluster.node.tryFindChild('Secret');
+  if (secret === undefined || !(generated instanceof Secret)) {
+    throw new Error('the RDS cluster has no generated secret: its credentials must be generated');
   }
-  secret.applyRemovalPolicy(rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY);
+  generated.applyRemovalPolicy(rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY);
   if (rules.pointInTimeRecovery) {
     cluster.addRotationSingleUser({
       automaticallyAfter: ROTATION,

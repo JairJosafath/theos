@@ -274,7 +274,10 @@ describe('ApiStack data stores', () => {
         operations: OPERATIONS,
       }),
     );
-    template.resourceCountIs('AWS::DynamoDB::Table', 2 + DATA_STORES.length);
+    // One table or one cluster per store, beside the stack's own two tables.
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table')).length;
+    const clusters = Object.keys(template.findResources('AWS::RDS::DBCluster')).length;
+    expect(tables - 2 + clusters).toBe(DATA_STORES.length);
   });
 });
 

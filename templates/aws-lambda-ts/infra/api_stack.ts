@@ -10,13 +10,15 @@ import { Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { Architecture, LoggingFormat, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import type { Construct } from 'constructs';
 import path from 'node:path';
 
 import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { DATA_STORES } from './connectors';
-import type { Connect } from './connectors';
+import type { Connect, DataStore } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 
@@ -46,6 +48,24 @@ export const ACCESS_LOG_FIELDS = {
 // The function's time limit, which its duration alarm is a share of.
 const TIMEOUT = Duration.seconds(10);
 
+// The connections an Aurora PostgreSQL cluster allows per ACU (2 GiB each):
+// its max_connections, DBInstanceClassMemory / 9531392.
+const CONNECTIONS_PER_ACU = 225;
+
+/**
+ * Nine tenths of the connections `cluster` allows at its largest, from the
+ * Serverless v2 scaling configuration its Connector gave it; 1 ACU's when it
+ * has none the stack can read.
+ */
+export function maxConnections(cluster: DatabaseCluster): number {
+  const scaling = (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration;
+  const maxCapacity =
+    scaling !== undefined && 'maxCapacity' in scaling && typeof scaling.maxCapacity === 'number'
+      ? scaling.maxCapacity
+      : 1;
+  return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);
+}
+
 /** What the stack is built for. */
 export interface ApiStackProps extends StackProps {
   /** Where it runs, which decides what it keeps, backs up and traces. */
@@ -58,7 +78,7 @@ export interface ApiStackProps extends StackProps {
 
 /**
  * The Container's one stack: an HTTP API whose routes call a Lambda function
- * that keeps items in a DynamoDB table. Callers sign their requests with IAM
+ * that keeps items in a DynamoDB table, and the data stores its Connectors make. Callers sign their requests with IAM
  * (SigV4); the API refuses everyone else. Every part has alarms, to a topic
  * the stack outputs with its URL; production keeps and backs up the data.
  */
@@ -144,9 +164,17 @@ export class ApiStack extends Stack {
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
     );
-    // The DataStores the Container's Relationships name, from their Connectors.
+    // The DataStores the Container's Relationships name, from their
+    // Connectors: a table or an Aurora cluster each.
     const stores = (props.dataStores ?? DATA_STORES).map(
       ([name, connect]) => [name, connect(this, handler, rules)] as const,
+    );
+    const isTable = (store: DataStore): store is Table => store instanceof Table;
+    const tables = stores.flatMap(([name, store]) =>
+      isTable(store) ? [[name, store] as const] : [],
+    );
+    const clusters = stores.flatMap(([name, store]) =>
+      isTable(store) ? [] : [[name, store] as const],
     );
 
     const accessLogs = new LogGroup(this, 'ApiAccessLogs', {
@@ -199,7 +227,7 @@ export class ApiStack extends Stack {
     for (const [name, monitored] of [
       ['Items', table],
       ['Idempotency', idempotency],
-      ...stores,
+      ...tables,
     ] as const) {
       alarms.monitoring.monitorDynamoTable({
         table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
@@ -210,13 +238,26 @@ export class ApiStack extends Stack {
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
     }
+    // A cluster near its CPU or its connections is one the function will soon
+    // find slow or closed; both roll a deploy back like the function's own.
+    for (const [name, cluster] of clusters) {
+      alarms.monitoring.monitorAuroraCluster({
+        // The cluster itself, not its identifier: the monitoring reads its
+        // ARN to tell a Serverless cluster.
+        cluster,
+        alarmFriendlyName: name,
+        addCpuUsageAlarm: { Critical: { maxUsagePercent: 90 } },
+        addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },
+      });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        // The data tables, by ARN; the idempotency records expire and need no restore.
-        tables: [table, ...stores.map(([, store]) => store)],
+        // The data tables and clusters, by ARN; the idempotency records expire and need no restore.
+        tables: [table, ...tables.map(([, store]) => store)],
+        clusters: clusters.map(([, cluster]) => cluster),
       });
     }
 
