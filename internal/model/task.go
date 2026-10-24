@@ -228,7 +228,11 @@ type TaskFacts struct {
 	Protected bool
 	// BlockedBy names an earlier Task on the same Container that is still active.
 	BlockedBy string
-	Run       RunState
+	// Base is the CI state of main's head for the Container's check contexts
+	// (see BaseState), read before round 1, and BaseURL where to see it.
+	Base    string
+	BaseURL string
+	Run     RunState
 	// Checks is the CI state on the round's commit, and ChecksURL where to see it.
 	Checks    string
 	ChecksURL string
@@ -468,6 +472,10 @@ const (
 	// timeout, plus 15 minutes for it to report.
 	RunningChecksLimit = 3*time.Hour + 15*time.Minute
 )
+
+// ReasonBaseRed is the reason of a Task that waits to start round 1 because
+// main's checks failed.
+const ReasonBaseRed = "BaseRed"
 
 // ReasonNoCIResult is the reason of a Task that failed because CI won't report.
 const ReasonNoCIResult = "NoCIResult"
@@ -973,7 +981,7 @@ type TaskStep struct {
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
 	// Reason is a failed Task's reason, when not ReasonFailed, or a waiting
-	// one's when it is not a plain wait (ReasonOverBudget).
+	// one's when it is not a plain wait (ReasonOverBudget, ReasonBaseRed).
 	Reason string
 }
 
@@ -1012,6 +1020,12 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		case f.BlockedBy != "":
 			return TaskStep{Action: ActionWait,
 				Message: fmt.Sprintf("Waiting for Task %s: one Task works on a Container at a time", f.BlockedBy)}
+		case checksFailed(f.Base):
+			return TaskStep{Action: ActionWait, Reason: ReasonBaseRed, Recheck: true,
+				Message: fmt.Sprintf("Main's checks failed (%s): round 1 starts only on a green base; "+
+					"fix main's checks", orUnknown(f.BaseURL))}
+		case f.Base == checkPending:
+			return TaskStep{Action: ActionWait, Recheck: true, Message: "Waiting for main's checks to end before round 1"}
 		}
 		return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
 
