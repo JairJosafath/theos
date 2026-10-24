@@ -111,6 +111,19 @@ var templateCombos = []struct {
 		{model.SideDeployment, "gitea-release"},
 		{model.SideConnector, "dynamodb"},
 	}},
+	{"aws lambda function with rds", "function", []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws lambda function with dynamodb and rds", "function", []side{
+		{model.SideFramework, "aws-lambda-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+		{model.SideConnector, "rds"},
+	}},
 	{"aws ec2 service", "service", []side{
 		{model.SideFramework, "aws-ec2-ts"},
 		{model.SideStandard, "aws-standard"},

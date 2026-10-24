@@ -65,6 +65,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | aws-static-site-ts | Framework | | yes | yes | yes | yes | #1071 | yes | n/a |
 | aws-standard | Standard | | yes | yes | yes | n/a | n/a | yes | yes |
 | dynamodb | Connector | | yes | yes | yes | n/a | yes, #1393 | n/a | yes |
+| rds | Connector | | yes | yes | yes | n/a | yes, #1923 | n/a | yes |
 | hello | Framework | | n/a | n/a | n/a | yes | n/a | n/a | n/a |
 | hello-standard | Standard | | n/a | yes | n/a | n/a | n/a | n/a | n/a |
 | hello-html | Framework | | n/a | n/a | n/a | yes | n/a | n/a | n/a |
@@ -486,7 +487,7 @@ repository; its `protectedPaths` are the fence agents may not change.
 
 ### The AWS Frameworks
 
-aws-lambda-ts (v1.4.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
+aws-lambda-ts (v1.5.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.3.0) and
 aws-fargate-ts (v2.1.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.2.0): an SQS, EventBridge
@@ -601,6 +602,43 @@ aws-event-ts and aws-schedule-ts (#1741).
   the Container until their step of the plan.
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
+
+### rds (v1.0.0)
+
+A Connector: a CDK construct (`infra/connector_rds.ts`) making one Aurora
+Serverless v2 PostgreSQL 16 cluster for a function Container, with a
+database named after the Container, its own customer managed key, a
+generated secret in Secrets Manager, the Data API and IAM database
+authentication on (#1923, [docs/plans/aws-rds.md](plans/aws-rds.md)).
+`connectRDS` takes a `DataStoreUser` as `connectDynamoDB` does, with an
+optional `network` (a VPC and security groups): with one the cluster joins
+the user's VPC and hands it `RDS_HOST` and `RDS_PORT` too, without one it
+makes an isolated two-zone VPC of its own and the user reaches it through
+the Data API. Production scales 0.5 to 8 ACU with a reader, keeps 35 days,
+rotates the secret every 30 days, is deletion-protected and snapshotted on
+removal; development scales 0 to 1 ACU, pauses, keeps 1 day and goes with
+the stack. Its file refuses a Framework that renders no
+`infra/connectors.ts` with `{{ fail }}`, and the catalog's `wiredBy` refuses
+a Container on a Framework that doesn't wire it (`NotWired`).
+
+- CI: `make test-templates`, combos "aws lambda function with rds" and "aws
+  lambda function with dynamodb and rds": their `make check`
+  ([docs/screenshots/1923-aws-lambda-ts-rds-check.txt](screenshots/1923-aws-lambda-ts-rds-check.txt)).
+- Tests: `infra/connector_rds.test.ts`, in the Framework's vitest include,
+  both tiers and a user with a network;
+  `TestRDSConnectorConnectsToAWSLambdaTS` and
+  `TestRDSConnectorFailsAFrameworkThatDoesNotWireIt`
+  (`internal/scaffold/aws_connectors_test.go`).
+- Lint: aws-standard's `make check` once rendered, CDK Nag and cfn-lint
+  included.
+- Deploy: the cluster is part of the stack; aws-lambda-ts (v1.5.0) wires it,
+  alarms on its CPU and connections and backs it up by `DBClusterArn`. No
+  other Framework does yet.
+- Auth: `grantDataApiAccess` grants the `rds-data` calls on that cluster and
+  `GetSecretValue` on its secret only; an ingress rule from the user's
+  security groups where it has a network.
+- README, Logging: n/a: it writes no README and has no runtime code; the
+  own VPC has a flow log of rejected traffic.
 
 ### hello, hello-standard, hello-html, hello-html-standard
 
