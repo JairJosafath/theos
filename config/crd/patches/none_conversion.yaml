@@ -1,0 +1,7 @@
+# A c4.factory.io CRD whose kind's versions share a shape converts by the API
+# server, so a read never waits on the operator, and the CRDs the chart keeps
+# on uninstall stay readable (docs/plans/api-versions.md, decision 3, #1830).
+- op: add
+  path: /spec/conversion
+  value:
+    strategy: None

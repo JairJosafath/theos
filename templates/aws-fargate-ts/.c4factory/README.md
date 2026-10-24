@@ -125,11 +125,23 @@ container asset that synth only stages.
   `infra/user_pool.ts`.
   `infra/service_stack.test.ts` asserts it with `Template.fromStack` for
   both tiers.
+- **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
+  `DATA_STORES`: one entry per Connector of a DataStore the Container's
+  Relationships name that this Framework knows (`dynamodb`, whose
+  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  stack calls each entry with a `DataStoreUser` of the task role and the App
+  container's `addEnvironment`, and the tier's `TIER_RULES`, so the Connector
+  makes its table, grants the role its calls and hands the container the
+  table's name; the stack alarms on the table like its own and backs it up
+  by ARN. The `Items` table stays beside it as the
+  starter's example; the README says new data goes in the DataStore's table.
+  `infra/connectors.ts` is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `Dockerfile`, `.dockerignore`, `src/`,
   `infra/stacks.ts`, `infra/service_stack.ts`, `infra/service_stack.test.ts`,
   `infra/alarms.ts`, `infra/backups.ts`, `infra/operations.ts`,
-  `infra/user_pool.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
+  `infra/connectors.ts`, `infra/user_pool.ts`, `README.md`, `CHANGELOG.md`,
+  `.gitignore`
 - **Deployment:** none. The CDK app is the deployment, so a Container on this
   Framework takes no Compute and no Deployment layer; `k8s-manifests` would
   add Kubernetes manifests for an image it doesn't build.
@@ -174,6 +186,9 @@ container asset that synth only stages.
   `ImageUri` parameter instead of building a Docker asset, so `cdk synth`
   and `make dist` need no Docker; gitea-release v1.7.0 builds and pushes
   the image, and the deployer copies it to ECR by digest (#1610).
+  v2.1.0 renders `infra/connectors.ts` and connects the service to each
+  `dynamodb` DataStore's table through its task role and the App container's
+  environment, alarming on it and backing it up (#1742).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 

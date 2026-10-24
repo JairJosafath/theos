@@ -169,7 +169,7 @@ func deployOfIs(ns, name, target, phase, reason, version, deployed string) *c4v1
 			want = metav1.ConditionTrue
 		}
 		g.Expect(cond.Status).To(Equal(want))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return d
 }
 
@@ -201,7 +201,7 @@ func saidOnce(ns, reason, note string) {
 		g.Expect(matching).To(HaveLen(1))
 		g.Expect(matching[0].Series).To(BeNil())
 	}
-	Eventually(said, deployWait).Should(Succeed())
+	Eventually(said).Should(Succeed())
 	Consistently(said, 3*time.Second).Should(Succeed())
 }
 
@@ -316,7 +316,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &c)).To(Succeed())
 			g.Expect(c.Status.Deploys).To(BeEmpty())
 			g.Expect(condition(c.Status.Conditions, c4v1alpha1.ConditionDeployed)).To(BeNil())
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("ships two Containers to one github target under their names, and bare tags when tagPrefix is empty (#1486)", func() {
@@ -364,7 +364,7 @@ var _ = Describe("Container deploys", func() {
 			}
 			g.Expect(published(shared)).To(ConsistOf("orders-api-v0.1.0", "orders-cli-v0.1.0"))
 			g.Expect(published(bare)).To(ConsistOf("v0.1.0"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("copies the published image to GHCR by digest and reports it, and copies nothing without a packagesToken (#1600)", func() {
@@ -403,7 +403,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(d.Image).To(Equal(want))
 			d, _ = deployOfContainer(g, ns, "orders-api", "plain")
 			g.Expect(d.Image).To(BeEmpty())
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		got, err := oci.Resolve(ctx, oci.Registry{Host: ghcrFake.host}, ghcrRepo, "v0.1.0")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(Equal(digest))
@@ -589,7 +589,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(d.Reason).To(Equal(model.DeploySecretFound))
 			g.Expect(d.Message).To(ContainSubstring("config/app.env line 1: a credential the operator holds"))
 			g.Expect(d.Message).NotTo(ContainSubstring(token))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Expect(githubFake.ref(public, "tags/orders-api/v0.1.0")).NotTo(BeEmpty())
 		Expect(githubFake.releases(mirror)).To(BeEmpty())
 		Expect(githubFake.ref(mirror, "tags/orders-api/v0.1.0")).To(BeEmpty())
@@ -635,7 +635,7 @@ var _ = Describe("Container deploys", func() {
 				g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
 				g.Expect(d.Reason).To(Equal(model.DeployFolderOverlaps))
 				g.Expect(d.Message).To(And(ContainSubstring(problem), ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
-			}, deployWait).Should(Succeed())
+			}).Should(Succeed())
 		},
 		Entry("the whole repository", c4v1alpha1.DeployTargetGitHubSource{Path: new(".")}, "folder"),
 		Entry("their own folders under the target's one source tag prefix",
@@ -650,7 +650,7 @@ var _ = Describe("Container deploys", func() {
 		DeferCleanup(release)
 		shipRelease(ns, "v0.1.0", true)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "oss"})
-		Eventually(func() int { return deployFake.Blocked(targetName(ns, "oss")) }, deployWait).Should(Equal(1))
+		Eventually(func() int { return deployFake.Blocked(targetName(ns, "oss")) }).Should(Equal(1))
 
 		other := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
 		other.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
@@ -736,7 +736,7 @@ var _ = Describe("Container deploys", func() {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.WantedVersion).To(Equal("v0.2.0"))
 			g.Expect(d.Message).To(Equal("Deploying v0.1.0 to staging; v0.2.0 ships once it ends"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func() int {
 			return deployFake.Deploys(targetName(ns, "staging"), ns+"/orders-api")
 		}, 2*time.Second).Should(Equal(1))
@@ -745,7 +745,7 @@ var _ = Describe("Container deploys", func() {
 			Phase: ports.PhaseDeployed, Health: ports.HealthHealthy})
 		Eventually(func() int {
 			return deployFake.Deploys(targetName(ns, "staging"), ns+"/orders-api")
-		}, deployWait).Should(Equal(2))
+		}).Should(Equal(2))
 	})
 
 	It("says when a release lacks what the target needs, and ships it again only for another version", func() {
@@ -809,7 +809,7 @@ var _ = Describe("Container deploys", func() {
 		Eventually(func(g Gomega) {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Message).To(ContainSubstring("DeployTarget staging is not ready: GitHub refused the credential"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployTargetNotReady, "", model.DeployTargetNotReady)
 
 		By("a Framework the target can't take, first in the condition")

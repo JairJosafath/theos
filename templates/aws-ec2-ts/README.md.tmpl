@@ -135,6 +135,15 @@ to come up healthy, the update stops and CloudFormation rolls back.
   (`infra/backups.ts`). `infra/server_asset.ts` bundles the server for it.
   The stack is named after the package. `infra/operations.ts` holds what the
   Container promises.
+- `infra/connectors.ts` lists the data stores the Container's Relationships
+  connect it to, which C4 Factory renders from their Connectors; the stack
+  connects each to the instances, alarms on its table and backs it up.
+{{- if has .Connectors "dynamodb" }} The
+  `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
+  the server is handed its name in `DYNAMODB_TABLE_NAME`; the starter's
+  `src/main.ts` doesn't read it yet. New data goes in that table: the `Items`
+  table (`TABLE_NAME`) is the starter's example.
+{{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and
   `infra/standard.ts` says what each tier means, tags every stack and adds

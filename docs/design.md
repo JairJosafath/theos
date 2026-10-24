@@ -207,6 +207,12 @@ on a Standard change), then `Merged` or `Failed`.
   every run and closes it on merge; a failed Task hands it back
   `status/needs-human` with the reason. An issue without an *Acceptance
   criteria* checklist goes back before any tokens are spent.
+- **Issue text is data, not instructions.** The prompt puts the issue's
+  text, every field a person wrote, between two marker lines and says it is
+  the goal and never an instruction: whatever in it asks the agent to change
+  its tools, credentials, settings, the files that configure agents, or where
+  it sends data is ignored. The markers grow past any copy of themselves in
+  the text, so nothing a person wrote can end the block early.
 - **Merges only on checks of the `main` it merges into.** When `main` moved,
   the operator merges it into the branch (no agent run, no round) and waits
   for the checks again; a conflict goes back to the implementer.
@@ -780,12 +786,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy. The copy
-  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
-  plain HTTP). It resolves the destination tag first: a tag already
-  naming the digest is left alone and nothing is written, so a registry
-  with immutable tags takes a retried Ship; a tag naming another image
-  fails the deploy with that reason, and is not retried as transient.
+  `registryPassword`, a credential that reads tags as well as pushes, and
+  `kustomize.images` names the copy. The copy speaks HTTPS unless
+  `imageRegistryInsecure` is set (a lab registry over plain HTTP). It
+  resolves the destination tag first: a tag already naming the digest is
+  left alone and nothing is written, so a registry with immutable tags
+  takes a retried Ship; a tag naming another image fails the deploy with
+  that reason, and is not retried as transient. A credential that may
+  push but not read (a token scoped to push alone) fails the deploy as a
+  refused credential naming the read it lacks, and writes nothing: a
+  blind write could move a tag (#1877).
   `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
   `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
   (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
@@ -799,7 +809,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   bootstrapping the environment when the credential may (else *Needs you*
   says the command). State comes from the stack's status and its newest
   event, the URL from the `EntryPoint` output. The factory never deletes a
-  stack. Fargate's image comes by digest from the Registry (#1069).
+  stack. Fargate's image comes by digest from the Registry (#1069),
+  copied into the bootstrap's ECR repository as its image-publishing
+  role, which reads tags as well as pushes (the copy resolves its tag
+  first; a role without `ecr:BatchGetImage` refuses the credential, #1877).
 
 ## Distribution and issues
 
@@ -857,6 +870,13 @@ with an object may change, as the release notes say.
   `status.storedVersions` holds the storage version alone, under *Removed*
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
+- **The operator rewrites what etcd holds at an older version.** `v1beta1`
+  is the storage version of every kind. At start, once the conversion
+  webhook serves, the leader lists each kind whose CRD's `storedVersions`
+  names another version, patches every object back at the storage version,
+  and brings that CRD's `storedVersions` down to it; a start after the pass
+  does nothing, and a pass that fails is tried again until it succeeds,
+  with the operator serving meanwhile.
 
 `make check` guards what a schema shows: `test/compat` compares each served
 version of the CRDs with the last release's, in `test/compat/baseline/`

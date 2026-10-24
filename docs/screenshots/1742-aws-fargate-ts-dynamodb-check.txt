@@ -1,0 +1,27 @@
+# make check in a scaffolded aws-fargate-ts v2.1.0 + aws-standard v1.19.1 Container with the dynamodb Connector v1.2.0 (issue #1742)
+# go run ./hack/render -out DIR -type service -container basket -display-name Basket Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb
+# then make check in DIR, on 2026-10-22, Node v24.22.1, go1.26.10. The same render without dynamodb passes too.
+
+npm ci --no-audit --no-fund
+
+added 195 packages in 4s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.QbRMDPte4m/basket
+
+
+ Test Files  10 passed (10)
+      Tests  190 passed (190)
+   Start at  21:27:38
+   Duration  2.49s (tests 61%, import 29%, transform 9%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+AI agent detected
+AI agent detected
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json

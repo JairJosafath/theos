@@ -54,9 +54,11 @@ const (
 	webhookCAPrivKey = "ca.key"
 )
 
-// WebhookCRDs are the CRDs whose conversion webhook the operator serves: every
-// kind of c4.factory.io (a test keeps the list equal to config/crd/bases). The
-// RBAC marker below names the same CRDs.
+// WebhookCRDs are the CRDs the operator may serve conversion for: every kind
+// of c4.factory.io (a test keeps the list equal to config/crd/bases). The RBAC
+// marker below names the same CRDs. Only one whose versions differ in shape is
+// at strategy Webhook and gets the CA; the rest convert by the API server
+// (#1830, docs/plans/api-versions.md, decision 3).
 var WebhookCRDs = []string{
 	"agents.c4.factory.io", "briefs.c4.factory.io", "bundles.c4.factory.io", "computes.c4.factory.io",
 	"connectors.c4.factory.io", "containers.c4.factory.io", "crews.c4.factory.io",

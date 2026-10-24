@@ -215,13 +215,17 @@ var _ = Describe("CI runner pool", func() {
 
 		By("trimming idle pods above a lowered size, the busy one kept")
 		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Size = 1 })).To(Succeed())
-		Eventually(func() []string { return names(livePoolPods(ns)) }).Should(ConsistOf(busy.Name))
-		for _, pod := range poolPods(ns) {
-			if pod.Name != busy.Name {
-				Expect(pod.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
-				Expect(pod.DeletionTimestamp).NotTo(BeNil())
+		// The pool records a pod lost before it deletes it, so a pod is out of
+		// livePoolPods a moment before it is deleting: wait for both (#1886).
+		Eventually(func(g Gomega) {
+			g.Expect(names(livePoolPods(ns))).To(ConsistOf(busy.Name))
+			for _, pod := range poolPods(ns) {
+				if pod.Name != busy.Name {
+					g.Expect(pod.Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
+					g.Expect(pod.DeletionTimestamp).NotTo(BeNil())
+				}
 			}
-		}
+		}).Should(Succeed())
 		Consistently(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(1))
 
 		By("not replacing the busy pod once it ends, the pool being at size")

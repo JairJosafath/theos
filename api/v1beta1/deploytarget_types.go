@@ -70,7 +70,8 @@ type DeployTargetSpec struct {
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
-	// registryPassword (the login to argoCD.imageRegistry for the copy).
+	// registryPassword (the login to argoCD.imageRegistry for the copy, which
+	// reads tags as well as pushes).
 	// +optional
 	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
@@ -102,7 +103,7 @@ type DeployTargetGitHub struct {
 	// isolation on.
 	// +kubebuilder:validation:MaxLength=200
 	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')",message="url must be https://host, with no path: the server's address, not its API's"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
+	// +kubebuilder:validation:XValidation:rule="!self.lowerAscii().matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
 	// +optional
 	URL string `json:"url,omitempty"`
 
@@ -184,6 +185,8 @@ type DeployTargetCloudFormation struct {
 // DeployTargetArgoCD is an Argo CD whose Applications are the deploys, one
 // per Container: in the operator's cluster, or in the one the Secret's
 // kubeconfig names.
+// +kubebuilder:validation:XValidation:rule="!(has(self.imageRegistryInsecure) && self.imageRegistryInsecure) || has(self.imageRegistry)",message="imageRegistryInsecure needs imageRegistry"
+// +kubebuilder:validation:XValidation:rule="!has(self.imageRepositoryLayout) || has(self.imageRegistry)",message="imageRepositoryLayout needs imageRegistry"
 type DeployTargetArgoCD struct {
 	// namespace is where Argo CD runs and its Applications live.
 	// +kubebuilder:validation:MaxLength=63
@@ -213,6 +216,20 @@ type DeployTargetArgoCD struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*$`
 	// +optional
 	ImageRegistry string `json:"imageRegistry,omitempty"`
+
+	// imageRegistryInsecure speaks plain HTTP to imageRegistry, for a lab
+	// registry without a certificate; unset, the copy uses TLS (#1770).
+	// +optional
+	ImageRegistryInsecure bool `json:"imageRegistryInsecure,omitempty"`
+
+	// imageRepositoryLayout is where the copy goes below imageRegistry's
+	// path: nested, the default, keeps the image's own repository,
+	// <owner>/<name>, as the in-cluster Gitea registry takes it; flat keeps
+	// only <name>, for a registry that refuses a third path segment, such
+	// as Docker Hub (#1770).
+	// +kubebuilder:validation:Enum=nested;flat
+	// +optional
+	ImageRepositoryLayout string `json:"imageRepositoryLayout,omitempty"`
 
 	// gitURL is the Git host's address, scheme://host[:port], as Argo CD
 	// sees it. Set, it replaces the scheme and host of the repository's
@@ -264,6 +281,7 @@ type DeployTargetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"

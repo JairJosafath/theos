@@ -24,10 +24,6 @@ import (
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
-// deployWait bounds the wait for a DeployTarget's Ready: the Secret is read
-// every second.
-const deployWait = 10 * time.Second
-
 func newDeployTarget(ns, name, secret string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		GitHub:               &c4v1alpha1.DeployTargetGitHub{Repository: "acme/orders-cli"},
@@ -72,7 +68,7 @@ func deployReady(dt *c4v1alpha1.DeployTarget, status metav1.ConditionStatus, rea
 		g.Expect(cond.Reason).To(Equal(reason), cond.Message)
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.ObservedGeneration).To(Equal(dt.Generation))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return cond
 }
 
@@ -125,6 +121,12 @@ var _ = Describe("DeployTarget", func() {
 		}, "url must be https://host, with no path"),
 		Entry("github.com as a server url (#1605)", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.URL = "https://github.com"
+		}, "leave it unset for github.com"),
+		Entry("github.com in capitals as a server url (#1809)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://GitHub.com"
+		}, "leave it unset for github.com"),
+		Entry("www.github.com in capitals with a port as a server url (#1809)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://WWW.GitHub.COM:443"
 		}, "leave it unset for github.com"),
 		Entry("more than 50 parameters", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.Parameters = map[string]string{}

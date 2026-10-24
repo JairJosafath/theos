@@ -27,7 +27,19 @@ later, create all types together with
 
 ## API design
 
-**Key markers for** `api/v1alpha1/*_types.go`:
+Every kind has a type in `api/v1alpha1` and in `api/v1beta1`; `v1beta1` is
+the hub and the storage version (`+kubebuilder:storageversion` sits on its
+types alone), and each `v1alpha1` type converts to it
+([plans/api-versions.md](../plans/api-versions.md)). A field change goes to
+both versions, with the conversion, and `test/compat` holds each served
+version to the last release's schema. Moving the storage marker to a newer
+version needs nothing else: `StorageMigrator` (`internal/controller`) rewrites
+the stored objects at the next start and logs `Rewriting the stored objects at
+the storage version` and `Rewrote the stored objects at the storage version`
+per CRD, with `storedVersions`, `storage` and `objects`; a failed pass logs
+`Failed to migrate the stored objects; trying again` and the wait.
+
+**Key markers for** `api/*/*_types.go`:
 
 ```go
 // +kubebuilder:object:root=true

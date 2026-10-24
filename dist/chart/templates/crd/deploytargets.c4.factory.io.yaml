@@ -9,18 +9,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.22.0
   name: deploytargets.c4.factory.io
 spec:
-  {{- if .Values.webhook.enabled }}
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: {{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-          namespace: {{ .Release.Namespace }}
-          path: /convert
-      conversionReviewVersions:
-      - v1
-  {{- end }}
+    strategy: None
   group: c4.factory.io
   names:
     categories:
@@ -215,7 +205,8 @@ spec:
                   An argoCD target needs none: the operator uses its own ServiceAccount.
                   Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
                   when that is not the operator's) and registryUsername and
-                  registryPassword (the login to argoCD.imageRegistry for the copy).
+                  registryPassword (the login to argoCD.imageRegistry for the copy, which
+                  reads tags as well as pushes).
                 properties:
                   name:
                     description: name of the referenced object.
@@ -311,7 +302,7 @@ spec:
                       rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')
                     - message: url is for GitHub Enterprise Server; leave it unset
                         for github.com
-                      rule: '!self.matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
+                      rule: '!self.lowerAscii().matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
                 required:
                 - repository
                 type: object
@@ -412,7 +403,7 @@ spec:
         - spec
         type: object
     served: true
-    storage: true
+    storage: false
     subresources:
       status: {}
   - additionalPrinterColumns:
@@ -519,6 +510,22 @@ spec:
                     maxLength: 253
                     pattern: ^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)*$
                     type: string
+                  imageRegistryInsecure:
+                    description: |-
+                      imageRegistryInsecure speaks plain HTTP to imageRegistry, for a lab
+                      registry without a certificate; unset, the copy uses TLS (#1770).
+                    type: boolean
+                  imageRepositoryLayout:
+                    description: |-
+                      imageRepositoryLayout is where the copy goes below imageRegistry's
+                      path: nested, the default, keeps the image's own repository,
+                      <owner>/<name>, as the in-cluster Gitea registry takes it; flat keeps
+                      only <name>, for a registry that refuses a third path segment, such
+                      as Docker Hub (#1770).
+                    enum:
+                    - nested
+                    - flat
+                    type: string
                   namespace:
                     default: argocd
                     description: namespace is where Argo CD runs and its Applications
@@ -537,6 +544,12 @@ spec:
                 required:
                 - destination
                 type: object
+                x-kubernetes-validations:
+                - message: imageRegistryInsecure needs imageRegistry
+                  rule: '!(has(self.imageRegistryInsecure) && self.imageRegistryInsecure)
+                    || has(self.imageRegistry)'
+                - message: imageRepositoryLayout needs imageRegistry
+                  rule: '!has(self.imageRepositoryLayout) || has(self.imageRegistry)'
               cloudFormation:
                 description: |-
                   cloudFormation ships each release of an AWS Container, the CDK
@@ -577,7 +590,8 @@ spec:
                   An argoCD target needs none: the operator uses its own ServiceAccount.
                   Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
                   when that is not the operator's) and registryUsername and
-                  registryPassword (the login to argoCD.imageRegistry for the copy).
+                  registryPassword (the login to argoCD.imageRegistry for the copy, which
+                  reads tags as well as pushes).
                 properties:
                   name:
                     description: name of the referenced object.
@@ -673,7 +687,7 @@ spec:
                       rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')
                     - message: url is for GitHub Enterprise Server; leave it unset
                         for github.com
-                      rule: '!self.matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
+                      rule: '!self.lowerAscii().matches(''^https://(www[.]|api[.])?github[.]com(:443)?$'')'
                 required:
                 - repository
                 type: object
@@ -774,7 +788,7 @@ spec:
         - spec
         type: object
     served: true
-    storage: false
+    storage: true
     subresources:
       status: {}
 {{- end }}

@@ -1,0 +1,12 @@
+# The verifier watch of docs/plans/self-hosting.md (see verifier-watch.sh).
+# The plan's one command installs it into ~/.config/systemd/user/; the timer
+# starts it. Stop it with: systemctl --user disable --now c4factory-verifier.timer
+[Unit]
+Description=C4 Factory self-hosting plan: start a verifier session when a step is due
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/c4factory
+ExecStart=/bin/bash -lc 'exec ./dev run docs/plans/self-hosting/verifier-watch.sh'
+# A cut-over waits for a release build and a migration: give a session hours.
+TimeoutStartSec=10h

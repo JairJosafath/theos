@@ -96,7 +96,6 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Harness",type=string,JSONPath=".spec.harness"
 // +kubebuilder:printcolumn:name="Model",type=string,JSONPath=".spec.model"
