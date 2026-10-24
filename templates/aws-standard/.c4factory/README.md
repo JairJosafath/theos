@@ -203,7 +203,11 @@ byte for byte.
   `SOURCES.md` names python-standard v1.6.0, whose job rules leave the
   copied files as they were (#1595). Since v1.19.0 `make dist` writes both
   tiers' cloud assemblies, flat, into `dist/` for gitea-release to attach
-  (#1607). v1.19.1's runbook passes Prettier (#1610).
+  (#1607). v1.19.1's runbook passes Prettier (#1610). Since v1.21.0 the
+  Standard knows an Aurora cluster: `BACKED_UP_TYPES` gains
+  `AWS::RDS::DBCluster`, the backup selection names clusters by
+  `DBClusterArn`, and the encryption, removal, deletion protection and
+  recovery rules check every cluster (#1921).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,
@@ -243,8 +247,11 @@ byte for byte.
   `@aws-cdk/core:explicitStackTags` flag needs), sets termination protection
   where the tier keeps data, acknowledges `AwsSolutions-IAM5[Resource::*]` on
   a policy whose only statements on the resource `*` are X-Ray's
-  `PutTraceSegments` and `PutTelemetryRecords`, and `AwsSolutions-DDB3` on
-  every table where the tier has no point-in-time recovery, and adds CDK
+  `PutTraceSegments` and `PutTelemetryRecords`, `AwsSolutions-DDB3` on
+  every table and `AwsSolutions-SMG4` (no rotation) on every secret where
+  the tier has no point-in-time recovery, and `AwsSolutions-RDS10` (no
+  deletion protection) on every Aurora cluster where the tier keeps no
+  data, and adds CDK
   Nag's `AwsSolutions` to the app as a policy validation plugin
   (`Validations.of(app).addPlugins`, cdk-nag 3), and `Serverless` when
   `infra/operations.ts` exists, so a finding not acknowledged with a reason
@@ -273,7 +280,9 @@ byte for byte.
   the stack and on every resource with a `Tags` list; no IAM action `*` or
   `service:*` in a statement that allows, but a key's default policy (`kms:*`
   to the account's root); every DynamoDB table (`SSESpecification`), S3
-  bucket, SQS queue and SNS topic encrypted at rest; every log group with a
+  bucket, SQS queue and SNS topic encrypted at rest, and since v1.21.0
+  every Aurora cluster (`StorageEncrypted`) with a customer managed key
+  (`KmsKeyId`); every log group with a
   retention and every Lambda function logging to its own; every stateful
   resource (tables, buckets, queues, topics, log groups, databases, file
   systems, KMS keys, backup vaults) with an explicit `DeletionPolicy`;
@@ -281,16 +290,24 @@ byte for byte.
   `infra/operations.ts`, it imports its `OPERATIONS` at run time, checks its
   shape, and adds a `describe` per tier and item of what it promises: the
   stack names (`stackNameFor`), the removal policies (tables and data
-  buckets `Retain` or `Delete` by tier, every backup vault and its key
-  `Retain`), deletion and termination protection, point-in-time recovery
-  (and on in production when `rpo` is under a day, 0 included), the versions of data
+  buckets `Retain` or `Delete` by tier, since v1.21.0 an Aurora cluster
+  `Snapshot` where the tier keeps data and `Delete` elsewhere, its key
+  `Retain` or `Delete` the same way, every backup vault and its key
+  `Retain`), deletion and termination protection (since v1.21.0 a
+  cluster's `DeletionProtection` on where the tier keeps data, off
+  elsewhere), point-in-time recovery
+  (and on in production when `rpo` is under a day, 0 included; since
+  v1.21.0 a cluster's `BackupRetentionPeriod` is 35 days where the tier
+  recovers data and 1 elsewhere), the versions of data
   buckets (where the tier keeps data, versioning `Enabled` and a lifecycle
   rule expiring noncurrent versions), the backup plan and vault (in
   production with `retentionDays` over 0, in a stack holding a resource of
-  `BACKED_UP_TYPES`, a DynamoDB table: one plan whose rules are daily, keep
+  `BACKED_UP_TYPES`, a DynamoDB table or, since v1.21.0, an Aurora
+  cluster: one plan whose rules are daily, keep
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
-  with its own key, one selection naming the stack's own tables by ARN
-  (`Fn::GetAtt`) and nothing else, every table but an `Idempotency` one
+  with its own key, one selection naming the stack's own tables and
+  clusters by ARN (`Fn::GetAtt`, `Arn` for a table and `DBClusterArn` for
+  a cluster) and nothing else, every table but an `Idempotency` one
   with TTL on among them, and a copy stack in that region; else none; since
   v1.17.0 a selection by tag (`ListOfTags`), by a condition, by `*` or by
   an ARN written out fails, as it reaches a `<name>-development` stack's

@@ -101,7 +101,9 @@ scaffolded repository verify it; nothing is deployed.
    `selectionFaults` reads clusters (`Fn::GetAtt [id, DBClusterArn]`) as it
    reads tables, `BACKED_UP_TYPES` gains `AWS::RDS::DBCluster`, and the
    rules for encryption, deletion protection, removal and recovery get a
-   cluster branch. Restore is a runbook section per Framework, as the
+   cluster branch. Where the tier keeps no data the Standard also
+   acknowledges `AwsSolutions-RDS10` on every cluster: this decision gives
+   it no deletion protection there, and the rule fires on that. Restore is a runbook section per Framework, as the
    table's.
 6. **A `Connect` returns a `DataStore`, a `Table` or a `DatabaseCluster`.**
    `infra/connectors.ts` in every Framework: `export type DataStore = Table |
