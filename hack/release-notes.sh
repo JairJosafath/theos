@@ -106,7 +106,7 @@ if [ -n "$prs" ]; then sorted=$(sort_prs <"$prs"); else sorted=$(collect | sort_
 
 listed=0
 for section in Added Changed Deprecated Removed Fixed Security; do
-  lines=$(printf '%s\n' "$sorted" | sed -n "s/^$section\t//p")
+  lines=$(printf '%s\n' "$sorted" | sed -n "s/^$section\t//p" | awk '!seen[$0]++')
   [ -n "$lines" ] || continue
   [ $listed = 0 ] || echo
   printf '### %s\n\n%s\n' "$section" "$lines"

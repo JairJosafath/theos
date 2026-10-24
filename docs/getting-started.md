@@ -1063,8 +1063,8 @@ stays until you delete it.
 
 **Your objects keep working.** Write them at `c4.factory.io/v1beta1`. An
 object at `v1alpha1` still works: the version is deprecated, the API server
-warns on every request at it (the UI shows the warning on the project page),
-and it may be dropped no earlier than 2027-01-22 (#1963). Within a served
+warns on every request at it (kubectl prints the warning), and it may be
+dropped no earlier than 2027-01-22 (#1963). Within a served
 version a release never removes, renames or retypes a field, never adds a
 required one and never tightens a rule so that an object you applied before
 is refused after; a change that must break waits for a new version that

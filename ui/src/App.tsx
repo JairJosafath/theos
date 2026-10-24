@@ -286,7 +286,7 @@ export default function App() {
       ) : null}
       {/* Each panel says the reads behind it that failed; only demo mode's own failure is the page's. */}
       <ProblemsBanner problems={demoProblem ? [demoProblem] : []} />
-      {/* A deprecation the API server put in a Warning header on any list behind the page (#1618). */}
+      {/* A deprecation the API server put in a Warning header on a list of the model behind the page (#1618); the health read is not one. */}
       <WarningsBanner
         warnings={[
           ...(projects.connection.warnings ?? []),

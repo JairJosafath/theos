@@ -254,11 +254,13 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    `kind/feature`. Done when `make check` and `make ui-test` pass, a UI
    test shows the warning from a watch response's `Warning` header, and
    `docs/screenshots/` holds the test output of steps 3, 4 and 6.
-   Built (#1618) with three choices the decision left open: the UI reads
-   the `Warning` header on the list request of each watcher only (the
-   ndjson mux `/k8s-watch` carries no headers), shows it as one banner
-   per distinct text on the project, story and factory pages, and clears
-   it on a relist without one; the deprecating release is named v0.30.0
+   Built (#1618) with three choices the decision left open: the UI shows
+   whatever `Warning` header the API server puts on the list response of
+   each watcher (the ndjson mux `/k8s-watch` carries no headers), one
+   banner per distinct text on the project, story and factory pages,
+   cleared on a relist without one; since the UI itself reads `v1beta1`,
+   the `v1alpha1` warning reaches kubectl and clients at that version, and
+   the banner shows the day a version the UI reads is deprecated in turn; the deprecating release is named v0.30.0
    in the marker (so the earliest drop is 2027-01-22, #1963); and the
    release notes read *Deprecated* and *Removed* entries from a merged
    commit's body lines `Deprecated: <text>` and `Removed: <text>`, whatever

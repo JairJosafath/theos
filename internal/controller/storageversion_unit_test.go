@@ -37,7 +37,7 @@ type crdStorage struct {
 }
 
 // TestEveryCRDStoresTheHub holds every generated CRD of our group to
-// docs/plans/api-versions.md: the version with storage: true is the v1beta1
+// docs/plans/done/api-versions.md: the version with storage: true is the v1beta1
 // hub, so an object written today is already at the version that stays when
 // v1alpha1 is dropped. The +kubebuilder:storageversion marker belongs in
 // api/v1beta1; Domain carried it in api/v1alpha1 and nothing noticed (#1914).
@@ -78,7 +78,7 @@ func TestEveryCRDStoresTheHub(t *testing.T) {
 }
 
 // TestEveryCRDDeprecatesV1alpha1 holds every generated CRD of our group to
-// docs/plans/api-versions.md decision 6 (#1618): the v1alpha1 version is
+// docs/plans/done/api-versions.md decision 6 (#1618): the v1alpha1 version is
 // marked deprecated, and its warning (what the API server sends back in a
 // Warning header, which the UI shows) names v1beta1 and the drop issue. The
 // +kubebuilder:deprecatedversion marker sits above each kind in api/v1alpha1.
