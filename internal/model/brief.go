@@ -21,8 +21,15 @@ const (
 	KindRelationship = "Relationship"
 )
 
-// PlanAPIVersion is the apiVersion of every object in a plan.
+// PlanAPIVersion is the apiVersion the planner writes on every object in a
+// plan: the storage version (docs/plans/api-versions.md, decision 5).
 const PlanAPIVersion = "c4.factory.io/v1beta1"
+
+// planAPIVersions are the apiVersions a plan may carry: every served version,
+// since a plan a person wrote by hand, or one written before the upgrade, may
+// still say v1alpha1, and the operator applies it through conversion as it
+// would any older client's object (docs/design.md, "Compatibility").
+var planAPIVersions = []string{PlanAPIVersion, "c4.factory.io/v1alpha1"}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"
@@ -669,7 +676,7 @@ func CheckPlan(plan Plan, current CurrentModel) []Refusal {
 			continue
 		}
 		seen[o.Ref()] = true
-		if !slices.Contains(planKinds, o.Kind) || o.APIVersion != PlanAPIVersion {
+		if !slices.Contains(planKinds, o.Kind) || !slices.Contains(planAPIVersions, o.APIVersion) {
 			refuse(subject, "a plan writes only %s objects of %s; "+
 				"anything else (a GitProvider, Secret, Agent, Crew, catalog entry, Task or Brief) is the person's to make",
 				joinAnd(planKinds), PlanAPIVersion)

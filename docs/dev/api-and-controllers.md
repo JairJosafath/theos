@@ -7,7 +7,7 @@ How to add or change a kind, a reconciler or a log line. The rules in
 
 ### Create API (a new kind in this project)
 ```bash
-kubebuilder create api --group c4 --version v1alpha1 --kind <Kind> --resource --controller
+kubebuilder create api --group c4 --version v1beta1 --kind <Kind> --resource --controller
 ```
 
 Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Agent) and
@@ -23,7 +23,7 @@ kubebuilder create api --group core --version v1 --kind Pod \
 v1 has no webhooks by design: CEL rules and a ValidatingAdmissionPolicy cover
 validation, and the operator checks compatibility after creation. If one is added
 later, create all types together with
-`kubebuilder create webhook --group c4 --version v1alpha1 --kind <Kind> --defaulting --programmatic-validation`.
+`kubebuilder create webhook --group c4 --version v1beta1 --kind <Kind> --defaulting --programmatic-validation`.
 
 ## API design
 

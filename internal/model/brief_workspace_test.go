@@ -379,3 +379,21 @@ func TestPlannerGuideChoosesTheKindOfAppByTheIdea(t *testing.T) {
 		}
 	}
 }
+
+// TestPlannerGuideWritesPlanAPIVersion holds every apiVersion the planner's
+// guide shows to PlanAPIVersion, what the planner writes (#1617).
+func TestPlannerGuideWritesPlanAPIVersion(t *testing.T) {
+	found := 0
+	for i, line := range strings.Split(plannerGuideText, "\n") {
+		if !strings.Contains(line, "apiVersion: ") {
+			continue
+		}
+		found++
+		if !strings.Contains(line, PlanAPIVersion) {
+			t.Errorf("planner.md:%d: %q, want %s", i+1, line, PlanAPIVersion)
+		}
+	}
+	if found == 0 {
+		t.Fatal("planner.md shows no apiVersion")
+	}
+}

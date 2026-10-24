@@ -361,6 +361,10 @@ func TestCheckPlan(t *testing.T) {
 		{"a story kind of another group", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").APIVersion = "example.com/v1"
 		}, "Container/web", PlanAPIVersion},
+		// #1617: a plan at a served older version applies through conversion.
+		{"a story kind at the served v1alpha1", func(p *Plan, _ *CurrentModel) {
+			object(p, "Container/web").APIVersion = "c4.factory.io/v1alpha1"
+		}, "", ""},
 		{"a name that isn't a DNS label", func(p *Plan, _ *CurrentModel) {
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "Ann_B"})
 		}, "Person/Ann_B", "not a DNS label"},
