@@ -61,7 +61,7 @@ func TestPlannerGuideStatesTheAWSEventCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that reacts to events on AWS, names an EventBridge rule or event bus (not a rule on a schedule or EventBridge Scheduler, which is the `job` above), or consumes events another service puts on an event bus is a `worker`",
 		"such as `aws-event-ts`",
-		"since the rule and the table are in its CDK app",
+		"since the rule is in its CDK app",
 		"A `service`, `static-site`, `worker` or `job` that names no AWS runs in the cluster",
 	} {
 		if !strings.Contains(guide, rule) {
