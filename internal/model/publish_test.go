@@ -272,6 +272,34 @@ func TestReleaseName(t *testing.T) {
 	}
 }
 
+// Two Containers of one name shipping one version to one GitLab project
+// (#1873) get their own package versions: the tag, in GitLab's version
+// alphabet.
+func TestGitLabPackageVersion(t *testing.T) {
+	for tag, want := range map[string]string{
+		"orders-cli-v1.0.0": "orders-cli-v1.0.0",
+		"v1.0.0+build.7":    "v1.0.0+build.7",
+		"cli/v1.0.0":        "cli_2fv1.0.0",
+		"a_b/v1":            "a__b_2fv1",
+		"web@v1":            "web_40v1",
+		"":                  "",
+	} {
+		if got := GitLabPackageVersion(tag); got != want {
+			t.Errorf("GitLabPackageVersion(%q) = %q, want %q", tag, got, want)
+		}
+	}
+	// The encoding keeps two tags apart that a plain swap of '/' for '_' or
+	// '-' would not.
+	seen := map[string]string{}
+	for _, tag := range []string{"cli/v1", "cli_v1", "cli-v1", "cli__v1", "cli_2fv1"} {
+		v := GitLabPackageVersion(tag)
+		if other, dup := seen[v]; dup {
+			t.Errorf("GitLabPackageVersion(%q) = %q = GitLabPackageVersion(%q)", tag, v, other)
+		}
+		seen[v] = tag
+	}
+}
+
 // TestNextPublishStepRuns takes a release from nothing on GitHub to published,
 // taking each step on a fake of both sides, and again from a failure halfway.
 func TestNextPublishStepRuns(t *testing.T) {
