@@ -68,6 +68,12 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
+		if side == model.SideDomain {
+			// A Domain's folder is <name>-domain; the layer and the input name
+			// the Domain itself (templates_test.go, domainSuffix).
+			name = strings.TrimSuffix(name, "-domain")
+			in.Domains = append(in.Domains, name)
+		}
 		layers = append(layers, scaffold.Layer{Side: side, Name: name, Ref: "local", Files: files})
 		switch side {
 		case "Framework":
