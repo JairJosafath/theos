@@ -246,10 +246,8 @@ func TestNextTaskStepOverBudget(t *testing.T) {
 	}
 }
 
-// A Task in Checking waits while its run is queued on an online runner or
-// running, and fails, reason NoCIResult, only when CI won't report (#758).
-// TestNextTaskStepBaseRed: a Task on a red main waits under its own reason and
-// looks at main again, which sends no event when it turns green (#1892).
+// A Task on a red main waits under its own reason and looks at main again,
+// which sends no event when it turns green (#1892).
 func TestNextTaskStepBaseRed(t *testing.T) {
 	step := NextTaskStep(TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Base: "error",
 		Round: 1, MaxRounds: 3})
@@ -262,6 +260,8 @@ func TestNextTaskStepBaseRed(t *testing.T) {
 	}
 }
 
+// A Task in Checking waits while its run is queued on an online runner or
+// running, and fails, reason NoCIResult, only when CI won't report (#758).
 func TestNextTaskStepChecksWait(t *testing.T) {
 	since := time.Date(2026, 10, 9, 1, 13, 0, 0, time.UTC)
 	started := time.Date(2026, 10, 9, 1, 40, 0, 0, time.UTC)
