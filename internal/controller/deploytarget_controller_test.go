@@ -24,10 +24,6 @@ import (
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
-// deployWait bounds the wait for a DeployTarget's Ready: the Secret is read
-// every second.
-const deployWait = 10 * time.Second
-
 func newDeployTarget(ns, name, secret string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		GitHub:               &c4v1alpha1.DeployTargetGitHub{Repository: "acme/orders-cli"},
@@ -72,7 +68,7 @@ func deployReady(dt *c4v1alpha1.DeployTarget, status metav1.ConditionStatus, rea
 		g.Expect(cond.Reason).To(Equal(reason), cond.Message)
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.ObservedGeneration).To(Equal(dt.Generation))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return cond
 }
 
