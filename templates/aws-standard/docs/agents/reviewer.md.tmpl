@@ -171,6 +171,20 @@ says what to check.
    reason ("not needed", "for now") is blocking. `docs/well-architected.md`
    says what each rule protects.
 
+{{ if .Domains -}}
+## The domains
+
+This system is about {{ range $i, $d := .Domains }}{{ if $i }}, {{ end }}{{ $d }}{{ end }}. Check the change against
+each domain's *Common mistakes*, in the topic files its guide names for the
+part the change touches:
+
+{{ range .Domains }}- `docs/agents/domain/{{ . }}/README.md`
+{{ end }}
+A change that makes one is blocking: name the mistake and where, as for any
+finding. Where a domain lists a choice, the change makes its choice unless the
+issue says otherwise.
+
+{{ end -}}
 ## Verdict
 
 - **Blocking** means the change would ship a defect or break a stated need or
