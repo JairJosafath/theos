@@ -96,7 +96,7 @@ leave.
 
 ### 2. The trust boundary: one trust domain per device, written where a client installs
 
-The Claude token is readable inside a sandbox ([docs/design.md](../design.md#the-fence),
+The Claude token is readable inside a sandbox ([docs/design.md](../../design.md#the-fence),
 closed by #1075) and the CI runners run the agents' code on the cluster
 network (#1076). Both are planned, not done, and nothing a client reads says
 so. The factory may be installed before they close, on these terms, written
