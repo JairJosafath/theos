@@ -174,7 +174,7 @@ if [ "$pinned" != "$want" ]; then
 	exit 1
 fi
 if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
-	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Bundle)$'; then
+	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Domain|Bundle)$'; then
 	echo "The chart renders catalog entries, bundles or Agents with catalog.enabled=false and agents.enabled=false" >&2
 	exit 1
 fi
