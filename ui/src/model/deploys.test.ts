@@ -5,7 +5,9 @@ import {
   approvePatch,
   deploysOf,
   describeApproval,
+  githubHosts,
   githubImage,
+  githubReleasesURL,
   githubSource,
   memberOf,
   readinessOf,
@@ -177,5 +179,28 @@ describe('githubSource and githubImage (#1603)', () => {
       'ghcr.io/acme/api',
     )
     expect(githubImage(target({ github: undefined, argoCD: { destination: { namespace: 'a' } } }))).toBeUndefined()
+  })
+})
+
+describe('a GitHub Enterprise Server target (#1809)', () => {
+  const ghes = target({ github: { url: 'https://ghe.example.com', repository: 'Acme/API' } })
+
+  it('builds the releases link and the registry from url, as model.GitHubHostsOf does', () => {
+    expect(githubHosts(ghes)).toEqual({ web: 'https://ghe.example.com', registry: 'containers.ghe.example.com' })
+    expect(githubReleasesURL(ghes)).toBe('https://ghe.example.com/Acme/API/releases')
+    expect(githubImage(ghes, 'Orders')).toBe('containers.ghe.example.com/acme/api/orders')
+    const port = target({ github: { url: 'https://ghe.example.com:8443/', repository: 'acme/api', tagPrefix: '' } })
+    expect(githubReleasesURL(port)).toBe('https://ghe.example.com:8443/acme/api/releases')
+    expect(githubImage(port)).toBe('containers.ghe.example.com:8443/acme/api')
+  })
+
+  it('keeps github.com and ghcr.io while url is unset', () => {
+    const dotcom = target({ github: { repository: 'Acme/API' } })
+    expect(githubHosts(dotcom)).toEqual({ web: 'https://github.com', registry: 'ghcr.io' })
+    expect(githubReleasesURL(dotcom)).toBe('https://github.com/Acme/API/releases')
+    expect(githubImage(dotcom, 'Orders')).toBe('ghcr.io/acme/api/orders')
+    expect(
+      githubReleasesURL(target({ github: undefined, argoCD: { destination: { namespace: 'a' } } })),
+    ).toBeUndefined()
   })
 })
