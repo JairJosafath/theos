@@ -10,6 +10,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+unset IS_SANDBOX # an agent sandbox sets it; pull.sh does nothing there (#1894)
 
 # origin, with pull.sh in it, and a clone on a feature branch.
 git init -q -b main "$T/src"
@@ -43,6 +44,13 @@ pull() { (cd "$T/clone" && PATH="$T/bin:$PATH" hack/pull.sh); }
 
 # main checked out nowhere: the ref moves.
 want=$(advance two)
+# In an agent sandbox (IS_SANDBOX=1) pull.sh exits 0 at once and main stays
+# where it is (#1894); the same pull outside one moves it, next.
+before=$(git -C "$T/clone" rev-parse main)
+out=$(IS_SANDBOX=1 pull 2>&1); rc=$?
+check "sandbox: exit 0" "$rc" 0
+check "sandbox: silent" "$out" ""
+check "sandbox: main stays" "$(git -C "$T/clone" rev-parse main)" "$before"
 out=$(pull)
 check "nowhere: main moves" "$(git -C "$T/clone" rev-parse main)" "$want"
 check "nowhere: says so" "$(grep -c 'pull: main .* on feature' <<<"$out")" 1

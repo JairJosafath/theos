@@ -16,10 +16,13 @@ BASES=${1:-config/crd/bases}
 CHART=${2:-dist/chart/templates/crd}
 
 # The chart's copy of a base CRD: kubebuilder's helm plugin wraps it in
-# crd.enabled and adds the crd.keep annotation. With webhook.enabled it
-# converts by the operator's webhook, which patches its CA in
-# (docs/plans/api-versions.md, decision 3); without, by strategy None, which
-# serves while the versions' shapes match.
+# crd.enabled and adds the crd.keep annotation. A CRD whose versions share a
+# shape converts by the API server, strategy None, so a read never waits on
+# the operator (#1830). One the base marks c4.factory.io/conversion: webhook
+# (the kind's versions differ) converts by the operator's webhook, which
+# patches its CA in (docs/plans/api-versions.md, decision 3); it needs
+# webhook.enabled, and the render fails without it, since strategy None would
+# lose what differs.
 guarded() {
 	awk 'NR == 1 && $0 == "---" { print "{{- if .Values.crd.enabled }}"; next }
 		{ print }
@@ -29,8 +32,11 @@ guarded() {
 			print "    {{- end }}"
 			done = 1
 		}
-		$0 == "spec:" {
-			print "  {{- if .Values.webhook.enabled }}"
+		$0 == "    c4.factory.io/conversion: webhook" { webhook = 1 }
+		$0 == "spec:" && webhook {
+			print "  {{- if not .Values.webhook.enabled }}"
+			print "  {{- fail \"" crd ": its versions differ in shape and convert by the operator (webhook.enabled)\" }}"
+			print "  {{- end }}"
 			print "  conversion:"
 			print "    strategy: Webhook"
 			print "    webhook:"
@@ -41,9 +47,12 @@ guarded() {
 			print "          path: /convert"
 			print "      conversionReviewVersions:"
 			print "      - v1"
-			print "  {{- end }}"
 		}
-		END { print "{{- end }}" }' "$1"
+		$0 == "spec:" && !webhook {
+			print "  conversion:"
+			print "    strategy: None"
+		}
+		END { print "{{- end }}" }' crd="$2" "$1"
 }
 
 fail=0
@@ -55,13 +64,13 @@ for base in "$BASES"/*.yaml; do
 	chart=$CHART/${name#*_}.$group.yaml
 	want+=("$chart")
 	if [ -n "$write" ]; then
-		if [ ! -f "$chart" ] || ! guarded "$base" | cmp -s - "$chart"; then
-			guarded "$base" >"$chart" && echo "$chart: written from $base"
+		if [ ! -f "$chart" ] || ! guarded "$base" "${name#*_}.$group" | cmp -s - "$chart"; then
+			guarded "$base" "${name#*_}.$group" >"$chart" && echo "$chart: written from $base"
 		fi
 	elif [ ! -f "$chart" ]; then
 		echo "$chart: missing, for $base" >&2
 		fail=1
-	elif ! diff -u --label "$base (guarded)" --label "$chart" <(guarded "$base") "$chart" >&2; then
+	elif ! diff -u --label "$base (guarded)" --label "$chart" <(guarded "$base" "${name#*_}.$group") "$chart" >&2; then
 		fail=1
 	fi
 done

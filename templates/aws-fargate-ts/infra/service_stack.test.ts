@@ -1,8 +1,11 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { copyVaultName } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import { ServiceStack } from './service_stack';
 import type { Operations, Tier } from './standard';
 
@@ -12,11 +15,15 @@ const OPERATIONS: Operations = {
   alerts: { email: '' },
 };
 
-/** The stack's template for `tier`, with `operations` changed as given. */
+/**
+ * The stack's template for `tier`, with `operations` changed as given, and
+ * `dataStores` in place of the Connectors' (none, unless a test names them).
+ */
 function synth(
   tier: Tier,
   backups: Partial<Operations['backups']> = {},
   alerts: Partial<Operations['alerts']> = {},
+  dataStores: readonly (readonly [string, Connect])[] = [],
 ): Template {
   const operations: Operations = {
     ...OPERATIONS,
@@ -27,6 +34,7 @@ function synth(
     new ServiceStack(new App(), 'test', {
       tier,
       operations,
+      dataStores,
     }),
   );
 }
@@ -566,6 +574,60 @@ describe('ServiceStack', () => {
         },
       },
     );
+  });
+});
+
+describe('ServiceStack data stores', () => {
+  it("connects the tasks to each Connector's data store and alarms on its table", () => {
+    const connected: string[] = [];
+    const connect: Connect = (scope, user, rules) => {
+      const store = new Table(scope, 'Store', {
+        partitionKey: { name: 'pk', type: AttributeType.STRING },
+        deletionProtection: rules.keepData,
+      });
+      store.grant(user, 'dynamodb:Query');
+      user.addEnvironment('STORE_TABLE_NAME', store.tableName);
+      connected.push(scope.node.id);
+      return store;
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    // Connected once, in the stack; the task role is what the table grants
+    // to, and the app's environment is what gets the table's name.
+    expect(connected).toEqual(['test']);
+    expect(taskRoleActions(template)).toContain('"dynamodb:Query"');
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'App',
+          Environment: Match.arrayWith([
+            {
+              Name: 'STORE_TABLE_NAME',
+              Value: { Ref: Match.stringLikeRegexp('^Store') },
+            },
+          ]),
+        }),
+      ]),
+    });
+    template.resourceCountIs('AWS::DynamoDB::Table', 2);
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 2 + 7 + 3 * 2);
+    // Its table is data: backed up with the stack's own (#1267).
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    const backedUp = ['Items', 'Store'].map((name) => tables.find((id) => id.startsWith(name)));
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
+      }),
+    });
+  });
+
+  it('connects the data stores of the rendered infra/connectors.ts by default', () => {
+    const template = Template.fromStack(
+      new ServiceStack(new App(), 'test', {
+        tier: 'production',
+        operations: OPERATIONS,
+      }),
+    );
+    template.resourceCountIs('AWS::DynamoDB::Table', 1 + DATA_STORES.length);
   });
 });
 

@@ -1,0 +1,25 @@
+# make check in a scaffolded aws-event-ts v1.2.0 + aws-standard v1.19.1 Container with the dynamodb Connector v1.2.0 (issue #1741)
+# go run ./hack/render -out DIR -type worker Framework=aws-event-ts Standard=aws-standard Connector=dynamodb
+# then make check in DIR, on 2026-10-22, Node v24.22.1, go1.26.10. Bundling lines are cut; the same render without dynamodb passes too.
+
+npm ci --no-audit --no-fund
+
+added 178 packages in 4s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-11/tmp.VQNeImMlk5/event-with
+
+ Test Files  7 passed (7)
+      Tests  152 passed (152)
+   Start at  21:14:42
+   Duration  3.76s (tests 77%, import 19%, transform 4%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json

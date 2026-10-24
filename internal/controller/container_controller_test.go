@@ -82,6 +82,15 @@ var _ = Describe("Container", func() {
 		container := newContainer(ns, "orders-api", "webshop-core", "lambda")
 		Expect(k8sClient.Create(ctx, container)).To(MatchError(ContainSubstring("Unsupported value")))
 	})
+
+	It("takes a license only from the fixed set of SPDX ids (#1859)", func() {
+		ns := newProjectNamespace()
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container.Spec.License = "WTFPL"
+		Expect(k8sClient.Create(ctx, container)).To(MatchError(ContainSubstring("license")))
+		container.Spec.License = "MIT"
+		Expect(k8sClient.Create(ctx, container)).To(Succeed())
+	})
 })
 
 var _ = Describe("SoftwareSystem", func() {

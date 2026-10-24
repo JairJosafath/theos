@@ -1368,7 +1368,7 @@ spec:
             (has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <= (has(self.status)
             && has(self.status.promptsPlanned) ? self.status.promptsPlanned : 0)'
     served: true
-    storage: true
+    storage: false
     subresources:
       status: {}
   - additionalPrinterColumns:
@@ -2723,6 +2723,6 @@ spec:
             (has(self.spec.promptsRetired) ? self.spec.promptsRetired : 0) <= (has(self.status)
             && has(self.status.promptsPlanned) ? self.status.promptsPlanned : 0)'
     served: true
-    storage: false
+    storage: true
     subresources:
       status: {}

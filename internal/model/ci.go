@@ -54,10 +54,6 @@ func HostCI(host string) (CI, error) {
 	return CIByName(name)
 }
 
-// OperatorPaths are the operator's own files in every Container, whatever its
-// CI system: the identity file and the dev container.
-var OperatorPaths = []string{".c4factory.yaml", ".devcontainer/"}
-
 // PlatformProtectedPaths are the paths that belong to the operator and the CI
 // system: no agent may change them, whatever the Standard. Sorted.
 func PlatformProtectedPaths(ci CI) []string {

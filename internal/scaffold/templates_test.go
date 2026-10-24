@@ -116,6 +116,18 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws ec2 service with dynamodb", "service", []side{
+		{model.SideFramework, "aws-ec2-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
+	{"aws fargate service with dynamodb", "service", []side{
+		{model.SideFramework, "aws-fargate-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws lambda function in go", "function", []side{
 		{model.SideFramework, "aws-lambda-go"},
 		{model.SideStandard, "aws-standard"},
@@ -143,15 +155,33 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws queue consumer with dynamodb", "worker", []side{
+		{model.SideFramework, "aws-queue-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws scheduled job", "job", []side{
 		{model.SideFramework, "aws-schedule-ts"},
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws scheduled job with dynamodb", "job", []side{
+		{model.SideFramework, "aws-schedule-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws event consumer", "worker", []side{
 		{model.SideFramework, "aws-event-ts"},
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
+	}},
+	{"aws event consumer with dynamodb", "worker", []side{
+		{model.SideFramework, "aws-event-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
 	}},
 	{"aws static site", "static-site", []side{
 		{model.SideFramework, "aws-static-site-ts"},

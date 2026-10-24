@@ -477,6 +477,22 @@ func main() {
 		// (docs/plans/api-versions.md, decision 3).
 		mgr.GetWebhookServer().Register("/convert",
 			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
+		// Once this pod's conversion webhook serves, the leader rewrites what
+		// etcd still holds at a version other than the storage one and brings
+		// each CRD's storedVersions down (docs/plans/api-versions.md, decision
+		// 4); a start after the pass does nothing. The Service may still route
+		// a conversion to an older pod during a rollout; the migrator's retry
+		// covers that.
+		direct, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "Failed to create the storage migrator's client")
+			os.Exit(1)
+		}
+		if err := mgr.Add(&controller.StorageMigrator{Client: direct,
+			Ready: mgr.GetWebhookServer().StartedChecker()}); err != nil {
+			setupLog.Error(err, "Failed to add the storage migrator")
+			os.Exit(1)
+		}
 	}
 	if webhookCert != nil {
 		// The webhook server starts before the caches; the pod is ready, and in

@@ -9,6 +9,7 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/close-guard.sh"
 export GH_TOKEN=x FAKE=$T/github CALLED=$T/called C4_GITHUB_REPO=JairJosafath/c4factory
+unset IS_SANDBOX # an agent sandbox sets it; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
@@ -175,5 +176,20 @@ check "issue close: GitHub can't be asked, denied" "$(decision) $(reason | grep 
 rm "$FAKE/${R}_issues_467"
 hook 'git commit -m "closes #467"'
 check "commit: GitHub can't be asked, allowed with a warning" "$(decision) $(reason | grep -c 'could not be asked')" "none 1"
+
+# In an agent sandbox (IS_SANDBOX=1) the hook exits 0 at once, before it reads
+# its input (#1894): its stdin is a pipe nobody writes to, so a read would
+# hang until timeout kills it (exit 124); and a close of a parent with an
+# open step, denied above, goes through with no GitHub call.
+mkfifo "$T/quiet"; exec 3<>"$T/quiet"
+IS_SANDBOX=1 timeout 10 "$HOOK" <"$T/quiet" >"$T/out" 2>"$T/err"
+check "sandbox: exit 0 without reading its input" $? 0
+check "sandbox: silent" "$(cat "$T/out" "$T/err")" ""
+exec 3>&-
+rm -f "$CALLED"
+IS_SANDBOX=1 hook 'gh issue close 467'
+check "sandbox, closing a parent with an open step: exit 0" $? 0
+check "sandbox, closing a parent with an open step: silent" "$(cat "$T/out" "$T/err")" ""
+check "sandbox, closing a parent with an open step: asks GitHub nothing" "$(cat "$CALLED" 2>/dev/null)" ""
 
 exit $fail

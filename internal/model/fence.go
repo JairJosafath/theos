@@ -2,9 +2,52 @@ package model
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 )
+
+// The fence: the rules that keep agents inside their Container and off the
+// cluster (docs/design.md, "The fence" and "The CI fence"). The paths no
+// agent may change, the operator's own files, and the private address
+// ranges HTTPS egress never reaches live here, so one file guards them
+// (docs/plans/self-hosting.md, step 2).
+
+// AgentNeverPaths are the protected paths no agent may change, even through a
+// Standard change: the agents' own rules and the platform's contract.
+var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".c4factory.yaml"}
+
+// OperatorPaths are the operator's own files in every Container, whatever its
+// CI system: the identity file and the dev container.
+var OperatorPaths = []string{".c4factory.yaml", ".devcontainer/"}
+
+// AgentProtectedPaths returns the paths agents may not change in a Container:
+// the platform's for its CI system and its Standard's, sorted and without
+// duplicates.
+func AgentProtectedPaths(ci CI, standard []string) []string {
+	return sortedPaths(PlatformProtectedPaths(ci), standard)
+}
+
+// PrivateRanges are the addresses the fences keep agents and CI jobs from over
+// HTTPS: the cluster's pods, services and nodes, and anything else on a
+// private network (docs/design.md, "The fence" and "The CI fence").
+func PrivateRanges() []string {
+	return []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
+}
+
+// PrivateBlock reports whether cidr is an address block (10.96.0.10/32,
+// 169.254.20.10/32) that lies inside one of PrivateRanges: an address the
+// cluster's own services answer on, which is where cluster DNS runs (#1257).
+func PrivateBlock(cidr string) bool {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(PrivateRanges(), func(r string) bool {
+		private := netip.MustParsePrefix(r)
+		return private.Bits() <= block.Bits() && private.Contains(block.Addr())
+	})
+}
 
 // neverPathsCode is AgentNeverPaths as prose, each path in backticks.
 func neverPathsCode() string {

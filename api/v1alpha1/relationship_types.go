@@ -52,7 +52,6 @@ type RelationshipStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4,shortName=rel
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=".spec.source.name"
 // +kubebuilder:printcolumn:name="Target",type=string,JSONPath=".spec.target.name"
 // +kubebuilder:printcolumn:name="Description",type=string,JSONPath=".spec.description"

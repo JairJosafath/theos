@@ -78,7 +78,8 @@ type DeployTargetSpec struct {
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
 	// Its keys, each optional, are kubeconfig (the cluster Argo CD runs in,
 	// when that is not the operator's) and registryUsername and
-	// registryPassword (the login to argoCD.imageRegistry for the copy).
+	// registryPassword (the login to argoCD.imageRegistry for the copy, which
+	// reads tags as well as pushes).
 	// +optional
 	CredentialsSecretRef *LocalRef `json:"credentialsSecretRef,omitempty"`
 
@@ -110,7 +111,7 @@ type DeployTargetGitHub struct {
 	// isolation on.
 	// +kubebuilder:validation:MaxLength=200
 	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$')",message="url must be https://host, with no path: the server's address, not its API's"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
+	// +kubebuilder:validation:XValidation:rule="!self.lowerAscii().matches('^https://(www[.]|api[.])?github[.]com(:443)?$')",message="url is for GitHub Enterprise Server; leave it unset for github.com"
 	// +optional
 	URL string `json:"url,omitempty"`
 
@@ -328,7 +329,6 @@ type DeployTargetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"
