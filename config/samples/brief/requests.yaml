@@ -6,7 +6,7 @@
 # gray-lenovo/cel-lens with Contents and Issues read and write, and
 # Organization members read for the team. You create it yourself.
 # Apply with: kubectl apply -f config/samples/brief/requests.yaml
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

@@ -1,5 +1,5 @@
 # expect: at most one releases entry per GitHub repository may take requests
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

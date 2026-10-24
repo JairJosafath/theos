@@ -86,6 +86,16 @@ export interface Connection {
   unread?: Problem[]
   /** When the data last changed, in ms since the epoch; unset until it does, and for demo data. */
   updatedAt?: number
+  /**
+   * What the API server warned about the lists, each once: a read at a
+   * deprecated version (#1618). The page shows them in a banner.
+   */
+  warnings?: string[]
+}
+
+/** The strings, each once, in first-seen order. */
+function distinct(values: string[]): string[] {
+  return [...new Set(values)]
 }
 
 /** Two sources shown as one: the less connected phase, and both sets of problems. */
@@ -98,6 +108,7 @@ export function mergeConnections(a: Connection, b: Connection): Connection {
     unread: [...(a.unread ?? []), ...(b.unread ?? [])],
     waiting: a.waiting && b.waiting ? [...a.waiting, ...b.waiting] : undefined,
     updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0) || undefined,
+    warnings: distinct([...(a.warnings ?? []), ...(b.warnings ?? [])]),
   }
 }
 
@@ -164,7 +175,8 @@ export function combineConnection(
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
   const settled = states.every((s) => s.state.loaded || Boolean(s.state.error))
   const waiting = states.filter((s) => !s.state.loaded && !s.state.error && s.resource).map((s) => s.resource!)
-  return { phase, loaded, settled, problems, unread, waiting }
+  const warnings = distinct(states.map((s) => s.state.warning ?? '').filter(Boolean))
+  return { phase, loaded, settled, problems, unread, waiting, warnings }
 }
 
 /** The failed optional read of this kind, by its plural, if it failed. */

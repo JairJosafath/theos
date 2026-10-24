@@ -17,7 +17,7 @@ describe('LiveStandardWriter', () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveStandardWriter('k8s', fetchImpl).bumpRef('webshop', 'python-standard', 'v1.3.0')
     expect(fetchImpl).toHaveBeenCalledWith(
-      'k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/standards/python-standard',
+      'k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/standards/python-standard',
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },

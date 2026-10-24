@@ -474,6 +474,96 @@ func TestShipSourceBranchMoved(t *testing.T) {
 	}
 }
 
+// The second release ships when the branch's head commit left alone a file it
+// updates (#1950). GitLab compares an action's last_commit_id with the last
+// commit that touched that file, not with the head, so a source commit that
+// named the head as every file's last_commit_id was refused whenever another
+// commit had touched only some other file since, and the release never shipped:
+// every poll failed BranchMoved. The commit names the head as its start_sha
+// instead, and the fake applies GitLab's per-file rule to last_commit_id.
+func TestShipSourceAfterOutsideCommit(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
+	d := New(nil)
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n",
+		"main.go": "package main // v1.0.0\n"})
+	shipAll(t, d, tg, p, s, 5)
+
+	// Someone else's commit touches main.go alone: the head no longer is
+	// go.mod's last commit.
+	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go",
+			Content: "package main // theirs\n"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// v1.1.0 updates go.mod alone (its main.go is theirs).
+	s2 := shipment(file("orders-cli_linux.tar.gz", "bin2"))
+	s2.Version, s2.Notes = "v1.1.0", "notes v1.1.0"
+	s2.Source, s2.ReadSource = source(map[string]string{"go.mod": "module example.com/orders/v2\n",
+		"main.go": "package main // theirs\n"})
+	for i := 0; i < 5 && len(p.Releases()) < 2; i++ {
+		if err := d.Ship(ctx, tg, s2); err != nil {
+			t.Fatalf("Ship() v1.1.0 %d = %v, want the source commit to land (#1950)", i, err)
+		}
+	}
+	want := map[string]string{"orders-api/go.mod": "module example.com/orders/v2\n",
+		"orders-api/main.go": "package main // theirs\n"}
+	if got := p.Folder("orders-api/v1.1.0", "orders-api"); !maps.Equal(got, want) {
+		t.Errorf("folder at orders-api/v1.1.0 = %v, want %v", got, want)
+	}
+	if rels := p.Releases(); len(rels) != 2 || p.Tag(rels[0].Tag) != p.Tag("orders-api/v1.1.0") {
+		t.Errorf("releases = %+v, want v1.1.0 at the source tag's commit", rels)
+	}
+}
+
+// The fake applies GitLab's rule to last_commit_id: the last commit that
+// touched the file, not the branch's head (#1950). A head that left the file
+// alone is refused, the file's own last commit accepted.
+func TestFakeLastCommitIDIsPerFile(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(msg string, actions ...gitprovider.GitLabCommitAction) (string, error) {
+		return c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: msg, Actions: actions})
+	}
+	both, err := commit("a and b", gitprovider.GitLabCommitAction{Action: "create", FilePath: "a", Content: "a"},
+		gitprovider.GitLabCommitAction{Action: "create", FilePath: "b", Content: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := commit("a alone", gitprovider.GitLabCommitAction{Action: "update", FilePath: "a", Content: "a2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = commit("b at the head", gitprovider.GitLabCommitAction{Action: "update", FilePath: "b", Content: "b2",
+		LastCommitID: head})
+	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Status != 400 ||
+		!strings.Contains(re.Message, "has changed since") {
+		t.Fatalf("update of b with the head as last_commit_id = %v, want a 400: the head left b alone", err)
+	}
+	if _, err := commit("b at its last commit", gitprovider.GitLabCommitAction{Action: "update", FilePath: "b",
+		Content: "b2", LastCommitID: both}); err != nil {
+		t.Fatalf("update of b with its own last commit = %v, want it to land", err)
+	}
+	if got := p.Folder(p.DefaultBranch, ""); got["b"] != "b2" || got["a"] != "a2" {
+		t.Errorf("folder = %v", got)
+	}
+}
+
 // A source with a symlink fails SourceUnsupported, naming it, before
 // anything is written: GitLab's Commits API carries none (#1805).
 func TestShipSourceSymlink(t *testing.T) {

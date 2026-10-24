@@ -8,6 +8,7 @@ import {
   parseWatchEvent,
   readWatchEvents,
   ResourceWatcher,
+  parseWarnings,
   type WatchEvent,
   type WatchState,
 } from './watch'
@@ -143,7 +144,7 @@ const names = (s: WatchState<K8sObject>) => s.items.map((i) => i.metadata.name).
 const noSleep = () => Promise.resolve()
 
 describe('ResourceWatcher', () => {
-  const path = '/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers'
+  const path = '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers'
 
   it('lists, then applies watch events from the list resourceVersion', async () => {
     const api = fakeFetch([
@@ -167,6 +168,28 @@ describe('ResourceWatcher', () => {
     expect(api.urls[1].searchParams.get('resourceVersion')).toBe('10')
     expect(api.urls[1].searchParams.get('allowWatchBookmarks')).toBe('true')
     expect(state.items.find((i) => i.metadata.name === 'a')?.metadata.resourceVersion).toBe('11')
+  })
+
+  it('keeps the deprecation warning the list response carried in its Warning header (#1618)', async () => {
+    const DEPRECATED = 'c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1.'
+    const warned = (rv: string) =>
+      new Response(JSON.stringify({ metadata: { resourceVersion: rv }, items: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', warning: `299 - "${DEPRECATED}"` },
+      })
+    const api = fakeFetch([
+      () => warned('10'),
+      () => json({ kind: 'Status', code: 410, message: 'too old resource version' }, 410),
+      () => list('11', []),
+    ])
+    const w = new ResourceWatcher<K8sObject>({ baseUrl: 'k8s', path, fetch: api.fetch, sleep: noSleep })
+    w.start()
+    const state = await until(w, (s) => s.loaded)
+    expect(state.warning).toBe(DEPRECATED)
+    // A relist whose response has no header clears it.
+    const cleared = await until(w, (s) => s.warning === undefined)
+    w.stop()
+    expect(cleared.loaded).toBe(true)
   })
 
   it('re-watches from the last resourceVersion (bookmarks included) when the server ends the stream', async () => {
@@ -278,5 +301,17 @@ describe('ResourceWatcher', () => {
     w.stop()
     expect(names(state)).toEqual(['a'])
     expect(state.error?.message).toMatch(/network error/)
+  })
+})
+
+describe('parseWarnings', () => {
+  it('takes the quoted text of each entry and nothing else', () => {
+    expect(parseWarnings(null)).toEqual([])
+    expect(parseWarnings('299 - "one thing"')).toEqual(['one thing'])
+    expect(parseWarnings('299 kube-apiserver "first", 299 - "second, with \\"quotes\\""')).toEqual([
+      'first',
+      'second, with "quotes"',
+    ])
+    expect(parseWarnings('garbage')).toEqual([])
   })
 })

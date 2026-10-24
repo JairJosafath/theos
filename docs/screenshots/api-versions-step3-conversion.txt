@@ -1,0 +1,7 @@
+== step3: go test ./api/... -run 'Conversion' -v (2026-10-24, #1618)
+--- PASS: TestConversionRoundTrip (0.58s)
+--- PASS: TestConversionFieldsAnnotation (0.00s)
+--- PASS: TestConversionFieldsAnnotationByHand (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/api/v1alpha1	0.584s
+?   	github.com/JairJosafath/c4factory/api/v1beta1	[no test files]

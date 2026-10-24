@@ -7,7 +7,7 @@
 # its releases ships there once the release runs succeed. Not in
 # kustomization.yaml: apply it with
 # kubectl apply -n webshop -f deploytarget.yaml.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DeployTarget
 metadata:
   name: orders-cli-releases
