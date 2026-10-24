@@ -819,8 +819,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   registry (package the Container's name, version the release's). The image goes by digest to the
   project's container registry, at its `container_registry_image_prefix`
   and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
-  registry is on and the token has `write_registry`; else the release ships
-  without one. The Secret holds `token`, a project access token with the
+  registry is on and the token has `read_registry` and `write_registry`;
+  else the release ships without one. The Secret holds `token`, a project access token with the
   Maintainer role and the scopes `api`, `read_registry` and `write_registry`
   (a group or personal access token works the same); a deploy token can't
   call the API and is not taken.
