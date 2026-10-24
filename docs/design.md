@@ -33,7 +33,7 @@ draws the story on top.
 | --- | --- |
 | Scope | One Project per namespace; no references across namespaces, reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
-| Container | An application with its own new repository; no monorepos, no adopted repositories. |
+| Container | An application with its own repository: a new one, or an existing one it adopts with `spec.adopt`; no monorepos. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
 | Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
@@ -155,6 +155,19 @@ Container, naming it. An empty existing repository gets the commit again; one
 with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
 `c4.factory.io/retry` annotation is set or changed.
+
+**Adopting a repository.** A Container with `spec.adopt: true` (set at
+creation, immutable) takes over a repository that already has commits and
+is never scaffolded: the operator writes nothing. It checks main for two
+things. `.c4factory.yaml` carries the identity file's fields, naming this
+project and Container, with `scaffoldedFrom` empty since nothing was
+scaffolded; a missing file or another identity fails `IdentityMismatch`,
+saying what the file holds. Every file the Container's Standard renders for
+it at its ref is there with that content; else it fails
+`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
+and goes `Ready`, recording the Standard at its ref. An empty repository
+fails `NothingToAdopt`. A Container without a Standard adopts on the
+identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
 
 **Relationships.** Container to DataStore applies the DataStore's Connector at
 scaffold. Container to Container with `spec.bundles: true` says the source
@@ -883,7 +896,8 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 
 ## Out of scope and open points
 
-- **Out of scope:** existing repositories and monorepos; Component and Code
+- **Out of scope:** monorepos (an existing repository of one application
+  may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
   it writes may run the store, as postgres's StatefulSet or dynamodb's table,
   but the operator creates none); monitoring the apps beyond what a deploy

@@ -163,6 +163,9 @@ describe('containerNextStep', () => {
   it.each([
     ['ForeignCommits', 'Scaffolded', /Empty it, then retry/],
     ['LayerConflict', 'Scaffolded', /Two templates write the same file/],
+    ['NothingToAdopt', 'Scaffolded', /Push its history first, then retry/],
+    ['IdentityMismatch', 'Scaffolded', /name this project and container, then retry/],
+    ['StandardFilesDiffer', 'Scaffolded', /what the Standard renders, then retry/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
     ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
