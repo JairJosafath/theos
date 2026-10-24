@@ -528,6 +528,32 @@ var _ = Describe("Crew", func() {
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("Duplicate value")))
 	})
 
+	It("refuses a taskBudgetUSD under 1 (#1893)", func() {
+		ns := newProjectNamespace()
+		crew := newCrew(ns)
+		crew.Spec.TaskBudgetUSD = -1
+		Expect(k8sClient.Create(ctx, crew)).To(And(
+			MatchError(ContainSubstring("spec.taskBudgetUSD")),
+			MatchError(ContainSubstring("greater than or equal to 1"))))
+
+		// The typed field is omitempty, so a Go client's 0 never reaches the API
+		// server and means unset (the Task controller's spec shows the cap off);
+		// a manifest that spells taskBudgetUSD: 0 is refused like -1.
+		raw := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": c4v1alpha1.GroupVersion.String(), "kind": "Crew",
+			"metadata": map[string]any{"name": "orders-api", "namespace": ns},
+			"spec": map[string]any{
+				"containerRef":  map[string]any{"name": "orders-api"},
+				"implementer":   map[string]any{"name": "claude"},
+				"reviewer":      map[string]any{"name": "reviewer"},
+				"taskBudgetUSD": int64(0),
+			},
+		}}
+		Expect(k8sClient.Create(ctx, raw)).To(And(
+			MatchError(ContainSubstring("spec.taskBudgetUSD")),
+			MatchError(ContainSubstring("greater than or equal to 1"))))
+	})
+
 	It("starts a labelled issue's Task on its route's Agent once it exists, and the others on its own (#1085)", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
