@@ -322,16 +322,31 @@ hack/relay.sh --workers 2          # two relay workers side by side, each in its
 hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
 hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cron) across crashes and reboots
 touch .relay/stop                  # stop the watch, and every worker after its current session
-rm -f .relay/stop; hack/relay-watch.sh  # restore it: starts the installed unit, with its own worker count
+rm -f .relay/stop; hack/relay-watch.sh  # restore it on a systemd install: starts the unit, with its own worker count
+rm -f .relay/stop                  # restore it on a cron install: cron's next tick (within 5 minutes) starts the watch
 ```
+
+The restore depends on the install, and the two are told apart by what
+`--install` wrote: `systemctl --user is-enabled c4factory-relay-watch` prints
+`enabled` on a systemd install, and `crontab -l | grep -F 'c4factory relay
+watch'` prints the two crontab lines on a cron install. On systemd,
+`hack/relay-watch.sh` starts the unit, which runs under the login the install
+recorded. On a cron install there is no unit to start: `hack/relay-watch.sh`
+starts a detached watch under the caller's own login and the default worker
+count, and that watch holds `watch.lock`, so cron's own watch cannot start
+until it ends. Run from a maintainer or helper session, that is the *Not
+logged in* trap below (#1981). So on a cron install, only remove the stop
+file; cron's next tick starts the watch under its own login, with its own
+worker count.
 
 Every session the watch starts runs under the login `--install` recorded:
 `CLAUDE_CONFIG_DIR` as it was in the installer's shell (`~/.claude` when
 unset), written into the unit and the crontab lines, so `./dev run` cannot
 point the sessions at `.dev/claude` (#1435). A `hack/relay.sh` started from
 anywhere else, a maintainer session or another `claude -p` session, runs
-outside that login and its sessions answer `Not logged in`; a quiet window
-for one issue goes through the watch's own workers and the stop file (the
+outside that login and its sessions answer `Not logged in`; so does
+`hack/relay-watch.sh` itself on a cron install (above). A quiet window for
+one issue goes through the watch's own workers and the stop file (the
 `maintainer` skill, Health).
 
 The relay picks the issue its worker's last session reserved (`create --next`,
