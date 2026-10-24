@@ -97,7 +97,9 @@ scaffolded repository verify it; nothing is deployed.
    encrypted with the AWS-managed key to another region, and the plan's
    `copyToRegion` must work for it as for a table. Each Framework's
    `infra/backups.ts` takes `clusters` beside `tables` and selects each with
-   `BackupResource.fromArn(cluster.clusterArn)`; the Standard's
+   `BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn)`
+   (the L2's `clusterArn` is a `formatArn` over a `Ref`, which the
+   Standard reads as an ARN written out, #1921); the Standard's
    `selectionFaults` reads clusters (`Fn::GetAtt [id, DBClusterArn]`) as it
    reads tables, `BACKED_UP_TYPES` gains `AWS::RDS::DBCluster`, and the
    rules for encryption, deletion protection, removal and recovery get a

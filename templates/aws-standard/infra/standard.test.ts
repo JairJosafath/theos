@@ -7,6 +7,7 @@ import { App, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { BackupPlan, BackupPlanRule, BackupResource } from 'aws-cdk-lib/aws-backup';
 import { SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Code, Function as LambdaFunction, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
@@ -14,6 +15,7 @@ import type { FunctionProps } from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
   AuroraPostgresEngineVersion,
+  CfnDBCluster,
   ClusterInstance,
   Credentials,
   DatabaseCluster,
@@ -231,10 +233,12 @@ function needsNoBackup(id: string, properties: unknown): boolean {
 
 /**
  * What a selection reaching past the stack should be instead, as the `aws-*`
- * Frameworks' `infra/backups.ts` do since #1267.
+ * Frameworks' `infra/backups.ts` do since #1267. A cluster is selected by its
+ * `CfnDBCluster`'s `attrDbClusterArn` (`Fn::GetAtt`): `DatabaseCluster`'s
+ * `clusterArn` is a `formatArn` over a `Ref`, an ARN written out (#1921).
  */
 const SELECT_BY_ARN =
-  "pass the stack's data tables and clusters to infra/backups.ts and select each with BackupResource.fromArn(table.tableArn) or BackupResource.fromArn(cluster.clusterArn)";
+  "pass the stack's data tables and clusters to infra/backups.ts and select each with BackupResource.fromArn(table.tableArn) or BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn)";
 
 /**
  * What is wrong with a backup selection in a stack whose data stores are
@@ -317,8 +321,15 @@ function clusterFaults(template: Template, rules: TierRules): ClusterFaults {
       faults.encryption.push(`${id} is not encrypted at rest`);
     }
     const keyId = properties['KmsKeyId'];
+    const ownKeys = keys.filter(([keyLogicalId]) =>
+      JSON.stringify(keyId ?? null).includes(`"${keyLogicalId}"`),
+    );
     if (keyId === undefined) {
       faults.encryption.push(`${id} is encrypted with no customer managed key`);
+    } else if (ownKeys.length === 0) {
+      faults.encryption.push(
+        `${id} is encrypted with ${JSON.stringify(keyId)}, which is none of the stack's keys`,
+      );
     }
     const policy = rules.keepData ? 'Snapshot' : 'Delete';
     if (cluster.DeletionPolicy !== policy || cluster.UpdateReplacePolicy !== policy) {
@@ -327,13 +338,11 @@ function clusterFaults(template: Template, rules: TierRules): ClusterFaults {
       );
     }
     const keyPolicy = rules.keepData ? 'Retain' : 'Delete';
-    for (const [clusterKeyId, key] of keys) {
-      if (JSON.stringify(keyId ?? null).includes(`"${clusterKeyId}"`)) {
-        if (key.DeletionPolicy !== keyPolicy) {
-          faults.removal.push(
-            `${id}'s key ${clusterKeyId} is ${String(key.DeletionPolicy)} on removal, not ${keyPolicy}`,
-          );
-        }
+    for (const [clusterKeyId, key] of ownKeys) {
+      if (key.DeletionPolicy !== keyPolicy) {
+        faults.removal.push(
+          `${id}'s key ${clusterKeyId} is ${String(key.DeletionPolicy)} on removal, not ${keyPolicy}`,
+        );
       }
     }
     if ((properties['DeletionProtection'] === true) !== rules.keepData) {
@@ -588,7 +597,9 @@ describe('a backup selection', () => {
     const [fault] = selectionFaults({ ListOfTags: [] }, tables);
     expect(fault).toContain('infra/backups.ts');
     expect(fault).toContain('BackupResource.fromArn(table.tableArn)');
-    expect(fault).toContain('BackupResource.fromArn(cluster.clusterArn)');
+    expect(fault).toContain(
+      'BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn)',
+    );
   });
 
   it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
@@ -1279,14 +1290,14 @@ function probeCluster(
   tier: Tier,
   props: Partial<DatabaseClusterProps> = {},
   keyPolicy = TIER_RULES[tier].keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-): void {
+): DatabaseCluster {
   const rules = TIER_RULES[tier];
   const vpc = new Vpc(stack, 'Vpc', {
     natGateways: 0,
     subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
   });
   const key = new Key(stack, 'Key', { enableKeyRotation: true, removalPolicy: keyPolicy });
-  new DatabaseCluster(stack, 'Cluster', {
+  return new DatabaseCluster(stack, 'Cluster', {
     engine: DatabaseClusterEngine.auroraPostgres({ version: AuroraPostgresEngineVersion.VER_16_6 }),
     writer: ClusterInstance.serverlessV2('Writer'),
     vpc,
@@ -1308,12 +1319,12 @@ function probeCluster(
 describe.each(TIERS)('an Aurora cluster, in %s', (tier) => {
   const rules = TIER_RULES[tier];
   const faultsOf = (
-    props: Partial<DatabaseClusterProps> = {},
+    props: Partial<DatabaseClusterProps> | ((stack: Stack) => Partial<DatabaseClusterProps>) = {},
     keyPolicy?: RemovalPolicy,
   ): ClusterFaults => {
     const probe = new App({ context: { ...cdkContext(), tier } });
     const stack = new Stack(probe, 'probe');
-    probeCluster(stack, tier, props, keyPolicy);
+    probeCluster(stack, tier, typeof props === 'function' ? props(stack) : props, keyPolicy);
     return clusterFaults(Template.fromStack(stack), rules);
   };
   const none: ClusterFaults = { encryption: [], removal: [], protection: [], recovery: [] };
@@ -1328,6 +1339,50 @@ describe.each(TIERS)('an Aurora cluster, in %s', (tier) => {
       ...none,
       encryption: [expect.stringMatching(/^Cluster\w+ is encrypted with no customer managed key$/)],
     });
+  });
+
+  it('encrypted with a key outside the stack fails the encryption rule', () => {
+    const outside = 'arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000';
+    expect(
+      faultsOf((stack) => ({ storageEncryptionKey: Key.fromKeyArn(stack, 'Outside', outside) })),
+    ).toEqual({
+      ...none,
+      encryption: [
+        expect.stringMatching(
+          /^Cluster\w+ is encrypted with "arn:aws:kms:[^"]+", which is none of the stack's keys$/,
+        ),
+      ],
+    });
+  });
+
+  // What the rds Connector's infra/backups.ts must select the cluster by, on
+  // the ARN CDK renders: the CfnDBCluster's attrDbClusterArn is the
+  // Fn::GetAtt the selection rule reads; DatabaseCluster.clusterArn is a
+  // formatArn over a Ref, an ARN written out, and the fault names the fix.
+  const selectionFaultsBy = (arnOf: (cluster: DatabaseCluster) => string): string[] => {
+    const probe = new App({ context: { ...cdkContext(), tier } });
+    const stack = new Stack(probe, 'probe');
+    const cluster = probeCluster(stack, tier);
+    const plan = new BackupPlan(stack, 'Plan', { backupPlanRules: [BackupPlanRule.daily()] });
+    plan.addSelection('Selection', { resources: [BackupResource.fromArn(arnOf(cluster))] });
+    const template = Template.fromStack(stack);
+    const [selection] = resourcesOf(template, 'AWS::Backup::BackupSelection');
+    return selectionFaults(selection?.[1].Properties?.['BackupSelection'], dataStoresOf(template));
+  };
+
+  it("selected for backup by its CfnDBCluster's attrDbClusterArn keeps the selection rule", () => {
+    const byAttribute = (cluster: DatabaseCluster): string =>
+      (cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn;
+    expect(selectionFaultsBy(byAttribute)).toEqual([]);
+  });
+
+  it("selected for backup by DatabaseCluster's clusterArn fails the selection rule, naming the fix", () => {
+    expect(selectionFaultsBy((cluster) => cluster.clusterArn)).toEqual([
+      expect.stringMatching(
+        /^\{"Fn::Join".* is none of the stack's tables or clusters: .*attrDbClusterArn\)$/,
+      ),
+      expect.stringMatching(/^Cluster\w+ is in no backup selection$/),
+    ]);
   });
 
   it("removed the other tier's way fails the removal rule", () => {

@@ -282,7 +282,7 @@ byte for byte.
   to the account's root); every DynamoDB table (`SSESpecification`), S3
   bucket, SQS queue and SNS topic encrypted at rest, and since v1.21.0
   every Aurora cluster (`StorageEncrypted`) with a customer managed key
-  (`KmsKeyId`); every log group with a
+  of its own stack (`KmsKeyId`); every log group with a
   retention and every Lambda function logging to its own; every stateful
   resource (tables, buckets, queues, topics, log groups, databases, file
   systems, KMS keys, backup vaults) with an explicit `DeletionPolicy`;
@@ -307,7 +307,9 @@ byte for byte.
   `retentionDays` and copy to `copyToRegion`'s vault when set, one vault
   with its own key, one selection naming the stack's own tables and
   clusters by ARN (`Fn::GetAtt`, `Arn` for a table and `DBClusterArn` for
-  a cluster) and nothing else, every table but an `Idempotency` one
+  a cluster: the `CfnDBCluster`'s `attrDbClusterArn`, as `DatabaseCluster`'s
+  `clusterArn` is a `formatArn` over a `Ref`, an ARN written out) and
+  nothing else, every table but an `Idempotency` one
   with TTL on among them, and a copy stack in that region; else none; since
   v1.17.0 a selection by tag (`ListOfTags`), by a condition, by `*` or by
   an ARN written out fails, as it reaches a `<name>-development` stack's

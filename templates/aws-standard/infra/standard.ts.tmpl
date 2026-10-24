@@ -380,7 +380,7 @@ export function applyStandard(app: App, tier: Tier): void {
       for (const secret of stack.node.findAll().filter((node) => node instanceof CfnSecret)) {
         Validations.of(secret).acknowledge({
           id: 'AwsSolutions-SMG4',
-          reason: `The ${tier} tier keeps no data worth recovering: deleting the stack deletes its databases, and their credentials rotate only in production.`,
+          reason: `The ${tier} tier keeps no data worth recovering: deleting the stack deletes its data, and its secrets rotate only in production.`,
         });
       }
     }

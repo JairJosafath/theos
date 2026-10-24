@@ -541,9 +541,11 @@ gains `AWS::RDS::DBCluster`, the backup selection names clusters by
 `DBClusterArn` as it names tables by `Arn`, and the encryption (a customer
 managed key), removal (`Snapshot` where the tier keeps data, else
 `Delete`), deletion protection and recovery (35 days of backups) rules
-check every cluster; where the tier keeps no data it acknowledges
-`AwsSolutions-SMG4` on every secret and `AwsSolutions-RDS10` on every
-cluster (#1921).
+check every cluster, the selection by the `CfnDBCluster`'s
+`attrDbClusterArn` (the L2's `clusterArn` is a `formatArn` over a `Ref`, an
+ARN written out); where the tier has no point-in-time recovery it
+acknowledges `AwsSolutions-SMG4` on every secret, and where it keeps no
+data `AwsSolutions-RDS10` on every cluster (#1921).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
