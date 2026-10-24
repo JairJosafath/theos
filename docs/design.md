@@ -216,6 +216,7 @@ on a Standard change), then `Merged` or `Failed`.
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
   a person cancelled costs the round.
@@ -328,6 +329,9 @@ A Crew per Container names the implementer and reviewer Agents, polls the
 repository's `status/ready` issues and starts up to `parallel` Tasks (one by
 default; `Blocked` ones don't count), with three tries per issue.
 `spec.paused` stops new starts; running Tasks are never stopped.
+`spec.taskBudgetUSD` caps what one Task's agent runs may cost, in US dollars,
+summed from what its agents report; at the cap the Task starts no further
+run (`OverBudget`) until the cap is raised, and unset means no cap.
 
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
   goes first, even past `parallel`; then a Standard change a `Blocked` Task
