@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -449,5 +450,41 @@ func TestShipNoSourceSetting(t *testing.T) {
 	}
 	if state, err := New(nil).State(context.Background(), tg, s.App, "v1.0.0"); err != nil || state.Source != nil {
 		t.Errorf("State() = %+v, %v, want no source", state, err)
+	}
+}
+
+// A self-hosted GitLab under a relative URL root (#1916): the target's url
+// keeps the root, so every API call, the generic package files' download
+// URLs the release links and the release's page sit under it. The fake
+// serves nothing outside the root, so a ship that dropped it would fail.
+func TestShipUnderRoot(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.NewUnder(t, "/gitlab")
+	if !strings.HasSuffix(gl.URL(), "/gitlab") {
+		t.Fatalf("URL() = %q, want it to end in the root", gl.URL())
+	}
+	tg, p := newTarget(gl, "t0ken")
+	d := New(nil)
+	if err := d.Check(ctx, tg); err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	s := shipment(file("orders-cli_linux.tar.gz", "binary"), file("SHA256SUMS", "s"))
+	for i := 0; i < 3 && marked(p, s.App) == 0; i++ {
+		if err := d.Ship(ctx, tg, s); err != nil {
+			t.Fatalf("Ship() %d = %v", i, err)
+		}
+	}
+	rels := p.Releases()
+	if len(rels) != 1 || len(rels[0].Links) != 2 {
+		t.Fatalf("releases = %+v, want one with two links", rels)
+	}
+	want := gl.URL() + "/api/v4/projects/" + url.PathEscape(p.Path) +
+		"/packages/generic/orders-cli/v1.0.0/orders-cli_linux.tar.gz"
+	if got := rels[0].Links[0].URL; got != want {
+		t.Errorf("package link = %q, want %q: the download URL under the root", got, want)
+	}
+	state, err := d.State(ctx, tg, s.App, "")
+	if err != nil || state.Phase != ports.PhaseDeployed || !strings.HasPrefix(state.URL, gl.URL()+"/"+p.Path+"/") {
+		t.Fatalf("State() = %+v, %v, want Deployed at a page under %s/%s", state, err, gl.URL(), p.Path)
 	}
 }
