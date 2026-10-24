@@ -132,6 +132,8 @@ func (g *fakeGit) seedRepo(owner, name, message string) {
 
 // seedRepoFiles creates a repository with one commit, as if someone else made
 // it, whose main holds files.
+//
+//nolint:unparam // takes owner and name like the other helpers
 func (g *fakeGit) seedRepoFiles(owner, name, message string, files scaffold.Tree) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
