@@ -315,14 +315,26 @@ const (
 	// HistoryForeign means commits the factory didn't make: it only scaffolds
 	// into a new, empty repository.
 	HistoryForeign
+	// HistoryAdopt means the Container adopts the repository's existing
+	// commits: nothing is scaffolded, main is checked and protected.
+	HistoryAdopt
+	// HistoryNothingToAdopt means the Container asked to adopt a repository
+	// that has no commits.
+	HistoryNothingToAdopt
 )
 
 // ScaffoldHistory decides what to do with a repository's history before
 // scaffolding container (project/container). commits is how many commits the
 // repository has, counted up to two; initialFor is the Container the newest
-// commit's trailers name, empty when the factory didn't make it.
-func ScaffoldHistory(commits int, initialFor, container string) ExistingHistory {
+// commit's trailers name, empty when the factory didn't make it; adopt is the
+// Container's spec.adopt: it takes over whatever history there is and is never
+// scaffolded.
+func ScaffoldHistory(commits int, initialFor, container string, adopt bool) ExistingHistory {
 	switch {
+	case adopt && commits > 0:
+		return HistoryAdopt
+	case adopt:
+		return HistoryNothingToAdopt
 	case commits == 0:
 		return HistoryEmpty
 	case commits == 1 && initialFor != "" && initialFor == container:
