@@ -18,6 +18,11 @@ set -u
 
 soft=${C4_CONTEXT_SOFT:-80000}
 hard=${C4_CONTEXT_HARD:-120000}
+# In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile) the hook does
+# nothing, before it reads its input: the sandbox has no heavy-job slots, no
+# cluster lease, no claim and no main to pull (#1894).
+[ "${IS_SANDBOX:-}" = 1 ] && exit 0
+
 input=$(cat)
 
 # field NAME: a string field of the hook's input JSON.
