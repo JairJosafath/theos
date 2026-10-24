@@ -32,6 +32,20 @@ says what to check.
 8. **Security.** Untrusted input can't escape its directory, exhaust memory or
    run commands; no secrets or whole documents in logs.
 
+{{ if .Domains -}}
+## The domains
+
+This system is about {{ range $i, $d := .Domains }}{{ if $i }}, {{ end }}{{ $d }}{{ end }}. Check the change against
+each domain's *Common mistakes*, in the topic files its guide names for the
+part the change touches:
+
+{{ range .Domains }}- `docs/agents/domain/{{ . }}/README.md`
+{{ end }}
+A change that makes one is blocking: name the mistake and where, as for any
+finding. Where a domain lists a choice, the change makes its choice unless the
+issue says otherwise.
+
+{{ end -}}
 ## Verdict
 
 - **Blocking** means the change would ship a defect or break a stated need or
@@ -80,11 +94,3 @@ yourself; the full `make check` runs on the release's commit before its tag.
   real reason; package-level mutable state; interfaces declared next to their
   only implementation; exported names whose doc comment says nothing.
 - Golden file changes in `testdata/` are part of the diff: read them.
-- Operator code: a reconcile that is not idempotent or assumes it runs once;
-  status not reported through conditions; children without an owner
-  reference; RBAC markers granting more than the reconciler uses; a reconcile
-  that sleeps instead of requeueing; an `api/` field without a doc comment or
-  validation marker; a reconciler or CEL rule with no envtest case.
-- Generated files (`config/crd/bases/`, `config/rbac/role.yaml`,
-  `zz_generated.*`, `PROJECT`) change only as `make manifests generate` and
-  `kubebuilder` write them; `make check` fails otherwise.

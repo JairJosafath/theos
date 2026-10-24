@@ -735,7 +735,7 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.3.0
+      ref: v1.4.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -747,7 +747,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.3.1
+      ref: v1.4.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -768,7 +768,7 @@ catalog:
         protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/gitprovider/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
     - kind: Standard
       name: ts-standard
-      ref: v1.6.2
+      ref: v1.7.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -778,7 +778,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.19.1
+      ref: v1.20.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -789,7 +789,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.6.0
+      ref: v1.7.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
