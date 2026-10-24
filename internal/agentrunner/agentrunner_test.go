@@ -127,7 +127,7 @@ func TestPrompts(t *testing.T) {
 		EnvContext: "Pocket Tools: works fully offline"}))
 	implement := ImplementPrompt(job, Workspace{})
 	for _, want := range []string{"Add crop", "Handle an empty image.", "round 2", "AGENTS.md", `"make check"`,
-		"task/add-crop", "works fully offline"} {
+		"task/add-crop", "works fully offline", "main was green in CI when this Task started"} {
 		if !strings.Contains(implement, want) {
 			t.Errorf("implement prompt lacks %q", want)
 		}
@@ -137,7 +137,8 @@ func TestPrompts(t *testing.T) {
 	}
 	review := ReviewPrompt(job, Workspace{})
 	for _, want := range []string{"Add crop", "git diff origin/main...HEAD", `"verdict"`, "do not change files",
-		"Handle an empty image.", "check each point was addressed", "Non-blocking:"} {
+		"Handle an empty image.", "check each point was addressed", "Non-blocking:",
+		"main was green in CI when this Task started"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review prompt lacks %q", want)
 		}
@@ -1608,7 +1609,8 @@ func TestRunImplementCheckFailsOnTheBaseToo(t *testing.T) {
 	}
 	for _, prompt := range agent.prompts[1:] {
 		if !strings.Contains(prompt, "fails on main in this workspace too") ||
-			!strings.Contains(prompt, "download: 404 Not Found") || !strings.Contains(prompt, "leave the rest to CI") {
+			!strings.Contains(prompt, "download: 404 Not Found") || !strings.Contains(prompt, "leave the rest to CI") ||
+			!strings.Contains(prompt, "green in CI when this Task started") {
 			t.Errorf("fix prompt = %q, want it to name the base's failure", prompt)
 		}
 	}
