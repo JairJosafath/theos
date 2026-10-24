@@ -129,7 +129,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 			standard = b.Standard
 		}
 		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
-			info.ScaffoldedFrom, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
+			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
@@ -149,7 +149,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, res.use.Connectors,
+	in := scaffoldInput(view, ci, res.use.Connectors, res.domains,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
@@ -160,6 +160,12 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		}
 		if _, ok := errors.AsType[*scaffold.UnsupportedCIError](err); ok {
 			reason = c4v1alpha1.ReasonUnsupportedCI
+		}
+		if _, ok := errors.AsType[*scaffold.DomainNotMarkdownError](err); ok {
+			reason = c4v1alpha1.ReasonDomainNotMarkdown
+		}
+		if _, ok := errors.AsType[*scaffold.DomainNoReadmeError](err); ok {
+			reason = c4v1alpha1.ReasonDomainNoReadme
 		}
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, reason, err.Error())
 	}
@@ -175,12 +181,12 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
 	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
-		result.ScaffoldedFrom, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
+		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
 // adopt takes over a repository that already has commits (#1888, spec.adopt).
-// Nothing is written: main must carry a .c4factory.yaml naming this project
+// Nothing is written: main must exist and carry a .c4factory.yaml naming this project
 // and Container, and every file of the Container's Standard with the content
 // the Standard renders for it at its ref. Then main is protected and the
 // Container is Ready, its Standard recorded at that ref and nothing recorded
@@ -211,7 +217,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, nil,
+	in := scaffoldInput(view, ci, nil, nil,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
 	rendered := scaffold.Tree{}
@@ -226,6 +232,14 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 
 	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch,
 		append(rendered.Paths(), scaffold.IdentityPath))
+	if errors.Is(err, gitprovider.ErrBranchNotFound) {
+		// #1908: the commits History found are on another branch; no retry
+		// makes main appear.
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonNoDefaultBranch,
+			fmt.Sprintf("Repository %s has commits but no %s branch; an adopted repository names its project and "+
+				"Container and carries its Standard's files on %s, so rename its default branch to %s first",
+				repo.WebURL, gitprovider.DefaultBranch, gitprovider.DefaultBranch, gitprovider.DefaultBranch))
+	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
@@ -257,7 +271,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef)
-	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, in.Checks,
+	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, nil, in.Checks,
 		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
 }
 
@@ -288,10 +302,11 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 // block recorded, so a Framework that doesn't read it never reports it
 // applied.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, standard, standardRef string, from []string,
+	status *c4v1alpha1.ContainerStatus, standard, standardRef string, from, domains []string,
 	relationships []model.AppliedRelationship, checks string, readsOperations bool, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
+	status.ScaffoldedDomains = domains
 	if standard != "" && standardRef != "" {
 		status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: standard, Ref: standardRef,
 			Checks: c4v1alpha1.ChecksMode(checks)}
@@ -343,7 +358,7 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 // (model.EffectiveChecks), ops its operations block, the defaults filled in,
 // and npmScope the scope the repository's npm package is named under
 // (gitprovider.Repository.NpmScope; empty means gitprovider.DefaultNpmScope).
-func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
+func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors, domains []string,
 	checks string, ops model.Operations, npmScope string) scaffold.Input {
 	if npmScope == "" {
 		npmScope = gitprovider.DefaultNpmScope
@@ -363,6 +378,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Deployment:     choices.Deployment,
 		Bundle:         choices.Bundle,
 		Connectors:     connectors,
+		Domains:        domains,
 		Checks:         checks,
 		Operations:     ops,
 		NpmScope:       npmScope,
