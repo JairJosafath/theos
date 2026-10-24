@@ -25,7 +25,7 @@ and the reviewer to read them before they plan or review a change.
   `checkLayers` holds the order, the owner map fails two layers on one path
   (`ConflictError`), and each layer's `name@ref` goes to `scaffoldedFrom`.
   `resolve` (`internal/controller/container_resolve.go`) loads the entries.
-- `model.AgentNeverPaths` (`internal/model/standard.go`) is `AGENTS.md`,
+- `model.AgentNeverPaths` (`internal/model/fence.go`) is `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml`: the fence refuses an agent's change
   there and the plan check refuses an issue asking for one. A file under
   `docs/agents/domain/` is already covered.
