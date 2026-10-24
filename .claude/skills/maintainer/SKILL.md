@@ -166,14 +166,22 @@ unanswered for 14 days.
      current sessions and start no new one. The window is that one
      session: the stop file ends the issue's worker too when its session
      ends. When the issue closes, or needs a second session, restore the
-     watch with `rm -f .relay/stop; hack/relay-watch.sh` (it starts the
-     installed unit, with its own worker count), and repeat the stop for a
-     second window once the issue's session has started again. Never start
-     `hack/relay.sh` or `hack/relay-watch.sh --workers N` from a
-     maintainer session, a helper, or any other `claude -p` session: it
-     runs outside the login `--install` recorded (`CLAUDE_CONFIG_DIR`), its
-     worker's `claude -p` answers `Not logged in`, the claim is released
-     and the window is lost (#1617's first try).
+     watch the way the install needs ([docs/dev/testenv.md](../../../docs/dev/testenv.md),
+     "The restore depends on the install"): on a systemd install
+     (`systemctl --user is-enabled c4factory-relay-watch` prints
+     `enabled`), `rm -f .relay/stop; hack/relay-watch.sh` starts the unit,
+     with its own worker count; on a cron install (`crontab -l | grep -F
+     'c4factory relay watch'` prints the lines), only `rm -f .relay/stop`,
+     and cron's next tick, within 5 minutes, starts the watch under its own
+     login. Repeat the stop for a second window once the issue's session
+     has started again. Never start `hack/relay.sh` or `hack/relay-watch.sh
+     --workers N` from a maintainer session, a helper, or any other `claude
+     -p` session, and never `hack/relay-watch.sh` at all on a cron install
+     (#1981): it runs outside the login `--install` recorded
+     (`CLAUDE_CONFIG_DIR`), its worker's `claude -p` answers `Not logged
+     in`, the claim is released and the window is lost (#1617's first
+     try); on a cron install it also holds `watch.lock`, so cron's own
+     watch cannot start.
    - Claims: stale ones in `hack/lib/github.sh claims`, issues in progress
      with no activity for 6 hours (a `status/waiting` parent is not stale: it
      waits on its steps, which `hack/lib/github.sh parents` lists), and the same issue failing session after

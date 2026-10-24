@@ -133,6 +133,9 @@
 #   hack/relay-watch.sh --uninstall    remove the unit or the crontab lines
 #   touch .relay/stop                  stop the watch, and every worker after its current session; an
 #                                      installed watch stays down until hack/relay-watch.sh starts the unit
+#                                      (systemd), or until the stop file is removed and cron's next tick
+#                                      starts it (cron; hack/relay-watch.sh there would start a watch under
+#                                      the caller's own login, #1981)
 #
 # The unit runs the watch with --foreground: in its own process, waiting for the
 # lock while a watch started by hand holds it. The crontab line runs it with
