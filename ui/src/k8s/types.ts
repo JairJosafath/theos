@@ -268,7 +268,7 @@ export interface ContainerDeployStatus {
   message?: string
   /** When the phase, reason or wanted version last changed. */
   since?: string
-  /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR). */
+  /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR, a gitlab target's project registry). */
   image?: string
 }
 
@@ -293,6 +293,22 @@ export interface DeployTarget extends K8sObject {
       repository: string
       tagPrefix?: string
       latest?: boolean
+      source?: { path?: string; tagPrefix?: string }
+    }
+    /**
+     * Ships each release as a GitLab release of a project: its full path
+     * (group/sub/project), on gitlab.com or, when url is set
+     * (https://host[:port], a path allowed for an instance under a relative
+     * URL root), on that instance; tagPrefix and source as github's, the
+     * source committed through the Commits API and the release made of that
+     * commit; the files go to the project's generic package registry and the
+     * image to its container registry. No latest: GitLab's latest release is
+     * the newest (docs/plans/gitlab-deploy.md, decision 1).
+     */
+    gitlab?: {
+      url?: string
+      project: string
+      tagPrefix?: string
       source?: { path?: string; tagPrefix?: string }
     }
     /**
