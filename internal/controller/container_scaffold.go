@@ -149,7 +149,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, res.use.Connectors,
+	in := scaffoldInput(view, ci, res.use.Connectors, res.domains,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
@@ -160,6 +160,12 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 		}
 		if _, ok := errors.AsType[*scaffold.UnsupportedCIError](err); ok {
 			reason = c4v1alpha1.ReasonUnsupportedCI
+		}
+		if _, ok := errors.AsType[*scaffold.DomainNotMarkdownError](err); ok {
+			reason = c4v1alpha1.ReasonDomainNotMarkdown
+		}
+		if _, ok := errors.AsType[*scaffold.DomainNoReadmeError](err); ok {
+			reason = c4v1alpha1.ReasonDomainNoReadme
 		}
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, reason, err.Error())
 	}
@@ -211,7 +217,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, nil,
+	in := scaffoldInput(view, ci, nil, nil,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
 	rendered := scaffold.Tree{}
@@ -343,7 +349,7 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 // (model.EffectiveChecks), ops its operations block, the defaults filled in,
 // and npmScope the scope the repository's npm package is named under
 // (gitprovider.Repository.NpmScope; empty means gitprovider.DefaultNpmScope).
-func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
+func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors, domains []string,
 	checks string, ops model.Operations, npmScope string) scaffold.Input {
 	if npmScope == "" {
 		npmScope = gitprovider.DefaultNpmScope
@@ -363,6 +369,7 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Deployment:     choices.Deployment,
 		Bundle:         choices.Bundle,
 		Connectors:     connectors,
+		Domains:        domains,
 		Checks:         checks,
 		Operations:     ops,
 		NpmScope:       npmScope,
