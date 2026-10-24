@@ -47,7 +47,7 @@ func imageIs(ns, tag, state string) *c4v1alpha1.ContainerImageStatus { //nolint:
 			want = metav1.ConditionTrue
 		}
 		g.Expect(cond.Status).To(Equal(want))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return img
 }
 
@@ -79,7 +79,7 @@ var _ = Describe("Container images", func() {
 				}
 			}
 			g.Expect(images).To(ContainElement(repository + "@" + testDigest))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	DescribeTable("says why a release's image is left unpublished, once",
@@ -205,7 +205,7 @@ var _ = Describe("Container images", func() {
 			g.Expect(d.Phase).To(Equal(model.DeployPhaseWaiting))
 			g.Expect(d.Reason).To(Equal(model.DeployGitHostUnreachable))
 			g.Expect(d.Message).To(ContainSubstring("the image of v0.1.0 is not published yet: gitea unavailable"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Expect(shippedImages(ns, "staging")).To(BeEmpty())
 
 		By("shipping once the push succeeds")
@@ -259,7 +259,7 @@ var _ = Describe("Container images", func() {
 		Eventually(func(g Gomega) {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Health).To(Equal(ports.HealthDegraded))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("reports no image for a Container whose choice builds none", func() {
@@ -278,7 +278,7 @@ var _ = Describe("Container images", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.NewestRelease).To(Equal("v0.1.0"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).To(BeNil())
@@ -316,7 +316,7 @@ var _ = Describe("Container images", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.NewestRelease).To(Equal("v0.1.0"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).To(BeNil())

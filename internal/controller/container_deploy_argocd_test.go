@@ -86,7 +86,7 @@ func argoApplication(ns, argoNS string) *unstructured.Unstructured {
 	app.SetGroupVersionKind(argocd.ApplicationGVK)
 	Eventually(func() error {
 		return k8sClient.Get(ctx, argoKey(ns, argoNS), app)
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return app
 }
 
@@ -114,7 +114,7 @@ func setArgoStatus(ns, argoNS string, s argoStatus) {
 				"startedAt": time.Now().UTC().Format(time.RFC3339)},
 		}
 		g.Expect(k8sClient.Update(ctx, app)).To(Succeed())
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 }
 
 // readyCrewContainer makes Container name of a fresh factory in ns, changed
@@ -179,7 +179,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 			d, _ := deployOf(g, ns, "dev")
 			g.Expect(d.Health).To(Equal(model.DeployHealthDegraded))
 			g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 
 		By("Failed, reason SyncFailed, with Argo CD's message when the sync failed")
 		setArgoStatus(ns, argoNS, argoStatus{sync: model.ArgoCDSyncOutOfSync, operation: model.ArgoCDOperationFailed,
