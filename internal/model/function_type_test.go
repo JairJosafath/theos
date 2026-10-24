@@ -51,7 +51,7 @@ func TestPlannerGuideStatesTheFunctionCue(t *testing.T) {
 	guide := strings.Join(strings.Fields(plannerGuideText), " ")
 	for _, rule := range []string{
 		"An idea that asks for AWS Lambda, or serverless on AWS, is a `function`",
-		"so plan no DataStore for it",
+		"and the plan check refuses either ref)",
 		"such as `aws-lambda-ts` (TypeScript), `aws-lambda-go` (Go: pick it when the idea asks for Go)",
 		"or `aws-lambda-py` (Python: pick it when the idea asks for Python)",
 		"it takes no `computeRef` and no `deploymentRef`",
