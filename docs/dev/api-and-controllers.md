@@ -119,6 +119,12 @@ the spec that makes it, with `forbidden` in the reconciler's log.
   expansion in `status.bundle`. Only `resolve` reads the Bundle to expand it,
   and only until the Container is scaffolded; after that `reportBundleCurrent`
   reads it to report `BundleCurrent`, never to apply it.
+- **A Ready Container only reports.** `resolve` reads the system's
+  `spec.domainRefs` once, for the scaffold; after that `reportDomainsApplied`
+  (`container_domains.go`) compares them with the `name@ref` entries that
+  follow the Connectors in `status.scaffoldedFrom` (`model.ScaffoldedDomains`)
+  and reports `DomainsApplied`, never rescaffolds. The Standard update renders
+  with those same Domains, not the system's current ones.
 
 ## Logging
 

@@ -21,10 +21,17 @@ and the reviewer to read them before they plan or review a change.
   installs them from `catalog.entries` (`dist/chart/templates/gitea/_catalog.tpl`),
   and `make validate-yaml` pairs each with `templates/versions.txt`.
 - `scaffold.Build` (`internal/scaffold/scaffold.go`) renders the layers in
-  `sideOrder` (Framework, Standard, Compute, Deployment, Connectors),
+  `sideOrder` (Framework, Standard, Compute, Deployment, Connectors, Domains),
   `checkLayers` holds the order, the owner map fails two layers on one path
   (`ConflictError`), and each layer's `name@ref` goes to `scaffoldedFrom`.
-  `resolve` (`internal/controller/container_resolve.go`) loads the entries.
+  `resolve` (`internal/controller/container_resolve.go`) loads the entries,
+  the system's Domains last. Step 2 (#1757) built the Domain layer:
+  `domainTree` prefixes a Domain's files with `docs/agents/domain/<name>/`
+  and fails a non-Markdown file (`DomainNotMarkdownError`) or a missing
+  `README.md` (`DomainNoReadmeError`); `reportDomainsApplied`
+  (`internal/controller/container_domains.go`) sets `DomainsApplied` on a
+  Ready Container from `model.ScaffoldedDomains` against the system's
+  `domainRefs`.
 - `model.AgentNeverPaths` (`internal/model/fence.go`) is `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml`: the fence refuses an agent's change
   there and the plan check refuses an issue asking for one. A file under
