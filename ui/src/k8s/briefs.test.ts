@@ -9,7 +9,7 @@ function respond(status: number, body: unknown): Response {
 describe('briefManifest and promptPatch', () => {
   it('makes a Brief with only its name and idea', () => {
     expect(briefManifest('webshop', 'plant-care', 'Remind me to water plants')).toEqual({
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'plant-care', namespace: 'webshop' },
       spec: { idea: 'Remind me to water plants' },
@@ -93,11 +93,11 @@ describe('LiveBriefWriter', () => {
     await new LiveBriefWriter('k8s', fetchImpl).create('webshop', 'plant-care', 'Water the plants')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs')
+    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs')
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
     expect(JSON.parse(init.body as string)).toEqual({
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'plant-care', namespace: 'webshop' },
       spec: { idea: 'Water the plants' },
@@ -108,7 +108,7 @@ describe('LiveBriefWriter', () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveBriefWriter('k8s', fetchImpl).addPrompt('webshop', 'plant-care', 'Add a weekly summary')
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/plant-care')
+    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/plant-care')
     expect(init.method).toBe('PATCH')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
     expect(init.body).toBe('[{"op":"add","path":"/spec/prompts/-","value":"Add a weekly summary"}]')
@@ -118,7 +118,7 @@ describe('LiveBriefWriter', () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveBriefWriter('k8s', fetchImpl).setPaused('webshop', 'plant-care', paused)
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/plant-care')
+    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/plant-care')
     expect(init.method).toBe('PATCH')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
     expect(init.body).toBe(`[{"op":"add","path":"/spec/paused","value":${paused}}]`)

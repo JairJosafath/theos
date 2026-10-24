@@ -1,0 +1,19 @@
+== step4 (2026-10-24, #1618): go test ./internal/controller -run 'TestControllers|TestEveryCRD' -v -args -ginkgo.focus 'Storage migrator' -ginkgo.v
+--- PASS: TestEveryCRDStoresTheHub (0.02s)
+--- PASS: TestEveryCRDDeprecatesV1alpha1 (0.02s)
+Storage migrator rewrites the objects stored at v1alpha1 and brings storedVersions down to v1beta1 under the generated role
+Storage migrator rewrites a kind at strategy None without waiting on the webhook
+Ran 2 of 590 Specs in 6.659 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 588 Skipped
+--- PASS: TestControllers (6.66s)
+ok  	github.com/JairJosafath/c4factory/internal/controller	6.726s
+
+== go test ./test/compat/... -v
+--- PASS: TestCRDsKeepTheLastRelease (0.04s)
+--- PASS: TestCompareSchema (0.00s)
+--- PASS: TestCompareSchemaDefaults (0.00s)
+--- PASS: TestCompareCRDs (0.00s)
+--- PASS: TestDroppedNamesOnlyDroppedVersions (0.05s)
+--- PASS: TestStaleDropped (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/test/compat	(cached)

@@ -91,7 +91,7 @@ spec:
           - --ui-service-account=c4-factory-ui/c4-factory-ui
           # The operator issues the webhook certificate into this Secret for
           # config/default's webhook Service (namePrefix c4-factory-) and
-          # patches its CA into the CRDs (docs/plans/api-versions.md).
+          # patches its CA into the CRDs (docs/plans/done/api-versions.md).
           - --webhook-service=c4-factory-webhook-service
           - --webhook-cert-secret=c4-factory-webhook-cert
         env:

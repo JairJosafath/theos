@@ -163,7 +163,14 @@ func TestGitHubDeployer(t *testing.T) {
 // says Deployed.
 func shipUntilDeployed(t *testing.T, d ports.Deployer, target ports.Target, s ports.Shipment) {
 	t.Helper()
-	ctx := context.Background()
+	shipUntilDeployedIn(context.Background(), t, d, target, s)
+}
+
+// shipUntilDeployedIn is shipUntilDeployed with the context the Ships and
+// States run under, for a test that reads what they log.
+func shipUntilDeployedIn(ctx context.Context, t *testing.T, d ports.Deployer, target ports.Target,
+	s ports.Shipment) {
+	t.Helper()
 	for range 10 {
 		if err := d.Ship(ctx, target, s); err != nil {
 			t.Fatalf("Ship(%s) = %v", s.Version, err)

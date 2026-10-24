@@ -18,7 +18,7 @@ interface Schema {
 /** The Brief CRD's spec schema. */
 function briefSpec(): Record<string, Schema> {
   const crd = parse(briefCRD)
-  const version = crd.spec.versions.find((v: { name: string }) => v.name === 'v1alpha1')
+  const version = crd.spec.versions.find((v: { name: string }) => v.name === 'v1beta1')
   return version.schema.openAPIV3Schema.properties.spec.properties
 }
 

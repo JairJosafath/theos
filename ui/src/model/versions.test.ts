@@ -36,13 +36,13 @@ describe('factoryVersions', () => {
     const v = factoryVersions(
       [project('new'), project('webshop', { operatorVersion: '1.4.0', chartVersion: '1.4.1' })],
       '1.4.0',
-      'c4.factory.io/v1alpha1',
+      'c4.factory.io/v1beta1',
     )
-    expect(v).toEqual({ ui: '1.4.0', operator: '1.4.0', chart: '1.4.1', api: 'c4.factory.io/v1alpha1' })
+    expect(v).toEqual({ ui: '1.4.0', operator: '1.4.0', chart: '1.4.1', api: 'c4.factory.io/v1beta1' })
   })
 
   it('leaves them unknown when no Project reported one', () => {
-    const v = factoryVersions([project('new')], DEV_VERSION, 'c4.factory.io/v1alpha1')
+    const v = factoryVersions([project('new')], DEV_VERSION, 'c4.factory.io/v1beta1')
     expect(v.operator).toBeUndefined()
     expect(v.chart).toBeUndefined()
   })

@@ -611,7 +611,7 @@ describe('gitlab targets (#1807)', () => {
     expect(t).not.toContain('Latest')
     expect(t).toContain('Source folder <container>, tagged <container>/v1.2.3 (path not set: each Container’s name)')
     expect(t).toContain(
-      'Image registry.gitlab.com/webshop-co/apps/webshop/<container> · copied to the project’s container registry, for a Container whose release builds an image, when the registry is on and the token has write_registry',
+      'Image registry.gitlab.com/webshop-co/apps/webshop/<container> · copied to the project’s container registry, for a Container whose release builds an image, when the registry is on and the token has read_registry and write_registry',
     )
     expect(t).not.toContain('the instance names its registry')
     expect(t).toContain('Secret lab-gitlab')

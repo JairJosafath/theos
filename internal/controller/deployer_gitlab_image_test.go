@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -15,6 +16,8 @@ import (
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
 	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 )
 
 // TestGitLabDeployerImage: the gitlab member copies the release's image to
@@ -209,17 +212,41 @@ func TestGitLabDeployerImageSkipped(t *testing.T) {
 		}
 	})
 
-	t.Run("a token without write_registry ships without an image", func(t *testing.T) {
-		p, tg := target("acme/tax", "tax-")
-		p.Scopes = []string{"api"}
-		s, _ := pushed(t, "ns/tax", "v1.0.0")
-		puts := reg.puts.Load()
-		shipUntilDeployed(t, d, tg, withFile(s))
-		if got := reg.puts.Load(); got != puts {
-			t.Errorf("the registry got %d manifests, want none", got-puts)
-		}
-		if rels := p.Releases(); len(rels) != 1 || strings.Contains(rels[0].Description, "Image:") {
-			t.Errorf("releases = %+v, want one naming no image", rels)
-		}
-	})
+	// A token that can't both pull and push ships without an image: the
+	// copy's first call pulls the source tag, which only read_registry grants
+	// (#1956), and the log line names what the token lacks.
+	for _, tc := range []struct {
+		name, project, app string
+		scopes             []string
+		missing            string
+	}{
+		{name: "a token without write_registry ships without an image", project: "acme/tax", app: "tax",
+			scopes: []string{"api", "read_registry"}, missing: "write_registry"},
+		{name: "#1956 a token without read_registry ships without an image", project: "acme/duty", app: "duty",
+			scopes: []string{"api", "write_registry"}, missing: "read_registry"},
+		{name: "a token with neither registry scope ships without an image", project: "acme/levy", app: "levy",
+			scopes: []string{"api"}, missing: "read_registry and write_registry"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, tg := target(tc.project, tc.app+"-")
+			p.Scopes = tc.scopes
+			s, _ := pushed(t, "ns/"+tc.app, "v1.0.0")
+			puts := reg.puts.Load()
+			var logged strings.Builder
+			ctx := logr.NewContext(ctx, funcr.New(func(prefix, args string) {
+				logged.WriteString(prefix + " " + args + "\n")
+			}, funcr.Options{}))
+			shipUntilDeployedIn(ctx, t, d, tg, withFile(s))
+			if got := reg.puts.Load(); got != puts {
+				t.Errorf("the registry got %d manifests, want none", got-puts)
+			}
+			if rels := p.Releases(); len(rels) != 1 || strings.Contains(rels[0].Description, "Image:") {
+				t.Errorf("releases = %+v, want one naming no image", rels)
+			}
+			want := fmt.Sprintf("the token lacks the %s scope", tc.missing)
+			if got := logged.String(); !strings.Contains(got, "No image copied") || !strings.Contains(got, want) {
+				t.Errorf("logged %q, want %q naming %q", got, "No image copied", want)
+			}
+		})
+	}
 }

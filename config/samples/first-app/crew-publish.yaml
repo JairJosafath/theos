@@ -4,7 +4,7 @@
 # Secret orders-cli-github, with the key token, which you create yourself. Not
 # in kustomization.yaml: apply it in place of crew.yaml with
 # kubectl apply -n webshop -f crew-publish.yaml.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Crew
 metadata:
   name: orders-cli

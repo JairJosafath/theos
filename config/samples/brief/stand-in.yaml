@@ -10,7 +10,7 @@
 # with it up to the Gitea release, for every minor release on its own and for
 # a patch when a human dispatches it.
 # Apply with: kubectl apply -f config/samples/brief/stand-in.yaml
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Brief
 metadata:
   name: stand-in-demo

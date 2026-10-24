@@ -453,7 +453,7 @@ same tag, notes and files, give the Crew that repository and a token for it.
 
 > The Crew's `publishReleases` is deprecated: a `github` DeployTarget does the
 > same and more (*Publish a service on GitHub* below). It keeps working in
-> `v1alpha1`; [docs/design.md](design.md#publishing-a-release) says how to
+> `v1alpha1` and `v1beta1`; [docs/design.md](design.md#publishing-a-release) says how to
 > move over, and the Crew's page in the UI links it.
 The factory only adds releases there, and, when you ask for the app's source
 too, one commit per release inside the folder you name: it never touches
@@ -1061,11 +1061,14 @@ README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 `catalog.enabled` off and keep your own. An object the chart stops rendering
 stays until you delete it.
 
-**Your objects keep working.** Within `c4.factory.io/v1alpha1` a release
-never removes, renames or retypes a field, never adds a required one and
-never tightens a rule so that an object you applied before is refused after;
-a change that must break waits for a `v1beta1` that converts your objects.
-See [Compatibility](design.md#compatibility).
+**Your objects keep working.** Write them at `c4.factory.io/v1beta1`. An
+object at `v1alpha1` still works: the version is deprecated, the API server
+warns on every request at it (kubectl prints the warning), and it may be
+dropped no earlier than 2027-01-22 (#1963). Within a served
+version a release never removes, renames or retypes a field, never adds a
+required one and never tightens a rule so that an object you applied before
+is refused after; a change that must break waits for a new version that
+converts your objects. See [Compatibility](design.md#compatibility).
 
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
 one step: the Pause button on its card in the UI sets its `spec.paused` to
