@@ -1012,6 +1012,9 @@ Failed CI leaves it False, reason `ChecksFailed`, with the pull request;
 re-run CI and it merges. A Framework that says it reads the block but
 renders no `infra/operations.ts` leaves it False, reason
 `ChangedAfterScaffold`: file an issue in the app that changes the file.
+So does a change on a Container that adopted its repository
+(`spec.adopt`), reason `AdoptedRepository`: the factory never scaffolded
+it, so it can't know whether the file there is one it can render again.
 
 ## Upgrading
 

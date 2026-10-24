@@ -739,10 +739,25 @@ func (p *Project) pkgByID(id string) *pkg {
 	return nil
 }
 
+// GitLab's rules for a generic package's name and version
+// (lib/gitlab/regex/packages.rb): letters, digits, '.', '_', '+' and '-',
+// and no ".." in a version. The file name's rule is not modelled: the
+// gitprovider tests upload a name with a space to see it escaped.
+var packageKeyRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
+
 // upload adds a file to the package, making the package when it is new. A
 // file of a name already there is added beside it, as GitLab keeps
-// duplicates.
+// duplicates. A name or version outside GitLab's rule is a 400, as GitLab
+// answers (#1873: a tag prefix with '/' must not reach it as the version).
 func (p *Project) upload(w http.ResponseWriter, r *http.Request, name, version, fileName string) {
+	switch {
+	case !packageKeyRe.MatchString(name):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_name is invalid"))
+		return
+	case !packageKeyRe.MatchString(version), strings.Contains(version, ".."):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_version is invalid"))
+		return
+	}
 	size, err := io.Copy(io.Discard, r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
