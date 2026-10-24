@@ -22,7 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -38,7 +38,7 @@ const maxGoMod = 1 << 20
 
 // publishSource is the folder the Crew publishes its releases' source to, or
 // nil when it publishes none.
-func publishSource(crew *c4v1alpha1.Crew) *model.PublishSource {
+func publishSource(crew *c4v1beta1.Crew) *model.PublishSource {
 	spec := crew.Spec.PublishReleases
 	if spec == nil || spec.Source == nil {
 		return nil
@@ -48,8 +48,8 @@ func publishSource(crew *c4v1alpha1.Crew) *model.PublishSource {
 
 // sourceOverlaps names the other Crews, in any namespace, publishing source to
 // the Crew's repository in a folder overlapping its own.
-func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1alpha1.Crew) ([]string, error) {
-	var crews c4v1alpha1.CrewList
+func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1beta1.Crew) ([]string, error) {
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews); err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1alpha1.Cr
 // reads the module path from the root go.mod. Each file is scanned for
 // secrets as it streams, known among them, and the files kept are checked
 // (model.PublishChecks) into the source's Problems.
-func readSource(ctx context.Context, c client.Reader, container *c4v1alpha1.Container,
+func readSource(ctx context.Context, c client.Reader, container *c4v1beta1.Container,
 	provider gitprovider.Provider, repo gitprovider.Repository, tag string, known []string) (*model.ReleaseSource, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
@@ -117,10 +117,10 @@ func readSource(ctx context.Context, c client.Reader, container *c4v1alpha1.Cont
 // Secrets in its namespace, and extra, the publish target's own. They are
 // compared, never stored or logged. A Secret not there holds nothing.
 func knownCredentials(ctx context.Context, c client.Reader, apiReader client.Reader,
-	container *c4v1alpha1.Container, extra ...string) ([]string, error) {
+	container *c4v1beta1.Container, extra ...string) ([]string, error) {
 	known := slices.Clone(extra)
 	ns := container.Namespace
-	var gp c4v1alpha1.GitProvider
+	var gp c4v1beta1.GitProvider
 	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: container.Spec.GitProviderRef.Name}, &gp); err != nil {
 		return nil, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
 	}
@@ -135,7 +135,7 @@ func knownCredentials(ctx context.Context, c client.Reader, apiReader client.Rea
 		return nil, err
 	}
 	known = append(known, string(agentGit["token"]))
-	var agents c4v1alpha1.AgentList
+	var agents c4v1beta1.AgentList
 	if err := c.List(ctx, &agents, client.InNamespace(ns)); err != nil {
 		return nil, err
 	}

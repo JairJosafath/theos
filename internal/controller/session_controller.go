@@ -21,7 +21,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -44,12 +44,12 @@ type SessionReconciler struct {
 func (r *SessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	var session c4v1alpha1.Session
+	var session c4v1beta1.Session
 	if err := r.Get(ctx, req.NamespacedName, &session); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	err := r.Get(ctx, types.NamespacedName{Namespace: session.Namespace, Name: session.Spec.ContainerRef.Name}, &container)
 	switch {
 	case apierrors.IsNotFound(err):
@@ -58,14 +58,14 @@ func (r *SessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	default:
 		labels := projectLabels(session.Namespace)
-		labels[c4v1alpha1.LabelSoftwareSystem] = container.Spec.SoftwareSystemRef.Name
-		labels[c4v1alpha1.LabelContainer] = container.Name
+		labels[c4v1beta1.LabelSoftwareSystem] = container.Spec.SoftwareSystemRef.Name
+		labels[c4v1beta1.LabelContainer] = container.Name
 		if err := adopt(ctx, r.Client, r.Scheme, &container, &session, labels); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if session.Status.Phase == c4v1alpha1.SessionStale {
+	if session.Status.Phase == c4v1beta1.SessionStale {
 		return ctrl.Result{}, nil
 	}
 	var last time.Time
@@ -79,7 +79,7 @@ func (r *SessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Optimistic lock: a heartbeat that lands meanwhile wins, and we look again.
 	orig := session.DeepCopy()
-	session.Status.Phase = c4v1alpha1.SessionStale
+	session.Status.Phase = c4v1beta1.SessionStale
 	if err := r.Status().Patch(ctx, &session, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{})); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{RequeueAfter: time.Second}, nil
@@ -109,7 +109,7 @@ func (r *SessionReconciler) staleAfter() time.Duration {
 func (r *SessionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Container appearing lets its waiting Sessions be adopted.
 	toSessions := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var sessions c4v1alpha1.SessionList
+		var sessions c4v1beta1.SessionList
 		if err := mgr.GetClient().List(ctx, &sessions, client.InNamespace(obj.GetNamespace()),
 			client.MatchingFields{indexContainer: obj.GetName()}); err != nil {
 			return nil
@@ -121,8 +121,8 @@ func (r *SessionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return reqs
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Session{}).
-		Watches(&c4v1alpha1.Container{}, toSessions, createOrDelete()).
+		For(&c4v1beta1.Session{}).
+		Watches(&c4v1beta1.Container{}, toSessions, createOrDelete()).
 		Named("session").
 		Complete(r)
 }

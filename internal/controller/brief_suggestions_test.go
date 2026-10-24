@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -32,7 +32,7 @@ func suggestionsPlan(ns, answers string) scaffold.Tree {
 // extensionDoc is a second Container of cel-lens, the editor extension, which
 // sorts after the linter (the engine), as cel-lens-vscode does after cel-lens.
 const extensionDoc = `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: linter-vscode
@@ -86,7 +86,7 @@ var _ = Describe("Brief suggestions", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("listing the suggestions a reviewer filed, and not a person's proposed issue")
@@ -101,7 +101,7 @@ var _ = Describe("Brief suggestions", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.SuggestionsWaiting).To(Equal(int32(2)))
-			g.Expect(b.Status.Suggestions).To(Equal([]c4v1alpha1.BriefSuggestion{
+			g.Expect(b.Status.Suggestions).To(Equal([]c4v1beta1.BriefSuggestion{
 				{Container: "linter", Number: int32(safety), Title: "Reject control characters",
 					URL: gitFake.issue(ns, "linter", safety).URL, Criteria: true},
 				{Container: "linter", Number: int32(caching), Title: "Think about caching",
@@ -135,7 +135,7 @@ var _ = Describe("Brief suggestions", func() {
 `, safety, caching)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 			g.Expect(b.Status.SuggestionsWaiting).To(BeZero())
 			g.Expect(b.Status.Suggestions).To(BeEmpty())
@@ -165,7 +165,7 @@ var _ = Describe("Brief suggestions", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		caching := gitFake.addIssue(ns, "linter", "Think about caching", model.FollowUpIssue(model.FollowUp{
 			Body: "Rules are read often."}, "Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"),
@@ -182,7 +182,7 @@ var _ = Describe("Brief suggestions", func() {
 		planRound(ns, 2, 1, suggestionsPlan(ns,
 			fmt.Sprintf("- {container: linter, issue: %d, answer: skip, why: The prompt skips it.}\n", caching)))
 		Eventually(func(g Gomega) {
-			cond := meta.FindStatusCondition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := meta.FindStatusCondition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Reason).To(Equal(model.ReasonApplyFailed))
 			g.Expect(cond.Message).To(ContainSubstring(fmt.Sprintf("answering linter#%d", caching)))
@@ -221,7 +221,7 @@ var _ = Describe("Brief suggestions a prompt names that don't wait", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		suggestion := func(n int) string {
@@ -260,7 +260,7 @@ var _ = Describe("Brief suggestions a prompt names that don't wait", func() {
 		planRound(ns, 2, 2, suggestionsPlan(ns, missing(closed, ready, 999)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
 		b := getBrief(Default, ns)
@@ -292,7 +292,7 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, twoContainersPlan(ns, 1, ""))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("filing 31 suggestions in each, #364 and #371 in both")
@@ -343,7 +343,7 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 		planRound(ns, 2, 2, twoContainersPlan(ns, 0, answers("linter-vscode", newest...)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 			g.Expect(b.Status.SuggestionsWaiting).To(Equal(int32(56)))
 		}).Should(Succeed())

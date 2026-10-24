@@ -13,21 +13,21 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Container", func() {
 	It("becomes a child of its SoftwareSystem, with ancestor labels", func() {
 		ns := newProjectNamespace()
 		system := newSystem(ns, "webshop-core")
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		mustCreate(system, container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(controlledBy(container, system)).To(BeTrue())
-			g.Expect(container.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelProject, ns))
-			g.Expect(container.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSoftwareSystem, "webshop-core"))
+			g.Expect(container.Labels).To(HaveKeyWithValue(c4v1beta1.LabelProject, ns))
+			g.Expect(container.Labels).To(HaveKeyWithValue(c4v1beta1.LabelSoftwareSystem, "webshop-core"))
 		}).Should(Succeed())
 
 		// ownerReferences carry blockOwnerDeletion, so deleting the system cascades
@@ -38,13 +38,13 @@ var _ = Describe("Container", func() {
 
 	It("waits for a missing SoftwareSystem, then is adopted when it appears", func() {
 		ns := newProjectNamespace()
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		mustCreate(container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerPending))
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerPending))
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Message).To(Equal("SoftwareSystem webshop-core not found"))
@@ -60,7 +60,7 @@ var _ = Describe("Container", func() {
 
 	It("keeps its SoftwareSystem for life", func() {
 		ns := newProjectNamespace()
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		mustCreate(container)
 
 		Expect(patch(container, func() { container.Spec.SoftwareSystemRef.Name = "another-system" })).
@@ -69,12 +69,12 @@ var _ = Describe("Container", func() {
 
 	It("accepts the operator type", func() {
 		ns := newProjectNamespace()
-		mustCreate(newContainer(ns, "backup-operator", "webshop-core", c4v1alpha1.ContainerTypeOperator))
+		mustCreate(newContainer(ns, "backup-operator", "webshop-core", c4v1beta1.ContainerTypeOperator))
 	})
 
 	It("accepts the function type", func() {
 		ns := newProjectNamespace()
-		mustCreate(newContainer(ns, "orders-fn", "webshop-core", c4v1alpha1.ContainerTypeFunction))
+		mustCreate(newContainer(ns, "orders-fn", "webshop-core", c4v1beta1.ContainerTypeFunction))
 	})
 
 	It("rejects a type outside the fixed list", func() {
@@ -85,7 +85,7 @@ var _ = Describe("Container", func() {
 
 	It("takes a license only from the fixed set of SPDX ids (#1859)", func() {
 		ns := newProjectNamespace()
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		container.Spec.License = "WTFPL"
 		Expect(k8sClient.Create(ctx, container)).To(MatchError(ContainSubstring("license")))
 		container.Spec.License = "MIT"
@@ -99,13 +99,13 @@ var _ = Describe("SoftwareSystem", func() {
 		mustCreate(
 			newSystem(ns, "webshop-core"),
 			newSystem(ns, "back-office"),
-			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService),
-			newContainer(ns, "storefront", "webshop-core", c4v1alpha1.ContainerTypeStaticSite),
-			newContainer(ns, "reports", "back-office", c4v1alpha1.ContainerTypeJob),
+			newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService),
+			newContainer(ns, "storefront", "webshop-core", c4v1beta1.ContainerTypeStaticSite),
+			newContainer(ns, "reports", "back-office", c4v1beta1.ContainerTypeJob),
 			newOrdersDB(ns),
 		)
 		Eventually(func(g Gomega) {
-			var system c4v1alpha1.SoftwareSystem
+			var system c4v1beta1.SoftwareSystem
 			g.Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), &system)).To(Succeed())
 			g.Expect(system.Status.Containers).To(BeEquivalentTo(2))
 			g.Expect(system.Status.DataStores).To(BeEquivalentTo(1))

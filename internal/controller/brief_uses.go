@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -37,7 +37,7 @@ type usedPackages struct {
 // usesLookup is what one reconcile read for the round's uses: issues.
 type usesLookup struct {
 	// crews are the namespace's Crews by Container.
-	crews map[string]*c4v1alpha1.Crew
+	crews map[string]*c4v1beta1.Crew
 	// tags are, by Container, the title of the round's release milestone in
 	// its repository, which its release's tag takes; "" while it has none.
 	tags map[string]string
@@ -57,11 +57,11 @@ func (r *BriefReconciler) usedPackages(ctx context.Context, run *roundApply, iss
 		return out, nil
 	}
 	if run.uses == nil {
-		var crews c4v1alpha1.CrewList
+		var crews c4v1beta1.CrewList
 		if err := r.List(ctx, &crews, client.InNamespace(run.brief.Namespace)); err != nil {
 			return out, err
 		}
-		run.uses = &usesLookup{crews: map[string]*c4v1alpha1.Crew{}, tags: map[string]string{},
+		run.uses = &usesLookup{crews: map[string]*c4v1beta1.Crew{}, tags: map[string]string{},
 			indexes: map[string]string{}}
 		for i := range crews.Items {
 			run.uses.crews[crews.Items[i].Spec.ContainerRef.Name] = &crews.Items[i]
@@ -80,7 +80,7 @@ func (r *BriefReconciler) usedPackages(ctx context.Context, run *roundApply, iss
 			}
 			want = tag
 		}
-		var release *c4v1alpha1.CrewRelease
+		var release *c4v1beta1.CrewRelease
 		if crew := run.uses.crews[name]; crew != nil {
 			release = crew.Status.LastRelease
 		}
@@ -116,7 +116,7 @@ func (r *BriefReconciler) usedPackages(ctx context.Context, run *roundApply, iss
 // the Crew listed them; a PyPI package carries the index it is installed
 // from, read once per Container from its GitProvider.
 func (r *BriefReconciler) releasePublished(ctx context.Context, run *roundApply, name string,
-	release *c4v1alpha1.CrewRelease) ([]model.UsedPackage, error) {
+	release *c4v1beta1.CrewRelease) ([]model.UsedPackage, error) {
 	var out []model.UsedPackage
 	if release.GoModule.State == model.ModuleStatePublished {
 		out = append(out, model.UsedPackage{Ecosystem: model.EcosystemGo, Name: release.GoModule.Path,
@@ -142,7 +142,7 @@ func (r *BriefReconciler) pypiIndex(ctx context.Context, run *roundApply, name s
 	if index, ok := run.uses.indexes[name]; ok {
 		return index, nil
 	}
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c); err != nil {
 		return "", err
 	}
@@ -161,7 +161,7 @@ func (r *BriefReconciler) roundReleaseTag(ctx context.Context, run *roundApply, 
 	if tag, ok := run.uses.tags[name]; ok {
 		return tag, nil
 	}
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c); err != nil {
 		return "", err
 	}

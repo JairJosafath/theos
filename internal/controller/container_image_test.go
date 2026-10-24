@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -29,17 +29,17 @@ const imageRegistry = "gitea.gitea.svc.cluster.local:3000/"
 
 // imageIs waits for orders-api's status.image to have tag and state, and the
 // condition ImagePublished to match it.
-func imageIs(ns, tag, state string) *c4v1alpha1.ContainerImageStatus { //nolint:unparam // the helper names the release, as its callers read; every spec of this file releases v0.1.0
+func imageIs(ns, tag, state string) *c4v1beta1.ContainerImageStatus { //nolint:unparam // the helper names the release, as its callers read; every spec of this file releases v0.1.0
 	GinkgoHelper()
-	var img *c4v1alpha1.ContainerImageStatus
+	var img *c4v1beta1.ContainerImageStatus
 	Eventually(func(g Gomega) {
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		img = container.Status.Image
 		g.Expect(img).NotTo(BeNil())
 		g.Expect(img.Tag).To(Equal(tag))
 		g.Expect(img.State).To(Equal(state), img.Message)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionImagePublished)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionImagePublished)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Reason).To(Equal(state))
 		want := metav1.ConditionFalse
@@ -55,11 +55,11 @@ var _ = Describe("Container images", func() {
 	It("publishes the newest release's image once and ships it by digest", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		shipRelease(ns, "v0.1.0", true)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
 
 		img := imageIs(ns, "v0.1.0", model.ImageStatePublished)
 		repository := imageRegistry + ns + "/orders-api"
@@ -126,12 +126,12 @@ var _ = Describe("Container images", func() {
 	It("ships a pinned version's image from the registry", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		gitFake.setGiteaRelease(ns, "orders-api", "v0.0.9", "Notes of v0.0.9",
 			fakeFile{"orders-api-v0.0.9.tar.gz", []byte("the build of v0.0.9")})
 		gitFake.setRegistryImage(ns, "orders-api", "v0.0.9", testDigest)
 		shipRelease(ns, "v0.1.0", true)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging", Version: "v0.0.9"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging", Version: "v0.0.9"})
 
 		deployIs(ns, "staging", model.DeployPhaseDeploying, model.DeployDeploying, "", model.DeployDeploying)
 		deployFake.SetState(targetName(ns, "staging"), ns+"/orders-api", ports.DeployState{Version: "v0.0.9",
@@ -159,8 +159,8 @@ var _ = Describe("Container images", func() {
 	It("writes Pushing and goes on while a push is held, then the image once it ends (#1572)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		release := gitFake.holdImagePushes(ns, "orders-api")
@@ -189,8 +189,8 @@ var _ = Describe("Container images", func() {
 	It("holds the ship while the newest release's push fails, then ships by digest (#1570)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		gitFake.failImagePushes(ns, "orders-api", 5)
@@ -217,8 +217,8 @@ var _ = Describe("Container images", func() {
 	It("ships no image, not the registry's, when the newest release's tag is taken (#1570)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImageTagTaken,
 			Reason: "v0.1.0 already names sha256:other"})
 		gitFake.setRegistryImage(ns, "orders-api", "v0.1.0", "sha256:other")
@@ -232,8 +232,8 @@ var _ = Describe("Container images", func() {
 	It("leaves the image and the deploys as they were while the Crew list fails (#1570)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		readyTarget(ns, "staging", c4v1alpha1.DeployTierDevelopment)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "staging"})
+		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
 		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
@@ -248,7 +248,7 @@ var _ = Describe("Container images", func() {
 		Consistently(func(g Gomega) {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Health).To(Equal(ports.HealthHealthy))
-			container := &c4v1alpha1.Container{}
+			container := &c4v1beta1.Container{}
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).NotTo(BeNil())
 			g.Expect(container.Status.Image.State).To(Equal(model.ImageStatePublished))
@@ -266,12 +266,12 @@ var _ = Describe("Container images", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
 		// A service without a Deployment: no catalog choice of its builds an image.
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		container.Spec.DeploymentRef = nil
 		mustCreate(newSystem(ns, "webshop-core"), container, newCrew(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 		shipRelease(ns, "v0.1.0", true)
 
@@ -282,7 +282,7 @@ var _ = Describe("Container images", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).To(BeNil())
-			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionImagePublished)).To(BeNil())
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionImagePublished)).To(BeNil())
 		}, 3*time.Second).Should(Succeed())
 		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(BeZero())
 	})
@@ -296,19 +296,19 @@ var _ = Describe("Container images", func() {
 		gitFake.addTemplate(templatesURL+model.FrameworkAWSFargate, "v1.3.0", scaffold.Tree{
 			"README.md.tmpl": {Data: []byte("# {{ .Container }}\n")},
 		})
-		fargate := &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, model.FrameworkAWSFargate),
-			Spec: newFrameworkSpec(templatesURL+model.FrameworkAWSFargate, "v1.3.0", c4v1alpha1.ContainerTypeService)}
+		fargate := &c4v1beta1.Framework{ObjectMeta: objectMeta(ns, model.FrameworkAWSFargate),
+			Spec: newFrameworkSpec(templatesURL+model.FrameworkAWSFargate, "v1.3.0", c4v1beta1.ContainerTypeService)}
 		fargate.Spec.DeploysItself = true
-		giteaRelease := &c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
-			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.8.0", c4v1alpha1.ContainerTypeService)}
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		giteaRelease := &c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
+			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.8.0", c4v1beta1.ContainerTypeService)}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		container.Spec.FrameworkRef.Name = model.FrameworkAWSFargate
 		container.Spec.ComputeRef = nil
-		container.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: model.DeploymentGiteaRelease}
+		container.Spec.DeploymentRef = &c4v1beta1.LocalRef{Name: model.DeploymentGiteaRelease}
 		mustCreate(newSystem(ns, "webshop-core"), fargate, giteaRelease, container, newCrew(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 		Expect(container.Status.ScaffoldedFrom).To(ContainElement(model.FrameworkAWSFargate + "@v1.3.0"))
 		shipRelease(ns, "v0.1.0", true) // its files: the build's tar.gz, no *.oci.tar
@@ -320,7 +320,7 @@ var _ = Describe("Container images", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Image).To(BeNil())
-			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionImagePublished)).To(BeNil())
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionImagePublished)).To(BeNil())
 		}, 3*time.Second).Should(Succeed())
 		Expect(gitFake.imagePushes(ns + "/orders-api@v0.1.0")).To(BeZero())
 	})

@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -31,7 +31,7 @@ const reasonBumpFiled = "BumpFiled"
 // built its files and, when the Crew publishes its releases, the release is
 // published (model.ReleaseBumpable). A failure is logged and tried again on the
 // next poll.
-func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil {
@@ -59,7 +59,7 @@ func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1alpha1.Crew, s
 			log.Error(err, "Failed to file a bump issue", "bundler", b.Container, "tag", release.Tag)
 			continue
 		}
-		release.Bumps = append(release.Bumps, c4v1alpha1.CrewReleaseBump{Container: b.Container, IssueURL: issue.URL})
+		release.Bumps = append(release.Bumps, c4v1beta1.CrewReleaseBump{Container: b.Container, IssueURL: issue.URL})
 		if isNew {
 			log.Info("Filed a bump issue", "bundler", b.Container, "tag", release.Tag, "issue", issue.URL)
 			if r.Recorder != nil {
@@ -73,25 +73,25 @@ func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1alpha1.Crew, s
 // bundlers are the Containers that bundle the named one, through a Relationship
 // that says bundles.
 func (r *CrewReconciler) bundlers(ctx context.Context, ns, name string) ([]model.Bundler, error) {
-	var rels c4v1alpha1.RelationshipList
+	var rels c4v1beta1.RelationshipList
 	if err := r.List(ctx, &rels, client.InNamespace(ns),
-		client.MatchingFields{indexElement: elementKey(c4v1alpha1.ElementContainer, name)}); err != nil {
+		client.MatchingFields{indexElement: elementKey(c4v1beta1.ElementContainer, name)}); err != nil {
 		return nil, err
 	}
 	var out []model.Bundler
 	for _, rel := range rels.Items {
-		if !rel.Spec.Bundles || rel.Spec.Source.Kind != c4v1alpha1.ElementContainer ||
-			rel.Spec.Target.Kind != c4v1alpha1.ElementContainer || rel.Spec.Target.Name != name {
+		if !rel.Spec.Bundles || rel.Spec.Source.Kind != c4v1beta1.ElementContainer ||
+			rel.Spec.Target.Kind != c4v1beta1.ElementContainer || rel.Spec.Target.Name != name {
 			continue
 		}
 		b := model.Bundler{Container: rel.Spec.Source.Name, Relationship: rel.Name,
 			Description: rel.Spec.Description, Created: rel.CreationTimestamp.Time}
-		var source c4v1alpha1.Container
+		var source c4v1beta1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: b.Container}, &source)
 		if client.IgnoreNotFound(err) != nil {
 			return nil, err
 		}
-		b.Ready = err == nil && source.Status.Phase == c4v1alpha1.ContainerReady
+		b.Ready = err == nil && source.Status.Phase == c4v1beta1.ContainerReady
 		out = append(out, b)
 	}
 	return out, nil
@@ -102,7 +102,7 @@ func (r *CrewReconciler) bundlers(ctx context.Context, ns, name string) ([]model
 // bundler's first release that can still take work (releaseTakingWork). isNew
 // says it was filed now.
 func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bump) (gitprovider.Issue, bool, error) {
-	var bundler c4v1alpha1.Container
+	var bundler c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: bump.Bundler.Container}, &bundler); err != nil {
 		return gitprovider.Issue{}, false, err
 	}

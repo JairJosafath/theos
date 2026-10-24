@@ -61,7 +61,7 @@ func briefRepo(t *testing.T) string {
 	return bareRepo(t, map[string]string{
 		model.BriefFile:               "# cel-lens\n\nA tool that explains CEL rules.\n",
 		model.PlannerGuide:            "Plan the brief.\n",
-		model.WorkspaceModelFile:      "---\napiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata:\n  name: apps\n",
+		model.WorkspaceModelFile:      "---\napiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata:\n  name: apps\n",
 		model.WorkspaceCatalogFile:    "frameworks: []\n",
 		model.WorkspaceContainersFile: "- name: cli\n  repository: http://gitea/apps/cli\n  openIssues: []\n",
 		"plan/choices.md":             "- Round 1 chose a CLI.\n",
@@ -119,7 +119,7 @@ func TestRunPlanPushesOnlyThePlan(t *testing.T) {
 	url := briefRepo(t)
 	agent := &recordingAgent{next: filesAgent{summary: "One CLI and one issue.", files: map[string]string{
 		model.PlanChoicesFile:   "- A CLI, since the idea is a tool.\n",
-		model.PlanModelFile:     "apiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata:\n  name: apps\n",
+		model.PlanModelFile:     "apiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata:\n  name: apps\n",
 		"plan/issues/01-cli.md": "---\ntitle: Explain a rule\n---\nBody.\n",
 		model.BriefFile:         "The planner may not rewrite the brief.\n",
 		"notes.md":              "Nor add files outside plan/.\n",

@@ -17,14 +17,14 @@ const operatorIdea = "an operator that backs up every PVC labelled `backup: nigh
 
 // operatorPlan is a planner's plan for operatorIdea: the cue in planner.md
 // makes it an operator on go-kubebuilder.
-const operatorPlan = `apiVersion: c4.factory.io/v1alpha1
+const operatorPlan = `apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: pvc-backup
 spec:
   description: Backs up the cluster's labelled volumes every night
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: backup-operator

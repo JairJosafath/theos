@@ -18,7 +18,7 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -59,7 +59,7 @@ var _ = Describe("Crew Go modules", func() {
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
 			g.Expect(crew.Status.LastRelease).NotTo(BeNil())
-			g.Expect(crew.Status.LastRelease.GoModule).To(Equal(&c4v1alpha1.CrewReleaseGoModule{
+			g.Expect(crew.Status.LastRelease.GoModule).To(Equal(&c4v1beta1.CrewReleaseGoModule{
 				State: "Published", Path: ordersModule(ns), Version: "v0.1.0",
 				Message: "Published " + ordersModule(ns) + " v0.1.0"}))
 			cond := condition(crew.Status.Conditions, ConditionModulePublished)
@@ -321,7 +321,7 @@ var _ = Describe("Crew Go modules", func() {
 		goProxyFake.setFound(module, "v0.1.0", false)
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			crew.Status.LastRelease.GoModule = &c4v1alpha1.CrewReleaseGoModule{State: "Published", Path: module,
+			crew.Status.LastRelease.GoModule = &c4v1beta1.CrewReleaseGoModule{State: "Published", Path: module,
 				Version: "v0.1.0", Message: "Published " + module + " v0.1.0"}
 			g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
 		}).Should(Succeed())
@@ -342,20 +342,20 @@ var _ = Describe("Crew Go modules", func() {
 var _ = Describe("Crew Go modules with no Go proxy", func() {
 	It("takes the Crew's source tag for a module in its GitHub folder (--go-proxy=off)", func() {
 		module := "github.com/acme/cel-lens/engine"
-		crew := &c4v1alpha1.Crew{Spec: c4v1alpha1.CrewSpec{TagReleases: true,
-			PublishReleases: &c4v1alpha1.CrewPublishReleases{
-				GitHub: c4v1alpha1.CrewPublishGitHub{Repository: "acme/cel-lens"},
-				Source: &c4v1alpha1.CrewPublishSource{Path: "engine"}}}}
-		status := &c4v1alpha1.CrewStatus{LastRelease: &c4v1alpha1.CrewRelease{Tag: "v0.15.1",
-			GoModule: &c4v1alpha1.CrewReleaseGoModule{State: "Published", Path: module, Version: "v0.15.1"}}}
+		crew := &c4v1beta1.Crew{Spec: c4v1beta1.CrewSpec{TagReleases: true,
+			PublishReleases: &c4v1beta1.CrewPublishReleases{
+				GitHub: c4v1beta1.CrewPublishGitHub{Repository: "acme/cel-lens"},
+				Source: &c4v1beta1.CrewPublishSource{Path: "engine"}}}}
+		status := &c4v1beta1.CrewStatus{LastRelease: &c4v1beta1.CrewRelease{Tag: "v0.15.1",
+			GoModule: &c4v1beta1.CrewReleaseGoModule{State: "Published", Path: module, Version: "v0.15.1"}}}
 		r := &CrewReconciler{}
 
 		r.publishGoModule(ctx, crew, status, nil, gitprovider.Repository{})
 		Expect(status.LastRelease.GoModule.State).To(Equal("Waiting"))
 		Expect(condition(status.Conditions, ConditionModulePublished).Reason).To(Equal("WaitsForRelease"))
 
-		status.LastRelease.Publish = &c4v1alpha1.CrewReleasePublish{State: "Published",
-			Source: &c4v1alpha1.CrewReleaseSource{Commit: "abc", Tag: "engine/v0.15.1", Private: new(false)}}
+		status.LastRelease.Publish = &c4v1beta1.CrewReleasePublish{State: "Published",
+			Source: &c4v1beta1.CrewReleaseSource{Commit: "abc", Tag: "engine/v0.15.1", Private: new(false)}}
 		r.publishGoModule(ctx, crew, status, nil, gitprovider.Repository{})
 		m := status.LastRelease.GoModule
 		Expect(m.State).To(Equal("Published"))

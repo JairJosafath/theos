@@ -29,7 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -141,7 +141,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Read live: a reconcile queued before the last status write would see the
 	// cached Crew without it, and a release whose milestone that write closed
 	// would turn back into "No open release is done".
-	var crew c4v1alpha1.Crew
+	var crew c4v1beta1.Crew
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &crew); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -150,7 +150,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	status := r.observe(ctx, &crew)
 
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: crew.Spec.ContainerRef.Name}, &container)
 	if apierrors.IsNotFound(err) {
 		r.wait(&crew, status, "ContainerNotFound", "Container "+crew.Spec.ContainerRef.Name+" not found")
@@ -160,7 +160,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	labels := projectLabels(crew.Namespace)
-	labels[c4v1alpha1.LabelContainer] = container.Name
+	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &crew, labels); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -168,7 +168,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// too, or a release written since the read is patched away (#591, #1455).
 	status = r.observe(ctx, &crew)
 	for _, name := range crewAgentNames(&crew.Spec) {
-		var agent c4v1alpha1.Agent
+		var agent c4v1beta1.Agent
 		err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: name}, &agent)
 		if apierrors.IsNotFound(err) {
 			r.wait(&crew, status, "AgentNotFound", "Agent "+name+" not found")
@@ -180,13 +180,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
-		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady, Routes: crewRoutes(&crew.Spec)}
+		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec)}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
 		return ctrl.Result{}, err
 	}
-	var containerTasks []c4v1alpha1.Task
+	var containerTasks []c4v1beta1.Task
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name == container.Name {
 			facts.Tasks = append(facts.Tasks, crewTask(&t))
@@ -248,13 +248,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if s.Reviewer != "" {
 			reviewer = s.Reviewer
 		}
-		task := &c4v1alpha1.Task{
+		task := &c4v1beta1.Task{
 			ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
 				LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
-			Spec: c4v1alpha1.TaskSpec{
-				ContainerRef: c4v1alpha1.LocalRef{Name: container.Name},
-				AgentRef:     c4v1alpha1.LocalRef{Name: implementer},
-				ReviewerRef:  &c4v1alpha1.LocalRef{Name: reviewer},
+			Spec: c4v1beta1.TaskSpec{
+				ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
+				AgentRef:     c4v1beta1.LocalRef{Name: implementer},
+				ReviewerRef:  &c4v1beta1.LocalRef{Name: reviewer},
 				Issue:        int32(s.Issue),
 				// Set only for a Standard change, from the Task that filed it.
 				AllowedProtectedPaths: s.AllowedPaths,
@@ -268,7 +268,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 
-	status.Phase = c4v1alpha1.CrewPhase(step.Phase)
+	status.Phase = c4v1beta1.CrewPhase(step.Phase)
 	status.Ready, status.Waiting = int32s(step.Ready), int32s(step.Waiting)
 	if facts.ContainerReady {
 		now := metav1.NewTime(r.now())
@@ -292,9 +292,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // publishes its Go module, files its bumps and publishes it, as the Crew's
 // switches say. It returns the prepare issue filed now, if any, and the
 // release whose prepare issue waits for the Tasks at work, if any.
-func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
-	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) (*model.Issue, string) {
+func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	status *c4v1beta1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1beta1.Task) (*model.Issue, string) {
 	if crew.Spec.TagReleases {
 		r.rerunRelease(ctx, crew, status, provider, repo)
 		r.watchReleaseRun(ctx, crew, status, provider, repo)
@@ -320,9 +320,9 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1alpha1.Crew, con
 
 // crewAgentNames names every Agent a Crew may start a Task with: its own two
 // and those its routes name, each once.
-func crewAgentNames(spec *c4v1alpha1.CrewSpec) []string {
+func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
 	names := make([]string, 0, 2+2*len(spec.Routes))
-	add := func(ref *c4v1alpha1.LocalRef) {
+	add := func(ref *c4v1beta1.LocalRef) {
 		if ref != nil && !slices.Contains(names, ref.Name) {
 			names = append(names, ref.Name)
 		}
@@ -337,7 +337,7 @@ func crewAgentNames(spec *c4v1alpha1.CrewSpec) []string {
 }
 
 // crewRoutes are a Crew's routes as the model reads them.
-func crewRoutes(spec *c4v1alpha1.CrewSpec) []model.AgentRoute {
+func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 	out := make([]model.AgentRoute, 0, len(spec.Routes))
 	for _, route := range spec.Routes {
 		r := model.AgentRoute{Label: route.Label}
@@ -355,10 +355,10 @@ func crewRoutes(spec *c4v1alpha1.CrewSpec) []model.AgentRoute {
 // crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
 // a Standard change, and the Standard change it filed, which alone grants an
 // allowance.
-func crewTask(t *c4v1alpha1.Task) model.CrewTask {
+func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
-		Failed: t.Status.Phase == c4v1alpha1.TaskFailed, NoCI: failedNoCI(&t.Status),
-		Blocked: t.Status.Phase == c4v1alpha1.TaskBlocked}
+		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked}
 	if change := t.Status.StandardChange; change != nil {
 		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
 	}
@@ -420,21 +420,21 @@ func release(issue gitprovider.Issue) *model.Release {
 	return &model.Release{Title: issue.MilestoneTitle, Due: issue.MilestoneDue}
 }
 
-func (r *CrewReconciler) wait(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus, reason, message string) {
-	status.Phase = c4v1alpha1.CrewWaiting
+func (r *CrewReconciler) wait(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus, reason, message string) {
+	status.Phase = c4v1beta1.CrewWaiting
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, metav1.ConditionFalse, reason, message)
 }
 
 // observe starts the status this reconcile writes from the Crew as read:
 // its generation observed, its release target checked.
-func (r *CrewReconciler) observe(ctx context.Context, crew *c4v1alpha1.Crew) *c4v1alpha1.CrewStatus {
+func (r *CrewReconciler) observe(ctx context.Context, crew *c4v1beta1.Crew) *c4v1beta1.CrewStatus {
 	status := crew.Status.DeepCopy()
 	status.ObservedGeneration = crew.Generation
 	r.releaseTarget(ctx, crew, status)
 	return status
 }
 
-func (r *CrewReconciler) writeStatus(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) error {
+func (r *CrewReconciler) writeStatus(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) error {
 	if equality.Semantic.DeepEqual(&crew.Status, status) {
 		return nil
 	}
@@ -473,7 +473,7 @@ func int32s(in []int) []int32 {
 // Crews at once; otherwise they poll the Git host.
 func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	crewsOf := func(ctx context.Context, ns, container string) []reconcile.Request {
-		var crews c4v1alpha1.CrewList
+		var crews c4v1beta1.CrewList
 		if err := mgr.GetClient().List(ctx, &crews, client.InNamespace(ns),
 			client.MatchingFields{indexContainer: container}); err != nil {
 			return nil
@@ -485,14 +485,14 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return reqs
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Crew{}).
-		Watches(&c4v1alpha1.Container{}, handler.EnqueueRequestsFromMapFunc(
+		For(&c4v1beta1.Crew{}).
+		Watches(&c4v1beta1.Container{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				return crewsOf(ctx, obj.GetNamespace(), obj.GetName())
 			}), containerPhaseChanges()).
-		Watches(&c4v1alpha1.Task{}, handler.EnqueueRequestsFromMapFunc(
+		Watches(&c4v1beta1.Task{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
-				task, ok := obj.(*c4v1alpha1.Task)
+				task, ok := obj.(*c4v1beta1.Task)
 				if !ok {
 					return nil
 				}
@@ -500,9 +500,9 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}), taskPhaseChanges()).
 		// A Crew read before its Agents were in the cache waits on AgentNotFound
 		// with no requeue; their creation wakes it.
-		Watches(&c4v1alpha1.Agent{}, handler.EnqueueRequestsFromMapFunc(
+		Watches(&c4v1beta1.Agent{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
-				var crews c4v1alpha1.CrewList
+				var crews c4v1beta1.CrewList
 				if err := mgr.GetClient().List(ctx, &crews, client.InNamespace(obj.GetNamespace())); err != nil {
 					return nil
 				}

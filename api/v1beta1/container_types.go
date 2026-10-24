@@ -694,3 +694,39 @@ func init() {
 		return nil
 	})
 }
+
+// ContainerChoices are the catalog entries a Container picked, by name, ""
+// for a side it picks none of. Bundle names the Bundle they came from, if any.
+type ContainerChoices struct {
+	Bundle     string
+	Framework  string
+	Standard   string
+	Compute    string
+	Deployment string
+}
+
+// Choices gives the Container's effective catalog choices: its spec's refs,
+// or, when it names a Bundle, what status.bundle says the bundle expanded to.
+// Before the operator first expands the bundle only Bundle is set.
+func (c *Container) Choices() ContainerChoices {
+	if c.Spec.BundleRef == nil {
+		return ContainerChoices{
+			Framework:  c.Spec.FrameworkRef.Name,
+			Standard:   refName(c.Spec.StandardRef),
+			Compute:    refName(c.Spec.ComputeRef),
+			Deployment: refName(c.Spec.DeploymentRef),
+		}
+	}
+	out := ContainerChoices{Bundle: c.Spec.BundleRef.Name}
+	if b := c.Status.Bundle; b != nil {
+		out.Framework, out.Standard, out.Compute, out.Deployment = b.Framework, b.Standard, b.Compute, b.Deployment
+	}
+	return out
+}
+
+func refName(ref *LocalRef) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
+}

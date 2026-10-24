@@ -17,7 +17,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // controller-gen writes any resource name an RBAC marker gives, and the
@@ -59,7 +59,7 @@ func TestRoleNamesOnlyRealCRDResources(t *testing.T) {
 		if err := utilyaml.Unmarshal(data, &crd); err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		if crd.Spec.Group != c4v1alpha1.GroupVersion.Group || crd.Spec.Names.Plural == "" {
+		if crd.Spec.Group != c4v1beta1.GroupVersion.Group || crd.Spec.Names.Plural == "" {
 			continue
 		}
 		status := false
@@ -82,7 +82,7 @@ func TestRoleNamesOnlyRealCRDResources(t *testing.T) {
 	for _, rule := range role.Rules {
 		ours := false
 		for _, g := range rule.APIGroups {
-			ours = ours || g == c4v1alpha1.GroupVersion.Group
+			ours = ours || g == c4v1beta1.GroupVersion.Group
 		}
 		if !ours {
 			continue
@@ -94,7 +94,7 @@ func TestRoleNamesOnlyRealCRDResources(t *testing.T) {
 			switch {
 			case !ok:
 				t.Errorf("role.yaml grants %q, but no %s CRD has the plural %q; fix the +kubebuilder:rbac marker",
-					resource, c4v1alpha1.GroupVersion.Group, plural)
+					resource, c4v1beta1.GroupVersion.Group, plural)
 			case sub == "status" && !status:
 				t.Errorf("role.yaml grants %q, but the %s CRD has no status subresource", resource, plural)
 			// finalizers is not a CRD subresource: the API server checks it
@@ -106,6 +106,6 @@ func TestRoleNamesOnlyRealCRDResources(t *testing.T) {
 		}
 	}
 	if checked == 0 {
-		t.Fatalf("role.yaml grants nothing in %s; is it the generated role?", c4v1alpha1.GroupVersion.Group)
+		t.Fatalf("role.yaml grants nothing in %s; is it the generated role?", c4v1beta1.GroupVersion.Group)
 	}
 }

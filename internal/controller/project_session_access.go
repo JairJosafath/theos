@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // SessionAccountName is the ServiceAccount, Role and RoleBinding that the
@@ -29,7 +29,7 @@ const SessionAccountName = "c4-session"
 // ensureSessionAccess gives the project's namespace a ServiceAccount that may only
 // work with Sessions. In v1 any client with it can touch any Session in the
 // project; limiting a client to its own Session needs short-lived tokens, later.
-func (r *ProjectReconciler) ensureSessionAccess(ctx context.Context, project *c4v1alpha1.Project) error {
+func (r *ProjectReconciler) ensureSessionAccess(ctx context.Context, project *c4v1beta1.Project) error {
 	meta := func() metav1.ObjectMeta {
 		return metav1.ObjectMeta{Name: SessionAccountName, Namespace: project.Namespace}
 	}
@@ -48,12 +48,12 @@ func (r *ProjectReconciler) ensureSessionAccess(ctx context.Context, project *c4
 		role.Labels = labels
 		role.Rules = []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{c4v1alpha1.SchemeGroupVersion.Group},
+				APIGroups: []string{c4v1beta1.SchemeGroupVersion.Group},
 				Resources: []string{"sessions"},
 				Verbs:     []string{verbGet, "create", "update", "patch", "delete"},
 			},
 			{
-				APIGroups: []string{c4v1alpha1.SchemeGroupVersion.Group},
+				APIGroups: []string{c4v1beta1.SchemeGroupVersion.Group},
 				Resources: []string{"sessions/status"},
 				Verbs:     []string{verbGet, "update", "patch"},
 			},

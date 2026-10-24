@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -37,18 +37,18 @@ func failedPlan(ns, answers string) scaffold.Tree {
 func failLinterTask(ns, name string, n int) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 		g.Expect(gitFake.issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	}).Should(Succeed())
 }
 
 // endedTask records a Task of the linter on issue n as ended in phase at
 // completed. Its Agent doesn't exist, so the Task does nothing first.
-func endedTask(ns, name string, n int, phase c4v1alpha1.TaskPhase, completed time.Time) {
+func endedTask(ns, name string, n int, phase c4v1beta1.TaskPhase, completed time.Time) {
 	GinkgoHelper()
 	task := newTask(ns, name, "")
-	task.Spec.ContainerRef = c4v1alpha1.LocalRef{Name: "linter"}
-	task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+	task.Spec.ContainerRef = c4v1beta1.LocalRef{Name: "linter"}
+	task.Spec.AgentRef = c4v1beta1.LocalRef{Name: "nobody"}
 	task.Spec.Issue = int32(n)
 	mustCreate(task)
 	Eventually(func(g Gomega) {
@@ -74,15 +74,15 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("a person handing back an issue of a Container the Brief didn't make")
-		mustCreate(newContainer(ns, "orders-api", "cel-lens", c4v1alpha1.ContainerTypeService))
+		mustCreate(newContainer(ns, "orders-api", "cel-lens", c4v1beta1.ContainerTypeService))
 		Eventually(func(g Gomega) {
-			var c c4v1alpha1.Container
+			var c c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &c)).To(Succeed())
-			g.Expect(c.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(c.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 		gitFake.addIssue(ns, "orders-api", "A person's question", "What now?", []string{model.LabelNeedsHuman})
 
@@ -91,7 +91,7 @@ var _ = Describe("Brief failed issues", func() {
 		var message string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "linter-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			cond := meta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded)
 			g.Expect(cond).NotTo(BeNil())
 			message = cond.Message
@@ -101,14 +101,14 @@ var _ = Describe("Brief failed issues", func() {
 		reason := "Task `linter-1` failed: " + strings.Join(strings.Fields(message), " ")
 
 		By("listing it with the Task's message, in the status, the condition, an Event and the workspace")
-		want := []c4v1alpha1.BriefFailedIssue{{Container: "linter", Number: int32(n), Title: "Lint rule 1",
+		want := []c4v1beta1.BriefFailedIssue{{Container: "linter", Number: int32(n), Title: "Lint rule 1",
 			URL: gitFake.issue(ns, "linter", n).URL, Kind: model.FailedTask, Reason: reason, Tries: 1}}
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(Equal(int32(1)))
 			g.Expect(b.Status.Failed).To(Equal(want))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionIssuesFailed)
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1beta1.ConditionIssuesFailed)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Message).To(And(ContainSubstring(fmt.Sprintf("Issue linter#%d \"Lint rule 1\" was handed back: %s", n, reason)),
@@ -141,7 +141,7 @@ var _ = Describe("Brief failed issues", func() {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(BeZero())
 			g.Expect(b.Status.Failed).To(BeEmpty())
-			g.Expect(meta.IsStatusConditionFalse(b.Status.Conditions, c4v1alpha1.ConditionIssuesFailed)).To(BeTrue())
+			g.Expect(meta.IsStatusConditionFalse(b.Status.Conditions, c4v1beta1.ConditionIssuesFailed)).To(BeTrue())
 		}).Should(Succeed())
 	})
 
@@ -153,7 +153,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		title, body := model.ByHandIssue("Lint rule 1", 1, "http://gitea/pulls/2", "linter-1", "Agent `reviewer`",
@@ -200,7 +200,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		change := func(run string) int {
@@ -235,9 +235,9 @@ var _ = Describe("Brief failed issues", func() {
 			closeAnswer(second)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
-			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Message).To(Equal("Applied round 2"))
@@ -264,9 +264,9 @@ var _ = Describe("Brief failed issues", func() {
 		refused := fmt.Sprintf("could not close linter#%d (waits on #%d), which stays handed back", blocked, other)
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(2)))
-			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Message).To(And(HavePrefix("Applied round 3; "), ContainSubstring(refused)))
@@ -291,7 +291,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
@@ -337,7 +337,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
@@ -361,7 +361,7 @@ var _ = Describe("Brief failed issues", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
-			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := meta.FindStatusCondition(b.Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(And(HavePrefix("Applied round 2; "), ContainSubstring(refused)))
 			g.Expect(b.Status.Failed).To(ConsistOf(HaveField("Number", int32(n))), "it stays handed back")
@@ -402,7 +402,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		due := time.Now().AddDate(0, 0, 7)
@@ -418,12 +418,12 @@ var _ = Describe("Brief failed issues", func() {
 		stopped := time.Now().Add(-time.Hour).Truncate(time.Second)
 		shipped := inRelease("Lint rule 136")
 		Expect(gitFake.closeIssue(ns, "linter", shipped)).To(Succeed())
-		endedTask(ns, "linter-shipped", shipped, c4v1alpha1.TaskMerged, stopped.Add(-time.Hour))
+		endedTask(ns, "linter-shipped", shipped, c4v1beta1.TaskMerged, stopped.Add(-time.Hour))
 		step := inRelease("Prepare v0.3.0", model.LabelRelease, model.LabelNeedsHuman)
-		endedTask(ns, "linter-step", step, c4v1alpha1.TaskFailed, stopped)
+		endedTask(ns, "linter-step", step, c4v1beta1.TaskFailed, stopped)
 		fresh := inRelease("Lint rule 147")
 		Expect(gitFake.closeIssue(ns, "linter", fresh)).To(Succeed())
-		endedTask(ns, "linter-fresh", fresh, c4v1alpha1.TaskMerged, stopped.Add(30*time.Minute))
+		endedTask(ns, "linter-fresh", fresh, c4v1beta1.TaskMerged, stopped.Add(30*time.Minute))
 
 		By("giving the planner the milestone's merges, and which came after the try stopped")
 		Eventually(func(g Gomega) {
@@ -465,7 +465,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("an issue failing three Tasks, and another failing one: the linter has no Standard to protect it")
@@ -513,7 +513,7 @@ var _ = Describe("Brief failed issues", func() {
 `, cli, tired)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
 		retried := gitFake.issue(ns, "linter", cli)
@@ -545,7 +545,7 @@ var _ = Describe("Brief failed issues", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("two issues failing a Task each: the linter has no Standard to protect it")
@@ -555,7 +555,7 @@ var _ = Describe("Brief failed issues", func() {
 		failLinterTask(ns, model.IssueTaskName("linter", asked, 1), asked)
 		// Settled: the Brief may list an issue as a person's before it sees
 		// its failed Task, so wait for both reasons to name their Task.
-		var failed []c4v1alpha1.BriefFailedIssue
+		var failed []c4v1beta1.BriefFailedIssue
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(Equal(int32(2)))
@@ -590,7 +590,7 @@ var _ = Describe("Brief failed issues", func() {
 `, waited, asked)))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
 
@@ -603,7 +603,7 @@ var _ = Describe("Brief failed issues", func() {
 				g.Expect(issue.Labels).NotTo(ContainElement(model.LabelReady))
 				g.Expect(issue.Body).NotTo(ContainSubstring("Clarification"))
 				g.Expect(issue.comments).To(HaveLen(comments[n]))
-				var task c4v1alpha1.Task
+				var task c4v1beta1.Task
 				g.Expect(k8sClient.Get(ctx, key(ns, model.IssueTaskName("linter", n, 2)), &task)).NotTo(Succeed())
 			}
 			b := getBrief(g, ns)

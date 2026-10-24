@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -23,10 +23,10 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	git.issueState().late = true
 
 	r := &TaskReconciler{GitTimeout: 50 * time.Millisecond}
-	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("tools", "vscode-extension-19"),
-		Spec: c4v1alpha1.TaskSpec{Issue: int32(n)}}
-	status := &c4v1alpha1.TaskStatus{Round: 3, PullRequestURL: "http://gitea/tools/vscode-extension/pulls/35"}
-	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta("tools", "claude-reviewer")}
+	task := &c4v1beta1.Task{ObjectMeta: objectMeta("tools", "vscode-extension-19"),
+		Spec: c4v1beta1.TaskSpec{Issue: int32(n)}}
+	status := &c4v1beta1.TaskStatus{Round: 3, PullRequestURL: "http://gitea/tools/vscode-extension/pulls/35"}
+	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta("tools", "claude-reviewer")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -53,8 +53,8 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 	repo := gitprovider.Repository{Owner: "tools", Name: "cel-lens"}
 	n := git.addIssue(repo.Owner, repo.Name, "README shows the hover", "", []string{model.LabelInProgress})
 	r := &TaskReconciler{GitTimeout: time.Second}
-	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("tools", "cel-lens-1"), Spec: c4v1alpha1.TaskSpec{Issue: int32(n)}}
-	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta("tools", "reviewer")}
+	task := &c4v1beta1.Task{ObjectMeta: objectMeta("tools", "cel-lens-1"), Spec: c4v1beta1.TaskSpec{Issue: int32(n)}}
+	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta("tools", "reviewer")}
 	open := []model.OpenCriterion{{Criterion: "The README has a screenshot of the hover", Why: "No desktop editor."}}
 	byHand := func() []gitprovider.Issue {
 		issues, err := provider.ListIssues(context.Background(), repo, model.LabelByHand)
@@ -64,7 +64,7 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 		return issues
 	}
 
-	status := &c4v1alpha1.TaskStatus{Round: 1, IssueTitle: "README shows the hover",
+	status := &c4v1beta1.TaskStatus{Round: 1, IssueTitle: "README shows the hover",
 		PullRequestURL: "http://gitea/tools/cel-lens/pulls/2"}
 	r.closeIssue(context.Background(), provider, repo, task, status, reviewer, nil, open)
 	filed := byHand()
@@ -76,7 +76,7 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 		name   string
 		byHand string
 	}{{"with status.byHand", status.ByHand}, {"with status.byHand lost", ""}} {
-		again := &c4v1alpha1.TaskStatus{Round: 1, IssueTitle: status.IssueTitle, PullRequestURL: status.PullRequestURL,
+		again := &c4v1beta1.TaskStatus{Round: 1, IssueTitle: status.IssueTitle, PullRequestURL: status.PullRequestURL,
 			ByHand: rerun.byHand}
 		r.closeIssue(context.Background(), provider, repo, task, again, reviewer, nil, open)
 		if got := byHand(); len(got) != 1 {

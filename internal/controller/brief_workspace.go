@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -50,9 +50,9 @@ func (e errNeedsInput) Error() string { return e.sentence }
 
 // briefGit reads the Brief's GitProvider and its credentials. A missing one is
 // errNeedsInput, naming it.
-func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1alpha1.Brief) (gitprovider.Provider, error) {
+func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1beta1.Brief) (gitprovider.Provider, error) {
 	name := brief.Spec.GitProviderRef.Name
-	var provider c4v1alpha1.GitProvider
+	var provider c4v1beta1.GitProvider
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &provider)
 	if apierrors.IsNotFound(err) {
 		return nil, errNeedsInput{fmt.Sprintf("GitProvider %s is missing: make it in namespace %s, "+
@@ -82,7 +82,7 @@ func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1alpha1.Brief)
 // and brings main's brief.md, model/ and PLANNER.md up to date. It writes
 // nothing when main already holds them as they are. It returns the
 // repository's web address.
-func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (string, error) {
+func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1beta1.Brief) (string, error) {
 	provider, err := r.briefGit(ctx, brief)
 	if err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 	}
 
 	repoName := model.BriefRepository(brief.Name)
-	var clash c4v1alpha1.Container
+	var clash c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: repoName}, &clash); err == nil {
 		return "", errNeedsInput{fmt.Sprintf("Container %s has the repository the Brief needs: rename the Brief, "+
 			"so its repository %s is its own", repoName, repoName)}
@@ -136,7 +136,7 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1alpha
 		return "", err
 	}
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
-		map[string]string{c4v1alpha1.LabelProject: brief.Namespace, c4v1alpha1.LabelBrief: brief.Name},
+		map[string]string{c4v1beta1.LabelProject: brief.Namespace, c4v1beta1.LabelBrief: brief.Name},
 		map[string]string{"repository": repo.CloneURL}, r.now(),
 		func() (gitprovider.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo,
@@ -153,7 +153,7 @@ const briefBotFinalizer = "c4.factory.io/brief-bot"
 
 // holdForBot puts briefBotFinalizer on the Brief before it has a bot, so its
 // deletion waits for deleteBot.
-func (r *BriefReconciler) holdForBot(ctx context.Context, brief *c4v1alpha1.Brief) error {
+func (r *BriefReconciler) holdForBot(ctx context.Context, brief *c4v1beta1.Brief) error {
 	if controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
 		return nil
 	}
@@ -183,7 +183,7 @@ const (
 // is left. A host that fails the delete is tried again until the namespace is
 // terminating or BotDeleteTimeout has passed since the deletion; then the bot
 // is left too.
-func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1alpha1.Brief) (ctrl.Result, error) {
+func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1beta1.Brief) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -220,7 +220,7 @@ func (r *BriefReconciler) deleteBot(ctx context.Context, brief *c4v1alpha1.Brief
 // giveUpOnBot says why a deleted Brief stops trying to delete its bot: its
 // namespace is terminating, or BotDeleteTimeout has passed. It is empty while
 // the Brief should try again.
-func (r *BriefReconciler) giveUpOnBot(ctx context.Context, brief *c4v1alpha1.Brief) string {
+func (r *BriefReconciler) giveUpOnBot(ctx context.Context, brief *c4v1beta1.Brief) string {
 	// An operator with only namespaced RBAC can't read the Namespace; the
 	// timeout still bounds its wait.
 	var ns corev1.Namespace
@@ -236,7 +236,7 @@ func (r *BriefReconciler) giveUpOnBot(ctx context.Context, brief *c4v1alpha1.Bri
 
 // leaveBot logs and records that the deleted Brief goes without deleting its
 // bot on the Git host, and why.
-func (r *BriefReconciler) leaveBot(ctx context.Context, brief *c4v1alpha1.Brief, user, reason string) {
+func (r *BriefReconciler) leaveBot(ctx context.Context, brief *c4v1beta1.Brief, user, reason string) {
 	logf.FromContext(ctx).Info("Left the Brief's bot on the Git host", "user", user, "reason", reason)
 	r.event(brief, corev1.EventTypeWarning, eventBotLeft, "LeaveBot", fmt.Sprintf(
 		"Left bot %s on the Git host: %s. Delete the user there by hand.", user, reason))
@@ -271,7 +271,7 @@ func writeWorkspace(ctx context.Context, provider gitprovider.Provider, repo git
 
 // gatherWorkspace reads what the planner needs: the Brief, the namespace's
 // story, its catalog and its Containers' open issues.
-func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1.Brief) (model.BriefWorkspace, error) {
+func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1beta1.Brief) (model.BriefWorkspace, error) {
 	status := &brief.Status
 	outcomes := make([]string, 0, len(status.History))
 	for _, h := range status.History {
@@ -318,17 +318,17 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1alpha1
 // and failed issues waiting in the ones the Brief made. Issues that can't be
 // read are marked so, not an error: one broken repository doesn't stop the
 // Brief, and its suggestions and failed issues are the ones the Brief last saw.
-func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1.Brief) (
+func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1beta1.Brief) (
 	[]model.WorkspaceContainer, []model.Suggestion, []model.FailedIssue, error) {
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace)); err != nil {
 		return nil, nil, nil, err
 	}
-	var crews c4v1alpha1.CrewList
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace)); err != nil {
 		return nil, nil, nil, err
 	}
-	var taskList c4v1alpha1.TaskList
+	var taskList c4v1beta1.TaskList
 	if err := r.List(ctx, &taskList, client.InNamespace(brief.Namespace)); err != nil {
 		return nil, nil, nil, err
 	}
@@ -347,7 +347,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 		if c.Status.RepositoryURL == "" {
 			continue
 		}
-		mine := c.Labels[c4v1alpha1.LabelBrief] == brief.Name
+		mine := c.Labels[c4v1beta1.LabelBrief] == brief.Name
 		entry := model.WorkspaceContainer{Name: c.Name, Repository: c.Status.RepositoryURL,
 			Released: released[c.Name], Checks: string(c.Spec.Checks)}
 		issues, err := r.openIssues(ctx, providers, &c)
@@ -394,7 +394,7 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1alpha1
 
 // readFailedRelease is failedRelease with the workspace's Git timeout.
 func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitprovider.Provider,
-	c *c4v1alpha1.Container, issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
+	c *c4v1beta1.Container, issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return failedRelease(gitCtx, provider, provider.Repository(c.Name), issue, tasks)
@@ -402,14 +402,14 @@ func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitpro
 
 // readGoneProposal is goneProposal with the workspace's Git timeout.
 func (r *BriefReconciler) readGoneProposal(ctx context.Context, provider gitprovider.Provider,
-	c *c4v1alpha1.Container, issue gitprovider.Issue) (string, error) {
+	c *c4v1beta1.Container, issue gitprovider.Issue) (string, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return goneProposal(gitCtx, provider, provider.Repository(c.Name), issue)
 }
 
 func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,
-	c *c4v1alpha1.Container) ([]gitprovider.Issue, error) {
+	c *c4v1beta1.Container) ([]gitprovider.Issue, error) {
 	name := c.Spec.GitProviderRef.Name
 	provider, ok := providers[name]
 	if !ok {
@@ -428,7 +428,7 @@ func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]g
 func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.PlanObject, error) {
 	var out []model.PlanObject
 	in := client.InNamespace(ns)
-	var projects c4v1alpha1.ProjectList
+	var projects c4v1beta1.ProjectList
 	if err := c.List(ctx, &projects, in); err != nil {
 		return nil, err
 	}
@@ -436,7 +436,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 		out = append(out, model.PlanObject{Kind: model.KindProject, Name: o.Name,
 			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
 	}
-	var persons c4v1alpha1.PersonList
+	var persons c4v1beta1.PersonList
 	if err := c.List(ctx, &persons, in); err != nil {
 		return nil, err
 	}
@@ -444,7 +444,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 		out = append(out, model.PlanObject{Kind: model.KindPerson, Name: o.Name,
 			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
 	}
-	var systems c4v1alpha1.SoftwareSystemList
+	var systems c4v1beta1.SoftwareSystemList
 	if err := c.List(ctx, &systems, in); err != nil {
 		return nil, err
 	}
@@ -453,7 +453,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs,
 			Location: string(o.Spec.Location)})
 	}
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := c.List(ctx, &containers, in); err != nil {
 		return nil, err
 	}
@@ -465,7 +465,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 			Framework: picked.Framework, Standard: picked.Standard, Compute: picked.Compute, Deployment: picked.Deployment,
 			Checks: string(s.Checks), Operations: plannedOperations(s.Operations)})
 	}
-	var stores c4v1alpha1.DataStoreList
+	var stores c4v1beta1.DataStoreList
 	if err := c.List(ctx, &stores, in); err != nil {
 		return nil, err
 	}
@@ -474,7 +474,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description,
 			SoftwareSystem: o.Spec.SoftwareSystemRef.Name, Connector: o.Spec.ConnectorRef.Name})
 	}
-	var relationships c4v1alpha1.RelationshipList
+	var relationships c4v1beta1.RelationshipList
 	if err := c.List(ctx, &relationships, in); err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 	return out, nil
 }
 
-func refName(ref *c4v1alpha1.LocalRef) string {
+func refName(ref *c4v1beta1.LocalRef) string {
 	if ref == nil {
 		return ""
 	}
@@ -499,35 +499,35 @@ func refName(ref *c4v1alpha1.LocalRef) string {
 func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.CatalogEntry, error) {
 	in := client.InNamespace(ns)
 	var out []model.CatalogEntry
-	var frameworks c4v1alpha1.FrameworkList
+	var frameworks c4v1beta1.FrameworkList
 	if err := c.List(ctx, &frameworks, in); err != nil {
 		return nil, err
 	}
 	for i := range frameworks.Items {
 		out = append(out, catalogEntry(model.SideFramework, &frameworks.Items[i]))
 	}
-	var standards c4v1alpha1.StandardList
+	var standards c4v1beta1.StandardList
 	if err := c.List(ctx, &standards, in); err != nil {
 		return nil, err
 	}
 	for i := range standards.Items {
 		out = append(out, catalogEntry(model.SideStandard, &standards.Items[i]))
 	}
-	var computes c4v1alpha1.ComputeList
+	var computes c4v1beta1.ComputeList
 	if err := c.List(ctx, &computes, in); err != nil {
 		return nil, err
 	}
 	for i := range computes.Items {
 		out = append(out, catalogEntry(model.SideCompute, &computes.Items[i]))
 	}
-	var deployments c4v1alpha1.DeploymentList
+	var deployments c4v1beta1.DeploymentList
 	if err := c.List(ctx, &deployments, in); err != nil {
 		return nil, err
 	}
 	for i := range deployments.Items {
 		out = append(out, catalogEntry(model.SideDeployment, &deployments.Items[i]))
 	}
-	var connectors c4v1alpha1.ConnectorList
+	var connectors c4v1beta1.ConnectorList
 	if err := c.List(ctx, &connectors, in); err != nil {
 		return nil, err
 	}
@@ -540,7 +540,7 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 // installedBundles reads the namespace's Bundles, each as the entry names it
 // picks, the way the operator expands a Container's bundleRef.
 func installedBundles(ctx context.Context, c client.Reader, ns string) ([]model.Bundle, error) {
-	var bundles c4v1alpha1.BundleList
+	var bundles c4v1beta1.BundleList
 	if err := c.List(ctx, &bundles, client.InNamespace(ns)); err != nil {
 		return nil, err
 	}

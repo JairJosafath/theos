@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -35,11 +35,11 @@ var _ = Describe("Brief requests in rounds", func() {
 	BeforeEach(func() { ns = newProjectNamespace() })
 
 	It("takes requests into a round, refuses a plan that answers them wrong, and says on GitHub what each became", func() {
-		repository, _ := requestsBrief(ns, c4v1alpha1.BriefRequests{Mode: model.RequestsAsk,
+		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"gray-lenovo"}})
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please add a dark theme.")
@@ -54,7 +54,7 @@ var _ = Describe("Brief requests in rounds", func() {
 		}, "1s").Should(Succeed())
 
 		By("starting a round on the accepted requests, with no new prompt")
-		setRequests(ns, func(r *c4v1alpha1.BriefRequests) { r.Accepted = []int32{int32(theme), int32(rules)} })
+		setRequests(ns, func(r *c4v1beta1.BriefRequests) { r.Accepted = []int32{int32(theme), int32(rules)} })
 		Eventually(func(g Gomega) {
 			status := getBrief(g, ns).Status
 			g.Expect(status.Round).To(Equal(int32(2)))
@@ -73,8 +73,8 @@ var _ = Describe("Brief requests in rounds", func() {
 			themeName)))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPlanChecked, commit))
-			g.Expect(task.Annotations[c4v1alpha1.AnnotationPlanRefusals]).To(
+			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationPlanChecked, commit))
+			g.Expect(task.Annotations[c4v1beta1.AnnotationPlanRefusals]).To(
 				ContainSubstring("leaves " + rulesName + " unanswered"))
 		}).Should(Succeed())
 
@@ -84,8 +84,8 @@ var _ = Describe("Brief requests in rounds", func() {
 			themeName, rulesName, repository)))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPlanChecked, commit))
-			g.Expect(task.Annotations[c4v1alpha1.AnnotationPlanRefusals]).To(And(
+			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationPlanChecked, commit))
+			g.Expect(task.Annotations[c4v1beta1.AnnotationPlanRefusals]).To(And(
 				ContainSubstring("takes "+themeName+" with no issue"),
 				ContainSubstring("answers "+repository+"#99, which this round didn't take")))
 		}).Should(Succeed())
@@ -94,10 +94,10 @@ var _ = Describe("Brief requests in rounds", func() {
 		planRound(ns, 2, 3, requestsPlan(ns, fmt.Sprintf(
 			"- {request: %s, answer: take, issues: [1]}\n- {request: %s, answer: skip, why: \"The linter lints rules already.\"}\n",
 			themeName, rulesName)))
-		var filed c4v1alpha1.BriefIssue
+		var filed c4v1beta1.BriefIssue
 		Eventually(func(g Gomega) {
 			status := getBrief(g, ns).Status
-			g.Expect(status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(status.Round).To(Equal(int32(2)))
 			for _, i := range status.Issues {
 				if i.Round == 2 {

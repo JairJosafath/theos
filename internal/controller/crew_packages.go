@@ -18,7 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -54,7 +54,7 @@ const packagesTimeout = 5 * time.Minute
 // a log line, with the ecosystem as its action (PublishNpmPackage,
 // PublishPyPIPackage); a file left unpublished is a Warning Event, once per
 // release.
-func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil {
@@ -96,9 +96,9 @@ func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1alpha1.C
 		}
 	}
 	d := model.DecidePackages(facts)
-	packages := &c4v1alpha1.CrewReleasePackages{State: d.State, Message: d.Message}
+	packages := &c4v1beta1.CrewReleasePackages{State: d.State, Message: d.Message}
 	for _, p := range d.Published {
-		packages.Published = append(packages.Published, c4v1alpha1.CrewReleasePackage{Ecosystem: p.Ecosystem,
+		packages.Published = append(packages.Published, c4v1beta1.CrewReleasePackage{Ecosystem: p.Ecosystem,
 			Name: p.Name, Version: p.Version})
 	}
 	release.Packages = packages
@@ -121,7 +121,7 @@ func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1alpha1.C
 // reportPackages logs a release's packages' new state, with its Events: a
 // Normal one per package uploaded now, and a Warning one when a file can't be
 // published at the tag's version, once per release.
-func (r *CrewReconciler) reportPackages(ctx context.Context, crew *c4v1alpha1.Crew, tag string,
+func (r *CrewReconciler) reportPackages(ctx context.Context, crew *c4v1beta1.Crew, tag string,
 	d model.PackagesDecision, uploaded []model.ReleasePackage) {
 	log := logf.FromContext(ctx).WithValues("tag", tag)
 	for _, p := range uploaded {

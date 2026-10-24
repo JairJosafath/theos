@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // A Task's CEL rules: the create-time ones refuse a bad Task, the transition
@@ -34,7 +34,7 @@ var _ = Describe("Task immutability", func() {
 	BeforeEach(func() { ns = newProjectNamespace() })
 
 	// created creates a goal Task, or an issue Task when goal is empty.
-	created := func(name, goal string, mutate func(*c4v1alpha1.Task)) *c4v1alpha1.Task {
+	created := func(name, goal string, mutate func(*c4v1beta1.Task)) *c4v1beta1.Task {
 		GinkgoHelper()
 		task := newTask(ns, name, goal)
 		if goal == "" {
@@ -46,8 +46,8 @@ var _ = Describe("Task immutability", func() {
 		mustCreate(task)
 		return task
 	}
-	reviewer := func(t *c4v1alpha1.Task) { t.Spec.ReviewerRef = &c4v1alpha1.LocalRef{Name: "reviewer"} }
-	paths := func(t *c4v1alpha1.Task) { t.Spec.AllowedProtectedPaths = []string{"Makefile"} }
+	reviewer := func(t *c4v1beta1.Task) { t.Spec.ReviewerRef = &c4v1beta1.LocalRef{Name: "reviewer"} }
+	paths := func(t *c4v1beta1.Task) { t.Spec.AllowedProtectedPaths = []string{"Makefile"} }
 
 	It("keeps its Container for life", func() {
 		task := created("container", "Do it", nil)

@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -33,7 +33,7 @@ type Options struct {
 	Namespace string
 	// Container is the Container being worked on.
 	Container string
-	Actor     c4v1alpha1.Actor
+	Actor     c4v1beta1.Actor
 	// Summary is a one-line description of the work.
 	Summary   string
 	Heartbeat time.Duration
@@ -85,7 +85,7 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 		opts.Heartbeat = DefaultHeartbeat
 	}
 	if opts.Actor == "" {
-		opts.Actor = c4v1alpha1.ActorHuman
+		opts.Actor = c4v1beta1.ActorHuman
 	}
 	log := opts.Log
 	if log == nil {
@@ -110,7 +110,7 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 			// ctx is done, so clean up with a short context of our own.
 			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			err := c.Delete(cleanup, &c4v1alpha1.Session{
+			err := c.Delete(cleanup, &c4v1beta1.Session{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: opts.Namespace},
 			})
 			if client.IgnoreNotFound(err) != nil {
@@ -147,10 +147,10 @@ func Run(ctx context.Context, c client.Client, opts Options) error {
 
 // register creates the Session and sends its first heartbeat.
 func register(ctx context.Context, c client.Client, opts Options, log *slog.Logger) (string, error) {
-	session := &c4v1alpha1.Session{
+	session := &c4v1beta1.Session{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: opts.Container + "-", Namespace: opts.Namespace},
-		Spec: c4v1alpha1.SessionSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: opts.Container},
+		Spec: c4v1beta1.SessionSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: opts.Container},
 			Actor:        opts.Actor,
 			Summary:      opts.Summary,
 		},
@@ -168,7 +168,7 @@ func register(ctx context.Context, c client.Client, opts Options, log *slog.Logg
 // deleted reports whether the Session is really gone, rather than its status
 // endpoint answering 404 for a moment.
 func deleted(ctx context.Context, c client.Client, namespace, name string) bool {
-	err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &c4v1alpha1.Session{})
+	err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &c4v1beta1.Session{})
 	return apierrors.IsNotFound(err)
 }
 
@@ -176,12 +176,12 @@ func deleted(ctx context.Context, c client.Client, namespace, name string) bool 
 // alone, so it needs no read and never conflicts.
 func heartbeat(ctx context.Context, c client.Client, namespace, name string) error {
 	patch, err := json.Marshal(map[string]any{"status": map[string]any{
-		"phase":         c4v1alpha1.SessionActive,
+		"phase":         c4v1beta1.SessionActive,
 		"lastHeartbeat": metav1.Now().UTC().Format(time.RFC3339),
 	}})
 	if err != nil {
 		return err
 	}
-	session := &c4v1alpha1.Session{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
+	session := &c4v1beta1.Session{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
 	return c.Status().Patch(ctx, session, client.RawPatch(types.MergePatchType, patch))
 }

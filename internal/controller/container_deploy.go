@@ -26,7 +26,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
@@ -58,13 +58,13 @@ func (r *ContainerReconciler) deployMember(name string) (model.DeployMember, err
 // targets of its spec.deploy, in order, and reports them in status.deploys
 // and the condition Deployed. It returns how soon to look again, zero
 // without spec.deploy.
-func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) time.Duration {
+func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) time.Duration {
 	log := logf.FromContext(ctx)
 	newest := status.NewestRelease
 	if len(container.Spec.Deploy) == 0 {
 		status.Deploys = nil
-		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionDeployed)
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionDeployed)
 		return 0
 	}
 	ctx, cancel := context.WithTimeout(ctx, deployTimeout)
@@ -98,7 +98,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 	}
 
 	now := metav1.Now()
-	deploys := make([]c4v1alpha1.ContainerDeployStatus, 0, len(steps))
+	deploys := make([]c4v1beta1.ContainerDeployStatus, 0, len(steps))
 	poll := r.checksRecheck()
 	for _, s := range steps {
 		rep := s.Report
@@ -109,7 +109,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 				since = d.Since
 			}
 		}
-		deploys = append(deploys, c4v1alpha1.ContainerDeployStatus{Target: rep.Target, Version: rep.Version,
+		deploys = append(deploys, c4v1beta1.ContainerDeployStatus{Target: rep.Target, Version: rep.Version,
 			WantedVersion: rep.WantedVersion, Phase: rep.Phase, Health: rep.Health, URL: rep.URL, Image: rep.Image, Reason: rep.Reason,
 			Message: rep.Message, Since: since})
 		if s.Cause == model.DeployDeploying || s.Cause == model.DeployTargetNotReady && rep.Reason ==
@@ -123,17 +123,17 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1alpha1.
 	if ok {
 		value = metav1.ConditionTrue
 	}
-	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionDeployed, value, reason, message)
+	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionDeployed, value, reason, message)
 	return poll
 }
 
 // deployPass is one pass over a Container's deploys.
 type deployPass struct {
 	r         *ContainerReconciler
-	container *c4v1alpha1.Container
+	container *c4v1beta1.Container
 	log       logr.Logger
 	// image is the newest release's, status.image.
-	image *c4v1alpha1.ContainerImageStatus
+	image *c4v1beta1.ContainerImageStatus
 	// provider and repo reach the Container's repository, once a ship needs it.
 	provider gitprovider.Provider
 	repo     gitprovider.Repository
@@ -144,7 +144,7 @@ type deployPass struct {
 // read what runs there.
 func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 	brings model.DeployContainer) (ports.Target, ports.Deployer) {
-	var dt c4v1alpha1.DeployTarget
+	var dt c4v1beta1.DeployTarget
 	found, err := p.r.lookup(ctx, p.container.Namespace, facts.Target, &dt)
 	if err != nil {
 		p.log.Error(err, "Failed to read the DeployTarget", "target", facts.Target)
@@ -164,7 +164,7 @@ func (p *deployPass) read(ctx context.Context, facts *model.DeployFacts,
 	facts.Tool = member.Tool
 	facts.Approval = model.DeployApproval(string(dt.Spec.Tier), string(dt.Spec.Approval))
 	facts.Lacks = member.Lacks(brings)
-	if cond := apimeta.FindStatusCondition(dt.Status.Conditions, c4v1alpha1.ConditionDeployTargetReady); cond != nil {
+	if cond := apimeta.FindStatusCondition(dt.Status.Conditions, c4v1beta1.ConditionDeployTargetReady); cond != nil {
 		facts.TargetChecked = true
 		facts.TargetReady = cond.Status == metav1.ConditionTrue
 		facts.TargetMessage = cond.Message
@@ -300,12 +300,12 @@ func (p *deployPass) source(ctx context.Context, target ports.Target, version st
 // before it and that ships to the same target: the first keeps the folder.
 func (p *deployPass) folderOverlaps(ctx context.Context, target ports.Target,
 	path string) *model.DeployShipFailure {
-	var dt c4v1alpha1.DeployTarget
+	var dt c4v1beta1.DeployTarget
 	_, name, _ := strings.Cut(target.Name, "/")
 	if found, err := p.r.lookup(ctx, p.container.Namespace, name, &dt); err != nil || !found {
 		return nil
 	}
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := p.r.List(ctx, &containers, client.InNamespace(p.container.Namespace)); err != nil {
 		return &model.DeployShipFailure{Reason: model.DeployFolderOverlaps,
 			Detail: "listing the Containers that ship there: " + err.Error()}
@@ -317,7 +317,7 @@ func (p *deployPass) folderOverlaps(ctx context.Context, target ports.Target,
 	for i := range containers.Items {
 		c := &containers.Items[i]
 		if c.Name >= p.container.Name || !c.DeletionTimestamp.IsZero() ||
-			!slices.ContainsFunc(c.Spec.Deploy, func(d c4v1alpha1.ContainerDeploy) bool { return d.Target == dt.Name }) {
+			!slices.ContainsFunc(c.Spec.Deploy, func(d c4v1beta1.ContainerDeploy) bool { return d.Target == dt.Name }) {
 			continue
 		}
 		settings := containerTarget(&dt, c).Settings
@@ -372,7 +372,7 @@ func (p *deployPass) copyImage(image string) func(context.Context, ports.Registr
 // deployEvent logs an entry's change and emits its Event, once: the
 // Reconciler remembers what it said, as the last poll's status write can fail
 // after its Event, and after a restart the status says it.
-func (r *ContainerReconciler) deployEvent(ctx context.Context, container *c4v1alpha1.Container,
+func (r *ContainerReconciler) deployEvent(ctx context.Context, container *c4v1beta1.Container,
 	prev *model.DeployReport, next model.DeployReport) {
 	log := logf.FromContext(ctx).WithValues("target", next.Target)
 	if prev == nil || prev.Phase != next.Phase || prev.Reason != next.Reason ||
@@ -402,8 +402,8 @@ func (r *ContainerReconciler) deployEvent(ctx context.Context, container *c4v1al
 // Container's Crews whose runs succeeded, kept with or without spec.deploy so
 // a target added later ships it. It returns how soon to look again after a
 // failed read.
-func (r *ContainerReconciler) keepNewestRelease(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) time.Duration {
+func (r *ContainerReconciler) keepNewestRelease(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) time.Duration {
 	newest, err := r.newestRelease(ctx, container)
 	if err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to list the Container's Crews")
@@ -417,13 +417,13 @@ func (r *ContainerReconciler) keepNewestRelease(ctx context.Context, container *
 
 // newestRelease is the newest release of the Container's Crews whose runs
 // succeeded, "" when none has one.
-func (r *ContainerReconciler) newestRelease(ctx context.Context, container *c4v1alpha1.Container) (string, error) {
-	var crews c4v1alpha1.CrewList
+func (r *ContainerReconciler) newestRelease(ctx context.Context, container *c4v1beta1.Container) (string, error) {
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(container.Namespace),
 		client.MatchingFields{indexContainer: container.Name}); err != nil {
 		return "", err
 	}
-	var newest *c4v1alpha1.CrewRelease
+	var newest *c4v1beta1.CrewRelease
 	for _, c := range crews.Items {
 		rel := c.Status.LastRelease
 		if rel != nil && rel.Run == model.RunSucceeded && (newest == nil || rel.Time.After(newest.Time.Time)) {
@@ -439,9 +439,9 @@ func (r *ContainerReconciler) newestRelease(ctx context.Context, container *c4v1
 // deployContainer is what the Container brings that a target's member may
 // need: its Deployment, and whether its Framework deploys itself.
 func (r *ContainerReconciler) deployContainer(ctx context.Context,
-	container *c4v1alpha1.Container) (model.DeployContainer, error) {
+	container *c4v1beta1.Container) (model.DeployContainer, error) {
 	brings := model.DeployContainer{Deployment: container.Choices().Deployment}
-	var framework c4v1alpha1.Framework
+	var framework c4v1beta1.Framework
 	found, err := r.lookup(ctx, container.Namespace, container.Choices().Framework, &framework)
 	if found {
 		brings.DeploysItself = framework.Spec.DeploysItself
@@ -460,7 +460,7 @@ func isGiteaError(err error) bool {
 // Latest, and with source set the folder of its source (the Container's name
 // unless the target sets one) and its source tag prefix when the target sets
 // one.
-func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
+func containerTarget(dt *c4v1beta1.DeployTarget, container *c4v1beta1.Container) ports.Target {
 	target, _ := deployTarget(dt)
 	if gh := dt.Spec.GitHub; gh != nil {
 		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
@@ -481,12 +481,12 @@ func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Containe
 }
 
 // deployApp names the Container's app uniquely at any target.
-func deployApp(container *c4v1alpha1.Container) string {
+func deployApp(container *c4v1beta1.Container) string {
 	return container.Namespace + "/" + container.Name
 }
 
 // displayName is the Container's display name, else its name.
-func displayName(container *c4v1alpha1.Container) string {
+func displayName(container *c4v1beta1.Container) string {
 	if container.Spec.DisplayName != "" {
 		return container.Spec.DisplayName
 	}
@@ -496,7 +496,7 @@ func displayName(container *c4v1alpha1.Container) string {
 // lastReleaseChanges passes a Crew whose last release or its runs changed: a
 // release whose runs succeeded ships.
 func lastReleaseChanges() builder.WatchesOption {
-	release := func(c *c4v1alpha1.Crew) string {
+	release := func(c *c4v1beta1.Crew) string {
 		if r := c.Status.LastRelease; r != nil {
 			return r.Tag + "\n" + r.Run
 		}
@@ -504,8 +504,8 @@ func lastReleaseChanges() builder.WatchesOption {
 	}
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldCrew, ok1 := e.ObjectOld.(*c4v1alpha1.Crew)
-			newCrew, ok2 := e.ObjectNew.(*c4v1alpha1.Crew)
+			oldCrew, ok1 := e.ObjectOld.(*c4v1beta1.Crew)
+			newCrew, ok2 := e.ObjectNew.(*c4v1beta1.Crew)
 			return !ok1 || !ok2 || release(oldCrew) != release(newCrew)
 		},
 	})
@@ -514,16 +514,16 @@ func lastReleaseChanges() builder.WatchesOption {
 // deployTargetReadyChanges passes a DeployTarget made, removed, changed, or
 // whose Ready condition changed.
 func deployTargetReadyChanges() builder.WatchesOption {
-	ready := func(dt *c4v1alpha1.DeployTarget) string {
-		if cond := apimeta.FindStatusCondition(dt.Status.Conditions, c4v1alpha1.ConditionDeployTargetReady); cond != nil {
+	ready := func(dt *c4v1beta1.DeployTarget) string {
+		if cond := apimeta.FindStatusCondition(dt.Status.Conditions, c4v1beta1.ConditionDeployTargetReady); cond != nil {
 			return string(cond.Status) + "\n" + cond.Reason + "\n" + cond.Message
 		}
 		return ""
 	}
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldTarget, ok1 := e.ObjectOld.(*c4v1alpha1.DeployTarget)
-			newTarget, ok2 := e.ObjectNew.(*c4v1alpha1.DeployTarget)
+			oldTarget, ok1 := e.ObjectOld.(*c4v1beta1.DeployTarget)
+			newTarget, ok2 := e.ObjectNew.(*c4v1beta1.DeployTarget)
 			return !ok1 || !ok2 || oldTarget.Generation != newTarget.Generation || ready(oldTarget) != ready(newTarget)
 		},
 	})

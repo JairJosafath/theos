@@ -324,7 +324,7 @@ ensure_project() {
     return
   fi
   kubectl create -f - >/dev/null <<EOF
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Project
 metadata:
   name: $ns

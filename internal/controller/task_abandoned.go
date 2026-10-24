@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -30,8 +30,8 @@ const defaultPullRequestRecheck = 10 * time.Minute
 // continue it, saying why on it, and records how it ended so the Task stops
 // looking. The branch stays. A Git host that can't be reached is tried again
 // at the next look.
-func (r *TaskReconciler) tendAbandonedPull(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container) ctrl.Result {
+func (r *TaskReconciler) tendAbandonedPull(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) ctrl.Result {
 	if status.PullRequest == 0 || status.PullRequestEnded != "" {
 		return ctrl.Result{}
 	}
@@ -69,8 +69,8 @@ func (r *TaskReconciler) tendAbandonedPull(ctx context.Context, task *c4v1alpha1
 
 // abandonedPullFacts reads the pull request and its issue on the Git host, and
 // the Container's Tasks at the same issue.
-func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container) (model.AbandonedPullFacts, error) {
+func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) (model.AbandonedPullFacts, error) {
 	facts := model.AbandonedPullFacts{Task: task.Name, Issue: int(task.Spec.Issue), PullRequest: int(status.PullRequest)}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
@@ -102,20 +102,20 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1alpha
 	}
 	// Read live: a newer try that took this pull request up a moment ago must
 	// keep it, and the cache may not have its status yet.
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(task.Namespace)); err != nil {
 		return facts, err
 	}
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name != container.Name || t.Spec.Issue != task.Spec.Issue ||
-			t.Spec.Kind == c4v1alpha1.TaskPlan {
+			t.Spec.Kind == c4v1beta1.TaskPlan {
 			continue
 		}
 		if t.Name == task.Name {
 			t.Status = *status
 		}
 		facts.Tries = append(facts.Tries, model.IssueTry{Name: t.Name, Created: t.CreationTimestamp.Unix(),
-			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1alpha1.TaskFailed, NoCI: failedNoCI(&t.Status),
+			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
 			PullRequest: int(t.Status.PullRequest), PullRequestURL: t.Status.PullRequestURL})
 	}
 	return facts, nil

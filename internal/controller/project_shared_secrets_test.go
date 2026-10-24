@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Project sharing Secrets", Ordered, func() {
@@ -41,14 +41,14 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 				namespace.Labels = map[string]string{}
 			}
 			if in {
-				namespace.Labels[c4v1alpha1.LabelSharedSecrets] = "true"
+				namespace.Labels[c4v1beta1.LabelSharedSecrets] = "true"
 			} else {
-				delete(namespace.Labels, c4v1alpha1.LabelSharedSecrets)
+				delete(namespace.Labels, c4v1beta1.LabelSharedSecrets)
 			}
 		})).To(Succeed())
 	}
 	secretsShared := func(g Gomega, ns string) *metav1.Condition {
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 		cond := condition(project.Status.Conditions, ConditionSecretsShared)
 		g.Expect(cond).NotTo(BeNil())
@@ -57,7 +57,7 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 	// oldTokenCopy is the copy of the token an earlier release made in ns.
 	oldTokenCopy := func(ns string) *corev1.Secret {
 		labels := projectLabels(ns)
-		labels[c4v1alpha1.LabelSharedFrom] = sharedToken
+		labels[c4v1beta1.LabelSharedFrom] = sharedToken
 		return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: sharedToken, Namespace: ns, Labels: labels},
 			Data: map[string][]byte{"token": []byte("stale")}}
 	}
@@ -78,14 +78,14 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, sharedPullSecret), &copied)).To(Succeed())
 			g.Expect(copied.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
 			g.Expect(copied.Data).To(HaveKeyWithValue(corev1.DockerConfigJsonKey, []byte(`{"auths":{}}`)))
-			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSharedFrom, sharedPullSecret))
+			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1beta1.LabelSharedFrom, sharedPullSecret))
 			cond := secretsShared(g, ns)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Message).To(Equal(sharedPullSecret + ": shared from namespace " + operatorNamespace))
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, sharedToken), &corev1.Secret{}))).
 				To(BeTrue(), "the old token copy is deleted")
 		}).Should(Succeed())
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 		Expect(controlledBy(&copied, &project)).To(BeTrue())
 		noToken(ns)
@@ -124,8 +124,8 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		DeferCleanup(stopPolling, ns)
 		mustCreate(oldTokenCopy(ns))
 
-		mustCreate(&c4v1alpha1.Project{ObjectMeta: objectMeta(ns, ns),
-			Spec: c4v1alpha1.ProjectSpec{DisplayName: "Stale"}})
+		mustCreate(&c4v1beta1.Project{ObjectMeta: objectMeta(ns, ns),
+			Spec: c4v1beta1.ProjectSpec{DisplayName: "Stale"}})
 		Eventually(func(g Gomega) {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, sharedToken), &corev1.Secret{}))).To(BeTrue())
 			g.Expect(secretsShared(g, ns).Reason).To(Equal("NotOptedIn"))
@@ -141,14 +141,14 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, sharedToken), own)).To(Succeed())
 			g.Expect(own.Data).To(HaveKeyWithValue("token", []byte("own")))
-			g.Expect(own.Labels).NotTo(HaveKey(c4v1alpha1.LabelSharedFrom))
+			g.Expect(own.Labels).NotTo(HaveKey(c4v1beta1.LabelSharedFrom))
 		}, "2s").Should(Succeed())
 		optIn(ns, false)
 	})
 
 	It("shares into a namespace made opted in before it has a Project, which then adopts the copy", func() {
 		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "early-",
-			Labels: map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}}}
+			Labels: map[string]string{c4v1beta1.LabelSharedSecrets: "true"}}}
 		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 		ns := namespace.Name
 		DeferCleanup(stopPolling, ns)
@@ -156,16 +156,16 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		Eventually(func(g Gomega) {
 			var copied corev1.Secret
 			g.Expect(k8sClient.Get(ctx, key(ns, sharedPullSecret), &copied)).To(Succeed())
-			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSharedFrom, sharedPullSecret))
+			g.Expect(copied.Labels).To(HaveKeyWithValue(c4v1beta1.LabelSharedFrom, sharedPullSecret))
 			g.Expect(copied.OwnerReferences).To(BeEmpty())
 		}).Should(Succeed())
 		noToken(ns)
 
-		mustCreate(&c4v1alpha1.Project{ObjectMeta: objectMeta(ns, ns),
-			Spec: c4v1alpha1.ProjectSpec{DisplayName: "Early"}})
+		mustCreate(&c4v1beta1.Project{ObjectMeta: objectMeta(ns, ns),
+			Spec: c4v1beta1.ProjectSpec{DisplayName: "Early"}})
 		Eventually(func(g Gomega) {
 			g.Expect(secretsShared(g, ns).Reason).To(Equal("Shared"))
-			var project c4v1alpha1.Project
+			var project c4v1beta1.Project
 			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 			var copied corev1.Secret
 			g.Expect(k8sClient.Get(ctx, key(ns, sharedPullSecret), &copied)).To(Succeed())
@@ -176,7 +176,7 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 
 	It("keeps the copy in a namespace without a Project in step and deletes it on opt-out", func() {
 		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "projectless-",
-			Labels: map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}}}
+			Labels: map[string]string{c4v1beta1.LabelSharedSecrets: "true"}}}
 		Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 		ns := namespace.Name
 		DeferCleanup(stopPolling, ns)
@@ -201,7 +201,7 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		Eventually(func(g Gomega) {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, sharedPullSecret), &corev1.Secret{}))).To(BeTrue())
 		}).Should(Succeed())
-		var project c4v1alpha1.Project
+		var project c4v1beta1.Project
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, ns), &project))).To(BeTrue())
 	})
 
@@ -219,7 +219,7 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 		}).Should(Succeed())
 		Expect(k8sClient.Get(ctx, key(ns, sharedPullSecret), own)).To(Succeed())
 		Expect(own.Data).To(HaveKeyWithValue(corev1.DockerConfigJsonKey, []byte("own")))
-		Expect(own.Labels).NotTo(HaveKey(c4v1alpha1.LabelSharedFrom))
+		Expect(own.Labels).NotTo(HaveKey(c4v1beta1.LabelSharedFrom))
 
 		By("keeping it when the namespace opts out")
 		optIn(ns, false)
@@ -238,7 +238,7 @@ var _ = Describe("Project sharing Secrets", Ordered, func() {
 			cond := secretsShared(g, ns)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal("NotOptedIn"))
-			g.Expect(cond.Message).To(ContainSubstring(c4v1alpha1.LabelSharedSecrets))
+			g.Expect(cond.Message).To(ContainSubstring(c4v1beta1.LabelSharedSecrets))
 			g.Expect(cond.Message).NotTo(ContainSubstring(sharedToken))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {

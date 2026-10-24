@@ -18,7 +18,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -54,7 +54,7 @@ func autopilotBrief(ns, mode string) {
 	planRound(ns, 1, 1, linterPlan(ns, 0))
 	Eventually(func(g Gomega) {
 		b := getBrief(g, ns)
-		g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+		g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		// #750: status says the mode in effect, the default when unset.
 		g.Expect(b.Status.Autopilot).To(Equal(model.AutopilotMode(mode)))
 	}).Should(Succeed())
@@ -79,7 +79,7 @@ func awaitTendRound(ns string, round int) {
 		g.Expect(b.Status.TendRound).To(Equal(int32(round)))
 		g.Expect(b.Status.LastTendTime).NotTo(BeNil())
 		task := getTask(g, ns, fmt.Sprintf("cel-lens-plan-%d", round))
-		g.Expect(task.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelBriefRoundKind, c4v1alpha1.BriefRoundKindTend))
+		g.Expect(task.Labels).To(HaveKeyWithValue(c4v1beta1.LabelBriefRoundKind, c4v1beta1.BriefRoundKindTend))
 		g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(ContainSubstring(model.TendingHeading))
 		// #871: the planner clones the workspace as it was when its Task was
 		// made, and reads it as a tending round's.
@@ -94,21 +94,21 @@ func awaitTendRound(ns string, round int) {
 func briefService(ns string) {
 	GinkgoHelper()
 	standard := newStandard(ns, "python-strict", "python-fastapi")
-	container := newContainer(ns, "orders-api", "cel-lens", c4v1alpha1.ContainerTypeService)
-	container.Labels = map[string]string{c4v1alpha1.LabelBrief: "cel-lens"}
-	container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+	container := newContainer(ns, "orders-api", "cel-lens", c4v1beta1.ContainerTypeService)
+	container.Labels = map[string]string{c4v1beta1.LabelBrief: "cel-lens"}
+	container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
 	mustCreate(standard, container)
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 	}).Should(Succeed())
 }
 
 // serviceTask makes a Task on orders-api for the Brief's implementer.
-func serviceTask(ns, name string) *c4v1alpha1.Task {
-	task := &c4v1alpha1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.TaskSpec{
-		ContainerRef: c4v1alpha1.LocalRef{Name: "orders-api"},
-		AgentRef:     c4v1alpha1.LocalRef{Name: "implementer"},
+func serviceTask(ns, name string) *c4v1beta1.Task {
+	task := &c4v1beta1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.TaskSpec{
+		ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"},
+		AgentRef:     c4v1beta1.LocalRef{Name: "implementer"},
 		Goal:         "Add crop",
 	}}
 	mustCreate(task)
@@ -143,7 +143,7 @@ var _ = Describe("Brief autopilot", func() {
 			last := b.Status.History[1]
 			g.Expect(last.Outcome).To(Equal(model.ReasonTended))
 			g.Expect(last.Summary).To(Equal(fmt.Sprintf("Tried linter#%d again: The checker it needs is merged now.", n)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.Tended).To(ConsistOf(And(HaveField("Number", int32(n)),
 				HaveField("Answer", model.AnswerRetry), HaveField("Round", int32(2)), HaveField("Tries", int32(1)))))
 		}).Should(Succeed())
@@ -196,7 +196,7 @@ var _ = Describe("Brief autopilot", func() {
 					HaveField("Name", name), HaveField("Recommend", "Try it again."),
 					HaveField("Why", why))))
 				g.Expect(b.Status.NeedsYouWaiting).To(Equal(int32(1)))
-				cond := condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)
+				cond := condition(b.Status.Conditions, c4v1beta1.ConditionNeedsYou)
 				g.Expect(cond).NotTo(BeNil())
 				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(cond.Message).To(And(ContainSubstring(name), ContainSubstring("Try it again.")))
@@ -221,7 +221,7 @@ var _ = Describe("Brief autopilot", func() {
 				b := getBrief(g, ns)
 				g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 				g.Expect(b.Status.NeedsYou).To(BeEmpty())
-				g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(
+				g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsYou)).To(
 					HaveField("Status", metav1.ConditionFalse))
 			}).Should(Succeed())
 			Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
@@ -234,7 +234,7 @@ var _ = Describe("Brief autopilot", func() {
 	for _, mode := range []string{model.AutopilotOff, model.AutopilotAsk, model.AutopilotOn} {
 		It("in "+mode+", lists a Container whose Standard files are behind under Needs you until they aren't", func() {
 			autopilotBrief(ns, mode)
-			standardContainer(ns, map[string]string{c4v1alpha1.LabelBrief: "cel-lens"})
+			standardContainer(ns, map[string]string{c4v1beta1.LabelBrief: "cel-lens"})
 			gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
 			bumpStandard(ns, "v1.2.0")
 			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.2.0").Commit, "success")
@@ -252,7 +252,7 @@ var _ = Describe("Brief autopilot", func() {
 					"Since": Not(BeNil()),
 				})))
 				g.Expect(b.Status.NeedsYouWaiting).To(BeNumerically(">=", 1))
-				g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(PointTo(
+				g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsYou)).To(PointTo(
 					HaveField("Status", metav1.ConditionTrue)))
 				g.Expect(briefEventNotes(g, ns, eventNeedsYou)).To(ContainElement(ContainSubstring("orders-api")))
 			}).Should(Succeed())
@@ -265,7 +265,7 @@ var _ = Describe("Brief autopilot", func() {
 				b := getBrief(g, ns)
 				g.Expect(b.Status.NeedsYou).NotTo(ContainElement(HaveField("Name", "orders-api")))
 				if mode == model.AutopilotOff {
-					g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionNeedsYou)).To(PointTo(
+					g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsYou)).To(PointTo(
 						HaveField("Status", metav1.ConditionFalse)))
 				}
 			}).Should(Succeed())
@@ -330,7 +330,7 @@ var _ = Describe("Brief autopilot", func() {
 		merged := serviceTask(ns, "merged-one")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, merged.Name), merged)).To(Succeed())
-			merged.Status.Phase = c4v1alpha1.TaskMerged
+			merged.Status.Phase = c4v1beta1.TaskMerged
 			merged.Status.PhaseChangedAt = &metav1.Time{Time: time.Now()}
 			g.Expect(k8sClient.Status().Update(ctx, merged)).To(Succeed())
 		}).Should(Succeed())
@@ -343,7 +343,7 @@ var _ = Describe("Brief autopilot", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("an issue failing three Tasks while autopilot is Off")
@@ -383,8 +383,8 @@ var _ = Describe("Brief autopilot", func() {
 		// The Events of one Brief's refusals are a series: the Task holds each.
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPlanChecked, commit))
-			g.Expect(task.Annotations[c4v1alpha1.AnnotationPlanRefusals]).To(And(
+			g.Expect(task.Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationPlanChecked, commit))
+			g.Expect(task.Annotations[c4v1beta1.AnnotationPlanRefusals]).To(And(
 				ContainSubstring("a tending round writes only"), ContainSubstring(model.PlanModelFile)))
 		}).Should(Succeed())
 
@@ -409,7 +409,7 @@ var _ = Describe("Brief autopilot", func() {
 		Expect(closed.comments).To(ContainElement(ContainSubstring("Closed by Brief `cel-lens` in tending round 2")))
 		fourth := model.IssueTaskName("linter", tired, model.MaxIssueAttempts+1)
 		Consistently(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key(ns, fourth), &c4v1alpha1.Task{})).NotTo(Succeed())
+			g.Expect(k8sClient.Get(ctx, key(ns, fourth), &c4v1beta1.Task{})).NotTo(Succeed())
 		}, "1s").Should(Succeed(), "the exhausted issue gets no fourth Task")
 	})
 })

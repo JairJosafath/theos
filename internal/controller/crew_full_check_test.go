@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -31,23 +31,23 @@ func beforeReleaseContainer(ns string) {
 	GinkgoHelper()
 	readyContainer(ns)
 	Eventually(func(g Gomega) {
-		standard := &c4v1alpha1.Standard{}
+		standard := &c4v1beta1.Standard{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())
 		standard.Spec.ChecksBeforeRelease = true
 		g.Expect(k8sClient.Update(ctx, standard)).To(Succeed())
 	}).Should(Succeed())
 	Eventually(func(g Gomega) {
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-		container.Spec.Checks = c4v1alpha1.ChecksBeforeRelease
+		container.Spec.Checks = c4v1beta1.ChecksBeforeRelease
 		g.Expect(k8sClient.Update(ctx, container)).To(Succeed())
 	}).Should(Succeed())
 	Eventually(func(g Gomega) {
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		g.Expect(container.Status.Standard).NotTo(BeNil())
-		if container.Status.Standard.Checks != c4v1alpha1.ChecksBeforeRelease {
-			container.Status.Standard.Checks = c4v1alpha1.ChecksBeforeRelease
+		if container.Status.Standard.Checks != c4v1beta1.ChecksBeforeRelease {
+			container.Status.Standard.Checks = c4v1beta1.ChecksBeforeRelease
 			g.Expect(k8sClient.Status().Update(ctx, container)).To(Succeed())
 		}
 	}).Should(Succeed())
@@ -197,7 +197,7 @@ var _ = Describe("Crew release full checks", func() {
 			fullCheckRun(ns, 7, "completed", "failure"))
 		Expect(gitFake.closeIssue(ns, "orders-api", filed.Number)).To(Succeed())
 		// The Crew had started a Task on the issue; it ends with it.
-		task := &c4v1alpha1.Task{}
+		task := &c4v1beta1.Task{}
 		Expect(k8sClient.Get(ctx, key(ns, fmt.Sprintf("orders-api-%d", filed.Number)), task)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, task)).To(Succeed())
 		Eventually(func(g Gomega) {

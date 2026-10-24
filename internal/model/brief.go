@@ -22,7 +22,7 @@ const (
 )
 
 // PlanAPIVersion is the apiVersion of every object in a plan.
-const PlanAPIVersion = "c4.factory.io/v1alpha1"
+const PlanAPIVersion = "c4.factory.io/v1beta1"
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"
@@ -803,7 +803,7 @@ type specLimit struct {
 }
 
 // specLimits are the limits of kind's spec, as its CRD's markers in
-// api/v1alpha1 set them; a test holds the two together.
+// api/v1beta1 set them; a test holds the two together.
 func specLimits(kind string) []specLimit {
 	displayName := specLimit{"displayName", 100, false, func(o PlanObject) any { return o.DisplayName }}
 	description := specLimit{"description", 1000, false, func(o PlanObject) any { return o.Description }}

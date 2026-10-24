@@ -17,7 +17,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // The pool's pod (#1140): registration in an init container that alone holds the
@@ -26,14 +26,14 @@ import (
 func TestBuildRunnerPod(t *testing.T) {
 	in := runnerPodInput{namespace: "shop", provider: "gitea", gitURL: "http://gitea.gitea.svc.cluster.local:3000",
 		tokenSecret: ciRunnerTokenSecret("gitea"),
-		runner:      c4v1alpha1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1, GoCache: true},
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1, GoCache: true},
 		goCacheRoot: "/var/cache/c4factory/go/ci"}
 	pod := buildRunnerPod(in)
 	if pod.GenerateName != "ci-gitea-go-" || pod.Namespace != "shop" {
 		t.Errorf("named %q in %q, want ci-gitea-go- in shop", pod.GenerateName, pod.Namespace)
 	}
 	for k, v := range map[string]string{LabelCIRunner: ciRunnerValue, LabelCIGitProvider: "gitea", LabelCILabel: "go",
-		c4v1alpha1.LabelProject: "shop"} {
+		c4v1beta1.LabelProject: "shop"} {
 		if pod.Labels[k] != v {
 			t.Errorf("label %s = %q, want %q", k, pod.Labels[k], v)
 		}
@@ -75,7 +75,7 @@ func TestBuildRunnerPod(t *testing.T) {
 // flag or the label's goCache, no cache and no job.env.
 func TestBuildRunnerPodGoCache(t *testing.T) {
 	in := runnerPodInput{namespace: "shop", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
-		runner:      c4v1alpha1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", GoCache: true},
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", GoCache: true},
 		goCacheRoot: "/var/cache/c4factory/go/ci"}
 	pod := buildRunnerPod(in)
 	for _, v := range pod.Spec.Volumes {

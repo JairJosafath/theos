@@ -23,7 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -37,14 +37,14 @@ var ordersAPIScaffoldedFrom = []string{
 func createWebshop(ns string) {
 	GinkgoHelper()
 	createFactory(ns)
-	container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 	container.Spec.DisplayName = "Orders API"
 	mustCreate(
 		newSystem(ns, "webshop-core"),
 		newOrdersDB(ns),
 		newRelationship(ns, "orders-api-to-orders-db",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "orders-db")),
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "orders-db")),
 		container,
 	)
 }
@@ -54,7 +54,7 @@ var (
 	ordersDBApplied = model.AppliedRelationship{
 		Name: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres",
 	}
-	ordersDBConnector = c4v1alpha1.AppliedConnector{
+	ordersDBConnector = c4v1beta1.AppliedConnector{
 		Relationship: "orders-api-to-orders-db", DataStore: "orders-db", Connector: "postgres",
 	}
 )
@@ -63,9 +63,9 @@ var (
 func eventuallyApplied(ns, name string, status metav1.ConditionStatus, reason string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		var rel c4v1alpha1.Relationship
+		var rel c4v1beta1.Relationship
 		g.Expect(k8sClient.Get(ctx, key(ns, name), &rel)).To(Succeed())
-		cond := condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)
+		cond := condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.Reason).To(Equal(reason))
@@ -73,9 +73,9 @@ func eventuallyApplied(ns, name string, status metav1.ConditionStatus, reason st
 }
 
 // eventuallyOrdersAPI waits for orders-api to reach a phase and returns it.
-func eventuallyOrdersAPI(ns string, phase c4v1alpha1.ContainerPhase) *c4v1alpha1.Container {
+func eventuallyOrdersAPI(ns string, phase c4v1beta1.ContainerPhase) *c4v1beta1.Container {
 	GinkgoHelper()
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
 		g.Expect(container.Status.Phase).To(Equal(phase))
@@ -109,12 +109,12 @@ var _ = Describe("Container scaffolding", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.RepositoryURL).To(Equal("http://gitea.gitea.svc.cluster.local:3000/" + ns + "/orders-api"))
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 		Expect(container.Status.AppliedRelationships).To(ConsistOf("orders-api-to-orders-db"))
-		for _, t := range []string{c4v1alpha1.ConditionReferencesResolved, c4v1alpha1.ConditionChoicesValid,
-			c4v1alpha1.ConditionRepositoryCreated, c4v1alpha1.ConditionScaffolded} {
+		for _, t := range []string{c4v1beta1.ConditionReferencesResolved, c4v1beta1.ConditionChoicesValid,
+			c4v1beta1.ConditionRepositoryCreated, c4v1beta1.ConditionScaffolded} {
 			Expect(condition(container.Status.Conditions, t)).To(HaveField("Status", metav1.ConditionTrue), t)
 		}
 
@@ -151,9 +151,9 @@ var _ = Describe("Container scaffolding", func() {
 
 		By("the Relationship reporting it was applied")
 		Eventually(func(g Gomega) {
-			var rel c4v1alpha1.Relationship
+			var rel c4v1beta1.Relationship
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), &rel)).To(Succeed())
-			g.Expect(condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)).
+			g.Expect(condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)).
 				To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 
@@ -161,7 +161,7 @@ var _ = Describe("Container scaffolding", func() {
 		pushes := gitFake.pushCount()
 		before := container.Status.DeepCopy()
 		orig := container.DeepCopy()
-		container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: time.Now().String()}
+		container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: time.Now().String()}
 		Expect(k8sClient.Patch(ctx, container, client.MergeFrom(orig))).To(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pushCount()).To(Equal(pushes))
@@ -175,13 +175,13 @@ var _ = Describe("Container scaffolding", func() {
 	It("comes back to a Container its cache has not seen Ready yet", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		pushes := gitFake.pushCount()
 
 		// An event queued during the scaffold absorbs the requeue ready asked
 		// for, and its reconcile still reads the Container as Scaffolding.
 		stale := container.DeepCopy()
-		stale.Status.Phase = c4v1alpha1.ContainerScaffolding
+		stale.Status.Phase = c4v1beta1.ContainerScaffolding
 		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
 			ScaffoldTimeout: testScaffoldTimeout}
 		result, err := r.scaffold(ctx, stale, resolved{}, stale.Status.DeepCopy())
@@ -193,13 +193,13 @@ var _ = Describe("Container scaffolding", func() {
 	It("writes manifests that name only files it wrote, with or without a Compute", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
-		catalogAPI := newContainer(ns, "catalog-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		catalogAPI := newContainer(ns, "catalog-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		catalogAPI.Spec.ComputeRef = nil
 		mustCreate(catalogAPI)
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "catalog-api"), catalogAPI)).To(Succeed())
-			g.Expect(catalogAPI.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(catalogAPI.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 
 		ordersFiles := gitFake.repo(ns, "orders-api").files
@@ -220,12 +220,12 @@ var _ = Describe("Container scaffolding", func() {
 	It("rolls the Ready Container up into its SoftwareSystem and Project", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Eventually(func(g Gomega) {
-			var system c4v1alpha1.SoftwareSystem
+			var system c4v1beta1.SoftwareSystem
 			g.Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), &system)).To(Succeed())
 			g.Expect(system.Status.Summary).To(Equal("1 of 1 container Ready, 0 active sessions"))
-			var project c4v1alpha1.Project
+			var project c4v1beta1.Project
 			g.Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 			g.Expect(project.Status.ReadyContainers).To(BeEquivalentTo(1))
 		}).Should(Succeed())
@@ -237,21 +237,21 @@ var _ = Describe("Container scaffolding", func() {
 		mustCreate(
 			newSystem(ns, "webshop-core"),
 			newOrdersDB(ns),
-			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService),
+			newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService),
 		)
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).NotTo(ContainElement("postgres@v1.2.0"))
 
 		mustCreate(newRelationship(ns, "orders-api-to-orders-db",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "orders-db")))
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "orders-db")))
 		Eventually(func(g Gomega) {
-			var rel c4v1alpha1.Relationship
+			var rel c4v1beta1.Relationship
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), &rel)).To(Succeed())
-			cond := condition(rel.Status.Conditions, c4v1alpha1.ConditionApplied)
+			cond := condition(rel.Status.Conditions, c4v1beta1.ConditionApplied)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonAddedAfterScaffold))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonAddedAfterScaffold))
 		}).Should(Succeed())
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "no second scaffold")
 	})
@@ -264,11 +264,11 @@ var _ = Describe("Container scaffolding", func() {
 		pushes := gitFake.pushCount()
 		createWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 		Expect(container.Status.AppliedRelationships).To(ConsistOf("orders-api-to-orders-db"))
 		Expect(container.Status.AppliedConnectors).To(ConsistOf(ordersDBConnector))
-		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded).Message).
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded).Message).
 			To(ContainSubstring("earlier attempt"))
 		Expect(gitFake.pushCount()).To(Equal(pushes))
 	})
@@ -280,20 +280,20 @@ var _ = Describe("Container scaffolding", func() {
 			[]model.AppliedRelationship{{Name: "orders-api-to-orders-db"}}))
 		createWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.AppliedRelationships).To(ConsistOf("orders-api-to-orders-db"))
 		Expect(container.Status.AppliedConnectors).To(BeEmpty())
-		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
 	})
 
 	It("doesn't count a Relationship recreated under the same name with a new target as applied", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.AppliedConnectors).To(ConsistOf(ordersDBConnector))
-		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
 
-		rel := &c4v1alpha1.Relationship{}
+		rel := &c4v1beta1.Relationship{}
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), rel)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, rel)).To(Succeed())
 		Eventually(func() bool {
@@ -303,10 +303,10 @@ var _ = Describe("Container scaffolding", func() {
 		cache.Name = "cache-db"
 		cache.Spec.ConnectorRef.Name = "redis"
 		mustCreate(cache, newRelationship(ns, "orders-api-to-orders-db",
-			element(c4v1alpha1.ElementContainer, "orders-api"),
-			element(c4v1alpha1.ElementDataStore, "cache-db")))
+			element(c4v1beta1.ElementContainer, "orders-api"),
+			element(c4v1beta1.ElementDataStore, "cache-db")))
 
-		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionFalse, c4v1alpha1.ReasonAddedAfterScaffold)
+		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionFalse, c4v1beta1.ReasonAddedAfterScaffold)
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "no second scaffold")
 	})
 
@@ -315,20 +315,20 @@ var _ = Describe("Container scaffolding", func() {
 		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")
 		createWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonForeignCommits))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonForeignCommits))
 		Expect(cond.Message).To(ContainSubstring("has commits C4 Factory didn't make"))
 
 		By("not trying again on its own")
 		reads := gitFake.historyCount(ns, "orders-api")
 		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
 
 		By("not trying again when a DataStore, Relationship or catalog entry changes only status or metadata")
-		var db c4v1alpha1.DataStore
+		var db c4v1beta1.DataStore
 		Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
 		Expect(patch(&db, func() { metav1.SetMetaDataLabel(&db.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
 		orig := db.DeepCopy()
@@ -336,10 +336,10 @@ var _ = Describe("Container scaffolding", func() {
 			Type: "Touched", Status: metav1.ConditionTrue, Reason: "Test", LastTransitionTime: metav1.Now(),
 		})
 		Expect(k8sClient.Status().Patch(ctx, &db, client.MergeFrom(orig))).To(Succeed())
-		var framework c4v1alpha1.Framework
+		var framework c4v1beta1.Framework
 		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
 		Expect(patch(&framework, func() { metav1.SetMetaDataLabel(&framework.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
-		var rel c4v1alpha1.Relationship
+		var rel c4v1beta1.Relationship
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), &rel)).To(Succeed())
 		Expect(patch(&rel, func() { metav1.SetMetaDataLabel(&rel.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
 		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
@@ -348,72 +348,72 @@ var _ = Describe("Container scaffolding", func() {
 	It("stays Ready when its SoftwareSystem goes missing", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		reads := gitFake.historyCount(ns, "orders-api")
 
 		// Envtest has no garbage collector, so the Container outlives its system,
 		// as it would after `kubectl delete --cascade=orphan`.
 		Expect(k8sClient.Delete(ctx, newSystem(ns, "webshop-core"))).To(Succeed())
-		var container c4v1alpha1.Container
+		var container c4v1beta1.Container
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
-			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonNotFound))
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonNotFound))
 		}).Should(Succeed())
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 
 		By("not scaffolding again when it comes back")
 		mustCreate(newSystem(ns, "webshop-core"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
 	})
 
 	It("builds nothing for an External system, and scaffolds once it turns Internal", func() {
 		ns := newProjectNamespace()
 		system := newSystem(ns, "webshop-core")
-		system.Spec.Location = c4v1alpha1.SystemExternal
+		system.Spec.Location = c4v1beta1.SystemExternal
 		createFactory(ns)
 		mustCreate(system, newOrdersDB(ns),
-			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService))
+			newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService))
 
-		var container c4v1alpha1.Container
+		var container c4v1beta1.Container
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
-			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonExternalSystem))
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonExternalSystem))
 			g.Expect(cond.Message).To(ContainSubstring("SoftwareSystem webshop-core is External"))
 		}).Should(Succeed())
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerPending))
-		var db c4v1alpha1.DataStore
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerPending))
+		var db c4v1beta1.DataStore
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
-			cond := condition(db.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
-			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonExternalSystem))
+			cond := condition(db.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
+			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonExternalSystem))
 		}).Should(Succeed())
 		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "1s").Should(BeZero())
 
 		By("scaffolding once the system turns Internal")
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
-		Expect(patch(system, func() { system.Spec.Location = c4v1alpha1.SystemInternal })).To(Succeed())
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		Expect(patch(system, func() { system.Spec.Location = c4v1beta1.SystemInternal })).To(Succeed())
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), &db)).To(Succeed())
-			cond := condition(db.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+			cond := condition(db.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 
 		By("staying Ready when it turns External again")
 		reads := gitFake.historyCount(ns, "orders-api")
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
-		Expect(patch(system, func() { system.Spec.Location = c4v1alpha1.SystemExternal })).To(Succeed())
+		Expect(patch(system, func() { system.Spec.Location = c4v1beta1.SystemExternal })).To(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}, "1s").Should(Succeed())
 		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
 	})
@@ -423,7 +423,7 @@ var _ = Describe("Container scaffolding", func() {
 		system := newSystem(ns, "webshop-core")
 		mustCreate(system)
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
-		Expect(system.Spec.Location).To(Equal(c4v1alpha1.SystemInternal))
+		Expect(system.Spec.Location).To(Equal(c4v1beta1.SystemInternal))
 
 		bad := newSystem(ns, "stripe")
 		bad.Spec.Location = "Elsewhere"
@@ -437,29 +437,29 @@ var _ = Describe("Container scaffolding", func() {
 		createWebshop(ns)
 
 		Eventually(func(g Gomega) {
-			var container c4v1alpha1.Container
+			var container c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
-			g.Expect(cond).To(HaveField("Reason", c4v1alpha1.ReasonGitError))
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
+			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonGitError))
 			g.Expect(cond.Message).To(ContainSubstring("deadline exceeded"))
 		}).Should(Succeed())
 
 		release()
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 	})
 
 	It("tries a Failed Container again when the retry annotation changes", func() {
 		ns := newProjectNamespace()
 		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")
 		createWebshop(ns)
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
 
 		gitFake.clearRepo(ns, "orders-api")
 		Expect(patch(container, func() {
-			container.Annotations = map[string]string{c4v1alpha1.AnnotationRetry: "1"}
+			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
 		})).To(Succeed())
 
-		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container = eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom))
 	})
 
@@ -470,13 +470,13 @@ var _ = Describe("Container scaffolding", func() {
 		})
 		createFactory(ns)
 		setNpmScope(ns, "@acme")
-		mustCreate(&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "scoped"),
-			Spec: newCatalogSpec(templatesURL+"scoped-compute", "v1.0.0", c4v1alpha1.ContainerTypeService)})
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "scoped"}
+		mustCreate(&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "scoped"),
+			Spec: newCatalogSpec(templatesURL+"scoped-compute", "v1.0.0", c4v1beta1.ContainerTypeService)})
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.ComputeRef = &c4v1beta1.LocalRef{Name: "scoped"}
 		mustCreate(newSystem(ns, "webshop-core"), container)
 
-		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("package.json",
 			HaveField("Data", BeEquivalentTo("{\n  \"name\": \"@acme/orders-api\"\n}\n"))),
 			"the scaffold's provider Config carries the GitProvider's packages")
@@ -488,16 +488,16 @@ var _ = Describe("Container scaffolding", func() {
 			"pyproject.toml": {Data: []byte("[project]\n")},
 		})
 		createFactory(ns)
-		mustCreate(&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "clashing"),
-			Spec: newCatalogSpec(templatesURL+"clashing-compute", "v1.0.0", c4v1alpha1.ContainerTypeService)})
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "clashing"}
+		mustCreate(&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "clashing"),
+			Spec: newCatalogSpec(templatesURL+"clashing-compute", "v1.0.0", c4v1beta1.ContainerTypeService)})
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.ComputeRef = &c4v1beta1.LocalRef{Name: "clashing"}
 		mustCreate(newSystem(ns, "webshop-core"), container)
 
-		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container = eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonLayerConflict))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonLayerConflict))
 		Expect(cond.Message).To(Equal("python-fastapi and clashing both write pyproject.toml"))
 	})
 
@@ -507,32 +507,32 @@ var _ = Describe("Container scaffolding", func() {
 			".c4factory/ci/gitlabCI/.gitlab-ci.yml": {Data: []byte("check:\n")},
 		})
 		createFactory(ns)
-		mustCreate(&c4v1alpha1.Compute{ObjectMeta: objectMeta(ns, "gitlab-only"),
-			Spec: newCatalogSpec(templatesURL+"gitlab-compute", "v1.0.0", c4v1alpha1.ContainerTypeService)})
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.ComputeRef = &c4v1alpha1.LocalRef{Name: "gitlab-only"}
+		mustCreate(&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "gitlab-only"),
+			Spec: newCatalogSpec(templatesURL+"gitlab-compute", "v1.0.0", c4v1beta1.ContainerTypeService)})
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.ComputeRef = &c4v1beta1.LocalRef{Name: "gitlab-only"}
 		mustCreate(newSystem(ns, "webshop-core"), container)
 
-		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container = eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedCI))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUnsupportedCI))
 		Expect(cond.Message).To(Equal("gitlab-only doesn't support giteaActions; it supports gitlabCI"))
 	})
 
 	It("fails a template pinned to a branch", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		var framework c4v1alpha1.Framework
+		var framework c4v1beta1.Framework
 		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
 		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
 		mustCreate(newSystem(ns, "webshop-core"),
-			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService))
+			newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService))
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnpinnedRef))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUnpinnedRef))
 		Expect(cond.Message).To(ContainSubstring("Framework python-fastapi"))
 	})
 
@@ -541,12 +541,12 @@ var _ = Describe("Container scaffolding", func() {
 		createFactory(ns)
 		Expect(k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: objectMeta(ns, "gitea-credentials")})).To(Succeed())
 		mustCreate(newSystem(ns, "webshop-core"),
-			newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService))
+			newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService))
 		Eventually(func(g Gomega) {
-			var container c4v1alpha1.Container
+			var container c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerPending))
-			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerPending))
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)).
 				To(HaveField("Message", "Secret gitea-credentials not found"))
 		}).Should(Succeed())
 
@@ -556,9 +556,9 @@ var _ = Describe("Container scaffolding", func() {
 			StringData: map[string]string{"username": "c4admin", "token": rand.Text()},
 		})
 		Eventually(func(g Gomega) {
-			var container c4v1alpha1.Container
+			var container c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 	})
 })

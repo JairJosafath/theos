@@ -19,7 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -29,16 +29,16 @@ const clearIssue = "## Goal\n\nValidate orders.\n\n## Acceptance criteria\n\n- [
 
 // newCrew returns the Crew of orders-api: Agent claude implements, Agent
 // reviewer reviews.
-func newCrew(ns string) *c4v1alpha1.Crew {
+func newCrew(ns string) *c4v1beta1.Crew {
 	return newCrewOf(ns, "orders-api")
 }
 
 // newCrewOf is a Crew named for Container name, on it.
-func newCrewOf(ns, name string) *c4v1alpha1.Crew {
-	return &c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.CrewSpec{
-		ContainerRef: c4v1alpha1.LocalRef{Name: name},
-		Implementer:  c4v1alpha1.LocalRef{Name: "claude"},
-		Reviewer:     c4v1alpha1.LocalRef{Name: "reviewer"},
+func newCrewOf(ns, name string) *c4v1beta1.Crew {
+	return &c4v1beta1.Crew{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.CrewSpec{
+		ContainerRef: c4v1beta1.LocalRef{Name: name},
+		Implementer:  c4v1beta1.LocalRef{Name: "claude"},
+		Reviewer:     c4v1beta1.LocalRef{Name: "reviewer"},
 	}}
 }
 
@@ -47,8 +47,8 @@ func crewAgents(ns string, rounds int32) {
 	GinkgoHelper()
 	implementer := newAgent(ns, rounds)
 	implementer.Spec.Model = "claude-sonnet-5-5"
-	reviewer := &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "reviewer"),
-		Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: rounds}}
+	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "reviewer"),
+		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: rounds}}
 	mustCreate(implementer, reviewer)
 }
 
@@ -61,8 +61,8 @@ func sandboxEnv(g Gomega, ns, name string) []any {
 }
 
 // getCrew reads the Crew of orders-api.
-func getCrew(g Gomega, ns string) *c4v1alpha1.Crew {
-	crew := &c4v1alpha1.Crew{}
+func getCrew(g Gomega, ns string) *c4v1beta1.Crew {
+	crew := &c4v1beta1.Crew{}
 	g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), crew)).To(Succeed())
 	return crew
 }
@@ -90,10 +90,10 @@ var _ = Describe("Crew", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-3")
 			g.Expect(task.Spec.Issue).To(Equal(int32(first)))
-			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1alpha1.LocalRef{Name: "reviewer"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1beta1.LocalRef{Name: "reviewer"}))
 			g.Expect(task.Labels).To(HaveKeyWithValue(LabelCrew, "orders-api"))
 			crew := getCrew(g, ns)
-			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewWorking))
+			g.Expect(crew.Status.Phase).To(Equal(c4v1beta1.CrewWorking))
 			g.Expect(crew.Status.ActiveTasks).To(Equal([]string{"orders-api-3"}))
 			g.Expect(crew.Status.Waiting).To(Equal([]int32{int32(blocked)}))
 			g.Expect(crew.OwnerReferences).To(ContainElement(HaveField("Kind", "Container")))
@@ -145,7 +145,7 @@ var _ = Describe("Crew", func() {
 		By("approving in the Git host, merging, filing the follow-up and closing the issue")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-3")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.FollowUps).To(HaveLen(1))
 		}).Should(Succeed())
 		mergeCommit := gitFake.pullRequests(ns, "orders-api")[0].MergeCommit
@@ -199,11 +199,11 @@ var _ = Describe("Crew", func() {
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", nil, "OOMKilled")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			issue := gitFake.issue(ns, "orders-api", n)
 			g.Expect(issue.Labels).To(Equal([]string{model.LabelNeedsHuman}))
 			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Task `orders-api-1` failed")))
-			g.Expect(getCrew(g, ns).Status.Phase).To(Equal(c4v1alpha1.CrewIdle))
+			g.Expect(getCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewIdle))
 		}).Should(Succeed())
 
 		Expect(gitFake.labelIssue(ns, "orders-api", n, model.LabelReady)).To(Succeed())
@@ -233,7 +233,7 @@ var _ = Describe("Crew", func() {
 		var byHand string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.ByHand).NotTo(BeEmpty())
 			byHand = task.Status.ByHand
 		}).Should(Succeed())
@@ -277,7 +277,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(crew.Status.ActiveTasks).To(ConsistOf("orders-api-1", "orders-api-2"))
 			g.Expect(crew.Status.Ready).To(Equal([]int32{3}), "the third waits for a free place")
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-3"), &c4v1alpha1.Task{}))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-3"), &c4v1beta1.Task{}))).To(BeTrue())
 	})
 
 	It("gives the release due first its places, and the next release the place it can't use", func() {
@@ -326,7 +326,7 @@ var _ = Describe("Crew", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "a conflict with another change costs no round")
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Merge main into your branch"))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
@@ -347,7 +347,7 @@ var _ = Describe("Crew", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Conflicts resolved."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}, "30s").Should(Succeed())
 		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
@@ -373,7 +373,7 @@ var _ = Describe("Crew", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "main moving costs no round")
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
 			g.Expect(task.Status.Commit).NotTo(Equal("sha-1"))
@@ -396,7 +396,7 @@ var _ = Describe("Crew", func() {
 		var head string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Commit).NotTo(Equal(first))
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
 			head = task.Status.Commit
@@ -407,7 +407,7 @@ var _ = Describe("Crew", func() {
 		gitFake.setChecks(ns, "orders-api", head, "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.Review).NotTo(BeNil())
 			g.Expect(task.Status.Review.Verdict).To(Equal(model.VerdictApprove))
@@ -424,7 +424,7 @@ var _ = Describe("Crew", func() {
 		gitFake.setChecks(ns, "orders-api", head, "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeFalse())
 			g.Expect(task.Status.Feedback).To(ContainSubstring("main moved since its checks ran"))
@@ -447,7 +447,7 @@ var _ = Describe("Crew", func() {
 		}, "30s").Should(Succeed())
 		Consistently(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.History).NotTo(ContainElement(HaveField("Reason", "ResolvingConflicts")))
 		}, "2s").Should(Succeed())
 
@@ -455,7 +455,7 @@ var _ = Describe("Crew", func() {
 		gitFake.retest(ns, "orders-api", pr.Number, false)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}, "30s").Should(Succeed())
 	})
@@ -494,7 +494,7 @@ var _ = Describe("Crew", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Still good."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}, "30s").Should(Succeed())
 	})
@@ -509,22 +509,22 @@ var _ = Describe("Crew", func() {
 		mustCreate(crew)
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewPaused))
+			g.Expect(crew.Status.Phase).To(Equal(c4v1beta1.CrewPaused))
 			g.Expect(crew.Status.Ready).To(Equal([]int32{1}))
 		}).Should(Succeed())
 		Consistently(func() bool {
-			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1"), &c4v1alpha1.Task{}))
+			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1"), &c4v1beta1.Task{}))
 		}, "3s").Should(BeTrue())
 	})
 
 	It("refuses a route that names no Agent, and two routes for one label (#1085)", func() {
 		ns := newProjectNamespace()
 		crew := newCrew(ns)
-		crew.Spec.Routes = []c4v1alpha1.CrewRoute{{Label: "kind/docs"}}
+		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "kind/docs"}}
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("a route names an implementer, a reviewer or both")))
-		haiku := &c4v1alpha1.LocalRef{Name: "haiku"}
+		haiku := &c4v1beta1.LocalRef{Name: "haiku"}
 		crew = newCrew(ns)
-		crew.Spec.Routes = []c4v1alpha1.CrewRoute{{Label: "kind/docs", Implementer: haiku}, {Label: "kind/docs", Reviewer: haiku}}
+		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "kind/docs", Implementer: haiku}, {Label: "kind/docs", Reviewer: haiku}}
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("Duplicate value")))
 	})
 
@@ -536,9 +536,9 @@ var _ = Describe("Crew", func() {
 		other := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 2
-		crew.Spec.Routes = []c4v1alpha1.CrewRoute{
-			{Label: "security", Reviewer: &c4v1alpha1.LocalRef{Name: "reviewer"}},
-			{Label: "kind/docs", Implementer: &c4v1alpha1.LocalRef{Name: "haiku"}},
+		crew.Spec.Routes = []c4v1beta1.CrewRoute{
+			{Label: "security", Reviewer: &c4v1beta1.LocalRef{Name: "reviewer"}},
+			{Label: "kind/docs", Implementer: &c4v1beta1.LocalRef{Name: "haiku"}},
 		}
 		mustCreate(crew)
 
@@ -549,18 +549,18 @@ var _ = Describe("Crew", func() {
 			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
 			g.Expect(cond.Message).To(Equal("Agent haiku not found"))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1"), &c4v1alpha1.Task{}))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1"), &c4v1beta1.Task{}))).To(BeTrue())
 
 		By("running the labelled issue on the routed implementer and the Crew's reviewer, the other on the Crew's own")
-		mustCreate(&c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "haiku"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-haiku-4-5-20251001", MaxRounds: 2}})
+		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "haiku"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-haiku-4-5-20251001", MaxRounds: 2}})
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, fmt.Sprintf("orders-api-%d", docs))
-			g.Expect(task.Spec.AgentRef).To(Equal(c4v1alpha1.LocalRef{Name: "haiku"}))
-			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1alpha1.LocalRef{Name: "reviewer"}))
+			g.Expect(task.Spec.AgentRef).To(Equal(c4v1beta1.LocalRef{Name: "haiku"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1beta1.LocalRef{Name: "reviewer"}))
 			task = getTask(g, ns, fmt.Sprintf("orders-api-%d", other))
-			g.Expect(task.Spec.AgentRef).To(Equal(c4v1alpha1.LocalRef{Name: "claude"}))
-			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1alpha1.LocalRef{Name: "reviewer"}))
+			g.Expect(task.Spec.AgentRef).To(Equal(c4v1beta1.LocalRef{Name: "claude"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1beta1.LocalRef{Name: "reviewer"}))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", docs))).To(
@@ -584,7 +584,7 @@ var _ = Describe("Crew", func() {
 		crewAgents(ns, 1)
 		Eventually(func(g Gomega) {
 			crew := getCrew(g, ns)
-			g.Expect(crew.Status.Phase).To(Equal(c4v1alpha1.CrewIdle))
+			g.Expect(crew.Status.Phase).To(Equal(c4v1beta1.CrewIdle))
 			g.Expect(condition(crew.Status.Conditions, ConditionReady).Status).To(Equal(metav1.ConditionTrue))
 		}).Should(Succeed())
 	})

@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -34,7 +34,7 @@ const (
 )
 
 // agentName is how comments name an Agent: its name, and its model when set.
-func agentName(agent *c4v1alpha1.Agent) string {
+func agentName(agent *c4v1beta1.Agent) string {
 	if agent.Spec.Model == "" {
 		return "Agent `" + agent.Name + "`"
 	}
@@ -44,7 +44,7 @@ func agentName(agent *c4v1alpha1.Agent) string {
 // announce marks an issue as taken: in progress, assigned to the Container's
 // agent bot, with a comment naming the Task and its Agents.
 func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, container *c4v1alpha1.Container, agents taskAgents) {
+	task *c4v1beta1.Task, container *c4v1beta1.Container, agents taskAgents) {
 	n := int(task.Spec.Issue)
 	notes := []error{
 		provider.EnsureLabels(ctx, repo, issueLabels()),
@@ -64,19 +64,19 @@ func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Prov
 // unreviewed commit is still the head and its checks now pass
 // (model.StartsAtReview); empty otherwise.
 func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitprovider.Provider,
-	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) (string, error) {
-	var list c4v1alpha1.TaskList
+	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) (string, error) {
+	var list c4v1beta1.TaskList
 	if err := r.List(ctx, &list, client.InNamespace(task.Namespace),
 		client.MatchingFields{indexTaskContainer: task.Spec.ContainerRef.Name}); err != nil {
 		return "", err
 	}
 	tries := make([]model.Try, 0, len(list.Items))
-	byName := make(map[string]*c4v1alpha1.Task, len(list.Items))
+	byName := make(map[string]*c4v1beta1.Task, len(list.Items))
 	for i := range list.Items {
 		t := &list.Items[i]
 		byName[t.Name] = t
 		tries = append(tries, model.Try{Name: t.Name, Issue: int(t.Spec.Issue), Created: t.CreationTimestamp.Unix(),
-			Failed: t.Status.Phase == c4v1alpha1.TaskFailed, PullRequest: int(t.Status.PullRequest)})
+			Failed: t.Status.Phase == c4v1beta1.TaskFailed, PullRequest: int(t.Status.PullRequest)})
 	}
 	earlier, ok := model.EarlierTry(task.Name, task.CreationTimestamp.Unix(), int(task.Spec.Issue), tries)
 	if !ok {
@@ -119,7 +119,7 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitpro
 }
 
 // tryHistory is a Task's timeline as model.EndedUnreviewed reads it.
-func tryHistory(history []c4v1alpha1.TaskTransition) []model.TryStep {
+func tryHistory(history []c4v1beta1.TaskTransition) []model.TryStep {
 	steps := make([]model.TryStep, len(history))
 	for i, h := range history {
 		steps[i] = model.TryStep{Phase: string(h.Phase), Round: int(h.Round)}
@@ -131,7 +131,7 @@ func tryHistory(history []c4v1alpha1.TaskTransition) []model.TryStep {
 // it. The caller posts it once, with the run's new sandbox, so a retry after a
 // failed status write doesn't post it again.
 func (r *TaskReconciler) noteContinued(ctx context.Context, provider gitprovider.Provider,
-	repo gitprovider.Repository, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) {
+	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
 	if err := provider.CommentPullRequest(ctx, repo, int(status.PullRequest), fmt.Sprintf(
 		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, status.Continues)); err != nil {
 		logf.FromContext(ctx).Info("Could not comment on pull request", "task", task.Name, "error", err.Error())
@@ -139,8 +139,8 @@ func (r *TaskReconciler) noteContinued(ctx context.Context, provider gitprovider
 }
 
 // review posts the reviewer's verdict as a review of the round's commit.
-func (r *TaskReconciler) review(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, reviewer *c4v1alpha1.Agent, event, summary string) {
+func (r *TaskReconciler) review(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent, event, summary string) {
 	if status.PullRequest == 0 {
 		return
 	}
@@ -159,7 +159,7 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1alpha1.Task, stat
 // issue for a person (status.byHand), both in the Later milestone, outside any
 // release, and closes it. It returns the follow-ups' addresses.
 func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, followUps []model.FollowUp,
+	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, followUps []model.FollowUp,
 	open []model.OpenCriterion) []string {
 	n := int(task.Spec.Issue)
 	var filed []string
@@ -232,7 +232,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 // status/needs-human so no Crew picks it, and returns its address. When the
 // Task's status lost the address, the issue is found again by its marker.
 func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, reviewer *c4v1alpha1.Agent, open []model.OpenCriterion,
+	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, open []model.OpenCriterion,
 	milestone int64) (string, error) {
 	var existing []gitprovider.Issue
 	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
@@ -264,7 +264,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Pr
 // refused, and labels the issue status/needs-human so a person sees it. It
 // returns the notes' errors.
 func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, comment, ended string) []error {
+	task *c4v1beta1.Task, comment, ended string) []error {
 	n := int(task.Spec.Issue)
 	notes := []error{
 		r.gitCall(ctx, func(ctx context.Context) error {
@@ -289,7 +289,7 @@ func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Prov
 }
 
 // handBack gives a failed Task's issue back to a person, saying why.
-func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1alpha1.Task, container *c4v1alpha1.Container, why string) {
+func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1beta1.Task, container *c4v1beta1.Container, why string) {
 	if task.Spec.Issue == 0 {
 		return
 	}
@@ -300,7 +300,7 @@ func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1alpha1.Task, co
 	}
 	n := int(task.Spec.Issue)
 	again := fmt.Sprintf("clarify or split the issue and label it %s", model.LabelReady)
-	if brief := container.Labels[c4v1alpha1.LabelBrief]; brief != "" {
+	if brief := container.Labels[c4v1beta1.LabelBrief]; brief != "" {
 		again += fmt.Sprintf(", or say in a prompt on Brief `%s`", brief)
 	}
 	comment := fmt.Sprintf("Task `%s` failed: %s\n\nTo try again, %s; a Crew tries an issue up to %d times.",
@@ -330,7 +330,7 @@ func issueLabels() []gitprovider.Label {
 	return out
 }
 
-func logNotes(ctx context.Context, task *c4v1alpha1.Task, notes []error) {
+func logNotes(ctx context.Context, task *c4v1beta1.Task, notes []error) {
 	for _, err := range notes {
 		if err != nil {
 			logf.FromContext(ctx).Error(err, "Failed to update the Git host's notes for Task", "task", task.Name)

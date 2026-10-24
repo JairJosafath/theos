@@ -20,7 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -97,15 +97,15 @@ func roundIssueMilestones(g Gomega, ns string, round int32) []string {
 	return out
 }
 
-func linterRelease(repository string) c4v1alpha1.BriefRelease {
-	return c4v1alpha1.BriefRelease{Container: "linter", CrewPublishReleases: c4v1alpha1.CrewPublishReleases{
-		GitHub: c4v1alpha1.CrewPublishGitHub{Repository: repository,
-			TokenSecretRef: c4v1alpha1.LocalRef{Name: "cel-lens-github"}}}}
+func linterRelease(repository string) c4v1beta1.BriefRelease {
+	return c4v1beta1.BriefRelease{Container: "linter", CrewPublishReleases: c4v1beta1.CrewPublishReleases{
+		GitHub: c4v1beta1.CrewPublishGitHub{Repository: repository,
+			TokenSecretRef: c4v1beta1.LocalRef{Name: "cel-lens-github"}}}}
 }
 
 // linterCrew reads the Crew of the linter.
-func linterCrew(g Gomega, ns string) *c4v1alpha1.Crew {
-	crew := &c4v1alpha1.Crew{}
+func linterCrew(g Gomega, ns string) *c4v1beta1.Crew {
+	crew := &c4v1beta1.Crew{}
 	g.Expect(k8sClient.Get(ctx, key(ns, "linter"), crew)).To(Succeed())
 	return crew
 }
@@ -123,11 +123,11 @@ func setLinterTarget(ns, repository string) {
 
 // markLinter removes the Brief's mark from the linter's Crew, as on a Crew
 // made before it, changed by change when given, in one write.
-func markLinter(ns string, change func(*c4v1alpha1.Crew)) {
+func markLinter(ns string, change func(*c4v1beta1.Crew)) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		crew := linterCrew(g, ns)
-		delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+		delete(crew.Annotations, c4v1beta1.AnnotationBriefPublishReleases)
 		if change != nil {
 			change(crew)
 		}
@@ -153,9 +153,9 @@ func linterTargetEvents(g Gomega, ns string) []eventsv1.Event {
 func targetSetByBrief(g Gomega, ns, repository string) {
 	crew := linterCrew(g, ns)
 	g.Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal(repository))
-	g.Expect(crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]).
+	g.Expect(crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases]).
 		To(ContainSubstring(`"repository":"` + repository + `"`))
-	cond := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	cond := condition(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget)
 	g.Expect(cond).NotTo(BeNil())
 	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	g.Expect(cond.Reason).To(Equal("SetByBrief"))
@@ -169,7 +169,7 @@ func targetSetByBrief(g Gomega, ns, repository string) {
 func targetHeld(g Gomega, ns, crewRepo, briefRepo string) {
 	crew := linterCrew(g, ns)
 	g.Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal(crewRepo))
-	cond := condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	cond := condition(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget)
 	g.Expect(cond).NotTo(BeNil())
 	g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 	g.Expect(cond.Reason).To(Equal("DiffersFromBrief"))
@@ -195,7 +195,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 2))
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases).To(BeTrue())
@@ -220,7 +220,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2))
@@ -238,7 +238,7 @@ var _ = Describe("Brief releases", func() {
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 2))
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
@@ -254,7 +254,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
 
@@ -265,7 +265,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.1.1"}))
 		milestones := gitFake.allMilestones(ns, "linter")
@@ -279,7 +279,7 @@ var _ = Describe("Brief releases", func() {
 		crew := linterCrew(Default, ns)
 		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1alpha1.CrewPaused))
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
 		}).Should(Succeed())
 		safety := gitFake.addIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
 			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
@@ -304,7 +304,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(3)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.1.1"}))
 		taken := gitFake.issue(ns, "linter", safety)
@@ -407,7 +407,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.15.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
@@ -427,7 +427,7 @@ var _ = Describe("Brief releases", func() {
 		plan[model.PlanReleasesFile] = scaffold.File{Data: []byte("containers: [linter]\n")}
 		planRound(ns, 1, 1, plan)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.13.1"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
@@ -444,7 +444,7 @@ var _ = Describe("Brief releases", func() {
 			Data: []byte(strings.Replace(linterIssue(2), "kind/feature", model.LabelBug, 1))}
 		planRound(ns, 1, 1, plan)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.2.0", "v0.1.1"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
@@ -457,7 +457,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
@@ -476,7 +476,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.4", "v0.19.0"}))
 		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
@@ -489,7 +489,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{""}), "filed before releases were on")
 
@@ -497,7 +497,7 @@ var _ = Describe("Brief releases", func() {
 		crew := linterCrew(Default, ns)
 		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1alpha1.CrewPaused))
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
 		}).Should(Succeed())
 		older := gitFake.addIssue(ns, "linter", "Bundle the engine", "", []string{model.LabelReady})
 		gitFake.addMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(time.Hour))
@@ -515,7 +515,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
 		Expect(gitFake.issue(ns, "linter", older).milestone).To(Equal("v0.1.0"))
@@ -530,7 +530,7 @@ var _ = Describe("Brief releases", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(gitFake.allMilestones(ns, "linter")).To(BeEmpty())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{""}))
@@ -540,7 +540,7 @@ var _ = Describe("Brief releases", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
 		brief := newBrief(ns, "cel-lens")
-		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens")}
+		brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("acme/cel-lens")}
 		mustCreate(brief)
 
 		By("listing the entry in brief.md for the planner")
@@ -553,7 +553,7 @@ var _ = Describe("Brief releases", func() {
 		By("making the linter's Crew release and publish, though the plan doesn't name it")
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases && crew.Spec.PrepareReleases).To(BeTrue())
@@ -585,8 +585,8 @@ var _ = Describe("Brief releases", func() {
 		Expect(crew.Spec.PublishReleases.GitHub.Repository).To(Equal("acme/lens"))
 		Eventually(func(g Gomega) {
 			crew := linterCrew(g, ns)
-			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationBriefPublishReleases))
-			g.Expect(condition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)).To(BeNil())
+			g.Expect(crew.Annotations).NotTo(HaveKey(c4v1beta1.AnnotationBriefPublishReleases))
+			g.Expect(condition(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget)).To(BeNil())
 		}).Should(Succeed())
 	})
 
@@ -594,11 +594,11 @@ var _ = Describe("Brief releases", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
 		brief := newBrief(ns, "cel-lens")
-		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens")}
+		brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("acme/cel-lens")}
 		mustCreate(brief)
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("marking the Crew with the target the Brief set, and saying the Brief sets it")
@@ -629,25 +629,25 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) { targetSetByBrief(g, ns, "acme/private-cel-lens") }).Should(Succeed())
 
 		By("holding a Crew from before the mark that publishes elsewhere")
-		markLinter(ns, func(crew *c4v1alpha1.Crew) { crew.Spec.PublishReleases.GitHub.Repository = "acme/other" })
+		markLinter(ns, func(crew *c4v1beta1.Crew) { crew.Spec.PublishReleases.GitHub.Repository = "acme/other" })
 		Eventually(func(g Gomega) { targetHeld(g, ns, "acme/other", "acme/private-cel-lens") }).Should(Succeed())
 	})
 
 	It("leaves alone a Crew the Brief didn't make", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		mustCreate(&c4v1alpha1.Crew{ObjectMeta: objectMeta(ns, "linter"), Spec: c4v1alpha1.CrewSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: "linter"},
-			Implementer:  c4v1alpha1.LocalRef{Name: "implementer"}, Reviewer: c4v1alpha1.LocalRef{Name: "reviewer"},
+		mustCreate(&c4v1beta1.Crew{ObjectMeta: objectMeta(ns, "linter"), Spec: c4v1beta1.CrewSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: "linter"},
+			Implementer:  c4v1beta1.LocalRef{Name: "implementer"}, Reviewer: c4v1beta1.LocalRef{Name: "reviewer"},
 			Parallel: 2}})
 		orig := linterCrew(Default, ns)
 		brief := newBrief(ns, "cel-lens")
-		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens")}
+		brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("acme/cel-lens")}
 		mustCreate(brief)
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec).To(Equal(orig.Spec))
@@ -673,7 +673,7 @@ var _ = Describe("Brief releases", func() {
 
 		It("names each Container once", func() {
 			brief := newBrief(ns, "twice")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/a"), linterRelease("acme/b")}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("acme/a"), linterRelease("acme/b")}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring("Duplicate value")))
 		})
 
@@ -681,13 +681,13 @@ var _ = Describe("Brief releases", func() {
 			brief := newBrief(ns, "label")
 			entry := linterRelease("acme/cel-lens")
 			entry.Container = "Linter_CLI"
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{entry}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{entry}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring("container must be a DNS label")))
 		})
 
 		It("names a repository as owner/name", func() {
 			brief := newBrief(ns, "url")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("https://github.com/acme/cel-lens")}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("https://github.com/acme/cel-lens")}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring("repository must be owner/name")))
 		})
 
@@ -695,14 +695,14 @@ var _ = Describe("Brief releases", func() {
 			brief := newBrief(ns, "prefix")
 			entry := linterRelease("acme/cel-lens")
 			entry.TagPrefix = "linter v"
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{entry}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{entry}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring("spec.releases[0].tagPrefix")))
 		})
 	})
 
 	// Step 1 of docs/plans/done/brief-requests.md: decision 1's rules.
 	Describe("spec.releases[].requests", func() {
-		requesting := func(repository string, requests c4v1alpha1.BriefRequests) c4v1alpha1.BriefRelease {
+		requesting := func(repository string, requests c4v1beta1.BriefRequests) c4v1beta1.BriefRelease {
 			entry := linterRelease(repository)
 			entry.Requests = &requests
 			return entry
@@ -710,12 +710,12 @@ var _ = Describe("Brief releases", func() {
 
 		It("is Off when unset, and takes Ask with authors and teams", func() {
 			brief := newBrief(ns, "ask")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
 				Mode: "Ask", Authors: []string{"gray-lenovo", "a1"}, Teams: []string{"acme/maintainers"},
 				Accepted: []int32{12}, Declined: []int32{13}})}
 			mustCreate(brief)
 			brief = newBrief(ns, "off")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{})}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{})}
 			mustCreate(brief)
 			Expect(k8sClient.Get(ctx, key(ns, "off"), brief)).To(Succeed())
 			Expect(brief.Spec.Releases[0].Requests.Mode).To(Equal("Off"))
@@ -723,19 +723,19 @@ var _ = Describe("Brief releases", func() {
 
 		It("needs authors or teams unless Off", func() {
 			brief := newBrief(ns, "nobody")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens",
-				c4v1alpha1.BriefRequests{Mode: "On"})}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens",
+				c4v1beta1.BriefRequests{Mode: "On"})}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 				"requests need authors or teams unless mode is Off")))
 		})
 
 		It("takes requests in one entry per repository", func() {
 			brief := newBrief(ns, "twice")
-			other := requesting("Acme/Cel-Lens", c4v1alpha1.BriefRequests{Mode: "Ask", Teams: []string{"acme/devs"}})
+			other := requesting("Acme/Cel-Lens", c4v1beta1.BriefRequests{Mode: "Ask", Teams: []string{"acme/devs"}})
 			other.Container = "cli"
 			other.TagPrefix = "cli-"
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{
-				requesting("acme/cel-lens", c4v1alpha1.BriefRequests{Mode: "On", Authors: []string{"gray-lenovo"}}), other}
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{
+				requesting("acme/cel-lens", c4v1beta1.BriefRequests{Mode: "On", Authors: []string{"gray-lenovo"}}), other}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 				"at most one releases entry per GitHub repository may take requests")))
 			other.Requests.Mode = "Off"
@@ -745,7 +745,7 @@ var _ = Describe("Brief releases", func() {
 
 		It("refuses a number both accepted and declined", func() {
 			brief := newBrief(ns, "both")
-			brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
 				Mode: "Ask", Authors: []string{"gray-lenovo"}, Accepted: []int32{12, 14}, Declined: []int32{14}})}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 				"an issue number can't be both accepted and declined")))
@@ -754,7 +754,7 @@ var _ = Describe("Brief releases", func() {
 		It("refuses a login GitHub wouldn't give", func() {
 			for _, login := range []string{"-gray", "gray--lenovo", "gray_lenovo", strings.Repeat("a", 40)} {
 				brief := newBrief(ns, "login")
-				brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+				brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
 					Mode: "On", Authors: []string{login}})}
 				Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 					"spec.releases[0].requests.authors[0]")), login)
@@ -764,7 +764,7 @@ var _ = Describe("Brief releases", func() {
 		It("refuses a team that isn't org/slug", func() {
 			for _, team := range []string{"maintainers", "acme/", "acme/main tainers", "https://github.com/orgs/acme/teams/x"} {
 				brief := newBrief(ns, "team")
-				brief.Spec.Releases = []c4v1alpha1.BriefRelease{requesting("acme/cel-lens", c4v1alpha1.BriefRequests{
+				brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
 					Mode: "On", Teams: []string{team}})}
 				Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 					"spec.releases[0].requests.teams[0]")), team)
@@ -776,21 +776,21 @@ var _ = Describe("Brief releases", func() {
 // briefApp returns the line of container in Brief cel-lens's status.apps.
 //
 //nolint:unparam // names the container like the other helpers
-func briefApp(g Gomega, ns, container string) c4v1alpha1.BriefApp {
+func briefApp(g Gomega, ns, container string) c4v1beta1.BriefApp {
 	for _, app := range getBrief(g, ns).Status.Apps {
 		if app.Container == container {
 			return app
 		}
 	}
 	g.Expect(container).To(BeEmpty(), "Brief cel-lens has no app line for it")
-	return c4v1alpha1.BriefApp{}
+	return c4v1beta1.BriefApp{}
 }
 
 // setLinterRelease sets the linter Crew's latest release as tagging it would.
 func setLinterRelease(ns, tag string) {
 	Eventually(func(g Gomega) {
 		crew := linterCrew(g, ns)
-		crew.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(),
+		crew.Status.LastRelease = &c4v1beta1.CrewRelease{Tag: tag, Commit: "abc123", Time: metav1.Now(),
 			Run: "Succeeded"}
 		g.Expect(k8sClient.Status().Update(ctx, crew)).To(Succeed())
 	}).Should(Succeed())
@@ -808,27 +808,27 @@ var _ = Describe("Brief apps", func() {
 		brief := newBrief(ns, "cel-lens")
 		server := linterRelease("acme/cel-lens-server")
 		server.Container = "server"
-		brief.Spec.Releases = []c4v1alpha1.BriefRelease{linterRelease("acme/cel-lens"), server}
+		brief.Spec.Releases = []c4v1beta1.BriefRelease{linterRelease("acme/cel-lens"), server}
 		mustCreate(brief)
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		Eventually(func(g Gomega) {
 			apps := getBrief(g, ns).Status.Apps
 			g.Expect(apps).To(HaveLen(2))
-			g.Expect(apps[0]).To(Equal(c4v1alpha1.BriefApp{Container: "linter", Crew: "linter", Releases: "On",
+			g.Expect(apps[0]).To(Equal(c4v1beta1.BriefApp{Container: "linter", Crew: "linter", Releases: "On",
 				Parallel: model.BriefParallelDefault, PublishTo: "acme/cel-lens",
 				Message: "Releases are on: the next one follows once the issues of its milestone are merged."}))
-			g.Expect(apps[1]).To(Equal(c4v1alpha1.BriefApp{Container: "server", Releases: "Off",
+			g.Expect(apps[1]).To(Equal(c4v1beta1.BriefApp{Container: "server", Releases: "Off",
 				Message: "The Brief hasn't made a Container named server: its releases start once a round makes it."}))
 		}).Should(Succeed())
 
 		By("showing the Crew's new release on the Brief")
 		var repoURL string
 		Eventually(func(g Gomega) {
-			var c c4v1alpha1.Container
+			var c c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "linter"), &c)).To(Succeed())
 			repoURL = c.Status.RepositoryURL
 			g.Expect(repoURL).NotTo(BeEmpty())
@@ -883,7 +883,7 @@ var _ = Describe("Brief apps", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Apps).To(Equal([]c4v1alpha1.BriefApp{{Container: "linter",
+			g.Expect(getBrief(g, ns).Status.Apps).To(Equal([]c4v1beta1.BriefApp{{Container: "linter",
 				Crew: "linter", Parallel: model.BriefParallelDefault, Releases: "Off",
 				Message: MessageReleasesOff}}))
 		}).Should(Succeed())
@@ -893,28 +893,28 @@ var _ = Describe("Brief apps", func() {
 })
 
 var _ = DescribeTable("appMessage",
-	func(app c4v1alpha1.BriefApp, briefsCrew bool, want string) {
+	func(app c4v1beta1.BriefApp, briefsCrew bool, want string) {
 		Expect(appMessage(&app, briefsCrew)).To(Equal(want))
 	},
-	Entry("off on a Crew another owner made", c4v1alpha1.BriefApp{Crew: "linter", Releases: "Off"}, false,
+	Entry("off on a Crew another owner made", c4v1beta1.BriefApp{Crew: "linter", Releases: "Off"}, false,
 		"Releases are off, and they are for the owner of Crew linter to turn on: the Brief didn't make it."),
-	Entry("a failed run", c4v1alpha1.BriefApp{Releases: "On",
-		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Failed"}}, true,
+	Entry("a failed run", c4v1beta1.BriefApp{Releases: "On",
+		LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", Run: "Failed"}}, true,
 		"Release v0.1.0 was tagged, but its CI run failed."),
-	Entry("published", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
-		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Succeeded", PublishState: "Published"}}, true,
+	Entry("published", c4v1beta1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", Run: "Succeeded", PublishState: "Published"}}, true,
 		"Released v0.1.0 and published it to acme/lens."),
-	Entry("publishing failed", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
-		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed"}}, true,
+	Entry("publishing failed", c4v1beta1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed"}}, true,
 		"Release v0.1.0 could not be published to acme/lens; the Crew says why and tries again."),
-	Entry("a module Go can't fetch", c4v1alpha1.BriefApp{Releases: "On", PublishTo: "acme/lens",
-		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Published", ModuleState: "NotFetchable",
+	Entry("a module Go can't fetch", c4v1beta1.BriefApp{Releases: "On", PublishTo: "acme/lens",
+		LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Published", ModuleState: "NotFetchable",
 			ModulePath: "github.com/acme/lens/engine"}}, true,
 		"Released v0.1.0, but Go can't fetch its module github.com/acme/lens/engine; the Crew says why."),
-	Entry("a module waiting on a failed publish says the publish", c4v1alpha1.BriefApp{Releases: "On",
-		PublishTo: "acme/lens", LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed",
+	Entry("a module waiting on a failed publish says the publish", c4v1beta1.BriefApp{Releases: "On",
+		PublishTo: "acme/lens", LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", PublishState: "Failed",
 			ModuleState: "Waiting"}}, true,
 		"Release v0.1.0 could not be published to acme/lens; the Crew says why and tries again."),
-	Entry("released, not published", c4v1alpha1.BriefApp{Releases: "On",
-		LastRelease: &c4v1alpha1.BriefAppRelease{Tag: "v0.1.0", Run: "Running"}}, true, "Released v0.1.0."),
+	Entry("released, not published", c4v1beta1.BriefApp{Releases: "On",
+		LastRelease: &c4v1beta1.BriefAppRelease{Tag: "v0.1.0", Run: "Running"}}, true, "Released v0.1.0."),
 )

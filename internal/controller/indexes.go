@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // Field indexes the reconcilers use to find related objects in the cache.
@@ -32,57 +32,57 @@ const (
 )
 
 // elementKey is how Relationship ends appear in the indexes.
-func elementKey(kind c4v1alpha1.ElementKind, name string) string {
+func elementKey(kind c4v1beta1.ElementKind, name string) string {
 	return string(kind) + "/" + name
 }
 
 // SetupIndexes registers the field indexes. Call it once, before the reconcilers.
 func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 	indexer := mgr.GetFieldIndexer()
-	if err := indexer.IndexField(ctx, &c4v1alpha1.Container{}, indexSoftwareSystem,
+	if err := indexer.IndexField(ctx, &c4v1beta1.Container{}, indexSoftwareSystem,
 		func(o client.Object) []string {
-			return []string{o.(*c4v1alpha1.Container).Spec.SoftwareSystemRef.Name}
+			return []string{o.(*c4v1beta1.Container).Spec.SoftwareSystemRef.Name}
 		}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &c4v1alpha1.DataStore{}, indexSoftwareSystem,
+	if err := indexer.IndexField(ctx, &c4v1beta1.DataStore{}, indexSoftwareSystem,
 		func(o client.Object) []string {
-			return []string{o.(*c4v1alpha1.DataStore).Spec.SoftwareSystemRef.Name}
+			return []string{o.(*c4v1beta1.DataStore).Spec.SoftwareSystemRef.Name}
 		}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &c4v1alpha1.Session{}, indexContainer,
+	if err := indexer.IndexField(ctx, &c4v1beta1.Session{}, indexContainer,
 		func(o client.Object) []string {
-			return []string{o.(*c4v1alpha1.Session).Spec.ContainerRef.Name}
+			return []string{o.(*c4v1beta1.Session).Spec.ContainerRef.Name}
 		}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &c4v1alpha1.Crew{}, indexContainer,
+	if err := indexer.IndexField(ctx, &c4v1beta1.Crew{}, indexContainer,
 		func(o client.Object) []string {
-			return []string{o.(*c4v1alpha1.Crew).Spec.ContainerRef.Name}
+			return []string{o.(*c4v1beta1.Crew).Spec.ContainerRef.Name}
 		}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &c4v1alpha1.Task{}, indexTaskContainer,
+	if err := indexer.IndexField(ctx, &c4v1beta1.Task{}, indexTaskContainer,
 		func(o client.Object) []string {
 			// A Plan Task names a Brief, not a Container.
-			if name := o.(*c4v1alpha1.Task).Spec.ContainerRef.Name; name != "" {
+			if name := o.(*c4v1beta1.Task).Spec.ContainerRef.Name; name != "" {
 				return []string{name}
 			}
 			return nil
 		}); err != nil {
 		return err
 	}
-	if err := indexer.IndexField(ctx, &c4v1alpha1.Relationship{}, indexSource,
+	if err := indexer.IndexField(ctx, &c4v1beta1.Relationship{}, indexSource,
 		func(o client.Object) []string {
-			rel := o.(*c4v1alpha1.Relationship)
+			rel := o.(*c4v1beta1.Relationship)
 			return []string{elementKey(rel.Spec.Source.Kind, rel.Spec.Source.Name)}
 		}); err != nil {
 		return err
 	}
-	return indexer.IndexField(ctx, &c4v1alpha1.Relationship{}, indexElement,
+	return indexer.IndexField(ctx, &c4v1beta1.Relationship{}, indexElement,
 		func(o client.Object) []string {
-			rel := o.(*c4v1alpha1.Relationship)
+			rel := o.(*c4v1beta1.Relationship)
 			return []string{
 				elementKey(rel.Spec.Source.Kind, rel.Spec.Source.Name),
 				elementKey(rel.Spec.Target.Kind, rel.Spec.Target.Name),

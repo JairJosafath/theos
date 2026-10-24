@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -28,19 +28,19 @@ import (
 func TestAdoptingACrewKeepsAReleaseWrittenSinceTheRead(t *testing.T) {
 	scheme := briefScheme(t)
 	crew := newCrew("apps") // its Agents are missing: a step writes AgentNotFound
-	container := &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "orders-api")}
+	container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api")}
 	released := false
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1alpha1.Crew{}).
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Crew{}).
 		WithObjects(crew, container).
 		WithInterceptorFuncs(interceptor.Funcs{Patch: func(ctx context.Context, c client.WithWatch,
 			obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-			if _, ok := obj.(*c4v1alpha1.Crew); ok && !released {
+			if _, ok := obj.(*c4v1beta1.Crew); ok && !released {
 				released = true
-				var current c4v1alpha1.Crew
+				var current c4v1beta1.Crew
 				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &current); err != nil {
 					return err
 				}
-				current.Status.LastRelease = &c4v1alpha1.CrewRelease{Tag: "v0.1.0", Commit: "c-v0.1.0",
+				current.Status.LastRelease = &c4v1beta1.CrewRelease{Tag: "v0.1.0", Commit: "c-v0.1.0",
 					Time: metav1.Now(), Run: model.RunSucceeded}
 				if err := c.Status().Update(ctx, &current); err != nil {
 					return err
@@ -57,7 +57,7 @@ func TestAdoptingACrewKeepsAReleaseWrittenSinceTheRead(t *testing.T) {
 	if !released {
 		t.Fatal("the reconcile didn't adopt the Crew")
 	}
-	var got c4v1alpha1.Crew
+	var got c4v1beta1.Crew
 	if err := c.Get(ctx, client.ObjectKeyFromObject(crew), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestAdoptingACrewKeepsAReleaseWrittenSinceTheRead(t *testing.T) {
 		t.Errorf("lastRelease is %+v, want v0.1.0: the reconcile patched the newer release away",
 			got.Status.LastRelease)
 	}
-	if got.Status.Phase != c4v1alpha1.CrewWaiting {
-		t.Errorf("phase is %q, want %q", got.Status.Phase, c4v1alpha1.CrewWaiting)
+	if got.Status.Phase != c4v1beta1.CrewWaiting {
+		t.Errorf("phase is %q, want %q", got.Status.Phase, c4v1beta1.CrewWaiting)
 	}
 }

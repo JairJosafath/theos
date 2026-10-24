@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -141,7 +141,7 @@ func (r *ContainerReconciler) forget(uid types.UID) {
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -157,39 +157,39 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	status.ActiveSessions = int32(active)
 
-	var system c4v1alpha1.SoftwareSystem
+	var system c4v1beta1.SoftwareSystem
 	err = r.Get(ctx, types.NamespacedName{Namespace: container.Namespace, Name: container.Spec.SoftwareSystemRef.Name}, &system)
 	switch {
 	case apierrors.IsNotFound(err):
 		// A scaffolded Container stays Ready: its repository is still there, and
 		// losing Ready would scaffold it again.
-		if status.Phase != c4v1alpha1.ContainerReady {
-			status.Phase = c4v1alpha1.ContainerPending
+		if status.Phase != c4v1beta1.ContainerReady {
+			status.Phase = c4v1beta1.ContainerPending
 		}
-		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound,
+		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonNotFound,
 			notFoundMessage([]string{"SoftwareSystem " + container.Spec.SoftwareSystemRef.Name}))
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	case err != nil:
 		return ctrl.Result{}, err
 	}
 	labels := projectLabels(container.Namespace)
-	labels[c4v1alpha1.LabelSoftwareSystem] = system.Name
+	labels[c4v1beta1.LabelSoftwareSystem] = system.Name
 	if err := adopt(ctx, r.Client, r.Scheme, &system, &container, labels); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Scaffolding happens once. After that the factory only reports.
-	if status.Phase == c4v1alpha1.ContainerReady {
-		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
+	if status.Phase == c4v1beta1.ContainerReady {
+		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionTrue, c4v1beta1.ReasonResolved, "")
 		result := r.refreshChecks(ctx, &container, status)
 		live := r.liveContainer(ctx, &container)
 		answered := false
 		if container.Choices().Standard != "" {
 			answered = r.updateStandard(ctx, &container, status, live)
 		} else {
-			meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+			meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionStandardUpdated)
 		}
 		r.reportBundleCurrent(ctx, &container, status)
 		failed := r.updateOperations(ctx, &container, status, live)
@@ -218,10 +218,10 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// The factory builds nothing for an External system. A Container scaffolded
 	// before its system turned External passed the Ready branch above.
-	if system.Spec.Location == c4v1alpha1.SystemExternal {
-		status.Phase = c4v1alpha1.ContainerPending
-		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonExternalSystem, externalMessage(system.Name))
+	if system.Spec.Location == c4v1beta1.SystemExternal {
+		status.Phase = c4v1beta1.ContainerPending
+		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonExternalSystem, externalMessage(system.Name))
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
 
@@ -233,9 +233,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// the last one, and from then on the Container reads it.
 	status.Bundle = res.bundle
 	if len(missing) > 0 {
-		status.Phase = c4v1alpha1.ContainerPending
-		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
+		status.Phase = c4v1beta1.ContainerPending
+		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonNotFound, notFoundMessage(missing))
 		// Secrets aren't watched (they're read uncached), so look again for one.
 		var result ctrl.Result
 		if slices.ContainsFunc(missing, func(m string) bool { return strings.HasPrefix(m, "Secret ") }) {
@@ -243,8 +243,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		return result, r.writeStatus(ctx, &container, status)
 	}
-	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionReferencesResolved,
-		metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
+	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
+		metav1.ConditionTrue, c4v1beta1.ReasonResolved, "")
 
 	choices := res.choices
 	err = model.CheckChoices(string(container.Spec.Type), res.entries)
@@ -257,27 +257,27 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	err = model.InBundle(choices.Bundle, err)
 	if err != nil {
-		reason := c4v1alpha1.ReasonUnsupportedType
+		reason := c4v1beta1.ReasonUnsupportedType
 		if _, ok := errors.AsType[*model.FitError](err); ok {
-			reason = c4v1alpha1.ReasonUnsupportedFramework
+			reason = c4v1beta1.ReasonUnsupportedFramework
 		}
 		if _, ok := errors.AsType[*model.SelfDeployError](err); ok {
-			reason = c4v1alpha1.ReasonDeploysItself
+			reason = c4v1beta1.ReasonDeploysItself
 		}
-		status.Phase = c4v1alpha1.ContainerFailed
-		setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
+		status.Phase = c4v1beta1.ContainerFailed
+		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionChoicesValid,
 			metav1.ConditionFalse, reason, err.Error())
 		log.Info("Rejected catalog choices", "reason", err.Error())
 		return ctrl.Result{}, r.writeStatus(ctx, &container, status)
 	}
-	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionChoicesValid,
-		metav1.ConditionTrue, c4v1alpha1.ReasonValid, "")
+	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionChoicesValid,
+		metav1.ConditionTrue, c4v1beta1.ReasonValid, "")
 
 	return r.scaffold(ctx, &container, res, status)
 }
 
-func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1alpha1.Container) (int, error) {
-	var sessions c4v1alpha1.SessionList
+func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1beta1.Container) (int, error) {
+	var sessions c4v1beta1.SessionList
 	if err := r.List(ctx, &sessions, client.InNamespace(container.Namespace),
 		client.MatchingFields{indexContainer: container.Name}); err != nil {
 		return 0, err
@@ -285,7 +285,7 @@ func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1
 	return countActive(sessions.Items), nil
 }
 
-func (r *ContainerReconciler) writeStatus(ctx context.Context, container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) error {
+func (r *ContainerReconciler) writeStatus(ctx context.Context, container *c4v1beta1.Container, status *c4v1beta1.ContainerStatus) error {
 	status.ObservedGeneration = container.Generation
 	if equality.Semantic.DeepEqual(&container.Status, status) {
 		return nil
@@ -297,24 +297,24 @@ func (r *ContainerReconciler) writeStatus(ctx context.Context, container *c4v1al
 
 // removeAnswers removes the person's answer to the Standard files behind once
 // the status records what it did, unless someone changed the Container since.
-func (r *ContainerReconciler) removeAnswers(ctx context.Context, container *c4v1alpha1.Container) error {
+func (r *ContainerReconciler) removeAnswers(ctx context.Context, container *c4v1beta1.Container) error {
 	orig := container.DeepCopy()
-	delete(container.Annotations, c4v1alpha1.AnnotationStandardTake)
-	delete(container.Annotations, c4v1alpha1.AnnotationStandardKeep)
+	delete(container.Annotations, c4v1beta1.AnnotationStandardTake)
+	delete(container.Annotations, c4v1beta1.AnnotationStandardKeep)
 	return r.Patch(ctx, container, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	toContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		session, ok := obj.(*c4v1alpha1.Session)
+		session, ok := obj.(*c4v1beta1.Session)
 		if !ok {
 			return nil
 		}
 		return []reconcile.Request{requestFor(session.Namespace, session.Spec.ContainerRef.Name)}
 	})
 	systemContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace()),
 			client.MatchingFields{indexSoftwareSystem: obj.GetName()}); err != nil {
 			return nil
@@ -328,13 +328,13 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A catalog entry, GitProvider or DataStore appearing or changing its spec can
 	// unblock any Container in the namespace that isn't scaffolded yet.
 	waitingContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
 			return nil
 		}
 		var reqs []reconcile.Request
 		for _, c := range containers.Items {
-			if c.Status.Phase != c4v1alpha1.ContainerReady {
+			if c.Status.Phase != c4v1beta1.ContainerReady {
 				reqs = append(reqs, requestFor(c.Namespace, c.Name))
 			}
 		}
@@ -343,13 +343,13 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Standard changing its spec also moves the Ready Containers on it to its
 	// new ref.
 	standardContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
 			return nil
 		}
 		var reqs []reconcile.Request
 		for _, c := range containers.Items {
-			if c.Status.Phase != c4v1alpha1.ContainerReady ||
+			if c.Status.Phase != c4v1beta1.ContainerReady ||
 				c.Choices().Standard == obj.GetName() {
 				reqs = append(reqs, requestFor(c.Namespace, c.Name))
 			}
@@ -359,13 +359,13 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Bundle changing, or going, is reported on the Ready Containers naming
 	// it, never applied (#1621).
 	bundleContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
 			return nil
 		}
 		var reqs []reconcile.Request
 		for _, c := range containers.Items {
-			if c.Status.Phase != c4v1alpha1.ContainerReady ||
+			if c.Status.Phase != c4v1beta1.ContainerReady ||
 				(c.Spec.BundleRef != nil && c.Spec.BundleRef.Name == obj.GetName()) {
 				reqs = append(reqs, requestFor(c.Namespace, c.Name))
 			}
@@ -373,8 +373,8 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return reqs
 	})
 	sourceContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		rel, ok := obj.(*c4v1alpha1.Relationship)
-		if !ok || rel.Spec.Source.Kind != c4v1alpha1.ElementContainer {
+		rel, ok := obj.(*c4v1beta1.Relationship)
+		if !ok || rel.Spec.Source.Kind != c4v1beta1.ElementContainer {
 			return nil
 		}
 		return []reconcile.Request{requestFor(rel.Namespace, rel.Spec.Source.Name)}
@@ -382,20 +382,20 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Crew's release whose runs succeeded ships, and a DeployTarget turning
 	// ready lets its Containers ship there.
 	crewContainer := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		crew, ok := obj.(*c4v1alpha1.Crew)
+		crew, ok := obj.(*c4v1beta1.Crew)
 		if !ok {
 			return nil
 		}
 		return []reconcile.Request{requestFor(crew.Namespace, crew.Spec.ContainerRef.Name)}
 	})
 	targetContainers := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var containers c4v1alpha1.ContainerList
+		var containers c4v1beta1.ContainerList
 		if err := mgr.GetClient().List(ctx, &containers, client.InNamespace(obj.GetNamespace())); err != nil {
 			return nil
 		}
 		var reqs []reconcile.Request
 		for _, c := range containers.Items {
-			if slices.ContainsFunc(c.Spec.Deploy, func(d c4v1alpha1.ContainerDeploy) bool {
+			if slices.ContainsFunc(c.Spec.Deploy, func(d c4v1beta1.ContainerDeploy) bool {
 				return d.Target == obj.GetName()
 			}) {
 				reqs = append(reqs, requestFor(c.Namespace, c.Name))
@@ -405,22 +405,22 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	r.imagePushEnded = make(chan event.GenericEvent, containerWorkers)
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Container{}, specOrAsked()).
+		For(&c4v1beta1.Container{}, specOrAsked()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: containerWorkers}).
 		WatchesRawSource(source.Channel(r.imagePushEnded, &handler.EnqueueRequestForObject{})).
-		Watches(&c4v1alpha1.Crew{}, crewContainer, lastReleaseChanges()).
-		Watches(&c4v1alpha1.DeployTarget{}, targetContainers, deployTargetReadyChanges()).
-		Watches(&c4v1alpha1.Session{}, toContainer, sessionPhaseChanges()).
-		Watches(&c4v1alpha1.SoftwareSystem{}, systemContainers, specChanged()).
-		Watches(&c4v1alpha1.Relationship{}, sourceContainer, specChanged()).
-		Watches(&c4v1alpha1.GitProvider{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Framework{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Standard{}, standardContainers, specChanged()).
-		Watches(&c4v1alpha1.Compute{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Deployment{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Connector{}, waitingContainers, specChanged()).
-		Watches(&c4v1alpha1.Bundle{}, bundleContainers, specChanged()).
-		Watches(&c4v1alpha1.DataStore{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Crew{}, crewContainer, lastReleaseChanges()).
+		Watches(&c4v1beta1.DeployTarget{}, targetContainers, deployTargetReadyChanges()).
+		Watches(&c4v1beta1.Session{}, toContainer, sessionPhaseChanges()).
+		Watches(&c4v1beta1.SoftwareSystem{}, systemContainers, specChanged()).
+		Watches(&c4v1beta1.Relationship{}, sourceContainer, specChanged()).
+		Watches(&c4v1beta1.GitProvider{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Framework{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Standard{}, standardContainers, specChanged()).
+		Watches(&c4v1beta1.Compute{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Deployment{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Connector{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
+		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
 		Named("container").
 		Complete(r)
 }

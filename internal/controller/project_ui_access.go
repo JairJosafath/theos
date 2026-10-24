@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // UIPodReaderName is the Role and RoleBinding that let the UI read the pods,
@@ -37,7 +37,7 @@ const verbGet = "get"
 
 // ensureUIPodReader lets the UI's ServiceAccount read the project namespace's
 // pods. Without a UI ServiceAccount (--ui-service-account) it does nothing.
-func (r *ProjectReconciler) ensureUIPodReader(ctx context.Context, project *c4v1alpha1.Project) error {
+func (r *ProjectReconciler) ensureUIPodReader(ctx context.Context, project *c4v1beta1.Project) error {
 	if r.UIServiceAccount.Name == "" {
 		return nil
 	}

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -37,8 +37,8 @@ func (r *ContainerReconciler) checksRecheck() time.Duration {
 
 // refreshChecks reads the latest CI result on the default branch into status.
 // A Git error keeps the last known result: checks are a report, not a step.
-func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) ctrl.Result {
+func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) ctrl.Result {
 	if !model.Protected(container.Choices().Standard != "") {
 		return ctrl.Result{}
 	}
@@ -49,7 +49,7 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 		checks, err = provider.CombinedStatus(gitCtx, provider.Repository(container.Name), gitprovider.DefaultBranch)
 		cancel()
 		if err == nil {
-			status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
+			status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
 		}
 	}
 	if err != nil {
@@ -69,7 +69,7 @@ func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, 
 // gitAccess is a GitProvider, its credentials, the Provider built from them
 // and its CI system.
 type gitAccess struct {
-	gitProvider *c4v1alpha1.GitProvider
+	gitProvider *c4v1beta1.GitProvider
 	creds       gitprovider.Credentials
 	provider    gitprovider.Provider
 	ci          model.CI
@@ -79,7 +79,7 @@ type gitAccess struct {
 // from the API server, and builds its Provider.
 func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader, git GitClient,
 	ns, name string) (gitAccess, error) {
-	var provider c4v1alpha1.GitProvider
+	var provider c4v1beta1.GitProvider
 	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &provider); err != nil {
 		return gitAccess{}, fmt.Errorf("GitProvider %s: %w", name, err)
 	}
@@ -118,48 +118,48 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 // is False and says why, the update in flight or the stop. A Container without
 // a Standard, or whose Standard isn't there (ReferencesResolved says so), has no
 // such condition; a read error keeps the last one.
-func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) {
+func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) {
 	if container.Choices().Standard == "" {
-		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionChecksApplied)
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionChecksApplied)
 		return
 	}
 	name := container.Choices().Standard
-	var standard c4v1alpha1.Standard
+	var standard c4v1beta1.Standard
 	found, err := r.lookup(ctx, container.Namespace, name, &standard)
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read Standard", "standard", name, "error", err.Error())
 		return
 	}
 	if !found {
-		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionChecksApplied)
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionChecksApplied)
 		return
 	}
 	asked := string(container.Spec.Checks)
 	effective := model.EffectiveChecks(asked, standard.Spec.ChecksBeforeRelease)
-	if status.Phase == c4v1alpha1.ContainerReady {
+	if status.Phase == c4v1beta1.ContainerReady {
 		if runs := recordedChecks(status); runs != effective {
 			reason, message := checksNotRunYet(name, status, runs, effective)
-			r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionFalse, reason, message)
+			r.condition(container, status, c4v1beta1.ConditionChecksApplied, metav1.ConditionFalse, reason, message)
 			return
 		}
 	}
 	if asked == model.ChecksBeforeRelease && effective != asked {
-		r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionFalse,
-			c4v1alpha1.ReasonStandardRunsFullChecks, fmt.Sprintf(
+		r.condition(container, status, c4v1beta1.ConditionChecksApplied, metav1.ConditionFalse,
+			c4v1beta1.ReasonStandardRunsFullChecks, fmt.Sprintf(
 				"The Standard %s can't run the full check only before a release; CI runs it on every change", name))
 		return
 	}
-	reason := c4v1alpha1.ReasonEveryChange
+	reason := c4v1beta1.ReasonEveryChange
 	if effective == model.ChecksBeforeRelease {
-		reason = c4v1alpha1.ReasonBeforeRelease
+		reason = c4v1beta1.ReasonBeforeRelease
 	}
-	r.condition(container, status, c4v1alpha1.ConditionChecksApplied, metav1.ConditionTrue, reason, "")
+	r.condition(container, status, c4v1beta1.ConditionChecksApplied, metav1.ConditionTrue, reason, "")
 }
 
 // recordedChecks is when the repository's CI runs the full check, as its
 // Standard files were last rendered; empty reads as EveryChange.
-func recordedChecks(status *c4v1alpha1.ContainerStatus) string {
+func recordedChecks(status *c4v1beta1.ContainerStatus) string {
 	if status.Standard == nil || status.Standard.Checks == "" {
 		return model.ChecksEveryChange
 	}
@@ -170,19 +170,19 @@ func recordedChecks(status *c4v1alpha1.ContainerStatus) string {
 // runs, not as effective, the Container's checks: an update in flight
 // (Pending), its stop, or a Standard the scaffold didn't have. A switch held
 // for a missing light check says so in StandardUpdated's words.
-func checksNotRunYet(name string, status *c4v1alpha1.ContainerStatus, runs, effective string) (string, string) {
+func checksNotRunYet(name string, status *c4v1beta1.ContainerStatus, runs, effective string) (string, string) {
 	now := "CI runs the full check " + checksWhen(runs)
 	if status.Standard == nil || status.Standard.Name != name {
-		return c4v1alpha1.ReasonAddedAfterScaffold, fmt.Sprintf(
+		return c4v1beta1.ReasonAddedAfterScaffold, fmt.Sprintf(
 			"The Standard %s was not part of the scaffold, so its updates don't reach this Container; %s", name, now)
 	}
 	update := status.Standard.Update
 	if update == nil || updateChecks(update) != effective {
-		return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until a Standard update brings it %s", now, checksWhen(effective))
+		return c4v1beta1.ReasonPending, fmt.Sprintf("%s until a Standard update brings it %s", now, checksWhen(effective))
 	}
-	if update.Stopped == c4v1alpha1.ReasonNoLightCheck {
-		if c := meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionStandardUpdated); c != nil &&
-			c.Reason == c4v1alpha1.ReasonNoLightCheck {
+	if update.Stopped == c4v1beta1.ReasonNoLightCheck {
+		if c := meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionStandardUpdated); c != nil &&
+			c.Reason == c4v1beta1.ReasonNoLightCheck {
 			return update.Stopped, c.Message
 		}
 	}
@@ -191,15 +191,15 @@ func checksNotRunYet(name string, status *c4v1alpha1.ContainerStatus, runs, effe
 			now, checksWhen(effective), update.Stopped)
 	}
 	if update.PullRequestURL == "" {
-		return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until the Standard update that brings it %s merges",
+		return c4v1beta1.ReasonPending, fmt.Sprintf("%s until the Standard update that brings it %s merges",
 			now, checksWhen(effective))
 	}
-	return c4v1alpha1.ReasonPending, fmt.Sprintf("%s until pull request %s merges", now, update.PullRequestURL)
+	return c4v1beta1.ReasonPending, fmt.Sprintf("%s until pull request %s merges", now, update.PullRequestURL)
 }
 
 // updateChecks is when CI runs the full check once update merges; empty reads
 // as EveryChange.
-func updateChecks(update *c4v1alpha1.StandardUpdateStatus) string {
+func updateChecks(update *c4v1beta1.StandardUpdateStatus) string {
 	if update.Checks == "" {
 		return model.ChecksEveryChange
 	}

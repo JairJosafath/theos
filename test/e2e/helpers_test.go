@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/test/utils"
 )
 
@@ -31,7 +31,7 @@ func key(ns, name string) types.NamespacedName {
 
 func objMeta(ns, name string) metav1.ObjectMeta { return metav1.ObjectMeta{Namespace: ns, Name: name} }
 
-func ref(name string) c4v1alpha1.LocalRef { return c4v1alpha1.LocalRef{Name: name} }
+func ref(name string) c4v1beta1.LocalRef { return c4v1beta1.LocalRef{Name: name} }
 
 // newNamespace creates a namespace for one spec and deletes it afterwards.
 func newNamespace(prefix string) string {

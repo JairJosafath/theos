@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // #1571: a Container that is being deleted leaves nothing behind in the
@@ -26,15 +26,15 @@ import (
 func TestReconcilingADeletedContainerForgetsItsEntries(t *testing.T) {
 	scheme := briefScheme(t)
 	now := metav1.Now()
-	container := &c4v1alpha1.Container{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders-api",
+	container := &c4v1beta1.Container{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders-api",
 		UID: types.UID("uid-orders"), DeletionTimestamp: &now, Finalizers: []string{"test/hold"}}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(container).Build()
 	r := &ContainerReconciler{Client: c, Scheme: scheme}
 	const other = types.UID("uid-other")
 	r.imageSaid.Store(container.UID, "v0.1.0 pushed")
 	r.imageSaid.Store(other, "v0.2.0 pushed")
-	r.imagePushed.Store(container.UID, &c4v1alpha1.ContainerImageStatus{Tag: "v0.1.0"})
-	r.imagePushed.Store(other, &c4v1alpha1.ContainerImageStatus{Tag: "v0.2.0"})
+	r.imagePushed.Store(container.UID, &c4v1beta1.ContainerImageStatus{Tag: "v0.1.0"})
+	r.imagePushed.Store(other, &c4v1beta1.ContainerImageStatus{Tag: "v0.2.0"})
 	r.deploySaid.Store(string(container.UID)+"/staging", "deployed")
 	r.deploySaid.Store(string(container.UID)+"/prod", "deployed")
 	r.deploySaid.Store(string(other)+"/staging", "deployed")

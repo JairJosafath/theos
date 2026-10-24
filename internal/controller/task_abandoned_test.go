@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -41,15 +41,15 @@ func startTry(ns, name string, issue int, sha string) {
 
 // failTry plays a try whose only round fails its checks, and returns its Task
 // once Failed, its pull request open.
-func failTry(ns, name string, issue int) *c4v1alpha1.Task {
+func failTry(ns, name string, issue int) *c4v1beta1.Task {
 	GinkgoHelper()
 	sha := "sha-" + name
 	startTry(ns, name, issue, sha)
 	gitFake.setChecks(ns, "orders-api", sha, "failure")
-	var task *c4v1alpha1.Task
+	var task *c4v1beta1.Task
 	Eventually(func(g Gomega) {
 		task = getTask(g, ns, name)
-		g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+		g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 	}).Should(Succeed())
 	return task
 }
@@ -63,7 +63,7 @@ func waitingTry(ns, name string, issue int, pr gitprovider.PullRequest) {
 	mustCreate(task)
 	Eventually(func(g Gomega) {
 		t := getTask(g, ns, name)
-		g.Expect(t.Status.Phase).To(Equal(c4v1alpha1.TaskPending))
+		g.Expect(t.Status.Phase).To(Equal(c4v1beta1.TaskPending))
 		t.Status.PullRequest, t.Status.PullRequestURL = int32(pr.Number), pr.URL
 		g.Expect(k8sClient.Status().Update(ctx, t)).To(Succeed())
 	}).Should(Succeed())

@@ -441,12 +441,12 @@ of Frameworks, Standards, Computes, Deployments, Connectors and the Git
 provider from `model/catalog.yaml` and `brief.md`, not from here.
 
 `plan/model.yaml` holds one document per object, split by `---` lines. Every
-document has `apiVersion: c4.factory.io/v1alpha1`, a `kind`, a
+document has `apiVersion: c4.factory.io/v1beta1`, a `kind`, a
 `metadata.name` and a `spec`. This one has every kind and every field a plan
 may write:
 
 ```yaml plan/model.yaml
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Project
 metadata:
   name: shop
@@ -454,7 +454,7 @@ spec:
   displayName: Shop
   description: Everything the shop's team builds.
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: shopper
@@ -462,7 +462,7 @@ spec:
   displayName: Shopper
   description: Someone who buys from the shop.
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
@@ -475,7 +475,7 @@ spec:
     - Orders per day
   location: Internal # the default: the factory builds it
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
@@ -484,7 +484,7 @@ spec:
   description: Takes the shoppers' money; another company runs it.
   location: External # the story only names it (rule 1)
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: web
@@ -497,7 +497,7 @@ spec:
   bundleRef: {name: react-web} # a Bundle that supports static-site, in place of the sides (rule 2)
   checks: BeforeRelease # only when a new prompt asks (rule 16)
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: api
@@ -516,7 +516,7 @@ spec:
     recovery: {rpo: 15m, rto: 4h}
     alerts: {email: ops@shop.example}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: orders-db
@@ -526,7 +526,7 @@ spec:
   softwareSystemRef: {name: shop}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: shopper-uses-web
@@ -535,7 +535,7 @@ spec:
   target: {kind: Container, name: web}
   description: Orders products
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: web-calls-api
@@ -545,7 +545,7 @@ spec:
   description: Sends orders
   bundles: false
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-takes-payments
@@ -554,7 +554,7 @@ spec:
   target: {kind: SoftwareSystem, name: payments}
   description: Charges the shopper
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-keeps-orders

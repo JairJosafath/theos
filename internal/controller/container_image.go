@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -31,7 +31,7 @@ const imageTimeout = 30 * time.Minute
 
 // buildsImage reports whether the Container's catalog choice builds an image
 // on release, at the refs it was scaffolded from (#1797).
-func buildsImage(container *c4v1alpha1.Container) bool {
+func buildsImage(container *c4v1beta1.Container) bool {
 	return model.BuildsImage(container.Choices().Deployment, container.Choices().Framework,
 		string(container.Spec.Type), container.Status.ScaffoldedFrom)
 }
@@ -41,12 +41,12 @@ func buildsImage(container *c4v1alpha1.Container) bool {
 // reports it in status.image and the condition ImagePublished. A push the
 // Git host failed is tried again at each poll; it returns how soon, zero
 // when nothing waits.
-func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus) time.Duration {
+func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) time.Duration {
 	tag := status.NewestRelease
 	if !buildsImage(container) || tag == "" {
 		status.Image = nil
-		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionImagePublished)
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionImagePublished)
 		return 0
 	}
 	prev := status.Image
@@ -58,7 +58,7 @@ func (r *ContainerReconciler) publishImage(ctx context.Context, container *c4v1a
 	if img.State == model.ImageStatePublished {
 		value = metav1.ConditionTrue
 	}
-	setCondition(&status.Conditions, container.Generation, c4v1alpha1.ConditionImagePublished, value, img.State,
+	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionImagePublished, value, img.State,
 		img.Message)
 	if !model.ImageSettled(img.State) {
 		return r.deployPoll()
@@ -79,13 +79,13 @@ type imagePush struct {
 // a status write by a reconcile), else Pushing as it starts a new push. The
 // push runs beside the reconcile, so a slow registry holds no Container's
 // reconcile (#1572), and its end wakes the Container.
-func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1alpha1.Container,
-	prev *c4v1alpha1.ContainerImageStatus, tag string) *c4v1alpha1.ContainerImageStatus {
+func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1beta1.Container,
+	prev *c4v1beta1.ContainerImageStatus, tag string) *c4v1beta1.ContainerImageStatus {
 	if push, ok := r.imagePushing.Load(container.UID); ok {
 		return pushingImage(tag, push.(*imagePush).tag)
 	}
 	if last, ok := r.imagePushed.Load(container.UID); ok {
-		img := last.(*c4v1alpha1.ContainerImageStatus)
+		img := last.(*c4v1beta1.ContainerImageStatus)
 		behind := prev == nil || prev.Tag != tag || prev.State != img.State || prev.Message != img.Message
 		if img.Tag == tag && behind {
 			return img.DeepCopy()
@@ -97,8 +97,8 @@ func (r *ContainerReconciler) pushedImage(ctx context.Context, container *c4v1al
 
 // pushingImage is release tag's image while the push of release pushing
 // runs.
-func pushingImage(tag, pushing string) *c4v1alpha1.ContainerImageStatus {
-	img := &c4v1alpha1.ContainerImageStatus{Tag: tag, State: model.ImageStatePushing,
+func pushingImage(tag, pushing string) *c4v1beta1.ContainerImageStatus {
+	img := &c4v1beta1.ContainerImageStatus{Tag: tag, State: model.ImageStatePushing,
 		Message: fmt.Sprintf("Pushing the image of release %s.", tag)}
 	if pushing != tag {
 		img.Message = fmt.Sprintf("Waiting for the push of release %s's image to end.", pushing)
@@ -109,8 +109,8 @@ func pushingImage(tag, pushing string) *c4v1alpha1.ContainerImageStatus {
 // startPush pushes release tag's image in a goroutine of its own, bounded by
 // imageTimeout and stopped when the Container is forgotten. Its end remembers
 // the image, reports it and wakes the Container, whose reconcile writes it.
-func (r *ContainerReconciler) startPush(ctx context.Context, container *c4v1alpha1.Container,
-	prev *c4v1alpha1.ContainerImageStatus, tag string) {
+func (r *ContainerReconciler) startPush(ctx context.Context, container *c4v1beta1.Container,
+	prev *c4v1beta1.ContainerImageStatus, tag string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), imageTimeout)
 	push := &imagePush{tag: tag, cancel: cancel}
 	r.imagePushing.Store(container.UID, push)
@@ -133,9 +133,9 @@ func (r *ContainerReconciler) startPush(ctx context.Context, container *c4v1alph
 }
 
 // pushImage pushes release tag's image archive and says how it went.
-func (r *ContainerReconciler) pushImage(ctx context.Context, container *c4v1alpha1.Container,
-	tag string) *c4v1alpha1.ContainerImageStatus {
-	img := &c4v1alpha1.ContainerImageStatus{Tag: tag, State: model.ImageStateFailed}
+func (r *ContainerReconciler) pushImage(ctx context.Context, container *c4v1beta1.Container,
+	tag string) *c4v1beta1.ContainerImageStatus {
+	img := &c4v1beta1.ContainerImageStatus{Tag: tag, State: model.ImageStateFailed}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace,
 		container.Spec.GitProviderRef.Name)
 	if err != nil {
@@ -166,8 +166,8 @@ func (r *ContainerReconciler) pushImage(ctx context.Context, container *c4v1alph
 // reportImage logs a release's new image state, with its Event, once per
 // release: the Reconciler remembers what it said too, as the last poll's
 // status write can fail after its Event.
-func (r *ContainerReconciler) reportImage(ctx context.Context, container *c4v1alpha1.Container,
-	prev, img *c4v1alpha1.ContainerImageStatus) {
+func (r *ContainerReconciler) reportImage(ctx context.Context, container *c4v1beta1.Container,
+	prev, img *c4v1beta1.ContainerImageStatus) {
 	log := logf.FromContext(ctx).WithValues("tag", img.Tag)
 	switch img.State {
 	case model.ImageStatePublished:

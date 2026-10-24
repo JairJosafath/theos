@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // startAPIServer runs envtest with the CRDs and returns a client, or skips when
@@ -38,7 +38,7 @@ func startAPIServer(t *testing.T) client.Client {
 
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = c4v1alpha1.AddToScheme(scheme)
+	_ = c4v1beta1.AddToScheme(scheme)
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatal(err)
@@ -61,9 +61,9 @@ func (w testWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func sessions(t *testing.T, c client.Client) []c4v1alpha1.Session {
+func sessions(t *testing.T, c client.Client) []c4v1beta1.Session {
 	t.Helper()
-	var list c4v1alpha1.SessionList
+	var list c4v1beta1.SessionList
 	if err := c.List(context.Background(), &list, client.InNamespace("webshop")); err != nil {
 		t.Fatal(err)
 	}
@@ -88,22 +88,22 @@ func TestRunRegistersHeartbeatsAndDeletes(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, c, Options{
-			Namespace: "webshop", Container: "orders-api", Actor: c4v1alpha1.ActorAgent,
+			Namespace: "webshop", Container: "orders-api", Actor: c4v1beta1.ActorAgent,
 			Summary: "Adding order validation", Heartbeat: 200 * time.Millisecond,
 			Log: testLogger(t),
 		})
 	}()
 
-	var first c4v1alpha1.Session
+	var first c4v1beta1.Session
 	waitFor(t, "an Active Session", func() bool {
 		items := sessions(t, c)
-		if len(items) == 1 && items[0].Status.Phase == c4v1alpha1.SessionActive {
+		if len(items) == 1 && items[0].Status.Phase == c4v1beta1.SessionActive {
 			first = items[0]
 			return true
 		}
 		return false
 	})
-	if first.Spec.ContainerRef.Name != "orders-api" || first.Spec.Actor != c4v1alpha1.ActorAgent ||
+	if first.Spec.ContainerRef.Name != "orders-api" || first.Spec.Actor != c4v1beta1.ActorAgent ||
 		first.Spec.Summary != "Adding order validation" {
 		t.Errorf("spec = %+v", first.Spec)
 	}
@@ -146,12 +146,12 @@ func TestRunRegistersAgainWhenDeleted(t *testing.T) {
 		}
 		return false
 	})
-	if err := c.Delete(ctx, &c4v1alpha1.Session{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "webshop"}}); err != nil {
+	if err := c.Delete(ctx, &c4v1beta1.Session{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "webshop"}}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "a new Session", func() bool {
 		items := sessions(t, c)
-		return len(items) == 1 && items[0].Name != name && items[0].Spec.Actor == c4v1alpha1.ActorHuman
+		return len(items) == 1 && items[0].Name != name && items[0].Spec.Actor == c4v1beta1.ActorHuman
 	})
 }
 

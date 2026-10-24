@@ -19,7 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -53,7 +53,7 @@ func mergedTask(ns, name string, n int, commit string, at time.Time) {
 	GinkgoHelper()
 	// The Task's Agent doesn't exist, so the Task does nothing before it is Merged.
 	task := newTask(ns, name, "")
-	task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+	task.Spec.AgentRef = c4v1beta1.LocalRef{Name: "nobody"}
 	task.Spec.Issue = int32(n)
 	mustCreate(task)
 	// Once it waits for its Agent, the Task reconciler writes nothing more.
@@ -65,7 +65,7 @@ func mergedTask(ns, name string, n int, commit string, at time.Time) {
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, name)
 		completed := metav1.NewTime(at)
-		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, commit, &completed
+		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1beta1.TaskMerged, commit, &completed
 		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -79,7 +79,7 @@ func setRerunRelease(ns, value string) {
 		if crew.Annotations == nil {
 			crew.Annotations = map[string]string{}
 		}
-		crew.Annotations[c4v1alpha1.AnnotationRerunRelease] = value
+		crew.Annotations[c4v1beta1.AnnotationRerunRelease] = value
 		g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -272,7 +272,7 @@ var _ = Describe("Crew releases", func() {
 		mergedTask(ns, "orders-api-done", n, "", time.Now())
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-done")
-			task.Status.StandardChange = &c4v1alpha1.TaskStandardChange{Issue: change, Paths: []string{"Makefile"},
+			task.Status.StandardChange = &c4v1beta1.TaskStandardChange{Issue: change, Paths: []string{"Makefile"},
 				Count: 1}
 			task.Status.Conditions = append(task.Status.Conditions, metav1.Condition{Type: ConditionSucceeded,
 				Status: metav1.ConditionTrue, Reason: reasonDoneByStandardChange, Message: "done",
@@ -674,7 +674,7 @@ var _ = Describe("Crew release preparation", func() {
 		fix := gitFake.addIssue(ns, "orders-api", "Track orders", clearIssue, nil)
 		gitFake.setIssueRelease(ns, "orders-api", fix, "v0.2.0", releaseDue.AddDate(0, 0, 7))
 		task := newTask(ns, "orders-api-fix-2", "")
-		task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+		task.Spec.AgentRef = c4v1beta1.LocalRef{Name: "nobody"}
 		task.Spec.Issue = int32(fix)
 		mustCreate(task)
 		Eventually(func(g Gomega) {
@@ -684,7 +684,7 @@ var _ = Describe("Crew release preparation", func() {
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, task.Name)
-			task.Status.Phase = c4v1alpha1.TaskReviewing
+			task.Status.Phase = c4v1beta1.TaskReviewing
 			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 		}).Should(Succeed())
 		crew := newCrew(ns)
@@ -701,7 +701,7 @@ var _ = Describe("Crew release preparation", func() {
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(prepareIssues(ns)).To(BeEmpty())
-			g.Expect(getTask(g, ns, task.Name).Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(getTask(g, ns, task.Name).Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			for _, e := range crewEvents(g, ns) {
 				g.Expect(e.Type).NotTo(Equal("Warning"), "waiting for a Task is no warning")
 			}
@@ -714,7 +714,7 @@ var _ = Describe("Crew release preparation", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, task.Name)
 			completed := metav1.Now()
-			task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1alpha1.TaskMerged, "fix-merge", &completed
+			task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1beta1.TaskMerged, "fix-merge", &completed
 			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
@@ -765,7 +765,7 @@ var _ = Describe("Crew release preparation", func() {
 			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", prepare)).Spec.Issue).To(BeEquivalentTo(prepare))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			var task c4v1alpha1.Task
+			var task c4v1beta1.Task
 			err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: fmt.Sprintf("orders-api-%d", next)}, &task)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "v0.2.0 waits for v0.1.0's prepare issue")
 		}, 3*time.Second).Should(Succeed())

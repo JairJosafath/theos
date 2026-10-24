@@ -29,7 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -102,7 +102,7 @@ type ProjectReconciler struct {
 func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	var project c4v1alpha1.Project
+	var project c4v1beta1.Project
 	err := r.Get(ctx, req.NamespacedName, &project)
 	if apierrors.IsNotFound(err) && req.Name == req.Namespace {
 		// The pool goes with the Project: its pods and their kept records,
@@ -176,18 +176,18 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 // adoptChildren sets the Project as owner of every kind it owns directly. These
 // kinds have no parent field: the Project is found by namespace.
-func (r *ProjectReconciler) adoptChildren(ctx context.Context, project *c4v1alpha1.Project) error {
+func (r *ProjectReconciler) adoptChildren(ctx context.Context, project *c4v1beta1.Project) error {
 	lists := []client.ObjectList{
-		&c4v1alpha1.PersonList{},
-		&c4v1alpha1.SoftwareSystemList{},
-		&c4v1alpha1.GitProviderList{},
-		&c4v1alpha1.FrameworkList{},
-		&c4v1alpha1.StandardList{},
-		&c4v1alpha1.ComputeList{},
-		&c4v1alpha1.DeploymentList{},
-		&c4v1alpha1.ConnectorList{},
-		&c4v1alpha1.BundleList{},
-		&c4v1alpha1.AgentList{},
+		&c4v1beta1.PersonList{},
+		&c4v1beta1.SoftwareSystemList{},
+		&c4v1beta1.GitProviderList{},
+		&c4v1beta1.FrameworkList{},
+		&c4v1beta1.StandardList{},
+		&c4v1beta1.ComputeList{},
+		&c4v1beta1.DeploymentList{},
+		&c4v1beta1.ConnectorList{},
+		&c4v1beta1.BundleList{},
+		&c4v1beta1.AgentList{},
 	}
 	labels := projectLabels(project.Namespace)
 	for _, list := range lists {
@@ -207,22 +207,22 @@ func (r *ProjectReconciler) adoptChildren(ctx context.Context, project *c4v1alph
 	return nil
 }
 
-func (r *ProjectReconciler) rollUp(ctx context.Context, project *c4v1alpha1.Project, status *c4v1alpha1.ProjectStatus) error {
-	var systems c4v1alpha1.SoftwareSystemList
+func (r *ProjectReconciler) rollUp(ctx context.Context, project *c4v1beta1.Project, status *c4v1beta1.ProjectStatus) error {
+	var systems c4v1beta1.SoftwareSystemList
 	if err := r.List(ctx, &systems, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}
-	var sessions c4v1alpha1.SessionList
+	var sessions c4v1beta1.SessionList
 	if err := r.List(ctx, &sessions, client.InNamespace(project.Namespace)); err != nil {
 		return err
 	}
 	ready := 0
 	for _, c := range containers.Items {
-		if c.Status.Phase == c4v1alpha1.ContainerReady {
+		if c.Status.Phase == c4v1beta1.ContainerReady {
 			ready++
 		}
 	}
@@ -232,11 +232,11 @@ func (r *ProjectReconciler) rollUp(ctx context.Context, project *c4v1alpha1.Proj
 	status.ReadyContainers = int32(ready)
 	status.ActiveSessions = int32(active)
 	status.Summary = model.Summary(ready, len(containers.Items), active)
-	status.Factory = &c4v1alpha1.FactoryVersions{OperatorVersion: r.OperatorVersion, ChartVersion: r.ChartVersion}
+	status.Factory = &c4v1beta1.FactoryVersions{OperatorVersion: r.OperatorVersion, ChartVersion: r.ChartVersion}
 	return nil
 }
 
-func (r *ProjectReconciler) writeStatus(ctx context.Context, project *c4v1alpha1.Project, status *c4v1alpha1.ProjectStatus) error {
+func (r *ProjectReconciler) writeStatus(ctx context.Context, project *c4v1beta1.Project, status *c4v1beta1.ProjectStatus) error {
 	if equality.Semantic.DeepEqual(&project.Status, status) {
 		return nil
 	}
@@ -246,10 +246,10 @@ func (r *ProjectReconciler) writeStatus(ctx context.Context, project *c4v1alpha1
 }
 
 // countActive counts Sessions in phase Active.
-func countActive(sessions []c4v1alpha1.Session) int {
+func countActive(sessions []c4v1beta1.Session) int {
 	n := 0
 	for _, s := range sessions {
-		if s.Status.Phase == c4v1alpha1.SessionActive {
+		if s.Status.Phase == c4v1beta1.SessionActive {
 			n++
 		}
 	}
@@ -285,28 +285,28 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []reconcile.Request{requestFor(obj.GetNamespace(), obj.GetNamespace())}
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Project{}).
+		For(&c4v1beta1.Project{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&corev1.Pod{}).
-		Watches(&c4v1alpha1.Person{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.SoftwareSystem{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.GitProvider{}, toProject, specChanged()).
-		Watches(&c4v1alpha1.Framework{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Compute{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Deployment{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Connector{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Bundle{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Standard{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Agent{}, toProject, createOrDelete()).
-		Watches(&c4v1alpha1.Container{}, toProject, containerPhaseChanges()).
-		Watches(&c4v1alpha1.Session{}, toProject, sessionPhaseChanges()).
+		Watches(&c4v1beta1.Person{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.SoftwareSystem{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.GitProvider{}, toProject, specChanged()).
+		Watches(&c4v1beta1.Framework{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Compute{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Deployment{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Connector{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Bundle{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Standard{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Agent{}, toProject, createOrDelete()).
+		Watches(&c4v1beta1.Container{}, toProject, containerPhaseChanges()).
+		Watches(&c4v1beta1.Session{}, toProject, sessionPhaseChanges()).
 		WatchesMetadata(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(
 			func(_ context.Context, obj client.Object) []reconcile.Request {
 				return []reconcile.Request{requestFor(obj.GetName(), obj.GetName())}
-			}), labelChanged(c4v1alpha1.LabelSharedSecrets)).
+			}), labelChanged(c4v1beta1.LabelSharedSecrets)).
 		Named("project").
 		Complete(r)
 }

@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -35,24 +35,24 @@ type SoftwareSystemReconciler struct {
 
 // Reconcile counts the system's Containers, DataStores and active Sessions.
 func (r *SoftwareSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var system c4v1alpha1.SoftwareSystem
+	var system c4v1beta1.SoftwareSystem
 	if err := r.Get(ctx, req.NamespacedName, &system); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	inSystem := client.MatchingFields{indexSoftwareSystem: system.Name}
-	var containers c4v1alpha1.ContainerList
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(system.Namespace), inSystem); err != nil {
 		return ctrl.Result{}, err
 	}
-	var dataStores c4v1alpha1.DataStoreList
+	var dataStores c4v1beta1.DataStoreList
 	if err := r.List(ctx, &dataStores, client.InNamespace(system.Namespace), inSystem); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	ready, sessions := 0, 0
 	for _, c := range containers.Items {
-		if c.Status.Phase == c4v1alpha1.ContainerReady {
+		if c.Status.Phase == c4v1beta1.ContainerReady {
 			ready++
 		}
 		sessions += int(c.Status.ActiveSessions)
@@ -77,17 +77,17 @@ func (r *SoftwareSystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	toSystem := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		var name string
 		switch o := obj.(type) {
-		case *c4v1alpha1.Container:
+		case *c4v1beta1.Container:
 			name = o.Spec.SoftwareSystemRef.Name
-		case *c4v1alpha1.DataStore:
+		case *c4v1beta1.DataStore:
 			name = o.Spec.SoftwareSystemRef.Name
 		}
 		return []reconcile.Request{requestFor(obj.GetNamespace(), name)}
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.SoftwareSystem{}).
-		Watches(&c4v1alpha1.Container{}, toSystem).
-		Watches(&c4v1alpha1.DataStore{}, toSystem).
+		For(&c4v1beta1.SoftwareSystem{}).
+		Watches(&c4v1beta1.Container{}, toSystem).
+		Watches(&c4v1beta1.DataStore{}, toSystem).
 		Named("softwaresystem").
 		Complete(r)
 }

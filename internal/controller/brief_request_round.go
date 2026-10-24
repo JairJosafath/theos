@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -30,7 +30,7 @@ import (
 // takeRequests marks the requests a new round takes, those let through that
 // no round took, as the round's, and returns their names for
 // status.roundRequests.
-func takeRequests(status *c4v1alpha1.BriefStatus) []string {
+func takeRequests(status *c4v1beta1.BriefStatus) []string {
 	var names []string
 	for i := range status.Requests {
 		req := &status.Requests[i]
@@ -46,7 +46,7 @@ func takeRequests(status *c4v1alpha1.BriefStatus) []string {
 // releaseRequests hands back the requests of a round that ended without
 // applying, failed or asking for input: they wait, let through, for the next
 // round, which a new prompt or request starts, as the round's prompts do.
-func releaseRequests(status *c4v1alpha1.BriefStatus) {
+func releaseRequests(status *c4v1beta1.BriefStatus) {
 	for i := range status.Requests {
 		req := &status.Requests[i]
 		if req.Round == status.Round && req.Stage == model.RequestPlanning {
@@ -58,7 +58,7 @@ func releaseRequests(status *c4v1alpha1.BriefStatus) {
 // heldRequests are the requests handed back by the last round, when it is
 // over and didn't apply: they wait for something new to start a round. A
 // request an applied round took and that came back, reopened, is new.
-func heldRequests(status *c4v1alpha1.BriefStatus) []string {
+func heldRequests(status *c4v1beta1.BriefStatus) []string {
 	n := len(status.History)
 	if !roundOver(status) || status.History[n-1].Outcome == model.ReasonApplied {
 		return nil
@@ -68,7 +68,7 @@ func heldRequests(status *c4v1alpha1.BriefStatus) []string {
 
 // roundRequests are the requests the running round took, and those of them
 // still open on GitHub, which its plan must answer.
-func roundRequests(status *c4v1alpha1.BriefStatus) (took, open []string) {
+func roundRequests(status *c4v1beta1.BriefStatus) (took, open []string) {
 	for _, req := range status.Requests {
 		name := model.RequestName(req.Repository, int(req.Number))
 		if req.Round == status.Round && slices.Contains(status.RoundRequests, name) {
@@ -91,7 +91,7 @@ func (r *BriefReconciler) answerRequests(ctx context.Context, run *roundApply, p
 	}
 	releases := map[string]string{}
 	for _, answer := range plan.Requests {
-		i := slices.IndexFunc(status.Requests, func(s c4v1alpha1.BriefRequest) bool {
+		i := slices.IndexFunc(status.Requests, func(s c4v1beta1.BriefRequest) bool {
 			return s.Round == status.Round && model.RequestName(s.Repository, int(s.Number)) == answer.Request
 		})
 		if i < 0 {
@@ -129,9 +129,9 @@ func (r *BriefReconciler) answerRequests(ctx context.Context, run *roundApply, p
 
 // roundRelease is the title of the round's release milestone in the
 // Container's repository, "" when the round made none there.
-func (r *BriefReconciler) roundRelease(ctx context.Context, brief *c4v1alpha1.Brief, container string) (
+func (r *BriefReconciler) roundRelease(ctx context.Context, brief *c4v1beta1.Brief, container string) (
 	string, error) {
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &c); err != nil {
 		return "", err
 	}
@@ -158,9 +158,9 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // owesRequests reports whether a request of a repository the Brief reads
 // waits for its planned comment.
-func (r *BriefReconciler) owesRequests(brief *c4v1alpha1.Brief) bool {
-	return slices.ContainsFunc(brief.Status.Requests, func(s c4v1alpha1.BriefRequest) bool {
-		reads := slices.ContainsFunc(brief.Spec.Releases, func(e c4v1alpha1.BriefRelease) bool {
+func (r *BriefReconciler) owesRequests(brief *c4v1beta1.Brief) bool {
+	return slices.ContainsFunc(brief.Status.Requests, func(s c4v1beta1.BriefRequest) bool {
+		reads := slices.ContainsFunc(brief.Spec.Releases, func(e c4v1beta1.BriefRelease) bool {
 			return e.GitHub.Repository == s.Repository && requestsMode(&e) != model.RequestsOff
 		})
 		return reads && r.owesPlanned(brief, model.Request{Repository: s.Repository, Number: int(s.Number),
@@ -171,7 +171,7 @@ func (r *BriefReconciler) owesRequests(brief *c4v1alpha1.Brief) bool {
 // owesPlanned reports whether a request waits for its planned comment: a
 // skipped one until it is closed, a planned one until the Brief knows it
 // commented.
-func (r *BriefReconciler) owesPlanned(brief *c4v1alpha1.Brief, req model.Request) bool {
+func (r *BriefReconciler) owesPlanned(brief *c4v1beta1.Brief, req model.Request) bool {
 	switch req.Stage {
 	case model.RequestSkipped:
 		return true
@@ -183,7 +183,7 @@ func (r *BriefReconciler) owesPlanned(brief *c4v1alpha1.Brief, req model.Request
 	return false
 }
 
-func saidKey(brief *c4v1alpha1.Brief, req model.Request) string {
+func saidKey(brief *c4v1beta1.Brief, req model.Request) string {
 	return requestsKey(brief, req.Repository) + fmt.Sprintf("#%d %s %d", req.Number, model.CommentPlanned, req.Round)
 }
 
@@ -191,7 +191,7 @@ func saidKey(brief *c4v1alpha1.Brief, req model.Request) string {
 // the issues and their release, or the skip's why, and closes a skipped one
 // as not planned; a closed one leaves the list. It goes on past a request it
 // fails, and returns the first failure.
-func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Brief,
 	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
@@ -253,7 +253,7 @@ func sayPlanned(ctx context.Context, tracker gitprovider.IssueTracker, brief str
 	return tracker.CloseIssue(ctx, req.Number, gitprovider.CloseNotPlanned)
 }
 
-func (r *BriefReconciler) markSaid(brief *c4v1alpha1.Brief, req model.Request) {
+func (r *BriefReconciler) markSaid(brief *c4v1beta1.Brief, req model.Request) {
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
 	if r.requestsSaid == nil {
@@ -264,7 +264,7 @@ func (r *BriefReconciler) markSaid(brief *c4v1alpha1.Brief, req model.Request) {
 
 // issueTitles are the titles of the issues a request became, as the Brief
 // recorded them, container#number when it has none.
-func issueTitles(brief *c4v1alpha1.Brief, issues []string) []string {
+func issueTitles(brief *c4v1beta1.Brief, issues []string) []string {
 	out := make([]string, 0, len(issues))
 	for _, name := range issues {
 		container, number, _ := strings.Cut(name, "#")

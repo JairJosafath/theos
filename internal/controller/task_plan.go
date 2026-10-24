@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -28,16 +28,16 @@ import (
 // (docs/plans/done/brief.md, step 5): the planner pushes a plan to the brief
 // repository's plan/<round>, and the Brief checks it. The Brief made the Task,
 // owned and labelled; its verdict comes back as annotations on the Task.
-func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1alpha1.Task) (ctrl.Result, error) {
+func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1beta1.Task) (ctrl.Result, error) {
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
-		status.Phase = c4v1alpha1.TaskPending
+		status.Phase = c4v1beta1.TaskPending
 	}
 	if isFinal(status.Phase) {
 		return ctrl.Result{}, r.writeStatus(ctx, task, status)
 	}
 
-	var brief c4v1alpha1.Brief
+	var brief c4v1beta1.Brief
 	err := r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.BriefRef.Name}, &brief)
 	if apierrors.IsNotFound(err) {
 		r.progress(task, status, metav1.ConditionFalse, "BriefNotFound", "Brief "+task.Spec.BriefRef.Name+" not found")
@@ -46,16 +46,16 @@ func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1alpha1.Tas
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	round, err := strconv.Atoi(task.Labels[c4v1alpha1.LabelBriefRound])
+	round, err := strconv.Atoi(task.Labels[c4v1beta1.LabelBriefRound])
 	if err != nil || round < 1 {
 		message := fmt.Sprintf("A Plan Task needs label %s with the Brief's round, a number from 1; it has %q",
-			c4v1alpha1.LabelBriefRound, task.Labels[c4v1alpha1.LabelBriefRound])
+			c4v1beta1.LabelBriefRound, task.Labels[c4v1beta1.LabelBriefRound])
 		if err := r.failPlan(ctx, task, status, model.TaskStep{Action: model.ActionFail, Message: message}); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, r.writeStatus(ctx, task, status)
 	}
-	var agent c4v1alpha1.Agent
+	var agent c4v1beta1.Agent
 	err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.AgentRef.Name}, &agent)
 	if apierrors.IsNotFound(err) {
 		r.progress(task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+task.Spec.AgentRef.Name+" not found")
@@ -81,8 +81,8 @@ func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1alpha1.Tas
 }
 
 // planFacts gathers what a Plan Task's next step depends on.
-func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	agent *c4v1alpha1.Agent) (model.TaskFacts, error) {
+func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	agent *c4v1beta1.Agent) (model.TaskFacts, error) {
 	facts := model.TaskFacts{
 		Phase:     string(status.Phase),
 		Round:     int(status.Round),
@@ -95,9 +95,9 @@ func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1alpha1.Task, s
 		facts.MaxRounds = 3
 	}
 	// A verdict counts only for the plan this try pushed.
-	if checked := task.Annotations[c4v1alpha1.AnnotationPlanChecked]; checked != "" && checked == status.Commit {
+	if checked := task.Annotations[c4v1beta1.AnnotationPlanChecked]; checked != "" && checked == status.Commit {
 		facts.PlanChecked = true
-		facts.PlanRefusals = task.Annotations[c4v1alpha1.AnnotationPlanRefusals]
+		facts.PlanRefusals = task.Annotations[c4v1beta1.AnnotationPlanRefusals]
 	}
 	if status.PhaseChangedAt != nil {
 		facts.InPhase = r.now().Sub(status.PhaseChangedAt.Time)
@@ -112,7 +112,7 @@ func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1alpha1.Task, s
 		}
 		facts.NoFreeSlot = noSlot
 	}
-	if status.Phase == c4v1alpha1.TaskImplementing {
+	if status.Phase == c4v1beta1.TaskImplementing {
 		name := sandboxName(task, status, model.RolePlanner)
 		startedOn := ""
 		if name == status.Sandbox {
@@ -131,12 +131,12 @@ func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1alpha1.Task, s
 }
 
 // applyPlan does one step of a Plan Task and records it in status.
-func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	brief *c4v1alpha1.Brief, agent *c4v1alpha1.Agent, round int, step model.TaskStep) (ctrl.Result, error) {
+func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	brief *c4v1beta1.Brief, agent *c4v1beta1.Agent, round int, step model.TaskStep) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	switch step.Action {
 	case model.ActionWait:
-		if status.Phase == c4v1alpha1.TaskChecking {
+		if status.Phase == c4v1beta1.TaskChecking {
 			// The Brief's verdict is an annotation on the Task, which wakes it.
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForBrief", step.Message)
 			return ctrl.Result{}, nil
@@ -162,7 +162,7 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1alpha1.Task, s
 		return ctrl.Result{}, r.endRun(ctx, task, status)
 
 	case model.ActionPlanAccepted:
-		r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, "PlanAccepted", step.Message)
+		r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, "PlanAccepted", step.Message)
 		log.Info("Brief accepted the plan of Task", "commit", status.Commit, "round", status.Round)
 		return ctrl.Result{}, nil
 
@@ -182,13 +182,13 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1alpha1.Task, s
 }
 
 // failPlan ends the run and fails the Plan Task; its Brief reads why from it.
-func (r *TaskReconciler) failPlan(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+func (r *TaskReconciler) failPlan(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	step model.TaskStep) error {
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
 	}
 	status.Feedback = step.Feedback
-	r.finish(task, status, c4v1alpha1.TaskFailed, metav1.ConditionFalse, "Failed", step.Message)
+	r.finish(task, status, c4v1beta1.TaskFailed, metav1.ConditionFalse, "Failed", step.Message)
 	logf.FromContext(ctx).Info("Failed Task", "reason", "Failed", "message", step.Message)
 	return nil
 }
@@ -196,8 +196,8 @@ func (r *TaskReconciler) failPlan(ctx context.Context, task *c4v1alpha1.Task, st
 // startPlan creates the planner's sandbox for this try, on the brief
 // repository with the Brief's bot. The Brief makes the bot's Secret before it
 // starts a round; until it is there, the Task waits.
-func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	brief *c4v1alpha1.Brief, agent *c4v1alpha1.Agent, round int, message string) (ctrl.Result, error) {
+func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	brief *c4v1beta1.Brief, agent *c4v1beta1.Agent, round int, message string) (ctrl.Result, error) {
 	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
 		return ctrl.Result{}, err
 	} else if !found {

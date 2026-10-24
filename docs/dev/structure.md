@@ -8,9 +8,10 @@ cmd/main.go                        Manager entry (registers controllers, Session
 cmd/c4session/                     Session client CLI, run in devcontainers
 cmd/c4agent/                       Task runner, run in agent sandboxes
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
-api/v1alpha1/*_types.go            CRD schemas for all nineteen kinds (+kubebuilder markers)
-api/v1alpha1/shared_types.go       Refs, Container types, condition names and labels
-api/v1alpha1/zz_generated.*        Auto-generated (DO NOT EDIT)
+api/v1beta1/*_types.go             CRD schemas for all nineteen kinds (+kubebuilder markers); the hub and storage version the operator imports
+api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
+api/v1alpha1/                      The served older version: the same shapes, converting to the hub (conversion.go)
+api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
