@@ -59,8 +59,8 @@ else on _Story_:
   and release notes, and to the repository.
 
 **Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
-Relationship, Session, Standard, Compute, Deployment, GitProvider and
-DeployTarget each have
+Relationship, Session, Standard, Compute, Deployment, Bundle, Domain,
+GitProvider and DeployTarget each have
 a page that opens with the same header
 ([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
 name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
