@@ -471,28 +471,32 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
-	if webhookCert != nil || webhookCertPath != "" {
+	webhookOn := webhookCert != nil || webhookCertPath != ""
+	if webhookOn {
 		// Every c4.factory.io kind converts between its versions here: each
 		// v1alpha1 type is Convertible to its v1beta1 hub
 		// (docs/plans/api-versions.md, decision 3).
 		mgr.GetWebhookServer().Register("/convert",
 			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
-		// Once this pod's conversion webhook serves, the leader rewrites what
-		// etcd still holds at a version other than the storage one and brings
-		// each CRD's storedVersions down (docs/plans/api-versions.md, decision
-		// 4); a start after the pass does nothing. The Service may still route
-		// a conversion to an older pod during a rollout; the migrator's retry
-		// covers that.
-		direct, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
-		if err != nil {
-			setupLog.Error(err, "Failed to create the storage migrator's client")
-			os.Exit(1)
-		}
-		if err := mgr.Add(&controller.StorageMigrator{Client: direct,
-			Ready: mgr.GetWebhookServer().StartedChecker()}); err != nil {
-			setupLog.Error(err, "Failed to add the storage migrator")
-			os.Exit(1)
-		}
+	}
+	// Whatever the webhook setting, the leader rewrites what etcd still holds
+	// at a version other than the storage one and brings each CRD's
+	// storedVersions down (docs/plans/api-versions.md, decision 4); a start
+	// after the pass does nothing. A kind at strategy None converts in the
+	// API server; one that converts by this pod's webhook waits until it
+	// serves (#1884). The Service may still route a conversion to an older
+	// pod during a rollout; the migrator's retry covers that.
+	migrator := &controller.StorageMigrator{}
+	if webhookOn {
+		migrator.Ready = mgr.GetWebhookServer().StartedChecker()
+	}
+	if migrator.Client, err = client.New(mgr.GetConfig(), client.Options{Scheme: scheme}); err != nil {
+		setupLog.Error(err, "Failed to create the storage migrator's client")
+		os.Exit(1)
+	}
+	if err := mgr.Add(migrator); err != nil {
+		setupLog.Error(err, "Failed to add the storage migrator")
+		os.Exit(1)
 	}
 	if webhookCert != nil {
 		// The webhook server starts before the caches; the pod is ready, and in
