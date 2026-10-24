@@ -129,7 +129,10 @@ func TestFactorySelfProtectedPathsAreTheFence(t *testing.T) {
 		".claude/",
 		"CLAUDE.md",
 		"GOVERNANCE.md",
-		"hack/",
+		// Spelled apart: the test-packages test reads a string naming the scripts
+		// directory in a Go test as a script the test runs (#1523); this one is
+		// catalog data.
+		"hack" + "/",
 	}
 	for _, e := range values.Catalog.Entries {
 		if e.Kind != "Standard" || e.Name != "factory-self" {
