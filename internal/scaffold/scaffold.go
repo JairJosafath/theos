@@ -78,6 +78,10 @@ type Input struct {
 	Bundle string
 	// Connectors are the unique Connector names, sorted.
 	Connectors []string
+	// Domains are the names of the Domains the Container's system is about,
+	// sorted; their Markdown lands under docs/agents/domain/<name>/, so a
+	// Standard's agent guide can point the implementer at it.
+	Domains []string
 	// Checks is when CI runs the full check: EveryChange or BeforeRelease, as
 	// model.EffectiveChecks decides. Empty reads as EveryChange.
 	Checks string
@@ -152,7 +156,11 @@ var sideOrder = map[string]int{
 	model.SideCompute:    2,
 	model.SideDeployment: 3,
 	model.SideConnector:  4,
+	model.SideDomain:     5,
 }
+
+// repeatingSides may appear more than once in a Container's layers.
+var repeatingSides = map[string]bool{model.SideConnector: true, model.SideDomain: true}
 
 // ConflictError reports a path written by two owners.
 type ConflictError struct {
@@ -177,6 +185,27 @@ func (e *TemplateError) Error() string {
 
 func (e *TemplateError) Unwrap() error { return e.Err }
 
+// DomainNotMarkdownError reports a Domain whose template renders a file that
+// is not Markdown: a Domain holds only *.md (and *.md.tmpl).
+type DomainNotMarkdownError struct {
+	Domain string
+	Path   string
+}
+
+func (e *DomainNotMarkdownError) Error() string {
+	return fmt.Sprintf("Domain %s renders %s, which is not Markdown: a Domain holds only *.md files", e.Domain, e.Path)
+}
+
+// DomainNoReadmeError reports a Domain whose template renders no README.md,
+// the index the Standards' guides point at.
+type DomainNoReadmeError struct {
+	Domain string
+}
+
+func (e *DomainNoReadmeError) Error() string {
+	return fmt.Sprintf("Domain %s renders no README.md", e.Domain)
+}
+
 // UnsupportedCIError reports a layer that keeps CI files, but none for the
 // Container's CI system.
 type UnsupportedCIError struct {
@@ -195,8 +224,9 @@ func (e *UnsupportedCIError) Error() string {
 }
 
 // Build renders the layers into one repository tree. Layers must come in the
-// fixed order Framework, Standard, Compute, Deployment, then each Connector, with exactly one
-// Framework, and the Connector layers must match in.Connectors.
+// fixed order Framework, Standard, Compute, Deployment, each Connector, then
+// each Domain, with exactly one Framework; the Connector layers must match
+// in.Connectors and the Domain layers in.Domains.
 func Build(in Input, layers []Layer, opts Options) (Result, error) {
 	if err := checkLayers(in, layers); err != nil {
 		return Result{}, err
@@ -246,15 +276,15 @@ func Build(in Input, layers []Layer, opts Options) (Result, error) {
 
 func checkLayers(in Input, layers []Layer) error {
 	frameworks := 0
-	var connectors []string
+	var connectors, domains []string
 	last := -1
 	for _, layer := range layers {
 		order, ok := sideOrder[layer.Side]
 		if !ok {
 			return fmt.Errorf("layer %s has unknown side %q", layer.Name, layer.Side)
 		}
-		if order < last || (order == last && layer.Side != model.SideConnector) {
-			return fmt.Errorf("layer %s (%s) is out of order: want Framework, Standard, Compute, Deployment, then Connectors",
+		if order < last || (order == last && !repeatingSides[layer.Side]) {
+			return fmt.Errorf("layer %s (%s) is out of order: want Framework, Standard, Compute, Deployment, Connectors, then Domains",
 				layer.Name, layer.Side)
 		}
 		last = order
@@ -263,6 +293,8 @@ func checkLayers(in Input, layers []Layer) error {
 			frameworks++
 		case model.SideConnector:
 			connectors = append(connectors, layer.Name)
+		case model.SideDomain:
+			domains = append(domains, layer.Name)
 		}
 	}
 	if frameworks != 1 {
@@ -270,6 +302,9 @@ func checkLayers(in Input, layers []Layer) error {
 	}
 	if !slices.Equal(connectors, in.Connectors) {
 		return fmt.Errorf("connector layers %v don't match input connectors %v", connectors, in.Connectors)
+	}
+	if !slices.Equal(domains, in.Domains) {
+		return fmt.Errorf("domain layers %v don't match input domains %v", domains, in.Domains)
 	}
 	return nil
 }
@@ -307,7 +342,32 @@ func isOperatorPath(p string) bool {
 // renderLayer returns the files a layer adds to the repository: everything except
 // .c4factory/, and what .c4factory/ci/ holds for the Container's CI system, at
 // the root, with .tmpl files rendered and whitespace-only results left out.
+// A Domain layer's files are Markdown only, hold a README.md, and land under
+// docs/agents/domain/<name>/.
 func renderLayer(in Input, layer Layer) (Tree, error) {
+	out, err := renderFiles(in, layer)
+	if err != nil || layer.Side != model.SideDomain {
+		return out, err
+	}
+	return domainTree(layer.Name, out)
+}
+
+// domainTree checks a rendered Domain layer and moves it under its directory.
+func domainTree(domain string, rendered Tree) (Tree, error) {
+	if _, ok := rendered["README.md"]; !ok {
+		return nil, &DomainNoReadmeError{Domain: domain}
+	}
+	out := Tree{}
+	for _, p := range rendered.Paths() {
+		if !strings.HasSuffix(p, ".md") {
+			return nil, &DomainNotMarkdownError{Domain: domain, Path: p}
+		}
+		out[model.DomainDir+domain+"/"+p] = rendered[p]
+	}
+	return out, nil
+}
+
+func renderFiles(in Input, layer Layer) (Tree, error) {
 	if err := checkCI(in, layer); err != nil {
 		return nil, err
 	}
