@@ -10,6 +10,7 @@ import {
   type Bundle,
   type Domain,
   type CatalogEntry,
+  type Connector,
   type Container,
   type Crew,
   type DataStore,
@@ -39,7 +40,7 @@ export interface StoryData {
   sessions: Session[]
   /** Catalog entries, used only for display names. Optional: may stay empty. */
   frameworks: CatalogEntry[]
-  connectors: CatalogEntry[]
+  connectors: Connector[]
   /** The rest of the catalog and the Git hosts, for their pages. Optional: may stay empty. */
   standards: Standard[]
   computes: CatalogEntry[]
@@ -350,7 +351,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       relationships: this.items<Relationship>(5),
       sessions: this.items<Session>(6),
       frameworks: this.items<CatalogEntry>(7),
-      connectors: this.items<CatalogEntry>(8),
+      connectors: this.items<Connector>(8),
       crews: this.items<Crew>(9),
       agents: this.items<Agent>(10),
       tasks: this.items<Task>(11),
