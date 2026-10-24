@@ -79,9 +79,6 @@ spec:
                   Ready. An adopted Container is never scaffolded; an empty repository
                   fails NothingToAdopt. Set at creation and immutable.
                 type: boolean
-                x-kubernetes-validations:
-                - message: adopt is immutable
-                  rule: self == oldSelf
               bundleRef:
                 description: |-
                   bundleRef names the Bundle catalog entry that picks the Framework,
@@ -360,6 +357,8 @@ spec:
             - message: bundleRef is immutable
               rule: has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef)
                 || self.bundleRef == oldSelf.bundleRef)
+            - message: adopt is immutable
+              rule: (has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)
           status:
             description: status defines the observed state of Container
             properties:
@@ -1128,9 +1127,6 @@ spec:
                   Ready. An adopted Container is never scaffolded; an empty repository
                   fails NothingToAdopt. Set at creation and immutable.
                 type: boolean
-                x-kubernetes-validations:
-                - message: adopt is immutable
-                  rule: self == oldSelf
               bundleRef:
                 description: |-
                   bundleRef names the Bundle catalog entry that picks the Framework,
@@ -1409,6 +1405,8 @@ spec:
             - message: bundleRef is immutable
               rule: has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef)
                 || self.bundleRef == oldSelf.bundleRef)
+            - message: adopt is immutable
+              rule: (has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)
           status:
             description: status defines the observed state of Container
             properties:

@@ -33,7 +33,7 @@ import (
 func adoptableFiles(ns string) scaffold.Tree {
 	GinkgoHelper()
 	source := newProjectNamespace()
-	createWebshop(source)
+	createAdoptingWebshop(source, false)
 	eventuallyOrdersAPI(source, c4v1alpha1.ContainerReady)
 	files := maps.Clone(gitFake.repo(source, "orders-api").files)
 	id, err := scaffold.ParseIdentity(files[scaffold.IdentityPath].Data)
@@ -45,7 +45,16 @@ func adoptableFiles(ns string) scaffold.Tree {
 	return files
 }
 
-func adopting(c *c4v1alpha1.Container) { c.Spec.Adopt = true }
+// createAdoptingWebshop creates the webshop with orders-api under the Standard
+// python-strict, adopting its repository when adopt is set.
+func createAdoptingWebshop(ns string, adopt bool) {
+	GinkgoHelper()
+	mustCreate(newStandard(ns, "python-strict", "python-fastapi"))
+	createWebshopWith(ns, func(c *c4v1alpha1.Container) {
+		c.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		c.Spec.Adopt = adopt
+	})
+}
 
 // failedAdoption waits for orders-api to fail and returns its Scaffolded condition.
 func failedAdoption(ns, reason string) *metav1.Condition {
@@ -64,7 +73,7 @@ var _ = Describe("Container adoption", func() {
 	It("adopts a repository carrying its identity and its Standard's files, and protects main", func() {
 		ns := newProjectNamespace()
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFiles(ns))
-		createWebshopWith(ns, adopting)
+		createAdoptingWebshop(ns, true)
 
 		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
 		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
@@ -72,10 +81,10 @@ var _ = Describe("Container adoption", func() {
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		Expect(cond.Message).To(ContainSubstring("Adopted repository"))
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "nothing pushed")
-		Expect(gitFake.protectedBranches(ns, "orders-api")).To(ContainElement("main"))
+		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
 		Expect(container.Status.Standard).To(Equal(&c4v1alpha1.ContainerStandardStatus{
-			Name: "small", Ref: "v1.1.0", Checks: c4v1alpha1.ChecksEveryChange}))
+			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1alpha1.ChecksEveryChange}))
 		Expect(container.Status.RepositoryURL).NotTo(BeEmpty())
 	})
 
@@ -84,7 +93,7 @@ var _ = Describe("Container adoption", func() {
 		files := adoptableFiles(ns)
 		delete(files, scaffold.IdentityPath)
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
-		createWebshopWith(ns, adopting)
+		createAdoptingWebshop(ns, true)
 
 		cond := failedAdoption(ns, c4v1alpha1.ReasonIdentityMismatch)
 		Expect(cond.Message).To(ContainSubstring("has no .c4factory.yaml on main"))
@@ -101,7 +110,7 @@ var _ = Describe("Container adoption", func() {
 		Expect(err).NotTo(HaveOccurred())
 		files[scaffold.IdentityPath] = scaffold.File{Data: data}
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
-		createWebshopWith(ns, adopting)
+		createAdoptingWebshop(ns, true)
 
 		cond := failedAdoption(ns, c4v1alpha1.ReasonIdentityMismatch)
 		Expect(cond.Message).To(ContainSubstring(`names project "other-shop" and container "billing-api", not ` +
@@ -111,18 +120,18 @@ var _ = Describe("Container adoption", func() {
 	It("fails StandardFilesDiffer, naming the paths, when a Standard file is missing or changed", func() {
 		ns := newProjectNamespace()
 		files := adoptableFiles(ns)
-		Expect(files).To(HaveKey(".c4factory/README.md"), "the Standard's file")
-		files[".c4factory/README.md"] = scaffold.File{Data: []byte("edited by hand\n")}
+		Expect(files).To(HaveKey("AGENTS.md"), "the Standard's file")
+		files["AGENTS.md"] = scaffold.File{Data: []byte("edited by hand\n")}
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
-		createWebshopWith(ns, adopting)
+		createAdoptingWebshop(ns, true)
 
 		cond := failedAdoption(ns, c4v1alpha1.ReasonStandardFilesDiffer)
-		Expect(cond.Message).To(ContainSubstring("differs from Standard small at v1.1.0 in .c4factory/README.md"))
+		Expect(cond.Message).To(ContainSubstring("differs from Standard python-strict at v1.0.0 in AGENTS.md"))
 	})
 
 	It("fails NothingToAdopt on an empty repository", func() {
 		ns := newProjectNamespace()
-		createWebshopWith(ns, adopting)
+		createAdoptingWebshop(ns, true)
 
 		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
 		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)

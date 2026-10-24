@@ -16,6 +16,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef)",message="name a bundleRef or a frameworkRef"
 // +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
+// +kubebuilder:validation:XValidation:rule="(has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)",message="adopt is immutable"
 type ContainerSpec struct {
 	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
@@ -84,7 +85,6 @@ type ContainerSpec struct {
 	// Ready. An adopted Container is never scaffolded; an empty repository
 	// fails NothingToAdopt. Set at creation and immutable.
 	// +kubebuilder:default=false
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adopt is immutable"
 	// +optional
 	Adopt bool `json:"adopt,omitempty"`
 
