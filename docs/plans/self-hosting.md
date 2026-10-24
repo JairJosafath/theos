@@ -102,7 +102,7 @@ Done when:
 - **Protection needs a Standard.**
   - `protectRepository` protects main only when the Container has a Standard.
   - Protected paths come from three places: `AgentNeverPaths`
-    (`internal/model/standard.go`), the CI system's `.gitea/`, and the
+    (`internal/model/fence.go`), the CI system's `.gitea/`, and the
     Standard's `protectedPaths` (at most 64). No per-Container list exists.
   - The check is `model.CheckCommand`, `make check`, which this repository
     has.
@@ -212,7 +212,12 @@ Done when:
    These matter most when the code under change is the fence itself.
 
 8. **The repository's hooks do nothing in a sandbox** (step 7). This is done
-   without editing `.claude/settings.json`, which stays the owner's.
+   without editing `.claude/settings.json`, which stays the owner's: each
+   script the hooks run (`hack/heavy-guard.sh`, `hack/close-guard.sh`,
+   `hack/lib/github.sh beat`, `hack/context-guard.sh`, `hack/pull.sh`) exits
+   0 at once when `IS_SANDBOX=1`, before reading its input, and
+   `hack/test-hack.sh` clears `IS_SANDBOX` so the hooks' tests see the hooks
+   at work inside a sandbox too (#1894).
 
 9. **The factory never upgrades itself.**
    - A verifier session moves the running factory to a new release, and only

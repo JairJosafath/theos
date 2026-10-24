@@ -240,6 +240,67 @@ var _ = Describe("Task", func() {
 			"Implementing r2", "Checking r2", "Reviewing r2", "Merged r2"}))
 	})
 
+	It("stops at its Crew's cost cap and goes on when the cap is raised (#1893)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 3)
+		crew := newCrew(ns)
+		crew.Spec.TaskBudgetUSD = 1
+		task := newTask(ns, "add-crop", "Add crop")
+		task.Labels = map[string]string{LabelCrew: crew.Name}
+		mustCreate(crew, task)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(1000))}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+		}).Should(Succeed())
+
+		By("starting no review once the runs' cost reached the cap")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			cond := condition(task.Status.Conditions, "Progressing")
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal(model.ReasonOverBudget))
+			g.Expect(cond.Message).To(Equal("The Task's runs cost $1.00, at its Crew's cap of $1; " +
+				"raise the Crew's taskBudgetUSD to go on"))
+		}).Should(Succeed())
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "add-crop-r1-review-a1"), newSandbox()))
+		}).Should(BeTrue())
+
+		By("starting the review once the cap is raised")
+		Eventually(func(g Gomega) {
+			var c c4v1alpha1.Crew
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crew), &c)).To(Succeed())
+			c.Spec.TaskBudgetUSD = 2
+			g.Expect(k8sClient.Update(ctx, &c)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+	})
+
+	It("reviews under its Crew's cost cap (#1893)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 3)
+		crew := newCrew(ns)
+		crew.Spec.TaskBudgetUSD = 1
+		task := newTask(ns, "add-crop", "Add crop")
+		task.Labels = map[string]string{LabelCrew: crew.Name}
+		mustCreate(crew, task)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(999))}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+		}).Should(Succeed())
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+	})
+
 	It("adds up what its runs cost and used, and counts the runs whose agent didn't say", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
