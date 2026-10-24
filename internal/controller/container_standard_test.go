@@ -137,6 +137,15 @@ func getContainer(g Gomega, ns string) *c4v1beta1.Container {
 	return container
 }
 
+// setProjectLicense sets the namespace's Project's spec.license to id; empty
+// clears it.
+func setProjectLicense(ns string, id c4v1alpha1.License) {
+	GinkgoHelper()
+	var project c4v1alpha1.Project
+	Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+	Expect(patch(&project, func() { project.Spec.License = id })).To(Succeed())
+}
+
 // bumpStandard moves the Standard's template to ref.
 func bumpStandard(ns, ref string) {
 	GinkgoHelper()
@@ -452,6 +461,42 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.1.0")
 		Expect(mainFile(ns, frameworkDoc)).To(Equal("pyproject\n"),
 			"the Standard sees the Framework at v1.3.0, the scaffold's, not at its newest ref")
+	})
+
+	It("renders an update with the license the repository was scaffolded with, not the current one (#1788)", func() {
+		ns := newProjectNamespace()
+		setProjectLicense(ns, "MIT")
+		refs := standardRefs()
+		const licenseDoc = "docs/license.md"
+		refs["v1.1.0"][licenseDoc+".tmpl"] = scaffold.File{Data: []byte("Licensed under {{ .License.ID }}.\n")}
+		refs["v1.2.0"][scaffold.LicensePath] = scaffold.File{Data: []byte("The Standard's own license\n")}
+		createUpdatableContainer(ns, refs, false, "")
+		eventuallyAt(ns, "v1.0.0")
+		Expect(mainFile(ns, scaffold.LicensePath)).To(ContainSubstring("Permission is hereby granted"))
+		Expect(mainFile(ns, scaffold.IdentityPath)).To(ContainSubstring("license: MIT"))
+
+		By("changing the Project's license after the scaffold, then bumping the Standard")
+		setProjectLicense(ns, "Apache-2.0")
+		bumpStandard(ns, "v1.1.0")
+		update := openedUpdate(ns, "v1.1.0")
+		Expect(update.Paths).To(ContainElement(licenseDoc))
+		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		eventuallyAt(ns, "v1.1.0")
+		Expect(mainFile(ns, licenseDoc)).To(Equal("Licensed under MIT.\n"),
+			"the update renders with the id .c4factory.yaml records, not spec.license as it stands")
+		Expect(mainFile(ns, scaffold.IdentityPath)).To(ContainSubstring("license: MIT"))
+		Expect(mainFile(ns, scaffold.LicensePath)).To(ContainSubstring("Permission is hereby granted"),
+			"the scaffolded LICENSE stays")
+		Expect(mainFile(ns, scaffold.LicensePath)).NotTo(ContainSubstring("Apache License"))
+
+		By("clearing the Project's license, then bumping to a version whose Standard writes LICENSE")
+		setProjectLicense(ns, "")
+		bumpStandard(ns, "v1.2.0")
+		message := stoppedUpdate(ns, c4v1alpha1.ReasonFailed)
+		Expect(message).To(HavePrefix("Could not render the Standard python-strict at v1.2.0"))
+		Expect(message).To(HaveSuffix(": python-strict and the operator both write "+scaffold.LicensePath),
+			"LICENSE is the operator's while the repository holds its license, whatever spec.license says now")
+		Expect(mainFile(ns, scaffold.LicensePath)).To(ContainSubstring("Permission is hereby granted"))
 	})
 
 	It("takes no step from a Container its cache has not caught up with", func() {
