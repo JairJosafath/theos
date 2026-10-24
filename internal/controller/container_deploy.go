@@ -477,11 +477,19 @@ func containerTarget(dt *c4v1beta1.DeployTarget, container *c4v1beta1.Container)
 			}
 		}
 	}
-	// A gitlab target's source is step 3 of docs/plans/gitlab-deploy.md
-	// (#1805): until it lands the source setting stays unset, and a release
-	// to a gitlab target with source set ships without its source.
+	// A gitlab target's source goes under the same settings as a github
+	// target's: the deployers read them alike (#1805).
 	if gl := dt.Spec.GitLab; gl != nil {
 		target.Settings[model.GitLabSettingTagPrefix] = model.ReleaseTagPrefix(gl.TagPrefix, container.Name)
+		if src := gl.Source; src != nil {
+			target.Settings[model.GitHubSettingSourcePath] = container.Name
+			if src.Path != nil {
+				target.Settings[model.GitHubSettingSourcePath] = *src.Path
+			}
+			if src.TagPrefix != nil {
+				target.Settings[model.GitHubSettingSourceTagPrefix] = *src.TagPrefix
+			}
+		}
 	}
 	return target
 }

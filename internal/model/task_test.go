@@ -24,6 +24,17 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionWait, message: "Waiting for Container photo-editor to be Ready"},
 		{name: "waits behind an earlier Task", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			BlockedBy: "add-crop", Round: 1, MaxRounds: 3}, want: ActionWait, message: "Waiting for Task add-crop"},
+		{name: "waits while main is red (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "failure", BaseURL: "https://ci/1", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Main's checks failed (https://ci/1): round 1 starts only on a green base"},
+		{name: "waits while main's checks run (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "pending", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Waiting for main's checks to end before round 1"},
+		{name: "starts on a green main (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "success", Round: 1, MaxRounds: 3}, want: ActionStartImplement},
+		{name: "waits behind an earlier Task before reading main", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, BlockedBy: "add-crop", Base: "failure", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Waiting for Task add-crop"},
 		{name: "starts when the Container is Ready", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			Round: 1, MaxRounds: 3}, want: ActionStartImplement},
 		{name: "a new Task starts pending", facts: TaskFacts{Protected: true, ContainerReady: true, MaxRounds: 3},
@@ -232,6 +243,20 @@ func TestNextTaskStepOverBudget(t *testing.T) {
 				t.Errorf("SlotWait = true; a Task at its cap holds no slot place")
 			}
 		})
+	}
+}
+
+// A Task on a red main waits under its own reason and looks at main again,
+// which sends no event when it turns green (#1892).
+func TestNextTaskStepBaseRed(t *testing.T) {
+	step := NextTaskStep(TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Base: "error",
+		Round: 1, MaxRounds: 3})
+	if step.Action != ActionWait || step.Reason != ReasonBaseRed || !step.Recheck {
+		t.Errorf("NextTaskStep on a red main = %+v, want a rechecked wait with reason %s", step, ReasonBaseRed)
+	}
+	if pending := NextTaskStep(TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Base: "pending",
+		Round: 1, MaxRounds: 3}); pending.Reason != "" || !pending.Recheck {
+		t.Errorf("NextTaskStep on a pending main = %+v, want a rechecked plain wait", pending)
 	}
 }
 
