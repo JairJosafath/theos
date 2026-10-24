@@ -229,7 +229,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if errors.Is(err, gitprovider.ErrBranchNotFound) {
 		// #1908: the commits History found are on another branch; no retry
 		// makes main appear.
-		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonNoDefaultBranch,
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonNoDefaultBranch,
 			fmt.Sprintf("Repository %s has commits but no %s branch; an adopted repository names its project and "+
 				"Container and carries its Standard's files on %s, so rename its default branch to %s first",
 				repo.WebURL, gitprovider.DefaultBranch, gitprovider.DefaultBranch, gitprovider.DefaultBranch))
