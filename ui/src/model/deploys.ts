@@ -50,15 +50,39 @@ export const GITHUB_SECRET_KEYS = {
 } as const
 
 /**
- * The image a Container's release goes to on GHCR at a github target:
- * ghcr.io/owner/name/<container>, lower-cased, or ghcr.io/owner/name when
- * the target's tagPrefix is "" (model.GitHubImage). Undefined for another member.
+ * The hosts a github target publishes to, as model.GitHubHostsOf builds them:
+ * github.com and ghcr.io when url is unset, else the GitHub Enterprise Server
+ * at url (its web site) and its registry at containers.<host> (#1809).
+ * Undefined for another member.
+ */
+export function githubHosts(target: DeployTarget): { web: string; registry: string } | undefined {
+  const github = target.spec.github
+  if (!github) return undefined
+  const url = (github.url ?? '').replace(/\/+$/, '')
+  if (url === '') return { web: 'https://github.com', registry: 'ghcr.io' }
+  return { web: url, registry: `containers.${url.replace(/^https:\/\//, '')}` }
+}
+
+/** The page of a github target's releases on its host: github.com's, or the Enterprise Server's at url (#1809). */
+export function githubReleasesURL(target: DeployTarget): string | undefined {
+  const hosts = githubHosts(target)
+  if (!hosts || !target.spec.github) return undefined
+  return `${hosts.web}/${target.spec.github.repository}/releases`
+}
+
+/**
+ * The image a Container's release goes to at a github target's registry:
+ * <registry>/owner/name/<container>, lower-cased, or <registry>/owner/name
+ * when the target's tagPrefix is "" (model.GitHubImage); the registry is
+ * ghcr.io, or the Enterprise Server's at url (githubHosts). Undefined for
+ * another member.
  */
 export function githubImage(target: DeployTarget, container = '<container>'): string | undefined {
   const github = target.spec.github
-  if (!github) return undefined
+  const hosts = githubHosts(target)
+  if (!github || !hosts) return undefined
   const repository = github.tagPrefix === '' ? github.repository : `${github.repository}/${container}`
-  return `ghcr.io/${repository.toLowerCase()}`
+  return `${hosts.registry}/${repository.toLowerCase()}`
 }
 
 /** The target's tier as asked; unset is development, the CRD's documented default. */
