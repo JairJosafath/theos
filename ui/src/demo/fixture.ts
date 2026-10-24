@@ -18,6 +18,7 @@ import type {
   Crew,
   DataStore,
   DeployTarget,
+  Domain,
   GitProvider,
   Person,
   Project,
@@ -107,6 +108,7 @@ export function demoStory(now: number): StoryData {
         description: 'Catalog, cart and ordering',
         needs: ['Customers can reorder in two clicks', 'Managers change prices without a release'],
         kpis: ['Checkout conversion', 'Time to first order'],
+        domainRefs: ['webshop'],
       },
       status: {
         containers: 5,
@@ -178,7 +180,9 @@ export function demoStory(now: number): StoryData {
           'small@v1.0.0',
           'k8s-manifests@v1.1.0',
           'postgres@v1.1.0',
+          'webshop@v1.0.0',
         ],
+        scaffoldedDomains: ['webshop'],
         standard: { name: 'python-standard', ref: 'v1.2.0' },
         appliedRelationships: ['orders-api-to-orders-db'],
         appliedConnectors: [{ relationship: 'orders-api-to-orders-db', dataStore: 'orders-db', connector: 'postgres' }],
@@ -215,6 +219,7 @@ export function demoStory(now: number): StoryData {
           cond('ChoicesValid', 'True', 'Valid', 'Every catalog entry supports service', ago(10700)),
           cond('RepositoryCreated', 'True', 'Created', `Created ${GITEA}/webshop/orders-api`, ago(10690)),
           cond('Scaffolded', 'True', 'Scaffolded', 'Pushed the initial commit', ago(10680)),
+          cond('DomainsApplied', 'True', 'AppliedAtScaffold', '', ago(10680)),
           cond(
             'Deployed',
             'False',
@@ -252,6 +257,14 @@ export function demoStory(now: number): StoryData {
           cond('RepositoryCreated', 'True', 'Created', `Created ${GITEA}/webshop/inventory-api`, ago(7990)),
           cond('Scaffolded', 'True', 'Scaffolded', 'Pushed the initial commit', ago(7980)),
           cond('BundleCurrent', 'True', 'Current', 'Bundle python-service names what it was scaffolded from', ago(600)),
+          // Scaffolded before webshop-core named the webshop Domain: reported, never applied.
+          cond(
+            'DomainsApplied',
+            'False',
+            'AddedAfterScaffold',
+            'Domains added after the scaffold: webshop; scaffolding happens once',
+            ago(600),
+          ),
         ],
       },
     ),
@@ -967,6 +980,18 @@ export function demoStory(now: number): StoryData {
       },
     },
   ]
+  const domains: Domain[] = [
+    {
+      kind: 'Domain',
+      metadata: meta('webshop', created),
+      spec: {
+        displayName: 'Webshop',
+        description: 'What a webshop is: catalog, cart, checkout and orders, and the words the team uses for them.',
+        template: { url: `${GITEA}/templates/webshop-domain`, ref: 'v1.0.0' },
+      },
+    },
+  ]
+
   const gitProviders: GitProvider[] = [
     {
       apiVersion: API_VERSION,
@@ -1294,6 +1319,7 @@ export function demoStory(now: number): StoryData {
     computes,
     deployments,
     bundles,
+    domains,
     gitProviders,
     deployTargets,
     crews,

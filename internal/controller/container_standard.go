@@ -52,6 +52,11 @@ type standardUpdate struct {
 	// first use when frameworkRead.
 	frameworkPaths []string
 	frameworkRead  bool
+	// license is the license the repository was scaffolded with, read on
+	// first use when licenseRead; a Standard that writes LICENSE while the
+	// repository carries one collides.
+	license     scaffold.License
+	licenseRead bool
 	// answered says the pass acted on or ignored the person's answer: the
 	// standard-take and standard-keep annotations are removed once the status
 	// is written.
@@ -291,8 +296,13 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		return
 	}
 
+	license, err := u.scaffoldedLicense(ctx, gitCtx, git)
+	if err != nil {
+		u.renderFailed(ctx, err)
+		return
+	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
+		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 	in.FrameworkFiles, err = u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		// Not the Standard's version's fault: the next pass plans it again.
@@ -510,8 +520,12 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
+	license, err := u.scaffoldedLicense(ctx, gitCtx, git)
+	if err != nil {
+		return nil, err
+	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
+		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 	paths, err := u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		return nil, err
@@ -573,8 +587,12 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if err != nil {
 			return nil, err
 		}
+		license, err := u.scaffoldedLicense(ctx, gitCtx, git)
+		if err != nil {
+			return nil, err
+		}
 		in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-			scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope)
+			scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref,
 			Files: files})
 		if err != nil {
@@ -584,6 +602,20 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 	}
 	u.frameworkRead = true
 	return u.frameworkPaths, nil
+}
+
+// scaffoldedLicense is the repository's license
+// (ContainerReconciler.scaffoldedLicense), read at most once per pass.
+func (u *standardUpdate) scaffoldedLicense(ctx, gitCtx context.Context, git *gitAccess) (scaffold.License, error) {
+	if u.licenseRead {
+		return u.license, nil
+	}
+	license, err := u.r.scaffoldedLicense(ctx, gitCtx, git, u.container)
+	if err != nil {
+		return scaffold.License{}, err
+	}
+	u.license, u.licenseRead = license, true
+	return license, nil
 }
 
 // at is the Standard's render at ref.
@@ -977,7 +1009,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
 	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status), "")
+		scaffoldedOperations(u.container, u.status), "", scaffold.License{})
 	if update.Take {
 		taken := make([]model.TakenFile, 0, len(update.Paths))
 		for _, p := range update.Paths {
@@ -991,7 +1023,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
 	title = model.StandardUpdateTitle(s.Name, from, to)
 	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status), ""), s.Name,
+		scaffoldedOperations(u.container, u.status), "", scaffold.License{}), s.Name,
 		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message

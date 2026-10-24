@@ -95,7 +95,7 @@ type ContainerReconciler struct {
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles;domains,verbs=get;list;watch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets;projects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 

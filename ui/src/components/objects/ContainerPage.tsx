@@ -12,7 +12,7 @@
 
 import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
-import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Relationship, Session } from '../../k8s/types'
+import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Domain, Relationship, Session } from '../../k8s/types'
 import { choicesOf } from '../../model/choices'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
@@ -37,6 +37,7 @@ export function ContainerPage({
   briefs,
   crews,
   deployTargets,
+  domains,
   writer,
 }: {
   container: Container
@@ -46,6 +47,8 @@ export function ContainerPage({
   briefs: Brief[]
   crews: Crew[]
   deployTargets: DeployTarget[]
+  /** The catalog's Domains, for their pinned refs; the ones in the repository are status.scaffoldedDomains. */
+  domains: Domain[]
   writer: ContainerWriter
 }) {
   const session = useContext(SessionContext)
@@ -172,6 +175,29 @@ export function ContainerPage({
             <a href={pageHref(ns, 'GitProvider', container.spec.gitProviderRef.name)}>
               {container.spec.gitProviderRef.name}
             </a>
+          </dd>
+          <dt>Domains</dt>
+          <dd>
+            {/* What the repository holds (status.scaffoldedDomains), not what its system names now:
+                a Domain is rendered once, at the scaffold; DomainsApplied above says when they differ. */}
+            {!status?.scaffoldedFrom?.length ? (
+              <span className="muted">Not scaffolded yet.</span>
+            ) : status.scaffoldedDomains?.length ? (
+              <ul className="object-list">
+                {status.scaffoldedDomains.map((d) => {
+                  const from = status.scaffoldedFrom?.map(splitTemplateRef).find((t) => t.name === d)
+                  const version = from?.version ?? domains.find((e) => e.metadata.name === d)?.spec.template.ref
+                  return (
+                    <li key={d} className="mono">
+                      <a href={pageHref(ns, 'Domain', d)}>{d}</a>
+                      {version ? <span className="muted"> @ {version}</span> : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <span className="muted">None.</span>
+            )}
           </dd>
           <dt>Scaffolded from</dt>
           <dd>

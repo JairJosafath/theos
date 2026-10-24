@@ -39,6 +39,7 @@ export type LifecycleKind =
   | 'Standard'
   | 'Compute'
   | 'Bundle'
+  | 'Domain'
   | 'Deployment'
   | 'GitProvider'
   | 'DeployTarget'
@@ -238,6 +239,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   Bundle: phaseless(
     'The four catalog entries a team picked together. A Container names it instead of the four; the factory expands it into the Container’s status until the scaffold, and marks a Ready Container BundleCurrent=False when the Bundle changes afterwards.',
     'Nothing: a Ready Container keeps what the Bundle named when it was scaffolded, and a Bundle fix reaches a Container not yet scaffolded by itself. To follow a changed Bundle after the scaffold, create a new Container.',
+  ),
+  Domain: phaseless(
+    'A catalog entry: what a system is about. Its system names it, and it is rendered into each of the system’s Containers once, at their scaffold, under docs/agents/domain/<name>/.',
+    'Nothing: a scaffolded Container keeps the Domains it was scaffolded with, and a new template ref or a Domain named later reaches only new Containers; the Container reports the difference as DomainsApplied.',
   ),
   GitProvider: phaseless(
     'Where the factory creates each Container’s repository, with the credentials of the Secret it names.',

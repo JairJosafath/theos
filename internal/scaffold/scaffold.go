@@ -105,6 +105,11 @@ type Input struct {
 	// the Framework renders, and a Standard update from the Framework at its
 	// recorded ref. The Framework's own render has none.
 	FrameworkFiles []string
+	// License is the license the repository is scaffolded with: the
+	// Container's spec.license, else its Project's (ResolveLicense). Build
+	// writes its text as LICENSE and records the id in .c4factory.yaml; with
+	// an empty ID it writes none, and a layer may.
+	License License
 }
 
 // Layer is one catalog entry's template repository at a pinned ref.
@@ -266,11 +271,19 @@ func Build(in Input, layers []Layer, opts Options) (Result, error) {
 		Type:           in.Type,
 		ScaffoldedFrom: result.ScaffoldedFrom,
 		Checks:         scaffoldedChecks(in),
+		License:        in.License.ID,
 	}.Marshal()
 	if err != nil {
 		return Result{}, err
 	}
 	out[IdentityPath] = File{Data: identity}
+	if in.License.ID != "" {
+		text, err := licenseText(in.License)
+		if err != nil {
+			return Result{}, err
+		}
+		out[LicensePath] = File{Data: text}
+	}
 	return result, nil
 }
 
@@ -335,8 +348,10 @@ func checkCI(in Input, layer Layer) error {
 	return &UnsupportedCIError{Layer: layer.Name, CI: in.CI.Name, Supported: supported}
 }
 
-func isOperatorPath(p string) bool {
-	return p == IdentityPath || strings.HasPrefix(p, devcontainerDir)
+// isOperatorPath says the operator writes p, so no layer may: the identity
+// file, .devcontainer/, and LICENSE while a license is set.
+func (in Input) isOperatorPath(p string) bool {
+	return p == IdentityPath || strings.HasPrefix(p, devcontainerDir) || (in.License.ID != "" && p == LicensePath)
 }
 
 // renderLayer returns the files a layer adds to the repository: everything except
