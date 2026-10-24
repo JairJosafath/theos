@@ -624,10 +624,10 @@ catalog:
         supportedTypes: [cli]
     - kind: Framework
       name: aws-lambda-ts
-      ref: v1.4.0
+      ref: v1.5.0
       spec:
         displayName: Serverless API on AWS (Lambda, TypeScript)
-        description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
+        description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
         supportedTypes: [function]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -839,6 +839,17 @@ catalog:
         ## instead of getting a file nothing calls (docs/plans/aws-rds.md,
         ## decision 7).
         wiredBy: [aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-fargate-ts, aws-ec2-ts, aws-queue-ts, aws-event-ts, aws-schedule-ts]
+    - kind: Connector
+      name: rds
+      ref: v1.0.0
+      spec:
+        displayName: Amazon Aurora PostgreSQL
+        description: "An Aurora Serverless v2 PostgreSQL 16 cluster in the Container's CDK stack, one per Container with a database named after it, encrypted with its own key, its credentials a Secrets Manager secret (rotated every 30 days in production), the Data API on and IAM database authentication on; kept, protected, snapshotted and backed up in production like the Framework's own tables, paused and thrown away in development. Hands whatever the Framework connects RDS_CLUSTER_ARN, RDS_SECRET_ARN and RDS_DATABASE and the Data API grants; in the Framework's VPC also RDS_HOST and RDS_PORT, else in an isolated VPC of its own. aws-lambda-ts wires it; a Framework that doesn't fails the Container."
+        supportedTypes: [function]
+        ## The Frameworks whose infra/connectors.ts calls connectRDS; a
+        ## Container on any other is refused at ChoicesValid (NotWired)
+        ## (docs/plans/aws-rds.md, decisions 6 and 7).
+        wiredBy: [aws-lambda-ts]
     ## A Domain is what a SoftwareSystem is about (spec.domainRefs); every
     ## Container of that system gets it under docs/agents/domain/<name>/,
     ## whatever its type, so it has no supportedTypes (docs/plans/domains.md).
