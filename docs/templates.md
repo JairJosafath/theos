@@ -521,7 +521,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.21.0)
+### aws-standard (v1.21.1)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -545,7 +545,12 @@ check every cluster, the selection by the `CfnDBCluster`'s
 `attrDbClusterArn` (the L2's `clusterArn` is a `formatArn` over a `Ref`, an
 ARN written out); where the tier has no point-in-time recovery it
 acknowledges `AwsSolutions-SMG4` on every secret, and where it keeps no
-data `AwsSolutions-RDS10` on every cluster (#1921).
+data `AwsSolutions-RDS10` on every cluster (#1921). v1.21.1 is the
+release that carries the `attrDbClusterArn` selection, the key-of-the-stack
+encryption rule and the secret acknowledgement, which landed after v1.21.0
+was tagged, and its `infra/standard.test.ts` passes a rendered copy's `tsc`
+under `exactOptionalPropertyTypes`: the probe cluster's overrides allow
+`undefined` and its props are cast as `DatabaseClusterProps` (#1987).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
