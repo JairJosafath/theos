@@ -159,6 +159,10 @@ const (
 	// ReasonNothingToAdopt: the Container has spec.adopt set but its
 	// repository has no commits; there is nothing to take over.
 	ReasonNothingToAdopt = "NothingToAdopt"
+	// ReasonNoDefaultBranch: an adopted repository has commits but no main
+	// branch to read the identity and the Standard's files from; rename its
+	// default branch to main before adopting it.
+	ReasonNoDefaultBranch = "NoDefaultBranch"
 	// ReasonIdentityMismatch: an adopted repository's main has no
 	// .c4factory.yaml, or one naming another project or Container.
 	ReasonIdentityMismatch = "IdentityMismatch"

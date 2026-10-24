@@ -129,6 +129,17 @@ var _ = Describe("Container adoption", func() {
 		Expect(cond.Message).To(ContainSubstring("differs from Standard python-strict at v1.0.0 in AGENTS.md"))
 	})
 
+	It("fails NoDefaultBranch when the repository's only branch is not main (#1908)", func() {
+		ns := newProjectNamespace()
+		gitFake.seedRepoBranch(ns, "orders-api", "master", "Import orders-api\n", adoptableFiles(ns))
+		createAdoptingWebshop(ns, true)
+
+		cond := failedAdoption(ns, c4v1alpha1.ReasonNoDefaultBranch)
+		Expect(cond.Message).To(ContainSubstring("has commits but no main branch"))
+		Expect(cond.Message).To(ContainSubstring("rename its default branch to main"))
+		Expect(gitFake.protectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+	})
+
 	It("fails NothingToAdopt on an empty repository", func() {
 		ns := newProjectNamespace()
 		createAdoptingWebshop(ns, true)
