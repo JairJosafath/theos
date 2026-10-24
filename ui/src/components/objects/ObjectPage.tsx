@@ -113,6 +113,7 @@ function pageFor(
             crews={data.crews}
             deployTargets={data.deployTargets}
             domains={data.domains}
+            project={data.project}
             writer={containerWriter}
           />
         )

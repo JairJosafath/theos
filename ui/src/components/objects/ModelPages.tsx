@@ -72,6 +72,12 @@ export function ProjectPage({
           </dd>
           <dt>Active sessions</dt>
           <dd>{count(status?.activeSessions)}</dd>
+          {project.spec?.license ? (
+            <>
+              <dt>License</dt>
+              <dd className="mono">{project.spec.license}</dd>
+            </>
+          ) : null}
           {status?.summary ? (
             <>
               <dt>Summary</dt>
