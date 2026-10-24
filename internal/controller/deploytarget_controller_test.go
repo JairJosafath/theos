@@ -122,6 +122,12 @@ var _ = Describe("DeployTarget", func() {
 		Entry("github.com as a server url (#1605)", func(dt *c4v1beta1.DeployTarget) {
 			dt.Spec.GitHub.URL = "https://github.com"
 		}, "leave it unset for github.com"),
+		Entry("github.com in capitals as a server url (#1809)", func(dt *c4v1beta1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://GitHub.com"
+		}, "leave it unset for github.com"),
+		Entry("www.github.com in capitals with a port as a server url (#1809)", func(dt *c4v1beta1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://WWW.GitHub.COM:443"
+		}, "leave it unset for github.com"),
 		Entry("more than 50 parameters", func(dt *c4v1beta1.DeployTarget) {
 			dt.Spec.Parameters = map[string]string{}
 			for i := range 51 {

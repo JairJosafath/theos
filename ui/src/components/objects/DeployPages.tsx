@@ -19,6 +19,7 @@ import {
   describeApproval,
   GITHUB_SECRET_KEYS,
   githubImage,
+  githubReleasesURL,
   githubSource,
   healthTone,
   memberOf,
@@ -51,9 +52,10 @@ function Badge({ tone, label, title }: { tone: Tone; label: string; title?: stri
 function Where({ target }: { target: DeployTarget }) {
   const { where } = memberOf(target)
   if (!where) return <span className="muted">not shown by this UI</span>
-  if (target.spec.github)
+  const releases = githubReleasesURL(target)
+  if (releases)
     return (
-      <a className="mono" href={`https://github.com/${where}/releases`} target="_blank" rel="noreferrer">
+      <a className="mono" href={releases} target="_blank" rel="noreferrer">
         {where} <ExternalLinkIcon size={12} />
       </a>
     )
@@ -113,7 +115,7 @@ function GitHubKeys() {
       The operator reads its keys <span className="mono">{GITHUB_SECRET_KEYS.token}</span> (a fine-grained token), or{' '}
       <span className="mono">{appId}</span>, <span className="mono">{installationId}</span> and{' '}
       <span className="mono">{privateKey}</span> (a GitHub App); and{' '}
-      <span className="mono">{GITHUB_SECRET_KEYS.packages}</span>, when there, for images on GHCR.
+      <span className="mono">{GITHUB_SECRET_KEYS.packages}</span>, when there, for images on its registry.
     </p>
   )
 }
