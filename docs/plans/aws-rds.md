@@ -137,21 +137,21 @@ scaffolded repository verify it; nothing is deployed.
 
 ## Steps
 
-1. **A Connector entry names the Frameworks that wire it** (#S1).
+1. **A Connector entry names the Frameworks that wire it** (#1920).
    `ConnectorSpec.wiredBy`, `make manifests`, the `ChoicesValid` rule in
    `internal/model` and its envtest, `dynamodb`'s entry in the chart. Done
    when a table test in `internal/model` and an envtest show a DataStore on
    a Connector naming `wiredBy` is refused for a Framework outside it, with
    the reason naming the Connector and the Framework, and accepted for one
    inside it or when `wiredBy` is unset; `make validate-yaml` passes.
-2. **The Standard knows a relational cluster** (#S2). `aws-standard` minor:
+2. **The Standard knows a relational cluster** (#1921). `aws-standard` minor:
    `BACKED_UP_TYPES`, `selectionFaults` over clusters, the encryption,
    protection, removal and recovery rules' cluster branch, the `SMG4`
    acknowledgement in development, and the README's list of what it checks.
    Done when `standard.test.ts` has a case per rule on a stack with a
    cluster in either tier, and a selection that leaves the cluster out, or
    names it by an ARN written out, has a fault.
-3. **The `rds` Connector v1.0.0, wired by `aws-lambda-ts`** (#S3). Depends on
+3. **The `rds` Connector v1.0.0, wired by `aws-lambda-ts`** (#1923). Depends on
    steps 1 and 2. `infra/connector_rds.ts.tmpl` (the guard, `connectRDS`,
    `DataStoreUser` with `network`, the constants) and its test; the catalog
    entry with `wiredBy: [aws-lambda-ts]`, `supportedTypes: [function]`, and
@@ -162,17 +162,17 @@ scaffolded repository verify it; nothing is deployed.
    `templateCombos` has the rows; and a `hack/render` copy with `rds` passes
    its own `make check` in both tiers under CDK Nag and cfn-lint (output
    under `docs/screenshots/`).
-4. **`aws-lambda-py` and `aws-lambda-go` wire it** (#S4). Depends on step 3.
+4. **`aws-lambda-py` and `aws-lambda-go` wire it** (#1924). Depends on step 3.
    Done as step 3, for these two; `wiredBy` grows.
 5. **`aws-queue-ts`, `aws-event-ts` and `aws-schedule-ts` wire it; the
-   Connector supports `worker` and `job`** (#S5). Depends on step 3. Done as
+   Connector supports `worker` and `job`** (#1925). Depends on step 3. Done as
    step 3, for these three.
 6. **`aws-fargate-ts` and `aws-ec2-ts` wire it with their network; the
-   Connector supports `service`** (#S6). Depends on step 3. Each passes
+   Connector supports `service`** (#1926). Depends on step 3. Each passes
    `network` and its rendered copy's test shows the ingress rule, `RDS_HOST`
    and `RDS_PORT`, and no new VPC. Done as step 3, for these two.
 7. **`postgres` refuses AWS, the planner plans the store, the docs say so**
-   (#S7). Depends on steps 4 to 6. `postgres` minor with decision 8's guard
+   (#1927). Depends on steps 4 to 6. `postgres` minor with decision 8's guard
    and a scaffold test; `internal/model/planner.md` and its tests; the
    runbook's restore sections per Framework, the style guide's relational
    rule, the implementer guide, `docs/design.md`'s AWS line. Done when a
