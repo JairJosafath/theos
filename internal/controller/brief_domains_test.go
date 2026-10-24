@@ -20,7 +20,11 @@ var _ = Describe("Brief rounds with Domains", func() {
 		// A Standard that fits python-fastapi, so the stand-in picks the
 		// Framework whose template the fake pins, and k8s-manifests ships it.
 		mustCreate(newStandard(ns, "python-standard", "python-fastapi"))
-		mustCreate(newDomain(ns, "webshop"), newDomain(ns, "payments"))
+		// addDomainTemplate creates each Domain and registers the template it
+		// pins with the fake; without the templates the Domain layer failed
+		// UnpinnedRef and the Brief stayed Applying (seen landing #1617).
+		addDomainTemplate(ns, "webshop", markdownDomain("webshop"))
+		addDomainTemplate(ns, "payments", markdownDomain("payments"))
 		brief := newBrief(ns, "cel-lens")
 		brief.Spec.Idea = "A webshop for plants."
 		mustCreate(brief)
