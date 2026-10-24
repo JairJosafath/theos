@@ -30,7 +30,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
   (what ships, by type), `ShipMarker` and `ReleaseBody` (finding our
   release), `NextSourceStep` with `SourceShip` (the snapshot, its commit and
   its tag), `PublishChecks`, `FactoryOwnPaths`, `SourceOverlaps`,
-  `ReleaseTagPrefix`, `GitHubImage` and `GitHubImageNotes`.
+  `ReleaseTagPrefix`, `ImageRepository` (`GitHubImage` before step 4) and
+  `GitHubImageNotes`.
 - `NextReleaseStep` is GitHub's: a draft, retargeted, files uploaded to it,
   then published. GitLab has no drafts.
 - The GitHub client and its fake are in `internal/gitprovider` and in

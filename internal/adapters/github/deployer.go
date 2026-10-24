@@ -186,7 +186,7 @@ func (d *Deployer) packages(t ports.Target) (r oci.Registry, ok bool) {
 // imageRepository is where t keeps app's image at its registry.
 func imageRepository(t ports.Target, app string) string {
 	_, container, _ := strings.Cut(app, "/")
-	return model.GitHubImage(t.Settings[model.GitHubSettingRepository], container,
+	return model.ImageRepository(t.Settings[model.GitHubSettingRepository], container,
 		t.Settings[model.GitHubSettingTagPrefix])
 }
 
