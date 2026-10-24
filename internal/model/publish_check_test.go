@@ -131,7 +131,7 @@ func TestPublishChecks(t *testing.T) {
 		{"LICENSE.txt", []CheckedFile{{Path: "LICENSE.txt", Size: 1}, readme}, nil},
 		{"COPYING", []CheckedFile{{Path: "COPYING", Size: 1}, readme}, nil},
 		{"README", []CheckedFile{license, {Path: "README", Size: 1}}, nil},
-		{"no license", []CheckedFile{readme}, []string{PublishLicenseMissing}},
+		{"no license (#1788: the message names spec.license)", []CheckedFile{readme}, []string{PublishLicenseMissing}},
 		{"empty license", []CheckedFile{{Path: "LICENSE", Size: 0}, readme}, []string{PublishLicenseMissing}},
 		{"license in a subfolder", []CheckedFile{{Path: "docs/LICENSE", Size: 9}, readme},
 			[]string{PublishLicenseMissing}},
@@ -156,7 +156,8 @@ func TestPublishChecks(t *testing.T) {
 	}
 	got := PublishProblemsMessage(PublishChecks([]CheckedFile{secret("b.txt", 1), secret("a.txt", 7)}), 0)
 	want := "a.txt line 7: a private key; b.txt line 1: a private key; " +
-		"no license: add a non-empty LICENSE, LICENSE.md, LICENSE.txt or COPYING at the root; " +
+		"no license: set spec.license on the Project or the Container before it is scaffolded, " +
+		"or commit a non-empty LICENSE, LICENSE.md, LICENSE.txt or COPYING at the root, the only way once scaffolded; " +
 		"no README: add a non-empty README.md or README at the root"
 	if got != want {
 		t.Errorf("message\n%s\nwant\n%s", got, want)
