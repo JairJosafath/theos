@@ -54,12 +54,13 @@ say() { echo "make test: $*" >&2; }
 # readers: a path (a directory or file, relative to the module root) Go tests
 # read without importing it, and the directories of the packages whose tests
 # do. api/ holds only the package api/v1alpha1, whose importers the graph
-# finds; no test reads it as files. A listed directory that holds no package
-# of the module is ignored.
+# finds; internal/scaffold's tests read its License enum as a file (#1788),
+# since the layering forbids the import. A listed directory that holds no
+# package of the module is ignored.
 declare -A readers=(
   [templates]="hack/template-go-kubebuilder internal/controller internal/gitprovider internal/model internal/scaffold test/chart"
   [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
-  [api]=""
+  [api]="internal/scaffold"
   [dist]="internal/model test/chart"
   [test/crds]="internal/controller internal/adapters/argocd"
   [hack/seed]="test/chart"

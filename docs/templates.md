@@ -174,7 +174,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.6.0)
+### python-standard (v1.7.0)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
@@ -186,6 +186,10 @@ without its port, which `uv` matches on, and its login is `__token__` when
 `C4_PYPI_TOKEN` is set (#1696). Since v1.6.0 it supports a `job` with
 python-cli, and `AGENTS.md` has a job's rules: run once, exit non-zero on
 failure, safe to redo (#1595).
+Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -200,7 +204,7 @@ failure, safe to redo (#1595).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.6.2)
+### ts-standard (v1.7.0)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
@@ -210,6 +214,10 @@ own registries and the workflow's token, so `npm ci` fetches factory
 packages; `AGENTS.md` says how one is added (#1231). Since v1.6.2 `~/.netrc`
 names the index's host without its port, which `uv` matches on, and its
 login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
+Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes", "node cli" and "vscode extension".
@@ -414,10 +422,14 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.3.0) and go-operator-standard (v1.3.1)
+### go-standard (v1.4.0) and go-operator-standard (v1.4.0)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
+Since v1.4.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
   go-kubebuilder. go-standard: its `make check` in `make test-templates`'
@@ -468,7 +480,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.19.1)
+### aws-standard (v1.20.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -479,6 +491,10 @@ host without its port, as ts-standard v1.6.2's does (#1696). Since v1.19.0
 `dist/` (`infra/dist.ts`, tested by `infra/dist.test.ts` on a synth) for
 gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
 (#1610).
+Since v1.20.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

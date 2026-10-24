@@ -20,7 +20,8 @@ var _ = Describe("Brief rounds with Domains", func() {
 		// A Standard that fits python-fastapi, so the stand-in picks the
 		// Framework whose template the fake pins, and k8s-manifests ships it.
 		mustCreate(newStandard(ns, "python-standard", "python-fastapi"))
-		mustCreate(newDomain(ns, "webshop"), newDomain(ns, "payments"))
+		addDomainTemplate(ns, "webshop", markdownDomain("webshop"))
+		addDomainTemplate(ns, "payments", markdownDomain("payments"))
 		brief := newBrief(ns, "cel-lens")
 		brief.Spec.Idea = "A webshop for plants."
 		mustCreate(brief)
@@ -50,9 +51,11 @@ var _ = Describe("Brief rounds with Domains", func() {
 		By("applying it: the new system names the webshop Domain, the Brief's idea's word, and the summary says so")
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			// The condition first: while the round waits, its message names
+			// what for (#1938: the phase alone hid the Container's failure).
 			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonApplied)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
 		}).Should(Succeed())
 		system := &c4v1alpha1.SoftwareSystem{}
 		Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), system)).To(Succeed())
