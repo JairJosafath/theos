@@ -143,7 +143,7 @@ const names = (s: WatchState<K8sObject>) => s.items.map((i) => i.metadata.name).
 const noSleep = () => Promise.resolve()
 
 describe('ResourceWatcher', () => {
-  const path = '/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers'
+  const path = '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers'
 
   it('lists, then applies watch events from the list resourceVersion', async () => {
     const api = fakeFetch([

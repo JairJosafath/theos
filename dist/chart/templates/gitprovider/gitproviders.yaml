@@ -30,7 +30,7 @@ data:
 {{- fail (printf "gitProviders[%d].token and username are gone: create a Secret with keys username and token, and name it in gitProviders[%d].existingSecret" $i $i) }}
 {{- end }}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: {{ $name }}

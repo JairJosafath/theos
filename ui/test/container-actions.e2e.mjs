@@ -128,7 +128,7 @@ describe('the Container page’s actions', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/containers/orders-api`)
+      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
       assert.deepEqual(Object.keys(w.body.metadata.annotations), ['c4.factory.io/retry'])
       assert.ok(!Number.isNaN(Date.parse(w.body.metadata.annotations['c4.factory.io/retry'])))
     })
@@ -142,7 +142,7 @@ describe('the Container page’s actions', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/containers/orders-api`)
+      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
       assert.deepEqual(w.body, [{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }])
       await checks.getByText('The repository still runs the full check on every change').waitFor({ timeout: 5000 })
     })

@@ -130,7 +130,7 @@ describe('the Standard page’s ref bump', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/standards/python-standard`)
+      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/standards/python-standard`)
       assert.deepEqual(w.body, [{ op: 'add', path: '/spec/template/ref', value: 'v1.3.0' }])
       // The watch brings the new ref to the page's template facts.
       await page.locator('.facts dd', { hasText: /^v1\.3\.0$/ }).waitFor({ timeout: 5000 })

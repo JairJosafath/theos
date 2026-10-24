@@ -11,7 +11,7 @@
 # the image from the in-cluster Gitea; on a real cluster, install Argo CD and
 # point the Container's registry at one with a real name and TLS
 # (docs/getting-started.md, "Deploy to a cluster with Argo CD").
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DeployTarget
 metadata:
   name: kind-cluster

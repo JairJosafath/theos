@@ -82,8 +82,8 @@ describe('server.mjs', () => {
       if (req.method === 'POST' || req.method === 'PATCH') {
         return json(req.method === 'POST' ? 201 : 200, { kind: 'Brief', metadata: { name: 'echo' } })
       }
-      const briefs = '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/'
-      if (url.pathname === '/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects') {
+      const briefs = '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/'
+      if (url.pathname === '/apis/c4.factory.io/v1beta1/namespaces/webshop/projects') {
         return json(200, { kind: 'ProjectList', metadata: {}, items: [{ metadata: { name: 'webshop' } }] })
       }
       if (url.pathname === `${briefs}lens`) {
@@ -101,7 +101,7 @@ describe('server.mjs', () => {
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
       }
-      if (url.pathname === '/apis/c4.factory.io/v1alpha1/namespaces/webshop/crews/orders-api') {
+      if (url.pathname === '/apis/c4.factory.io/v1beta1/namespaces/webshop/crews/orders-api') {
         return json(200, { kind: 'Crew', metadata: { name: 'orders-api', resourceVersion: '7' }, spec: {} })
       }
       if (url.pathname === `${briefs}gone`) {
@@ -171,7 +171,7 @@ describe('server.mjs', () => {
       seen.map((r) => r.url).sort(),
       [
         '/api/v1/nodes',
-        '/apis/c4.factory.io/v1alpha1/projects',
+        '/apis/c4.factory.io/v1beta1/projects',
         '/apis/metrics.k8s.io/v1beta1/nodes',
         ...namespaces.map((ns) => `/api/v1/namespaces/${ns}/pods`),
         ...namespaces.map((ns) => `/apis/metrics.k8s.io/v1beta1/namespaces/${ns}/pods`),
@@ -187,7 +187,7 @@ describe('server.mjs', () => {
 
   it('proxies GET to the API with path and query, and without client credentials', async () => {
     seen.length = 0
-    const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers?limit=5`, {
+    const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?limit=5`, {
       headers: {
         authorization: `Bearer ${browserToken}`,
         cookie: `session=${browserToken}`,
@@ -201,7 +201,7 @@ describe('server.mjs', () => {
     assert.equal(seen.length, 1)
     const [req] = seen
     assert.equal(req.method, 'GET')
-    assert.equal(req.url, '/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers?limit=5')
+    assert.equal(req.url, '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?limit=5')
     assert.equal(req.headers.authorization, undefined)
     assert.equal(req.headers.cookie, undefined)
     assert.equal(req.headers['impersonate-user'], undefined)
@@ -215,11 +215,11 @@ describe('server.mjs', () => {
   it('reads the factory kinds across namespaces: Tasks, Agents and Crews', async () => {
     for (const plural of ['tasks', 'agents', 'crews']) {
       seen.length = 0
-      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/${plural}`)
+      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/${plural}`)
       assert.equal(res.status, 200)
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
-        [['GET', `/apis/c4.factory.io/v1alpha1/${plural}`]],
+        [['GET', `/apis/c4.factory.io/v1beta1/${plural}`]],
       )
     }
   })
@@ -227,7 +227,7 @@ describe('server.mjs', () => {
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']) {
     it(`rejects ${method} under /k8s/ with 405 and never calls the API`, async () => {
       seen.length = 0
-      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api`, {
+      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api`, {
         method,
         body: method === 'POST' || method === 'PUT' || method === 'PATCH' ? '{}' : undefined,
       })
@@ -238,9 +238,9 @@ describe('server.mjs', () => {
   }
 
   describe('the three writes', () => {
-    const briefsPath = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs'
+    const briefsPath = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs'
     const brief = {
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'lens', namespace: 'webshop', labels: { x: 'y' }, finalizers: ['f'] },
       spec: { idea: 'A camera app that reads labels aloud' },
@@ -267,15 +267,15 @@ describe('server.mjs', () => {
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
         [
-          ['GET', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects'],
-          ['POST', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs?fieldManager=c4-factory-ui'],
+          ['GET', '/apis/c4.factory.io/v1beta1/namespaces/webshop/projects'],
+          ['POST', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs?fieldManager=c4-factory-ui'],
         ],
       )
       const post = seen[1]
       assert.equal(post.headers['content-type'], 'application/json')
       assert.equal(post.headers.authorization, undefined)
       assert.deepEqual(post.body, {
-        apiVersion: 'c4.factory.io/v1alpha1',
+        apiVersion: 'c4.factory.io/v1beta1',
         kind: 'Brief',
         metadata: { name: 'lens', namespace: 'webshop' },
         spec: { idea: 'A camera app that reads labels aloud' },
@@ -289,8 +289,8 @@ describe('server.mjs', () => {
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
         [
-          ['GET', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens'],
-          ['PATCH', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui'],
+          ['GET', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens'],
+          ['PATCH', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui'],
         ],
       )
       assert.equal(seen[1].headers['content-type'], 'application/json-patch+json')
@@ -326,7 +326,7 @@ describe('server.mjs', () => {
         assert.equal(res.status, 200)
         assert.deepEqual(
           seen.map((r) => [r.method, r.url]),
-          [['PATCH', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui']],
+          [['PATCH', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui']],
         )
         assert.deepEqual(seen[0].body, [{ op: 'add', path: '/spec/paused', value }])
       }
@@ -382,7 +382,7 @@ describe('server.mjs', () => {
       [
         'a patch of another kind',
         'PATCH',
-        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api',
+        '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
         prompt(),
         405,
       ],
@@ -401,7 +401,7 @@ describe('server.mjs', () => {
       [
         'a POST of another kind',
         'POST',
-        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers',
+        '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers',
         { ...brief, kind: 'Container' },
         405,
       ],
@@ -415,7 +415,7 @@ describe('server.mjs', () => {
       [
         'a POST to a namespace without a Project',
         'POST',
-        '/k8s/apis/c4.factory.io/v1alpha1/namespaces/empty/briefs',
+        '/k8s/apis/c4.factory.io/v1beta1/namespaces/empty/briefs',
         brief,
         403,
       ],
@@ -465,7 +465,7 @@ describe('server.mjs', () => {
   describe('the action table, over port-forward (UI_ACTIONS=service-account)', () => {
     let actionServer
     let actionBase
-    const api = '/apis/c4.factory.io/v1alpha1/namespaces/webshop'
+    const api = '/apis/c4.factory.io/v1beta1/namespaces/webshop'
     const write = (method, p, body, type, headers = {}) =>
       fetch(`${actionBase}/k8s${api}${p}`, {
         method,
@@ -476,7 +476,7 @@ describe('server.mjs', () => {
     const MP = 'application/merge-patch+json'
     const add = (p, value) => ({ op: 'add', path: p, value })
     const task = {
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Task',
       metadata: { generateName: 'orders-api-', labels: { x: 'y' } },
       spec: {
@@ -607,7 +607,7 @@ describe('server.mjs', () => {
     it('still creates a Brief and adds a prompt as with actions off', async () => {
       seen.length = 0
       const brief = {
-        apiVersion: 'c4.factory.io/v1alpha1',
+        apiVersion: 'c4.factory.io/v1beta1',
         kind: 'Brief',
         metadata: { name: 'b' },
         spec: { idea: 'x' },
@@ -1137,7 +1137,7 @@ describe('server.mjs', () => {
     let oidcBase
     let bare
     let bareBase
-    const api = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop'
+    const api = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop'
     const pause = [{ op: 'add', path: '/spec/paused', value: true }]
 
     before(async () => {
@@ -1333,7 +1333,7 @@ describe('server.mjs', () => {
       const res = await fetch(`${oidcBase}${api}/briefs`, {
         method: 'POST',
         headers: { cookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: { idea: 'x' } }),
+        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1beta1', kind: 'Brief', spec: { idea: 'x' } }),
       })
       assert.equal(res.status, 201)
       assert.deepEqual(
@@ -1513,7 +1513,7 @@ describe('server.mjs', () => {
       const res = await fetch(`${bareBase}${api}/briefs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1alpha1', kind: 'Brief', spec: {} }),
+        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1beta1', kind: 'Brief', spec: {} }),
       })
       assert.equal(res.status, 401)
       assert.equal(seen.length, 0)
@@ -1541,7 +1541,7 @@ describe('server.mjs', () => {
       '/k8s/api/v1/namespaces/webshop/secrets',
       '/k8s/apis/c4.factory.io/../../api/v1/secrets',
       '/k8s/apis/c4.factory.io/%2e%2e/%2e%2e/api/v1/secrets',
-      '/k8s/apis/c4.factory.io/v1alpha1/..%2f..%2f..%2fapi%2fv1%2fsecrets',
+      '/k8s/apis/c4.factory.io/v1beta1/..%2f..%2f..%2fapi%2fv1%2fsecrets',
       '/k8s/version',
     ]) {
       const res = await fetch(`${base}${p}`)
@@ -1552,7 +1552,7 @@ describe('server.mjs', () => {
 
   it('streams a watch without waiting for it to end', async () => {
     const res = await fetch(
-      `${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers?watch=1&resourceVersion=1`,
+      `${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?watch=1&resourceVersion=1`,
     )
     assert.equal(res.status, 200)
     const reader = res.body.getReader()
@@ -1571,9 +1571,9 @@ describe('server.mjs', () => {
     seen.length = 0
     watches.length = 0
     const q = new URLSearchParams()
-    q.append('w', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers')
+    q.append('w', '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers')
     q.append('rv', '7')
-    q.append('w', '/apis/c4.factory.io/v1alpha1/namespaces/webshop/sessions')
+    q.append('w', '/apis/c4.factory.io/v1beta1/namespaces/webshop/sessions')
     q.append('rv', 'old')
     q.set('timeoutSeconds', '300')
     const res = await fetch(`${base}/k8s-watch?${q}`, {
@@ -1621,12 +1621,12 @@ describe('server.mjs', () => {
 
   it('refuses /k8s-watch for other methods, other API groups and malformed requests', async () => {
     seen.length = 0
-    const ok = '/apis/c4.factory.io/v1alpha1/projects'
+    const ok = '/apis/c4.factory.io/v1beta1/projects'
     const cases = [
       ['POST', `w=${ok}&rv=1`, 405],
       ['GET', `w=/api/v1/secrets&rv=1`, 403],
       ['GET', `w=${encodeURIComponent('/apis/c4.factory.io/../../api/v1/secrets')}&rv=1`, 403],
-      ['GET', `w=${encodeURIComponent('/apis/c4.factory.io/v1alpha1/x?watch=0')}&rv=1`, 403],
+      ['GET', `w=${encodeURIComponent('/apis/c4.factory.io/v1beta1/x?watch=0')}&rv=1`, 403],
       ['GET', `w=${ok}&rv=1&timeoutSeconds=abc`, 403],
       ['GET', `w=${ok}`, 400],
       ['GET', '', 400],
@@ -1697,10 +1697,10 @@ describe('server.mjs', () => {
   })
 
   describe('the Host it answers (DNS rebinding)', () => {
-    const projects = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/projects'
-    const briefs = '/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/briefs'
+    const projects = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/projects'
+    const briefs = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs'
     const brief = {
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'lens' },
       spec: { idea: 'A camera app that reads labels aloud' },
@@ -1772,7 +1772,7 @@ describe('server.mjs', () => {
     })
     const deadBase = await listen(dead)
     try {
-      const res = await fetch(`${deadBase}/k8s/apis/c4.factory.io/v1alpha1/projects`)
+      const res = await fetch(`${deadBase}/k8s/apis/c4.factory.io/v1beta1/projects`)
       assert.equal(res.status, 502)
       assert.equal((await res.json()).kind, 'Status')
     } finally {

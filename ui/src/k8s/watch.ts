@@ -141,7 +141,7 @@ export type OpenWatch = (
 export interface WatcherOptions {
   /** Base URL of the API proxy, such as "k8s" (relative to the page) or "/k8s". */
   baseUrl: string
-  /** API path of the resource, such as /apis/c4.factory.io/v1alpha1/namespaces/webshop/containers. */
+  /** API path of the resource, such as /apis/c4.factory.io/v1beta1/namespaces/webshop/containers. */
   path: string
   fetch?: typeof fetch
   /**

@@ -17,7 +17,7 @@ provider() {
 	shift
 	{
 		echo "---"
-		echo "apiVersion: c4.factory.io/v1alpha1"
+		echo "apiVersion: c4.factory.io/v1beta1"
 		echo "kind: GitProvider"
 		echo "spec:"
 		echo "  ci:"

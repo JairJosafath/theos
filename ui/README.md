@@ -272,7 +272,7 @@ a single watch.
 ```
 server.mjs              static files + gateway to the Kubernetes API (/k8s, /k8s-watch): GETs and the action table's writes
 health.mjs              the factory's health summary and last hour (/factory/health)
-src/k8s/types.ts        the CRD shapes, mirroring api/v1alpha1
+src/k8s/types.ts        the CRD shapes, mirroring api/v1beta1
 src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, relist on 410
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
