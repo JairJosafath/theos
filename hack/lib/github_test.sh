@@ -13,7 +13,7 @@
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
-unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS # ./dev setup --lite sets the first, a human the second, the relay the third; each test sets its own
+unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS IS_SANDBOX # ./dev setup --lite sets the first, a human the second, the relay the third, an agent sandbox the fourth; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -2140,6 +2140,10 @@ status/ready kind/docs source/dev"
     "$(holds heron-121 | sed 's/^Heartbeat: x$/Heartbeat: NOW/')"
   again; claim "$T/main" 121 $((GH_NOW - 100))
   gh_beat; check "beat, within GH_BEAT_EVERY: asks GitHub nothing" "$? $(cat "$TK/calls")" "0 "
+  # In an agent sandbox (IS_SANDBOX=1) there is no claim to refresh: exit 0,
+  # nothing asked, the claim file as it was (#1894).
+  again; claim "$T/main" 121 $((GH_NOW - 1000)); cm 1 1000 "$(holds heron-121)" | comments
+  IS_SANDBOX=1 gh_beat; check "beat, in a sandbox: exit 0, asks GitHub nothing, beat as it was (#1894)" "$? $(cat "$TK/calls") $(jq .beat "$GH_CLAIM_FILE")" "0  $((GH_NOW - 1000))"
   again; claim "$T/main" 121 $((GH_NOW - 1000)); touch "$TK/down"
   gh_beat 2>/dev/null; check "beat, GitHub failing: exit 0, claim kept as it was" "$? $(jq .beat "$GH_CLAIM_FILE")" "0 $((GH_NOW - 1000))"
   again; claim "$T/main" 121 $((GH_NOW - 1000)); cm 1 0 "$(holds otter-121)" | comments

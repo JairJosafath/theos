@@ -327,7 +327,9 @@ queue:
   `e2e`, `test-e2e`, `test-templates-operator`, `test-templates`;
   `devcontainer up`; `docker build`). `hack/heavy-guard_test.sh` reads
   `HEAVY_GOALS` from the Makefile, so a goal added there fails the test until
-  the hook flags it too (#1324). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
+  the hook flags it too (#1324). In an agent sandbox (`IS_SANDBOX=1`) it, and
+  every other hook `.claude/settings.json` runs, exits 0 before reading its
+  input (#1894). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
   runs, naming the processes with the most memory and the Kind node. A
   headless session (`C4_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
