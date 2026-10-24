@@ -329,6 +329,11 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 		facts.BlockedBy = model.BlockingTask(task.Name, refs)
 	}
+	if status.Phase == c4v1alpha1.TaskPending && facts.Protected && facts.ContainerReady && facts.BlockedBy == "" {
+		if err := r.baseFacts(ctx, container, &facts); err != nil {
+			return facts, err
+		}
+	}
 
 	if role := runRole(status.Phase); role != "" {
 		name := sandboxName(task, status, role)
@@ -357,6 +362,27 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 	r.approvalFacts(ctx, task, status, &facts)
 	return facts, nil
+}
+
+// baseFacts reads the CI state of main's head for the checks main requires,
+// before round 1: round 1 starts only on a green base.
+func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1alpha1.Container,
+	facts *model.TaskFacts) error {
+	git, err := gitAccessFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace,
+		container.Spec.GitProviderRef.Name)
+	if err != nil {
+		return err
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	checks, err := git.provider.CombinedStatus(gitCtx, git.provider.Repository(container.Name),
+		gitprovider.DefaultBranch)
+	if err != nil {
+		return err
+	}
+	facts.Base = model.BaseState(git.ci.CheckContexts, checks.State, checks.Contexts)
+	facts.BaseURL = checks.URL
+	return nil
 }
 
 // checkFacts reads the CI result on the round's commit while the Task is
