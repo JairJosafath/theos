@@ -120,7 +120,8 @@ guide tells the implementer and the reviewer to read it. A Domain's template
 renders Markdown only and a `README.md`: another file fails the scaffold
 with `Scaffolded=False`, reason `DomainNotMarkdown`, naming the file; no
 `README.md` fails it with `DomainNoReadme`. Each Domain's `name@ref` ends
-`status.scaffoldedFrom`. A Domain is written once, at the scaffold: a later
+`status.scaffoldedFrom` and its name joins `status.scaffoldedDomains`. A
+Domain is written once, at the scaffold: a later
 bump of its `ref` does not reach a scaffolded Container, and a Ready
 Container reports `DomainsApplied=True` while its system still names the
 Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`

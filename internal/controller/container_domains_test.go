@@ -56,6 +56,7 @@ var _ = Describe("Container domains", func() {
 		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).To(Equal(append(append([]string{}, ordersAPIScaffoldedFrom...),
 			"webshop@v1.0.0")), "each Domain's name@ref follows the Connectors")
+		Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"webshop"}), "the scaffold records its Domains by name")
 		files := gitFake.mainFiles(ns, "orders-api")
 		Expect(files).To(HaveKeyWithValue("docs/agents/domain/webshop/README.md",
 			HaveField("Data", BeEquivalentTo("# webshop\n"))))

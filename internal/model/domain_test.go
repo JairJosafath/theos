@@ -5,29 +5,6 @@ import (
 	"testing"
 )
 
-func TestScaffoldedDomains(t *testing.T) {
-	others := []string{"python-fastapi", "python-standard", "small", "k8s-manifests", "postgres"}
-	tests := []struct {
-		name           string
-		scaffoldedFrom []string
-		want           []string
-	}{
-		{"none", []string{"python-fastapi@v1", "small@v1", "k8s-manifests@v1", "postgres@v1"}, nil},
-		{"two, sorted", []string{"python-fastapi@v1", "postgres@v1", "webshop@v0.1.0", "billing@v0.2.0"},
-			[]string{"billing", "webshop"}},
-		{"only the trailing run counts", []string{"renamed-framework@v1", "small@v1", "postgres@v1", "webshop@v0.1.0"},
-			[]string{"webshop"}},
-		{"adopted Container has none", nil, nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ScaffoldedDomains(tt.scaffoldedFrom, others); !slices.Equal(got, tt.want) {
-				t.Errorf("ScaffoldedDomains() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDomainsDiff(t *testing.T) {
 	tests := []struct {
 		name         string

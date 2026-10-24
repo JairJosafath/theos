@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -12,14 +13,14 @@ import (
 )
 
 // scaffoldedDomains are the Domains the scaffold wrote, as it passed them to
-// the templates: sorted and unique, read from status.scaffoldedFrom as the
-// entries after the Container's sides and Connectors. An adopted Container
-// (nothing recorded as scaffolded) has none.
-func scaffoldedDomains(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus) []string {
-	choices := container.Choices()
-	others := append([]string{choices.Framework, choices.Standard, choices.Compute, choices.Deployment},
-		scaffoldedConnectors(status)...)
-	return model.ScaffoldedDomains(status.ScaffoldedFrom, others)
+// the templates: status.scaffoldedDomains, sorted and unique. They are
+// recorded, never inferred from scaffoldedFrom: a changed choice or a Domain
+// sharing a name with a Connector would otherwise be misread (#1757). An
+// adopted Container (nothing recorded as scaffolded) has none.
+func scaffoldedDomains(status *c4v1alpha1.ContainerStatus) []string {
+	names := slices.Clone(status.ScaffoldedDomains)
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // reportDomainsApplied sets DomainsApplied on a Ready Container: True when its
@@ -28,7 +29,7 @@ func scaffoldedDomains(container *c4v1alpha1.Container, status *c4v1alpha1.Conta
 // scaffold), absent when the system names none and none was scaffolded.
 func reportDomainsApplied(container *c4v1alpha1.Container, status *c4v1alpha1.ContainerStatus,
 	system *c4v1alpha1.SoftwareSystem) {
-	have, wanted := scaffoldedDomains(container, status), domainNames(system)
+	have, wanted := scaffoldedDomains(status), domainNames(system)
 	if len(have) == 0 && len(wanted) == 0 {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionDomainsApplied)
 		return

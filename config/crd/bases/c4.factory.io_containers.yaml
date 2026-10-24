@@ -799,6 +799,16 @@ spec:
               repositoryURL:
                 description: repositoryURL is the web address of the scaffolded repository.
                 type: string
+              scaffoldedDomains:
+                description: |-
+                  scaffoldedDomains names the Domains the scaffold wrote under
+                  docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+                  with them, and a Standard update renders with them. An adopted Container
+                  has none.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
               scaffoldedFrom:
                 description: scaffoldedFrom lists the templates used, as name@ref,
                   in layer order.
@@ -1846,6 +1856,16 @@ spec:
               repositoryURL:
                 description: repositoryURL is the web address of the scaffolded repository.
                 type: string
+              scaffoldedDomains:
+                description: |-
+                  scaffoldedDomains names the Domains the scaffold wrote under
+                  docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+                  with them, and a Standard update renders with them. An adopted Container
+                  has none.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
               scaffoldedFrom:
                 description: scaffoldedFrom lists the templates used, as name@ref,
                   in layer order.

@@ -251,7 +251,7 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.container, u.status), recordedChecks(u.status), to,
+	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status), to,
 		git.provider.Repository(u.container.Name).NpmScope)
 	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref, Files: files})
 	if err != nil {
@@ -371,7 +371,7 @@ func (u *operationsUpdate) forceMerge(ctx, gitCtx context.Context) bool {
 	if !ok {
 		return false
 	}
-	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.container, u.status), recordedChecks(u.status),
+	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
 		model.ResolveOperations(operationsChoices(update.Operations)), "")
 	title := model.OperationsUpdateTitle()
 	message, _ := strings.CutPrefix(scaffold.OperationsMessage(in, scaffoldedOperations(u.container, u.status)),

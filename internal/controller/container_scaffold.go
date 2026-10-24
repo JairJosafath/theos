@@ -129,7 +129,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 			standard = b.Standard
 		}
 		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
-			info.ScaffoldedFrom, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
+			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
@@ -181,7 +181,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
 	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
-		result.ScaffoldedFrom, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
+		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -263,7 +263,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef)
-	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, in.Checks,
+	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, nil, in.Checks,
 		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
 }
 
@@ -294,10 +294,11 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 // block recorded, so a Framework that doesn't read it never reports it
 // applied.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, standard, standardRef string, from []string,
+	status *c4v1alpha1.ContainerStatus, standard, standardRef string, from, domains []string,
 	relationships []model.AppliedRelationship, checks string, readsOperations bool, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
+	status.ScaffoldedDomains = domains
 	if standard != "" && standardRef != "" {
 		status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: standard, Ref: standardRef,
 			Checks: c4v1alpha1.ChecksMode(checks)}

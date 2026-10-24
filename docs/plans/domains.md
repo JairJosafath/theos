@@ -80,7 +80,9 @@ and the reviewer to read them before they plan or review a change.
    you touch; follow their practices, and where they list a choice, make
    theirs unless the issue says otherwise." The reviewer guide says to check
    the change against each domain's common mistakes. A Standard update
-   renders with the same `Domains` (read from `scaffoldedFrom`), so it does
+   renders with the same `Domains` (read from `status.scaffoldedDomains`,
+   which the scaffold records by name: inferring them from `scaffoldedFrom`
+   misreads a changed choice or a Domain named like a Connector), so it does
    not drop the paragraph.
 5. **Scaffold once, no update path.** A Domain is written at scaffold and a
    later bump of its `ref` does not reach a scaffolded Container; not the way
@@ -91,8 +93,8 @@ and the reviewer to read them before they plan or review a change.
    hand. When the reference app shows stale domain text costs something, a
    follow-up proposes a Domain update on the Standard's machinery.
 6. **A Domain named after the scaffold is reported, never applied.** A Ready
-   Container whose system's `domainRefs` differ from the Domains in its
-   `scaffoldedFrom` gets `DomainsApplied=False`, reason `AddedAfterScaffold`,
+   Container whose system's `domainRefs` differ from its
+   `status.scaffoldedDomains` gets `DomainsApplied=False`, reason `AddedAfterScaffold`,
    listing the names added and removed; `True` when they agree; absent when
    the system names none and none was scaffolded. As with Relationships.
    A missing Domain keeps an unscaffolded Container `Pending`,

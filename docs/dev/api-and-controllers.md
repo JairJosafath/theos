@@ -121,10 +121,12 @@ the spec that makes it, with `forbidden` in the reconciler's log.
   reads it to report `BundleCurrent`, never to apply it.
 - **A Ready Container only reports.** `resolve` reads the system's
   `spec.domainRefs` once, for the scaffold; after that `reportDomainsApplied`
-  (`container_domains.go`) compares them with the `name@ref` entries that
-  follow the Connectors in `status.scaffoldedFrom` (`model.ScaffoldedDomains`)
-  and reports `DomainsApplied`, never rescaffolds. The Standard update renders
-  with those same Domains, not the system's current ones.
+  (`container_domains.go`) compares them with `status.scaffoldedDomains`, the
+  names the scaffold recorded (and its commit's `Scaffolded-Domain` trailers,
+  for a recovered one), and reports `DomainsApplied`, never rescaffolds. The
+  Standard update renders with those same Domains, not the system's current
+  ones. They are recorded, never inferred from `scaffoldedFrom`: a changed
+  choice or a Domain named like a Connector would be misread.
 
 ## Logging
 
