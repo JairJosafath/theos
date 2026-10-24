@@ -166,7 +166,9 @@ saying what the file holds. Every file the Container's Standard renders for
 it at its ref is there with that content; else it fails
 `StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
 and goes `Ready`, recording the Standard at its ref. An empty repository
-fails `NothingToAdopt`. A Container without a Standard adopts on the
+fails `NothingToAdopt`; one with commits but no `main` branch fails
+`NoDefaultBranch`, telling the user to rename its default branch to `main`
+first (#1908). A Container without a Standard adopts on the
 identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
 
 **Relationships.** Container to DataStore applies the DataStore's Connector at
