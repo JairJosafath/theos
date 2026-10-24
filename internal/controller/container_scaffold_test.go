@@ -36,9 +36,18 @@ var ordersAPIScaffoldedFrom = []string{
 // reading and writing orders-db, and the factory it scaffolds from.
 func createWebshop(ns string) {
 	GinkgoHelper()
+	createWebshopWith(ns, nil)
+}
+
+// createWebshopWith is createWebshop with orders-api changed by mutate first.
+func createWebshopWith(ns string, mutate func(*c4v1beta1.Container)) {
+	GinkgoHelper()
 	createFactory(ns)
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 	container.Spec.DisplayName = "Orders API"
+	if mutate != nil {
+		mutate(container)
+	}
 	mustCreate(
 		newSystem(ns, "webshop-core"),
 		newOrdersDB(ns),

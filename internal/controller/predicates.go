@@ -109,6 +109,20 @@ func taskPhaseChanges() builder.Predicates {
 	})
 }
 
+// crewBudgetChanges passes a Crew's deletion and a change of its cost cap
+// (spec.taskBudgetUSD), which resume its Tasks waiting at the cap (#1893).
+func crewBudgetChanges() builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldCrew, ok1 := e.ObjectOld.(*c4v1beta1.Crew)
+			newCrew, ok2 := e.ObjectNew.(*c4v1beta1.Crew)
+			return !ok1 || !ok2 || oldCrew.Spec.TaskBudgetUSD != newCrew.Spec.TaskBudgetUSD
+		},
+	})
+}
+
 // podFinished passes agent pods only, and of their updates only the ones that
 // finish them: a sandbox's result is read once its pod is done.
 func podFinished() builder.WatchesOption {

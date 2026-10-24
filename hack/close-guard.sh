@@ -25,6 +25,11 @@
 # these words costs one bash, with no subprocess.
 set -uo pipefail
 
+# In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile) the hook does
+# nothing, before it reads its input: the sandbox has no heavy-job slots, no
+# cluster lease, no claim and no main to pull (#1894).
+[ "${IS_SANDBOX:-}" = 1 ] && exit 0
+
 IFS= read -r -d '' input
 # A loose match on the raw JSON with builtins only, as heavy-guard.sh does.
 loose='gh.*pr.*(create|edit|merge)|git.*commit|gh.*issue.*close|gh.*api.*issues|github\.sh.*duplicate'

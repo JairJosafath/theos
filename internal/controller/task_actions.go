@@ -175,6 +175,11 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
 		reason = "AgentUnavailable"
 	}
+	if step.Reason != "" {
+		// At its Crew's cost cap (OverBudget): the Crew watch wakes the Task
+		// when the cap is raised, so it needs no requeue.
+		reason = step.Reason
+	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}

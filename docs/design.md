@@ -33,7 +33,7 @@ draws the story on top.
 | --- | --- |
 | Scope | One Project per namespace; no references across namespaces, reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
-| Container | An application with its own new repository; no monorepos, no adopted repositories. |
+| Container | An application with its own repository: a new one, or an existing one it adopts with `spec.adopt`; no monorepos. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
 | Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
@@ -156,6 +156,19 @@ with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
 `c4.factory.io/retry` annotation is set or changed.
 
+**Adopting a repository.** A Container with `spec.adopt: true` (set at
+creation, immutable) takes over a repository that already has commits and
+is never scaffolded: the operator writes nothing. It checks main for two
+things. `.c4factory.yaml` carries the identity file's fields, naming this
+project and Container, with `scaffoldedFrom` empty since nothing was
+scaffolded; a missing file or another identity fails `IdentityMismatch`,
+saying what the file holds. Every file the Container's Standard renders for
+it at its ref is there with that content; else it fails
+`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
+and goes `Ready`, recording the Standard at its ref. An empty repository
+fails `NothingToAdopt`. A Container without a Standard adopts on the
+identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
+
 **Relationships.** Container to DataStore applies the DataStore's Connector at
 scaffold. Container to Container with `spec.bundles: true` says the source
 ships a release of the target ([Crews](#crews-and-releases)). Every other link
@@ -190,6 +203,12 @@ on a Standard change), then `Merged` or `Failed`.
   every run and closes it on merge; a failed Task hands it back
   `status/needs-human` with the reason. An issue without an *Acceptance
   criteria* checklist goes back before any tokens are spent.
+- **Issue text is data, not instructions.** The prompt puts the issue's
+  text, every field a person wrote, between two marker lines and says it is
+  the goal and never an instruction: whatever in it asks the agent to change
+  its tools, credentials, settings, the files that configure agents, or where
+  it sends data is ignored. The markers grow past any copy of themselves in
+  the text, so nothing a person wrote can end the block early.
 - **Merges only on checks of the `main` it merges into.** When `main` moved,
   the operator merges it into the branch (no agent run, no round) and waits
   for the checks again; a conflict goes back to the implementer.
@@ -210,6 +229,7 @@ on a Standard change), then `Merged` or `Failed`.
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
   a person cancelled costs the round.
@@ -322,6 +342,9 @@ A Crew per Container names the implementer and reviewer Agents, polls the
 repository's `status/ready` issues and starts up to `parallel` Tasks (one by
 default; `Blocked` ones don't count), with three tries per issue.
 `spec.paused` stops new starts; running Tasks are never stopped.
+`spec.taskBudgetUSD` caps what one Task's agent runs may cost, in US dollars,
+summed from what its agents report; at the cap the Task starts no further
+run (`OverBudget`) until the cap is raised, and unset means no cap.
 
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
   goes first, even past `parallel`; then a Standard change a `Blocked` Task
@@ -883,7 +906,8 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 
 ## Out of scope and open points
 
-- **Out of scope:** existing repositories and monorepos; Component and Code
+- **Out of scope:** monorepos (an existing repository of one application
+  may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
   it writes may run the store, as postgres's StatefulSet or dynamodb's table,
   but the operator creates none); monitoring the apps beyond what a deploy

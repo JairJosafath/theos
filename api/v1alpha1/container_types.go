@@ -16,6 +16,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef)",message="name a bundleRef or a frameworkRef"
 // +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
+// +kubebuilder:validation:XValidation:rule="(has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)",message="adopt is immutable"
 type ContainerSpec struct {
 	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
@@ -75,6 +76,16 @@ type ContainerSpec struct {
 	// +kubebuilder:default=EveryChange
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
+
+	// adopt says the Container takes over a repository that already has
+	// commits instead of scaffolding a new one. The operator writes nothing:
+	// it checks that main's .c4factory.yaml names this project and Container
+	// and that every file of the Container's Standard is there with the
+	// content the Standard renders at its ref, then protects main and goes
+	// Ready. An adopted Container is never scaffolded; an empty repository
+	// fails NothingToAdopt. Set at creation and immutable.
+	// +optional
+	Adopt bool `json:"adopt,omitempty"`
 
 	// operations is what the application promises whatever tier runs it: how
 	// long its backups are kept and where they are copied, its recovery
