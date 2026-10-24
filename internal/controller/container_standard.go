@@ -52,8 +52,9 @@ type standardUpdate struct {
 	// first use when frameworkRead.
 	frameworkPaths []string
 	frameworkRead  bool
-	// license is the Container's license, resolved on first use when
-	// licenseRead; a Standard that writes LICENSE while one is set collides.
+	// license is the license the repository was scaffolded with, read on
+	// first use when licenseRead; a Standard that writes LICENSE while the
+	// repository carries one collides.
 	license     scaffold.License
 	licenseRead bool
 	// answered says the pass acted on or ignored the person's answer: the
@@ -295,7 +296,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1alpha1.
 		return
 	}
 
-	license, err := u.resolveLicense(ctx)
+	license, err := u.scaffoldedLicense(ctx, gitCtx, git)
 	if err != nil {
 		u.renderFailed(ctx, err)
 		return
@@ -519,7 +520,7 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
-	license, err := u.resolveLicense(ctx)
+	license, err := u.scaffoldedLicense(ctx, gitCtx, git)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +587,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if err != nil {
 			return nil, err
 		}
-		license, err := u.resolveLicense(ctx)
+		license, err := u.scaffoldedLicense(ctx, gitCtx, git)
 		if err != nil {
 			return nil, err
 		}
@@ -603,13 +604,13 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 	return u.frameworkPaths, nil
 }
 
-// resolveLicense is the Container's license (ContainerReconciler.resolveLicense),
-// read at most once per pass.
-func (u *standardUpdate) resolveLicense(ctx context.Context) (scaffold.License, error) {
+// scaffoldedLicense is the repository's license
+// (ContainerReconciler.scaffoldedLicense), read at most once per pass.
+func (u *standardUpdate) scaffoldedLicense(ctx, gitCtx context.Context, git *gitAccess) (scaffold.License, error) {
 	if u.licenseRead {
 		return u.license, nil
 	}
-	license, err := u.r.resolveLicense(ctx, u.container)
+	license, err := u.r.scaffoldedLicense(ctx, gitCtx, git, u.container)
 	if err != nil {
 		return scaffold.License{}, err
 	}

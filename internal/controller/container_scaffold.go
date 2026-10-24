@@ -299,6 +299,39 @@ func (r *ContainerReconciler) resolveLicense(ctx context.Context,
 		project.Spec.DisplayName, container.Namespace, time.Now()), nil
 }
 
+// scaffoldedLicense is the license the Container's repository carries: the
+// id its .c4factory.yaml on main records, with the holder and the year as a
+// scaffold resolves them. An update renders with it, never with spec.license
+// as it stands: changing the setting after the scaffold rewrites nothing
+// (docs/plans/license.md, decision 5), so a layer writing LICENSE collides
+// only while the repository holds the operator's. A repository recording no
+// id, or none from before the identity file, carries none.
+func (r *ContainerReconciler) scaffoldedLicense(ctx, gitCtx context.Context, git *gitAccess,
+	container *c4v1alpha1.Container) (scaffold.License, error) {
+	files, _, err := git.provider.ReadFiles(gitCtx, git.provider.Repository(container.Name), gitprovider.DefaultBranch,
+		[]string{scaffold.IdentityPath})
+	if err != nil {
+		return scaffold.License{}, err
+	}
+	f, ok := files[scaffold.IdentityPath]
+	if !ok {
+		return scaffold.License{}, nil
+	}
+	identity, err := scaffold.ParseIdentity(f.Data)
+	if err != nil {
+		return scaffold.License{}, fmt.Errorf("reading %s: %w", scaffold.IdentityPath, err)
+	}
+	if identity.License == "" {
+		return scaffold.License{}, nil
+	}
+	license, err := r.resolveLicense(ctx, container)
+	if err != nil {
+		return scaffold.License{}, err
+	}
+	license.ID = identity.License
+	return license, nil
+}
+
 // withBundle is a copy of the Container carrying bundle as its status.bundle,
 // for reading its choices before the status that records them is written.
 func withBundle(container *c4v1alpha1.Container, bundle *c4v1alpha1.ContainerBundleStatus) *c4v1alpha1.Container {

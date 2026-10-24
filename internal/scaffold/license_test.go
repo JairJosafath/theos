@@ -70,6 +70,8 @@ func TestBuildWritesLicense(t *testing.T) {
 			"Copyright [yyyy] [name of copyright owner]", "Apache-2.0"},
 		{"0BSD's line is filled too", License{ID: "0BSD", Holder: "Webshop", Year: 2026},
 			"Copyright (c) 2026 Webshop\n", "0BSD"},
+		{"BSD-3-Clause keeps the period after the holder", License{ID: "BSD-3-Clause", Holder: "Webshop", Year: 2026},
+			"Copyright (c) 2026 Webshop.\n", "BSD-3-Clause"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := ordersAPI

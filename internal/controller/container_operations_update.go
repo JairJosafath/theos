@@ -251,9 +251,9 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	license, err := u.r.resolveLicense(ctx, u.container)
+	license, err := u.r.scaffoldedLicense(ctx, gitCtx, git, u.container)
 	if err != nil {
-		log.Info("Could not read the Container's license", "error", err.Error())
+		u.gitError(ctx, err)
 		return
 	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), recordedChecks(u.status), to,

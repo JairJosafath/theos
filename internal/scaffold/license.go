@@ -3,6 +3,7 @@ package scaffold
 import (
 	"embed"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -69,6 +70,13 @@ func LicenseIDs() []string {
 // as published, Apache-2.0's appendix placeholders included.
 var copyrightLicenses = []string{"MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "0BSD"}
 
+// copyrightPlaceholders matches the published copyright line of the
+// copyrightLicenses up to its placeholders for the year and the holder
+// (<year> <owner>, <year> <copyright holders>, YEAR by AUTHOR EMAIL); what
+// follows them on the line (BSD-3-Clause's period) is kept.
+var copyrightPlaceholders = regexp.MustCompile(
+	`(?i)^copyright\s+(?:\(c\)\s+)?(?:<year>|YEAR)\s+(?:by\s+)?(?:<owner>|<copyright holders>|AUTHOR EMAIL)`)
+
 // licenseText is the content of LICENSE for l.
 func licenseText(l License) ([]byte, error) {
 	data, err := licenseTexts.ReadFile("licenses/" + l.ID + ".txt")
@@ -80,8 +88,9 @@ func licenseText(l License) ([]byte, error) {
 	}
 	lines := strings.SplitAfter(string(data), "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(strings.ToLower(line), "copyright") {
-			lines[i] = fmt.Sprintf("Copyright (c) %d %s\n", l.Year, l.Holder)
+		if m := copyrightPlaceholders.FindStringIndex(line); m != nil {
+			rest := strings.TrimRight(line[m[1]:], " \n")
+			lines[i] = fmt.Sprintf("Copyright (c) %d %s%s\n", l.Year, l.Holder, rest)
 			return []byte(strings.Join(lines, "")), nil
 		}
 	}
