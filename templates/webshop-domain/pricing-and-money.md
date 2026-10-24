@@ -21,7 +21,8 @@ frozen on the order.
   storefront says which. The tax is computed per line from the line's taxable
   amount and the rate that applies to that variant and destination, then
   rounded to minor units per line; the order's tax is the sum of the lines'
-  tax. Rounding is half-up away from zero (or the mode the tax authority
+  tax. Rounding is half away from zero (2.5 to 3, -2.5 to -3, so a refund
+  rounds like the charge it reverses; or the mode the tax authority
   prescribes), stated once and applied everywhere.
 - A unit price multiplied by a quantity is exact in integers; a percentage
   discount or a tax rate is applied once to the line amount and rounded once.
@@ -81,9 +82,11 @@ frozen on the order.
 - **One price list with conversion, or a price per currency?** *The choice:*
   a price per currency, merchandised. Why: a converted price moves, ends in
   odd cents and is wrong for the market; a merchandised price is a decision.
-- **Rounding mode?** *The choice:* half-up away from zero unless the tax
+- **Rounding mode?** *The choice:* half away from zero unless the tax
   authority says otherwise, stated in one place. Why: it is what customers
-  expect to see on a receipt; banker's rounding surprises them.
+  expect to see on a receipt, and a negative amount (a refund, a discount)
+  rounds to the same magnitude as the positive one it mirrors; banker's
+  rounding surprises them, and half-up differs from it below zero.
 
 ## Sources
 

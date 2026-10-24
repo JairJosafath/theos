@@ -379,12 +379,15 @@ headings *Practices*, *Common mistakes*, *Controversies* (the choice this
 domain makes and why) and *Sources*. Built as the Domain of a Container
 (`domainRefs: [webshop]` on the webshop's `webshop-core`), every file lands
 under `docs/agents/domain/webshop/`, and the Standard's `AGENTS.md` and
-`REVIEWING.md` point the implementer and the reviewer at it (#1758). A
+`docs/agents/reviewer.md` point the implementer and the reviewer at it
+(#1758). A
 Domain is Markdown the agents read, so most promises don't apply.
 
 - CI: rendered in the python-fastapi combination of `templateCombos`
-  (`TestEveryTemplateRenders`), whose Container names the Domain, and whose
-  scaffolded repository `make test-templates` checks to green.
+  (`TestEveryTemplateRenders`), whose Container names the Domain; the
+  shell combo of the same name in `hack/test-templates.sh` renders it too
+  (`hack/render` takes `Domain=webshop-domain`) and runs that repository's
+  `make check` to green.
 - Tests: `TestDomainTemplatesHaveTheShape` checks the shape of every
   `*-domain` folder (Markdown only, the README names every topic file, the
   four headings) and builds it as a Container's Domain.

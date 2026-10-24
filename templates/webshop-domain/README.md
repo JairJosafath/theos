@@ -25,8 +25,9 @@ them and never edits them.
 - **Checkout**: the steps from a cart to a placed order: address, shipping
   choice, payment. Ends when the order is placed, not when it is paid.
 - **Order**: the record of what was bought, at which prices, by whom, to be
-  delivered where. Immutable once placed; later changes are new facts
-  (a payment, a shipment, a refund, a cancellation).
+  delivered where. Immutable once placed, save the shipping address until
+  a shipment exists; later changes are new facts (a payment, a shipment, a
+  refund, a cancellation).
 - **Stock on hand**: the units physically in the warehouse. **Available
   stock**: on hand minus what is reserved for orders not yet shipped.
 - **Reservation**: a hold on available stock for a cart or an order, with an
