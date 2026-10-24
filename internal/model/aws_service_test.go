@@ -60,7 +60,7 @@ func TestPlannerGuideStatesTheAWSServiceCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that asks for a container service on AWS, ECS or Fargate is a `service`",
 		"such as `aws-fargate-ts`",
-		"no `computeRef`, no `deploymentRef` and no DataStore",
+		"no `computeRef` and no `deploymentRef`",
 	} {
 		if !strings.Contains(guide, rule) {
 			t.Errorf("PLANNER.md doesn't say %q", rule)

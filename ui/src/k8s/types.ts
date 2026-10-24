@@ -96,6 +96,8 @@ export interface SoftwareSystem extends K8sObject {
     description?: string
     needs?: string[]
     kpis?: string[]
+    /** The Domains it is about, rendered into each of its Containers at their scaffold. */
+    domainRefs?: string[]
   }
   status?: {
     containers?: number
@@ -185,6 +187,8 @@ export interface Container extends K8sObject {
     }
     repositoryURL?: string
     scaffoldedFrom?: string[]
+    /** The Domains its system named when it was scaffolded, by name; their refs are in scaffoldedFrom. */
+    scaffoldedDomains?: string[]
     /** What spec.bundleRef expanded to: the entries' names. */
     bundle?: { name: string; framework: string; standard?: string; compute?: string; deployment?: string }
     appliedRelationships?: string[]
@@ -394,6 +398,20 @@ export interface Bundle extends K8sObject {
 }
 
 /**
+ * A Domain: what a system is about, a template of Markdown rendered into each
+ * of the system's Containers once, at their scaffold, under
+ * docs/agents/domain/<name>/ (docs/plans/domains.md). It supports every
+ * Container type, so it has no supportedTypes, and it has no status.
+ */
+export interface Domain extends K8sObject {
+  spec: {
+    displayName?: string
+    description?: string
+    template: { url: string; ref: string }
+  }
+}
+
+/**
  * Where repositories are created. Its Secret is named, never read: the UI's
  * proxy serves only c4.factory.io, so no Secret data reaches the browser.
  */
@@ -421,6 +439,7 @@ export const RESOURCES = {
   computes: 'computes',
   deployments: 'deployments',
   bundles: 'bundles',
+  domains: 'domains',
   gitProviders: 'gitproviders',
   deployTargets: 'deploytargets',
   tasks: 'tasks',

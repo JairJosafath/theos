@@ -27,6 +27,7 @@ var conversionSpecs = map[string]map[string]any{
 	"DataStore": {"connectorRef": map[string]any{"name": "pg"}, "softwareSystemRef": map[string]any{"name": "shop"}},
 	"Deployment": {"supportedTypes": []any{"service"},
 		"template": map[string]any{"url": "https://x", "ref": "v1"}},
+	"Domain":       {"template": map[string]any{"url": "https://x", "ref": "v1"}},
 	"DeployTarget": {"argoCD": map[string]any{"destination": map[string]any{"namespace": "shop"}}},
 	"Framework": {"supportedTypes": []any{"service"},
 		"template": map[string]any{"url": "https://x", "ref": "v1"}},
@@ -84,7 +85,7 @@ var _ = Describe("API versions", func() {
 			Expect(k8sClient.Create(ctx, obj)).To(Succeed(), kind)
 			names[kind] = "conv"
 		}
-		Expect(names).To(HaveLen(19))
+		Expect(names).To(HaveLen(20))
 
 		for kind, name := range names {
 			// A reconciler may write status between the reads; read again until

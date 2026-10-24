@@ -648,7 +648,7 @@ func TestNextPublishStepSourceRuns(t *testing.T) {
 func TestNextSourceStep(t *testing.T) {
 	files := &ReleaseSource{Files: []SourceFile{{Path: "main.go", Mode: "100644", Size: 3, Blob: "b1"}}, Tree: "t1"}
 	s := SourceShip{Source: PublishSource{Path: "."}, Files: files, Repository: "o/r", App: "shop",
-		Owner: "ns/api", Tag: "v1.0.0", GitHubTag: "api-v1.0.0"}
+		Owner: "ns/api", Tag: "v1.0.0", ReleaseTag: "api-v1.0.0"}
 	if step, done := NextSourceStep(s, nil); step.Action != PublishReadGitHubSource || done != nil {
 		t.Errorf("unread: got %v, %v", step.Action, done)
 	}

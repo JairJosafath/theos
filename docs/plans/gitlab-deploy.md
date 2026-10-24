@@ -30,7 +30,7 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
   (what ships, by type), `ShipMarker` and `ReleaseBody` (finding our
   release), `NextSourceStep` with `SourceShip` (the snapshot, its commit and
   its tag), `PublishChecks`, `FactoryOwnPaths`, `SourceOverlaps`,
-  `GitHubTagPrefix`, `GitHubImage` and `GitHubImageNotes`.
+  `ReleaseTagPrefix`, `GitHubImage` and `GitHubImageNotes`.
 - `NextReleaseStep` is GitHub's: a draft, retargeted, files uploaded to it,
   then published. GitLab has no drafts.
 - The GitHub client and its fake are in `internal/gitprovider` and in
@@ -53,7 +53,7 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
      deeper (`group/sub/project`), at most 255 characters, the pattern a
      GitLab namespace path allows. The API names it URL-encoded.
    - `tagPrefix` (`*string`): `github`'s field, rule and default
-     (`model.GitHubTagPrefix`, the Container's name and `-`).
+     (`model.ReleaseTagPrefix`, the Container's name and `-`).
    - `source`: `github`'s shape. Its Go type is renamed from
      `DeployTargetGitHubSource` to `DeployTargetSource`, shared by both
      members; the schema does not change.

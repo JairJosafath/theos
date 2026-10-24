@@ -32,6 +32,9 @@ const (
 	SideCompute    = "Compute"
 	SideDeployment = "Deployment"
 	SideConnector  = "Connector"
+	// SideDomain renders last, after the Connectors, into
+	// docs/agents/domain/<name>/; it has no supported types.
+	SideDomain = "Domain"
 )
 
 // CatalogEntry is one side of a Container: a pinned template plus the Container
@@ -89,6 +92,9 @@ func (e *ChoiceError) Error() string {
 func CheckChoices(containerType string, entries []CatalogEntry) error {
 	var unsupported []CatalogEntry
 	for _, entry := range entries {
+		if entry.Side == SideDomain {
+			continue // what a system is about does not depend on a Container's type
+		}
 		if !entry.Supports(containerType) {
 			unsupported = append(unsupported, entry)
 		}

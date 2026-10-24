@@ -1,0 +1,21 @@
+# The first app's orders-cli also published on GitLab: each release's files
+# (deploytarget.yaml), next to the GitHub target first-app ships to. A cli
+# Container on gitea-release is what a gitlab target ships today: the image
+# of a k8s-manifests Container (the webshop's orders-api) follows in #1806,
+# and the source in #1805.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webshop
+resources:
+- ../first-app
+- deploytarget.yaml
+patches:
+- target:
+    group: c4.factory.io
+    kind: Container
+    name: orders-cli
+  patch: |-
+    - op: add
+      path: /spec/deploy/-
+      value:
+        target: webshop-gitlab

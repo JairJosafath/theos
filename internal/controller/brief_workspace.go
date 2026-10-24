@@ -451,7 +451,7 @@ func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.Plan
 	for _, o := range systems.Items {
 		out = append(out, model.PlanObject{Kind: model.KindSoftwareSystem, Name: o.Name,
 			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs,
-			Location: string(o.Spec.Location)})
+			Location: string(o.Spec.Location), Domains: o.Spec.DomainRefs})
 	}
 	var containers c4v1alpha1.ContainerList
 	if err := c.List(ctx, &containers, in); err != nil {
@@ -533,6 +533,13 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 	}
 	for i := range connectors.Items {
 		out = append(out, catalogEntry(model.SideConnector, &connectors.Items[i]))
+	}
+	var domains c4v1alpha1.DomainList
+	if err := c.List(ctx, &domains, in); err != nil {
+		return nil, err
+	}
+	for i := range domains.Items {
+		out = append(out, catalogEntry(model.SideDomain, &domains.Items[i]))
 	}
 	return out, nil
 }

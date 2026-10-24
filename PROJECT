@@ -180,6 +180,14 @@ resources:
     namespaced: true
   domain: factory.io
   group: c4
+  kind: Domain
+  path: github.com/JairJosafath/c4factory/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: factory.io
+  group: c4
   kind: Project
   path: github.com/JairJosafath/c4factory/api/v1beta1
   version: v1beta1
@@ -325,6 +333,14 @@ resources:
   domain: factory.io
   group: c4
   kind: Task
+  path: github.com/JairJosafath/c4factory/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: factory.io
+  group: c4
+  kind: Domain
   path: github.com/JairJosafath/c4factory/api/v1beta1
   version: v1beta1
 version: "3"
