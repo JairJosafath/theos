@@ -357,4 +357,21 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	if !strings.Contains(string(src), "resourceNames="+strings.Join(want, ";")+"\n") {
 		t.Error("the customresourcedefinitions RBAC marker doesn't name exactly WebhookCRDs")
 	}
+	// #1884: the migrator's two markers are the other hand-kept lists: the
+	// CRDs whose status it patches, and the kinds it lists and rewrites.
+	src, err = os.ReadFile("storage_migrator.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		"resources=customresourcedefinitions/status,verbs=patch,resourceNames="+strings.Join(want, ";")+"\n") {
+		t.Error("storage_migrator.go's customresourcedefinitions/status RBAC marker doesn't name exactly WebhookCRDs")
+	}
+	plurals := make([]string, 0, len(want))
+	for _, name := range want {
+		plurals = append(plurals, strings.TrimSuffix(name, ".c4.factory.io"))
+	}
+	if !strings.Contains(string(src), "groups=c4.factory.io,resources="+strings.Join(plurals, ";")+",verbs=list;patch\n") {
+		t.Error("storage_migrator.go's c4.factory.io RBAC marker doesn't name exactly WebhookCRDs' kinds")
+	}
 }

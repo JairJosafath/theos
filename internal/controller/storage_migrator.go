@@ -37,8 +37,8 @@ const StorageMigratorRetry = 30 * time.Second
 // pass.
 const StorageMigratorReadyPoll = time.Second
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;briefs;bundles;computes;connectors;containers;crews;datastores;deployments;deploytargets;frameworks;gitproviders;people;projects;relationships;sessions;softwaresystems;standards;tasks,verbs=list;patch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
+// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;briefs;bundles;computes;connectors;containers;crews;datastores;deployments;deploytargets;domains;frameworks;gitproviders;people;projects;relationships;sessions;softwaresystems;standards;tasks,verbs=list;patch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;domains.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
 
 // StorageMigrator rewrites what etcd holds at a version other than the
 // storage one (docs/plans/api-versions.md, decision 4). For each CRD in CRDs
@@ -50,16 +50,20 @@ const StorageMigratorReadyPoll = time.Second
 // storedVersions, so the next pass tries it again; the other CRDs go on. It
 // is idempotent: a CRD already storing one version is skipped, so a start
 // after the pass does nothing. As a manager Runnable it runs under leader
-// election, after the webhook is Ready, and tries again every Retry until a
-// pass succeeds.
+// election, whatever the webhook setting, and tries again every Retry until a
+// pass succeeds; a CRD that converts by the webhook (strategy Webhook) waits
+// for Ready before its objects are rewritten, one at strategy None does not
+// (#1884).
 type StorageMigrator struct {
 	// Client reads and writes without a cache: the pass is one pull, and the
 	// caches of the kinds it rewrites may not be started.
 	Client client.Client
 	// CRDs defaults to WebhookCRDs.
 	CRDs []string
-	// Ready, when set, is waited on before the pass (the webhook server's
-	// started check): conversion of the stored objects needs it.
+	// Ready, when set, is waited on before a CRD at strategy Webhook is
+	// rewritten (the webhook server's started check): conversion of its
+	// stored objects needs it. A CRD at strategy None never waits; nil, with
+	// the webhook off, means no CRD does.
 	Ready func(*http.Request) error
 	// PageSize defaults to StorageMigratorPageSize.
 	PageSize int64
@@ -73,31 +77,14 @@ type StorageMigrator struct {
 // election every replica does, idempotently.
 func (m *StorageMigrator) NeedLeaderElection() bool { return true }
 
-// Start waits for Ready, then runs Migrate until a pass succeeds or ctx ends.
-// It returns nil either way: a pass that keeps failing is logged, and the
-// manager runs on with the stored objects as they are, converted on read.
+// Start runs Migrate until a pass succeeds or ctx ends. It returns nil either
+// way: a pass that keeps failing is logged, and the manager runs on with the
+// stored objects as they are, converted on read.
 func (m *StorageMigrator) Start(ctx context.Context) error {
 	log := logf.FromContext(ctx).WithName("storage-migrator")
 	retry := m.Retry
 	if retry <= 0 {
 		retry = StorageMigratorRetry
-	}
-	poll := m.ReadyPoll
-	if poll <= 0 {
-		poll = StorageMigratorReadyPoll
-	}
-	wait := func(d time.Duration) bool {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(d):
-			return true
-		}
-	}
-	for m.Ready != nil && m.Ready(nil) != nil {
-		if !wait(poll) {
-			return nil
-		}
 	}
 	for {
 		err := m.Migrate(ctx)
@@ -108,10 +95,35 @@ func (m *StorageMigrator) Start(ctx context.Context) error {
 			return nil
 		}
 		log.Error(err, "Failed to migrate the stored objects; trying again", "after", retry.String())
-		if !wait(retry) {
+		if !sleep(ctx, retry) {
 			return nil
 		}
 	}
+}
+
+// sleep waits d, or until ctx ends; it is true when d passed.
+func sleep(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// waitReady waits, every ReadyPoll, until Ready passes or ctx ends; it
+// returns ctx's error in the latter case.
+func (m *StorageMigrator) waitReady(ctx context.Context) error {
+	poll := m.ReadyPoll
+	if poll <= 0 {
+		poll = StorageMigratorReadyPoll
+	}
+	for m.Ready != nil && m.Ready(nil) != nil {
+		if !sleep(ctx, poll) {
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // Migrate runs one pass over CRDs, as described on StorageMigrator. A CRD
@@ -151,6 +163,14 @@ func (m *StorageMigrator) migrateCRD(ctx context.Context, name string) error {
 	storage := crd.Spec.Versions[i].Name
 	if !slices.ContainsFunc(crd.Status.StoredVersions, func(v string) bool { return v != storage }) {
 		return nil
+	}
+	if crd.Spec.Conversion != nil && crd.Spec.Conversion.Strategy == apiextensionsv1.WebhookConverter {
+		// Rewriting goes through the conversion webhook: not before it serves.
+		// A CRD at strategy None converts in the API server and never waits
+		// (#1884).
+		if err := m.waitReady(ctx); err != nil {
+			return fmt.Errorf("wait for the conversion webhook before rewriting %s: %w", crd.Spec.Names.Plural, err)
+		}
 	}
 	log.Info("Rewriting the stored objects at the storage version",
 		"storedVersions", crd.Status.StoredVersions, "storage", storage)
