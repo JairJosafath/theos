@@ -1,0 +1,19 @@
+== step6 (2026-10-24, #1618): cd ui && npx vitest run src/k8s/watch.test.ts src/components/Status.test.ts
+
+ RUN  v5.0.2 /home/josaf/c4factory/.claude/worktrees/relay-4/ui
+
+
+ Test Files  2 passed (2)
+      Tests  16 passed (16)
+   Start at  08:27:46
+   Duration  163ms (transform 50%, tests 28%, import 19%, worker 3%)
+
+
+== cd ui && node --test test/server.test.mjs | grep -A1 Warning
+  ✔ passes the deprecation Warning header of a response at a deprecated version to the browser (#1618) (3.717361ms)
+  ✔ reads the factory kinds across namespaces: Tasks, Agents and Crews (5.313169ms)
+
+== bash hack/release-notes_test.sh | grep -i '1618\|order\|passed'
+ok   sections in Keep a Changelog order
+ok   a body line Deprecated: adds a Deprecated line next to the pull request's own (#1618)
+ok   a body line Removed: adds a Removed line, a chore's too (#1618)

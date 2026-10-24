@@ -286,7 +286,7 @@ The one command starts it. Every command is bare.
 
 **The field.** Add `spec.adopt` (a bool, false by default, immutable by CEL) to
 Container in `api/v1beta1`. `v1alpha1` must carry it through conversion both
-ways ([api-versions.md](api-versions.md) has how conversion works).
+ways ([done/api-versions.md](done/api-versions.md) has how conversion works).
 
 **The model.** `model.ScaffoldHistory` takes the field:
 - an adopted Container whose repository has commits gets `HistoryAdopt`;

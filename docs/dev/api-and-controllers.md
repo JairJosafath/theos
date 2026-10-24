@@ -31,7 +31,7 @@ Every kind has a type in `api/v1alpha1` and in `api/v1beta1`; `v1beta1` is
 the hub and the storage version (`+kubebuilder:storageversion` sits on its
 types alone; `TestEveryCRDStoresTheHub` in `internal/controller` holds every
 generated CRD to that), and each `v1alpha1` type converts to it
-([plans/api-versions.md](../plans/api-versions.md)). A field change goes to
+([plans/done/api-versions.md](../plans/done/api-versions.md)). A field change goes to
 both versions, with the conversion, and `test/compat` holds each served
 version to the last release's schema. Moving the storage marker to a newer
 version needs nothing else: `StorageMigrator` (`internal/controller`) rewrites

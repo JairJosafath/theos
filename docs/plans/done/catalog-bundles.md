@@ -34,7 +34,7 @@ the bundle expanded to.
   (`brief_standin.go`) pick and check sides the same way.
 - The UI has a page per catalog kind (`ui/src/components/objects/CatalogPages.tsx`).
 - A served version keeps `v1alpha1`'s additive rules
-  ([api-versions.md](../api-versions.md), decision 1): a new kind and a new
+  ([api-versions.md](api-versions.md), decision 1): a new kind and a new
   optional field are allowed; a required field turning optional is too.
 
 ## Decisions
