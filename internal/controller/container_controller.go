@@ -80,8 +80,11 @@ type ContainerReconciler struct {
 	// imageSaid remembers each Container's last image Event, by UID: its
 	// release's tag and state.
 	imageSaid sync.Map
-	// imagePushed remembers each Container's last image push, by UID: the
-	// cache can lag a status write by a reconcile, which must not push again.
+	// imagePushed remembers each Container's last image push, by UID, until
+	// a reconcile writes it: the push runs in a goroutine of its own and
+	// hands its result over here, and the cache can lag that status write by
+	// a reconcile, which must not push again (#1573: liveContainer can't
+	// replace it, as the result has to reach the reconcile somewhere).
 	imagePushed sync.Map
 	// imagePushing holds each Container's image push in flight, an
 	// *imagePush by UID, and imagePushEnded wakes the Container when one ends.
@@ -149,18 +152,24 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		r.forget(container.UID)
 		return ctrl.Result{}, nil
 	}
-	status := container.Status.DeepCopy()
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	status.ActiveSessions = int32(active)
+	// observe starts the status this reconcile writes from the Container as it
+	// is now: after adopt, which reads it back newer than the cache (#1573).
+	observe := func() *c4v1beta1.ContainerStatus {
+		status := container.Status.DeepCopy()
+		status.ActiveSessions = int32(active)
+		return status
+	}
 
 	var system c4v1beta1.SoftwareSystem
 	err = r.Get(ctx, types.NamespacedName{Namespace: container.Namespace, Name: container.Spec.SoftwareSystemRef.Name}, &system)
 	switch {
 	case apierrors.IsNotFound(err):
+		status := observe()
 		// A scaffolded Container stays Ready: its repository is still there, and
 		// losing Ready would scaffold it again.
 		if status.Phase != c4v1beta1.ContainerReady {
@@ -178,6 +187,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := adopt(ctx, r.Client, r.Scheme, &system, &container, labels); err != nil {
 		return ctrl.Result{}, err
 	}
+	status := observe()
 
 	// Scaffolding happens once. After that the factory only reports.
 	if status.Phase == c4v1beta1.ContainerReady {
@@ -195,7 +205,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		reportDomainsApplied(&container, status, &system)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
-		// were: the pass would act on a newest release it couldn't read (#1570).
+		// were: the pass would act on a newest release it couldn't read (#1570, #1576).
 		if poll := r.keepNewestRelease(ctx, &container, status); poll > 0 {
 			result = sooner(result, ctrl.Result{RequeueAfter: poll})
 		} else {

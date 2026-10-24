@@ -229,7 +229,7 @@ var _ = Describe("Container images", func() {
 		Expect(shippedImages(ns, "staging")).To(Equal([]string{""}))
 	})
 
-	It("leaves the image and the deploys as they were while the Crew list fails (#1570)", func() {
+	It("leaves the image and the deploys as they were while the Crew list fails (#1570, #1576)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
