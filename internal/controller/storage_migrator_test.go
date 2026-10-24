@@ -152,7 +152,7 @@ var _ = Describe("Storage migrator", func() {
 		m := &StorageMigrator{Client: operator, CRDs: []string{crdName}, Retry: 1, ReadyPoll: 10 * time.Millisecond,
 			Ready: func(*http.Request) error { return errors.New("the webhook is off") }}
 		Expect(m.Start(bounded)).To(Succeed())
-		Expect(bounded.Err()).To(BeNil(), "the migrator waited on the webhook for a CRD at strategy None")
+		Expect(bounded.Err()).To(Succeed(), "the migrator waited on the webhook for a CRD at strategy None")
 		Expect(storedVersions()).To(Equal([]string{"v1beta1"}))
 
 		var got c4v1beta1.Person
