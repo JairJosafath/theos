@@ -29,7 +29,10 @@
 #   - Security when a label or its title says security;
 #   - Changed, marked **Breaking**, when its type ends in ! or its body says BREAKING CHANGE;
 #   - left out when its type is chore, ci, test or docs;
-#   - Added for feat, Fixed for fix, Changed for any other type.
+#   - Added for feat, Fixed for fix, Changed for any other type;
+#   - and, whatever its type, a line under Deprecated for each line of its
+#     merged commits' bodies saying "Deprecated: <text>", under Removed for
+#     each saying "Removed: <text>" (an API version, #1618).
 # Its type is the title's conventional-commit prefix (feat(12)!: ...), else the
 # branch's first segment (feat/12-...). A prefix counts only when it names a
 # Conventional Commits type; "AWS: ..." or "Plan: ..." is part of the title
@@ -93,13 +96,16 @@ sort_prs() {
       elif $type == "feat" then "Added\t- \($text) (#\(.number))"
       elif $type == "fix" then "Fixed\t- \($text) (#\(.number))"
       else "Changed\t- \($text) (#\(.number))"
-      end'
+      end,
+      (.number as $n | .body | split("\n")[]
+        | capture("^(?<section>Deprecated|Removed): *(?<text>.+?)\\s*$")
+        | "\(.section)\t- \(.text) (#\($n))")'
 }
 
 if [ -n "$prs" ]; then sorted=$(sort_prs <"$prs"); else sorted=$(collect | sort_prs); fi
 
 listed=0
-for section in Added Changed Fixed Security; do
+for section in Added Changed Deprecated Removed Fixed Security; do
   lines=$(printf '%s\n' "$sorted" | sed -n "s/^$section\t//p")
   [ -n "$lines" ] || continue
   [ $listed = 0 ] || echo
