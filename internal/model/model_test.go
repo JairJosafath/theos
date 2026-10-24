@@ -281,6 +281,47 @@ func TestCheckStandard(t *testing.T) {
 	}
 }
 
+func TestCheckWiring(t *testing.T) {
+	framework := CatalogEntry{Side: SideFramework, Name: "aws-lambda-ts", SupportedTypes: []string{TypeFunction}}
+	dynamodb := CatalogEntry{Side: SideConnector, Name: "dynamodb", WiredBy: []string{"aws-lambda-ts", "aws-lambda-go"}}
+	postgres := CatalogEntry{Side: SideConnector, Name: "postgres"}
+	tests := []struct {
+		name      string
+		framework string
+		entries   []CatalogEntry
+		want      string
+	}{
+		{"no connector", "python-fastapi", []CatalogEntry{framework}, ""},
+		{"wiredBy unset", "python-fastapi", []CatalogEntry{framework, postgres}, ""},
+		{"framework inside wiredBy", "aws-lambda-go", []CatalogEntry{framework, postgres, dynamodb}, ""},
+		{"framework outside wiredBy", "python-fastapi", []CatalogEntry{framework, postgres, dynamodb},
+			"dynamodb is not wired by python-fastapi, only by aws-lambda-ts and aws-lambda-go"},
+		{"only connectors are checked", "python-fastapi",
+			[]CatalogEntry{{Side: SideStandard, Name: "aws-standard", WiredBy: []string{"aws-lambda-ts"}}}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckWiring(tt.framework, tt.entries)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("CheckWiring() = %v, want nil", err)
+				}
+				return
+			}
+			wiring, ok := errors.AsType[*WiringError](err)
+			if !ok {
+				t.Fatalf("CheckWiring() = %v, want *WiringError", err)
+			}
+			if wiring.Connector != "dynamodb" || wiring.Framework != tt.framework {
+				t.Errorf("WiringError = %+v, want Connector dynamodb and Framework %s", wiring, tt.framework)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("message = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
 func TestClusterNamespace(t *testing.T) {
 	tests := []struct {
 		host string

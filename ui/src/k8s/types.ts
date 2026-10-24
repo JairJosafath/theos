@@ -409,6 +409,14 @@ export interface CatalogEntry extends K8sObject {
   }
 }
 
+/** A Connector: a catalog entry that may name the Frameworks whose templates wire its files. */
+export interface Connector extends K8sObject {
+  spec: CatalogEntry['spec'] & {
+    /** The Frameworks, by name, that wire it; a Container on any other is refused. Unset means no restriction. */
+    wiredBy?: string[]
+  }
+}
+
 /** A Standard: a catalog entry with the coding rules and checks of a Container. */
 export interface Standard extends K8sObject {
   spec: CatalogEntry['spec'] & {

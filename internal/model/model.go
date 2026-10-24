@@ -48,6 +48,9 @@ type CatalogEntry struct {
 	TemplateRef    string
 	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
 	SupportedFrameworks []string
+	// WiredBy lists the Frameworks whose templates call a Connector's files;
+	// empty when the Connector sets no restriction, and for other sides.
+	WiredBy []string
 	// ChecksBeforeRelease says a Standard can run the full check only before a
 	// release; false for other sides.
 	ChecksBeforeRelease bool
@@ -122,6 +125,31 @@ func CheckStandard(framework string, standard *CatalogEntry) error {
 		return nil
 	}
 	return &FitError{Standard: standard.Name, Framework: framework}
+}
+
+// WiringError says a Connector lists the Frameworks that wire it and the
+// Container's Framework is not among them.
+type WiringError struct {
+	Connector string
+	Framework string
+	WiredBy   []string
+}
+
+func (e *WiringError) Error() string {
+	return fmt.Sprintf("%s is not wired by %s, only by %s", e.Connector, e.Framework, joinAnd(e.WiredBy))
+}
+
+// CheckWiring returns a *WiringError for the first Connector among entries
+// whose WiredBy is set and doesn't list the Container's Framework. A Connector
+// with no WiredBy takes any Framework.
+func CheckWiring(framework string, entries []CatalogEntry) error {
+	for _, entry := range entries {
+		if entry.Side != SideConnector || len(entry.WiredBy) == 0 || slices.Contains(entry.WiredBy, framework) {
+			continue
+		}
+		return &WiringError{Connector: entry.Name, Framework: framework, WiredBy: entry.WiredBy}
+	}
+	return nil
 }
 
 // SelfDeployError says a Container names a Compute, or a Deployment other

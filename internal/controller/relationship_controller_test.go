@@ -124,7 +124,7 @@ var _ = Describe("DataStore", func() {
 		}).Should(Succeed())
 
 		mustCreate(&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1alpha1.ContainerTypeService)})
+			Spec: c4v1alpha1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1alpha1.ContainerTypeService)}})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-db"), store)).To(Succeed())
 			g.Expect(condition(store.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
