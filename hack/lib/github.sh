@@ -2681,9 +2681,11 @@ gh_land_fetch() {
   done
 }
 
-# gh_land_sync PR BASE BRANCH [ID]: merge origin/BASE (as fetched) into BRANCH,
-# run make GH_LAND_GOAL (default check; with none, nothing runs and nothing is
-# looked at: the simple path, #1524), push, and wait until GitHub shows the push. With ID, the
+# gh_land_sync PR BASE BRANCH [ID] [GOAL]: merge origin/BASE (as fetched) into BRANCH,
+# run make GOAL (default check; with none, nothing runs and nothing is
+# looked at: the simple path, #1524; an argument, never an environment
+# variable, so make's children don't inherit it: make test-hack runs
+# github_test.sh, whose land must check, #1960), push, and wait until GitHub shows the push. With ID, the
 # merge-turn comment ID is heartbeaten while make check runs, and make check
 # goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
 # device's lands wait on it, and only the turn's one holder may. Exit 3: PR
@@ -2691,7 +2693,7 @@ gh_land_fetch() {
 # GH_LAND_HEAD to the commit it checked and pushed: the one the merge is
 # pinned to (#1320).
 gh_land_sync() {
-  local pr=$1 base=$2 branch=$3 id=${4:-} rc local_head i s self out
+  local pr=$1 base=$2 branch=$3 id=${4:-} goal=${5:-check} rc local_head i s self out
   # The tree is clean, so the copy at HEAD before the merge is the one running.
   self=$(git -C "$GH_LIB_ROOT" rev-parse -q --verify HEAD:hack/lib/github.sh)
   if ! out=$(git -C "$GH_LIB_ROOT" merge -q --no-edit "origin/$base" 2>&1); then
@@ -2712,7 +2714,6 @@ gh_land_sync() {
     trap - EXIT INT TERM
     GH_LAND_TURN=$id exec bash "$GH_LIB_ROOT/hack/lib/github.sh" land "$pr" --wait "${wait}s"
   fi
-  local goal=${GH_LAND_GOAL:-check}
   if [ "$goal" = none ]; then
     gh_land_push "$pr"
     return
@@ -2824,7 +2825,7 @@ gh_land_turn() {
     goal=${simple%%$'\t'*}
     gh_land_say "$pr" ": the simple path: changes only files nothing but the docs read (${simple#*$'\t'} lines, under $GH_SIMPLE_LINES): merging origin/$base in, then $([ "$goal" = none ] && echo "no check" || echo "make $goal"), and merging without the merge turn"
     gh_land_fetch "$pr" || return 1
-    GH_LAND_GOAL=$goal gh_land_sync "$pr" "$base" "$branch"
+    gh_land_sync "$pr" "$base" "$branch" "" "$goal"
     s=$?
     ((s == 3)) && return 0
     ((s == 0)) || return 1
@@ -2893,7 +2894,7 @@ gh_land_turn() {
       ((moves++))
       gh_land_say "$pr" ": its turn; origin/$base moved since the check (${checked:0:12} -> ${now:0:12}) by files nothing but the docs read: merging it in with $([ "$goal" = none ] && echo "no check" || echo "make $goal"), holding the turn"
       checked=$now
-      GH_LAND_GOAL=$goal gh_land_sync "$pr" "$base" "$branch" "$id"
+      gh_land_sync "$pr" "$base" "$branch" "$id" "$goal"
       s=$?
       ((s == 0)) || { gh_land_say "$pr" ": gave the turn up after $((SECONDS - t1))s"; return $((s == 3 ? 0 : 1)); }
       continue

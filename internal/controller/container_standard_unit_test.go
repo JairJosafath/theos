@@ -9,11 +9,13 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"testing"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -153,6 +155,77 @@ func TestNoLightCheck(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := noLightCheck(tc.s, tc.plan); got != head+tc.want+tail {
 				t.Errorf("noLightCheck =\n%s\nwant\n%s", got, head+tc.want+tail)
+			}
+		})
+	}
+}
+
+// A Standard update renders with the Domains the Container was scaffolded
+// with, from status.scaffoldedDomains, sorted and unique, as the scaffold
+// passed them: the bump pull request's files name the same Domains the
+// repository's docs/agents/domain/ holds (#1757, #1935).
+func TestStandardUpdateRendersWithScaffoldedDomains(t *testing.T) {
+	ci, err := model.HostCI("gitea")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: "http://gitea", Owner: "apps"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	container := &c4v1beta1.Container{
+		ObjectMeta: objectMeta("webshop", "orders-api"),
+		Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
+			DisplayName:       "Orders API",
+			Type:              c4v1beta1.ContainerTypeService,
+			FrameworkRef:      c4v1beta1.LocalRef{Name: "python-fastapi"},
+			StandardRef:       &c4v1beta1.LocalRef{Name: "python-strict"},
+		},
+	}
+	for _, tc := range []struct {
+		name       string
+		scaffolded []string
+		want       []string
+		agents     string
+	}{
+		{name: "none", agents: "# Orders API\n"},
+		{name: "sorted and unique, as the scaffold passed them",
+			scaffolded: []string{"webshop", "billing", "webshop"}, want: []string{"billing", "webshop"},
+			agents: "# Orders API\nThis system is about billing, webshop.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := &standardUpdate{
+				r:         &ContainerReconciler{},
+				container: container,
+				status:    &c4v1beta1.ContainerStatus{ScaffoldedDomains: tc.scaffolded},
+				// The repository's license and Framework files were read; the
+				// render needs no Git.
+				licenseRead: true, frameworkRead: true,
+			}
+			git := &gitAccess{gitProvider: &c4v1beta1.GitProvider{Spec: c4v1beta1.GitProviderSpec{URL: "http://gitea"}},
+				provider: provider, ci: ci}
+			standard := &c4v1beta1.Standard{ObjectMeta: objectMeta("webshop", "python-strict"),
+				Spec: c4v1beta1.StandardSpec{CatalogEntrySpec: c4v1beta1.CatalogEntrySpec{
+					Template: c4v1beta1.TemplateSource{URL: "http://gitea/templates/python-standard"}}}}
+			renders, err := u.renders(t.Context(), t.Context(), git, standard)
+			if err != nil {
+				t.Fatalf("renders() = %v", err)
+			}
+			if !slices.Equal(renders.in.Domains, tc.want) {
+				t.Errorf("renders().in.Domains = %q, want %q", renders.in.Domains, tc.want)
+			}
+			// What the Standard's own templates see, as templates/*-standard/AGENTS.md.tmpl reads it.
+			renders.fetch = func(context.Context, string) (scaffold.Tree, error) {
+				return scaffold.Tree{"AGENTS.md.tmpl": {Data: []byte("# {{ .DisplayName }}\n{{ if .Domains -}}\n" +
+					"This system is about {{ range $i, $d := .Domains }}{{ if $i }}, {{ end }}{{ $d }}{{ end }}.\n{{ end -}}\n")}}, nil
+			}
+			tree, err := renders.at(t.Context(), "v1.1.0")
+			if err != nil {
+				t.Fatalf("at(v1.1.0) = %v", err)
+			}
+			if got := string(tree["AGENTS.md"].Data); got != tc.agents {
+				t.Errorf("AGENTS.md at v1.1.0 = %q, want %q", got, tc.agents)
 			}
 		})
 	}

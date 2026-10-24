@@ -209,7 +209,9 @@ export function ContainerPage({
             ) : status.scaffoldedDomains?.length ? (
               <ul className="object-list">
                 {status.scaffoldedDomains.map((d) => {
-                  const from = status.scaffoldedFrom?.map(splitTemplateRef).find((t) => t.name === d)
+                  // The Domains come last in scaffoldedFrom, after the Connectors, the Framework
+                  // and the Standard, so the Domain's entry is the last one of its name (#1933).
+                  const from = status.scaffoldedFrom?.map(splitTemplateRef).findLast((t) => t.name === d)
                   const version = from?.version ?? domains.find((e) => e.metadata.name === d)?.spec.template.ref
                   return (
                     <li key={d} className="mono">
