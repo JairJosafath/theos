@@ -419,7 +419,7 @@ gh_recent_claims() {
 # Then by priority/N, 1 first (#1329): 1 is something broken now, so a "main
 # is red" fix (the relay watch files it ready and priority/1) is worked before
 # an in-progress issue that keeps failing; 3 is what makes development itself
-# faster (docs/plans/velocity.md); an issue with no priority label counts as
+# faster (docs/plans/done/velocity.md); an issue with no priority label counts as
 # 5, and of several labels the lowest counts. Within a number, an in-progress
 # issue without a live claim comes before a ready one, oldest first.
 # GH_NEXT_FILES, one per line, adds other checkouts' .relay/next: the relay
