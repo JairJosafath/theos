@@ -52,7 +52,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | go-operator-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
-| factory-self | Standard | | yes | n/a | n/a | n/a | n/a | n/a | n/a |
+| factory-self | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | aws-lambda-ts | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-go | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-py | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
