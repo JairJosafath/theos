@@ -277,8 +277,9 @@ var _ = Describe("Crew publishing a release's source", func() {
 		})...)
 		mustCreate(publishSecret(ns, token))
 
-		publishFailedWith(ns, "LicenseMissing", "no license: add a non-empty LICENSE, LICENSE.md, LICENSE.txt "+
-			"or COPYING at the root")
+		publishFailedWith(ns, "LicenseMissing", "no license: set spec.license on the Project or the Container "+
+			"before it is scaffolded, or commit a non-empty LICENSE, LICENSE.md, LICENSE.txt or COPYING at the root, "+
+			"the only way once scaffolded")
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 	})
 })
