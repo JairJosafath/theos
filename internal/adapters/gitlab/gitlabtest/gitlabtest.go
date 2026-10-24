@@ -134,8 +134,10 @@ type Project struct {
 	token    string
 	releases []*Release
 	tags     map[string]string
-	// commits holds each commit's whole tree by its sha, path to blob.
+	// commits holds each commit's whole tree by its sha, path to blob, and
+	// parents each commit's parent ("" for the first).
 	commits  map[string]map[string]blob
+	parents  map[string]string
 	packages []*pkg
 }
 
@@ -186,7 +188,7 @@ func (s *Server) AddProject(path, token string) *Project {
 	s.nextID++
 	p := &Project{ID: s.nextID, Path: path, Scopes: slices.Clone(DefaultScopes), RegistryEnabled: true,
 		RegistryHost: s.host(), PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
-		s: s, token: token, tags: map[string]string{}, commits: map[string]map[string]blob{}}
+		s: s, token: token, tags: map[string]string{}, commits: map[string]map[string]blob{}, parents: map[string]string{}}
 	p.commits[p.DefaultBranchHead] = map[string]blob{}
 	s.projects[path] = p
 	return p
@@ -620,11 +622,27 @@ const (
 	actionChmod  = "chmod"
 )
 
+// lastForPath is the last commit from head that changed the file at path:
+// GitLab's rule for an action's last_commit_id, which compares with the
+// file's own history, not with the branch's head (#1950). "" when no commit
+// from head holds the file.
+func (p *Project) lastForPath(head, path string) string {
+	for c := head; c != ""; c = p.parents[c] {
+		held, ok := p.commits[c][path]
+		before, had := p.commits[p.parents[c]][path]
+		if ok != had || (ok && (string(held.content) != string(before.content) || held.mode != before.mode)) {
+			return c
+		}
+	}
+	return ""
+}
+
 func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Branch  string `json:"branch"`
-		Message string `json:"commit_message"`
-		Actions []struct {
+		Branch   string `json:"branch"`
+		StartSHA string `json:"start_sha"`
+		Message  string `json:"commit_message"`
+		Actions  []struct {
 			Action          string `json:"action"`
 			FilePath        string `json:"file_path"`
 			Content         string `json:"content"`
@@ -641,6 +659,19 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, msg("You can only create or edit files when you are on a branch"))
 		return
 	}
+	if _, known := p.commits[in.StartSHA]; in.StartSHA != "" && !known {
+		writeJSON(w, http.StatusBadRequest, msg("Cannot find start_sha: "+in.StartSHA))
+		return
+	}
+	if in.StartSHA != "" && in.StartSHA != p.DefaultBranchHead {
+		// As GitLab: the commit is made on start_sha, and the branch moves to
+		// it only when it still is there (Gitaly's ref update, old oid the
+		// parent). Checked before the actions, as the ref update refuses them
+		// all.
+		writeJSON(w, http.StatusBadRequest,
+			msg("9:Could not update refs/heads/"+in.Branch+". Please refresh and try again."))
+		return
+	}
 	files := maps.Clone(p.commits[p.DefaultBranchHead])
 	for _, a := range in.Actions {
 		content := []byte(a.Content)
@@ -652,6 +683,7 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		held, exists := files[a.FilePath]
+		last := p.lastForPath(p.DefaultBranchHead, a.FilePath)
 		switch {
 		case a.FilePath == "":
 			writeJSON(w, http.StatusBadRequest, msg("file_path is required"))
@@ -662,10 +694,17 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 		case (a.Action == actionUpdate || a.Action == actionDelete || a.Action == actionChmod) && !exists:
 			writeJSON(w, http.StatusBadRequest, msg("A file with this name doesn't exist"))
 			return
-		case a.Action != "create" && a.LastCommitID != "" && a.LastCommitID != p.DefaultBranchHead:
-			// As GitLab: the head the change was decided on moved.
+		case a.Action != actionCreate && a.LastCommitID != "" && last != "" && a.LastCommitID != last:
+			// As GitLab (Files::MultiService#validate_file_status!, on update,
+			// move, delete and chmod): last_commit_id is compared with the
+			// last commit that touched this file, so the branch's head is
+			// refused when it left the file alone (#1950). A file no commit
+			// holds yet passes, as there. Newer GitLab compares the file's
+			// last commit at last_commit_id instead, which accepts the head
+			// too; the fake keeps the stricter rule, which every version's
+			// accepts.
 			writeJSON(w, http.StatusBadRequest,
-				msg("You are attempting to update a file that has changed since you started editing it."))
+				msg("The file has changed since you started editing it: "+a.FilePath))
 			return
 		case a.Action == actionDelete:
 			delete(files, a.FilePath)
@@ -693,9 +732,10 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 	p.s.nextID++
 	id := blobID(fmt.Sprintf("commit %d %s %s", p.s.nextID, p.DefaultBranchHead, in.Message))
 	p.commits[id] = files
+	p.parents[id] = p.DefaultBranchHead
 	p.DefaultBranchHead = id
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "short_id": id[:8], "title": in.Message,
-		"message": in.Message, "parent_ids": []string{}})
+		"message": in.Message, "parent_ids": []string{p.parents[id]}})
 }
 
 // blobID is a 40-hex id of s, for the fake's trees and commits.
