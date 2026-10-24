@@ -99,7 +99,7 @@ func packageName(app string) string {
 // the factory didn't make is left alone and fails with reason TagTaken.
 // The source and the image are steps 3 and 4 of docs/plans/gitlab-deploy.md.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
-	tag := model.GitHubTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
+	tag := model.ReleaseTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
 	names := make([]string, len(s.Files))
 	for i, f := range s.Files {
 		names[i] = f.Name
@@ -259,7 +259,7 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 	}
 	facts := model.GitLabDeployFacts{App: app, Version: version, TagPrefix: t.Settings[model.GitLabSettingTagPrefix],
 		Releases: releases}
-	if version != "" && model.GitHubMarkedRelease(app, model.GitHubTag(facts.TagPrefix, version), releases) == nil {
+	if version != "" && model.GitHubMarkedRelease(app, model.ReleaseTag(facts.TagPrefix, version), releases) == nil {
 		files, err := c.PackageFiles(ctx, packageName(app), version)
 		if err != nil {
 			return ports.DeployState{}, portError(err)

@@ -378,11 +378,11 @@ func TestMergedReleaseIssues(t *testing.T) {
 }
 
 func TestPublishMarkerAndTag(t *testing.T) {
-	if got := GitHubTag("cli-", "v0.2.0"); got != "cli-v0.2.0" {
-		t.Errorf("GitHubTag = %q", got)
+	if got := ReleaseTag("cli-", "v0.2.0"); got != "cli-v0.2.0" {
+		t.Errorf("ReleaseTag = %q", got)
 	}
-	if got := GitHubTag("", "v0.2.0"); got != "v0.2.0" {
-		t.Errorf("GitHubTag = %q", got)
+	if got := ReleaseTag("", "v0.2.0"); got != "v0.2.0" {
+		t.Errorf("ReleaseTag = %q", got)
 	}
 	if got := PublishMarker("cel-lens", "extension", "v0.2.0"); got != "<!-- c4factory: cel-lens/extension v0.2.0 -->" {
 		t.Errorf("PublishMarker = %q", got)

@@ -161,17 +161,27 @@ const (
 	ReasonFailed               = "Failed"
 	ReasonGitError             = "GitError"
 	ReasonForeignCommits       = "ForeignCommits"
-	ReasonLayerConflict        = "LayerConflict"
-	ReasonUnpinnedRef          = "UnpinnedRef"
-	ReasonWaiting              = "WaitingForScaffold"
-	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
-	ReasonUpToDate             = "UpToDate"
-	ReasonUpdating             = "Updating"
-	ReasonChecksFailed         = "ChecksFailed"
-	ReasonUpdateClosed         = "UpdateClosed"
-	ReasonUpdateRefused        = "UpdateRefused"
-	ReasonFilesBehind          = "FilesBehind"
+	// ReasonNothingToAdopt: the Container has spec.adopt set but its
+	// repository has no commits; there is nothing to take over.
+	ReasonNothingToAdopt = "NothingToAdopt"
+	// ReasonIdentityMismatch: an adopted repository's main has no
+	// .c4factory.yaml, or one naming another project or Container.
+	ReasonIdentityMismatch = "IdentityMismatch"
+	// ReasonStandardFilesDiffer: an adopted repository's main is missing a
+	// file of the Container's Standard, or holds one with other content than
+	// the Standard renders for this Container at its ref.
+	ReasonStandardFilesDiffer = "StandardFilesDiffer"
+	ReasonLayerConflict       = "LayerConflict"
+	ReasonUnpinnedRef         = "UnpinnedRef"
+	ReasonWaiting             = "WaitingForScaffold"
+	ReasonAppliedAtScaffold   = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold  = "AddedAfterScaffold"
+	ReasonUpToDate            = "UpToDate"
+	ReasonUpdating            = "Updating"
+	ReasonChecksFailed        = "ChecksFailed"
+	ReasonUpdateClosed        = "UpdateClosed"
+	ReasonUpdateRefused       = "UpdateRefused"
+	ReasonFilesBehind         = "FilesBehind"
 	// ReasonBundleChanged: the Bundle a Ready Container scaffolded from now
 	// names other entries, or is gone; the Container keeps what it has.
 	ReasonBundleChanged = "BundleChanged"
