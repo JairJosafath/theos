@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -105,7 +106,14 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if len(commits) > 0 {
 		info, _ = scaffold.ParseCommitMessage(commits[0].Message) // not ours leaves Container empty
 	}
-	switch model.ScaffoldHistory(len(commits), info.Container, container.Namespace+"/"+container.Name) {
+	switch model.ScaffoldHistory(len(commits), info.Container, container.Namespace+"/"+container.Name,
+		container.Spec.Adopt) {
+	case model.HistoryAdopt:
+		return r.adopt(ctx, gitCtx, container, status, res, view, provider, repo)
+	case model.HistoryNothingToAdopt:
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonNothingToAdopt,
+			fmt.Sprintf("Repository %s has no commits to adopt; spec.adopt takes over an existing repository, "+
+				"it never scaffolds one", repo.WebURL))
 	case model.HistoryRecover:
 		log.Info("Found initial commit from an earlier attempt", "url", repo.WebURL)
 		if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
@@ -120,8 +128,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 				Standard: b.Standard, Compute: b.Compute, Deployment: b.Deployment}
 			standard = b.Standard
 		}
-		return r.ready(ctx, container, status, standard, info.ScaffoldedFrom, info.Relationships, info.Checks,
-			res.entries[0].ReadsOperations, "Found the initial commit from an earlier attempt")
+		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
+			info.ScaffoldedFrom, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
+			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonForeignCommits,
 			fmt.Sprintf("Repository %s has commits C4 Factory didn't make; it only scaffolds into a new, empty repository",
@@ -165,8 +174,88 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
-	return r.ready(ctx, container, status, res.choices.Standard, result.ScaffoldedFrom, res.use.Relationships, in.Checks,
-		res.entries[0].ReadsOperations, fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
+	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
+		result.ScaffoldedFrom, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
+		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
+}
+
+// adopt takes over a repository that already has commits (#1888, spec.adopt).
+// Nothing is written: main must carry a .c4factory.yaml naming this project
+// and Container, and every file of the Container's Standard with the content
+// the Standard renders for it at its ref. Then main is protected and the
+// Container is Ready, its Standard recorded at that ref and nothing recorded
+// as scaffolded. Its spec.operations is recorded as it is now, as a recovered
+// scaffold's is.
+func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1alpha1.Container,
+	status *c4v1alpha1.ContainerStatus, res resolved, view *c4v1alpha1.Container, provider gitprovider.Provider,
+	repo gitprovider.Repository) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	layers, err := r.fetchLayers(gitCtx, res)
+	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonUnpinnedRef, err.Error())
+	}
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
+	ci, err := gitProviderCI(res.provider)
+	if err != nil {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
+	}
+	in := scaffoldInput(view, ci, res.use.Connectors,
+		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
+		specOperations(container), repo.NpmScope)
+	// The Standard's templates may test the Framework's files, so the Framework
+	// renders first, as scaffold.Build has it; only the Standard's render is kept.
+	rendered := scaffold.Tree{}
+	var standardRef string
+	for _, layer := range layers {
+		tree, err := scaffold.RenderLayer(in, layer)
+		if err != nil {
+			return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
+		}
+		switch layer.Side {
+		case model.SideFramework:
+			in.FrameworkFiles = tree.Paths()
+		case model.SideStandard:
+			rendered, standardRef = tree, layer.Ref
+		}
+	}
+
+	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch,
+		append(rendered.Paths(), scaffold.IdentityPath))
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
+	identity, found := onMain[scaffold.IdentityPath]
+	delete(onMain, scaffold.IdentityPath)
+	if !found {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonIdentityMismatch,
+			fmt.Sprintf("Repository %s has no %s on %s; an adopted repository names its project and Container there",
+				repo.WebURL, scaffold.IdentityPath, gitprovider.DefaultBranch))
+	}
+	id, err := scaffold.ParseIdentity(identity.Data)
+	if err != nil {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonIdentityMismatch,
+			fmt.Sprintf("Repository %s: %v", repo.WebURL, err))
+	}
+	if id.Project != container.Namespace || id.Container != container.Name {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonIdentityMismatch,
+			fmt.Sprintf("Repository %s: %s names project %q and container %q, not %s/%s",
+				repo.WebURL, scaffold.IdentityPath, id.Project, id.Container, container.Namespace, container.Name))
+	}
+	if differ := scaffold.ChangedPaths(rendered, onMain); len(differ) > 0 {
+		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonStandardFilesDiffer,
+			fmt.Sprintf("Repository %s: %s differs from Standard %s at %s in %s; an adopted repository carries the "+
+				"Standard's files as it renders them", repo.WebURL, gitprovider.DefaultBranch, res.choices.Standard,
+				standardRef, strings.Join(differ, ", ")))
+	}
+
+	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
+	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef)
+	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, in.Checks,
+		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
 }
 
 // fetchLayers fetches every catalog entry's template at its pinned ref, in layer
@@ -188,21 +277,21 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 }
 
 // ready records a finished scaffold. From here on the factory only reports.
-// checks is when CI runs the full check as the scaffold rendered the Standard's
-// files; empty reads as EveryChange. readsOperations says the Framework
+// standardRef is the ref the Standard's files on main are at: the one the
+// scaffold pinned, or the one an adopted repository was checked against; empty
+// records no Standard. checks is when CI runs the full check as the scaffold
+// rendered the Standard's files; empty reads as EveryChange. readsOperations says the Framework
 // rendered spec.operations into the repository (#1209): only then is the
 // block recorded, so a Framework that doesn't read it never reports it
 // applied.
 func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.ContainerStatus, standard string, from []string, relationships []model.AppliedRelationship, checks string,
-	readsOperations bool, message string) (ctrl.Result, error) {
+	status *c4v1alpha1.ContainerStatus, standard, standardRef string, from []string,
+	relationships []model.AppliedRelationship, checks string, readsOperations bool, message string) (ctrl.Result, error) {
 	status.Phase = c4v1alpha1.ContainerReady
 	status.ScaffoldedFrom = from
-	if standard != "" {
-		if ref := model.ScaffoldedRef(from, standard); ref != "" {
-			status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: standard, Ref: ref,
-				Checks: c4v1alpha1.ChecksMode(checks)}
-		}
+	if standard != "" && standardRef != "" {
+		status.Standard = &c4v1alpha1.ContainerStandardStatus{Name: standard, Ref: standardRef,
+			Checks: c4v1alpha1.ChecksMode(checks)}
 	}
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	// The commit an earlier attempt pushed doesn't say its operations, so a

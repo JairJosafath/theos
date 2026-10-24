@@ -224,19 +224,25 @@ func TestScaffoldHistory(t *testing.T) {
 		name       string
 		commits    int
 		initialFor string
+		adopt      bool
 		want       ExistingHistory
 	}{
-		{"a new repository is scaffolded", 0, "", HistoryEmpty},
-		{"our own initial commit is recovered", 1, container, HistoryRecover},
-		{"one commit we didn't make is foreign", 1, "", HistoryForeign},
-		{"another Container's initial commit is foreign", 1, "shop/billing-api", HistoryForeign},
-		{"a second commit after ours is foreign", 2, container, HistoryForeign},
-		{"two commits we didn't make are foreign", 2, "", HistoryForeign},
+		{"a new repository is scaffolded", 0, "", false, HistoryEmpty},
+		{"our own initial commit is recovered", 1, container, false, HistoryRecover},
+		{"one commit we didn't make is foreign", 1, "", false, HistoryForeign},
+		{"another Container's initial commit is foreign", 1, "shop/billing-api", false, HistoryForeign},
+		{"a second commit after ours is foreign", 2, container, false, HistoryForeign},
+		{"two commits we didn't make are foreign", 2, "", false, HistoryForeign},
+		// #1888: spec.adopt takes over whatever history there is.
+		{"an adopted repository with commits is adopted", 2, "", true, HistoryAdopt},
+		{"an adopted repository with one foreign commit is adopted", 1, "", true, HistoryAdopt},
+		{"an adopted repository holding our own initial commit is adopted, not recovered", 1, container, true, HistoryAdopt},
+		{"an adopted repository with no commits has nothing to adopt", 0, "", true, HistoryNothingToAdopt},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ScaffoldHistory(tt.commits, tt.initialFor, container); got != tt.want {
-				t.Errorf("ScaffoldHistory(%d, %q) = %v, want %v", tt.commits, tt.initialFor, got, tt.want)
+			if got := ScaffoldHistory(tt.commits, tt.initialFor, container, tt.adopt); got != tt.want {
+				t.Errorf("ScaffoldHistory(%d, %q, adopt=%t) = %v, want %v", tt.commits, tt.initialFor, tt.adopt, got, tt.want)
 			}
 		})
 	}

@@ -156,6 +156,16 @@ const (
 	ReasonFailed               = "Failed"
 	ReasonGitError             = "GitError"
 	ReasonForeignCommits       = "ForeignCommits"
+	// ReasonNothingToAdopt: the Container has spec.adopt set but its
+	// repository has no commits; there is nothing to take over.
+	ReasonNothingToAdopt = "NothingToAdopt"
+	// ReasonIdentityMismatch: an adopted repository's main has no
+	// .c4factory.yaml, or one naming another project or Container.
+	ReasonIdentityMismatch = "IdentityMismatch"
+	// ReasonStandardFilesDiffer: an adopted repository's main is missing a
+	// file of the Container's Standard, or holds one with other content than
+	// the Standard renders for this Container at its ref.
+	ReasonStandardFilesDiffer = "StandardFilesDiffer"
 	ReasonLayerConflict        = "LayerConflict"
 	ReasonUnpinnedRef          = "UnpinnedRef"
 	ReasonWaiting              = "WaitingForScaffold"

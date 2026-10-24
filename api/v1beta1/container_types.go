@@ -76,6 +76,18 @@ type ContainerSpec struct {
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
 
+	// adopt says the Container takes over a repository that already has
+	// commits instead of scaffolding a new one. The operator writes nothing:
+	// it checks that main's .c4factory.yaml names this project and Container
+	// and that every file of the Container's Standard is there with the
+	// content the Standard renders at its ref, then protects main and goes
+	// Ready. An adopted Container is never scaffolded; an empty repository
+	// fails NothingToAdopt. Set at creation and immutable.
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adopt is immutable"
+	// +optional
+	Adopt bool `json:"adopt,omitempty"`
+
 	// operations is what the application promises whatever tier runs it: how
 	// long its backups are kept and where they are copied, its recovery
 	// objectives and who its alarms tell. The tier itself is the deploy

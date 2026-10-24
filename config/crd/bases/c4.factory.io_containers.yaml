@@ -63,6 +63,20 @@ spec:
           spec:
             description: spec defines the desired state of Container
             properties:
+              adopt:
+                default: false
+                description: |-
+                  adopt says the Container takes over a repository that already has
+                  commits instead of scaffolding a new one. The operator writes nothing:
+                  it checks that main's .c4factory.yaml names this project and Container
+                  and that every file of the Container's Standard is there with the
+                  content the Standard renders at its ref, then protects main and goes
+                  Ready. An adopted Container is never scaffolded; an empty repository
+                  fails NothingToAdopt. Set at creation and immutable.
+                type: boolean
+                x-kubernetes-validations:
+                - message: adopt is immutable
+                  rule: self == oldSelf
               bundleRef:
                 description: |-
                   bundleRef names the Bundle catalog entry that picks the Framework,
@@ -1098,6 +1112,20 @@ spec:
           spec:
             description: spec defines the desired state of Container
             properties:
+              adopt:
+                default: false
+                description: |-
+                  adopt says the Container takes over a repository that already has
+                  commits instead of scaffolding a new one. The operator writes nothing:
+                  it checks that main's .c4factory.yaml names this project and Container
+                  and that every file of the Container's Standard is there with the
+                  content the Standard renders at its ref, then protects main and goes
+                  Ready. An adopted Container is never scaffolded; an empty repository
+                  fails NothingToAdopt. Set at creation and immutable.
+                type: boolean
+                x-kubernetes-validations:
+                - message: adopt is immutable
+                  rule: self == oldSelf
               bundleRef:
                 description: |-
                   bundleRef names the Bundle catalog entry that picks the Framework,
