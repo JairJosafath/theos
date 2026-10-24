@@ -215,26 +215,11 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, nil,
-		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container), repo.NpmScope)
-	rendered := scaffold.Tree{}
-	var standardRef string
-	for _, layer := range layers {
-		tree, err := scaffold.RenderLayer(in, layer)
-		if err != nil {
-			return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
-		}
-		rendered, standardRef = tree, layer.Ref
-	}
-
-	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch,
-		append(rendered.Paths(), scaffold.IdentityPath))
+	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, []string{scaffold.IdentityPath})
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	identity, found := onMain[scaffold.IdentityPath]
-	delete(onMain, scaffold.IdentityPath)
 	if !found {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonIdentityMismatch,
 			fmt.Sprintf("Repository %s has no %s on %s; an adopted repository names its project and Container there",
@@ -249,6 +234,31 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonIdentityMismatch,
 			fmt.Sprintf("Repository %s: %s names project %q and container %q, not %s/%s",
 				repo.WebURL, scaffold.IdentityPath, id.Project, id.Container, container.Namespace, container.Name))
+	}
+	// The Standard renders with the license the identity records, as a later
+	// Standard update renders it (docs/plans/license.md, decision 5).
+	var license scaffold.License
+	if id.License != "" {
+		if license, err = r.resolveLicense(ctx, container); err != nil {
+			return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+		}
+		license.ID = id.License
+	}
+	in := scaffoldInput(view, ci, nil,
+		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
+		specOperations(container), repo.NpmScope, license)
+	rendered := scaffold.Tree{}
+	var standardRef string
+	for _, layer := range layers {
+		tree, err := scaffold.RenderLayer(in, layer)
+		if err != nil {
+			return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
+		}
+		rendered, standardRef = tree, layer.Ref
+	}
+	onMain, _, err = provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, rendered.Paths())
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
 	}
 	if differ := scaffold.ChangedPaths(rendered, onMain); len(differ) > 0 {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonStandardFilesDiffer,
