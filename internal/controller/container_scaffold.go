@@ -190,7 +190,17 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	status *c4v1alpha1.ContainerStatus, res resolved, view *c4v1alpha1.Container, provider gitprovider.Provider,
 	repo gitprovider.Repository) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	layers, err := r.fetchLayers(gitCtx, res)
+	// Only the Standard is checked, rendered from what a later Standard update
+	// renders an adopted Container with: no Framework ref and no Connectors
+	// recorded, so no Framework files and no Connectors.
+	standardOnly := res
+	standardOnly.entries = nil
+	for _, entry := range res.entries {
+		if entry.Side == model.SideStandard {
+			standardOnly.entries = append(standardOnly.entries, entry)
+		}
+	}
+	layers, err := r.fetchLayers(gitCtx, standardOnly)
 	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonUnpinnedRef, err.Error())
 	}
@@ -201,11 +211,9 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
-	in := scaffoldInput(view, ci, res.use.Connectors,
+	in := scaffoldInput(view, ci, nil,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope)
-	// The Standard's templates may test the Framework's files, so the Framework
-	// renders first, as scaffold.Build has it; only the Standard's render is kept.
 	rendered := scaffold.Tree{}
 	var standardRef string
 	for _, layer := range layers {
@@ -213,12 +221,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		if err != nil {
 			return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 		}
-		switch layer.Side {
-		case model.SideFramework:
-			in.FrameworkFiles = tree.Paths()
-		case model.SideStandard:
-			rendered, standardRef = tree, layer.Ref
-		}
+		rendered, standardRef = tree, layer.Ref
 	}
 
 	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch,
