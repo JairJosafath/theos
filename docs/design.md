@@ -572,7 +572,12 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   and files the issues once it is Ready, ordered by their `after:` front
   matter as Git host dependencies. What it made carries the label
   `c4.factory.io/brief`. A failed step says where and why
-  (`Planned=False`, `ApplyFailed`).
+  (`Planned=False`, `ApplyFailed`). A round that waits for a Container that
+  stopped (phase `Failed`) keeps waiting and says why: its `Planned` message
+  carries the Container's failing condition's reason and message after the
+  phase ("Container x (Failed: UnpinnedRef, Framework y: ...)"), so a fix
+  to the Container (a pinned ref, a Markdown domain, a layer moved) lets the
+  round go on without a retry.
 - **One app uses another's release, never its branch.** An issue's `uses:`
   names a related Container; it turns ready once that app's release has
   settled and published something other apps install, a Go module, an npm
@@ -815,8 +820,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   registry (package the Container's name, version the release's). The image goes by digest to the
   project's container registry, at its `container_registry_image_prefix`
   and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
-  registry is on and the token has `write_registry`; else the release ships
-  without one. The Secret holds `token`, a project access token with the
+  registry is on and the token has `read_registry` and `write_registry`;
+  else the release ships without one. The Secret holds `token`, a project access token with the
   Maintainer role and the scopes `api`, `read_registry` and `write_registry`
   (a group or personal access token works the same); a deploy token can't
   call the API and is not taken.
