@@ -107,23 +107,17 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 	for i, f := range s.Files {
 		names[i] = f.Name
 	}
+	// The rule runs offline first, as if the project took the image: a
+	// shipment with nothing to publish fails before GitLab is asked.
+	shipment := model.ReleaseShipmentFacts{Type: s.Type, Deployment: s.Deployment, Framework: s.Framework,
+		ScaffoldedFrom: s.ScaffoldedFrom, Files: names, Image: s.Image != "", TakesImage: true}
+	plan, problem := model.ReleaseShipment(shipment)
+	if problem != "" {
+		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
+	}
 	c, err := d.client(t)
 	if err != nil {
 		return err
-	}
-	info, err := c.Project(ctx)
-	if err != nil {
-		return portError(err)
-	}
-	takesImage, err := takesImage(ctx, c, info, s.Image)
-	if err != nil {
-		return portError(err)
-	}
-	plan, problem := model.ReleaseShipment(model.ReleaseShipmentFacts{Type: s.Type, Deployment: s.Deployment,
-		Framework: s.Framework, ScaffoldedFrom: s.ScaffoldedFrom, Files: names,
-		Image: s.Image != "", TakesImage: takesImage})
-	if problem != "" {
-		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
 	}
 	marker := model.ShipMarker(s.App, tag)
 	// A file's ID is its index in s.Files, which write streams it from.
@@ -142,36 +136,56 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 		Body: model.ReleaseBody(s.Notes, marker), Marker: marker, Commit: s.Commit, Files: files}
 	step := model.NextGitLabStep(ship, facts)
 	if step.Action == model.PublishCreateRelease && plan.Image && s.CopyImage != nil {
-		// The files are there: the image goes next, and the release, last,
-		// names it (docs/plans/gitlab-deploy.md, Decisions 3 and 5).
-		image, copied, err := d.shipImage(ctx, c, info, t, s)
-		if err != nil || copied {
-			return err
+		// The files are there: the image goes next, when the project takes
+		// it, and the release, last, names it (docs/plans/gitlab-deploy.md,
+		// Decisions 3 and 5). The project is asked here, once per release.
+		info, err := c.Project(ctx)
+		if err != nil {
+			return portError(err)
 		}
-		step.Body = model.ReleaseBody(model.GitHubImageNotes(s.Notes, image), marker)
+		takes, err := takesImage(ctx, c, info, s.Image)
+		if err != nil {
+			return portError(err)
+		}
+		shipment.TakesImage = takes
+		if _, problem := model.ReleaseShipment(shipment); problem != "" {
+			return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
+		}
+		if takes {
+			image, copied, err := d.shipImage(ctx, c, info, t, s)
+			if err != nil || copied {
+				return err
+			}
+			step.Body = model.ReleaseBody(model.GitHubImageNotes(s.Notes, image), marker)
+		}
 	}
 	return portError(d.write(ctx, c, t, s, step, files, held))
 }
 
 // takesImage says whether the project takes image, s's image by digest:
-// its container registry is on and the token may write to it
-// (docs/plans/gitlab-deploy.md, Decision 5). An image the project doesn't
-// take is logged once per Ship, with why, and the release ships without it.
+// its container registry is on, its registry prefix names a path for the
+// images, and the token may write to it (docs/plans/gitlab-deploy.md,
+// Decision 5). An image the project doesn't take is logged, with why, by
+// the Ship that makes the release, which ships without it.
 func takesImage(ctx context.Context, c gitprovider.GitLabProject, info gitprovider.GitLabProjectInfo,
 	image string) (bool, error) {
 	if image == "" {
 		return false, nil
 	}
-	why := ""
-	switch scopes, err := c.TokenScopes(ctx); {
-	case err != nil:
-		return false, err
-	case !info.RegistryEnabled:
+	var why string
+	if _, _, err := imageHome(info); !info.RegistryEnabled {
 		why = "the project's container registry is off"
-	case !slices.Contains(scopes, "write_registry"):
+	} else if err != nil {
+		why = fmt.Sprintf("the project names no registry path for its images, only %q", info.RegistryPrefix)
+	} else {
+		scopes, err := c.TokenScopes(ctx)
+		if err != nil {
+			return false, err
+		}
+		if slices.Contains(scopes, "write_registry") {
+			return true, nil
+		}
 		why = "the token lacks the write_registry scope; it has " + strings.Join(scopes, ", ")
-	default:
-		return true, nil
 	}
 	logr.FromContextOrDiscard(ctx).Info("No image copied", "project", info.Path, "image", image, "why", why)
 	return false, nil
