@@ -288,7 +288,7 @@ describe('github targets (#1603)', () => {
     )
     expect(t).toContain('Secret oss-github')
     expect(t).toMatch(
-      /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on GHCR\./,
+      /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on its registry\./,
     )
   })
 
