@@ -7,6 +7,8 @@ import type { App } from 'aws-cdk-lib';
 import { CfnTable } from 'aws-cdk-lib/aws-dynamodb';
 import { CfnPolicy } from 'aws-cdk-lib/aws-iam';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import { CfnSecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { AwsSolutionsChecks, ServerlessChecks } from 'cdk-nag';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -31,16 +33,18 @@ export const TIERS: readonly Tier[] = ['production', 'development'];
 /** What a tier means for every stack; the Standard's test holds the stacks to it. */
 export interface TierRules {
   /**
-   * Data (tables, backup vaults and their keys) outlives the stack, tables
-   * refuse deletion, and the stack has termination protection. Off, deleting
-   * the stack deletes the data.
+   * Data (tables, Aurora clusters and their keys, backup vaults and their
+   * keys) outlives the stack, tables and clusters refuse deletion, a removed
+   * cluster leaves a final snapshot, and the stack has termination
+   * protection. Off, deleting the stack deletes the data.
    */
   readonly keepData: boolean;
-  /** Point-in-time recovery on every table. */
+  /** Point-in-time recovery on every table, and 35 days of backups on every Aurora cluster. */
   readonly pointInTimeRecovery: boolean;
   /**
    * An AWS Backup plan keeping daily backups for `OPERATIONS.backups.retentionDays`,
-   * in a vault with its own key, copied to `copyToRegion` when it is set.
+   * in a vault with its own key, copied to `copyToRegion` when it is set,
+   * of the stack's tables and Aurora clusters, named by ARN.
    */
   readonly backups: boolean;
   /**
@@ -371,6 +375,20 @@ export function applyStandard(app: App, tier: Tier): void {
         Validations.of(table).acknowledge({
           id: 'AwsSolutions-DDB3',
           reason: `The ${tier} tier keeps no data worth recovering: deleting the stack deletes its tables.`,
+        });
+      }
+      for (const secret of stack.node.findAll().filter((node) => node instanceof CfnSecret)) {
+        Validations.of(secret).acknowledge({
+          id: 'AwsSolutions-SMG4',
+          reason: `The ${tier} tier keeps no data worth recovering: deleting the stack deletes its databases, and their credentials rotate only in production.`,
+        });
+      }
+    }
+    if (!TIER_RULES[tier].keepData) {
+      for (const cluster of stack.node.findAll().filter((node) => node instanceof CfnDBCluster)) {
+        Validations.of(cluster).acknowledge({
+          id: 'AwsSolutions-RDS10',
+          reason: `The ${tier} tier keeps no data: deleting the stack deletes its databases, so nothing protects them from deletion.`,
         });
       }
     }
