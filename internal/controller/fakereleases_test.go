@@ -536,7 +536,9 @@ func (p *fakeProvider) CopyImage(ctx context.Context, repo gitprovider.Repositor
 	}
 	state.imageCopies[to.Host+"/"+toRepository+":"+tag] = digest
 	p.git.mu.Unlock()
-	if ghcrFake == nil || to.Host != ghcrFake.host {
+	// Only the suite's registries take a real copy: GHCR's stand-in and a
+	// GitLab project's (#1806); any other host is recorded alone.
+	if ghcrFake == nil || (to.Host != ghcrFake.host && to.Host != gitlabRegistryFake.host) {
 		return nil
 	}
 	return oci.Copy(ctx, oci.Registry{Host: registryFake.host}, repo.Owner+"/"+repo.Name, digest, to, toRepository, tag)

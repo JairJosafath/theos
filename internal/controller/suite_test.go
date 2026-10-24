@@ -96,8 +96,9 @@ var (
 	gitlabFake *gitlabtest.Server
 	// ghcrFake stands in for GHCR, where the github member copies a
 	// release's image; registryFake is the owner's registry a spec pushes
-	// that image to first (#1600).
-	ghcrFake, registryFake *fakeRegistry
+	// that image to first (#1600). gitlabRegistryFake stands in for a
+	// GitLab project's container registry (#1806).
+	ghcrFake, registryFake, gitlabRegistryFake *fakeRegistry
 	// deployFake is the Deployer of every DeployTarget's member, but for a
 	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
@@ -336,9 +337,10 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(githubFake.enterprise.Close)
 	gitlabFake = gitlabtest.StartTLS()
 	DeferCleanup(gitlabFake.Close)
-	ghcrFake, registryFake = newFakeRegistry(), newFakeRegistry()
+	ghcrFake, registryFake, gitlabRegistryFake = newFakeRegistry(), newFakeRegistry(), newFakeRegistry()
 	DeferCleanup(ghcrFake.server.Close)
 	DeferCleanup(registryFake.server.Close)
+	DeferCleanup(gitlabRegistryFake.server.Close)
 	deployFake = &fake.Deployer{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
