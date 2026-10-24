@@ -105,7 +105,7 @@ func (d *Deployer) Check(ctx context.Context, t ports.Target) error {
 // fails with reason TagTaken. With a packagesToken and an image, the image is
 // copied to the target's registry before the draft is made, and the release's notes name it.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
-	tag := model.GitHubTag(t.Settings[model.GitHubSettingTagPrefix], s.Version)
+	tag := model.ReleaseTag(t.Settings[model.GitHubSettingTagPrefix], s.Version)
 	names := make([]string, len(s.Files))
 	for i, f := range s.Files {
 		names[i] = f.Name
@@ -343,7 +343,7 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, 
 	}
 	step, done := model.NextSourceStep(model.SourceShip{Source: src, Files: s.Source, Web: hosts(t).Web,
 		Repository: t.Settings[model.GitHubSettingRepository], App: s.DisplayName, Owner: s.App, Tag: s.Version,
-		GitHubTag: tag}, gh.Facts)
+		ReleaseTag: tag}, gh.Facts)
 	if done != nil {
 		return done, nil
 	}

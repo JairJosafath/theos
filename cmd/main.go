@@ -43,6 +43,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	"github.com/JairJosafath/c4factory/internal/adapters/cloudformation"
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
@@ -380,6 +381,7 @@ func main() {
 		os.Exit(1)
 	}
 	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{}),
+		model.DeployMemberGitLab:         gitlab.New(nil),
 		model.DeployMemberArgoCD:         argocd.New(argoClient),
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
 	if err := (&controller.ContainerReconciler{
