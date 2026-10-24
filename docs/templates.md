@@ -521,7 +521,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.20.0)
+### aws-standard (v1.21.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -536,6 +536,16 @@ Since v1.20.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
+Since v1.21.0 the Standard knows an Aurora cluster: `BACKED_UP_TYPES`
+gains `AWS::RDS::DBCluster`, the backup selection names clusters by
+`DBClusterArn` as it names tables by `Arn`, and the encryption (a customer
+managed key), removal (`Snapshot` where the tier keeps data, else
+`Delete`), deletion protection and recovery (35 days of backups) rules
+check every cluster, the selection by the `CfnDBCluster`'s
+`attrDbClusterArn` (the L2's `clusterArn` is a `formatArn` over a `Ref`, an
+ARN written out); where the tier has no point-in-time recovery it
+acknowledges `AwsSolutions-SMG4` on every secret, and where it keeps no
+data `AwsSolutions-RDS10` on every cluster (#1921).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
