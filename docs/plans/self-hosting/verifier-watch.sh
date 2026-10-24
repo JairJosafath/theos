@@ -96,7 +96,10 @@ fi
 
 hack/pull.sh >/dev/null 2>&1 || true
 echo "$(date -Is) #$due: verifier session $((attempts + 1))" >>"$log"
-env CLAUDE_CONFIG_DIR="$HOME/.claude" C4_HUMAN_CLUSTER=1 \
+# The ~/.claude login: unset, not set to ~/.claude, which would move the
+# config to ~/.claude/.claude.json, where the workspace isn't trusted and
+# .claude/settings.json's allow rules are ignored.
+env -u CLAUDE_CONFIG_DIR C4_HUMAN_CLUSTER=1 \
   claude -p --permission-mode auto --model opus \
   "You are the verifier session of docs/plans/self-hosting.md for issue #$due. Do its step as the plan says, close the issue when its Done when holds, or comment on it what stopped you, then end. Project commands bare, as the plan says." \
   >>"$log" 2>&1 || echo "$(date -Is) #$due: the session exited $?" >>"$log"

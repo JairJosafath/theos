@@ -54,7 +54,7 @@ if [ -f docs/plans/self-hosting.md ]; then ok "the plan is here"; else
 
 # The relay's Claude login: step 0, the relay and the verifier sessions use it.
 if [ -f "$HOME/.claude/.credentials.json" ]; then ok "Claude Code is logged in (~/.claude)"; else
-  bad "Claude Code isn't logged in at ~/.claude" "run: CLAUDE_CONFIG_DIR=\$HOME/.claude claude, then /login"; fi
+  bad "Claude Code isn't logged in at ~/.claude" "run: env -u CLAUDE_CONFIG_DIR claude, then /login"; fi
 
 # The agents' token, which step 8 stores in the cluster.
 token_file=.dev/secrets/claude-token
@@ -113,7 +113,7 @@ if [ -n "$parent" ] && gh issue view "$parent" -R "$repo" --json number >/dev/nu
   echo "Step 0 already ran: the plan's parent is #$parent."
 else
   echo "Starting step 0 (a headless session; it takes a few minutes)..."
-  env CLAUDE_CONFIG_DIR="$HOME/.claude" claude -p --permission-mode auto --model opus \
+  env -u CLAUDE_CONFIG_DIR claude -p --permission-mode auto --model opus \
     "Run step 0 of docs/plans/self-hosting.md, then end. Project commands bare, as the plan says."
   parent=$(tr -dc 0-9 <"$parent_file" 2>/dev/null || true)
   if [ -z "$parent" ]; then
