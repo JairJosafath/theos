@@ -8,7 +8,7 @@
 // approved. The CRD and RBAC decide whether it lands; the page shows the API
 // server's answer.
 
-import { useContext, useRef, useState } from 'react'
+import { useContext, useRef, useState, type ReactNode } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import { RESOURCES, type Container, type ContainerDeploy, type DeployTarget } from '../../k8s/types'
@@ -20,12 +20,15 @@ import {
   GITHUB_SECRET_KEYS,
   githubImage,
   githubReleasesURL,
-  githubSource,
+  GITLAB_SECRET_KEYS,
+  gitlabImage,
+  gitlabReleasesURL,
   healthTone,
   memberOf,
   phaseTone,
   readinessOf,
   shippingTo,
+  sourceOf,
   tierOf,
   type DeployRow,
 } from '../../model/deploys'
@@ -52,7 +55,7 @@ function Badge({ tone, label, title }: { tone: Tone; label: string; title?: stri
 function Where({ target }: { target: DeployTarget }) {
   const { where } = memberOf(target)
   if (!where) return <span className="muted">not shown by this UI</span>
-  const releases = githubReleasesURL(target)
+  const releases = githubReleasesURL(target) ?? gitlabReleasesURL(target)
   if (releases)
     return (
       <a className="mono" href={releases} target="_blank" rel="noreferrer">
@@ -62,39 +65,58 @@ function Where({ target }: { target: DeployTarget }) {
   return <span className="mono">{where}</span>
 }
 
-/** A github target's tags, source and image, each unset part as the operator fills it. */
-function GitHubFacts({ target }: { target: DeployTarget }) {
-  const github = target.spec.github
-  if (!github) return null
-  const source = githubSource(target)
+/** A github or gitlab target's release tags, the prefix as the operator fills it when unset. */
+function TagsFact({ tagPrefix, children }: { tagPrefix: string | undefined; children?: ReactNode }) {
   return (
     <>
       <dt>Tags</dt>
       <dd>
-        {github.tagPrefix === undefined ? (
+        {tagPrefix === undefined ? (
           <>
             <span className="mono">&lt;container&gt;-v1.2.3</span>
             <span className="muted"> (tagPrefix not set: the Container’s name and -)</span>
           </>
         ) : (
-          <span className="mono">{github.tagPrefix}v1.2.3</span>
+          <span className="mono">{tagPrefix}v1.2.3</span>
         )}
-        {github.latest === false ? <span className="muted"> · never marked Latest</span> : null}
+        {children}
       </dd>
+    </>
+  )
+}
+
+/** Where a github or gitlab target puts each release's source, the parts the operator fills named; or that it publishes none. */
+function SourceFact({ target }: { target: DeployTarget }) {
+  const source = sourceOf(target)
+  const path = (target.spec.github ?? target.spec.gitlab)?.source?.path
+  return (
+    <>
       <dt>Source</dt>
       <dd>
         {source ? (
           <>
             folder <span className="mono">{source.path}</span>, tagged{' '}
             <span className="mono">{source.tagPrefix}v1.2.3</span>
-            {github.source?.path === undefined ? (
-              <span className="muted"> (path not set: each Container’s name)</span>
-            ) : null}
+            {path === undefined ? <span className="muted"> (path not set: each Container’s name)</span> : null}
           </>
         ) : (
           <span className="muted">not published: the release only</span>
         )}
       </dd>
+    </>
+  )
+}
+
+/** A github target's tags, source and image, each unset part as the operator fills it. */
+function GitHubFacts({ target }: { target: DeployTarget }) {
+  const github = target.spec.github
+  if (!github) return null
+  return (
+    <>
+      <TagsFact tagPrefix={github.tagPrefix}>
+        {github.latest === false ? <span className="muted"> · never marked Latest</span> : null}
+      </TagsFact>
+      <SourceFact target={target} />
       <dt>Image</dt>
       <dd>
         <span className="mono">{githubImage(target)}</span>
@@ -104,6 +126,44 @@ function GitHubFacts({ target }: { target: DeployTarget }) {
         </span>
       </dd>
     </>
+  )
+}
+
+/**
+ * A gitlab target's tags, source and image, each unset part as the operator
+ * fills it (docs/plans/gitlab-deploy.md, decisions 1, 4 and 5). The image's
+ * registry is the project's own, which the operator reads from the project:
+ * named for gitlab.com, a placeholder for a self-hosted instance.
+ */
+function GitLabFacts({ target }: { target: DeployTarget }) {
+  const gitlab = target.spec.gitlab
+  if (!gitlab) return null
+  return (
+    <>
+      <TagsFact tagPrefix={gitlab.tagPrefix} />
+      <SourceFact target={target} />
+      <dt>Image</dt>
+      <dd>
+        <span className="mono">{gitlabImage(target)}</span>
+        <span className="muted small">
+          {' '}
+          · copied to the project’s container registry, for a Container whose release builds an image, when the registry
+          is on and the token has write_registry
+          {gitlab.url ? '; the instance names its registry' : ''}
+        </span>
+      </dd>
+    </>
+  )
+}
+
+/** The key the operator reads from a gitlab target's Secret, by name only: never its value. */
+function GitLabKeys() {
+  return (
+    <p className="muted small">
+      The operator reads its key <span className="mono">{GITLAB_SECRET_KEYS.token}</span>, a project access token with
+      the Maintainer role and the scopes api, read_registry and write_registry (a group or personal access token works
+      the same); a deploy token can’t call the API. The same token logs in to the project’s container registry.
+    </p>
   )
 }
 
@@ -167,6 +227,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
             <Where target={target} />
           </dd>
           {target.spec.github ? <GitHubFacts target={target} /> : null}
+          {target.spec.gitlab ? <GitLabFacts target={target} /> : null}
           <dt>Tier</dt>
           <dd>
             {tierOf(target)}
@@ -192,6 +253,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
                 Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
                 <span className="muted small"> · its name only: the UI never reads Secrets</span>
                 {target.spec.github ? <GitHubKeys /> : null}
+                {target.spec.gitlab ? <GitLabKeys /> : null}
               </>
             ) : (
               <span className="muted">none: the operator’s own ServiceAccount, in its cluster</span>

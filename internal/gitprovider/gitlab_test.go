@@ -2,6 +2,7 @@ package gitprovider_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 func gitlabReason(t *testing.T, err error, reason string) *gitprovider.ReleaseError {
@@ -308,4 +310,138 @@ func TestGitLabHosts(t *testing.T) {
 	if _, err := gl.Project(context.Background()); err != nil || path != "/gitlab/api/v4/projects/g%2Fp" {
 		t.Errorf("path %s, %v", path, err)
 	}
+}
+
+// TestGitLabSource drives the source calls against the fake: the branch's
+// head, a commit through the Commits API, the tree it leaves, and its tag.
+func TestGitLabSource(t *testing.T) {
+	ctx := context.Background()
+	srv := gitlabtest.New(t)
+	fp := srv.AddProject("shop/web", "tok")
+	gl, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: srv.URL(), Project: "shop/web", Token: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	head, err := gl.Branch(ctx, "main")
+	if err != nil || head != fp.DefaultBranchHead {
+		t.Fatalf("branch main %q, %v; want %q", head, err, fp.DefaultBranchHead)
+	}
+	if head, err := gl.Branch(ctx, "nope"); err != nil || head != "" {
+		t.Fatalf("missing branch %q, %v", head, err)
+	}
+	if entries, err := gl.Tree(ctx, "main", "web"); err != nil || entries != nil {
+		t.Fatalf("tree of a missing path %v, %v", entries, err)
+	}
+	if entries, err := gl.Tree(ctx, "main", ""); err != nil || len(entries) != 0 {
+		t.Fatalf("empty tree %v, %v", entries, err)
+	}
+
+	executable := true
+	commit, err := gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "web 1.0.0",
+		Actions: []gitprovider.GitLabCommitAction{
+			{Action: "create", FilePath: "web/go.mod", Content: base64.StdEncoding.EncodeToString([]byte("module web\n")),
+				Encoding: "base64"},
+			{Action: "create", FilePath: "web/cmd/run.sh", Content: "#!/bin/sh\n"},
+			{Action: "chmod", FilePath: "web/cmd/run.sh", ExecuteFilemode: &executable},
+			{Action: "create", FilePath: "README.md", Content: "hi\n"},
+		}})
+	if err != nil || len(commit) != 40 {
+		t.Fatalf("commit %q, %v", commit, err)
+	}
+	if fp.DefaultBranchHead != commit {
+		t.Errorf("branch head %q, want the new commit %q", fp.DefaultBranchHead, commit)
+	}
+	if got := fp.Folder(commit, "web"); len(got) != 2 || got["web/go.mod"] != "module web\n" || got["web/cmd/run.sh"] != "#!/bin/sh\n" {
+		t.Errorf("folder web %v", got)
+	}
+
+	entries, err := gl.Tree(ctx, commit, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, len(entries))
+	for _, e := range entries {
+		paths = append(paths, e.Type+" "+e.Path+" "+e.Mode)
+		if e.Type == "blob" && e.Path == "web/go.mod" && e.ID != model.BlobSHA([]byte("module web\n")) {
+			t.Errorf("go.mod id %q", e.ID)
+		}
+	}
+	slices.Sort(paths)
+	if want := []string{"blob web/cmd/run.sh 100755", "blob web/go.mod 100644", "tree web/cmd 040000"}; !slices.Equal(paths, want) {
+		t.Errorf("tree %v, want %v", paths, want)
+	}
+	if entries, err := gl.Tree(ctx, "main", "web/nope"); err != nil || entries != nil {
+		t.Errorf("tree of a missing path after the commit %v, %v", entries, err)
+	}
+	gitlabSourceTag(t, gl, fp, commit)
+}
+
+// gitlabSourceTag tags the commit, refuses a second tag, and sees the tag
+// stay put when the branch moves on.
+func gitlabSourceTag(t *testing.T, gl gitprovider.GitLabProject, fp *gitlabtest.Project, commit string) {
+	ctx := context.Background()
+	if err := gl.CreateTag(ctx, "web-1.0.0", commit); err != nil {
+		t.Fatal(err)
+	}
+	if fp.Tag("web-1.0.0") != commit {
+		t.Errorf("fake's tag %q, want %q", fp.Tag("web-1.0.0"), commit)
+	}
+	if got, err := gl.Tag(ctx, "web-1.0.0"); err != nil || got != commit {
+		t.Errorf("tag %q, %v", got, err)
+	}
+	if got := fp.Folder("web-1.0.0", ""); len(got) != 3 {
+		t.Errorf("folder at the tag %v", got)
+	}
+	err := gl.CreateTag(ctx, "web-1.0.0", commit)
+	if re := gitlabReason(t, err, gitprovider.ReasonGitLabRejected); re.Status != http.StatusBadRequest {
+		t.Errorf("second tag: %v", err)
+	}
+	// A second commit updates and deletes; the tag stays at the first.
+	next, err := gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "web 1.1.0",
+		Actions: []gitprovider.GitLabCommitAction{
+			{Action: "update", FilePath: "web/go.mod", Content: "module web2\n"},
+			{Action: "delete", FilePath: "web/cmd/run.sh"},
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fp.Folder("main", "web"); len(got) != 1 || got["web/go.mod"] != "module web2\n" {
+		t.Errorf("folder after the second commit %v", got)
+	}
+	if got := fp.Folder("web-1.0.0", "web"); len(got) != 2 || fp.DefaultBranchHead != next {
+		t.Errorf("tag moved: %v, head %q", got, fp.DefaultBranchHead)
+	}
+	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "again",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "web/go.mod", Content: "x"}}})
+	_ = gitlabReason(t, err, gitprovider.ReasonGitLabRejected)
+	// A change decided on the old head is refused, as GitLab does with
+	// last_commit_id; one decided on the new head goes through, and chmod
+	// alone moves the mode while an update keeps it.
+	executable, notExecutable := true, false
+	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "stale",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "web/go.mod", Content: "y", LastCommitID: commit}}})
+	if re := gitlabReason(t, err, gitprovider.ReasonGitLabRejected); re.Status != http.StatusBadRequest ||
+		!strings.Contains(re.Message, "has changed since") {
+		t.Errorf("stale last_commit_id: %v", err)
+	}
+	if _, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "modes",
+		Actions: []gitprovider.GitLabCommitAction{
+			{Action: "chmod", FilePath: "web/go.mod", ExecuteFilemode: &executable, LastCommitID: next},
+			{Action: "update", FilePath: "README.md", Content: "hi again\n", ExecuteFilemode: &notExecutable, LastCommitID: next},
+		}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fp.Mode("main", "web/go.mod"); got != "100755" {
+		t.Errorf("mode after chmod %q, want 100755", got)
+	}
+	if got := fp.Mode("web-1.0.0", "web/go.mod"); got != "100644" {
+		t.Errorf("mode at the tag %q, want 100644 still", got)
+	}
+	if entries, err := gl.Tree(ctx, "main", "web"); err != nil || len(entries) != 1 || entries[0].Mode != "100755" {
+		t.Errorf("tree after chmod %v, %v", entries, err)
+	}
+	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "no mode",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "chmod", FilePath: "README.md"}}})
+	_ = gitlabReason(t, err, gitprovider.ReasonGitLabRejected)
 }

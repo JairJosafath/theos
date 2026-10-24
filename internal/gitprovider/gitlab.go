@@ -81,6 +81,37 @@ type GitLabRelease struct {
 	Links       []GitLabReleaseLink
 }
 
+// GitLabTreeEntry is one entry of a repository tree: a "blob" (a file, ID
+// its content's sha) or a "tree" (a directory).
+type GitLabTreeEntry struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+}
+
+// GitLabCommitAction is one change of a commit: Action is "create", "update",
+// "delete" or "chmod", Content the file's bytes, base64 when Encoding is
+// "base64". ExecuteFilemode is read on chmod alone (a create is 100644, an
+// update keeps the mode). LastCommitID, on update, delete and chmod, is the
+// head the change was decided on: a file that changed since is a 400.
+type GitLabCommitAction struct {
+	Action          string `json:"action"`
+	FilePath        string `json:"file_path"`
+	Content         string `json:"content,omitempty"`
+	Encoding        string `json:"encoding,omitempty"`
+	ExecuteFilemode *bool  `json:"execute_filemode,omitempty"`
+	LastCommitID    string `json:"last_commit_id,omitempty"`
+}
+
+// GitLabCommit is a commit to make on Branch, through the Commits API.
+type GitLabCommit struct {
+	Branch  string               `json:"branch"`
+	Message string               `json:"commit_message"`
+	Actions []GitLabCommitAction `json:"actions"`
+}
+
 // GitLabProject is one GitLab project's REST API, for a deploy target that
 // publishes releases there. A failed call is a *ReleaseError.
 type GitLabProject interface {
@@ -99,6 +130,18 @@ type GitLabProject interface {
 	CreateRelease(ctx context.Context, r GitLabRelease) (model.TargetRelease, error)
 	// Tag returns the commit tag name names, "" when there is no such tag.
 	Tag(ctx context.Context, name string) (string, error)
+	// Branch returns the head commit of branch name, "" when there is no
+	// such branch.
+	Branch(ctx context.Context, name string) (string, error)
+	// Tree lists the tree at ref under path (recursive); nil, nil when path
+	// is not there.
+	Tree(ctx context.Context, ref, path string) ([]GitLabTreeEntry, error)
+	// CreateCommit commits c.Actions on c.Branch and returns the new
+	// commit's sha.
+	CreateCommit(ctx context.Context, c GitLabCommit) (string, error)
+	// CreateTag creates tag name at ref. A tag already there is
+	// ReasonGitLabRejected.
+	CreateTag(ctx context.Context, name, ref string) error
 	// PackageFiles returns the files of the generic package pkg at version,
 	// nil when there is no such package.
 	PackageFiles(ctx context.Context, pkg, version string) ([]GitLabPackageFile, error)
@@ -150,10 +193,13 @@ type gitlabProject struct {
 	project string
 }
 
-// gitlabPageSize and gitlabMaxPages bound the listings.
+// gitlabPageSize and gitlabMaxPages bound the listings; a tree is listed
+// recursively, directories counted, so gitlabTreeMaxPages gives it room for
+// a repository of 10,000 entries.
 const (
-	gitlabPageSize = 100
-	gitlabMaxPages = 10
+	gitlabPageSize     = 100
+	gitlabMaxPages     = 10
+	gitlabTreeMaxPages = 100
 )
 
 type gitlabProjectBody struct {
@@ -278,6 +324,63 @@ func (g *gitlabProject) Tag(ctx context.Context, name string) (string, error) {
 		return "", nil
 	}
 	return t.Commit.ID, err
+}
+
+func (g *gitlabProject) Branch(ctx context.Context, name string) (string, error) {
+	var b struct {
+		Commit struct {
+			ID string `json:"id"`
+		} `json:"commit"`
+	}
+	err := g.call(ctx, http.MethodGet, g.project+"/repository/branches/"+url.PathEscape(name), nil, http.StatusOK,
+		"reading branch "+name, &b)
+	if notFound(err) {
+		return "", nil
+	}
+	return b.Commit.ID, err
+}
+
+func (g *gitlabProject) Tree(ctx context.Context, ref, path string) ([]GitLabTreeEntry, error) {
+	query := "recursive=true&ref=" + url.QueryEscape(ref)
+	if path != "" {
+		query += "&path=" + url.QueryEscape(path)
+	}
+	var out []GitLabTreeEntry
+	for page := 1; page <= gitlabTreeMaxPages; page++ {
+		var batch []GitLabTreeEntry
+		err := g.list(ctx, g.project+"/repository/tree", query, page, "reading tree "+ref, &batch)
+		if notFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(batch) < gitlabPageSize {
+			return out, nil
+		}
+	}
+	return nil, &ReleaseError{Reason: ReasonGitLabError,
+		Message: fmt.Sprintf("gitlab: more than %d tree entries to look through", gitlabTreeMaxPages*gitlabPageSize)}
+}
+
+func (g *gitlabProject) CreateCommit(ctx context.Context, c GitLabCommit) (string, error) {
+	if c.Actions == nil {
+		c.Actions = []GitLabCommitAction{}
+	}
+	payload, _ := json.Marshal(c)
+	var out struct {
+		ID string `json:"id"`
+	}
+	err := g.call(ctx, http.MethodPost, g.project+"/repository/commits", payload, http.StatusCreated,
+		"committing to "+c.Branch, &out)
+	return out.ID, err
+}
+
+func (g *gitlabProject) CreateTag(ctx context.Context, name, ref string) error {
+	payload, _ := json.Marshal(map[string]string{"tag_name": name, "ref": ref})
+	return g.call(ctx, http.MethodPost, g.project+"/repository/tags", payload, http.StatusCreated,
+		"creating tag "+name, nil)
 }
 
 type gitlabPackageBody struct {
