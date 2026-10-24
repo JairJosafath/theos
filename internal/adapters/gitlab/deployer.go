@@ -187,10 +187,11 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 // takesImage says whether the project takes image, s's image by digest:
 // its container registry is on, its registry prefix names a path for the
 // images, and the token may read and write it (docs/plans/gitlab-deploy.md,
-// Decision 5): the copy's first call is a pull of the source tag, which
-// GitLab grants with read_registry, and write_registry grants the push
-// alone (#1956). An image the project doesn't take is logged, with why, by
-// the Ship that makes the release, which ships without it.
+// Decision 5). The api scope grants the whole registry (#1980); without it,
+// the copy's first call is a pull of the source tag, which GitLab grants
+// with read_registry, and write_registry grants the push alone (#1956). An
+// image the project doesn't take is logged, with why, by the Ship that
+// makes the release, which ships without it.
 func takesImage(ctx context.Context, c gitprovider.GitLabProject, info gitprovider.GitLabProjectInfo,
 	image string) (bool, error) {
 	if image == "" {
@@ -206,6 +207,9 @@ func takesImage(ctx context.Context, c gitprovider.GitLabProject, info gitprovid
 		if err != nil {
 			return false, err
 		}
+		if slices.Contains(scopes, "api") {
+			return true, nil
+		}
 		var missing []string
 		for _, scope := range []string{"read_registry", "write_registry"} {
 			if !slices.Contains(scopes, scope) {
@@ -215,8 +219,8 @@ func takesImage(ctx context.Context, c gitprovider.GitLabProject, info gitprovid
 		if len(missing) == 0 {
 			return true, nil
 		}
-		why = fmt.Sprintf("the token lacks the %s scope; it has %s", strings.Join(missing, " and "),
-			strings.Join(scopes, ", "))
+		why = fmt.Sprintf("the token lacks the api scope, or the %s scope; it has %s",
+			strings.Join(missing, " and "), strings.Join(scopes, ", "))
 	}
 	logr.FromContextOrDiscard(ctx).Info("No image copied", "project", info.Path, "image", image, "why", why)
 	return false, nil
