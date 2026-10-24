@@ -91,14 +91,18 @@ type GitLabTreeEntry struct {
 	Mode string `json:"mode"`
 }
 
-// GitLabCommitAction is one change of a commit: Action is "create", "update"
-// or "delete", Content the file's bytes, base64 when Encoding is "base64".
+// GitLabCommitAction is one change of a commit: Action is "create", "update",
+// "delete" or "chmod", Content the file's bytes, base64 when Encoding is
+// "base64". ExecuteFilemode is read on chmod alone (a create is 100644, an
+// update keeps the mode). LastCommitID, on update, delete and chmod, is the
+// head the change was decided on: a file that changed since is a 400.
 type GitLabCommitAction struct {
 	Action          string `json:"action"`
 	FilePath        string `json:"file_path"`
 	Content         string `json:"content,omitempty"`
 	Encoding        string `json:"encoding,omitempty"`
-	ExecuteFilemode bool   `json:"execute_filemode,omitempty"`
+	ExecuteFilemode *bool  `json:"execute_filemode,omitempty"`
+	LastCommitID    string `json:"last_commit_id,omitempty"`
 }
 
 // GitLabCommit is a commit to make on Branch, through the Commits API.
@@ -189,10 +193,13 @@ type gitlabProject struct {
 	project string
 }
 
-// gitlabPageSize and gitlabMaxPages bound the listings.
+// gitlabPageSize and gitlabMaxPages bound the listings; a tree is listed
+// recursively, directories counted, so gitlabTreeMaxPages gives it room for
+// a repository of 10,000 entries.
 const (
-	gitlabPageSize = 100
-	gitlabMaxPages = 10
+	gitlabPageSize     = 100
+	gitlabMaxPages     = 10
+	gitlabTreeMaxPages = 100
 )
 
 type gitlabProjectBody struct {
@@ -339,7 +346,7 @@ func (g *gitlabProject) Tree(ctx context.Context, ref, path string) ([]GitLabTre
 		query += "&path=" + url.QueryEscape(path)
 	}
 	var out []GitLabTreeEntry
-	for page := 1; page <= gitlabMaxPages; page++ {
+	for page := 1; page <= gitlabTreeMaxPages; page++ {
 		var batch []GitLabTreeEntry
 		err := g.list(ctx, g.project+"/repository/tree", query, page, "reading tree "+ref, &batch)
 		if notFound(err) {
@@ -354,7 +361,7 @@ func (g *gitlabProject) Tree(ctx context.Context, ref, path string) ([]GitLabTre
 		}
 	}
 	return nil, &ReleaseError{Reason: ReasonGitLabError,
-		Message: fmt.Sprintf("gitlab: more than %d tree entries to look through", gitlabMaxPages*gitlabPageSize)}
+		Message: fmt.Sprintf("gitlab: more than %d tree entries to look through", gitlabTreeMaxPages*gitlabPageSize)}
 }
 
 func (g *gitlabProject) CreateCommit(ctx context.Context, c GitLabCommit) (string, error) {

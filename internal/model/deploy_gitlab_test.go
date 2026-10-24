@@ -155,24 +155,32 @@ func TestGitLabSourceURL(t *testing.T) {
 
 // TestGitLabSourceActions covers the one commit that makes the folder hold
 // the release's source: nothing when it already does, else a create, update
-// or delete per path, sorted.
+// or delete per path, sorted, and a chmod after the create or update of a
+// path whose mode differs, since the Commits API reads the mode on chmod
+// alone.
 func TestGitLabSourceActions(t *testing.T) {
 	a := SourceFile{Path: "a.go", Mode: ModeFile, Blob: BlobSHA([]byte("a"))}
 	b := SourceFile{Path: "cmd/b.go", Mode: ModeFile, Blob: BlobSHA([]byte("b"))}
 	b2 := SourceFile{Path: "cmd/b.go", Mode: ModeFile, Blob: BlobSHA([]byte("b2"))}
 	run := SourceFile{Path: "run", Mode: ModeFile, Blob: BlobSHA([]byte("x"))}
 	runX := SourceFile{Path: "run", Mode: ModeExecutable, Blob: run.Blob}
+	runX2 := SourceFile{Path: "run", Mode: ModeExecutable, Blob: BlobSHA([]byte("y"))}
 	tests := []struct {
 		name       string
 		want, have []SourceFile
 		actions    []GitLabSourceAction
 	}{
 		{"same", []SourceFile{a, b}, []SourceFile{b, a}, nil},
-		{"empty folder", []SourceFile{b, a}, nil, []GitLabSourceAction{
-			{Action: GitLabActionCreate, File: a}, {Action: GitLabActionCreate, File: b}}},
-		{"changed, added, gone", []SourceFile{b2, runX}, []SourceFile{a, b, run}, []GitLabSourceAction{
+		{"empty folder", []SourceFile{b, a, runX}, nil, []GitLabSourceAction{
+			{Action: GitLabActionCreate, File: a}, {Action: GitLabActionCreate, File: b},
+			{Action: GitLabActionCreate, File: runX}, {Action: GitLabActionChmod, File: runX}}},
+		{"changed, mode changed, gone", []SourceFile{b2, runX}, []SourceFile{a, b, run}, []GitLabSourceAction{
 			{Action: GitLabActionDelete, File: SourceFile{Path: "a.go"}},
-			{Action: GitLabActionUpdate, File: b2}, {Action: GitLabActionUpdate, File: runX}}},
+			{Action: GitLabActionUpdate, File: b2}, {Action: GitLabActionChmod, File: runX}}},
+		{"content and mode changed", []SourceFile{runX2}, []SourceFile{run}, []GitLabSourceAction{
+			{Action: GitLabActionUpdate, File: runX2}, {Action: GitLabActionChmod, File: runX2}}},
+		{"execute bit dropped", []SourceFile{run}, []SourceFile{runX}, []GitLabSourceAction{
+			{Action: GitLabActionChmod, File: run}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -178,6 +178,14 @@ func (p *Project) Folder(ref, path string) map[string]string {
 	return out
 }
 
+// Mode is the mode of the file at path at commit ref (a branch, tag or sha),
+// "100644" or "100755"; "" when there is no such file.
+func (p *Project) Mode(ref, path string) string {
+	p.s.mu.Lock()
+	defer p.s.mu.Unlock()
+	return p.commits[p.resolve(ref)][path].mode
+}
+
 // Tag returns the commit tag name names, "" when there is none.
 func (p *Project) Tag(name string) string {
 	p.s.mu.Lock()
@@ -573,6 +581,14 @@ func (p *Project) tree(w http.ResponseWriter, r *http.Request) {
 
 // createCommit applies a commit's actions to the branch's head and advances
 // the branch. Only the default branch exists on the fake.
+// The actions of a commit, as the Commits API names them.
+const (
+	actionCreate = "create"
+	actionUpdate = "update"
+	actionDelete = "delete"
+	actionChmod  = "chmod"
+)
+
 func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Branch  string `json:"branch"`
@@ -582,7 +598,8 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 			FilePath        string `json:"file_path"`
 			Content         string `json:"content"`
 			Encoding        string `json:"encoding"`
-			ExecuteFilemode bool   `json:"execute_filemode"`
+			ExecuteFilemode *bool  `json:"execute_filemode"`
+			LastCommitID    string `json:"last_commit_id"`
 		} `json:"actions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Branch == "" || in.Message == "" {
@@ -603,25 +620,40 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		_, exists := files[a.FilePath]
+		held, exists := files[a.FilePath]
 		switch {
 		case a.FilePath == "":
 			writeJSON(w, http.StatusBadRequest, msg("file_path is required"))
 			return
-		case a.Action == "create" && exists:
+		case a.Action == actionCreate && exists:
 			writeJSON(w, http.StatusBadRequest, msg("A file with this name already exists"))
 			return
-		case (a.Action == "update" || a.Action == "delete") && !exists:
+		case (a.Action == actionUpdate || a.Action == actionDelete || a.Action == actionChmod) && !exists:
 			writeJSON(w, http.StatusBadRequest, msg("A file with this name doesn't exist"))
 			return
-		case a.Action == "delete":
+		case a.Action != "create" && a.LastCommitID != "" && a.LastCommitID != p.DefaultBranchHead:
+			// As GitLab: the head the change was decided on moved.
+			writeJSON(w, http.StatusBadRequest,
+				msg("You are attempting to update a file that has changed since you started editing it."))
+			return
+		case a.Action == actionDelete:
 			delete(files, a.FilePath)
-		case a.Action == "create", a.Action == "update":
+		case a.Action == actionCreate:
+			// A create is 100644 whatever execute_filemode says: GitLab reads
+			// it on chmod alone.
+			files[a.FilePath] = blob{content: content, mode: "100644"}
+		case a.Action == actionUpdate:
+			files[a.FilePath] = blob{content: content, mode: held.mode}
+		case a.Action == actionChmod:
+			if a.ExecuteFilemode == nil {
+				writeJSON(w, http.StatusBadRequest, msg("execute_filemode is required for chmod"))
+				return
+			}
 			mode := "100644"
-			if a.ExecuteFilemode {
+			if *a.ExecuteFilemode {
 				mode = "100755"
 			}
-			files[a.FilePath] = blob{content: content, mode: mode}
+			files[a.FilePath] = blob{content: held.content, mode: mode}
 		default:
 			writeJSON(w, http.StatusBadRequest, msg("action "+a.Action+" is not known"))
 			return

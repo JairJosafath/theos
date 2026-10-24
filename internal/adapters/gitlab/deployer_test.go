@@ -269,12 +269,21 @@ func TestCheckConfig(t *testing.T) {
 // streams them; a path in links is a symlink to its content.
 func source(files map[string]string, links ...string) (*model.ReleaseSource, func(context.Context,
 	func(string, int64, io.Reader) error) error) {
+	return sourceWith(files, nil, links...)
+}
+
+// sourceWith is source with the paths in executables mode 100755.
+func sourceWith(files map[string]string, executables []string, links ...string) (*model.ReleaseSource,
+	func(context.Context, func(string, int64, io.Reader) error) error) {
 	paths := slices.Sorted(maps.Keys(files))
 	hashed := make([]model.SourceFile, 0, len(paths))
 	for _, p := range paths {
 		mode := model.ModeFile
-		if slices.Contains(links, p) {
+		switch {
+		case slices.Contains(links, p):
 			mode = model.ModeSymlink
+		case slices.Contains(executables, p):
+			mode = model.ModeExecutable
 		}
 		hashed = append(hashed, model.SourceFile{Path: p, Mode: mode, Size: int64(len(files[p])),
 			Blob: model.BlobSHA([]byte(files[p]))})
@@ -318,8 +327,8 @@ func TestShipSource(t *testing.T) {
 	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
 	d := New(nil)
 	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
-	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n",
-		"main.go": "package main // v1.0.0\n", "cmd/run.sh": "#!/bin/sh\n"})
+	s.Source, s.ReadSource = sourceWith(map[string]string{"go.mod": "module example.com/orders\n",
+		"main.go": "package main // v1.0.0\n", "cmd/run.sh": "#!/bin/sh\n"}, []string{"cmd/run.sh"})
 	shipAll(t, d, tg, p, s, 5)
 
 	commit := p.Tag("orders-api/v1.0.0")
@@ -331,6 +340,9 @@ func TestShipSource(t *testing.T) {
 	if got := p.Folder("orders-api/v1.0.0", "orders-api"); !maps.Equal(got, want) {
 		t.Errorf("folder at the source tag = %v, want %v", got, want)
 	}
+	if got := p.Mode("orders-api/v1.0.0", "orders-api/cmd/run.sh"); got != "100755" {
+		t.Errorf("mode of cmd/run.sh = %q, want 100755: a chmod after the create", got)
+	}
 	if rels := p.Releases(); len(rels) != 1 || p.Tag(rels[0].Tag) != commit {
 		t.Errorf("releases = %+v, want one whose tag is at the source commit %s", rels, commit)
 	}
@@ -341,11 +353,12 @@ func TestShipSource(t *testing.T) {
 		t.Fatalf("State() = %+v, %v, want Deployed with the source at its tag", state, err)
 	}
 
-	// v1.1.0 changes main.go, drops cmd/run.sh and adds README.md.
+	// v1.1.0 changes main.go, drops cmd/run.sh, adds README.md and makes
+	// go.mod executable (a chmod alone).
 	s2 := shipment(file("orders-cli_linux.tar.gz", "bin2"))
 	s2.Version, s2.Notes = "v1.1.0", "notes v1.1.0"
-	s2.Source, s2.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n",
-		"main.go": "package main // v1.1.0\n", "README.md": "# orders\n"})
+	s2.Source, s2.ReadSource = sourceWith(map[string]string{"go.mod": "module example.com/orders\n",
+		"main.go": "package main // v1.1.0\n", "README.md": "# orders\n"}, []string{"go.mod"})
 	for i := 0; i < 5 && len(p.Releases()) < 2; i++ {
 		if err := d.Ship(ctx, tg, s2); err != nil {
 			t.Fatalf("Ship() v1.1.0 %d = %v", i, err)
@@ -359,8 +372,49 @@ func TestShipSource(t *testing.T) {
 	if got := p.Folder("orders-api/v1.0.0", "orders-api"); got["orders-api/main.go"] != "package main // v1.0.0\n" {
 		t.Errorf("folder at orders-api/v1.0.0 = %v, want v1.0.0's still", got)
 	}
+	if got := p.Mode("orders-api/v1.1.0", "orders-api/go.mod"); got != "100755" {
+		t.Errorf("mode of go.mod at v1.1.0 = %q, want 100755", got)
+	}
 	if c2 := p.Tag("orders-api/v1.1.0"); c2 == "" || c2 == commit || p.Tag("cli/v1.1.0") != c2 {
 		t.Errorf("source tag v1.1.0 at %q, release tag at %q, want a new commit both name", c2, p.Tag("cli/v1.1.0"))
+	}
+}
+
+// A commit that landed on the default branch between the read and the
+// source commit fails BranchMoved, as GitHub's path does, so the next poll
+// decides again; the stale change is not written over it.
+func TestShipSourceBranchMoved(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
+	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "orders-api/main.go", Content: "theirs"}}}); err != nil {
+		t.Fatal(err)
+	}
+	stale := p.DefaultBranchHead
+	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs again",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go", Content: "theirs 2"}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"main.go": "package main\n"})
+	src, _, _ := sourceTarget(tg, s.Version)
+	step := &model.SourceCommit{Path: src.Path, Message: "ours"}
+	actions := model.GitLabSourceActions(s.Source.Files, []model.SourceFile{{Path: "main.go", Mode: model.ModeFile,
+		Blob: model.BlobSHA([]byte("theirs"))}})
+	_, err = commitSource(ctx, c, s, p.DefaultBranch, stale, step, actions)
+	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	if !ok || re.Reason != model.PublishBranchMoved || !strings.Contains(re.Message, "another commit landed") {
+		t.Fatalf("commitSource on a moved branch = %v, want BranchMoved", err)
+	}
+	if got := p.Folder(p.DefaultBranch, "orders-api"); got["orders-api/main.go"] != "theirs 2" {
+		t.Errorf("their change was written over: %v", got)
 	}
 }
 

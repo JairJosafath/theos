@@ -292,7 +292,7 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.GitLabProject, 
 		return nil, &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
 	case model.PublishSourceCommit:
 		actions := model.GitLabSourceActions(step.SourceCommit.Files, head)
-		commit, err := commitSource(ctx, c, s, branch, step.SourceCommit, actions)
+		commit, err := commitSource(ctx, c, s, branch, facts.Head, step.SourceCommit, actions)
 		if err != nil {
 			return nil, err
 		}
@@ -383,18 +383,21 @@ func rooted(path, rel string) string {
 	return path + "/" + rel
 }
 
-// commitSource makes the one commit of sc's source on branch: actions on the
-// folder, each create's and update's content streamed from s.ReadSource and
-// sent base64. A failure of ReadSource itself is a SourceError, the Git
+// commitSource makes the one commit of sc's source on branch, whose head
+// the actions were decided on: actions on the folder, each create's and
+// update's content streamed from s.ReadSource and sent base64, the mode set
+// by chmod. Every change of a file names head as its last_commit_id, so a
+// commit that landed on the branch since fails BranchMoved and the next poll
+// decides again. A failure of ReadSource itself is a SourceError, the Git
 // host's side.
-func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Shipment, branch string,
+func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Shipment, branch, head string,
 	sc *model.SourceCommit, actions []model.GitLabSourceAction) (string, error) {
 	if len(actions) == 0 {
 		return "", fmt.Errorf("the folder %s differs from the source of %s, yet no file does", sc.Path, s.Version)
 	}
 	want := map[string]int{}
 	for i, a := range actions {
-		if a.Action != model.GitLabActionDelete {
+		if a.Action == model.GitLabActionCreate || a.Action == model.GitLabActionUpdate {
 			want[a.File.Path] = i
 		}
 	}
@@ -430,13 +433,27 @@ func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Ship
 	commit := gitprovider.GitLabCommit{Branch: branch, Message: sc.Message}
 	for i, a := range actions {
 		action := gitprovider.GitLabCommitAction{Action: a.Action, FilePath: rooted(sc.Path, a.File.Path)}
-		if a.Action != model.GitLabActionDelete {
+		switch a.Action {
+		case model.GitLabActionCreate:
 			action.Content, action.Encoding = content[i], "base64"
-			action.ExecuteFilemode = a.File.Mode == model.ModeExecutable
+		case model.GitLabActionUpdate:
+			action.Content, action.Encoding, action.LastCommitID = content[i], "base64", head
+		case model.GitLabActionChmod:
+			executable := a.File.Mode == model.ModeExecutable
+			action.ExecuteFilemode, action.LastCommitID = &executable, head
+		default:
+			action.LastCommitID = head
 		}
 		commit.Actions = append(commit.Actions, action)
 	}
-	return c.CreateCommit(ctx, commit)
+	sha, err := c.CreateCommit(ctx, commit)
+	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); ok && re.Reason == gitprovider.ReasonGitLabRejected &&
+		strings.Contains(re.Message, "has changed since") {
+		// As GitHub's path: the next poll reads the branch again and decides.
+		return "", &gitprovider.ReleaseError{Reason: model.PublishBranchMoved, Status: re.Status, Message: fmt.Sprintf(
+			"gitlab: another commit landed on %s first; the next poll puts the source of %s on it", branch, s.Version)}
+	}
+	return sha, err
 }
 
 // SourceError is a release's source that couldn't be read again: the Git

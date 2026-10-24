@@ -337,11 +337,13 @@ func TestGitLabSource(t *testing.T) {
 		t.Fatalf("empty tree %v, %v", entries, err)
 	}
 
+	executable := true
 	commit, err := gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "web 1.0.0",
 		Actions: []gitprovider.GitLabCommitAction{
 			{Action: "create", FilePath: "web/go.mod", Content: base64.StdEncoding.EncodeToString([]byte("module web\n")),
 				Encoding: "base64"},
-			{Action: "create", FilePath: "web/cmd/run.sh", Content: "#!/bin/sh\n", ExecuteFilemode: true},
+			{Action: "create", FilePath: "web/cmd/run.sh", Content: "#!/bin/sh\n"},
+			{Action: "chmod", FilePath: "web/cmd/run.sh", ExecuteFilemode: &executable},
 			{Action: "create", FilePath: "README.md", Content: "hi\n"},
 		}})
 	if err != nil || len(commit) != 40 {
@@ -412,5 +414,34 @@ func gitlabSourceTag(t *testing.T, gl gitprovider.GitLabProject, fp *gitlabtest.
 	}
 	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "again",
 		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "web/go.mod", Content: "x"}}})
+	_ = gitlabReason(t, err, gitprovider.ReasonGitLabRejected)
+	// A change decided on the old head is refused, as GitLab does with
+	// last_commit_id; one decided on the new head goes through, and chmod
+	// alone moves the mode while an update keeps it.
+	executable, notExecutable := true, false
+	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "stale",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "web/go.mod", Content: "y", LastCommitID: commit}}})
+	if re := gitlabReason(t, err, gitprovider.ReasonGitLabRejected); re.Status != http.StatusBadRequest ||
+		!strings.Contains(re.Message, "has changed since") {
+		t.Errorf("stale last_commit_id: %v", err)
+	}
+	if _, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "modes",
+		Actions: []gitprovider.GitLabCommitAction{
+			{Action: "chmod", FilePath: "web/go.mod", ExecuteFilemode: &executable, LastCommitID: next},
+			{Action: "update", FilePath: "README.md", Content: "hi again\n", ExecuteFilemode: &notExecutable, LastCommitID: next},
+		}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fp.Mode("main", "web/go.mod"); got != "100755" {
+		t.Errorf("mode after chmod %q, want 100755", got)
+	}
+	if got := fp.Mode("web-1.0.0", "web/go.mod"); got != "100644" {
+		t.Errorf("mode at the tag %q, want 100644 still", got)
+	}
+	if entries, err := gl.Tree(ctx, "main", "web"); err != nil || len(entries) != 1 || entries[0].Mode != "100755" {
+		t.Errorf("tree after chmod %v, %v", entries, err)
+	}
+	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "no mode",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "chmod", FilePath: "README.md"}}})
 	_ = gitlabReason(t, err, gitprovider.ReasonGitLabRejected)
 }

@@ -333,7 +333,7 @@ func TestNextPublishStepSource(t *testing.T) {
 		{name: "a file over GitHub's blob limit fails",
 			facts:   read(func(f *PublishFacts) { f.SourceFiles = &ReleaseSource{Files: big, Tree: sourceTree} }),
 			want:    PublishStep{Action: PublishFail, Reason: PublishSourceTooLarge},
-			message: "engine.go is 100 MiB, over the 100 MiB GitHub takes; the source of v0.6.1 isn't published"},
+			message: "engine.go is 100 MiB, over the 100 MiB a source file may be; the source of v0.6.1 isn't published"},
 		{name: "the folder on GitHub is read next",
 			facts: read(func(f *PublishFacts) { f.GitHubSource = nil }),
 			want:  PublishStep{Action: PublishReadGitHubSource}},

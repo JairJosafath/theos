@@ -169,6 +169,10 @@ const (
 	GitLabActionCreate = "create"
 	GitLabActionUpdate = "update"
 	GitLabActionDelete = "delete"
+	// GitLabActionChmod sets or clears the execute bit: the one action the
+	// Commits API reads execute_filemode on, so a mode change is its own
+	// action, after the create or update of the same path when there is one.
+	GitLabActionChmod = "chmod"
 )
 
 // GitLabSourceAction is one change of a source commit on GitLab: Action on
@@ -180,8 +184,10 @@ type GitLabSourceAction struct {
 
 // GitLabSourceActions are the actions of the one commit that turns the
 // folder holding have into want, both with paths from the folder's root,
-// sorted by path: create for a file not there, update for one whose blob or
-// mode differs, delete for one want lacks. Nil when nothing differs.
+// sorted by path: create for a file not there, update for one whose blob
+// differs, delete for one want lacks, and chmod for one whose mode differs
+// (after the create or update of its path, since the Commits API reads the
+// mode on chmod alone and a create is 100644). Nil when nothing differs.
 func GitLabSourceActions(want, have []SourceFile) []GitLabSourceAction {
 	held := make(map[string]SourceFile, len(have))
 	for _, f := range have {
@@ -194,14 +200,23 @@ func GitLabSourceActions(want, have []SourceFile) []GitLabSourceAction {
 		switch {
 		case !ok:
 			out = append(out, GitLabSourceAction{Action: GitLabActionCreate, File: f})
-		case h.Blob != f.Blob || h.Mode != f.Mode:
+			if f.Mode != ModeFile {
+				out = append(out, GitLabSourceAction{Action: GitLabActionChmod, File: f})
+			}
+			continue
+		case h.Blob != f.Blob:
 			out = append(out, GitLabSourceAction{Action: GitLabActionUpdate, File: f})
+		}
+		if h.Mode != f.Mode {
+			out = append(out, GitLabSourceAction{Action: GitLabActionChmod, File: f})
 		}
 	}
 	for path := range held {
 		out = append(out, GitLabSourceAction{Action: GitLabActionDelete, File: SourceFile{Path: path}})
 	}
-	slices.SortFunc(out, func(a, b GitLabSourceAction) int { return strings.Compare(a.File.Path, b.File.Path) })
+	// Sorted by path; the actions of one path keep their order (create or
+	// update, then chmod).
+	slices.SortStableFunc(out, func(a, b GitLabSourceAction) int { return strings.Compare(a.File.Path, b.File.Path) })
 	return out
 }
 
