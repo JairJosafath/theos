@@ -279,21 +279,29 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1beta1.Brief, now 
 	if len(needsYou) > 0 {
 		status.NeedsYou = needsYou
 	}
-	status.NeedsYouWaiting = int32(att.Waiting)
-	switch {
-	case att.Waiting > 0:
-		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionTrue,
-			reasonNeedsYouWaiting, model.Clip(model.NeedsYouMessage(att.NeedsYou, att.Waiting), 32768))
-	case meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionNeedsYou) != nil:
-		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionFalse,
-			c4v1beta1.ReasonResolved, model.NeedsYouMessage(nil, 0))
-	}
+	setNeedsYouWaiting(brief, att.NeedsYou, att.Waiting)
 	if len(att.Due) > 0 && status.LastTendTime != nil {
 		if at := status.LastTendTime.Add(model.TendInterval); at.After(now) && (next.IsZero() || at.Before(next)) {
 			next = at
 		}
 	}
 	return att, next, nil
+}
+
+// setNeedsYouWaiting records how many items wait for the person and the
+// NeedsYou condition that says so: True while any waits, with the first
+// listed item's question, False once none does.
+func setNeedsYouWaiting(brief *c4v1beta1.Brief, listed []model.NeedsYou, waiting int) {
+	status := &brief.Status
+	status.NeedsYouWaiting = int32(waiting)
+	switch {
+	case waiting > 0:
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionTrue,
+			reasonNeedsYouWaiting, model.Clip(model.NeedsYouMessage(listed, waiting), 32768))
+	case meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionNeedsYou) != nil:
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionFalse,
+			c4v1beta1.ReasonResolved, model.NeedsYouMessage(nil, 0))
+	}
 }
 
 // tendFacts is what a tending round's start depends on. A Brief whose last

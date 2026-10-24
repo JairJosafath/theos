@@ -27,7 +27,8 @@ import (
 // requestsBrief makes Brief cel-lens with a releases entry taking requests
 // from a new repository of the fake GitHub as requests says, and the token
 // Secret, and returns the repository and its token.
-func requestsBrief(ns string, requests c4v1beta1.BriefRequests) (repository, token string) {
+func requestsBrief(ns string, requests c4v1beta1.BriefRequests,
+	changes ...func(*c4v1beta1.Brief)) (repository, token string) {
 	GinkgoHelper()
 	repository, token = "gray-lenovo/"+ns, rand.Text()
 	githubFake.addRepository(repository, token)
@@ -39,6 +40,9 @@ func requestsBrief(ns string, requests c4v1beta1.BriefRequests) (repository, tok
 	entry := linterRelease(repository)
 	entry.Requests = &requests
 	brief.Spec.Releases = []c4v1beta1.BriefRelease{entry}
+	for _, change := range changes {
+		change(brief)
+	}
 	mustCreate(brief)
 	return repository, token
 }
@@ -353,5 +357,42 @@ var _ = Describe("Brief requests", func() {
 		}).Should(Succeed())
 		asked, _ := githubFake.issueLists(repository)
 		Consistently(func() int { n, _ := githubFake.issueLists(repository); return n }, "2s").Should(Equal(asked))
+	})
+
+	It("drops a request from needsYou in the status a round's start writes (#1930)", func() {
+		// The round starts as the mode goes Off: its start writes the status
+		// before the Brief is tended, and its Plan Task is refused, so no
+		// later step of the reconcile tends it either.
+		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
+			Authors: []string{"gray-lenovo"}}, func(b *c4v1beta1.Brief) { b.Spec.Paused = true })
+		githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
+		Eventually(func(g Gomega) {
+			status := getBrief(g, ns).Status
+			g.Expect(status.Round).To(BeZero())
+			g.Expect(status.NeedsYou).To(ContainElement(HaveField("Kind", model.AttentionRequest)))
+			g.Expect(status.NeedsYouWaiting).To(Equal(int32(1)))
+		}).Should(Succeed())
+		planBriefs.refuseCreates(ns, true)
+		DeferCleanup(planBriefs.refuseCreates, ns, false)
+		Eventually(func(g Gomega) {
+			brief := getBrief(g, ns)
+			g.Expect(patch(brief, func() {
+				brief.Spec.Releases[0].Requests.Mode = model.RequestsOff
+				brief.Spec.Paused = false
+			})).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			status := getBrief(g, ns).Status
+			g.Expect(status.Round).To(Equal(int32(1)))
+			g.Expect(status.Requests).To(BeEmpty())
+			g.Expect(status.NeedsYou).NotTo(ContainElement(HaveField("Kind", model.AttentionRequest)))
+			g.Expect(status.NeedsYouWaiting).To(BeZero())
+			g.Expect(condition(status.Conditions, c4v1beta1.ConditionNeedsYou)).To(
+				HaveField("Status", metav1.ConditionFalse))
+		}).Should(Succeed())
+		planBriefs.refuseCreates(ns, false)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
+		}).Should(Succeed())
 	})
 })

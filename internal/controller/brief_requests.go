@@ -128,6 +128,7 @@ func (r *BriefReconciler) syncRequests(ctx context.Context, brief *c4v1beta1.Bri
 		}
 	}
 	r.recordRequests(ctx, brief, all)
+	dropRequestsNeedsYou(brief)
 	recordSettled(brief, reading, settled)
 	r.setRequestsCondition(ctx, brief, reading, failure)
 	return len(reading) > 0
@@ -509,6 +510,39 @@ func knownRepositories(known []model.Request) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// dropRequestsNeedsYou takes out of status.needsYou the requests no longer
+// waiting in status.requests, so the two never disagree in a status the
+// reconcile writes before it tends the Brief: a round's start writes the
+// status as soon as it has begun, and a step that fails leaves what it had
+// (#1930). The count and the NeedsYou condition follow; the next tend lists
+// anew what the drop made room for.
+func dropRequestsNeedsYou(brief *c4v1beta1.Brief) {
+	status := &brief.Status
+	waiting := waitingRequests(brief)
+	kept := make([]c4v1beta1.BriefNeedsYou, 0, len(status.NeedsYou))
+	for _, n := range status.NeedsYou {
+		if n.Kind == model.AttentionRequest && !slices.ContainsFunc(waiting, func(w model.NeedsYou) bool {
+			return w.Name == n.Name
+		}) {
+			continue
+		}
+		kept = append(kept, n)
+	}
+	dropped := len(status.NeedsYou) - len(kept)
+	if dropped == 0 {
+		return
+	}
+	status.NeedsYou = nil
+	if len(kept) > 0 {
+		status.NeedsYou = kept
+	}
+	listed := make([]model.NeedsYou, 0, len(kept))
+	for _, n := range kept {
+		listed = append(listed, model.NeedsYou{Kind: n.Kind, Name: n.Name, Question: n.Question, Recommend: n.Recommend})
+	}
+	setNeedsYouWaiting(brief, listed, max(int(status.NeedsYouWaiting)-dropped, len(kept)))
 }
 
 // waitingRequests are the status.needsYou items of the requests waiting in
