@@ -659,7 +659,7 @@ spec:
 
 		By("resuming the round once it is there")
 		mustCreate(&c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", c4v1alpha1.ContainerTypeService)})
+			Spec: c4v1alpha1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", c4v1alpha1.ContainerTypeService)}})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))

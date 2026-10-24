@@ -161,6 +161,7 @@ const (
 	ReasonUnsupportedFramework = "UnsupportedFramework"
 	ReasonUnsupportedCI        = "UnsupportedCI"
 	ReasonDeploysItself        = "DeploysItself"
+	ReasonNotWired             = "NotWired"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"
 	ReasonScaffolded           = "Scaffolded"

@@ -140,6 +140,10 @@ Standards' guides, the webshop Domain and the planner are its later steps.
 2. **Check choices.** Every entry used, the Connectors reached through
    Relationships included, must list the Container's type, else `Failed`,
    `ChoicesValid=False` ("python-fastapi does not support static-site"). A
+   Connector whose `wiredBy` names the Frameworks that call its files takes
+   only a Container on one of them, else reason `NotWired` ("dynamodb is not
+   wired by python-fastapi, only by aws-lambda-ts and aws-lambda-go"); unset,
+   it takes any ([plans/aws-rds.md](plans/aws-rds.md), decision 7). A
    Framework with `deploysItself: true` (the AWS ones) takes no Compute and
    no Deployment but `gitea-release`, whose release carries its synthesized
    cloud assembly, else reason `DeploysItself`; and `gitea-release` ships a
