@@ -12,7 +12,17 @@
 
 import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
-import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Domain, Relationship, Session } from '../../k8s/types'
+import type {
+  Brief,
+  CatalogEntry,
+  Container,
+  Crew,
+  DeployTarget,
+  Domain,
+  Project,
+  Relationship,
+  Session,
+} from '../../k8s/types'
 import { choicesOf } from '../../model/choices'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
@@ -38,6 +48,7 @@ export function ContainerPage({
   crews,
   deployTargets,
   domains,
+  project,
   writer,
 }: {
   container: Container
@@ -49,6 +60,8 @@ export function ContainerPage({
   deployTargets: DeployTarget[]
   /** The catalog's Domains, for their pinned refs; the ones in the repository are status.scaffoldedDomains. */
   domains: Domain[]
+  /** Its Project, for the license it is scaffolded with when the Container names none. */
+  project?: Project
   writer: ContainerWriter
 }) {
   const session = useContext(SessionContext)
@@ -73,6 +86,8 @@ export function ContainerPage({
   const choices = choicesOf(container)
   const framework = frameworks.find((f) => f.metadata.name === choices.framework)
   const fromBundle = choices.bundle ? <span className="muted small"> · from bundle {choices.bundle}</span> : null
+  // The license the scaffold writes: the Container's own, else the Project's (docs/plans/license.md).
+  const license = container.spec.license ?? project?.spec?.license
   return (
     <main className="shell-page object-page">
       <ObjectHeader
@@ -167,6 +182,15 @@ export function ContainerPage({
               <dd className="mono">
                 <a href={pageHref(ns, 'Deployment', choices.deployment)}>{choices.deployment}</a>
                 {fromBundle}
+              </dd>
+            </>
+          ) : null}
+          {license ? (
+            <>
+              <dt>License</dt>
+              <dd className="mono">
+                {license}
+                {container.spec.license ? null : <span className="muted small"> · from the Project</span>}
               </dd>
             </>
           ) : null}
