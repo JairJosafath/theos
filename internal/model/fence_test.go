@@ -1,8 +1,11 @@
 package model
 
 import (
+	"os"
 	"slices"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestAgentProtectedPaths(t *testing.T) {
@@ -84,4 +87,67 @@ func TestWithoutNeverPaths(t *testing.T) {
 			t.Errorf("withoutNeverPaths(%q) = %q, want %q", tc.text, got, tc.want)
 		}
 	}
+}
+
+// TestFactorySelfProtectedPathsAreTheFence pins the chart catalog's factory-self
+// Standard to the fence of docs/plans/self-hosting.md, decision 5: its
+// protectedPaths are the table's rows, in the table's order (#1890).
+func TestFactorySelfProtectedPathsAreTheFence(t *testing.T) {
+	data, err := os.ReadFile(chartValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		Catalog struct {
+			Entries []struct {
+				Kind string `yaml:"kind"`
+				Name string `yaml:"name"`
+				Spec struct {
+					SupportedTypes      []string `yaml:"supportedTypes"`
+					SupportedFrameworks []string `yaml:"supportedFrameworks"`
+					ProtectedPaths      []string `yaml:"protectedPaths"`
+				} `yaml:"spec"`
+			} `yaml:"entries"`
+		} `yaml:"catalog"`
+	}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		t.Fatalf("%s: %v", chartValues, err)
+	}
+	want := []string{
+		"internal/agentrunner/",
+		"internal/modelproxy/",
+		"internal/model/fence.go",
+		"internal/controller/task_sandbox.go",
+		"internal/controller/project_agent_network.go",
+		"internal/controller/ci_runner_pod.go",
+		"internal/controller/protection.go",
+		"internal/gitprovider/gitea_agents.go",
+		"dist/chart/",
+		"Makefile",
+		".golangci.yml",
+		".custom-gcl.yml",
+		".claude/",
+		"CLAUDE.md",
+		"GOVERNANCE.md",
+		// Spelled apart: the test-packages test reads a string naming the scripts
+		// directory in a Go test as a script the test runs (#1523); this one is
+		// catalog data.
+		"hack" + "/",
+	}
+	for _, e := range values.Catalog.Entries {
+		if e.Kind != "Standard" || e.Name != "factory-self" {
+			continue
+		}
+		if !slices.Equal(e.Spec.ProtectedPaths, want) {
+			t.Errorf("factory-self protectedPaths = %v, want decision 5's table %v", e.Spec.ProtectedPaths, want)
+		}
+		if !slices.Equal(e.Spec.SupportedFrameworks, []string{"go-kubebuilder"}) {
+			t.Errorf("factory-self supportedFrameworks = %v, want [go-kubebuilder]", e.Spec.SupportedFrameworks)
+		}
+		if !slices.Equal(e.Spec.SupportedTypes, []string{"operator"}) {
+			t.Errorf("factory-self supportedTypes = %v, want [operator]", e.Spec.SupportedTypes)
+		}
+		return
+	}
+	t.Fatalf("%s has no Standard factory-self", chartValues)
 }

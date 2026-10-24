@@ -7,6 +7,7 @@ go-cli v1.0.0
 go-kubebuilder v1.2.0
 go-standard v1.4.0
 go-operator-standard v1.4.0
+factory-self v1.0.0
 vscode-extension v1.1.0
 react-vite v1.0.0
 node-cli v1.1.1
