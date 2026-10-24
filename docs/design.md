@@ -41,8 +41,9 @@ draws the story on top.
 
 ## The model
 
-Nineteen namespaced kinds in `c4.factory.io/v1alpha1`. Every child names its
-parent in `spec`; the operator turns that into the ownerReference, so deletion
+Twenty namespaced kinds in `c4.factory.io/v1beta1`, the version users write
+(`v1alpha1` is deprecated; Compatibility). Every child names its parent in
+`spec`; the operator turns that into the ownerReference, so deletion
 follows the tree. `metadata.name` is the stable id; `displayName` and
 `description` are on every story kind.
 
@@ -889,10 +890,11 @@ reports issues through the form *Report from a device*.
 
 ## Compatibility
 
-**An object a client stored keeps validating across upgrades.** All of
-`c4.factory.io` serves `v1alpha1` only, and a release keeps every `v1alpha1`
-object of the one before valid and meaning what it meant. Within `v1alpha1` a
-release never:
+**An object a client stored keeps validating across upgrades.** `c4.factory.io`
+serves `v1beta1`, the version users write and every kind stores, and
+`v1alpha1`, deprecated since v0.30.0 and converted (below; its drop is #1963).
+A release keeps every object of the one before valid and meaning what it
+meant. Within a served version a release never:
 
 - removes or renames a field, or changes its type;
 - adds a required field, or makes an optional one required;
@@ -905,10 +907,10 @@ is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
 with an object may change, as the release notes say.
 
-**Across versions** ([plans/api-versions.md](plans/api-versions.md), #1082):
+**Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082):
 
 - **A served version keeps these rules** from the first release that serves
-  it, as `v1alpha1` does.
+  it, as `v1alpha1` did and `v1beta1` does.
 - **Every served version converts to and from the storage version** without
   failing and without loss. A field with no home in the target version rides
   in the annotation `c4.factory.io/<version>-fields` as JSON, so a round trip

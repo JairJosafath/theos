@@ -173,7 +173,7 @@ describe('the Crew writer', () => {
     }) as unknown as typeof fetch
     return { sent, w: new LiveCrewWriter('k8s', fetchImpl) }
   }
-  const url = 'k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/crews/orders-api'
+  const url = 'k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/crews/orders-api'
 
   it('pauses, sets parallel and the release settings with JSON patches', async () => {
     const { sent, w } = writer()

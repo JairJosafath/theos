@@ -47,7 +47,7 @@ const waiting = (number, title) => ({
 })
 
 const brief = {
-  apiVersion: 'c4.factory.io/v1alpha1',
+  apiVersion: 'c4.factory.io/v1beta1',
   kind: 'Brief',
   metadata: { name: 'lens' },
   spec: { idea: 'A lens on CEL expressions.', releases: [lens] },
@@ -115,7 +115,7 @@ describe('a Brief’s requests in the browser', () => {
   const button = (name) => page.getByRole('button', { name, exact: true })
 
   /** The Brief as the fake API has it now. */
-  const current = async () => (await fetch(`${apiUrl}/apis/c4.factory.io/v1alpha1/namespaces/${NS}/briefs/lens`)).json()
+  const current = async () => (await fetch(`${apiUrl}/apis/c4.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)).json()
 
   /** Clicks, and resolves to the JSON patch the API got for it, without its test of the resourceVersion. */
   async function patchOf(click) {
@@ -125,7 +125,7 @@ describe('a Brief’s requests in the browser', () => {
     const write = api.writes[count]
     assert.ok(write, 'the fake API got no write')
     assert.equal(write.method, 'PATCH')
-    assert.equal(write.path, `/apis/c4.factory.io/v1alpha1/namespaces/${NS}/briefs/lens`)
+    assert.equal(write.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)
     const [test, ...ops] = write.body
     assert.deepEqual({ ...test, value: undefined }, { op: 'test', path: '/metadata/resourceVersion', value: undefined })
     assert.match(test.value, /^\d+$/)

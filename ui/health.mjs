@@ -88,7 +88,7 @@ const RECENT_RESTART_MS = 15 * 60_000
 const CACHE_MS = 5_000
 
 /** Every Project, one per namespace: where the agent sandboxes run. */
-const PROJECTS_PATH = '/apis/c4.factory.io/v1alpha1/projects'
+const PROJECTS_PATH = '/apis/c4.factory.io/v1beta1/projects'
 
 const SUFFIXES = {
   n: 1e-9,
