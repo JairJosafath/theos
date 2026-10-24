@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/JairJosafath/c4factory/internal/oci"
@@ -92,6 +93,17 @@ type Repository struct {
 	// settings, else the host's own.
 	PyPIIndex  string
 	PyPIUpload string
+}
+
+// ImageRepository is the repository of the images of r's releases in the
+// owner's container registry, <ImageRegistry>/<repository>, the repository
+// name lower-case as an OCI reference wants; "" when the host has no
+// registry.
+func (r Repository) ImageRepository() string {
+	if r.ImageRegistry == "" {
+		return ""
+	}
+	return r.ImageRegistry + "/" + strings.ToLower(r.Name)
 }
 
 // Commit is one commit on the default branch.

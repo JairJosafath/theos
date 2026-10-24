@@ -127,12 +127,34 @@ func (h *imageHost) release(files map[string][]byte) {
 	h.files = files
 }
 
+// #1573: the image-path rule lives in Repository alone; the controller and
+// the fakes ask it instead of restating it.
+func TestRepositoryImageRepository(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		repo Repository
+		want string
+	}{
+		{"lower-case name below the registry",
+			Repository{Owner: "WebShop", Name: "Orders-API", ImageRegistry: "gitea.example/webshop"},
+			"gitea.example/webshop/orders-api"},
+		{"no registry, no repository", Repository{Owner: "webshop", Name: "orders-api"}, ""},
+	} {
+		if got := tc.repo.ImageRepository(); got != tc.want {
+			t.Errorf("%s: ImageRepository() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestPublishImage(t *testing.T) {
 	ctx := context.Background()
 	h, p, host := newImageHost(t)
 	repo := p.Repository("orders-api")
 	if want := host + "/webshop"; repo.ImageRegistry != want {
 		t.Errorf("ImageRegistry = %q, want %q", repo.ImageRegistry, want)
+	}
+	if want := host + "/webshop/orders-api"; repo.ImageRepository() != want {
+		t.Errorf("ImageRepository() = %q, want %q", repo.ImageRepository(), want)
 	}
 	archive, digest := ocitest.TwoPlatforms(t)
 	h.release(map[string][]byte{"orders-api-v1.0.0.oci.tar": archive, "SHA256SUMS": []byte("abc\n")})
