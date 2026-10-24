@@ -128,6 +128,27 @@ export interface WatchState<T> {
   error?: ApiError | Error
   /** Set once the first list has succeeded. */
   loaded: boolean
+  /**
+   * What the API server warned about the last list, from the response's
+   * Warning header: a request at a deprecated version, such as
+   * c4.factory.io/v1alpha1 (#1618). Unset when it warned about nothing.
+   */
+  warning?: string
+}
+
+/**
+ * The texts of a Warning header's entries (`299 - "text"`, comma-separated
+ * when several), without their codes and agents; the API server sends one
+ * entry per warning, text in quotes.
+ */
+export function parseWarnings(header: string | null): string[] {
+  const texts: string[] = []
+  if (!header) return texts
+  for (const m of header.matchAll(/\d{3}\s+\S+\s+"((?:[^"\\]|\\.)*)"/g)) {
+    const text = m[1].replace(/\\(.)/g, '$1').trim()
+    if (text) texts.push(text)
+  }
+  return texts
 }
 
 /** Opens a watch from a resourceVersion; throws ApiError for error statuses (410 Gone ...). */
@@ -141,7 +162,7 @@ export type OpenWatch = (
 export interface WatcherOptions {
   /** Base URL of the API proxy, such as "k8s" (relative to the page) or "/k8s". */
   baseUrl: string
-  /** API path of the resource, such as /apis/c4.factory.io/v1alpha1/namespaces/webshop/containers. */
+  /** API path of the resource, such as /apis/c4.factory.io/v1beta1/namespaces/webshop/containers. */
   path: string
   fetch?: typeof fetch
   /**
@@ -246,7 +267,8 @@ export class ResourceWatcher<T extends K8sObject> {
     // weren't watching.
     this.items.clear()
     for (const item of list.items ?? []) this.items.set(objectKey(item), item)
-    this.update({ phase: 'live', error: undefined, loaded: true }, true)
+    const warning = parseWarnings(res.headers.get('warning')).join(' ') || undefined
+    this.update({ phase: 'live', error: undefined, loaded: true, warning }, true)
     return list.metadata?.resourceVersion ?? ''
   }
 

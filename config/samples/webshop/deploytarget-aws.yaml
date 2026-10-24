@@ -14,7 +14,7 @@
 #
 # (and sessionToken for a temporary credential). Ready says whether AWS
 # accepts the credential, and in which account.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DeployTarget
 metadata:
   name: aws-prod

@@ -53,7 +53,7 @@ say() { echo "make test: $*" >&2; }
 
 # readers: a path (a directory or file, relative to the module root) Go tests
 # read without importing it, and the directories of the packages whose tests
-# do. api/ holds only the package api/v1alpha1, whose importers the graph
+# do. api/ holds the packages api/v1alpha1 and api/v1beta1, whose importers the graph
 # finds; internal/scaffold's tests read its License enum as a file (#1788),
 # since the layering forbids the import. A listed directory that holds no
 # package of the module is ignored.

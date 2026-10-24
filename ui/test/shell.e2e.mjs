@@ -142,7 +142,7 @@ describe('the shell', () => {
   it('shows the versions and where to read about them in About', async () => {
     await page.goto(`${base}/?area=about`)
     const about = page.locator('.about')
-    await about.getByText('c4.factory.io/v1alpha1').waitFor({ timeout: 5000 })
+    await about.getByText('c4.factory.io/v1beta1').waitFor({ timeout: 5000 })
     const href = (name) => about.getByRole('link', { name }).getAttribute('href')
     // The test build is unreleased, so main's docs and every release.
     assert.equal(await href('Release notes'), 'https://github.com/JairJosafath/c4factory/releases')

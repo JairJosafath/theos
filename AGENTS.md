@@ -1,7 +1,7 @@
 # C4 Factory - AI Agent Guide
 
 C4 Factory is a kubebuilder operator. Users describe software as a C4-style model in
-custom resources (group `c4.factory.io`, version `v1alpha1`); the operator scaffolds
+custom resources (group `c4.factory.io`, version `v1beta1`); the operator scaffolds
 one Git repository per Container from pinned templates, then only reports. Read
 [docs/design.md](docs/design.md) for the what and why, and
 [docs/architecture.md](docs/architecture.md) for where code goes.

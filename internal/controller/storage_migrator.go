@@ -41,7 +41,7 @@ const StorageMigratorReadyPoll = time.Second
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;domains.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
 
 // StorageMigrator rewrites what etcd holds at a version other than the
-// storage one (docs/plans/api-versions.md, decision 4). For each CRD in CRDs
+// storage one (docs/plans/done/api-versions.md, decision 4). For each CRD in CRDs
 // whose status.storedVersions names a version besides the storage version, it
 // lists the objects at the storage version, page by page, issues an empty
 // patch per object, so the API server writes each back at the storage

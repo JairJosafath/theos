@@ -140,7 +140,7 @@ jobs:
           # misnamed Project gets in, so delete it and try again.
           for i in $(seq 1 12); do
             if ! kubectl -n webshop create -f - <<'EOF' 2>err.txt; then
-          apiVersion: c4.factory.io/v1alpha1
+          apiVersion: c4.factory.io/v1beta1
           kind: Project
           metadata:
             name: not-webshop

@@ -14,7 +14,7 @@ import { NeedsArea } from './components/Needs'
 import { FactoryArea, Shell } from './components/Shell'
 import { pageHref } from './components/objects/links'
 import { ObjectPage } from './components/objects/ObjectPage'
-import { ProblemsBanner, ReadProblems } from './components/Status'
+import { ProblemsBanner, ReadProblems, WarningsBanner } from './components/Status'
 import { PanelState } from './components/PanelState'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
@@ -286,6 +286,14 @@ export default function App() {
       ) : null}
       {/* Each panel says the reads behind it that failed; only demo mode's own failure is the page's. */}
       <ProblemsBanner problems={demoProblem ? [demoProblem] : []} />
+      {/* A deprecation the API server put in a Warning header on a list of the model behind the page (#1618); the health read is not one. */}
+      <WarningsBanner
+        warnings={[
+          ...(projects.connection.warnings ?? []),
+          ...(story.connection.warnings ?? []),
+          ...(factory.connection.warnings ?? []),
+        ]}
+      />
     </>
   )
   // Every list read or failed: a failed one doesn't hold up the rest of the story.

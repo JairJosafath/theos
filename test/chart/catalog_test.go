@@ -262,7 +262,7 @@ func applier(
 // to v0.12 made it: a Helm hook, created by helm.
 func hookGitProvider(name, url, secret string) *unstructured.Unstructured {
 	hook := &unstructured.Unstructured{}
-	hook.SetAPIVersion("c4.factory.io/v1alpha1")
+	hook.SetAPIVersion("c4.factory.io/v1beta1")
 	hook.SetKind("GitProvider")
 	hook.SetName(name)
 	hook.SetNamespace(project)
@@ -325,7 +325,7 @@ func objectRef(kind, name string) *unstructured.Unstructured {
 }
 
 func gvr(resource string) schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "c4.factory.io", Version: "v1alpha1", Resource: resource}
+	return schema.GroupVersionResource{Group: "c4.factory.io", Version: "v1beta1", Resource: resource}
 }
 
 func key(u *unstructured.Unstructured) string { return u.GetKind() + "/" + u.GetName() }

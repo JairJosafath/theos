@@ -1,6 +1,6 @@
 # Allow the API server's calls to the conversion webhook. It calls from
 # outside any pod network, so no selector names it: the port is open, and
-# TLS with the operator's own CA guards it (docs/plans/api-versions.md).
+# TLS with the operator's own CA guards it (docs/plans/done/api-versions.md).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

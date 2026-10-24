@@ -1,7 +1,7 @@
 # Picks up orders-cli's Gitea issues labelled status/ready that have an
 # "Acceptance criteria" checklist, one at a time: a Task per issue, implemented,
 # checked by CI, reviewed and merged.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Crew
 metadata:
   name: orders-cli
