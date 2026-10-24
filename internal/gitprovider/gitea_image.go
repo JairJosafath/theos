@@ -54,7 +54,7 @@ type Image struct {
 // pushes nothing new. The archive is streamed from the release, never held
 // whole.
 func (g *gitea) PublishImage(ctx context.Context, repo Repository, tag string) (Image, error) {
-	out := Image{Repository: g.base.Host + "/" + imagePath(repo), Tag: tag}
+	out := Image{Repository: repo.ImageRepository(), Tag: tag}
 	rel, err := g.GetRelease(ctx, repo, tag)
 	if err != nil {
 		return out, err

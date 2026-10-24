@@ -25,7 +25,10 @@ import (
 
 // adopt makes owner the controller of obj and merges the ancestor labels, then
 // patches obj if anything changed. Children name their parent in spec; this turns
-// that into the ownerReference, so deletion follows the tree.
+// that into the ownerReference, so deletion follows the tree. The patch
+// replaces obj with what the API server holds, status included, newer than
+// the cache: a reconciler copies the status it writes after adopt, never
+// before, or a status written since its read is patched away (#591, #1455).
 func adopt(ctx context.Context, c client.Client, scheme *runtime.Scheme,
 	owner, obj client.Object, labels map[string]string) error {
 	orig, ok := obj.DeepCopyObject().(client.Object)
