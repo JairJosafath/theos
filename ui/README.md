@@ -75,7 +75,7 @@ False, with a choice that sets it when actions are on; and where it ships:
 each `spec.deploy` entry's target, the version running and wanted, phase,
 health and URL, and for a version waiting for approval the `kubectl patch`
 line, or with actions on an Approve button. The DeployTarget page shows its
-tool and where (the `github` repository), tier, approval, `Ready` and the
+tool and where (the `github` repository or the `gitlab` project), tier, approval, `Ready` and the
 Containers that ship to it, and of its credentials the Secret's name only; the
 Project page lists its DeployTargets.
 

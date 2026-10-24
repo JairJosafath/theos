@@ -567,3 +567,45 @@ describe('an optional kind still loading', () => {
     expect(text(page('Compute', 'small', data, loading))).toContain('Loading the Compute')
   })
 })
+
+describe('gitlab targets (#1807)', () => {
+  const gitlab = (member: DeployTarget['spec']['gitlab']): DeployTarget => ({
+    metadata: { name: 'lab', namespace: 'webshop' },
+    spec: { gitlab: member, credentialsSecretRef: { name: 'lab-gitlab' } },
+  })
+  const plain = (html: string) => text(html).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/ ,/g, ',')
+  const page = (target: DeployTarget) =>
+    renderToStaticMarkup(createElement(DeployTargetPage, { target, containers: [] }))
+
+  it('shows a gitlab.com project: its releases page, tags, source, registry image and the Secret’s key, unset parts as the operator fills them', () => {
+    const html = page(gitlab({ project: 'Webshop-Co/Apps/Webshop', source: {} }))
+    const t = plain(html)
+    expect(t).toContain('Tool GitLab releases (gitlab)')
+    expect(t).toContain('Where Webshop-Co/Apps/Webshop')
+    expect(html).toContain('href="https://gitlab.com/Webshop-Co/Apps/Webshop/-/releases"')
+    expect(t).toContain('Tags <container>-v1.2.3 (tagPrefix not set: the Container’s name and -)')
+    expect(t).not.toContain('Latest')
+    expect(t).toContain('Source folder <container>, tagged <container>/v1.2.3 (path not set: each Container’s name)')
+    expect(t).toContain(
+      'Image registry.gitlab.com/webshop-co/apps/webshop/<container> · copied to the project’s container registry, for a Container whose release builds an image, when the registry is on and the token has write_registry',
+    )
+    expect(t).not.toContain('the instance names its registry')
+    expect(t).toContain('Secret lab-gitlab')
+    expect(t).toMatch(
+      /The operator reads its key token, a project access token with the Maintainer role and the scopes api, read_registry and write_registry/,
+    )
+    expect(t).not.toContain('packagesToken')
+  })
+
+  it('shows a self-hosted instance at url without source: its releases page there, the release only, and a registry only the project tells', () => {
+    const html = page(
+      gitlab({ url: 'https://git.example.com/gitlab', project: 'webshop-co/orders-cli', tagPrefix: '' }),
+    )
+    const t = plain(html)
+    expect(html).toContain('href="https://git.example.com/gitlab/webshop-co/orders-cli/-/releases"')
+    expect(t).toContain('Tags v1.2.3')
+    expect(t).toContain('Source not published: the release only')
+    expect(t).toContain('Image <registry>/webshop-co/orders-cli ·')
+    expect(t).toContain('the instance names its registry')
+  })
+})
