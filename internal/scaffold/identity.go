@@ -23,6 +23,9 @@ type Identity struct {
 	// scaffolded: EveryChange or BeforeRelease. Only a Container with a Standard
 	// has it.
 	Checks string `yaml:"checks,omitempty"`
+	// License is the SPDX id of the LICENSE the operator wrote, when a
+	// license was set as the repository was scaffolded.
+	License string `yaml:"license,omitempty"`
 }
 
 const identityHeader = "# Written once by C4 Factory when this repository was scaffolded.\n" +
