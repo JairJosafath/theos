@@ -226,6 +226,8 @@ func TestBriefWorkspaceCatalog(t *testing.T) {
 		{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{"service"},
 			SupportedFrameworks: []string{"go-service"}},
 		{Side: SideConnector, Name: "postgres", SupportedTypes: []string{"service"}},
+		// #1958: a Connector lists the Frameworks that wire it, sorted.
+		{Side: SideConnector, Name: "dynamodb", SupportedTypes: []string{"service"}, WiredBy: []string{"python-fastapi", "aws-lambda-ts"}},
 		// #1760: a Domain lists its name and description, no types.
 		{Side: SideDomain, Name: "webshop", Description: " Sells things online. ", SupportedTypes: nil},
 	}
@@ -248,6 +250,12 @@ standards:
 computes: []
 deployments: []
 connectors:
+    - name: dynamodb
+      supportedTypes:
+        - service
+      wiredBy:
+        - aws-lambda-ts
+        - python-fastapi
     - name: postgres
       supportedTypes:
         - service

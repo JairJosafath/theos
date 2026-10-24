@@ -313,6 +313,13 @@ func TestNextCrewStep(t *testing.T) {
 				{Issue: 4, Task: "cel-ls-4", Attempt: 1, Implementer: "haiku"},
 				{Issue: 5, Task: "cel-ls-5", Attempt: 1}},
 				Message: "Starting Task cel-ls-4 for issue #4 and Task cel-ls-5 for issue #5"}},
+		{name: "a labelled issue is reviewed by its route's reviewer, the others by the Crew's (#1241)", facts: CrewFacts{
+			ContainerReady: true, Parallel: 2, Issues: []Issue{labelled(ready(6), "security"), ready(7)},
+			Routes: []AgentRoute{{Label: "security", Reviewer: "opus"}}},
+			want: CrewStep{Phase: CrewWorking, Start: []IssueStart{
+				{Issue: 6, Task: "cel-ls-6", Attempt: 1, Reviewer: "opus"},
+				{Issue: 7, Task: "cel-ls-7", Attempt: 1}},
+				Message: "Starting Task cel-ls-6 for issue #6 and Task cel-ls-7 for issue #7"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -3,13 +3,26 @@
 // them. CDK Nag checks most AWS defaults; these check the rest, and that the
 // stacks keep what infra/operations.ts promises. A failing case here means a
 // stack breaks the Standard: fix the stack, never the test.
-import { App, Duration, Stack } from 'aws-cdk-lib';
+import { App, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { BackupPlan, BackupPlanRule, BackupResource } from 'aws-cdk-lib/aws-backup';
+import { SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { Key } from 'aws-cdk-lib/aws-kms';
 import { Code, Function as LambdaFunction, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
 import type { FunctionProps } from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import {
+  AuroraPostgresEngineVersion,
+  CfnDBCluster,
+  ClusterInstance,
+  Credentials,
+  DatabaseCluster,
+  DatabaseClusterEngine,
+} from 'aws-cdk-lib/aws-rds';
+import type { DatabaseClusterProps } from 'aws-cdk-lib/aws-rds';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription, LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Queue } from 'aws-cdk-lib/aws-sqs';
@@ -21,7 +34,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { defineStacks } from './stacks';
 import { applyStandard, stackNameFor, STANDARD_TAGS, TIER_RULES, TIERS, tierOf } from './standard';
-import type { Operations, Tier } from './standard';
+import type { Operations, Tier, TierRules } from './standard';
 
 /** A resource in a synthesized template, as far as these rules read it. */
 interface Resource {
@@ -89,7 +102,17 @@ const DEAD_LETTER_KEYS = ['RedrivePolicy', 'DeadLetterConfig', 'OnFailure'];
 
 // What AWS Backup's plan backs up; a stack holding none of it has no plan.
 // A data bucket keeps its earlier versions instead.
-const BACKED_UP_TYPES = ['AWS::DynamoDB::Table'];
+const BACKED_UP_TYPES = ['AWS::DynamoDB::Table', 'AWS::RDS::DBCluster'];
+
+// The attribute that is a data store's ARN, per type: what a backup
+// selection names it by (#1921).
+const ARN_ATTRIBUTES: Readonly<Record<string, string>> = {
+  'AWS::DynamoDB::Table': 'Arn',
+  'AWS::RDS::DBCluster': 'DBClusterArn',
+};
+
+/** A data store a backup selection names: its logical id, properties and ARN attribute. */
+type DataStore = readonly [id: string, properties: unknown, arnAttribute: string];
 
 // The image of the AWS Distro for OpenTelemetry collector, which a task
 // runs beside its app to send the app's traces to X-Ray.
@@ -210,26 +233,26 @@ function needsNoBackup(id: string, properties: unknown): boolean {
 
 /**
  * What a selection reaching past the stack should be instead, as the `aws-*`
- * Frameworks' `infra/backups.ts` do since #1267.
+ * Frameworks' `infra/backups.ts` do since #1267. A cluster is selected by its
+ * `CfnDBCluster`'s `attrDbClusterArn` (`Fn::GetAtt`): `DatabaseCluster`'s
+ * `clusterArn` is a `formatArn` over a `Ref`, an ARN written out (#1921).
  */
 const SELECT_BY_ARN =
-  "pass the stack's data tables to infra/backups.ts and select each with BackupResource.fromArn(table.tableArn)";
+  "pass the stack's data tables and clusters to infra/backups.ts and select each with BackupResource.fromArn(table.tableArn) or BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn)";
 
 /**
- * What is wrong with a backup selection in a stack whose tables are `tables`,
- * each one's logical id and properties. It names the stack's own tables by
- * `Fn::GetAtt` and nothing else, every one but the idempotency table among
- * them (`needsNoBackup`). A tag
- * (`ListOfTags`), a condition, `*` or an ARN written out reaches past the
- * stack: its `<name>-development` stack in the same account carries the same
- * tag and names its tables alike (#1267). A fault of that kind names the fix
- * (`SELECT_BY_ARN`), as a Container scaffolded before #1267 meets it first on
- * the Standard's update (#1490).
+ * What is wrong with a backup selection in a stack whose data stores are
+ * `stores`, each one's logical id, properties and ARN attribute (`Arn` for a
+ * table, `DBClusterArn` for an Aurora cluster, #1921). It names the stack's
+ * own tables and clusters by `Fn::GetAtt` of that attribute and nothing
+ * else, every one but the idempotency table among them (`needsNoBackup`). A
+ * tag (`ListOfTags`), a condition, `*` or an ARN written out reaches past
+ * the stack: its `<name>-development` stack in the same account carries the
+ * same tag and names its tables alike (#1267). A fault of that kind names
+ * the fix (`SELECT_BY_ARN`), as a Container scaffolded before #1267 meets it
+ * first on the Standard's update (#1490).
  */
-function selectionFaults(
-  selection: unknown,
-  tables: readonly (readonly [string, unknown])[],
-): string[] {
+function selectionFaults(selection: unknown, stores: readonly DataStore[]): string[] {
   if (!isRecord(selection)) {
     return ['no BackupSelection'];
   }
@@ -242,16 +265,20 @@ function selectionFaults(
     }
   }
   const named: unknown[] = [selection['Resources'] ?? []].flat();
-  const arnOf = (id: string): string => JSON.stringify({ 'Fn::GetAtt': [id, 'Arn'] });
+  const arnOf = ([id, , attribute]: DataStore): string =>
+    JSON.stringify({ 'Fn::GetAtt': [id, attribute] });
   for (const resource of named) {
-    if (!tables.some(([id]) => JSON.stringify(resource) === arnOf(id))) {
-      faults.push(`${JSON.stringify(resource)} is none of the stack's tables: ${SELECT_BY_ARN}`);
+    if (!stores.some((store) => JSON.stringify(resource) === arnOf(store))) {
+      faults.push(
+        `${JSON.stringify(resource)} is none of the stack's tables or clusters: ${SELECT_BY_ARN}`,
+      );
     }
   }
-  for (const [id, properties] of tables) {
+  for (const store of stores) {
+    const [id, properties] = store;
     if (
       !needsNoBackup(id, properties) &&
-      !named.some((resource) => JSON.stringify(resource) === arnOf(id))
+      !named.some((resource) => JSON.stringify(resource) === arnOf(store))
     ) {
       faults.push(`${id} is in no backup selection`);
     }
@@ -259,9 +286,77 @@ function selectionFaults(
   return faults;
 }
 
-/** Each table of `template`: its logical id and properties. */
-function tablesOf(template: Template): [string, unknown][] {
-  return resourcesOf(template, 'AWS::DynamoDB::Table').map(([id, table]) => [id, table.Properties]);
+/** Each data store of `template` a backup selection names: its tables and Aurora clusters. */
+function dataStoresOf(template: Template): DataStore[] {
+  return Object.entries(ARN_ATTRIBUTES).flatMap(([type, attribute]) =>
+    resourcesOf(template, type).map(
+      ([id, store]): DataStore => [id, store.Properties, attribute] as const,
+    ),
+  );
+}
+
+/** What is wrong with a template's Aurora clusters, per rule of the tier. */
+interface ClusterFaults {
+  readonly encryption: string[];
+  readonly removal: string[];
+  readonly protection: string[];
+  readonly recovery: string[];
+}
+
+/**
+ * What is wrong with the Aurora clusters of `template` under `rules`, per
+ * rule, each fault naming the cluster (#1921): encrypted at rest with a
+ * customer managed key; on removal `Snapshot` where the tier keeps data,
+ * else `Delete`, and its key `Retain` or `Delete` alike; deletion
+ * protection where the tier keeps data and nowhere else; 35 days of
+ * backups, the most Aurora keeps, where the tier recovers data, else the
+ * one day it keeps anyway (`BackupRetentionPeriod` left out).
+ */
+function clusterFaults(template: Template, rules: TierRules): ClusterFaults {
+  const faults: ClusterFaults = { encryption: [], removal: [], protection: [], recovery: [] };
+  const keys = resourcesOf(template, 'AWS::KMS::Key');
+  for (const [id, cluster] of resourcesOf(template, 'AWS::RDS::DBCluster')) {
+    const properties = cluster.Properties ?? {};
+    if (properties['StorageEncrypted'] !== true) {
+      faults.encryption.push(`${id} is not encrypted at rest`);
+    }
+    const keyId = properties['KmsKeyId'];
+    const ownKeys = keys.filter(([keyLogicalId]) =>
+      JSON.stringify(keyId ?? null).includes(`"${keyLogicalId}"`),
+    );
+    if (keyId === undefined) {
+      faults.encryption.push(`${id} is encrypted with no customer managed key`);
+    } else if (ownKeys.length === 0) {
+      faults.encryption.push(
+        `${id} is encrypted with ${JSON.stringify(keyId)}, which is none of the stack's keys`,
+      );
+    }
+    const policy = rules.keepData ? 'Snapshot' : 'Delete';
+    if (cluster.DeletionPolicy !== policy || cluster.UpdateReplacePolicy !== policy) {
+      faults.removal.push(
+        `${id} is ${String(cluster.DeletionPolicy)}/${String(cluster.UpdateReplacePolicy)} on removal, not ${policy}`,
+      );
+    }
+    const keyPolicy = rules.keepData ? 'Retain' : 'Delete';
+    for (const [clusterKeyId, key] of ownKeys) {
+      if (key.DeletionPolicy !== keyPolicy) {
+        faults.removal.push(
+          `${id}'s key ${clusterKeyId} is ${String(key.DeletionPolicy)} on removal, not ${keyPolicy}`,
+        );
+      }
+    }
+    if ((properties['DeletionProtection'] === true) !== rules.keepData) {
+      faults.protection.push(
+        `${id} has ${rules.keepData ? 'no ' : ''}deletion protection, which the tier ${rules.keepData ? 'wants' : 'leaves off'}`,
+      );
+    }
+    const retention: unknown = properties['BackupRetentionPeriod'] ?? 1;
+    const days = rules.pointInTimeRecovery ? 35 : 1;
+    if (retention !== days) {
+      faults.recovery.push(`${id} keeps ${String(retention)} days of backups, not ${String(days)}`);
+    }
+  }
+  return faults;
 }
 
 /**
@@ -396,15 +491,18 @@ beforeAll(() => {
 });
 
 // The rule a backup selection keeps, case by case: the stack's own data
-// tables by ARN, never what could reach another stack of the Container.
+// tables and clusters by ARN, never what could reach another stack of the
+// Container.
 describe('a backup selection', () => {
   const expiring = { TimeToLiveSpecification: { AttributeName: 'expiration', Enabled: true } };
-  const tables = [
-    ['ItemsA1B2', {}],
-    ['IdempotencyC3D4', expiring],
-  ] as const;
-  const arn = (id: string): unknown => ({ 'Fn::GetAtt': [id, 'Arn'] });
+  const tables: DataStore[] = [
+    ['ItemsA1B2', {}, 'Arn'],
+    ['IdempotencyC3D4', expiring, 'Arn'],
+  ];
+  const stores: DataStore[] = [...tables, ['ClusterE5F6', {}, 'DBClusterArn']];
+  const arn = (id: string, attribute = 'Arn'): unknown => ({ 'Fn::GetAtt': [id, attribute] });
   const development = 'arn:aws:dynamodb:eu-west-1:123456789012:table/orders-development-Items*';
+  const clusterArn = 'arn:aws:rds:eu-west-1:123456789012:cluster:orders-cluster';
   it.each([
     ["names the stack's data table", { Resources: [arn('ItemsA1B2')] }, []],
     [
@@ -440,14 +538,16 @@ describe('a backup selection', () => {
       },
       [
         `selects by Conditions, which reaches every stack of the Container: ${SELECT_BY_ARN}`,
-        `"*" is none of the stack's tables: ${SELECT_BY_ARN}`,
+        `"*" is none of the stack's tables or clusters: ${SELECT_BY_ARN}`,
         'ItemsA1B2 is in no backup selection',
       ],
     ],
     [
       "names the development stack's tables by an ARN written out (#1267)",
       { Resources: [arn('ItemsA1B2'), development] },
-      [`${JSON.stringify(development)} is none of the stack's tables: ${SELECT_BY_ARN}`],
+      [
+        `${JSON.stringify(development)} is none of the stack's tables or clusters: ${SELECT_BY_ARN}`,
+      ],
     ],
     [
       'leaves the data table out',
@@ -458,17 +558,55 @@ describe('a backup selection', () => {
     expect(selectionFaults(selection, tables)).toEqual(faults);
   });
 
+  // A stack with a table and an Aurora cluster (#1921).
+  it.each([
+    [
+      "names the stack's table and cluster, the cluster by DBClusterArn",
+      { Resources: [arn('ItemsA1B2'), arn('ClusterE5F6', 'DBClusterArn')] },
+      [],
+    ],
+    [
+      'leaves the cluster out',
+      { Resources: [arn('ItemsA1B2')] },
+      ['ClusterE5F6 is in no backup selection'],
+    ],
+    [
+      'names the cluster by an ARN written out',
+      { Resources: [arn('ItemsA1B2'), clusterArn] },
+      [
+        `${JSON.stringify(clusterArn)} is none of the stack's tables or clusters: ${SELECT_BY_ARN}`,
+        'ClusterE5F6 is in no backup selection',
+      ],
+    ],
+    [
+      'names the cluster by Arn, which a cluster has no attribute of, instead of DBClusterArn',
+      { Resources: [arn('ItemsA1B2'), arn('ClusterE5F6')] },
+      [
+        `${JSON.stringify(arn('ClusterE5F6'))} is none of the stack's tables or clusters: ${SELECT_BY_ARN}`,
+        'ClusterE5F6 is in no backup selection',
+      ],
+    ],
+  ])(
+    'in a stack with a cluster that %s has the faults it lists (#1921)',
+    (_, selection, faults) => {
+      expect(selectionFaults(selection, stores)).toEqual(faults);
+    },
+  );
+
   it('that selects by tag has a fault naming the fix in infra/backups.ts (#1490)', () => {
     const [fault] = selectionFaults({ ListOfTags: [] }, tables);
     expect(fault).toContain('infra/backups.ts');
     expect(fault).toContain('BackupResource.fromArn(table.tableArn)');
+    expect(fault).toContain(
+      'BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn)',
+    );
   });
 
   it('that leaves out a data table whose items expire has a fault: it still holds data', () => {
     expect(
       selectionFaults({ Resources: [arn('IdempotencyC3D4')] }, [
-        ['ItemsA1B2', expiring],
-        ['IdempotencyC3D4', expiring],
+        ['ItemsA1B2', expiring, 'Arn'],
+        ['IdempotencyC3D4', expiring, 'Arn'],
       ]),
     ).toEqual(['ItemsA1B2 is in no backup selection']);
   });
@@ -541,8 +679,9 @@ describe.each(TIERS)('the Standard, in %s', (tier) => {
     }
   });
 
-  it('encrypts every table, bucket, queue and topic at rest', () => {
+  it('encrypts every table, bucket, queue, topic and cluster at rest, a cluster with a customer managed key', () => {
     for (const [name, template] of app(tier).templates) {
+      expect(clusterFaults(template, TIER_RULES[tier]).encryption, name).toEqual([]);
       for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
         expect(table.Properties?.['SSESpecification'], `${name}/${id}`).toMatchObject({
           SSEEnabled: true,
@@ -687,9 +826,10 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('the removal policies', () => {
-      it('keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them', () => {
+      it('keep every table, data bucket, backup vault and vault key where the tier keeps data, else delete them; snapshot every cluster where it keeps data, else delete it and its key', () => {
         const policy = rules.keepData ? 'Retain' : 'Delete';
         for (const [name, template] of app(tier).templates) {
+          expect(clusterFaults(template, rules).removal, name).toEqual([]);
           for (const [id, data] of [
             ...resourcesOf(template, 'AWS::DynamoDB::Table'),
             ...dataBuckets(template),
@@ -713,8 +853,9 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('deletion and termination protection', () => {
-      it('protect every table and stack where the tier keeps data, and nothing else', () => {
+      it('protect every table, cluster and stack where the tier keeps data, and nothing else', () => {
         for (const [name, template] of app(tier).templates) {
+          expect(clusterFaults(template, rules).protection, name).toEqual([]);
           for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
             expect(table.Properties?.['DeletionProtectionEnabled'] === true, `${name}/${id}`).toBe(
               rules.keepData,
@@ -728,7 +869,7 @@ describe.runIf(operations !== undefined).each(TIERS)(
     });
 
     describe('point-in-time recovery', () => {
-      it('is on for every table in production when the RPO is under a day', () => {
+      it('is on for every table, and 35 days of backups for every cluster, in production when the RPO is under a day', () => {
         const [, count = '', unit = ''] = /^(\d+)([mhd])$/.exec(promised().recovery.rpo) ?? [];
         const minutes = Number(count) * ({ m: 1, h: 60, d: 1440 }[unit] ?? Number.NaN);
         // An RPO of 0 asks for the least loss there is: point-in-time recovery, as under a day (#1266).
@@ -737,6 +878,8 @@ describe.runIf(operations !== undefined).each(TIERS)(
           return;
         }
         for (const [name, template] of app(tier).templates) {
+          const recovering = { ...rules, pointInTimeRecovery: true };
+          expect(clusterFaults(template, recovering).recovery, name).toEqual([]);
           for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
             expect(table.Properties?.['PointInTimeRecoverySpecification'], `${name}/${id}`).toEqual(
               expect.objectContaining({ PointInTimeRecoveryEnabled: true }),
@@ -745,8 +888,9 @@ describe.runIf(operations !== undefined).each(TIERS)(
         }
       });
 
-      it('is on for every table where the tier recovers data, and off elsewhere', () => {
+      it('is on for every table, and every cluster keeps 35 days of backups, where the tier recovers data; off and a day elsewhere', () => {
         for (const [name, template] of app(tier).templates) {
+          expect(clusterFaults(template, rules).recovery, name).toEqual([]);
           for (const [id, table] of resourcesOf(template, 'AWS::DynamoDB::Table')) {
             const spec = table.Properties?.['PointInTimeRecoverySpecification'];
             const enabled = isRecord(spec) && spec['PointInTimeRecoveryEnabled'] === true;
@@ -822,10 +966,10 @@ describe.runIf(operations !== undefined).each(TIERS)(
               expect(JSON.stringify(copies), name).toContain(`:backup:${copyToRegion}:`);
             }
           }
-          // The plan backs up the stack's own data tables, named by ARN.
+          // The plan backs up the stack's own data tables and clusters, named by ARN.
           const selection = only(selections, `${name}'s backup selections`)[1];
           const backupSelection = selection.Properties?.['BackupSelection'];
-          expect(selectionFaults(backupSelection, tablesOf(template)), name).toEqual([]);
+          expect(selectionFaults(backupSelection, dataStoresOf(template)), name).toEqual([]);
         }
         const copyStacks = app(tier).stacks.filter((stack) =>
           holdsOnlyACopyVault(Template.fromStack(stack)),
@@ -1055,12 +1199,24 @@ describe.runIf(operations !== undefined).each(TIERS)(
   },
 );
 
+// Each pack's finding on the probe function nothing calls, which shows the
+// pack ran: the rule (which cdk-nag may suffix with what it found, as
+// `AwsSolutions-IAM4[Policy::...]`) and the construct path.
+const CANARY_FINDINGS = {
+  AwsSolutions: ['AwsSolutions-IAM4', 'probe/Canary/ServiceRole/Resource'],
+  Serverless: ['Serverless-LambdaDLQ', 'probe/Canary/Resource'],
+} as const;
+
 /**
- * The Serverless findings on a stack `define` builds, after the Standard, as
- * `<rule> <construct path>`: synth writes them into the outdir's validation
- * report, not into the error it throws.
+ * The findings of the Nag pack `pack` on a stack `define` builds, after the
+ * Standard, as `<rule> <construct path>`: synth writes them into the
+ * outdir's validation report, not into the error it throws.
  */
-function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[] {
+function nagFindings(
+  pack: keyof typeof CANARY_FINDINGS,
+  tier: Tier,
+  define: (stack: Stack) => void,
+): string[] {
   const outdir = mkdtempSync(path.join(tmpdir(), 'standard-'));
   try {
     const probe = new App({ outdir, context: { ...cdkContext(), tier } });
@@ -1081,7 +1237,7 @@ function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[
     const plugins =
       isRecord(parsed) && Array.isArray(parsed['pluginReports']) ? parsed['pluginReports'] : [];
     const findings = (plugins as unknown[])
-      .filter((plugin) => isRecord(plugin) && plugin['pluginName'] === 'Serverless')
+      .filter((plugin) => isRecord(plugin) && plugin['pluginName'] === pack)
       .flatMap((plugin) =>
         isRecord(plugin) && Array.isArray(plugin['violations'])
           ? (plugin['violations'] as unknown[])
@@ -1096,9 +1252,11 @@ function serverlessFindings(tier: Tier, define: (stack: Stack) => void): string[
           : [],
       )
       .sort();
-    const canary = 'Serverless-LambdaDLQ probe/Canary/Resource';
-    if (!findings.includes(canary)) {
-      throw new Error(`The Serverless pack did not find ${canary}: did it run?`);
+    const [rule, construct] = CANARY_FINDINGS[pack];
+    if (
+      !findings.some((finding) => finding.startsWith(rule) && finding.endsWith(` ${construct}`))
+    ) {
+      throw new Error(`The ${pack} pack did not find ${rule} ${construct}: did it run?`);
     }
     return findings.filter((finding) => !finding.includes('/Canary/'));
   } finally {
@@ -1122,12 +1280,182 @@ function probeFunction(
   });
 }
 
+/**
+ * An Aurora cluster in `stack` as the rds Connector builds it for `tier`
+ * (docs/plans/aws-rds.md), as far as the Standard's rules read it; `props`
+ * override any of it, and `keyPolicy` is its key's removal policy.
+ */
+function probeCluster(
+  stack: Stack,
+  tier: Tier,
+  props: Partial<DatabaseClusterProps> = {},
+  keyPolicy = TIER_RULES[tier].keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+): DatabaseCluster {
+  const rules = TIER_RULES[tier];
+  const vpc = new Vpc(stack, 'Vpc', {
+    natGateways: 0,
+    subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
+  });
+  const key = new Key(stack, 'Key', { enableKeyRotation: true, removalPolicy: keyPolicy });
+  return new DatabaseCluster(stack, 'Cluster', {
+    engine: DatabaseClusterEngine.auroraPostgres({ version: AuroraPostgresEngineVersion.VER_16_6 }),
+    writer: ClusterInstance.serverlessV2('Writer'),
+    vpc,
+    vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+    credentials: Credentials.fromGeneratedSecret('app'),
+    storageEncryptionKey: key,
+    enableDataApi: true,
+    iamAuthentication: true,
+    deletionProtection: rules.keepData,
+    removalPolicy: rules.keepData ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
+    backup: { retention: Duration.days(rules.pointInTimeRecovery ? 35 : 1) },
+    ...props,
+  });
+}
+
+// The cluster branch of the rules on a stack with an Aurora cluster, in
+// either tier (#1921): the cluster the rds Connector builds keeps every rule,
+// and each thing a Connector could get wrong names its fault.
+describe.each(TIERS)('an Aurora cluster, in %s', (tier) => {
+  const rules = TIER_RULES[tier];
+  const faultsOf = (
+    props: Partial<DatabaseClusterProps> | ((stack: Stack) => Partial<DatabaseClusterProps>) = {},
+    keyPolicy?: RemovalPolicy,
+  ): ClusterFaults => {
+    const probe = new App({ context: { ...cdkContext(), tier } });
+    const stack = new Stack(probe, 'probe');
+    probeCluster(stack, tier, typeof props === 'function' ? props(stack) : props, keyPolicy);
+    return clusterFaults(Template.fromStack(stack), rules);
+  };
+  const none: ClusterFaults = { encryption: [], removal: [], protection: [], recovery: [] };
+  const other = rules.keepData ? RemovalPolicy.DESTROY : RemovalPolicy.SNAPSHOT;
+
+  it('as the rds Connector builds it keeps every rule', () => {
+    expect(faultsOf()).toEqual(none);
+  });
+
+  it('encrypted with the AWS-managed key fails the encryption rule', () => {
+    expect(faultsOf({ storageEncryptionKey: undefined, storageEncrypted: true })).toEqual({
+      ...none,
+      encryption: [expect.stringMatching(/^Cluster\w+ is encrypted with no customer managed key$/)],
+    });
+  });
+
+  it('encrypted with a key outside the stack fails the encryption rule', () => {
+    const outside = 'arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000';
+    expect(
+      faultsOf((stack) => ({ storageEncryptionKey: Key.fromKeyArn(stack, 'Outside', outside) })),
+    ).toEqual({
+      ...none,
+      encryption: [
+        expect.stringMatching(
+          /^Cluster\w+ is encrypted with "arn:aws:kms:[^"]+", which is none of the stack's keys$/,
+        ),
+      ],
+    });
+  });
+
+  // What the rds Connector's infra/backups.ts must select the cluster by, on
+  // the ARN CDK renders: the CfnDBCluster's attrDbClusterArn is the
+  // Fn::GetAtt the selection rule reads; DatabaseCluster.clusterArn is a
+  // formatArn over a Ref, an ARN written out, and the fault names the fix.
+  const selectionFaultsBy = (arnOf: (cluster: DatabaseCluster) => string): string[] => {
+    const probe = new App({ context: { ...cdkContext(), tier } });
+    const stack = new Stack(probe, 'probe');
+    const cluster = probeCluster(stack, tier);
+    const plan = new BackupPlan(stack, 'Plan', { backupPlanRules: [BackupPlanRule.daily()] });
+    plan.addSelection('Selection', { resources: [BackupResource.fromArn(arnOf(cluster))] });
+    const template = Template.fromStack(stack);
+    const [selection] = resourcesOf(template, 'AWS::Backup::BackupSelection');
+    return selectionFaults(selection?.[1].Properties?.['BackupSelection'], dataStoresOf(template));
+  };
+
+  it("selected for backup by its CfnDBCluster's attrDbClusterArn keeps the selection rule", () => {
+    const byAttribute = (cluster: DatabaseCluster): string =>
+      (cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn;
+    expect(selectionFaultsBy(byAttribute)).toEqual([]);
+  });
+
+  it("selected for backup by DatabaseCluster's clusterArn fails the selection rule, naming the fix", () => {
+    expect(selectionFaultsBy((cluster) => cluster.clusterArn)).toEqual([
+      expect.stringMatching(
+        /^\{"Fn::Join".* is none of the stack's tables or clusters: .*attrDbClusterArn\)$/,
+      ),
+      expect.stringMatching(/^Cluster\w+ is in no backup selection$/),
+    ]);
+  });
+
+  it("removed the other tier's way fails the removal rule", () => {
+    const expected = rules.keepData ? 'Snapshot' : 'Delete';
+    expect(faultsOf({ removalPolicy: other })).toEqual({
+      ...none,
+      removal: [
+        expect.stringMatching(new RegExp(`^Cluster\\w+ is \\w+/\\w+ on removal, not ${expected}$`)),
+      ],
+    });
+  });
+
+  it("whose key is removed the other tier's way fails the removal rule", () => {
+    const expected = rules.keepData ? 'Retain' : 'Delete';
+    expect(faultsOf({}, rules.keepData ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN)).toEqual({
+      ...none,
+      removal: [
+        expect.stringMatching(
+          new RegExp(`^Cluster\\w+'s key Key\\w+ is \\w+ on removal, not ${expected}$`),
+        ),
+      ],
+    });
+  });
+
+  it("protected from deletion the other tier's way fails the protection rule", () => {
+    expect(faultsOf({ deletionProtection: !rules.keepData })).toEqual({
+      ...none,
+      protection: [
+        expect.stringMatching(
+          /^Cluster\w+ has (no )?deletion protection, which the tier (wants|leaves off)$/,
+        ),
+      ],
+    });
+  });
+
+  it('keeping 7 days of backups fails the recovery rule', () => {
+    expect(faultsOf({ backup: { retention: Duration.days(7) } })).toEqual({
+      ...none,
+      recovery: [expect.stringMatching(/^Cluster\w+ keeps 7 days of backups, not (35|1)$/)],
+    });
+  });
+});
+
+// Where the tier recovers no data, the Standard acknowledges what a
+// cluster's credentials and the cluster itself lack there by design (#1921).
+describe('the AwsSolutions rules on a cluster and its credentials', () => {
+  it('find a secret without rotation in production, and not in development', () => {
+    const secret = (stack: Stack): void => {
+      new Secret(stack, 'Credentials');
+    };
+    const finding = 'AwsSolutions-SMG4 probe/Credentials/Resource';
+    expect(nagFindings('AwsSolutions', 'production', secret)).toContain(finding);
+    expect(nagFindings('AwsSolutions', 'development', secret)).not.toContain(finding);
+  });
+
+  it('find a cluster without deletion protection in production, and not in development', () => {
+    const unprotected = (tier: Tier) => (stack: Stack) => {
+      probeCluster(stack, tier, { deletionProtection: false });
+    };
+    const finding = 'AwsSolutions-RDS10 probe/Cluster/Resource';
+    expect(nagFindings('AwsSolutions', 'production', unprotected('production'))).toContain(finding);
+    expect(nagFindings('AwsSolutions', 'development', unprotected('development'))).not.toContain(
+      finding,
+    );
+  });
+});
+
 // The Serverless pack runs beside AwsSolutions where the Frameworks carry
 // operations, and the Standard acknowledges the rules that are wrong for a
 // resource or duplicate an AwsSolutions one (#1112).
 describe.runIf(operations !== undefined)('the Serverless rules', () => {
   it('find an asynchronous function without a dead-letter queue, and not one only synchronous callers call', () => {
-    const findings = serverlessFindings('development', (stack) => {
+    const findings = nagFindings('Serverless', 'development', (stack) => {
       new HttpApi(stack, 'Api', {
         defaultIntegration: new HttpLambdaIntegration('Called', probeFunction(stack, 'Called')),
       });
@@ -1144,7 +1472,7 @@ describe.runIf(operations !== undefined)('the Serverless rules', () => {
   });
 
   it('take a dead-letter queue for an asynchronous failure destination', () => {
-    const findings = serverlessFindings('development', (stack) => {
+    const findings = nagFindings('Serverless', 'development', (stack) => {
       probeFunction(stack, 'Retried', {
         deadLetterQueue: new Queue(stack, 'DeadLetters', { enforceSSL: true }),
         retryAttempts: 2,
@@ -1154,7 +1482,7 @@ describe.runIf(operations !== undefined)('the Serverless rules', () => {
   });
 
   it('leave an email subscription without a redrive policy, and not a function’s', () => {
-    const findings = serverlessFindings('development', (stack) => {
+    const findings = nagFindings('Serverless', 'development', (stack) => {
       const topic = new Topic(stack, 'Alarms');
       topic.addSubscription(new EmailSubscription('alerts@example.com'));
       topic.addSubscription(new LambdaSubscription(probeFunction(stack, 'Notified')));
@@ -1165,7 +1493,7 @@ describe.runIf(operations !== undefined)('the Serverless rules', () => {
   });
 
   it('leave to AwsSolutions the rules it checks too', () => {
-    const findings = serverlessFindings('development', (stack) => {
+    const findings = nagFindings('Serverless', 'development', (stack) => {
       probeFunction(stack, 'Old', { runtime: Runtime.NODEJS_20_X });
       new Queue(stack, 'Lonely', { enforceSSL: true });
     });
@@ -1178,10 +1506,10 @@ describe.runIf(operations !== undefined)('the Serverless rules', () => {
     const untraced = (stack: Stack): void => {
       probeFunction(stack, 'Untraced', { tracing: Tracing.DISABLED });
     };
-    expect(serverlessFindings('production', untraced)).toContain(
+    expect(nagFindings('Serverless', 'production', untraced)).toContain(
       'Serverless-LambdaTracing probe/Untraced/Resource',
     );
-    expect(serverlessFindings('development', untraced)).not.toContain(
+    expect(nagFindings('Serverless', 'development', untraced)).not.toContain(
       'Serverless-LambdaTracing probe/Untraced/Resource',
     );
   });
