@@ -180,8 +180,8 @@ type DeployTargetGitLab struct {
 	// (https://example.com/gitlab); unset, the project is on gitlab.com. The
 	// operator calls its API under /api/v4.
 	// +kubebuilder:validation:MaxLength=200
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._-]+)*$')",message="url must be https://host[:port], with at most the instance's relative URL root as its path: the instance's address, not its API's"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://(www[.])?gitlab[.]com(:443)?/?$')",message="url is for a self-hosted GitLab; leave it unset for gitlab.com"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$')",message="url must be https://host[:port], with at most the instance's relative URL root as its path: the instance's address, not its API's"
+	// +kubebuilder:validation:XValidation:rule="!self.lowerAscii().matches('^https://(www[.])?gitlab[.]com(:443)?/?$')",message="url is for a self-hosted GitLab; leave it unset for gitlab.com"
 	// +optional
 	URL string `json:"url,omitempty"`
 

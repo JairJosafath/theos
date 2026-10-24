@@ -206,6 +206,14 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.GitHub = nil
 			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://gitlab.com/"}
 		}, "url is for a self-hosted GitLab; leave it unset for gitlab.com"),
+		Entry("GitLab.com in capitals as a gitlab url", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://GitLab.com:443"}
+		}, "url is for a self-hosted GitLab; leave it unset for gitlab.com"),
+		Entry("a gitlab url with a '..' segment", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://git.example.com/gitlab/.."}
+		}, "url must be https://host[:port], with at most the instance's relative URL root as its path"),
 		Entry("a gitlab url over http", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub = nil
 			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "http://git.example.com"}

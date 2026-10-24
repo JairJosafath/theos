@@ -235,9 +235,9 @@ type PublishStep struct {
 	Source *PublishedSource
 }
 
-// GitHubTag is the tag a release goes out under on GitHub: the prefix, then
-// the Crew's tag.
-func GitHubTag(prefix, tag string) string {
+// ReleaseTag is the tag a release goes out under on GitHub or GitLab: the
+// prefix, then the Crew's tag.
+func ReleaseTag(prefix, tag string) string {
 	return prefix + tag
 }
 
@@ -296,7 +296,7 @@ func MergedReleaseIssues(closed []ReleaseIssue, merged []int) []ReleaseIssue {
 // goes into Failure, and the next poll starts over, carrying on where the last
 // one stopped.
 func NextPublishStep(f PublishFacts) PublishStep {
-	tag := GitHubTag(f.TagPrefix, f.Tag)
+	tag := ReleaseTag(f.TagPrefix, f.Tag)
 	switch {
 	case !f.Configured:
 		return PublishStep{Action: PublishNone}
@@ -591,7 +591,7 @@ func ShipCommit(f PublishFacts) string {
 	if f.Source == nil {
 		return ""
 	}
-	if _, src := sourceStep(f, GitHubTag(f.TagPrefix, f.Tag)); src != nil {
+	if _, src := sourceStep(f, ReleaseTag(f.TagPrefix, f.Tag)); src != nil {
 		return src.Commit
 	}
 	return ""

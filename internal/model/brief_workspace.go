@@ -239,7 +239,7 @@ func renderBrief(ws BriefWorkspace) string {
 		slices.SortFunc(releases, func(a, b WorkspaceRelease) int { return strings.Compare(a.Container, b.Container) })
 		for _, r := range releases {
 			fmt.Fprintf(&b, "- `%s`, published by the factory to github.com/%s as `%s`\n",
-				r.Container, r.Repository, GitHubTag(r.TagPrefix, "vX.Y.Z"))
+				r.Container, r.Repository, ReleaseTag(r.TagPrefix, "vX.Y.Z"))
 		}
 	}
 	return b.String()

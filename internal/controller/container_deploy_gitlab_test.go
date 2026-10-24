@@ -66,9 +66,10 @@ var _ = Describe("Container deploys to a gitlab target (#1804)", func() {
 			g.Expect(d.Phase).To(Equal(model.DeployPhaseDeployed), d.Message)
 			g.Expect(d.Version).To(Equal("v0.1.0"))
 			g.Expect(cond.Reason).To(Equal(model.DeployDeployed), cond.Message)
-		}, deployWait).Should(Succeed())
-		var tags []string
-		for _, r := range project.Releases() {
+		}).Should(Succeed())
+		releases := project.Releases()
+		tags := make([]string, 0, len(releases))
+		for _, r := range releases {
 			tags = append(tags, r.Tag)
 		}
 		Expect(tags).To(ConsistOf("orders-cli-v0.1.0"))

@@ -134,11 +134,11 @@ const (
 	CloudFormationSettingAccount = "account"
 )
 
-// GitHubTagPrefix is the prefix a Container's tags carry at a github target:
-// the target's tagPrefix as it is when set ("" giving bare tags), else the
-// Container's name and "-", so any number of Containers share a target with
-// no setting (docs/plans/github-deploy-state.md, decision 3).
-func GitHubTagPrefix(set *string, container string) string {
+// ReleaseTagPrefix is the prefix a Container's tags carry at a github or
+// gitlab target: the target's tagPrefix as it is when set ("" giving bare
+// tags), else the Container's name and "-", so any number of Containers share
+// a target with no setting (docs/plans/github-deploy-state.md, decision 3).
+func ReleaseTagPrefix(set *string, container string) string {
 	if set != nil {
 		return *set
 	}

@@ -155,28 +155,31 @@ type deployChecked struct {
 	secret     string
 }
 
+// hostedTarget is target as a github or gitlab member reads it: the
+// repository or project under pathKey, the instance's url under urlKey when
+// self-hosted, and its place as path or host/path.
+func hostedTarget(target ports.Target, member, pathKey, path, urlKey, url string) (ports.Target, string) {
+	target.Member = member
+	target.Settings = map[string]string{pathKey: path}
+	if url == "" {
+		return target, path
+	}
+	target.Settings[urlKey] = url
+	return target, strings.TrimPrefix(url, "https://") + "/" + path
+}
+
 // deployTarget is dt as its member's Deployer reads it, its Secret's data
 // left out, and its place in the member's words.
 func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 	target := ports.Target{Name: dt.Namespace + "/" + dt.Name, Tier: string(dt.Spec.Tier),
 		Parameters: dt.Spec.Parameters}
 	if gh := dt.Spec.GitHub; gh != nil {
-		target.Member = model.DeployMemberGitHub
-		target.Settings = map[string]string{model.GitHubSettingRepository: gh.Repository}
-		if gh.URL == "" {
-			return target, gh.Repository
-		}
-		target.Settings[model.GitHubSettingURL] = gh.URL
-		return target, strings.TrimPrefix(gh.URL, "https://") + "/" + gh.Repository
+		return hostedTarget(target, model.DeployMemberGitHub, model.GitHubSettingRepository, gh.Repository,
+			model.GitHubSettingURL, gh.URL)
 	}
 	if gl := dt.Spec.GitLab; gl != nil {
-		target.Member = model.DeployMemberGitLab
-		target.Settings = map[string]string{model.GitLabSettingProject: gl.Project}
-		if gl.URL == "" {
-			return target, gl.Project
-		}
-		target.Settings[model.GitLabSettingURL] = gl.URL
-		return target, strings.TrimPrefix(gl.URL, "https://") + "/" + gl.Project
+		return hostedTarget(target, model.DeployMemberGitLab, model.GitLabSettingProject, gl.Project,
+			model.GitLabSettingURL, gl.URL)
 	}
 	if a := dt.Spec.ArgoCD; a != nil {
 		target.Member = model.DeployMemberArgoCD

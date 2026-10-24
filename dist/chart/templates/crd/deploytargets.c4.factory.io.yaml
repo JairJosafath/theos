@@ -388,10 +388,10 @@ spec:
                     - message: 'url must be https://host[:port], with at most the
                         instance''s relative URL root as its path: the instance''s
                         address, not its API''s'
-                      rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._-]+)*$')
+                      rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$')
                     - message: url is for a self-hosted GitLab; leave it unset for
                         gitlab.com
-                      rule: '!self.matches(''^https://(www[.])?gitlab[.]com(:443)?/?$'')'
+                      rule: '!self.lowerAscii().matches(''^https://(www[.])?gitlab[.]com(:443)?/?$'')'
                 required:
                 - project
                 type: object
@@ -862,10 +862,10 @@ spec:
                     - message: 'url must be https://host[:port], with at most the
                         instance''s relative URL root as its path: the instance''s
                         address, not its API''s'
-                      rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._-]+)*$')
+                      rule: self.matches('^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$')
                     - message: url is for a self-hosted GitLab; leave it unset for
                         gitlab.com
-                      rule: '!self.matches(''^https://(www[.])?gitlab[.]com(:443)?/?$'')'
+                      rule: '!self.lowerAscii().matches(''^https://(www[.])?gitlab[.]com(:443)?/?$'')'
                 required:
                 - project
                 type: object

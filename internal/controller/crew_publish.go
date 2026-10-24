@@ -159,7 +159,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		}
 		// One write per poll: the next one starts over from what is there.
 		r.setPublish(crew, status, publishPublishing, "", reasonPublishing,
-			fmt.Sprintf("Publishing %s to %s", model.GitHubTag(spec.TagPrefix, release.Tag), spec.GitHub.Repository))
+			fmt.Sprintf("Publishing %s to %s", model.ReleaseTag(spec.TagPrefix, release.Tag), spec.GitHub.Repository))
 		if pass.source != nil {
 			status.LastRelease.Publish.Source = pass.source
 		}
@@ -429,7 +429,7 @@ func mergedIssues(tasks []c4v1alpha1.Task) []int {
 // one of that tag someone else made, with its files.
 func targetReleases(ctx context.Context, target gitprovider.ReleaseTarget,
 	facts model.PublishFacts) (*model.TargetReleases, error) {
-	tag := model.GitHubTag(facts.TagPrefix, facts.Tag)
+	tag := model.ReleaseTag(facts.TagPrefix, facts.Tag)
 	found, err := target.FindRelease(ctx, tag, model.PublishMarker(facts.Namespace, facts.Container, tag))
 	if err != nil || found == nil {
 		return &model.TargetReleases{}, err

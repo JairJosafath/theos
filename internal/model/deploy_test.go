@@ -43,8 +43,8 @@ func TestGitHubTagPrefix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GitHubTagPrefix(tt.set, "orders-cli"); got != tt.want {
-				t.Errorf("GitHubTagPrefix(%v, orders-cli) = %q, want %q", tt.set, got, tt.want)
+			if got := ReleaseTagPrefix(tt.set, "orders-cli"); got != tt.want {
+				t.Errorf("ReleaseTagPrefix(%v, orders-cli) = %q, want %q", tt.set, got, tt.want)
 			}
 		})
 	}
