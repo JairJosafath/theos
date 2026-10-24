@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 	"testing"
 
@@ -217,21 +216,21 @@ func TestGitLabDeployerImageSkipped(t *testing.T) {
 	// copy's first call pulls the source tag, which only read_registry grants
 	// (#1956), and the log line names what the token lacks.
 	for _, tc := range []struct {
-		name, project, prefix string
-		scopes                []string
-		missing               string
+		name, project, app string
+		scopes             []string
+		missing            string
 	}{
-		{name: "a token without write_registry ships without an image", project: "acme/tax", prefix: "tax-",
+		{name: "a token without write_registry ships without an image", project: "acme/tax", app: "tax",
 			scopes: []string{"api", "read_registry"}, missing: "write_registry"},
-		{name: "#1956 a token without read_registry ships without an image", project: "acme/duty",
-			prefix: "duty-", scopes: []string{"api", "write_registry"}, missing: "read_registry"},
-		{name: "a token with neither registry scope ships without an image", project: "acme/levy",
-			prefix: "levy-", scopes: []string{"api"}, missing: "read_registry and write_registry"},
+		{name: "#1956 a token without read_registry ships without an image", project: "acme/duty", app: "duty",
+			scopes: []string{"api", "write_registry"}, missing: "read_registry"},
+		{name: "a token with neither registry scope ships without an image", project: "acme/levy", app: "levy",
+			scopes: []string{"api"}, missing: "read_registry and write_registry"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, tg := target(tc.project, tc.prefix)
+			p, tg := target(tc.project, tc.app+"-")
 			p.Scopes = tc.scopes
-			s, _ := pushed(t, "ns/"+path.Base(tc.project), "v1.0.0")
+			s, _ := pushed(t, "ns/"+tc.app, "v1.0.0")
 			puts := reg.puts.Load()
 			var logged strings.Builder
 			ctx := logr.NewContext(ctx, funcr.New(func(prefix, args string) {
