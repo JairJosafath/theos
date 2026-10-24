@@ -174,7 +174,10 @@ scaffolded repository verify it; nothing is deployed.
 6. **`aws-fargate-ts` and `aws-ec2-ts` wire it with their network; the
    Connector supports `service`** (#1926). Depends on step 3. Each passes
    `network` and its rendered copy's test shows the ingress rule, `RDS_HOST`
-   and `RDS_PORT`, and no new VPC. Done as step 3, for these two.
+   and `RDS_PORT`, and no new VPC. In production the Connector adds a Secrets
+   Manager interface endpoint to the Framework's VPC when it has none
+   (`aws-ec2-ts`'s has none), so rotation reaches the service. Done as step 3,
+   for these two.
 7. **`postgres` refuses AWS, the planner plans the store, the docs say so**
    (#1927). Depends on steps 4 to 6. `postgres` minor with decision 8's guard
    and a scaffold test; `internal/model/planner.md` and its tests; the
