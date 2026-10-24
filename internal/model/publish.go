@@ -193,6 +193,9 @@ const (
 	PublishBranchProtected    = "BranchProtected"
 	PublishRepositoryRenamed  = "RepositoryRenamed"
 	PublishRepositoryReplaced = "RepositoryReplaced"
+	// PublishSourceUnsupported is a source a target can't hold: a symlink,
+	// which GitLab's Commits API doesn't carry.
+	PublishSourceUnsupported = "SourceUnsupported"
 )
 
 // PublishBranchMoved is the failure of a fast-forward GitHub refused because

@@ -795,9 +795,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `source` as `github`'s; it has no `latest`, since GitLab's latest release is
   simply the newest. GitLab has no drafts, so the release is the last write,
   made of the source commit with the notes and links to the files: the source
-  commit goes in through the Commits API, one commit per release, and the
-  release's files into the project's generic package registry (package the
-  Container's name, version the release's). The image goes by digest to the
+  commit goes in through the Commits API, one commit per release (a source
+  tree holding a symlink fails `SourceUnsupported`, since that API carries
+  no symlinks), and the release's files into the project's generic package
+  registry (package the Container's name, version the release's). The image goes by digest to the
   project's container registry, at its `container_registry_image_prefix`
   and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
   registry is on and the token has `write_registry`; else the release ships
