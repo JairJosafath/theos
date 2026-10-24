@@ -85,14 +85,14 @@ export interface AgentRun {
 }
 
 /** History reasons on an Implementing or Reviewing step that mean no agent runs yet. */
-const NOT_RUNNING = new Set(['WaitingForSlot', 'AgentUnavailable'])
+const NOT_RUNNING = new Set(['WaitingForSlot', 'AgentUnavailable', 'OverBudget'])
 
 /**
  * The Task's agent runs, oldest first. A Task records each run as it ends
  * (status.runs); the one in its sandbox now follows them. A Task that recorded
  * none derives them from status.history: each step into Implementing or
- * Reviewing starts one, unless it only waits for a slot or for the agent;
- * later steps of the same run (its round and role) don't.
+ * Reviewing starts one, unless it only waits for a slot, for the agent or at
+ * its Crew's cost cap; later steps of the same run (its round and role) don't.
  */
 export function agentRuns(task: Task): AgentRun[] {
   const recorded = task.status?.runs ?? []

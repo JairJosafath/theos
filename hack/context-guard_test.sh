@@ -6,7 +6,7 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/context-guard.sh"
 export C4_CONTEXT_STATE_DIR=$T/state
-unset C4_CONTEXT_SOFT C4_CONTEXT_HARD
+unset C4_CONTEXT_SOFT C4_CONTEXT_HARD IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
@@ -54,5 +54,19 @@ check "missing transcript: silent" "$out" ""
 check "missing transcript: exit 0" "$rc" 0
 out=$(echo 'not json' | "$HOOK"); rc=$?
 check "bad input: exit 0" "$rc" 0
+
+# In an agent sandbox (IS_SANDBOX=1) the hook exits 0 at once, before it reads
+# its input (#1894): its stdin is a pipe nobody writes to, so a read would
+# hang until timeout kills it (exit 124); and a context past the hard limit,
+# which nags above, gets nothing.
+mkfifo "$T/quiet"; exec 3<>"$T/quiet"
+out=$(IS_SANDBOX=1 timeout 10 "$HOOK" <"$T/quiet" 2>&1); rc=$?
+check "sandbox: exit 0 without reading its input" "$rc" 0
+check "sandbox: silent" "$out" ""
+exec 3>&-
+transcript "$T/sandbox-hard.jsonl" 3 130000 1000
+out=$(IS_SANDBOX=1 run s9 "$T/sandbox-hard.jsonl" 2>&1); rc=$?
+check "sandbox, past the hard limit: exit 0" "$rc" 0
+check "sandbox, past the hard limit: silent" "$out" ""
 
 exit $fail

@@ -9,7 +9,7 @@ trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/heavy-guard.sh"
 export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called C4_CLUSTER_LEASE=$T/lease \
   HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2
-unset C4_HEADLESS KIND_CLUSTER
+unset C4_HEADLESS KIND_CLUSTER IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO"; }
@@ -230,5 +230,21 @@ check "slots taken, low memory: asks" "$(decision)" ask
 case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"GiB available"*"not a hang"*) r=yes ;; *) r=no ;; esac
 check "slots taken, low memory: says both" $r yes
 kill $a $b; wait $a $b 2>/dev/null
+
+# In an agent sandbox (IS_SANDBOX=1) the hook exits 0 at once, before it reads
+# its input (#1894): its stdin is a pipe nobody writes to, so a read would
+# hang until timeout kills it (exit 124); and a heavy job on low memory, which
+# warns above, gets nothing.
+meminfo 1
+mkfifo "$T/quiet"; exec 3<>"$T/quiet"
+IS_SANDBOX=1 timeout 10 "$BASH" "$HOOK" <"$T/quiet" >"$T/out" 2>"$T/err"
+check "sandbox: exit 0 without reading its input" $? 0
+check "sandbox: silent" "$(cat "$T/out" "$T/err")" ""
+exec 3>&-
+rm -f "$T/called"
+IS_SANDBOX=1 HOOK_PATH=$T/spy hook "make check"
+check "sandbox, make check on low memory: exit 0" $? 0
+check "sandbox, make check on low memory: silent" "$(cat "$T/out" "$T/err")" ""
+check "sandbox, make check on low memory: runs nothing" "$(cat "$T/called" 2>/dev/null)" ""
 
 exit $fail

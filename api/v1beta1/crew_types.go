@@ -57,6 +57,14 @@ type CrewSpec struct {
 	// +optional
 	Parallel int32 `json:"parallel,omitempty"`
 
+	// taskBudgetUSD is the most a Task's agent runs may cost, in US dollars,
+	// summed over its rounds from what the agents report (status.costMilliUSD).
+	// At the cap the Task starts no further run, reason OverBudget, until the
+	// cap is raised. Unset means no cap.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	TaskBudgetUSD int32 `json:"taskBudgetUSD,omitempty"`
+
 	// tagReleases lets the Crew tag a release once it is done: a milestone with a
 	// due date and a vMAJOR.MINOR.PATCH title, with no open issue and no Task at
 	// work on one of its issues. The tag goes at the merge commit of the release's

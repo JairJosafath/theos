@@ -301,6 +301,20 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		facts.MaxRounds = 3
 	}
 
+	// A Crew's Task stops at the Crew's cost cap (#1893); a Crew that is gone
+	// caps nothing.
+	if crewName := task.Labels[LabelCrew]; crewName != "" {
+		var crew c4v1alpha1.Crew
+		switch err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: crewName}, &crew); {
+		case apierrors.IsNotFound(err):
+		case err != nil:
+			return facts, err
+		default:
+			facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
+			facts.CostMilliUSD = status.CostMilliUSD
+		}
+	}
+
 	// A Crew's Tasks leave their concurrency to the Crew; others take turns.
 	if status.Phase == c4v1alpha1.TaskPending && task.Labels[LabelCrew] == "" {
 		var tasks c4v1alpha1.TaskList
@@ -726,12 +740,29 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return containerTasks(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 	})
+	// A Crew's cost cap changing, or the Crew going away, resumes its Tasks
+	// waiting at the cap (#1893).
+	fromCrew := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var tasks c4v1alpha1.TaskList
+		if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(obj.GetNamespace()),
+			client.MatchingLabels{LabelCrew: obj.GetName()}); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, t := range tasks.Items {
+			if !isFinal(t.Status.Phase) {
+				reqs = append(reqs, requestFor(t.Namespace, t.Name))
+			}
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1alpha1.Task{}).
 		Owns(newSandbox()).
 		Watches(&corev1.Pod{}, podTask, podFinished()).
 		Watches(&c4v1alpha1.Container{}, fromContainer, containerPhaseChanges()).
 		Watches(&c4v1alpha1.Task{}, fromTask, taskPhaseChanges()).
+		Watches(&c4v1alpha1.Crew{}, fromCrew, crewBudgetChanges()).
 		Watches(&c4v1alpha1.Agent{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				var tasks c4v1alpha1.TaskList
