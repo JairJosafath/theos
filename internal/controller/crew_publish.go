@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -69,9 +69,9 @@ type ReleaseTargets interface {
 // the report of why it waits, failed or is done. A failure is a Warning Event
 // once per release and reason, and is tried again on the next poll. The
 // release is named after the Container, its display name or else its name.
-func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Crew, container *c4v1alpha1.Container,
-	status *c4v1alpha1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
-	tasks []c4v1alpha1.Task) {
+func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	status *c4v1beta1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	tasks []c4v1beta1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
 	if d := targetDiffers(crew); d != nil && release != nil &&
@@ -79,7 +79,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 		// Held, even at no target: the release waits, as a failed publish
 		// does, and goes out at the next poll after the Crew and its Brief
 		// agree.
-		r.setPublish(crew, status, publishPending, "", c4v1alpha1.ReasonTargetDiffersFromBrief,
+		r.setPublish(crew, status, publishPending, "", c4v1beta1.ReasonTargetDiffersFromBrief,
 			model.ReleaseTargetPublishMessage(*d))
 		return
 	}
@@ -172,13 +172,13 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1alpha1.Cr
 // writes use.
 type publishPass struct {
 	r    *CrewReconciler
-	crew *c4v1alpha1.Crew
+	crew *c4v1beta1.Crew
 	// container is the Container whose release goes out.
-	container *c4v1alpha1.Container
+	container *c4v1beta1.Container
 	log       logr.Logger
 	provider  gitprovider.Provider
 	repo      gitprovider.Repository
-	spec      *c4v1alpha1.CrewPublishReleases
+	spec      *c4v1beta1.CrewPublishReleases
 	token     string
 	tag       string
 	facts     *model.PublishFacts
@@ -187,7 +187,7 @@ type publishPass struct {
 	target gitprovider.ReleaseTarget
 	gitea  *gitprovider.Release
 	// source is the release's source, once this pass put its tag out.
-	source *c4v1alpha1.CrewReleaseSource
+	source *c4v1beta1.CrewReleaseSource
 	// private is whether GitHub reports the repository private, once read.
 	private *bool
 }
@@ -309,8 +309,8 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 // publishFacts are what the Crew's spec, its last release and the repository it
 // published to say of publishing that release. A Crew a Brief made has its
 // target set by the Brief's spec.releases.
-func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container, release *c4v1alpha1.CrewRelease,
-	status *c4v1alpha1.CrewStatus) model.PublishFacts {
+func publishFacts(crew *c4v1beta1.Crew, container *c4v1beta1.Container, release *c4v1beta1.CrewRelease,
+	status *c4v1beta1.CrewStatus) model.PublishFacts {
 	spec := crew.Spec.PublishReleases
 	app := container.Spec.DisplayName
 	if app == "" {
@@ -322,8 +322,8 @@ func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container, releas
 	}
 	return model.PublishFacts{Configured: true, Namespace: crew.Namespace, Container: crew.Spec.ContainerRef.Name,
 		Tag: release.Tag, TagPrefix: spec.TagPrefix, App: app, Latest: spec.Latest == nil || *spec.Latest,
-		Repository: spec.GitHub.Repository, Brief: crew.Labels[c4v1alpha1.LabelBrief], Recorded: recorded,
-		Accept:    crew.Annotations[c4v1alpha1.AnnotationAcceptRepository],
+		Repository: spec.GitHub.Repository, Brief: crew.Labels[c4v1beta1.LabelBrief], Recorded: recorded,
+		Accept:    crew.Annotations[c4v1beta1.AnnotationAcceptRepository],
 		Published: release.Publish != nil && release.Publish.State == publishPublished, Runs: release.Run,
 		Secret: spec.GitHub.TokenSecretRef.Name, Source: publishSource(crew)}
 }
@@ -331,13 +331,13 @@ func publishFacts(crew *c4v1alpha1.Crew, container *c4v1alpha1.Container, releas
 // recordTarget records in status the repository the Crew published to, after a
 // pass that read facts and ended in last, with a Normal Event when a person's
 // c4.factory.io/accept-repository took another.
-func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	facts model.PublishFacts, last model.PublishStep) {
 	target, accepted := model.NextPublishTarget(facts, last)
 	prev := status.PublishTarget
 	status.PublishTarget = nil
 	if target != nil {
-		status.PublishTarget = &c4v1alpha1.CrewPublishTarget{Repository: target.Repository, ID: target.ID}
+		status.PublishTarget = &c4v1beta1.CrewPublishTarget{Repository: target.Repository, ID: target.ID}
 	}
 	if !accepted || prev != nil && prev.ID == target.ID {
 		return
@@ -345,19 +345,19 @@ func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1alpha1.Crew
 	logf.FromContext(ctx).Info("Accepted the publish repository", "repository", target.Repository, "id", target.ID)
 	r.event(crew, corev1.EventTypeNormal, reasonRepositoryAccepted, "PublishRelease", fmt.Sprintf(
 		"Releases go to %s, GitHub id %d, as %s accepts", target.Repository, target.ID,
-		c4v1alpha1.AnnotationAcceptRepository))
+		c4v1beta1.AnnotationAcceptRepository))
 }
 
 // dropAccepted removes c4.factory.io/accept-repository once status records the
 // id it accepts: recorded first, then removed, so a failed status write loses
 // nothing.
-func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
-	value, ok := crew.Annotations[c4v1alpha1.AnnotationAcceptRepository]
+func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) {
+	value, ok := crew.Annotations[c4v1beta1.AnnotationAcceptRepository]
 	if !ok || status.PublishTarget == nil || value != strconv.FormatInt(status.PublishTarget.ID, 10) {
 		return
 	}
 	orig := crew.DeepCopy()
-	delete(crew.Annotations, c4v1alpha1.AnnotationAcceptRepository)
+	delete(crew.Annotations, c4v1beta1.AnnotationAcceptRepository)
 	if err := r.Patch(ctx, crew, client.MergeFrom(orig)); err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to remove the accepted repository's annotation")
 		return
@@ -415,10 +415,10 @@ func releaseIssues(ctx context.Context, provider gitprovider.Provider, repo gitp
 }
 
 // mergedIssues returns the issues of the Merged Tasks among tasks.
-func mergedIssues(tasks []c4v1alpha1.Task) []int {
+func mergedIssues(tasks []c4v1beta1.Task) []int {
 	var out []int
 	for _, t := range tasks {
-		if t.Spec.Issue != 0 && t.Status.Phase == c4v1alpha1.TaskMerged {
+		if t.Spec.Issue != 0 && t.Status.Phase == c4v1beta1.TaskMerged {
 			out = append(out, int(t.Spec.Issue))
 		}
 	}
@@ -565,16 +565,16 @@ const eventReleaseTargetDiffers = "ReleaseTargetDiffers"
 // where it publishes (AnnotationBriefPublishReleases), with a Warning Event
 // once per target the Crew is held at; a Crew without the annotation has no
 // condition.
-func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus) {
-	if _, ok := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]; !ok {
-		apimeta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) {
+	if _, ok := crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases]; !ok {
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionReleaseTarget)
 		r.targetSaid.Delete(crew.UID)
 		return
 	}
 	d := targetDiffers(crew)
 	if d == nil {
-		setCondition(&status.Conditions, crew.Generation, c4v1alpha1.ConditionReleaseTarget, metav1.ConditionTrue,
-			c4v1alpha1.ReasonReleaseTargetSetByBrief, model.ReleaseTargetSetByBrief(crew.Labels[c4v1alpha1.LabelBrief]))
+		setCondition(&status.Conditions, crew.Generation, c4v1beta1.ConditionReleaseTarget, metav1.ConditionTrue,
+			c4v1beta1.ReasonReleaseTargetSetByBrief, model.ReleaseTargetSetByBrief(crew.Labels[c4v1beta1.LabelBrief]))
 		r.targetSaid.Delete(crew.UID)
 		return
 	}
@@ -584,7 +584,7 @@ func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1alpha1.Cre
 	// condition says whether it warned.
 	said := publishJSON(crew.Spec.PublishReleases)
 	last, remembered := r.targetSaid.Load(crew.UID)
-	cond := apimeta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+	cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionReleaseTarget)
 	warned := cond != nil && cond.Status == metav1.ConditionFalse && cond.Message == message
 	if remembered && last != said || !remembered && !warned {
 		logf.FromContext(ctx).Info("Release target differs from the Brief's", "brief", d.Brief,
@@ -592,20 +592,20 @@ func (r *CrewReconciler) releaseTarget(ctx context.Context, crew *c4v1alpha1.Cre
 		r.event(crew, corev1.EventTypeWarning, eventReleaseTargetDiffers, "PublishRelease", message)
 	}
 	r.targetSaid.Store(crew.UID, said)
-	setCondition(&status.Conditions, crew.Generation, c4v1alpha1.ConditionReleaseTarget, metav1.ConditionFalse,
-		c4v1alpha1.ReasonReleaseTargetDiffers, message)
+	setCondition(&status.Conditions, crew.Generation, c4v1beta1.ConditionReleaseTarget, metav1.ConditionFalse,
+		c4v1beta1.ReasonReleaseTargetDiffers, message)
 }
 
 // setPublish records how publishing the last release went, in its status and
 // the Published condition.
-func (r *CrewReconciler) setPublish(crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus, state, url, reason,
+func (r *CrewReconciler) setPublish(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus, state, url, reason,
 	message string) {
-	var source *c4v1alpha1.CrewReleaseSource
+	var source *c4v1beta1.CrewReleaseSource
 	if prev := status.LastRelease.Publish; prev != nil {
 		// The source stays recorded while the rest of the release goes out.
 		source = prev.Source
 	}
-	status.LastRelease.Publish = &c4v1alpha1.CrewReleasePublish{State: state, URL: url, Message: message,
+	status.LastRelease.Publish = &c4v1beta1.CrewReleasePublish{State: state, URL: url, Message: message,
 		Source: source}
 	value := metav1.ConditionFalse
 	if state == publishPublished {
@@ -616,7 +616,7 @@ func (r *CrewReconciler) setPublish(crew *c4v1alpha1.Crew, status *c4v1alpha1.Cr
 
 // publishFailed reports a failure, with a Warning Event once per release and
 // reason.
-func (r *CrewReconciler) publishFailed(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) publishFailed(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	step model.PublishStep) {
 	tag := status.LastRelease.Tag
 	prev := status.LastRelease.Publish
@@ -636,7 +636,7 @@ func (r *CrewReconciler) publishFailed(ctx context.Context, crew *c4v1alpha1.Cre
 
 // published records the release as published, with a Normal Event, and its
 // source, private as this pass read it, or as recorded when it read nothing.
-func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) published(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	step model.PublishStep, private *bool) {
 	tag := status.LastRelease.Tag
 	said := tag + "\n" + model.PublishPublished
@@ -650,7 +650,7 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 	}
 	r.setPublish(crew, status, publishPublished, step.URL, model.PublishPublished, step.Message)
 	if s := step.Source; s != nil {
-		status.LastRelease.Publish.Source = &c4v1alpha1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL,
+		status.LastRelease.Publish.Source = &c4v1beta1.CrewReleaseSource{Commit: s.Commit, Tag: s.Tag, URL: s.URL,
 			Private: private}
 	}
 }
@@ -658,8 +658,8 @@ func (r *CrewReconciler) published(ctx context.Context, crew *c4v1alpha1.Crew, s
 // sourcePublished says the release's source is out, with a Normal Event, and a
 // Warning Event when go install can't fetch it; private is what this pass
 // read of the repository.
-func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew, facts model.PublishFacts,
-	step model.PublishStep, private *bool) *c4v1alpha1.CrewReleaseSource {
+func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1beta1.Crew, facts model.PublishFacts,
+	step model.PublishStep, private *bool) *c4v1beta1.CrewReleaseSource {
 	url := model.SourceURL("", facts.Repository, facts.Source.Path, step.Tag)
 	allowed := 0
 	if facts.SourceFiles != nil {
@@ -677,12 +677,12 @@ func (r *CrewReconciler) sourcePublished(log logr.Logger, crew *c4v1alpha1.Crew,
 			fmt.Sprintf("%s; the source of %s is published, but go install can't fetch it from GitHub",
 				step.Warning, facts.Tag))
 	}
-	return &c4v1alpha1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url, Private: private}
+	return &c4v1beta1.CrewReleaseSource{Commit: step.Commit, Tag: step.Tag, URL: url, Private: private}
 }
 
 // notePublishSkipped warns, when a Crew that publishes tags a release before
 // the last one was published, that the last one is left to a person.
-func (r *CrewReconciler) notePublishSkipped(ctx context.Context, crew *c4v1alpha1.Crew, prev *c4v1alpha1.CrewRelease) {
+func (r *CrewReconciler) notePublishSkipped(ctx context.Context, crew *c4v1beta1.Crew, prev *c4v1beta1.CrewRelease) {
 	if crew.Spec.PublishReleases == nil || prev == nil ||
 		(prev.Publish != nil && prev.Publish.State == publishPublished) {
 		return

@@ -29,7 +29,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/sessionclient"
 )
 
@@ -54,7 +54,7 @@ func main() {
 	var f flags
 	flag.StringVar(&f.identity, "identity", "",
 		"Path to the repository's .c4factory.yaml (default: the nearest one above the working directory)")
-	flag.StringVar(&f.actor, "actor", envOr("C4_SESSION_ACTOR", string(c4v1alpha1.ActorHuman)),
+	flag.StringVar(&f.actor, "actor", envOr("C4_SESSION_ACTOR", string(c4v1beta1.ActorHuman)),
 		"Who is working: agent or human")
 	flag.StringVar(&f.summary, "summary", os.Getenv("C4_SESSION_SUMMARY"), "One line about the work")
 	flag.DurationVar(&f.heartbeat, "heartbeat", sessionclient.DefaultHeartbeat, "How often to report in")
@@ -99,7 +99,7 @@ func run(f flags, log *slog.Logger) error {
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		return err
 	}
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
@@ -113,12 +113,12 @@ func run(f flags, log *slog.Logger) error {
 
 func options(f flags, log *slog.Logger) (sessionclient.Options, error) {
 	opts := sessionclient.Options{
-		Actor:     c4v1alpha1.Actor(f.actor),
+		Actor:     c4v1beta1.Actor(f.actor),
 		Summary:   f.summary,
 		Heartbeat: f.heartbeat,
 		Log:       log,
 	}
-	if opts.Actor != c4v1alpha1.ActorAgent && opts.Actor != c4v1alpha1.ActorHuman {
+	if opts.Actor != c4v1beta1.ActorAgent && opts.Actor != c4v1beta1.ActorHuman {
 		return opts, fmt.Errorf("actor must be agent or human, not %q", f.actor)
 	}
 	path := f.identity

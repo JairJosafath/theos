@@ -19,7 +19,7 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -62,10 +62,10 @@ func sourceCrew(ns, repository, path, module string) map[string]string {
 	GinkgoHelper()
 	all, app := appSource(module)
 	gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
-	publishingCrew(ns, repository, func(crew *c4v1alpha1.Crew) {
+	publishingCrew(ns, repository, func(crew *c4v1beta1.Crew) {
 		crew.Spec.PublishReleases.TagPrefix = path + "-"
 		crew.Spec.PublishReleases.Latest = new(false)
-		crew.Spec.PublishReleases.Source = &c4v1alpha1.CrewPublishSource{Path: path}
+		crew.Spec.PublishReleases.Source = &c4v1beta1.CrewPublishSource{Path: path}
 	})
 	return app
 }
@@ -78,7 +78,7 @@ func sourcePublished(ns, repository, path string, app map[string]string) {
 	GinkgoHelper()
 	sourceTag := path + "/v0.1.0"
 	url := "https://github.com/" + repository + "/tree/" + sourceTag + "/" + path
-	var source *c4v1alpha1.CrewReleaseSource
+	var source *c4v1beta1.CrewReleaseSource
 	Eventually(func(g Gomega) {
 		crew := getCrew(g, ns)
 		g.Expect(crew.Status.LastRelease).NotTo(BeNil())

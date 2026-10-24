@@ -14,7 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -49,7 +49,7 @@ func (u *standardUpdate) fileFailure(ctx context.Context, gitCtx context.Context
 		log.Error(err, "Failed to file the issue of a Standard update whose CI failed", "ref", update.Ref)
 		return
 	}
-	s.FailureIssue = &c4v1alpha1.StandardFailureIssue{Ref: update.Ref, Number: int32(issue.Number), URL: issue.URL}
+	s.FailureIssue = &c4v1beta1.StandardFailureIssue{Ref: update.Ref, Number: int32(issue.Number), URL: issue.URL}
 	if !isNew {
 		return
 	}

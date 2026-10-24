@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -41,7 +41,7 @@ type RelationshipReconciler struct {
 
 // Reconcile adopts the Relationship and updates its conditions.
 func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var rel c4v1alpha1.Relationship
+	var rel c4v1beta1.Relationship
 	if err := r.Get(ctx, req.NamespacedName, &rel); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -67,19 +67,19 @@ func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	status := rel.Status.DeepCopy()
 	if len(missing) > 0 {
-		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionFalse, c4v1alpha1.ReasonNotFound, notFoundMessage(missing))
+		setCondition(&status.Conditions, rel.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionFalse, c4v1beta1.ReasonNotFound, notFoundMessage(missing))
 	} else {
-		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionReferencesResolved,
-			metav1.ConditionTrue, c4v1alpha1.ReasonResolved, "")
+		setCondition(&status.Conditions, rel.Generation, c4v1beta1.ConditionReferencesResolved,
+			metav1.ConditionTrue, c4v1beta1.ReasonResolved, "")
 	}
 
 	if toModel(rel).ChangesScaffold() {
-		container, _ := source.(*c4v1alpha1.Container)
-		dataStore, _ := target.(*c4v1alpha1.DataStore)
+		container, _ := source.(*c4v1beta1.Container)
+		dataStore, _ := target.(*c4v1beta1.DataStore)
 		setApplied(status, &rel, container, dataStore)
 	} else {
-		meta.RemoveStatusCondition(&status.Conditions, c4v1alpha1.ConditionApplied)
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionApplied)
 	}
 
 	if equality.Semantic.DeepEqual(&rel.Status, status) {
@@ -92,11 +92,11 @@ func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 // setApplied reports whether the source Container's scaffold included this link.
 // dataStore is nil when the target is gone.
-func setApplied(status *c4v1alpha1.RelationshipStatus, rel *c4v1alpha1.Relationship,
-	container *c4v1alpha1.Container, dataStore *c4v1alpha1.DataStore) {
+func setApplied(status *c4v1beta1.RelationshipStatus, rel *c4v1beta1.Relationship,
+	container *c4v1beta1.Container, dataStore *c4v1beta1.DataStore) {
 	facts := model.ScaffoldedRelationship{Name: rel.Name, DataStore: rel.Spec.Target.Name}
 	if container != nil {
-		facts.ContainerReady = container.Status.Phase == c4v1alpha1.ContainerReady
+		facts.ContainerReady = container.Status.Phase == c4v1beta1.ContainerReady
 		facts.AppliedNames = container.Status.AppliedRelationships
 		for _, a := range container.Status.AppliedConnectors {
 			facts.AppliedRecords = append(facts.AppliedRecords,
@@ -108,31 +108,31 @@ func setApplied(status *c4v1alpha1.RelationshipStatus, rel *c4v1alpha1.Relations
 	}
 	switch model.RelationshipApplied(facts) {
 	case model.AppliedWaiting:
-		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionApplied, metav1.ConditionUnknown,
-			c4v1alpha1.ReasonWaiting, "the Connector is applied when the Container is scaffolded")
+		setCondition(&status.Conditions, rel.Generation, c4v1beta1.ConditionApplied, metav1.ConditionUnknown,
+			c4v1beta1.ReasonWaiting, "the Connector is applied when the Container is scaffolded")
 	case model.AppliedAtScaffold:
-		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionApplied, metav1.ConditionTrue,
-			c4v1alpha1.ReasonAppliedAtScaffold, "the Connector was part of the scaffold")
+		setCondition(&status.Conditions, rel.Generation, c4v1beta1.ConditionApplied, metav1.ConditionTrue,
+			c4v1beta1.ReasonAppliedAtScaffold, "the Connector was part of the scaffold")
 	case model.AddedAfterScaffold:
-		setCondition(&status.Conditions, rel.Generation, c4v1alpha1.ConditionApplied, metav1.ConditionFalse,
-			c4v1alpha1.ReasonAddedAfterScaffold,
+		setCondition(&status.Conditions, rel.Generation, c4v1beta1.ConditionApplied, metav1.ConditionFalse,
+			c4v1beta1.ReasonAddedAfterScaffold,
 			fmt.Sprintf("%s was scaffolded before this Relationship existed; scaffolding happens once",
 				container.Name))
 	}
 }
 
 // getElement returns the story element a ref points to, or nil if it doesn't exist.
-func (r *RelationshipReconciler) getElement(ctx context.Context, namespace string, ref c4v1alpha1.ElementRef) (client.Object, error) {
+func (r *RelationshipReconciler) getElement(ctx context.Context, namespace string, ref c4v1beta1.ElementRef) (client.Object, error) {
 	var obj client.Object
 	switch ref.Kind {
-	case c4v1alpha1.ElementPerson:
-		obj = &c4v1alpha1.Person{}
-	case c4v1alpha1.ElementSoftwareSystem:
-		obj = &c4v1alpha1.SoftwareSystem{}
-	case c4v1alpha1.ElementContainer:
-		obj = &c4v1alpha1.Container{}
-	case c4v1alpha1.ElementDataStore:
-		obj = &c4v1alpha1.DataStore{}
+	case c4v1beta1.ElementPerson:
+		obj = &c4v1beta1.Person{}
+	case c4v1beta1.ElementSoftwareSystem:
+		obj = &c4v1beta1.SoftwareSystem{}
+	case c4v1beta1.ElementContainer:
+		obj = &c4v1beta1.Container{}
+	case c4v1beta1.ElementDataStore:
+		obj = &c4v1beta1.DataStore{}
 	default:
 		return nil, fmt.Errorf("unknown element kind %q", ref.Kind)
 	}
@@ -147,7 +147,7 @@ func (r *RelationshipReconciler) getElement(ctx context.Context, namespace strin
 }
 
 // toModel converts a Relationship into the plain value the business rules use.
-func toModel(rel c4v1alpha1.Relationship) model.Relationship {
+func toModel(rel c4v1beta1.Relationship) model.Relationship {
 	return model.Relationship{
 		Name:   rel.Name,
 		Source: model.Ref{Kind: string(rel.Spec.Source.Kind), Name: rel.Spec.Source.Name},
@@ -158,9 +158,9 @@ func toModel(rel c4v1alpha1.Relationship) model.Relationship {
 // SetupWithManager sets up the controller with the Manager. Any element appearing,
 // disappearing or (for Containers) finishing its scaffold affects the links to it.
 func (r *RelationshipReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	toRelationships := func(kind c4v1alpha1.ElementKind) handler.EventHandler {
+	toRelationships := func(kind c4v1beta1.ElementKind) handler.EventHandler {
 		return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-			var rels c4v1alpha1.RelationshipList
+			var rels c4v1beta1.RelationshipList
 			if err := mgr.GetClient().List(ctx, &rels, client.InNamespace(obj.GetNamespace()),
 				client.MatchingFields{indexElement: elementKey(kind, obj.GetName())}); err != nil {
 				return nil
@@ -173,11 +173,11 @@ func (r *RelationshipReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		})
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Relationship{}).
-		Watches(&c4v1alpha1.Person{}, toRelationships(c4v1alpha1.ElementPerson), createOrDelete()).
-		Watches(&c4v1alpha1.SoftwareSystem{}, toRelationships(c4v1alpha1.ElementSoftwareSystem), createOrDelete()).
-		Watches(&c4v1alpha1.DataStore{}, toRelationships(c4v1alpha1.ElementDataStore), createOrDelete()).
-		Watches(&c4v1alpha1.Container{}, toRelationships(c4v1alpha1.ElementContainer)).
+		For(&c4v1beta1.Relationship{}).
+		Watches(&c4v1beta1.Person{}, toRelationships(c4v1beta1.ElementPerson), createOrDelete()).
+		Watches(&c4v1beta1.SoftwareSystem{}, toRelationships(c4v1beta1.ElementSoftwareSystem), createOrDelete()).
+		Watches(&c4v1beta1.DataStore{}, toRelationships(c4v1beta1.ElementDataStore), createOrDelete()).
+		Watches(&c4v1beta1.Container{}, toRelationships(c4v1beta1.ElementContainer)).
 		Named("relationship").
 		Complete(r)
 }

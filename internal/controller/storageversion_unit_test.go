@@ -16,7 +16,6 @@ import (
 
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
@@ -55,7 +54,7 @@ func TestEveryCRDStoresTheHub(t *testing.T) {
 		if err := utilyaml.Unmarshal(data, &crd); err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		if crd.Spec.Group != c4v1alpha1.GroupVersion.Group {
+		if crd.Spec.Group != c4v1beta1.GroupVersion.Group {
 			continue
 		}
 		checked++
@@ -71,6 +70,6 @@ func TestEveryCRDStoresTheHub(t *testing.T) {
 		}
 	}
 	if checked == 0 {
-		t.Fatalf("no %s CRDs in config/crd/bases", c4v1alpha1.GroupVersion.Group)
+		t.Fatalf("no %s CRDs in config/crd/bases", c4v1beta1.GroupVersion.Group)
 	}
 }

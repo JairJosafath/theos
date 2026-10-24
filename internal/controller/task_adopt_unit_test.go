@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // #591: a status written between the Task's read and its adoption stays. The
@@ -20,24 +20,24 @@ import (
 // overwrite the newer one.
 func TestAdoptingATaskKeepsAStatusWrittenSinceTheRead(t *testing.T) {
 	scheme := briefScheme(t)
-	task := &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "merged-one"), Spec: c4v1alpha1.TaskSpec{
-		ContainerRef: c4v1alpha1.LocalRef{Name: "orders-api"},
-		AgentRef:     c4v1alpha1.LocalRef{Name: "implementer"}, // missing: a step would write AgentNotFound
+	task := &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "merged-one"), Spec: c4v1beta1.TaskSpec{
+		ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"},
+		AgentRef:     c4v1beta1.LocalRef{Name: "implementer"}, // missing: a step would write AgentNotFound
 		Goal:         "Add crop",
 	}}
-	container := &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "orders-api")}
+	container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api")}
 	merged := false
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1alpha1.Task{}).
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Task{}).
 		WithObjects(task, container).
 		WithInterceptorFuncs(interceptor.Funcs{Patch: func(ctx context.Context, c client.WithWatch,
 			obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-			if _, ok := obj.(*c4v1alpha1.Task); ok && !merged {
+			if _, ok := obj.(*c4v1beta1.Task); ok && !merged {
 				merged = true
-				var current c4v1alpha1.Task
+				var current c4v1beta1.Task
 				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &current); err != nil {
 					return err
 				}
-				current.Status.Phase = c4v1alpha1.TaskMerged
+				current.Status.Phase = c4v1beta1.TaskMerged
 				current.Status.PhaseChangedAt = &metav1.Time{Time: time.Now()}
 				if err := c.Status().Update(ctx, &current); err != nil {
 					return err
@@ -54,12 +54,12 @@ func TestAdoptingATaskKeepsAStatusWrittenSinceTheRead(t *testing.T) {
 	if !merged {
 		t.Fatal("the reconcile didn't adopt the Task")
 	}
-	var got c4v1alpha1.Task
+	var got c4v1beta1.Task
 	if err := c.Get(ctx, client.ObjectKeyFromObject(task), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Status.Phase != c4v1alpha1.TaskMerged {
+	if got.Status.Phase != c4v1beta1.TaskMerged {
 		t.Errorf("phase is %q, want %q: the reconcile overwrote the newer status", got.Status.Phase,
-			c4v1alpha1.TaskMerged)
+			c4v1beta1.TaskMerged)
 	}
 }

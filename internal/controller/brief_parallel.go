@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -23,14 +23,14 @@ import (
 // Brief owns the parallel of every Crew it made.
 
 // briefParallel is how many issues the Brief's Crews work on at once.
-func briefParallel(brief *c4v1alpha1.Brief) int32 {
+func briefParallel(brief *c4v1beta1.Brief) int32 {
 	return model.BriefParallel(brief.Spec.Parallel, brief.Status.Parallel)
 }
 
 // applyParallel records the number the round's plan relays from a prompt in
 // status.parallel (decision 4), before the round makes its Crews, and sets
 // the Crews the Brief made already. spec.parallel still wins over it.
-func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1alpha1.Brief, plan model.Plan) error {
+func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1beta1.Brief, plan model.Plan) error {
 	if plan.Parallel == nil {
 		return nil
 	}
@@ -47,10 +47,10 @@ func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1alpha1.B
 // included, whatever its round is doing (decision 1): a change to the Brief
 // reaches them without waiting for a round, and a hand edit of one is set
 // back. A Crew the Brief didn't make is never touched.
-func (r *BriefReconciler) syncParallel(ctx context.Context, brief *c4v1alpha1.Brief) error {
-	var crews c4v1alpha1.CrewList
+func (r *BriefReconciler) syncParallel(ctx context.Context, brief *c4v1beta1.Brief) error {
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return err
 	}
 	parallel := briefParallel(brief)

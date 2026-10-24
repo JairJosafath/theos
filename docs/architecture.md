@@ -25,7 +25,7 @@ internal/  internal/        internal/gitprovider
  model  ◄── scaffold         (Gitea over HTTP, Git with go-git)
 (pure rules) (pure rendering)
      ▲        ▲
-     └────────┴── api/v1alpha1 types never reach these two
+     └────────┴── api/v1beta1 types never reach these two
 
 features/ embeds the c4session devcontainer feature; the operator writes it into
 every scaffolded repository.
@@ -33,7 +33,7 @@ every scaffolded repository.
 
 | Layer | Packages | May import | Must not import |
 | --- | --- | --- | --- |
-| API types | `api/v1alpha1` | apimachinery | anything under `internal/` |
+| API types | `api/v1beta1` (the hub the operator imports), `api/v1alpha1` (converts to it) | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |

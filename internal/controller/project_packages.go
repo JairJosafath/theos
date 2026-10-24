@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 )
 
@@ -53,8 +53,8 @@ func (a packagesActions) equal(b packagesActions) bool {
 // spec sends the host nothing; a restart sends it once more. A changed
 // spec.packages reconciles the Project through its GitProvider watch; a
 // changed readToken is applied on the Project's next reconcile.
-func (r *ProjectReconciler) ensurePackagesActions(ctx context.Context, project *c4v1alpha1.Project,
-	providers []c4v1alpha1.GitProvider) error {
+func (r *ProjectReconciler) ensurePackagesActions(ctx context.Context, project *c4v1beta1.Project,
+	providers []c4v1beta1.GitProvider) error {
 	log := logf.FromContext(ctx)
 	for i := range providers {
 		gp := &providers[i]
@@ -91,7 +91,7 @@ func (r *ProjectReconciler) ensurePackagesActions(ctx context.Context, project *
 // packagesActionsOf is what gp's owner Actions should hold: nothing for the
 // default spec.packages, else the three variables from the provider's
 // addresses and each token secret whose Secret has a readToken.
-func (r *ProjectReconciler) packagesActionsOf(ctx context.Context, gp *c4v1alpha1.GitProvider,
+func (r *ProjectReconciler) packagesActionsOf(ctx context.Context, gp *c4v1beta1.GitProvider,
 	provider gitprovider.Provider) (packagesActions, error) {
 	want := packagesActions{variables: map[string]string{}, secrets: map[string]string{}}
 	npmSecret, pypiSecret := packagesSecrets(gp)

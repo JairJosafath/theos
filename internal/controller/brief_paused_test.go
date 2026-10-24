@@ -17,7 +17,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // runningLinterTask makes a Task of the linter's Crew that stays running: its
@@ -26,13 +26,13 @@ func runningLinterTask(ns, name string) {
 	GinkgoHelper()
 	task := newTask(ns, name, "Add a lint rule.")
 	task.Labels = map[string]string{LabelCrew: "linter"}
-	task.Spec.ContainerRef = c4v1alpha1.LocalRef{Name: "linter"}
-	task.Spec.AgentRef = c4v1alpha1.LocalRef{Name: "nobody"}
+	task.Spec.ContainerRef = c4v1beta1.LocalRef{Name: "linter"}
+	task.Spec.AgentRef = c4v1beta1.LocalRef{Name: "nobody"}
 	mustCreate(task)
 }
 
 // endLinterTask sets the Task's phase to a final one, as its round would.
-func endLinterTask(ns, name string, phase c4v1alpha1.TaskPhase) {
+func endLinterTask(ns, name string, phase c4v1beta1.TaskPhase) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, name)
@@ -45,7 +45,7 @@ func endLinterTask(ns, name string, phase c4v1alpha1.TaskPhase) {
 func pausedMessage(ns, message string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPaused)
+		cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPaused)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(cond.Message).To(Equal(message))
@@ -63,19 +63,19 @@ var _ = Describe("Brief paused", func() {
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
 		By("a person pausing one of the Brief's Crews by hand, and keeping a Crew of their own")
-		crewOf := func(name string, labels map[string]string, paused bool) *c4v1alpha1.Crew {
+		crewOf := func(name string, labels map[string]string, paused bool) *c4v1beta1.Crew {
 			om := objectMeta(ns, name)
 			om.Labels = labels
-			return &c4v1alpha1.Crew{ObjectMeta: om, Spec: c4v1alpha1.CrewSpec{
-				ContainerRef: c4v1alpha1.LocalRef{Name: name},
-				Implementer:  c4v1alpha1.LocalRef{Name: "implementer"}, Reviewer: c4v1alpha1.LocalRef{Name: "reviewer"},
+			return &c4v1beta1.Crew{ObjectMeta: om, Spec: c4v1beta1.CrewSpec{
+				ContainerRef: c4v1beta1.LocalRef{Name: name},
+				Implementer:  c4v1beta1.LocalRef{Name: "implementer"}, Reviewer: c4v1beta1.LocalRef{Name: "reviewer"},
 				Paused: paused}}
 		}
-		mustCreate(crewOf("by-hand", map[string]string{c4v1alpha1.LabelBrief: "cel-lens"}, true))
+		mustCreate(crewOf("by-hand", map[string]string{c4v1beta1.LabelBrief: "cel-lens"}, true))
 		mustCreate(crewOf("other", nil, false))
 		runningLinterTask(ns, "linter-a")
 		runningLinterTask(ns, "linter-b")
@@ -83,19 +83,19 @@ var _ = Describe("Brief paused", func() {
 		By("pausing the Brief")
 		brief := getBrief(Default, ns)
 		Expect(patch(brief, func() { brief.Spec.Paused = true })).To(Succeed())
-		getCrew := func(g Gomega, name string) *c4v1alpha1.Crew {
-			crew := &c4v1alpha1.Crew{}
+		getCrew := func(g Gomega, name string) *c4v1beta1.Crew {
+			crew := &c4v1beta1.Crew{}
 			g.Expect(k8sClient.Get(ctx, key(ns, name), crew)).To(Succeed())
 			return crew
 		}
 		Eventually(func(g Gomega) {
 			linter := getCrew(g, "linter")
 			g.Expect(linter.Spec.Paused).To(BeTrue())
-			g.Expect(linter.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPausedBy, c4v1alpha1.PausedByBrief))
+			g.Expect(linter.Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationPausedBy, c4v1beta1.PausedByBrief))
 		}).Should(Succeed())
 		byHand := getCrew(Default, "by-hand")
 		Expect(byHand.Spec.Paused).To(BeTrue())
-		Expect(byHand.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationPausedBy))
+		Expect(byHand.Annotations).NotTo(HaveKey(c4v1beta1.AnnotationPausedBy))
 		Expect(getCrew(Default, "other").Spec.Paused).To(BeFalse())
 		pausedMessage(ns, "Paused; 2 Tasks still running: linter-a, linter-b")
 
@@ -114,9 +114,9 @@ var _ = Describe("Brief paused", func() {
 		}, "2s").Should(Succeed())
 
 		By("counting the running Tasks down to nothing")
-		endLinterTask(ns, "linter-a", c4v1alpha1.TaskMerged)
+		endLinterTask(ns, "linter-a", c4v1beta1.TaskMerged)
 		pausedMessage(ns, "Paused; 1 Task still running: linter-b")
-		endLinterTask(ns, "linter-b", c4v1alpha1.TaskFailed)
+		endLinterTask(ns, "linter-b", c4v1beta1.TaskFailed)
 		pausedMessage(ns, "Paused; nothing is running")
 
 		By("resuming: the Crew it paused goes on, the one paused by hand stays paused")
@@ -125,9 +125,9 @@ var _ = Describe("Brief paused", func() {
 		Eventually(func(g Gomega) {
 			linter := getCrew(g, "linter")
 			g.Expect(linter.Spec.Paused).To(BeFalse())
-			g.Expect(linter.Annotations).NotTo(HaveKey(c4v1alpha1.AnnotationPausedBy))
+			g.Expect(linter.Annotations).NotTo(HaveKey(c4v1beta1.AnnotationPausedBy))
 			b := getBrief(g, ns)
-			cond := condition(b.Status.Conditions, c4v1alpha1.ConditionPaused)
+			cond := condition(b.Status.Conditions, c4v1beta1.ConditionPaused)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(b.Status.Round).To(Equal(int32(2)))
@@ -150,11 +150,11 @@ var _ = Describe("Brief paused", func() {
 
 		planRound(ns, 1, 1, linterPlan(ns, 0))
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		crew := linterCrew(Default, ns)
 		Expect(crew.Spec.Paused).To(BeTrue())
-		Expect(crew.Annotations).To(HaveKeyWithValue(c4v1alpha1.AnnotationPausedBy, c4v1alpha1.PausedByBrief))
+		Expect(crew.Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationPausedBy, c4v1beta1.PausedByBrief))
 		pausedMessage(ns, "Paused; nothing is running")
 	})
 
@@ -166,7 +166,7 @@ var _ = Describe("Brief paused", func() {
 		mustCreate(brief)
 		pausedMessage(ns, "Paused; nothing is running")
 		Consistently(func(g Gomega) {
-			var tasks c4v1alpha1.TaskList
+			var tasks c4v1beta1.TaskList
 			g.Expect(k8sClient.List(ctx, &tasks, client.InNamespace(ns))).To(Succeed())
 			g.Expect(tasks.Items).To(BeEmpty())
 			g.Expect(getBrief(g, ns).Status.Round).To(BeZero())

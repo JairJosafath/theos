@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -48,7 +48,7 @@ type shipContainer struct {
 	provider  gitprovider.Provider
 	repo      gitprovider.Repository
 	publishes bool
-	last      *c4v1alpha1.CrewRelease
+	last      *c4v1beta1.CrewRelease
 	// published is the newest release of the Crew the Brief saw published.
 	published model.Shipped
 }
@@ -59,7 +59,7 @@ type shipContainer struct {
 // of their Containers changes. A request whose planned comment isn't said yet
 // waits for it, so the two come in order. A Git host that fails is logged and
 // looked at again later; nothing here fails the reconcile.
-func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1alpha1.Brief) {
+func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1beta1.Brief) {
 	containers := map[string]*shipContainer{}
 	now := r.now()
 	for i := range brief.Status.Requests {
@@ -88,7 +88,7 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1alpha1.Br
 		}
 		s.Stage, s.Shipped = model.RequestReleased, nil
 		for _, sh := range shipped {
-			s.Shipped = append(s.Shipped, c4v1alpha1.BriefRequestShipped{Tag: sh.Tag, URL: model.Clip(sh.URL, 300)})
+			s.Shipped = append(s.Shipped, c4v1beta1.BriefRequestShipped{Tag: sh.Tag, URL: model.Clip(sh.URL, 300)})
 		}
 		logf.FromContext(ctx).Info("A request shipped", "request", model.RequestName(s.Repository, int(s.Number)),
 			"releases", len(shipped))
@@ -97,15 +97,15 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1alpha1.Br
 
 // readsRequests reports whether the Brief reads repository's issues: an
 // entry of spec.releases names it with a requests mode other than Off.
-func readsRequests(brief *c4v1alpha1.Brief, repository string) bool {
-	return slices.ContainsFunc(brief.Spec.Releases, func(e c4v1alpha1.BriefRelease) bool {
+func readsRequests(brief *c4v1beta1.Brief, repository string) bool {
+	return slices.ContainsFunc(brief.Spec.Releases, func(e c4v1beta1.BriefRelease) bool {
 		return e.GitHub.Repository == repository && requestsMode(&e) != model.RequestsOff
 	})
 }
 
 // requestShipped is where a planned request shipped, nil while one of its
 // issues is still to go or when it isn't time to look again.
-func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1alpha1.Brief, s *c4v1alpha1.BriefRequest,
+func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1beta1.Brief, s *c4v1beta1.BriefRequest,
 	containers map[string]*shipContainer, now time.Time) ([]model.Shipped, error) {
 	var releases []string
 	for _, name := range s.Issues {
@@ -167,12 +167,12 @@ func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1alpha1.
 }
 
 // shipContainer reads a Container's repository and Crew once per look.
-func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1alpha1.Brief, name string,
+func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1beta1.Brief, name string,
 	containers map[string]*shipContainer) (*shipContainer, error) {
 	if c, ok := containers[name]; ok {
 		return c, nil
 	}
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &container)
 	if apierrors.IsNotFound(err) {
 		containers[name] = &shipContainer{gone: true}
@@ -187,7 +187,7 @@ func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1alpha1.B
 		return nil, err
 	}
 	c := &shipContainer{provider: provider, repo: provider.Repository(container.Name)}
-	var crew c4v1alpha1.Crew
+	var crew c4v1beta1.Crew
 	err = r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &crew)
 	switch {
 	case apierrors.IsNotFound(err):
@@ -205,8 +205,8 @@ func (r *BriefReconciler) shipContainer(ctx context.Context, brief *c4v1alpha1.B
 // saw published, and returns it: a later release whose publishing failed
 // doesn't hide one that went out. It lives in memory; after a restart only
 // the Crew's latest release counts.
-func (r *BriefReconciler) notePublished(brief *c4v1alpha1.Brief, container string,
-	last *c4v1alpha1.CrewRelease) model.Shipped {
+func (r *BriefReconciler) notePublished(brief *c4v1beta1.Brief, container string,
+	last *c4v1beta1.CrewRelease) model.Shipped {
 	key := brief.Namespace + "/" + brief.Name + " " + container
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
@@ -225,7 +225,7 @@ func (r *BriefReconciler) notePublished(brief *c4v1alpha1.Brief, container strin
 
 // filedURL is the page of an issue the Brief filed, container#number, as its
 // status recorded it; the name when it has none.
-func filedURL(brief *c4v1alpha1.Brief, name string) string {
+func filedURL(brief *c4v1beta1.Brief, name string) string {
 	container, number, _ := strings.Cut(name, "#")
 	for _, i := range brief.Status.Issues {
 		if strings.HasSuffix(i.Repository, "/"+container) && fmt.Sprint(i.Number) == number && i.URL != "" {
@@ -238,7 +238,7 @@ func filedURL(brief *c4v1alpha1.Brief, name string) string {
 // answerReleased says on each released request where it shipped, once, and
 // closes it as completed; it then leaves the list. It goes on past a request
 // it fails, and returns the first failure.
-func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.Brief,
 	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]

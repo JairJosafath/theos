@@ -14,16 +14,16 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // newDomain is a Domain catalog entry pinned to a stand-in template.
-func newDomain(ns, name string) *c4v1alpha1.Domain {
-	return &c4v1alpha1.Domain{
+func newDomain(ns, name string) *c4v1beta1.Domain {
+	return &c4v1beta1.Domain{
 		ObjectMeta: objectMeta(ns, name),
-		Spec: c4v1alpha1.DomainSpec{
+		Spec: c4v1beta1.DomainSpec{
 			DisplayName: name,
-			Template:    c4v1alpha1.TemplateSource{URL: templatesURL + name + "-domain", Ref: "v1.0.0"},
+			Template:    c4v1beta1.TemplateSource{URL: templatesURL + name + "-domain", Ref: "v1.0.0"},
 		},
 	}
 }
@@ -34,7 +34,7 @@ var _ = Describe("Domain", func() {
 		domain := newDomain(ns, "webshop")
 		domain.Spec.Template.Ref = ""
 		Expect(k8sClient.Create(ctx, domain)).To(MatchError(ContainSubstring("spec.template.ref")))
-		domain.Spec.Template = c4v1alpha1.TemplateSource{URL: "gitea/templates/webshop-domain", Ref: "v1.0.0"}
+		domain.Spec.Template = c4v1beta1.TemplateSource{URL: "gitea/templates/webshop-domain", Ref: "v1.0.0"}
 		Expect(k8sClient.Create(ctx, domain)).To(MatchError(ContainSubstring("spec.template.url")))
 		mustCreate(newDomain(ns, "webshop"))
 	})
@@ -72,7 +72,7 @@ var _ = Describe("SoftwareSystem domainRefs", func() {
 	It("is refused on an External system, on create and on update", func() {
 		ns := newProjectNamespace()
 		provider := newSystem(ns, "payment-provider")
-		provider.Spec.Location = c4v1alpha1.SystemExternal
+		provider.Spec.Location = c4v1beta1.SystemExternal
 		provider.Spec.DomainRefs = []string{"payments"}
 		Expect(k8sClient.Create(ctx, provider)).To(MatchError(ContainSubstring(
 			"an External system names no domainRefs")))

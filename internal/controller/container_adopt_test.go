@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -39,11 +39,11 @@ func adoptableFiles(ns string) scaffold.Tree {
 
 // adoptableFilesWith is adoptableFiles with the Container changed by mutate
 // before it is created, in the source namespace too.
-func adoptableFilesWith(ns string, mutate func(string, *c4v1alpha1.Container)) scaffold.Tree {
+func adoptableFilesWith(ns string, mutate func(string, *c4v1beta1.Container)) scaffold.Tree {
 	GinkgoHelper()
 	source := newProjectNamespace()
 	createAdoptingWebshopWith(source, false, mutate)
-	eventuallyOrdersAPI(source, c4v1alpha1.ContainerReady)
+	eventuallyOrdersAPI(source, c4v1beta1.ContainerReady)
 	files := maps.Clone(gitFake.repo(source, "orders-api").files)
 	id, err := scaffold.ParseIdentity(files[scaffold.IdentityPath].Data)
 	Expect(err).NotTo(HaveOccurred())
@@ -64,11 +64,11 @@ func createAdoptingWebshop(ns string) {
 // createAdoptingWebshopWith is createAdoptingWebshop with the Container
 // changed by mutate, given its namespace, before it is created; the Standard
 // supports opsFramework too, for a Container mutate puts there.
-func createAdoptingWebshopWith(ns string, adopt bool, mutate func(string, *c4v1alpha1.Container)) {
+func createAdoptingWebshopWith(ns string, adopt bool, mutate func(string, *c4v1beta1.Container)) {
 	GinkgoHelper()
 	mustCreate(newStandard(ns, "python-strict", "python-fastapi", opsFramework))
-	createWebshopWith(ns, func(c *c4v1alpha1.Container) {
-		c.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+	createWebshopWith(ns, func(c *c4v1beta1.Container) {
+		c.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
 		c.Spec.Adopt = adopt
 		if mutate != nil {
 			mutate(ns, c)
@@ -79,10 +79,10 @@ func createAdoptingWebshopWith(ns string, adopt bool, mutate func(string, *c4v1a
 // onOperationsFramework puts the Container on opsFramework, which reads and
 // renders the block, registering the Framework in its namespace, with the
 // block ops.
-func onOperationsFramework(ops *c4v1alpha1.OperationsSpec) func(string, *c4v1alpha1.Container) {
-	return func(ns string, c *c4v1alpha1.Container) {
+func onOperationsFramework(ops *c4v1beta1.OperationsSpec) func(string, *c4v1beta1.Container) {
+	return func(ns string, c *c4v1beta1.Container) {
 		mustCreate(newOperationsFramework(ns, true))
-		c.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: opsFramework}
+		c.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: opsFramework}
 		c.Spec.Operations = ops
 	}
 }
@@ -90,8 +90,8 @@ func onOperationsFramework(ops *c4v1alpha1.OperationsSpec) func(string, *c4v1alp
 // failedAdoption waits for orders-api to fail and returns its Scaffolded condition.
 func failedAdoption(ns, reason string) *metav1.Condition {
 	GinkgoHelper()
-	container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-	cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+	container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+	cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 	Expect(cond).NotTo(BeNil())
 	Expect(cond.Reason).To(Equal(reason))
 	Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "an adopted repository is never written")
@@ -106,16 +106,16 @@ var _ = Describe("Container adoption", func() {
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFiles(ns))
 		createAdoptingWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		Expect(cond.Message).To(ContainSubstring("Adopted repository"))
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "nothing pushed")
 		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
-		Expect(container.Status.Standard).To(Equal(&c4v1alpha1.ContainerStandardStatus{
-			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1alpha1.ChecksEveryChange}))
+		Expect(container.Status.Standard).To(Equal(&c4v1beta1.ContainerStandardStatus{
+			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1beta1.ChecksEveryChange}))
 		Expect(container.Status.RepositoryURL).NotTo(BeEmpty())
 	})
 
@@ -123,12 +123,12 @@ var _ = Describe("Container adoption", func() {
 	// know whether the operations file there is one it can render again.
 	It("refuses a change to spec.operations after the adoption, AdoptedRepository, until it is undone", func() {
 		ns := newProjectNamespace()
-		ops := &c4v1alpha1.OperationsSpec{Alerts: &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"}}
+		ops := &c4v1beta1.OperationsSpec{Alerts: &c4v1beta1.OperationsAlerts{Email: "ops@example.com"}}
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFilesWith(ns, onOperationsFramework(ops)))
 		createAdoptingWebshopWith(ns, true, onOperationsFramework(ops))
 
-		container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
 		Expect(container.Status.Operations.Alerts.Email).To(Equal("ops@example.com"),
 			"the block named at adoption is recorded as the one the repository holds")
@@ -137,22 +137,22 @@ var _ = Describe("Container adoption", func() {
 		By("changing the block after the adoption")
 		pushes := gitFake.pushCount()
 		Expect(patch(container, func() {
-			container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+			container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})).To(Succeed())
-		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonAdoptedRepository)
-		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
+		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonAdoptedRepository)
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).
 			To(ContainSubstring("the factory never scaffolded, so it can't know whether the Framework " + opsFramework))
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps the block recorded at adoption")
-		Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped", c4v1alpha1.ReasonAdoptedRepository)))
+		Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped", c4v1beta1.ReasonAdoptedRepository)))
 		Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes), "nothing reaches the repository")
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "an adopted repository is never written")
 
 		By("writing the recorded block back")
 		Expect(patch(container, func() {
-			container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "1h"}
+			container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "1h"}
 		})).To(Succeed())
-		container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+		container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
 		Expect(container.Status.OperationsUpdate).To(BeNil())
 	})
 
@@ -163,7 +163,7 @@ var _ = Describe("Container adoption", func() {
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
-		cond := failedAdoption(ns, c4v1alpha1.ReasonIdentityMismatch)
+		cond := failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch)
 		Expect(cond.Message).To(ContainSubstring("has no .c4factory.yaml on main"))
 		Expect(gitFake.protectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
 	})
@@ -180,7 +180,7 @@ var _ = Describe("Container adoption", func() {
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
-		cond := failedAdoption(ns, c4v1alpha1.ReasonIdentityMismatch)
+		cond := failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch)
 		Expect(cond.Message).To(ContainSubstring(`names project "other-shop" and container "billing-api", not ` +
 			ns + "/orders-api"))
 	})
@@ -193,7 +193,7 @@ var _ = Describe("Container adoption", func() {
 		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
-		cond := failedAdoption(ns, c4v1alpha1.ReasonStandardFilesDiffer)
+		cond := failedAdoption(ns, c4v1beta1.ReasonStandardFilesDiffer)
 		Expect(cond.Message).To(ContainSubstring("differs from Standard python-strict at v1.0.0 in AGENTS.md"))
 	})
 
@@ -202,7 +202,7 @@ var _ = Describe("Container adoption", func() {
 		gitFake.seedRepoBranch(ns, "orders-api", "master", "Import orders-api\n", adoptableFiles(ns))
 		createAdoptingWebshop(ns)
 
-		cond := failedAdoption(ns, c4v1alpha1.ReasonNoDefaultBranch)
+		cond := failedAdoption(ns, c4v1beta1.ReasonNoDefaultBranch)
 		Expect(cond.Message).To(ContainSubstring("has commits but no main branch"))
 		Expect(cond.Message).To(ContainSubstring("rename its default branch to main"))
 		Expect(gitFake.protectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
@@ -212,18 +212,18 @@ var _ = Describe("Container adoption", func() {
 		ns := newProjectNamespace()
 		createAdoptingWebshop(ns)
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonNothingToAdopt))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonNothingToAdopt))
 		Expect(cond.Message).To(ContainSubstring("has no commits to adopt"))
 		Expect(gitFake.repo(ns, "orders-api").commits).To(BeEmpty(), "never scaffolded")
 	})
 
 	It("refuses a change of spec.adopt either way", func() {
 		ns := newProjectNamespace()
-		plain := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		adopted := newContainer(ns, "billing-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		plain := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		adopted := newContainer(ns, "billing-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		adopted.Spec.Adopt = true
 		mustCreate(plain, adopted)
 

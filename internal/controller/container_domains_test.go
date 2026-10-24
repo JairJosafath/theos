@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -53,7 +53,7 @@ var _ = Describe("Container domains", func() {
 		addDomainTemplate(ns, "billing", markdownDomain("billing"))
 		webshopOnDomains(ns, "webshop")
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.ScaffoldedFrom).To(Equal(append(append([]string{}, ordersAPIScaffoldedFrom...),
 			"webshop@v1.0.0")), "each Domain's name@ref follows the Connectors")
 		Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"webshop"}), "the scaffold records its Domains by name")
@@ -65,27 +65,27 @@ var _ = Describe("Container domains", func() {
 			"the Domain's files take its prefix, not the root")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionDomainsApplied)
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionDomainsApplied)
 			g.Expect(cond).NotTo(BeNil(), "the Ready report pass sets DomainsApplied")
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonAppliedAtScaffold))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonAppliedAtScaffold))
 		}).Should(Succeed())
 
 		By("naming a Domain added after the scaffold: scaffolding happens once")
-		var system c4v1alpha1.SoftwareSystem
+		var system c4v1beta1.SoftwareSystem
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), &system)).To(Succeed())
 		orig := system.DeepCopy()
 		system.Spec.DomainRefs = []string{"webshop", "billing"}
 		Expect(k8sClient.Patch(ctx, &system, client.MergeFrom(orig))).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionDomainsApplied)
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionDomainsApplied)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonAddedAfterScaffold))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonAddedAfterScaffold))
 			g.Expect(cond.Message).To(Equal("Domains added after the scaffold: billing; scaffolding happens once"))
 		}).Should(Succeed())
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		Expect(container.Status.ScaffoldedFrom).To(HaveLen(len(ordersAPIScaffoldedFrom)+1), "nothing is rescaffolded")
 		Expect(gitFake.mainFiles(ns, "orders-api")).NotTo(HaveKey("docs/agents/domain/billing/README.md"))
 	})
@@ -98,11 +98,11 @@ var _ = Describe("Container domains", func() {
 		})
 		webshopOnDomains(ns, "notes")
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonDomainNotMarkdown))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonDomainNotMarkdown))
 		Expect(cond.Message).To(Equal(
 			"Domain notes renders notes.txt, which is not Markdown: a Domain holds only *.md files"))
 	})
@@ -114,10 +114,10 @@ var _ = Describe("Container domains", func() {
 		})
 		webshopOnDomains(ns, "bare")
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerFailed)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionScaffolded)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonDomainNoReadme))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonDomainNoReadme))
 		Expect(cond.Message).To(Equal("Domain bare renders no README.md"))
 	})
 
@@ -125,15 +125,15 @@ var _ = Describe("Container domains", func() {
 		ns := newProjectNamespace()
 		webshopOnDomains(ns, "missing-one")
 
-		container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerPending)
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerPending)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		Expect(cond.Message).To(Equal("Domain missing-one not found"))
 
 		By("resolving once the Domain appears")
 		addDomainTemplate(ns, "missing-one", markdownDomain("missing-one"))
-		container = eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		container = eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		from := container.Status.ScaffoldedFrom
 		Expect(from[len(from)-1]).To(Equal("missing-one@v1.0.0"))
 	})

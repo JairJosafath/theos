@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -25,7 +25,7 @@ import (
 // engineContainer is a Container of the cel-lens system, as a plan holds it.
 func engineContainer(name, displayName string) string {
 	return fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: %s
@@ -45,7 +45,7 @@ spec:
 func orderedPlan(ns string) scaffold.Tree {
 	return scaffold.Tree{
 		model.PlanModelFile: {Data: []byte(projectDoc(ns) + `---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: cel-lens
@@ -106,10 +106,10 @@ var _ = Describe("Brief issue order", func() {
 
 		By("holding the CLI's issue while the core it builds on isn't Ready, though the CLI is")
 		Eventually(func(g Gomega) {
-			var cli c4v1alpha1.Container
+			var cli c4v1beta1.Container
 			g.Expect(k8sClient.Get(ctx, key(ns, "cli"), &cli)).To(Succeed())
-			g.Expect(cli.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			g.Expect(cli.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("waits for Container core"))))
 		}, orderWait).Should(Succeed())
@@ -123,7 +123,7 @@ var _ = Describe("Brief issue order", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
 			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
-			cond := condition(getBrief(g, ns).Status.Conditions, c4v1alpha1.ConditionPlanned)
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", ContainSubstring("dependencies are down"))))
 		}, orderWait).Should(Succeed())
@@ -135,7 +135,7 @@ var _ = Describe("Brief issue order", func() {
 		By("making it depend on the core's issue, then labelling it ready")
 		gitFake.failDependencies(ns, "cli", nil)
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}, orderWait).Should(Succeed())
 		cli = gitFake.issue(ns, "cli", 1)
 		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
@@ -168,7 +168,7 @@ The README shows the CLI checking a file.
 		planRound(ns, 1, 1, plan)
 
 		Eventually(func(g Gomega) {
-			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}, orderWait).Should(Succeed())
 		core, cli := gitFake.issue(ns, "core", 1), gitFake.issue(ns, "cli", 1)
 		Expect(core.milestone).To(BeEmpty())
@@ -202,8 +202,8 @@ The README shows the CLI checking a file.
 
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).
 				To(HaveField("Status", metav1.ConditionTrue))
 		}, orderWait).Should(Succeed())
 		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))

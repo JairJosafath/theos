@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -70,7 +70,7 @@ type DeployTargetReconciler struct {
 // target accepts it: on a change of the spec or the Secret, and at most every
 // CheckInterval otherwise.
 func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var dt c4v1alpha1.DeployTarget
+	var dt c4v1beta1.DeployTarget
 	if err := r.Get(ctx, req.NamespacedName, &dt); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.checked.Delete(req.NamespacedName)
@@ -110,7 +110,7 @@ func (r *DeployTargetReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	seen := deployChecked{uid: dt.UID, generation: dt.Generation, secret: secret.ResourceVersion}
 	last, ok := r.checked.Load(req.NamespacedName)
-	cond := apimeta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionDeployTargetReady)
+	cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionDeployTargetReady)
 	// A target that couldn't be reached is asked again on the next poll.
 	if ok && last == seen && cond != nil && cond.ObservedGeneration == dt.Generation && status.CheckedTime != nil &&
 		cond.Reason != model.DeployTargetUnreachable {
@@ -170,7 +170,7 @@ func hostedTarget(target ports.Target, member, pathKey, path, urlKey, url string
 
 // deployTarget is dt as its member's Deployer reads it, its Secret's data
 // left out, and its place in the member's words.
-func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
+func deployTarget(dt *c4v1beta1.DeployTarget) (ports.Target, string) {
 	target := ports.Target{Name: dt.Namespace + "/" + dt.Name, Tier: string(dt.Spec.Tier),
 		Parameters: dt.Spec.Parameters}
 	if gh := dt.Spec.GitHub; gh != nil {
@@ -205,19 +205,19 @@ func deployTarget(dt *c4v1alpha1.DeployTarget) (ports.Target, string) {
 }
 
 // setReady sets the Ready condition to reason.
-func (r *DeployTargetReconciler) setReady(status *c4v1alpha1.DeployTargetStatus, generation int64, reason string,
+func (r *DeployTargetReconciler) setReady(status *c4v1beta1.DeployTargetStatus, generation int64, reason string,
 	check model.DeployCheck) {
 	value := metav1.ConditionFalse
 	if reason == model.DeployTargetReady {
 		value = metav1.ConditionTrue
 	}
-	setCondition(&status.Conditions, generation, c4v1alpha1.ConditionDeployTargetReady, value, reason,
+	setCondition(&status.Conditions, generation, c4v1beta1.ConditionDeployTargetReady, value, reason,
 		model.DeployCheckMessage(reason, check))
 }
 
 // writeStatus patches dt's status to status when it changed.
-func (r *DeployTargetReconciler) writeStatus(ctx context.Context, dt *c4v1alpha1.DeployTarget,
-	status *c4v1alpha1.DeployTargetStatus) error {
+func (r *DeployTargetReconciler) writeStatus(ctx context.Context, dt *c4v1beta1.DeployTarget,
+	status *c4v1beta1.DeployTargetStatus) error {
 	if equality.Semantic.DeepEqual(&dt.Status, status) {
 		return nil
 	}
@@ -248,7 +248,7 @@ func (r *DeployTargetReconciler) checkInterval() time.Duration {
 // when the target names one.
 func (r *DeployTargetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.DeployTarget{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&c4v1beta1.DeployTarget{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("deploytarget").
 		Complete(r)
 }

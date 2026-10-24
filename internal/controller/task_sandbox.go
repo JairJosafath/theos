@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -60,13 +60,13 @@ func newSandbox() *unstructured.Unstructured {
 
 // sandboxRun is everything one sandbox run needs.
 type sandboxRun struct {
-	task *c4v1alpha1.Task
+	task *c4v1beta1.Task
 	// status is the Task's status as this step leaves it, not as it was read.
-	status *c4v1alpha1.TaskStatus
+	status *c4v1beta1.TaskStatus
 	// container is the Container an implement or review run works on; nil for
 	// a plan run.
-	container *c4v1alpha1.Container
-	agent     *c4v1alpha1.Agent
+	container *c4v1beta1.Container
+	agent     *c4v1beta1.Agent
 	name      string
 	role      string
 	repoURL   string
@@ -125,14 +125,14 @@ const (
 // its credentialsSecretRef names one of the --shared-secret Secrets and the
 // operator runs with --model-proxy-url. A stand-in Agent has no ref; an Agent
 // on a Secret of its own is the project's business.
-func onSharedToken(agent *c4v1alpha1.Agent, sharedSecrets []string, modelProxyURL string) bool {
+func onSharedToken(agent *c4v1beta1.Agent, sharedSecrets []string, modelProxyURL string) bool {
 	ref := agent.Spec.CredentialsSecretRef
 	return ref != nil && modelProxyURL != "" && slices.Contains(sharedSecrets, ref.Name)
 }
 
 // sandboxModelProxy returns the proxy URL a sandbox of the Agent gets, or
 // none for an Agent not on the shared token.
-func (r *TaskReconciler) sandboxModelProxy(agent *c4v1alpha1.Agent) string {
+func (r *TaskReconciler) sandboxModelProxy(agent *c4v1beta1.Agent) string {
 	if onSharedToken(agent, r.SharedSecrets, r.ModelProxyURL) {
 		return r.ModelProxyURL
 	}
@@ -233,14 +233,14 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	deadline := int64(timeout.Seconds())
 	no := false
 	labels := map[string]string{
-		LabelTask:               task.Name,
-		c4v1alpha1.LabelProject: task.Namespace,
-		LabelAgentSandbox:       "true",
+		LabelTask:              task.Name,
+		c4v1beta1.LabelProject: task.Namespace,
+		LabelAgentSandbox:      "true",
 	}
 	if run.brief != "" {
-		labels[c4v1alpha1.LabelBrief] = run.brief
+		labels[c4v1beta1.LabelBrief] = run.brief
 	} else {
-		labels[c4v1alpha1.LabelContainer] = run.container.Name
+		labels[c4v1beta1.LabelContainer] = run.container.Name
 	}
 	workspace := &corev1.EmptyDirVolumeSource{}
 	if run.workspaceMemory != nil {
@@ -560,9 +560,9 @@ func parseTime(s string) time.Time {
 }
 
 // harness is the Agent's harness, claude-code when unset.
-func harness(agent *c4v1alpha1.Agent) string {
+func harness(agent *c4v1beta1.Agent) string {
 	if agent.Spec.Harness == "" {
-		return string(c4v1alpha1.HarnessClaudeCode)
+		return string(c4v1beta1.HarnessClaudeCode)
 	}
 	return string(agent.Spec.Harness)
 }

@@ -122,6 +122,11 @@ const (
 	// its Standard's ref; False with reason FilesBehind while some an update
 	// left out wait on a person.
 	ConditionStandardUpdated = "StandardUpdated"
+	// ConditionBundleCurrent is True when a Ready Container's Bundle still
+	// names the entries it scaffolded from; False with reason BundleChanged
+	// listing the sides that differ, or saying the Bundle is gone. A changed
+	// Bundle is reported, never applied. Absent on a Container naming its sides.
+	ConditionBundleCurrent = "BundleCurrent"
 	// ConditionChecksApplied is True when a Container's Standard runs its CI's
 	// full check when the Container's spec.checks asks, and its repository's CI
 	// already does; False with the update in flight or its stop while not.
@@ -178,6 +183,9 @@ const (
 	// the Standard renders for this Container at its ref.
 	ReasonStandardFilesDiffer = "StandardFilesDiffer"
 	ReasonLayerConflict       = "LayerConflict"
+	// ReasonBundleChanged: the Bundle a Ready Container scaffolded from now
+	// names other entries, or is gone; the Container keeps what it has.
+	ReasonBundleChanged = "BundleChanged"
 	// ReasonDomainNotMarkdown: a Domain's template renders a file that is not
 	// Markdown; a Domain holds only *.md files. The message names the file.
 	ReasonDomainNotMarkdown = "DomainNotMarkdown"

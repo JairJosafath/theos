@@ -17,12 +17,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
-func agent(name string, harness c4v1alpha1.AgentHarness, edit func(*c4v1alpha1.AgentSpec)) c4v1alpha1.Agent {
-	a := c4v1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-base:dev", Harness: harness}}
+func agent(name string, harness c4v1beta1.AgentHarness, edit func(*c4v1beta1.AgentSpec)) c4v1beta1.Agent {
+	a := c4v1beta1.Agent{ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-base:dev", Harness: harness}}
 	if edit != nil {
 		edit(&a.Spec)
 	}
@@ -32,24 +32,24 @@ func agent(name string, harness c4v1alpha1.AgentHarness, edit func(*c4v1alpha1.A
 func TestCheck(t *testing.T) {
 	for _, c := range []struct {
 		name  string
-		agent c4v1alpha1.Agent
+		agent c4v1beta1.Agent
 		want  string // empty: passes
 	}{
-		{"stand-in", agent("ok", c4v1alpha1.HarnessStandIn, nil), ""},
-		{"claude-code", agent("claude", c4v1alpha1.HarnessClaudeCode, nil),
+		{"stand-in", agent("ok", c4v1beta1.HarnessStandIn, nil), ""},
+		{"claude-code", agent("claude", c4v1beta1.HarnessClaudeCode, nil),
 			`agent claude: harness is "claude-code", not "stand-in"`},
 		{"harness left to the default", agent("unset", "", nil), `agent unset: harness is "", not "stand-in"`},
-		{"credentials Secret", agent("keyed", c4v1alpha1.HarnessStandIn, func(s *c4v1alpha1.AgentSpec) {
-			s.CredentialsSecretRef = &c4v1alpha1.LocalRef{Name: "claude-credentials"}
+		{"credentials Secret", agent("keyed", c4v1beta1.HarnessStandIn, func(s *c4v1beta1.AgentSpec) {
+			s.CredentialsSecretRef = &c4v1beta1.LocalRef{Name: "claude-credentials"}
 		}), "agent keyed: references the credentials Secret claude-credentials"},
-		{"Secret in env", agent("env", c4v1alpha1.HarnessStandIn, func(s *c4v1alpha1.AgentSpec) {
+		{"Secret in env", agent("env", c4v1beta1.HarnessStandIn, func(s *c4v1beta1.AgentSpec) {
 			s.Env = []corev1.EnvVar{{Name: "CLAUDE_CODE_OAUTH_TOKEN", ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: "claude"}, Key: "token"}}}}
 		}), "agent env: env CLAUDE_CODE_OAUTH_TOKEN references the Secret claude"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			err := Check([]c4v1alpha1.Agent{c.agent})
+			err := Check([]c4v1beta1.Agent{c.agent})
 			switch {
 			case c.want == "" && err != nil:
 				t.Fatalf("Check: %v", err)
@@ -77,12 +77,12 @@ func TestFixture(t *testing.T) {
 
 func TestAgentsReadsOnlyAgents(t *testing.T) {
 	dir := t.TempDir()
-	yaml := `apiVersion: c4.factory.io/v1alpha1
+	yaml := `apiVersion: c4.factory.io/v1beta1
 kind: Framework
 metadata: {name: hello-html}
 spec: {supportedTypes: [static-site], template: {url: http://gitea/templates/hello-html, ref: v1.0.0}}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Agent
 metadata: {name: claude}
 spec: {image: agent:dev, harness: claude-code, credentialsSecretRef: {name: claude-credentials}}

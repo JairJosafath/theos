@@ -11,7 +11,7 @@ import (
 // data (plans/aws-data-stores.md, step 5, #1743).
 func dynamodbDataStore(system, container string) string {
 	return fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: %[2]s-table
@@ -20,7 +20,7 @@ spec:
   description: What %[2]s keeps
   connectorRef: {name: dynamodb}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: %[2]s-keeps-data

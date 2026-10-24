@@ -4,14 +4,14 @@ import (
 	"slices"
 	"testing"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // A round takes the requests let through; one that ends without applying
 // hands them back, and they start no round by themselves.
 func TestTakeAndReleaseRequests(t *testing.T) {
-	status := &c4v1alpha1.BriefStatus{Round: 3, Requests: []c4v1alpha1.BriefRequest{
+	status := &c4v1beta1.BriefStatus{Round: 3, Requests: []c4v1beta1.BriefRequest{
 		{Repository: "o/r", Number: 1, Stage: model.RequestAccepted},
 		{Repository: "o/r", Number: 2, Stage: model.RequestWaiting},
 		{Repository: "o/r", Number: 3, Stage: model.RequestPlanned, Round: 2},
@@ -40,7 +40,7 @@ func TestTakeAndReleaseRequests(t *testing.T) {
 	if r := status.Requests[2]; r.Stage != model.RequestPlanned || r.Round != 2 {
 		t.Errorf("an earlier round's request = %s in round %d, want it kept", r.Stage, r.Round)
 	}
-	status.History = []c4v1alpha1.BriefRound{{Round: 4, Outcome: model.ReasonRoundFailed}}
+	status.History = []c4v1beta1.BriefRound{{Round: 4, Outcome: model.ReasonRoundFailed}}
 	if n := model.NewRequests(modelRequests(status.Requests), heldRequests(status)); n != 0 {
 		t.Errorf("NewRequests = %d after a failed round, want 0: its requests wait for something new", n)
 	}

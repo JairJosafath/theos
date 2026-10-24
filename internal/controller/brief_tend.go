@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -43,7 +43,7 @@ const (
 )
 
 // tending reports whether the Brief's round is a tending round.
-func tending(status *c4v1alpha1.BriefStatus) bool {
+func tending(status *c4v1beta1.BriefStatus) bool {
 	return status.Round > 0 && status.TendRound == status.Round
 }
 
@@ -51,15 +51,15 @@ func tending(status *c4v1alpha1.BriefStatus) bool {
 // rounds answered them, the Tasks of the Containers it made that are not
 // final, its Crews that are not Ready and its Containers, and when a Task of
 // its Containers last merged or one of its apps last released.
-func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1alpha1.Brief) (model.AttentionFacts, error) {
+func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1beta1.Brief) (model.AttentionFacts, error) {
 	status := &brief.Status
 	facts := model.AttentionFacts{Tended: modelTended(status.Tended)}
 	for _, f := range status.Failed {
 		facts.Failed = append(facts.Failed, model.FailedIssue{Container: f.Container, Number: int(f.Number),
 			Title: f.Title, URL: f.URL, Kind: f.Kind, Reason: f.Reason, Tries: int(f.Tries)})
 	}
-	mine := client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}
-	var containers c4v1alpha1.ContainerList
+	mine := client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace), mine); err != nil {
 		return facts, err
 	}
@@ -75,7 +75,7 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1alpha1.
 		}
 		facts.Containers = append(facts.Containers, watched)
 	}
-	var crews c4v1alpha1.CrewList
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace), mine); err != nil {
 		return facts, err
 	}
@@ -86,7 +86,7 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1alpha1.
 				Message: cond.Message, Since: cond.LastTransitionTime.Time})
 		}
 	}
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.List(ctx, &tasks, client.InNamespace(brief.Namespace)); err != nil {
 		return facts, err
 	}
@@ -95,11 +95,11 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1alpha1.
 			continue
 		}
 		switch t.Status.Phase {
-		case c4v1alpha1.TaskMerged:
+		case c4v1beta1.TaskMerged:
 			if at := t.Status.PhaseChangedAt; at != nil && at.After(facts.Changed) {
 				facts.Changed = at.Time
 			}
-		case c4v1alpha1.TaskFailed:
+		case c4v1beta1.TaskFailed:
 		default:
 			facts.Tasks = append(facts.Tasks, watchedTask(&t))
 		}
@@ -114,7 +114,7 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1alpha1.
 
 // watchedTask is a Task that is not final as model.BriefAttention sees it:
 // its stage and since when, as the Factory view shows them.
-func watchedTask(t *c4v1alpha1.Task) model.WatchedTask {
+func watchedTask(t *c4v1beta1.Task) model.WatchedTask {
 	w := model.WatchedTask{Name: t.Name, Container: t.Spec.ContainerRef.Name}
 	if cond := meta.FindStatusCondition(t.Status.Conditions, "Progressing"); cond != nil {
 		w.Reason, w.Message = cond.Reason, cond.Message
@@ -122,13 +122,13 @@ func watchedTask(t *c4v1alpha1.Task) model.WatchedTask {
 	switch {
 	case t.Status.SlotWaitSince != nil || w.Reason == "WaitingForSlot":
 		w.Stage = model.StageSlot
-	case t.Status.Phase == c4v1alpha1.TaskImplementing:
+	case t.Status.Phase == c4v1beta1.TaskImplementing:
 		w.Stage = model.StageImplement
-	case t.Status.Phase == c4v1alpha1.TaskChecking:
+	case t.Status.Phase == c4v1beta1.TaskChecking:
 		w.Stage = model.StageChecks
-	case t.Status.Phase == c4v1alpha1.TaskReviewing:
+	case t.Status.Phase == c4v1beta1.TaskReviewing:
 		w.Stage = model.StageReview
-	case t.Status.Phase == c4v1alpha1.TaskBlocked:
+	case t.Status.Phase == c4v1beta1.TaskBlocked:
 		w.Stage = model.StageBlocked
 	default:
 		w.Stage = model.StageQueued
@@ -157,10 +157,10 @@ func watchedTask(t *c4v1alpha1.Task) model.WatchedTask {
 
 // standardBehind are the status.needsYou items of the Containers the Brief
 // made whose Standard files an update left out, waiting on the person.
-func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1alpha1.Brief) ([]model.NeedsYou, error) {
-	var containers c4v1alpha1.ContainerList
+func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1beta1.Brief) ([]model.NeedsYou, error) {
+	var containers c4v1beta1.ContainerList
 	if err := r.List(ctx, &containers, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return nil, err
 	}
 	var out []model.NeedsYou
@@ -171,7 +171,7 @@ func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1alpha1.
 		}
 		s := c.Status.Standard
 		b := model.StandardBehind{Container: c.Name, Standard: s.Name, Ref: s.Ref,
-			Take: c4v1alpha1.AnnotationStandardTake + "=" + s.Ref, Since: cond.LastTransitionTime.Time}
+			Take: c4v1beta1.AnnotationStandardTake + "=" + s.Ref, Since: cond.LastTransitionTime.Time}
 		for _, f := range behindFiles(s) {
 			b.Files = append(b.Files, model.BehindFile{Path: f.Path, Ref: f.Ref})
 		}
@@ -183,10 +183,10 @@ func (r *BriefReconciler) standardBehind(ctx context.Context, brief *c4v1alpha1.
 // heldTargets are the status.needsYou items of the Crews the Brief made whose
 // release target was changed under it (briefTarget): only a person knows
 // which repository is right.
-func (r *BriefReconciler) heldTargets(ctx context.Context, brief *c4v1alpha1.Brief) ([]model.NeedsYou, error) {
-	var crews c4v1alpha1.CrewList
+func (r *BriefReconciler) heldTargets(ctx context.Context, brief *c4v1beta1.Brief) ([]model.NeedsYou, error) {
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return nil, err
 	}
 	var out []model.NeedsYou
@@ -196,7 +196,7 @@ func (r *BriefReconciler) heldTargets(ctx context.Context, brief *c4v1alpha1.Bri
 			continue
 		}
 		n := model.ReleaseTargetNeedsYou(*d)
-		if cond := meta.FindStatusCondition(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget); cond != nil &&
+		if cond := meta.FindStatusCondition(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget); cond != nil &&
 			cond.Status == metav1.ConditionFalse {
 			n.Since = cond.LastTransitionTime.Time
 		}
@@ -207,10 +207,10 @@ func (r *BriefReconciler) heldTargets(ctx context.Context, brief *c4v1alpha1.Bri
 
 // filesBehind is the Container's StandardUpdated condition while its Standard
 // files wait on a person (FilesBehind), nil otherwise.
-func filesBehind(c *c4v1alpha1.Container) *metav1.Condition {
-	cond := meta.FindStatusCondition(c.Status.Conditions, c4v1alpha1.ConditionStandardUpdated)
+func filesBehind(c *c4v1beta1.Container) *metav1.Condition {
+	cond := meta.FindStatusCondition(c.Status.Conditions, c4v1beta1.ConditionStandardUpdated)
 	if c.Status.Standard == nil || cond == nil || cond.Status != metav1.ConditionFalse ||
-		cond.Reason != c4v1alpha1.ReasonFilesBehind {
+		cond.Reason != c4v1beta1.ReasonFilesBehind {
 		return nil
 	}
 	return cond
@@ -221,7 +221,7 @@ func filesBehind(c *c4v1alpha1.Container) *metav1.Condition {
 // autopilot Off it lists only the requests waiting in Ask and the Containers
 // whose Standard files wait on the person. It returns the classification and when the
 // Brief acts next on its own, zero when it waits for a change.
-func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now time.Time) (
+func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1beta1.Brief, now time.Time) (
 	model.Attention, time.Time, error) {
 	status := &brief.Status
 	var att model.Attention
@@ -246,9 +246,9 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 	}
 	att = model.InsteadOf(att, held)
 	var next time.Time
-	attention := make([]c4v1alpha1.BriefHealing, 0, len(att.Healing))
+	attention := make([]c4v1beta1.BriefHealing, 0, len(att.Healing))
 	for _, h := range att.Healing[:min(len(att.Healing), maxAttention)] {
-		entry := c4v1alpha1.BriefHealing{Kind: h.Kind, Name: model.Clip(h.Name, 320), Reason: model.Clip(h.Reason, 1000)}
+		entry := c4v1beta1.BriefHealing{Kind: h.Kind, Name: model.Clip(h.Name, 320), Reason: model.Clip(h.Reason, 1000)}
 		if !h.ActsAt.IsZero() {
 			entry.ActsAt = &metav1.Time{Time: h.ActsAt}
 			if next.IsZero() || h.ActsAt.Before(next) {
@@ -257,14 +257,14 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 		}
 		attention = append(attention, entry)
 	}
-	needsYou := make([]c4v1alpha1.BriefNeedsYou, 0, len(att.NeedsYou))
+	needsYou := make([]c4v1beta1.BriefNeedsYou, 0, len(att.NeedsYou))
 	for _, n := range att.NeedsYou {
-		entry := c4v1alpha1.BriefNeedsYou{Kind: n.Kind, Name: model.Clip(n.Name, 320),
+		entry := c4v1beta1.BriefNeedsYou{Kind: n.Kind, Name: model.Clip(n.Name, 320),
 			Question: model.Clip(n.Question, 1000), Recommend: model.Clip(n.Recommend, 1000), Why: model.Clip(n.Why, 1000)}
 		if !n.Since.IsZero() {
 			entry.Since = &metav1.Time{Time: n.Since}
 		}
-		if !slices.ContainsFunc(status.NeedsYou, func(s c4v1alpha1.BriefNeedsYou) bool {
+		if !slices.ContainsFunc(status.NeedsYou, func(s c4v1beta1.BriefNeedsYou) bool {
 			return s.Kind == n.Kind && s.Name == n.Name
 		}) {
 			logf.FromContext(ctx).Info("Something needs the person", "kind", n.Kind, "name", n.Name)
@@ -291,30 +291,30 @@ func (r *BriefReconciler) tend(ctx context.Context, brief *c4v1alpha1.Brief, now
 // setNeedsYouWaiting records how many items wait for the person and the
 // NeedsYou condition that says so: True while any waits, with the first
 // listed item's question, False once none does.
-func setNeedsYouWaiting(brief *c4v1alpha1.Brief, listed []model.NeedsYou, waiting int) {
+func setNeedsYouWaiting(brief *c4v1beta1.Brief, listed []model.NeedsYou, waiting int) {
 	status := &brief.Status
 	status.NeedsYouWaiting = int32(waiting)
 	switch {
 	case waiting > 0:
-		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsYou, metav1.ConditionTrue,
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionTrue,
 			reasonNeedsYouWaiting, model.Clip(model.NeedsYouMessage(listed, waiting), 32768))
-	case meta.FindStatusCondition(status.Conditions, c4v1alpha1.ConditionNeedsYou) != nil:
-		setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionNeedsYou, metav1.ConditionFalse,
-			c4v1alpha1.ReasonResolved, model.NeedsYouMessage(nil, 0))
+	case meta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionNeedsYou) != nil:
+		setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionFalse,
+			c4v1beta1.ReasonResolved, model.NeedsYouMessage(nil, 0))
 	}
 }
 
 // tendFacts is what a tending round's start depends on. A Brief whose last
 // round didn't apply waits for a prompt first: its planner asked a question,
 // or its round failed, and a tending round would hide that.
-func tendFacts(brief *c4v1alpha1.Brief, due int) model.TendFacts {
+func tendFacts(brief *c4v1beta1.Brief, due int) model.TendFacts {
 	status := &brief.Status
 	facts := model.TendFacts{Mode: brief.Spec.Autopilot, Round: int(status.Round), RoundOver: roundOver(status),
 		PromptWaiting: len(briefPrompts(brief)) > int(status.RoundPrompts) ||
 			model.NewRequests(modelRequests(status.Requests), heldRequests(status)) > 0,
 		Due: due, Paused: brief.Spec.Paused,
 		OperatorNeedsInput: operatorWaits(status) ||
-			!meta.IsStatusConditionTrue(status.Conditions, c4v1alpha1.ConditionPlanned)}
+			!meta.IsStatusConditionTrue(status.Conditions, c4v1beta1.ConditionPlanned)}
 	if status.LastTendTime != nil {
 		facts.LastTend = status.LastTendTime.Time
 	}
@@ -323,7 +323,7 @@ func tendFacts(brief *c4v1alpha1.Brief, due int) model.TendFacts {
 
 // tendRound classifies what the Brief watches and starts a tending round when
 // a failed issue is due. It returns when to look again.
-func (r *BriefReconciler) tendRound(ctx context.Context, brief, orig *c4v1alpha1.Brief) (ctrl.Result, error) {
+func (r *BriefReconciler) tendRound(ctx context.Context, brief, orig *c4v1beta1.Brief) (ctrl.Result, error) {
 	now := r.now()
 	att, next, err := r.tend(ctx, brief, now)
 	if err != nil {
@@ -342,7 +342,7 @@ func (r *BriefReconciler) tendRound(ctx context.Context, brief, orig *c4v1alpha1
 // applyTend applies a tending round's plan, each step idempotent like a
 // round's: the new issues it files, then its answers to the failed issues,
 // by the Brief's mode, and last the plan merged into main.
-func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1.Brief, task *c4v1alpha1.Task) (
+func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1beta1.Brief, task *c4v1beta1.Task) (
 	ctrl.Result, error) {
 	tree, ok, err := r.readPlan(ctx, brief, task.Status.Commit)
 	if err != nil {
@@ -395,7 +395,7 @@ func (r *BriefReconciler) applyTend(ctx context.Context, brief, orig *c4v1alpha1
 // answerFailedRemembering answers the failed issues as answerFailed does and
 // remembers every answer in status.tended, so an answered issue is raised
 // again only when it changed.
-func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4v1alpha1.Brief,
+func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4v1beta1.Brief,
 	answers []model.FailedAnswer) (retried, closed int, refused []string, err error) {
 	if len(answers) == 0 {
 		return 0, 0, nil, nil
@@ -412,11 +412,11 @@ func (r *BriefReconciler) answerFailedRemembering(ctx context.Context, brief *c4
 // tendApplied records a tending round that applied: a Tended history entry
 // and Event. The story's state, the Planned condition and the prompts
 // planned, is the last prompt round's and stays.
-func (r *BriefReconciler) tendApplied(ctx context.Context, brief *c4v1alpha1.Brief, task *c4v1alpha1.Task,
+func (r *BriefReconciler) tendApplied(ctx context.Context, brief *c4v1beta1.Brief, task *c4v1beta1.Task,
 	plan model.Plan, answers []model.FailedAnswer, refused []string) {
 	status := &brief.Status
 	summary := model.TendSummary(brief.Spec.Autopilot, plan.Summary, answers)
-	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonTended, Summary: summary})
+	recordRound(status, task, c4v1beta1.BriefRound{Outcome: model.ReasonTended, Summary: summary})
 	retried, closed, waited, asked := model.TendCounts(answers)
 	r.event(brief, corev1.EventTypeNormal, eventTended, "Tend",
 		fmt.Sprintf("Tending round %d retried %d, closed %d, waits on %d and asks you about %d failed issues, "+
@@ -427,7 +427,7 @@ func (r *BriefReconciler) tendApplied(ctx context.Context, brief *c4v1alpha1.Bri
 }
 
 // modelTended is status.tended as the model sees it.
-func modelTended(tended []c4v1alpha1.BriefTendedIssue) []model.TendedIssue {
+func modelTended(tended []c4v1beta1.BriefTendedIssue) []model.TendedIssue {
 	out := make([]model.TendedIssue, 0, len(tended))
 	for _, t := range tended {
 		m := model.TendedIssue{Container: t.Container, Issue: int(t.Number), Answer: t.Answer, Why: t.Why,
@@ -441,16 +441,16 @@ func modelTended(tended []c4v1alpha1.BriefTendedIssue) []model.TendedIssue {
 }
 
 // apiTended is the model's answered issues as status.tended holds them.
-func apiTended(tended []model.TendedIssue) []c4v1alpha1.BriefTendedIssue {
+func apiTended(tended []model.TendedIssue) []c4v1beta1.BriefTendedIssue {
 	if len(tended) == 0 {
 		return nil
 	}
-	out := make([]c4v1alpha1.BriefTendedIssue, 0, len(tended))
+	out := make([]c4v1beta1.BriefTendedIssue, 0, len(tended))
 	for _, t := range tended {
-		a := c4v1alpha1.BriefTendedIssue{Container: t.Container, Number: int32(t.Issue), Answer: t.Answer,
+		a := c4v1beta1.BriefTendedIssue{Container: t.Container, Number: int32(t.Issue), Answer: t.Answer,
 			Why: model.Clip(t.Why, 1000), Tries: int32(t.Tries), At: metav1.Time{Time: t.At}, Round: int32(t.Round)}
 		if rec := t.Recommend; rec != nil {
-			a.Recommend = &c4v1alpha1.BriefRecommendation{Answer: rec.Answer, Why: model.Clip(rec.Why, 1000),
+			a.Recommend = &c4v1beta1.BriefRecommendation{Answer: rec.Answer, Why: model.Clip(rec.Why, 1000),
 				Clarify: model.Clip(rec.Clarify, model.MaxClarify)}
 		}
 		out = append(out, a)

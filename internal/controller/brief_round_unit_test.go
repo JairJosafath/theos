@@ -17,14 +17,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 func briefScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
@@ -98,7 +98,7 @@ func TestMissingAgentSecretSaysWhereTheTokenGoes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}
 			if tt.labeled {
-				namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: sharedSecretsOptIn}
+				namespace.Labels = map[string]string{c4v1beta1.LabelSharedSecrets: sharedSecretsOptIn}
 			}
 			objs := []client.Object{namespace}
 			if tt.sourcePresent {
@@ -136,14 +136,14 @@ func TestMissingAgentSecretSaysWhereTheTokenGoes(t *testing.T) {
 // the stale status over the newer one.
 func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 	scheme := briefScheme(t)
-	brief := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
-		Spec: c4v1alpha1.BriefSpec{Idea: "A linter.", Agents: c4v1alpha1.BriefAgents{
-			Planner: c4v1alpha1.LocalRef{Name: "planner"}}}}
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter.", Agents: c4v1beta1.BriefAgents{
+			Planner: c4v1beta1.LocalRef{Name: "planner"}}}}
 	statusWrites := 0
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1alpha1.Brief{}).
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
 		WithObjects(brief,
-			&c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
-			&c4v1alpha1.Framework{ObjectMeta: objectMeta("apps", "python-fastapi")}).
+			&c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+			&c4v1beta1.Framework{ObjectMeta: objectMeta("apps", "python-fastapi")}).
 		WithInterceptorFuncs(interceptor.Funcs{SubResourcePatch: func(ctx context.Context, c client.Client,
 			sub string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
 			statusWrites++
@@ -152,11 +152,11 @@ func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 	r := &BriefReconciler{Client: c, Scheme: scheme}
 	ctx := context.Background()
 
-	var stale c4v1alpha1.Brief
+	var stale c4v1beta1.Brief
 	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &stale); err != nil {
 		t.Fatal(err)
 	}
-	var current c4v1alpha1.Brief
+	var current c4v1beta1.Brief
 	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &current); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 	if statusWrites != 1 {
 		t.Errorf("status writes = %d, want only startRound's refused one", statusWrites)
 	}
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := c.List(ctx, &tasks); err != nil || len(tasks.Items) != 0 {
 		t.Errorf("Tasks = %d (%v), want none", len(tasks.Items), err)
 	}
@@ -187,15 +187,15 @@ func TestStartRoundOnAStaleBriefWritesNothing(t *testing.T) {
 // The operator's own wait shows over the planner's question; once it ends,
 // the question is open again until a new round answers it.
 func TestClearOperatorNeedsInputRestoresThePlannersQuestion(t *testing.T) {
-	brief := &c4v1alpha1.Brief{}
+	brief := &c4v1beta1.Brief{}
 	brief.Status.Round = 2
-	brief.Status.History = []c4v1alpha1.BriefRound{
+	brief.Status.History = []c4v1beta1.BriefRound{
 		{Round: 1, Outcome: model.ReasonApplied},
 		{Round: 2, Outcome: model.ReasonPlannerNeedsInput, NeedsInput: "Which CRDs first?"},
 	}
 	operatorNeedsInput(brief, "GitProvider gitea is missing")
 	clearOperatorNeedsInput(brief)
-	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)
+	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)
 	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != model.ReasonPlannerNeedsInput ||
 		cond.Message != "Which CRDs first?" {
 		t.Errorf("NeedsInput = %+v, want the planner's question again", cond)
@@ -204,8 +204,8 @@ func TestClearOperatorNeedsInputRestoresThePlannersQuestion(t *testing.T) {
 	brief.Status.Round = 3 // a new round runs
 	operatorNeedsInput(brief, "Agent planner is missing")
 	clearOperatorNeedsInput(brief)
-	cond = meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionNeedsInput)
-	if cond.Status != metav1.ConditionFalse || cond.Reason != c4v1alpha1.ReasonResolved {
+	cond = meta.FindStatusCondition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != c4v1beta1.ReasonResolved {
 		t.Errorf("NeedsInput = %+v, want resolved once a new round runs", cond)
 	}
 }
@@ -214,14 +214,14 @@ func TestClearOperatorNeedsInputRestoresThePlannersQuestion(t *testing.T) {
 // must not fail the round again, over the newer status that says it applied.
 func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 	scheme := briefScheme(t)
-	brief := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
-		Spec: c4v1alpha1.BriefSpec{Idea: "A linter."}}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1alpha1.Brief{}).
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter."}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
 		WithObjects(brief).Build()
 	r := &BriefReconciler{Client: c, Scheme: scheme}
 	ctx := context.Background()
 
-	var stale c4v1alpha1.Brief
+	var stale c4v1beta1.Brief
 	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &stale); err != nil {
 		t.Fatal(err)
 	}
@@ -229,32 +229,32 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 	if err := c.Status().Update(ctx, &stale); err != nil {
 		t.Fatal(err)
 	}
-	var current c4v1alpha1.Brief
+	var current c4v1beta1.Brief
 	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &current); err != nil {
 		t.Fatal(err)
 	}
-	current.Status.History = []c4v1alpha1.BriefRound{{Round: 1, Outcome: model.ReasonApplied}}
-	setCondition(&current.Status.Conditions, current.Generation, c4v1alpha1.ConditionPlanned,
+	current.Status.History = []c4v1beta1.BriefRound{{Round: 1, Outcome: model.ReasonApplied}}
+	setCondition(&current.Status.Conditions, current.Generation, c4v1beta1.ConditionPlanned,
 		metav1.ConditionTrue, model.ReasonApplied, "Round 1 applied")
 	if err := c.Status().Update(ctx, &current); err != nil {
 		t.Fatal(err)
 	}
 
 	orig := stale.DeepCopy()
-	r.endRoundFailed(ctx, &stale, &c4v1alpha1.Task{}, "the plan no longer fits the namespace: "+
+	r.endRoundFailed(ctx, &stale, &c4v1beta1.Task{}, "the plan no longer fits the namespace: "+
 		model.RefusalText([]model.Refusal{{Subject: "Container/orders-api", Reason: "is in the namespace"}}))
 	result, err := r.finishReconcile(ctx, &stale, orig, ctrl.Result{}, nil)
 	if err != nil || result.RequeueAfter == 0 {
 		t.Errorf("finishReconcile = %+v, %v; want a requeue and no error", result, err)
 	}
-	var got c4v1alpha1.Brief
+	var got c4v1beta1.Brief
 	if err := c.Get(ctx, client.ObjectKeyFromObject(brief), &got); err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Status.History) != 1 || got.Status.History[0].Outcome != model.ReasonApplied {
 		t.Errorf("history = %+v, want round 1 applied", got.Status.History)
 	}
-	if cond := meta.FindStatusCondition(got.Status.Conditions, c4v1alpha1.ConditionPlanned); cond == nil ||
+	if cond := meta.FindStatusCondition(got.Status.Conditions, c4v1beta1.ConditionPlanned); cond == nil ||
 		cond.Reason != model.ReasonApplied {
 		t.Errorf("Planned = %+v, want reason %s", cond, model.ReasonApplied)
 	}
@@ -262,19 +262,19 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 
 // A Brief round takes what its Plan Task used, and the Brief adds its rounds up.
 func TestRecordRoundAddsUpTheTokens(t *testing.T) {
-	status := &c4v1alpha1.BriefStatus{Round: 1}
-	plan := func(tokens *c4v1alpha1.TokenUsage) *c4v1alpha1.Task {
-		return &c4v1alpha1.Task{Status: c4v1alpha1.TaskStatus{Tokens: tokens}}
+	status := &c4v1beta1.BriefStatus{Round: 1}
+	plan := func(tokens *c4v1beta1.TokenUsage) *c4v1beta1.Task {
+		return &c4v1beta1.Task{Status: c4v1beta1.TaskStatus{Tokens: tokens}}
 	}
-	recordRound(status, plan(&c4v1alpha1.TokenUsage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4,
-		LargestSession: 120000, RunsWithout: 1}), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+	recordRound(status, plan(&c4v1beta1.TokenUsage{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4,
+		LargestSession: 120000, RunsWithout: 1}), c4v1beta1.BriefRound{Outcome: model.ReasonApplied})
 	status.Round = 2
-	recordRound(status, plan(&c4v1alpha1.TokenUsage{Input: 10, Output: 20, CacheRead: 30, CacheWrite: 40,
-		LargestSession: 80000}), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+	recordRound(status, plan(&c4v1beta1.TokenUsage{Input: 10, Output: 20, CacheRead: 30, CacheWrite: 40,
+		LargestSession: 80000}), c4v1beta1.BriefRound{Outcome: model.ReasonApplied})
 	status.Round = 3
-	recordRound(status, plan(nil), c4v1alpha1.BriefRound{Outcome: model.ReasonApplied})
+	recordRound(status, plan(nil), c4v1beta1.BriefRound{Outcome: model.ReasonApplied})
 
-	want := c4v1alpha1.TokenUsage{Input: 11, Output: 22, CacheRead: 33, CacheWrite: 44, LargestSession: 120000,
+	want := c4v1beta1.TokenUsage{Input: 11, Output: 22, CacheRead: 33, CacheWrite: 44, LargestSession: 120000,
 		RunsWithout: 1}
 	if status.Tokens == nil || *status.Tokens != want {
 		t.Errorf("the Brief's tokens = %+v, want %+v", status.Tokens, want)
@@ -290,11 +290,11 @@ func TestRecordRoundAddsUpTheTokens(t *testing.T) {
 // Only the status write that starts the operator's own wait reconciles a
 // Brief again (#783), not the planner's question nor the wait ending.
 func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
-	brief := func(reason string) *c4v1alpha1.Brief {
-		b := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
+	brief := func(reason string) *c4v1beta1.Brief {
+		b := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
 		if reason != "" {
 			meta.SetStatusCondition(&b.Status.Conditions, metav1.Condition{
-				Type: c4v1alpha1.ConditionNeedsInput, Status: metav1.ConditionTrue, Reason: reason})
+				Type: c4v1beta1.ConditionNeedsInput, Status: metav1.ConditionTrue, Reason: reason})
 		}
 		return b
 	}
@@ -304,10 +304,10 @@ func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
 		old, new string
 		want     bool
 	}{
-		{"the planner's question gives way to the wait", model.ReasonPlannerNeedsInput, c4v1alpha1.ReasonNotFound, true},
-		{"nothing asked, then the wait", "", c4v1alpha1.ReasonNotFound, true},
-		{"the wait goes on", c4v1alpha1.ReasonNotFound, c4v1alpha1.ReasonNotFound, false},
-		{"the wait ends", c4v1alpha1.ReasonNotFound, model.ReasonPlannerNeedsInput, false},
+		{"the planner's question gives way to the wait", model.ReasonPlannerNeedsInput, c4v1beta1.ReasonNotFound, true},
+		{"nothing asked, then the wait", "", c4v1beta1.ReasonNotFound, true},
+		{"the wait goes on", c4v1beta1.ReasonNotFound, c4v1beta1.ReasonNotFound, false},
+		{"the wait ends", c4v1beta1.ReasonNotFound, model.ReasonPlannerNeedsInput, false},
 		{"the planner asks", "", model.ReasonPlannerNeedsInput, false},
 	} {
 		got := pred.Update(event.UpdateEvent{ObjectOld: brief(tc.old), ObjectNew: brief(tc.new)})
@@ -315,7 +315,7 @@ func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
 			t.Errorf("%s: passed %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if pred.Create(event.CreateEvent{Object: brief(c4v1alpha1.ReasonNotFound)}) {
+	if pred.Create(event.CreateEvent{Object: brief(c4v1beta1.ReasonNotFound)}) {
 		t.Error("a creation passed; the spec predicate passes those")
 	}
 }
@@ -325,15 +325,15 @@ func TestStartsOperatorWaitPassesOnlyTheWaitStarting(t *testing.T) {
 // show it yet. Status.Created still names the object (#1870).
 func TestCreatedNamesAnObjectAnEarlierReconcileMade(t *testing.T) {
 	scheme := briefScheme(t)
-	brief := &c4v1alpha1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens")}
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object,
 				opts ...client.GetOption) error {
-				return apierrors.NewNotFound(c4v1alpha1.GroupVersion.WithResource("persons").GroupResource(), key.Name)
+				return apierrors.NewNotFound(c4v1beta1.GroupVersion.WithResource("persons").GroupResource(), key.Name)
 			},
 			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				return apierrors.NewAlreadyExists(c4v1alpha1.GroupVersion.WithResource("persons").GroupResource(),
+				return apierrors.NewAlreadyExists(c4v1beta1.GroupVersion.WithResource("persons").GroupResource(),
 					obj.GetName())
 			},
 		}).Build()
@@ -349,7 +349,7 @@ func TestCreatedNamesAnObjectAnEarlierReconcileMade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := c4v1alpha1.BriefObject{Kind: model.KindPerson, Name: "rule-author"}
+	want := c4v1beta1.BriefObject{Kind: model.KindPerson, Name: "rule-author"}
 	if !slices.Contains(created, want) {
 		t.Errorf("Status.Created = %v, want %v in it", created, want)
 	}

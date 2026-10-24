@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -31,7 +31,7 @@ import (
 // spec.releases says; its rounds' issues go into a release milestone.
 
 // briefRelease returns the Brief's spec.releases entry for container, or nil.
-func briefRelease(brief *c4v1alpha1.Brief, container string) *c4v1alpha1.BriefRelease {
+func briefRelease(brief *c4v1beta1.Brief, container string) *c4v1beta1.BriefRelease {
 	for i := range brief.Spec.Releases {
 		if brief.Spec.Releases[i].Container == container {
 			return &brief.Spec.Releases[i]
@@ -42,14 +42,14 @@ func briefRelease(brief *c4v1alpha1.Brief, container string) *c4v1alpha1.BriefRe
 
 // releaseSpec turns releases on in a Crew's spec (R4). It never turns
 // anything off (R2); briefTarget sets where they are published (R5).
-func releaseSpec(spec *c4v1alpha1.CrewSpec) {
+func releaseSpec(spec *c4v1beta1.CrewSpec) {
 	spec.TagReleases = true
 	spec.PrepareReleases = true
 }
 
 // publishJSON is a release target in the one form the Crew's
 // AnnotationBriefPublishReleases holds and the Brief compares; empty for none.
-func publishJSON(p *c4v1alpha1.CrewPublishReleases) string {
+func publishJSON(p *c4v1beta1.CrewPublishReleases) string {
 	if p == nil {
 		return ""
 	}
@@ -63,12 +63,12 @@ func publishJSON(p *c4v1alpha1.CrewPublishReleases) string {
 // briefMark is the release target the Brief last wrote on the Crew, as
 // publishJSON says it, and whether it wrote one. A mark that isn't JSON is
 // taken as it is, so it matches no entry and the Brief writes it again.
-func briefMark(crew *c4v1alpha1.Crew) (*c4v1alpha1.CrewPublishReleases, string, bool) {
-	raw, ok := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]
+func briefMark(crew *c4v1beta1.Crew) (*c4v1beta1.CrewPublishReleases, string, bool) {
+	raw, ok := crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases]
 	if !ok {
 		return nil, "", false
 	}
-	var p c4v1alpha1.CrewPublishReleases
+	var p c4v1beta1.CrewPublishReleases
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
 		return nil, raw, true
 	}
@@ -80,9 +80,9 @@ func briefMark(crew *c4v1alpha1.Crew) (*c4v1alpha1.CrewPublishReleases, string, 
 // or left as it is when someone changed it on the Crew, which holds it. With
 // no entry the Brief sets no target: the Crew keeps its own (R5), unmarked.
 // It returns whether the Crew is held.
-func briefTarget(crew *c4v1alpha1.Crew, entry *c4v1alpha1.BriefRelease) bool {
+func briefTarget(crew *c4v1beta1.Crew, entry *c4v1beta1.BriefRelease) bool {
 	if entry == nil {
-		delete(crew.Annotations, c4v1alpha1.AnnotationBriefPublishReleases)
+		delete(crew.Annotations, c4v1beta1.AnnotationBriefPublishReleases)
 		return false
 	}
 	want := publishJSON(&entry.CrewPublishReleases)
@@ -94,7 +94,7 @@ func briefTarget(crew *c4v1alpha1.Crew, entry *c4v1alpha1.BriefRelease) bool {
 	if crew.Annotations == nil {
 		crew.Annotations = map[string]string{}
 	}
-	crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] = want
+	crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] = want
 	if action == model.TargetHold {
 		return true
 	}
@@ -105,12 +105,12 @@ func briefTarget(crew *c4v1alpha1.Crew, entry *c4v1alpha1.BriefRelease) bool {
 
 // targetDiffers is the Crew's release target as it differs from the one its
 // Brief last set; nil when the Brief sets none or the two agree.
-func targetDiffers(crew *c4v1alpha1.Crew) *model.TargetDiffers {
+func targetDiffers(crew *c4v1beta1.Crew) *model.TargetDiffers {
 	mark, want, marked := briefMark(crew)
 	if !marked || want == publishJSON(crew.Spec.PublishReleases) {
 		return nil
 	}
-	d := &model.TargetDiffers{Brief: crew.Labels[c4v1alpha1.LabelBrief], Crew: crew.Name}
+	d := &model.TargetDiffers{Brief: crew.Labels[c4v1beta1.LabelBrief], Crew: crew.Name}
 	if mark != nil {
 		d.BriefRepo = mark.GitHub.Repository
 	}
@@ -127,8 +127,8 @@ func targetDiffers(crew *c4v1alpha1.Crew) *model.TargetDiffers {
 // and sets where they are published (briefTarget). A Crew it didn't make, or
 // none yet, is left alone: releases on the first are its owner's, and the
 // second gets them when the Brief makes it.
-func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Brief, container string) error {
-	var crew c4v1alpha1.Crew
+func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1beta1.Brief, container string) error {
+	var crew c4v1beta1.Crew
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &crew)
 	if apierrors.IsNotFound(err) {
 		return nil
@@ -136,7 +136,7 @@ func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Bri
 	if err != nil {
 		return err
 	}
-	if crew.Labels[c4v1alpha1.LabelBrief] != brief.Name {
+	if crew.Labels[c4v1beta1.LabelBrief] != brief.Name {
 		return nil
 	}
 	orig := crew.DeepCopy()
@@ -168,18 +168,18 @@ func (r *BriefReconciler) releaseCrew(ctx context.Context, brief *c4v1alpha1.Bri
 // up to date, whatever its round is doing: an entry added or changed later
 // reaches the Crew without waiting for a round, and a removed one drops the
 // Brief's mark from it.
-func (r *BriefReconciler) syncReleases(ctx context.Context, brief *c4v1alpha1.Brief) error {
+func (r *BriefReconciler) syncReleases(ctx context.Context, brief *c4v1beta1.Brief) error {
 	names := map[string]bool{}
 	for _, entry := range brief.Spec.Releases {
 		names[entry.Container] = true
 	}
-	var crews c4v1alpha1.CrewList
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return err
 	}
 	for _, crew := range crews.Items {
-		if _, marked := crew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases]; marked {
+		if _, marked := crew.Annotations[c4v1beta1.AnnotationBriefPublishReleases]; marked {
 			names[crew.Name] = true
 		}
 	}
@@ -194,7 +194,7 @@ func (r *BriefReconciler) syncReleases(ctx context.Context, brief *c4v1alpha1.Br
 // releasedContainers are the Containers a round releases: those its plan
 // names, those spec.releases names, and those whose Crew the Brief made
 // already tags releases, as one released once stays released (R2).
-func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alpha1.Brief, plan model.Plan) (
+func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1beta1.Brief, plan model.Plan) (
 	map[string]bool, error) {
 	released := map[string]bool{}
 	for _, name := range plan.Releases {
@@ -203,9 +203,9 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1alp
 	for _, entry := range brief.Spec.Releases {
 		released[entry.Container] = true
 	}
-	var crews c4v1alpha1.CrewList
+	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: brief.Name}); err != nil {
+		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return nil, err
 	}
 	for _, crew := range crews.Items {
@@ -329,7 +329,7 @@ func patchMilestone(ctx context.Context, provider gitprovider.Provider, repo git
 // that isn't Ready, or has no release without a prepare issue, is left as it is.
 func (r *BriefReconciler) adoptStrayWork(ctx context.Context, run *roundApply) error {
 	for _, name := range slices.Sorted(maps.Keys(run.released)) {
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c)
 		if apierrors.IsNotFound(err) {
 			continue
@@ -337,7 +337,7 @@ func (r *BriefReconciler) adoptStrayWork(ctx context.Context, run *roundApply) e
 		if err != nil {
 			return err
 		}
-		if c.Labels[c4v1alpha1.LabelBrief] != run.brief.Name || c.Status.Phase != c4v1alpha1.ContainerReady {
+		if c.Labels[c4v1beta1.LabelBrief] != run.brief.Name || c.Status.Phase != c4v1beta1.ContainerReady {
 			continue
 		}
 		if err := r.adoptContainerWork(ctx, &c); err != nil {
@@ -347,7 +347,7 @@ func (r *BriefReconciler) adoptStrayWork(ctx context.Context, run *roundApply) e
 	return nil
 }
 
-func (r *BriefReconciler) adoptContainerWork(ctx context.Context, c *c4v1alpha1.Container) error {
+func (r *BriefReconciler) adoptContainerWork(ctx context.Context, c *c4v1beta1.Container) error {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, c.Namespace, c.Spec.GitProviderRef.Name)
 	if err != nil {
 		return err

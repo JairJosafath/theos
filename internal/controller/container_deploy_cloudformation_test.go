@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -30,19 +30,19 @@ func readyCloudFormationTarget(ns, name string) {
 // Deployment gitea-release, what a cloudFormation target needs.
 func selfDeploying(ns string) {
 	GinkgoHelper()
-	mustCreate(&c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
-		Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.0.0", c4v1alpha1.ContainerTypeService)})
+	mustCreate(&c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
+		Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.0.0", c4v1beta1.ContainerTypeService)})
 	Eventually(func(g Gomega) {
-		framework := &c4v1alpha1.Framework{}
+		framework := &c4v1beta1.Framework{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), framework)).To(Succeed())
 		framework.Spec.DeploysItself = true
 		g.Expect(k8sClient.Update(ctx, framework)).To(Succeed())
 	}).Should(Succeed())
 	Eventually(func(g Gomega) {
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		container.Spec.ComputeRef = nil
-		container.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: model.DeploymentGiteaRelease}
+		container.Spec.DeploymentRef = &c4v1beta1.LocalRef{Name: model.DeploymentGiteaRelease}
 		g.Expect(k8sClient.Update(ctx, container)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -54,7 +54,7 @@ var _ = Describe("Container deploys to a cloudFormation target (#1609)", func() 
 		selfDeploying(ns)
 		readyCloudFormationTarget(ns, "prod")
 		shipRelease(ns, "v0.1.0", true)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "prod"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "prod"})
 		d := deployIs(ns, "prod", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
 		Expect(d.WantedVersion).To(Equal("v0.1.0"))
 		Expect(d.Since).NotTo(BeNil())
@@ -68,7 +68,7 @@ var _ = Describe("Container deploys to a cloudFormation target (#1609)", func() 
 		readyCloudFormationTarget(ns, "prod")
 		shipRelease(ns, "v0.1.0", true)
 		deployFake.Unprepare(targetName(ns, "prod"))
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "prod"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "prod"})
 		// DeployFailed on Deployed is what the UI lists under Needs you.
 		d := deployIs(ns, "prod", model.DeployPhaseFailed, model.DeployPrerequisiteMissing, "", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("DeployTarget prod lacks what shipping v0.1.0 needs"))
@@ -83,7 +83,7 @@ var _ = Describe("Container deploys to a cloudFormation target (#1609)", func() 
 		deployingContainer(ns)
 		readyCloudFormationTarget(ns, "prod")
 		shipRelease(ns, "v0.1.0", true)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "prod"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "prod"})
 		d := deployIs(ns, "prod", model.DeployPhaseWaiting, model.DeployIncompatible, "", model.DeployIncompatible)
 		Expect(d.Message).To(ContainSubstring("Container orders-api can't ship to DeployTarget prod: it lacks " +
 			"a Framework that deploys itself"))

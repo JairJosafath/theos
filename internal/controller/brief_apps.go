@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -42,8 +42,8 @@ const (
 
 // listApps returns the Brief's app lines: one per Container it made, in the
 // order it made them, then one per spec.releases entry naming none of them.
-func (r *BriefReconciler) listApps(ctx context.Context, brief *c4v1alpha1.Brief) ([]c4v1alpha1.BriefApp, error) {
-	var apps []c4v1alpha1.BriefApp
+func (r *BriefReconciler) listApps(ctx context.Context, brief *c4v1beta1.Brief) ([]c4v1beta1.BriefApp, error) {
+	var apps []c4v1beta1.BriefApp
 	made := map[string]bool{}
 	for _, o := range brief.Status.Created {
 		if o.Kind != model.KindContainer || made[o.Name] {
@@ -60,7 +60,7 @@ func (r *BriefReconciler) listApps(ctx context.Context, brief *c4v1alpha1.Brief)
 		if made[entry.Container] {
 			continue
 		}
-		apps = append(apps, c4v1alpha1.BriefApp{Container: entry.Container, Releases: releasesOff,
+		apps = append(apps, c4v1beta1.BriefApp{Container: entry.Container, Releases: releasesOff,
 			Message: fmt.Sprintf("The Brief hasn't made a Container named %s: its releases start once a round makes it.",
 				entry.Container)})
 	}
@@ -72,10 +72,10 @@ func (r *BriefReconciler) listApps(ctx context.Context, brief *c4v1alpha1.Brief)
 
 // app is the line of a Container the Brief made, from its Crew, named after
 // it (ensureCrew), and its repository.
-func (r *BriefReconciler) app(ctx context.Context, brief *c4v1alpha1.Brief, container string) (
-	c4v1alpha1.BriefApp, error) {
-	app := c4v1alpha1.BriefApp{Container: container, Releases: releasesOff}
-	var crew c4v1alpha1.Crew
+func (r *BriefReconciler) app(ctx context.Context, brief *c4v1beta1.Brief, container string) (
+	c4v1beta1.BriefApp, error) {
+	app := c4v1beta1.BriefApp{Container: container, Releases: releasesOff}
+	var crew c4v1beta1.Crew
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &crew)
 	if apierrors.IsNotFound(err) {
 		app.Message = "The app has no Crew yet, so nothing releases it."
@@ -93,7 +93,7 @@ func (r *BriefReconciler) app(ctx context.Context, brief *c4v1alpha1.Brief, cont
 		app.PublishTo = crew.Spec.PublishReleases.GitHub.Repository
 	}
 	if release := crew.Status.LastRelease; release != nil {
-		app.LastRelease = &c4v1alpha1.BriefAppRelease{Tag: release.Tag, Time: release.Time.DeepCopy(),
+		app.LastRelease = &c4v1beta1.BriefAppRelease{Tag: release.Tag, Time: release.Time.DeepCopy(),
 			Run: release.Run}
 		if release.Publish != nil {
 			app.LastRelease.PublishState = release.Publish.State
@@ -104,14 +104,14 @@ func (r *BriefReconciler) app(ctx context.Context, brief *c4v1alpha1.Brief, cont
 			app.LastRelease.ModulePath = module.Path
 			app.LastRelease.ModuleMessage = module.Message
 		}
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		if err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: container}, &c); err == nil {
 			app.LastRelease.URL = releasePageURL(c.Status.RepositoryURL, release.Tag)
 		} else if !apierrors.IsNotFound(err) {
 			return app, err
 		}
 	}
-	app.Message = appMessage(&app, crew.Labels[c4v1alpha1.LabelBrief] == brief.Name)
+	app.Message = appMessage(&app, crew.Labels[c4v1beta1.LabelBrief] == brief.Name)
 	return app, nil
 }
 
@@ -125,7 +125,7 @@ func releasePageURL(repoURL, tag string) string {
 }
 
 // appMessage says in one sentence how an app's releases go.
-func appMessage(app *c4v1alpha1.BriefApp, briefsCrew bool) string {
+func appMessage(app *c4v1beta1.BriefApp, briefsCrew bool) string {
 	if app.Releases == releasesOff {
 		if !briefsCrew {
 			return fmt.Sprintf("Releases are off, and they are for the owner of Crew %s to turn on: the Brief didn't make it.",
@@ -162,11 +162,11 @@ func appMessage(app *c4v1alpha1.BriefApp, briefsCrew bool) string {
 func crewReleaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldCrew, ok1 := e.ObjectOld.(*c4v1alpha1.Crew)
-			newCrew, ok2 := e.ObjectNew.(*c4v1alpha1.Crew)
+			oldCrew, ok1 := e.ObjectOld.(*c4v1beta1.Crew)
+			newCrew, ok2 := e.ObjectNew.(*c4v1beta1.Crew)
 			return !ok1 || !ok2 || oldCrew.Generation != newCrew.Generation ||
-				oldCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] !=
-					newCrew.Annotations[c4v1alpha1.AnnotationBriefPublishReleases] ||
+				oldCrew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] !=
+					newCrew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] ||
 				releaseTargetHeld(oldCrew) != releaseTargetHeld(newCrew) ||
 				!equality.Semantic.DeepEqual(oldCrew.Status.LastRelease, newCrew.Status.LastRelease)
 		},
@@ -175,6 +175,6 @@ func crewReleaseChanges() builder.WatchesOption {
 
 // releaseTargetHeld reports whether the Crew's ReleaseTarget condition says
 // its target differs from its Brief's.
-func releaseTargetHeld(crew *c4v1alpha1.Crew) bool {
-	return meta.IsStatusConditionFalse(crew.Status.Conditions, c4v1alpha1.ConditionReleaseTarget)
+func releaseTargetHeld(crew *c4v1beta1.Crew) bool {
+	return meta.IsStatusConditionFalse(crew.Status.Conditions, c4v1beta1.ConditionReleaseTarget)
 }

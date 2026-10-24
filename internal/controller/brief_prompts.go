@@ -17,19 +17,19 @@ limitations under the License.
 package controller
 
 import (
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // briefPrompts returns the Brief's prompts where its status counts them:
 // every prompt written, the retired ones empty (model.PlacedPrompts).
-func briefPrompts(brief *c4v1alpha1.Brief) []string {
+func briefPrompts(brief *c4v1beta1.Brief) []string {
 	return model.PlacedPrompts(int(brief.Spec.PromptsRetired), brief.Spec.Prompts)
 }
 
 // takenPrompts returns the prompts the running or last round took that the
 // last applied round hadn't planned.
-func takenPrompts(brief *c4v1alpha1.Brief) []string {
+func takenPrompts(brief *c4v1beta1.Brief) []string {
 	prompts := briefPrompts(brief)
 	return model.RoundPrompts(prompts[:min(max(int(brief.Status.RoundPrompts), 0), len(prompts))],
 		int(brief.Status.PromptsPlanned))

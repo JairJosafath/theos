@@ -15,7 +15,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -71,8 +71,8 @@ type planRecordingClient struct {
 }
 
 func (c planRecordingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	task, ok := obj.(*c4v1alpha1.Task)
-	if !ok || task.Spec.Kind != c4v1alpha1.TaskPlan || task.Spec.BriefRef == nil {
+	task, ok := obj.(*c4v1beta1.Task)
+	if !ok || task.Spec.Kind != c4v1beta1.TaskPlan || task.Spec.BriefRef == nil {
 		return c.Client.Create(ctx, obj, opts...)
 	}
 	if c.plans.refuses(task.Namespace) {

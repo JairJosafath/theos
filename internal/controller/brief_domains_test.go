@@ -5,7 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -53,15 +53,15 @@ var _ = Describe("Brief rounds with Domains", func() {
 			b := getBrief(g, ns)
 			// The condition first: while the round waits, its message names
 			// what for (#1938: the phase alone hid the Container's failure).
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonApplied)))
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
-		system := &c4v1alpha1.SoftwareSystem{}
+		system := &c4v1beta1.SoftwareSystem{}
 		Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), system)).To(Succeed())
 		Expect(system.Spec.DomainRefs).To(Equal([]string{"webshop"}))
 		brief = getBrief(Default, ns)
-		Expect(brief.Status.Created).To(ContainElement(c4v1alpha1.BriefObject{Kind: "SoftwareSystem", Name: "cel-lens"}))
+		Expect(brief.Status.Created).To(ContainElement(c4v1beta1.BriefObject{Kind: "SoftwareSystem", Name: "cel-lens"}))
 		Expect(brief.Status.History).To(HaveLen(1))
 		Expect(brief.Status.History[0].Summary).To(ContainSubstring("SoftwareSystem cel-lens is about the one Domain webshop."))
 	})

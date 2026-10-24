@@ -14,21 +14,21 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 // newStandard returns a Standard that fits the named Frameworks, served by the
 // fake Git host with an AGENTS.md and a Makefile.
-func newStandard(ns, name string, frameworks ...string) *c4v1alpha1.Standard {
+func newStandard(ns, name string, frameworks ...string) *c4v1beta1.Standard {
 	gitFake.addTemplate(templatesURL+name, "v1.0.0", scaffold.Tree{
 		"AGENTS.md.tmpl": {Data: []byte("Rules for {{ .Container }}, checked by {{ .Standard }}\n")},
 		"Makefile":       {Data: []byte("check:\n\ttrue\n")},
 	})
-	return &c4v1alpha1.Standard{
+	return &c4v1beta1.Standard{
 		ObjectMeta: objectMeta(ns, name),
-		Spec: c4v1alpha1.StandardSpec{
-			CatalogEntrySpec:    newCatalogSpec(templatesURL+name, "v1.0.0", c4v1alpha1.ContainerTypeService),
+		Spec: c4v1beta1.StandardSpec{
+			CatalogEntrySpec:    newCatalogSpec(templatesURL+name, "v1.0.0", c4v1beta1.ContainerTypeService),
 			SupportedFrameworks: frameworks,
 		},
 	}
@@ -38,17 +38,17 @@ var _ = Describe("Container Standard", func() {
 	It("fails a Container whose Standard does not list its Framework", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "strict"}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "strict"}
 		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "strict", "go-cli"), container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerFailed))
-			cond := condition(container.Status.Conditions, c4v1alpha1.ConditionChoicesValid)
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionChoicesValid)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUnsupportedFramework))
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUnsupportedFramework))
 			g.Expect(cond.Message).To(Equal("strict does not support python-fastapi"))
 		}).Should(Succeed())
 	})
@@ -56,34 +56,34 @@ var _ = Describe("Container Standard", func() {
 	It("waits for a missing Standard", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
 		mustCreate(newSystem(ns, "webshop-core"), container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerPending))
-			g.Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionReferencesResolved)).
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerPending))
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionReferencesResolved)).
 				To(HaveField("Message", "Standard python-strict not found"))
 		}).Should(Succeed())
 
 		mustCreate(newStandard(ns, "python-strict", "python-fastapi"))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 	})
 
 	It("scaffolds a fitting Standard as the second layer", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
 		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-strict", "python-fastapi"), container)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 			g.Expect(container.Status.ScaffoldedFrom).To(HaveLen(4))
 			g.Expect(container.Status.ScaffoldedFrom[1]).To(Equal("python-strict@v1.0.0"))
 		}).Should(Succeed())
@@ -94,16 +94,16 @@ var _ = Describe("Container Standard", func() {
 	It("protects main and reports its checks when the Container has a Standard", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-		container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
-		plain := newContainer(ns, "orders-worker", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
+		plain := newContainer(ns, "orders-worker", "webshop-core", c4v1beta1.ContainerTypeService)
 		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-strict", "python-fastapi"), container, plain)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
-			g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-worker"), plain)).To(Succeed())
-			g.Expect(plain.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+			g.Expect(plain.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(gitFake.protectedBranches(ns, "orders-worker")).To(BeEmpty())
@@ -122,8 +122,8 @@ var _ = Describe("Container Standard", func() {
 	It("is adopted by the Project, like the other catalog entries", func() {
 		ns := newProjectNamespace()
 		standard := newStandard(ns, "python-strict", "python-fastapi")
-		agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev"}}
+		agent := &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "claude"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}}
 		mustCreate(standard, agent)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())

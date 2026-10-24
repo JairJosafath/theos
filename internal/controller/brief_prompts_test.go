@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -44,7 +44,7 @@ func numbered(from, to int) []string {
 // list (ui/server.mjs): guarded by the prompts it read, not the
 // resourceVersion the operator's status writes move, it drops the planned
 // prompts past the newest ten and appends prompt in one write.
-func appendRetiring(brief *c4v1alpha1.Brief, prompt string) client.Patch {
+func appendRetiring(brief *c4v1beta1.Brief, prompt string) client.Patch {
 	GinkgoHelper()
 	n := model.PromptsToRetire(int(brief.Spec.PromptsRetired), len(brief.Spec.Prompts),
 		int(brief.Status.PromptsPlanned))
@@ -62,7 +62,7 @@ var _ = Describe("Brief prompts (#835, #855)", func() {
 	BeforeEach(func() { ns = newProjectNamespace() })
 
 	// planned49 makes Brief cel-lens with 50 prompts, 49 of them planned.
-	planned49 := func() *c4v1alpha1.Brief {
+	planned49 := func() *c4v1beta1.Brief {
 		GinkgoHelper()
 		brief := newBrief(ns, "cel-lens", numbered(1, 50)...)
 		mustCreate(brief)

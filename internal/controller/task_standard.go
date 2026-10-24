@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -40,8 +40,8 @@ const defaultStandardChangeRecheck = time.Minute
 // merges. A repeated step reuses the issue it filed before. A Task without an
 // issue or a Crew, or whose issue a person closed during the round, fails
 // instead.
-func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error) {
+func (r *TaskReconciler) propose(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, step model.TaskStep) (ctrl.Result, error) {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("reading the proposal of %s: %w", status.Sandbox, err)
@@ -99,7 +99,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 	count := model.ProposalCount(earlier)
 	setProgress(status, model.Proposed(progressOf(status), run.Result.Commit))
 	status.Summary = run.Result.Summary
-	status.StandardChange = &c4v1alpha1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
+	status.StandardChange = &c4v1beta1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
 		Paths: proposal.Paths, Branch: proposal.Branch, Count: int32(count)}
 	r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
 	logf.FromContext(ctx).Info("Filed a Standard change", "issue", filed.Number, "paths", proposal.Paths)
@@ -111,7 +111,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, sta
 // kind/standard-change and status/ready, in the waiting issue's milestone, and
 // urgent when the waiting issue is. isNew says it was filed now.
 func fileStandardChange(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, proposal model.Proposal, waiting gitprovider.Issue, skip int) (gitprovider.Issue, bool, error) {
+	task *c4v1beta1.Task, proposal model.Proposal, waiting gitprovider.Issue, skip int) (gitprovider.Issue, bool, error) {
 	if err := provider.EnsureLabels(ctx, repo, standardChangeLabels()); err != nil {
 		return gitprovider.Issue{}, false, err
 	}
@@ -152,7 +152,7 @@ func standardChangeLabels() []gitprovider.Label {
 }
 
 // standardChangeCount is how many Standard changes the Task filed.
-func standardChangeCount(status *c4v1alpha1.TaskStatus) int {
+func standardChangeCount(status *c4v1beta1.TaskStatus) int {
 	if status.StandardChange == nil {
 		return 0
 	}
@@ -162,23 +162,23 @@ func standardChangeCount(status *c4v1alpha1.TaskStatus) int {
 // changeFacts is the Standard change the Task filed last, as its status says.
 // While the Task is Blocked on it, the Tasks on the change's issue say whether it
 // merged or will not, as does its issue closed with none.
-func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container) (model.ChangeFacts, error) {
+func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) (model.ChangeFacts, error) {
 	change := status.StandardChange
 	if change == nil {
 		return model.ChangeFacts{}, nil
 	}
 	facts := model.ChangeFacts{Issue: int(change.Issue), Paths: change.Paths}
-	if status.Phase != c4v1alpha1.TaskBlocked {
+	if status.Phase != c4v1beta1.TaskBlocked {
 		return facts, nil
 	}
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
 		client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
 		return facts, err
 	}
 	// Oldest first: the last one that failed says why the change will not merge.
-	slices.SortFunc(tasks.Items, func(a, b c4v1alpha1.Task) int {
+	slices.SortFunc(tasks.Items, func(a, b c4v1beta1.Task) int {
 		return cmp.Or(a.CreationTimestamp.Compare(b.CreationTimestamp.Time), cmp.Compare(a.Name, b.Name))
 	})
 	var changeTasks []model.ChangeTask
@@ -186,7 +186,7 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task,
 		if t.Spec.Issue != change.Issue {
 			continue
 		}
-		ct := model.ChangeTask{Name: t.Name, Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1alpha1.TaskFailed}
+		ct := model.ChangeTask{Name: t.Name, Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed}
 		if cond := meta.FindStatusCondition(t.Status.Conditions, ConditionSucceeded); cond != nil {
 			ct.Message = cond.Message
 			ct.Blocked = ct.Failed && cond.Reason == model.ReasonBlocked
@@ -209,15 +209,15 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1alpha1.Task,
 
 // resumedRun reports whether the Task's implement run is one of the round it
 // resumed in after its Standard change merged.
-func resumedRun(status *c4v1alpha1.TaskStatus) bool {
+func resumedRun(status *c4v1beta1.TaskStatus) bool {
 	change := status.StandardChange
-	return status.Phase == c4v1alpha1.TaskImplementing && change != nil && change.ResumedRound == status.Round
+	return status.Phase == c4v1beta1.TaskImplementing && change != nil && change.ResumedRound == status.Round
 }
 
 // resume puts a Task whose Standard change merged back to work, in the round it
 // was in, telling the implementer the change is in main.
-func (r *TaskReconciler) resume(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, step model.TaskStep) {
+func (r *TaskReconciler) resume(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, step model.TaskStep) {
 	change := status.StandardChange
 	provider, repo, err := r.gitRepo(ctx, container)
 	notes := []error{err}
@@ -242,8 +242,8 @@ const reasonDoneByStandardChange = "DoneByStandardChange"
 // doneByStandardChange ends a resumed Task whose branch has nothing beyond main:
 // its Standard change did the whole issue. It closes the Task's pull request from
 // an earlier round, if any, and the issue, with a comment naming the change.
-func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alpha1.Task,
-	status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container, step model.TaskStep) error {
+func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1beta1.Task,
+	status *c4v1beta1.TaskStatus, container *c4v1beta1.Container, step model.TaskStep) error {
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return err
@@ -264,7 +264,7 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 		change.Issue, change.IssueURL), fmt.Sprintf(
 		"its Standard change #%d (%s) merged and left this issue nothing to do", change.Issue, change.IssueURL))...)
 	logNotes(ctx, task, notes)
-	r.finish(task, status, c4v1alpha1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
+	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
 	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", change.Issue)
 	return nil
 }
@@ -272,7 +272,7 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1alp
 // deleteProposal deletes the proposal branch of the Task's Standard change:
 // nothing reads it once the change merged or will not.
 func deleteProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	change *c4v1alpha1.TaskStandardChange) error {
+	change *c4v1beta1.TaskStandardChange) error {
 	if change == nil || change.Branch == "" {
 		return nil
 	}
@@ -284,10 +284,10 @@ func deleteProposal(ctx context.Context, provider gitprovider.Provider, repo git
 // change can still be retried, and its retry merges the branch, so it stays;
 // the change's own merge, or its close by a failed issue's answer, deletes it
 // then.
-func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container) {
+func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) {
 	change := status.StandardChange
-	if status.Phase != c4v1alpha1.TaskBlocked || change == nil {
+	if status.Phase != c4v1beta1.TaskBlocked || change == nil {
 		return
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
@@ -349,9 +349,9 @@ var errChecksPending = errors.New("CI runs again on the reviewed commit")
 // mergeWaitsForChecks reports whether the Task's gated merge waits for CI on the
 // reviewed commit: gatedMerge found it pending there. The wait lasts only as long
 // as the approving review run, whose result the merge step reads.
-func mergeWaitsForChecks(status *c4v1alpha1.TaskStatus) bool {
+func mergeWaitsForChecks(status *c4v1beta1.TaskStatus) bool {
 	checks := status.Checks
-	return status.Phase == c4v1alpha1.TaskReviewing && checks != nil && checks.State == gitprovider.CheckPending &&
+	return status.Phase == c4v1beta1.TaskReviewing && checks != nil && checks.State == gitprovider.CheckPending &&
 		checks.Commit == status.Commit
 }
 
@@ -364,8 +364,8 @@ func mergeWaitsForChecks(status *c4v1alpha1.TaskStatus) bool {
 // is a refusal, and one it can't read for now an error. The reviewer's approval
 // is posted with the merge only, so waiting for CI posts it once.
 func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container,
-	reviewer *c4v1alpha1.Agent) (refusal string, err error) {
+	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container,
+	reviewer *c4v1beta1.Agent) (refusal string, err error) {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	checks, err := provider.CombinedStatus(gitCtx, repo, status.Commit)
@@ -373,7 +373,7 @@ func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Pr
 		return "", err
 	}
 	// Recorded for mergeWaitsForChecks too: a wait is bounded by the review run.
-	status.Checks = &c4v1alpha1.CheckStatus{Commit: status.Commit, State: checks.State, URL: checks.URL}
+	status.Checks = &c4v1beta1.CheckStatus{Commit: status.Commit, State: checks.State, URL: checks.URL}
 	if checks.State == gitprovider.CheckPending {
 		return "", errChecksPending
 	}

@@ -13,7 +13,7 @@ import (
 	"slices"
 	"testing"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -21,11 +21,11 @@ import (
 func TestScaffoldedConnectors(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
-		applied []c4v1alpha1.AppliedConnector
+		applied []c4v1beta1.AppliedConnector
 		want    []string
 	}{
 		{name: "none"},
-		{name: "unique and sorted, as the scaffold passed them", applied: []c4v1alpha1.AppliedConnector{
+		{name: "unique and sorted, as the scaffold passed them", applied: []c4v1beta1.AppliedConnector{
 			{Relationship: "a-to-orders-db", DataStore: "orders-db", Connector: "postgres"},
 			{Relationship: "b-to-cache", DataStore: "cache", Connector: "redis"},
 			{Relationship: "c-to-audit-db", DataStore: "audit-db", Connector: "postgres"},
@@ -33,7 +33,7 @@ func TestScaffoldedConnectors(t *testing.T) {
 		}, want: []string{"kafka", "postgres", "redis"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := scaffoldedConnectors(&c4v1alpha1.ContainerStatus{AppliedConnectors: tt.applied})
+			got := scaffoldedConnectors(&c4v1beta1.ContainerStatus{AppliedConnectors: tt.applied})
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("scaffoldedConnectors() = %q, want %q", got, tt.want)
 			}
@@ -54,19 +54,19 @@ func TestScaffoldedConnectors(t *testing.T) {
 }
 
 func TestScaffoldInput(t *testing.T) {
-	container := &c4v1alpha1.Container{
+	container := &c4v1beta1.Container{
 		ObjectMeta: objectMeta("webshop", "orders-api"),
-		Spec: c4v1alpha1.ContainerSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: "webshop-core"},
+		Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
 			DisplayName:       "Orders API",
 			Description:       "Takes and lists the shop's orders.",
-			Type:              c4v1alpha1.ContainerTypeService,
-			FrameworkRef:      c4v1alpha1.LocalRef{Name: "python-fastapi"},
-			StandardRef:       &c4v1alpha1.LocalRef{Name: "python-strict"},
-			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
-			Operations: &c4v1alpha1.OperationsSpec{
-				Recovery: &c4v1alpha1.OperationsRecovery{RPO: "15m"},
-				Alerts:   &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			Type:              c4v1beta1.ContainerTypeService,
+			FrameworkRef:      c4v1beta1.LocalRef{Name: "python-fastapi"},
+			StandardRef:       &c4v1beta1.LocalRef{Name: "python-strict"},
+			DeploymentRef:     &c4v1beta1.LocalRef{Name: "k8s-manifests"},
+			Operations: &c4v1beta1.OperationsSpec{
+				Recovery: &c4v1beta1.OperationsRecovery{RPO: "15m"},
+				Alerts:   &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 			},
 		},
 	}
@@ -133,20 +133,20 @@ func TestNoLightCheck(t *testing.T) {
 	const tail = ", which make check-light on each change needs; CI keeps running the full check on every change " +
 		"until the Makefile has one"
 	const head = "CI can't change to run the full check only before a release: the repository's Makefile "
-	behind := &c4v1alpha1.ContainerStandardStatus{Name: "go-standard", Ref: "v1.2.1",
-		Behind: []c4v1alpha1.StandardFile{{Path: "go.mod", Ref: "v1.0.0"}, {Path: "Makefile", Ref: "v1.1.6"}}}
+	behind := &c4v1beta1.ContainerStandardStatus{Name: "go-standard", Ref: "v1.2.1",
+		Behind: []c4v1beta1.StandardFile{{Path: "go.mod", Ref: "v1.0.0"}, {Path: "Makefile", Ref: "v1.1.6"}}}
 	for _, tc := range []struct {
 		name string
-		s    *c4v1alpha1.ContainerStandardStatus
+		s    *c4v1beta1.ContainerStandardStatus
 		plan scaffold.Update
 		want string
 	}{
-		{"its own", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"}, scaffold.Update{},
+		{"its own", &c4v1beta1.ContainerStandardStatus{Name: "go-standard"}, scaffold.Update{},
 			"has no check-light target"},
 		// The reporter's case: an earlier update left the Makefile out.
 		{"left out before", behind, scaffold.Update{},
 			"was left out of the go-standard updates (at v1.1.6) and has no check-light target"},
-		{"left out now", &c4v1alpha1.ContainerStandardStatus{Name: "go-standard"},
+		{"left out now", &c4v1beta1.ContainerStandardStatus{Name: "go-standard"},
 			scaffold.Update{LeftOut: []string{"Makefile"}},
 			"is left out of this go-standard update and has no check-light target"},
 	} {

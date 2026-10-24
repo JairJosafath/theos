@@ -24,23 +24,23 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
-func newAgent(ns string, rounds int32) *c4v1alpha1.Agent {
-	return &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-		Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}}
+func newAgent(ns string, rounds int32) *c4v1beta1.Agent {
+	return &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "claude"),
+		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}}
 }
 
 // newTask returns a Task on the Container orders-api.
-func newTask(ns, name, goal string) *c4v1alpha1.Task {
-	return &c4v1alpha1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.TaskSpec{
-		ContainerRef: c4v1alpha1.LocalRef{Name: "orders-api"},
-		AgentRef:     c4v1alpha1.LocalRef{Name: "claude"},
+func newTask(ns, name, goal string) *c4v1beta1.Task {
+	return &c4v1beta1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.TaskSpec{
+		ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"},
+		AgentRef:     c4v1beta1.LocalRef{Name: "claude"},
 		Goal:         goal,
 	}}
 }
@@ -51,19 +51,19 @@ func readyContainer(ns string) {
 	const name = "orders-api"
 	GinkgoHelper()
 	createFactory(ns)
-	container := newContainer(ns, name, "webshop-core", c4v1alpha1.ContainerTypeService)
-	container.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
+	container := newContainer(ns, name, "webshop-core", c4v1beta1.ContainerTypeService)
+	container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
 	standard := newStandard(ns, "python-strict", "python-fastapi")
 	standard.Spec.ProtectedPaths = []string{"Makefile", "ruff.toml"}
 	mustCreate(newSystem(ns, "webshop-core"), standard, container)
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, name), container)).To(Succeed())
-		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
+		g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 	}).Should(Succeed())
 }
 
-func getTask(g Gomega, ns, name string) *c4v1alpha1.Task {
-	task := &c4v1alpha1.Task{}
+func getTask(g Gomega, ns, name string) *c4v1beta1.Task {
+	task := &c4v1beta1.Task{}
 	g.Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
 	return task
 }
@@ -135,7 +135,7 @@ var _ = Describe("Task", func() {
 		Eventually(func(g Gomega) {
 			sandbox = sandboxExists(g, ns, "add-crop-r1-implement")
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Branch).To(Equal("task/add-crop"))
 			g.Expect(task.OwnerReferences).To(ContainElement(HaveField("Kind", "Container")))
 		}).Should(Succeed())
@@ -174,7 +174,7 @@ var _ = Describe("Task", func() {
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.PullRequest).To(Equal(int32(1)))
 			g.Expect(task.Status.Commit).To(Equal("sha-r1"))
 			g.Expect(task.Status.Summary).To(Equal("Added crop."))
@@ -185,7 +185,7 @@ var _ = Describe("Task", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, "add-crop-r1-review-a1")
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskReviewing))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 		}).Should(Succeed())
 
 		By("sending it back when the reviewer asks for changes")
@@ -194,7 +194,7 @@ var _ = Describe("Task", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Test an empty image."))
 			g.Expect(task.Status.Review).To(HaveField("Verdict", "changes"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
@@ -219,7 +219,7 @@ var _ = Describe("Task", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Complete and tested."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.CompletedAt).NotTo(BeNil())
 			g.Expect(task.Status.Review).To(HaveField("Verdict", "approve"))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).NotTo(BeNil(), "%+v", task.Status.Conditions)
@@ -254,7 +254,7 @@ var _ = Describe("Task", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(1000))}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
 
 		By("starting no review once the runs' cost reached the cap")
@@ -273,7 +273,7 @@ var _ = Describe("Task", func() {
 
 		By("starting the review once the cap is raised")
 		Eventually(func(g Gomega) {
-			var c c4v1alpha1.Crew
+			var c c4v1beta1.Crew
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crew), &c)).To(Succeed())
 			c.Spec.TaskBudgetUSD = 2
 			g.Expect(k8sClient.Update(ctx, &c)).To(Succeed())
@@ -295,7 +295,7 @@ var _ = Describe("Task", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(999))}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
@@ -310,7 +310,7 @@ var _ = Describe("Task", func() {
 		task := newTask(ns, "add-crop", "Add crop")
 		task.Labels = map[string]string{LabelCrew: crew.Name}
 		mustCreate(crew, task)
-		var stored c4v1alpha1.Crew
+		var stored c4v1beta1.Crew
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crew), &stored)).To(Succeed())
 		Expect(stored.Spec.TaskBudgetUSD).To(BeZero())
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
@@ -318,7 +318,7 @@ var _ = Describe("Task", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(250_000))}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
 
 		By("starting the review however much the runs cost")
@@ -341,10 +341,10 @@ var _ = Describe("Task", func() {
 				Tokens: &model.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
 			g.Expect(task.Status.RunsWithoutCost).To(BeZero())
-			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1beta1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
 				CacheWrite: 30000, LargestSession: 140000}))
 		}).Should(Succeed())
 
@@ -358,7 +358,7 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(312)))
 			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)))
-			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1beta1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000,
 				CacheWrite: 30000, LargestSession: 140000, RunsWithout: 1}))
 		}).Should(Succeed())
 
@@ -372,7 +372,7 @@ var _ = Describe("Task", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(412)))
-			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{Input: 15, Output: 3000, CacheRead: 130000,
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1beta1.TokenUsage{Input: 15, Output: 3000, CacheRead: 130000,
 				CacheWrite: 38000, LargestSession: 140000, RunsWithout: 1, SessionHandoffs: 2}))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
@@ -395,12 +395,12 @@ var _ = Describe("Task", func() {
 			Expect(runs[i].EndedAt.IsZero()).To(BeFalse())
 			runs[i].EndedAt = metav1.Time{}
 		}
-		Expect(runs).To(Equal([]c4v1alpha1.TaskAgentRun{
+		Expect(runs).To(Equal([]c4v1beta1.TaskAgentRun{
 			{Round: 1, Role: "implement", Sandbox: "add-crop-r1-implement", CostMilliUSD: new(int64(312)),
-				Tokens: &c4v1alpha1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}},
-			{Round: 1, Role: "review", Sandbox: "add-crop-r1-review-a1", Tokens: &c4v1alpha1.TokenUsage{RunsWithout: 1}},
+				Tokens: &c4v1beta1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}},
+			{Round: 1, Role: "review", Sandbox: "add-crop-r1-review-a1", Tokens: &c4v1beta1.TokenUsage{RunsWithout: 1}},
 			{Round: 2, Role: "implement", Sandbox: "add-crop-r2-implement", CostMilliUSD: new(int64(100)),
-				Tokens: &c4v1alpha1.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000,
+				Tokens: &c4v1beta1.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000,
 					LargestSession: 60000, SessionHandoffs: 2},
 				SessionHandoffs: []int64{134000, 141200}},
 		}))
@@ -433,9 +433,9 @@ var _ = Describe("Task", func() {
 			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "no round is spent")
-			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Phase", c4v1alpha1.TaskChecking),
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Phase", c4v1beta1.TaskChecking),
 				HaveField("Round", int32(1)), HaveField("Message", ContainSubstring(
 					"`make check` fails on main in the agent's workspace too, so CI decides")))),
 				"the round's history keeps the step's message after the checks' wait replaces it")
@@ -467,15 +467,15 @@ var _ = Describe("Task", func() {
 		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 		taskKey := client.ObjectKey{Namespace: ns, Name: "add-crop"}
-		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool {
-			return t.Status.Phase == c4v1alpha1.TaskChecking
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool {
+			return t.Status.Phase == c4v1beta1.TaskChecking
 		})
 		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
 			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.PullRequest).NotTo(BeZero())
 		}).Should(Succeed())
 		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
@@ -517,7 +517,7 @@ var _ = Describe("Task", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 		taskKey := client.ObjectKey{Namespace: ns, Name: "add-crop"}
-		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1alpha1.Task) bool { return t.Status.Round == 2 })
+		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool { return t.Status.Round == 2 })
 		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop", &agentrunner.Result{Role: "review", Verdict: "changes",
 			Summary: "Test an empty image.", CostMilliUSD: new(int64(40))}, "")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r2-implement") }).Should(Succeed())
@@ -546,7 +546,7 @@ var _ = Describe("Task", func() {
 		gitFake.setChecks(ns, "orders-api", "sha-r1", "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(
 				HaveField("Reason", model.ReasonRunnerOutOfSpace))
@@ -562,12 +562,12 @@ var _ = Describe("Task", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", nil, "OOMKilled")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			cond := condition(task.Status.Conditions, ConditionSucceeded)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(ContainSubstring("ended without a result: OOMKilled"))
 			g.Expect(task.Status.RunsWithoutCost).To(Equal(int32(1)), "a run without a result reported no cost")
-			g.Expect(task.Status.Tokens).To(Equal(&c4v1alpha1.TokenUsage{RunsWithout: 1}), "nor tokens")
+			g.Expect(task.Status.Tokens).To(Equal(&c4v1beta1.TokenUsage{RunsWithout: 1}), "nor tokens")
 		}).Should(Succeed())
 	})
 
@@ -586,7 +586,7 @@ var _ = Describe("Task", func() {
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Fine."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
 				To(HaveField("Reason", "PullRequestClosed"))
 		}).Should(Succeed())
@@ -596,11 +596,11 @@ var _ = Describe("Task", func() {
 	It("refuses a Container whose default branch isn't protected", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		mustCreate(newSystem(ns, "webshop-core"), container, newAgent(ns, 1), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
 				To(HaveField("Message", ContainSubstring("has no Standard")))
 		}).Should(Succeed())
@@ -621,7 +621,7 @@ var _ = Describe("Task", func() {
 		mustCreate(newTask(ns, "second", "Second change"))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "second")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskPending))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskPending))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).
 				To(HaveField("Message", ContainSubstring("Waiting for Task first")))
 		}).Should(Succeed())
@@ -629,7 +629,7 @@ var _ = Describe("Task", func() {
 		finishSandbox(ns, "first-r1-implement", "first", &agentrunner.Result{Role: "implement",
 			Error: "the agent made no changes"}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "first").Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(getTask(g, ns, "first").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			sandboxExists(g, ns, "second-r1-implement")
 		}).Should(Succeed())
 	})
@@ -638,7 +638,7 @@ var _ = Describe("Task", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		agent := newAgent(ns, 1)
-		agent.Spec.CredentialsSecretRef = &c4v1alpha1.LocalRef{Name: "claude-credentials"}
+		agent.Spec.CredentialsSecretRef = &c4v1beta1.LocalRef{Name: "claude-credentials"}
 		mustCreate(agent, newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) {
 			cond := condition(getTask(g, ns, "add-crop").Status.Conditions, ConditionProgressing)
@@ -668,7 +668,7 @@ var _ = Describe("Task", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		agent := newAgent(ns, 1)
-		agent.Spec.CredentialsSecretRef = &c4v1alpha1.LocalRef{Name: sharedToken}
+		agent.Spec.CredentialsSecretRef = &c4v1beta1.LocalRef{Name: sharedToken}
 		mustCreate(agent, newTask(ns, "add-crop", "Add crop"))
 		waitsFor := func(message string) {
 			GinkgoHelper()
@@ -682,13 +682,13 @@ var _ = Describe("Task", func() {
 
 		By("asking for the label while the namespace hasn't opted in")
 		waitsFor("Agent claude is on the factory's shared Secret " + sharedToken + ": label namespace " + ns + " " +
-			c4v1alpha1.LabelSharedSecrets + "=true, so its agents reach the factory's model proxy")
+			c4v1beta1.LabelSharedSecrets + "=true, so its agents reach the factory's model proxy")
 
 		By("naming the operator's namespace once it has, while the source is missing")
 		namespace := &corev1.Namespace{}
 		Expect(k8sClient.Get(ctx, key("", ns), namespace)).To(Succeed())
 		Expect(patch(namespace, func() {
-			namespace.Labels = map[string]string{c4v1alpha1.LabelSharedSecrets: "true"}
+			namespace.Labels = map[string]string{c4v1beta1.LabelSharedSecrets: "true"}
 		})).To(Succeed())
 		waitsFor("Secret " + sharedToken + " of Agent claude not found in namespace " + operatorNamespace)
 
@@ -892,7 +892,7 @@ var _ = Describe("Task with an unavailable agent", func() {
 			Error: "claude ended with an error: usage limit reached", Unavailable: true, RetryAt: &back}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "a usage limit costs no round")
 			g.Expect(task.Status.AgentBackAt).NotTo(BeNil())
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(HaveField("Reason", "AgentUnavailable"))
@@ -921,7 +921,7 @@ var _ = Describe("Agent tokens after an upgrade", func() {
 		running := newSandbox()
 		running.SetNamespace(ns)
 		running.SetName("fix-login-r1-implement")
-		running.SetLabels(map[string]string{c4v1alpha1.LabelContainer: "orders-api", LabelAgentSandbox: agentSandboxValue})
+		running.SetLabels(map[string]string{c4v1beta1.LabelContainer: "orders-api", LabelAgentSandbox: agentSandboxValue})
 		Expect(unstructured.SetNestedSlice(running.Object, []any{map[string]any{"name": "agent", "image": "agent"}},
 			"spec", "podTemplate", "spec", "containers")).To(Succeed())
 		Expect(k8sClient.Create(ctx, running)).To(Succeed())
@@ -939,7 +939,7 @@ var _ = Describe("Agent tokens after an upgrade", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
 		Expect(gitFake.revocations(user)).To(BeZero(), "a running agent never loses its token")
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())

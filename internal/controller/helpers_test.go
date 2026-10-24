@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // newProjectNamespace creates a fresh namespace with a Project named after it, so
@@ -38,9 +38,9 @@ func newProjectNamespaceNamed(name string) string {
 func projectIn(ns *corev1.Namespace) string {
 	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-	Expect(k8sClient.Create(ctx, &c4v1alpha1.Project{
+	Expect(k8sClient.Create(ctx, &c4v1beta1.Project{
 		ObjectMeta: metav1.ObjectMeta{Name: ns.Name, Namespace: ns.Name},
-		Spec:       c4v1alpha1.ProjectSpec{DisplayName: "Test story"},
+		Spec:       c4v1beta1.ProjectSpec{DisplayName: "Test story"},
 	})).To(Succeed())
 	DeferCleanup(stopPolling, ns.Name)
 	return ns.Name
@@ -55,7 +55,7 @@ func projectIn(ns *corev1.Namespace) string {
 func stopPolling(ns string) {
 	GinkgoHelper()
 	for _, obj := range []client.Object{
-		&c4v1alpha1.Brief{}, &c4v1alpha1.Crew{}, &c4v1alpha1.Task{}, &c4v1alpha1.Session{}, &c4v1alpha1.Container{},
+		&c4v1beta1.Brief{}, &c4v1beta1.Crew{}, &c4v1beta1.Task{}, &c4v1beta1.Session{}, &c4v1beta1.Container{},
 	} {
 		Expect(k8sClient.DeleteAllOf(ctx, obj, client.InNamespace(ns))).To(Succeed())
 	}
@@ -76,72 +76,72 @@ func objectMeta(ns, name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Namespace: ns, Name: name}
 }
 
-func newSystem(ns, name string) *c4v1alpha1.SoftwareSystem {
-	return &c4v1alpha1.SoftwareSystem{
+func newSystem(ns, name string) *c4v1beta1.SoftwareSystem {
+	return &c4v1beta1.SoftwareSystem{
 		ObjectMeta: objectMeta(ns, name),
-		Spec:       c4v1alpha1.SoftwareSystemSpec{DisplayName: name},
+		Spec:       c4v1beta1.SoftwareSystemSpec{DisplayName: name},
 	}
 }
 
-func newPerson(ns, name string) *c4v1alpha1.Person {
-	return &c4v1alpha1.Person{ObjectMeta: objectMeta(ns, name)}
+func newPerson(ns, name string) *c4v1beta1.Person {
+	return &c4v1beta1.Person{ObjectMeta: objectMeta(ns, name)}
 }
 
-func newContainer(ns, name, system string, typ c4v1alpha1.ContainerType) *c4v1alpha1.Container {
-	return &c4v1alpha1.Container{
+func newContainer(ns, name, system string, typ c4v1beta1.ContainerType) *c4v1beta1.Container {
+	return &c4v1beta1.Container{
 		ObjectMeta: objectMeta(ns, name),
-		Spec: c4v1alpha1.ContainerSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: system},
+		Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: system},
 			Type:              typ,
-			GitProviderRef:    c4v1alpha1.LocalRef{Name: "gitea"},
-			FrameworkRef:      c4v1alpha1.LocalRef{Name: "python-fastapi"},
-			ComputeRef:        &c4v1alpha1.LocalRef{Name: "small"},
-			DeploymentRef:     &c4v1alpha1.LocalRef{Name: "k8s-manifests"},
+			GitProviderRef:    c4v1beta1.LocalRef{Name: "gitea"},
+			FrameworkRef:      c4v1beta1.LocalRef{Name: "python-fastapi"},
+			ComputeRef:        &c4v1beta1.LocalRef{Name: "small"},
+			DeploymentRef:     &c4v1beta1.LocalRef{Name: "k8s-manifests"},
 		},
 	}
 }
 
 // newOrdersDB returns the sample story's orders-db: a Postgres DataStore in webshop-core.
-func newOrdersDB(ns string) *c4v1alpha1.DataStore {
-	return &c4v1alpha1.DataStore{
+func newOrdersDB(ns string) *c4v1beta1.DataStore {
+	return &c4v1beta1.DataStore{
 		ObjectMeta: objectMeta(ns, "orders-db"),
-		Spec: c4v1alpha1.DataStoreSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: "webshop-core"},
-			ConnectorRef:      c4v1alpha1.LocalRef{Name: "postgres"},
+		Spec: c4v1beta1.DataStoreSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
+			ConnectorRef:      c4v1beta1.LocalRef{Name: "postgres"},
 		},
 	}
 }
 
-func newRelationship(ns, name string, source, target c4v1alpha1.ElementRef) *c4v1alpha1.Relationship {
-	return &c4v1alpha1.Relationship{
+func newRelationship(ns, name string, source, target c4v1beta1.ElementRef) *c4v1beta1.Relationship {
+	return &c4v1beta1.Relationship{
 		ObjectMeta: objectMeta(ns, name),
-		Spec:       c4v1alpha1.RelationshipSpec{Source: source, Target: target},
+		Spec:       c4v1beta1.RelationshipSpec{Source: source, Target: target},
 	}
 }
 
-func element(kind c4v1alpha1.ElementKind, name string) c4v1alpha1.ElementRef {
-	return c4v1alpha1.ElementRef{Kind: kind, Name: name}
+func element(kind c4v1beta1.ElementKind, name string) c4v1beta1.ElementRef {
+	return c4v1beta1.ElementRef{Kind: kind, Name: name}
 }
 
-func newSession(ns, name, container string) *c4v1alpha1.Session {
-	return &c4v1alpha1.Session{
+func newSession(ns, name, container string) *c4v1beta1.Session {
+	return &c4v1beta1.Session{
 		ObjectMeta: objectMeta(ns, name),
-		Spec: c4v1alpha1.SessionSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: container},
-			Actor:        c4v1alpha1.ActorAgent,
+		Spec: c4v1beta1.SessionSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: container},
+			Actor:        c4v1beta1.ActorAgent,
 			Summary:      "Adding order validation",
 		},
 	}
 }
 
-func newFrameworkSpec(url, ref string, supported ...c4v1alpha1.ContainerType) c4v1alpha1.FrameworkSpec {
-	return c4v1alpha1.FrameworkSpec{CatalogEntrySpec: newCatalogSpec(url, ref, supported...)}
+func newFrameworkSpec(url, ref string, supported ...c4v1beta1.ContainerType) c4v1beta1.FrameworkSpec {
+	return c4v1beta1.FrameworkSpec{CatalogEntrySpec: newCatalogSpec(url, ref, supported...)}
 }
 
-func newCatalogSpec(url, ref string, supported ...c4v1alpha1.ContainerType) c4v1alpha1.CatalogEntrySpec {
-	return c4v1alpha1.CatalogEntrySpec{
+func newCatalogSpec(url, ref string, supported ...c4v1beta1.ContainerType) c4v1beta1.CatalogEntrySpec {
+	return c4v1beta1.CatalogEntrySpec{
 		SupportedTypes: supported,
-		Template:       c4v1alpha1.TemplateSource{URL: url, Ref: ref},
+		Template:       c4v1beta1.TemplateSource{URL: url, Ref: ref},
 	}
 }
 

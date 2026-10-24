@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -28,24 +28,24 @@ import (
 func readyCLIContainer(ns string) {
 	GinkgoHelper()
 	createFactory(ns)
-	container := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeCLI)
-	container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: "go-cli"}
+	container := newContainer(ns, "orders-cli", "webshop-core", c4v1beta1.ContainerTypeCLI)
+	container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: "go-cli"}
 	container.Spec.ComputeRef, container.Spec.DeploymentRef = nil, nil
 	crew := newCrew(ns)
 	crew.Name, crew.Spec.ContainerRef.Name = "orders-cli", "orders-cli"
 	mustCreate(
-		&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-cli"),
-			Spec: newFrameworkSpec(templatesURL+"go-cli", "v1.0.0", c4v1alpha1.ContainerTypeCLI)},
-		&c4v1alpha1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
-			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.0.0", c4v1alpha1.ContainerTypeCLI)},
+		&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "go-cli"),
+			Spec: newFrameworkSpec(templatesURL+"go-cli", "v1.0.0", c4v1beta1.ContainerTypeCLI)},
+		&c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
+			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.0.0", c4v1beta1.ContainerTypeCLI)},
 		newSystem(ns, "webshop-core"), container, crew)
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-cli"), container)).To(Succeed())
-		g.Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady), "%v", container.Status.Conditions)
+		g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady), "%v", container.Status.Conditions)
 	}).Should(Succeed())
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-cli"), container)).To(Succeed())
-		container.Spec.DeploymentRef = &c4v1alpha1.LocalRef{Name: model.DeploymentGiteaRelease}
+		container.Spec.DeploymentRef = &c4v1beta1.LocalRef{Name: model.DeploymentGiteaRelease}
 		g.Expect(k8sClient.Update(ctx, container)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -63,7 +63,7 @@ var _ = Describe("Container deploys to a gitlab target (#1804)", func() {
 		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
 			fakeFile{"orders-cli-v0.1.0.tar.gz", build})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
-		setDeployOf(ns, "orders-cli", c4v1alpha1.ContainerDeploy{Target: "staging"})
+		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "staging"})
 
 		Eventually(func(g Gomega) {
 			d, cond := deployOfContainer(g, ns, "orders-cli", "staging")
@@ -88,7 +88,7 @@ func gitlabSourceTarget(ns, name string) *gitlabtest.Project {
 	GinkgoHelper()
 	project := gitlabFake.AddProject("acme/"+ns, "glpat-"+ns)
 	dt := newGitLabTarget(ns, name, name+"-gitlab", "acme/"+ns)
-	dt.Spec.GitLab.Source = &c4v1alpha1.DeployTargetSource{}
+	dt.Spec.GitLab.Source = &c4v1beta1.DeployTargetSource{}
 	mustCreate(newDeploySecret(ns, name+"-gitlab", map[string]string{"token": "glpat-" + ns}), dt)
 	deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 	return project
@@ -107,7 +107,7 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
 			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
-		setDeployOf(ns, "orders-cli", c4v1alpha1.ContainerDeploy{Target: "open"})
+		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 
 		deployOfIs(ns, "orders-cli", "open", model.DeployPhaseDeployed, model.DeployDeployed, "v0.1.0", model.DeployDeployed)
 		source := project.Tag("orders-cli/v0.1.0")
@@ -132,7 +132,7 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
 			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
-		setDeployOf(ns, "orders-cli", c4v1alpha1.ContainerDeploy{Target: "open"})
+		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 
 		d := deployOfIs(ns, "orders-cli", "open", model.DeployPhaseFailed, model.DeploySecretFound, "", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("config/app.env line 2: a GitHub token (ghp_)"))
@@ -150,7 +150,7 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
 			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
-		setDeployOf(ns, "orders-cli", c4v1alpha1.ContainerDeploy{Target: "open"})
+		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 
 		d := deployOfIs(ns, "orders-cli", "open", model.DeployPhaseFailed, model.DeployFailed, "", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("run is a symlink"))

@@ -8,7 +8,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -51,25 +51,25 @@ var _ = Describe("Brief rounds on a Bundle", func() {
 			g.Expect(task.Status.Feedback).To(ContainSubstring(
 				"Container/linter: bundleRef: bundle go-operator: go-kubebuilder does not support service"))
 		}).Should(Succeed())
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1alpha1.Container{}))).To(BeTrue())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "linter"), &c4v1beta1.Container{}))).To(BeTrue())
 
 		By("making the Container on the Bundle, with none of the sides, and expanding it")
 		planRound(ns, 1, 2, bundledLinterPlan(ns, "python-service"))
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
-			g.Expect(b.Status.Phase).To(Equal(c4v1alpha1.BriefPlanned))
-			g.Expect(condition(b.Status.Conditions, c4v1alpha1.ConditionPlanned)).To(And(
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", model.ReasonApplied)))
 		}).Should(Succeed())
-		container := &c4v1alpha1.Container{}
+		container := &c4v1beta1.Container{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), container)).To(Succeed())
-		Expect(container.Spec.BundleRef).To(Equal(&c4v1alpha1.LocalRef{Name: "python-service"}))
+		Expect(container.Spec.BundleRef).To(Equal(&c4v1beta1.LocalRef{Name: "python-service"}))
 		Expect(container.Spec.FrameworkRef.Name).To(BeEmpty())
 		Expect(container.Spec.ComputeRef).To(BeNil())
 		Expect(container.Spec.DeploymentRef).To(BeNil())
-		Expect(container.Status.Bundle).To(Equal(&c4v1alpha1.ContainerBundleStatus{Name: "python-service",
+		Expect(container.Status.Bundle).To(Equal(&c4v1beta1.ContainerBundleStatus{Name: "python-service",
 			Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"}))
 		Expect(getBrief(Default, ns).Status.Created).To(ContainElement(
-			c4v1alpha1.BriefObject{Kind: "Container", Name: "linter"}))
+			c4v1beta1.BriefObject{Kind: "Container", Name: "linter"}))
 	})
 })

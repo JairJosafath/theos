@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -37,11 +37,11 @@ const briefLabelColor = "#ededed"
 
 // roundApply is one reconcile's work on applying a round.
 type roundApply struct {
-	brief, orig *c4v1alpha1.Brief
+	brief, orig *c4v1beta1.Brief
 	round       string
 	// made are the objects this reconcile created, which the cache may not
 	// show yet.
-	made []c4v1alpha1.BriefObject
+	made []c4v1beta1.BriefObject
 	// released are the Containers the round releases.
 	released map[string]bool
 	// took and skipped count the reviewers' suggestions the round answered.
@@ -72,7 +72,7 @@ type roundApply struct {
 // idempotent, so a restart applies the rest: the story objects, then for each
 // Container the round waits for, once it is Ready, a new one's Crew and the
 // round's issues for it, and last the plan merged into the brief repository's main.
-func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha1.Brief, task *c4v1alpha1.Task) (
+func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1beta1.Brief, task *c4v1beta1.Task) (
 	ctrl.Result, error) {
 	if tending(&brief.Status) {
 		return r.applyTend(ctx, brief, orig, task)
@@ -148,7 +148,7 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1alpha
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "making the Crews and filing the issues", err)
 	}
 	if len(waiting) > 0 || len(run.usesWaits) > 0 {
-		setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
+		setCondition(&brief.Status.Conditions, brief.Generation, c4v1beta1.ConditionPlanned, metav1.ConditionFalse,
 			"Applying", roundWaitMessage(int(brief.Status.Round), waiting, run.usesWaits))
 		return ctrl.Result{RequeueAfter: r.needsInputRecheck()}, nil
 	}
@@ -195,7 +195,7 @@ func (r *BriefReconciler) answerFailedAndRequests(ctx context.Context, run *roun
 // Brief stays Applying until a try gets past it. The operator's own
 // NeedsInput and a stale Brief are left to finishReconcile. A tending
 // round says it in the Event alone and leaves Planned as it is.
-func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Brief, where string, err error) error {
+func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1beta1.Brief, where string, err error) error {
 	if _, needsInput := needsInputSentence(err); needsInput || errors.Is(err, errStaleBrief) {
 		return err
 	}
@@ -209,13 +209,13 @@ func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Bri
 		r.event(brief, corev1.EventTypeWarning, eventApplyFailed, "Apply", message)
 		return fmt.Errorf("applying tending round %d %s: %w", brief.Status.Round, where, err)
 	}
-	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1alpha1.ConditionPlanned)
+	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1beta1.ConditionPlanned)
 	if cond == nil || cond.Reason != model.ReasonApplyFailed || cond.Message != message {
 		logf.FromContext(ctx).Info("Could not apply the round", "round", brief.Status.Round, "where", where,
 			"error", err.Error())
 		r.event(brief, corev1.EventTypeWarning, eventApplyFailed, "Apply", message)
 	}
-	setCondition(&brief.Status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionFalse,
+	setCondition(&brief.Status.Conditions, brief.Generation, c4v1beta1.ConditionPlanned, metav1.ConditionFalse,
 		model.ReasonApplyFailed, message)
 	return fmt.Errorf("applying round %d %s: %w", brief.Status.Round, where, err)
 }
@@ -223,11 +223,11 @@ func (r *BriefReconciler) applyFailed(ctx context.Context, brief *c4v1alpha1.Bri
 // madeByRound reports whether the Container carries this round's label: a
 // restart finds the Containers an earlier reconcile created.
 func (r *BriefReconciler) madeByRound(ctx context.Context, run *roundApply, name string) bool {
-	var c c4v1alpha1.Container
+	var c c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c); err != nil {
 		return false
 	}
-	return c.Labels[c4v1alpha1.LabelBrief] == run.brief.Name && c.Labels[c4v1alpha1.LabelBriefRound] == run.round
+	return c.Labels[c4v1beta1.LabelBrief] == run.brief.Name && c.Labels[c4v1beta1.LabelBriefRound] == run.round
 }
 
 // finishContainers gives each of names that is Ready its Crew, when the round
@@ -236,9 +236,9 @@ func (r *BriefReconciler) madeByRound(ctx context.Context, run *roundApply, name
 func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply, names, created []string,
 	issues []model.PlanIssue) ([]string, error) {
 	var waiting []string
-	ready := map[string]*c4v1alpha1.Container{}
+	ready := map[string]*c4v1beta1.Container{}
 	for _, name := range names {
-		var c c4v1alpha1.Container
+		var c c4v1beta1.Container
 		err := r.Get(ctx, client.ObjectKey{Namespace: run.brief.Namespace, Name: name}, &c)
 		if apierrors.IsNotFound(err) {
 			waiting = append(waiting, "Container "+name)
@@ -247,7 +247,7 @@ func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply,
 		if err != nil {
 			return nil, err
 		}
-		if c.Status.Phase != c4v1alpha1.ContainerReady {
+		if c.Status.Phase != c4v1beta1.ContainerReady {
 			waiting = append(waiting, fmt.Sprintf("Container %s (%s)", name, c.Status.Phase))
 			continue
 		}
@@ -282,7 +282,7 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 	err = r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
 	if apierrors.IsNotFound(err) {
 		desired.SetLabels(map[string]string{
-			c4v1alpha1.LabelBrief: run.brief.Name, c4v1alpha1.LabelBriefRound: run.round,
+			c4v1beta1.LabelBrief: run.brief.Name, c4v1beta1.LabelBriefRound: run.round,
 		})
 		err := r.Create(ctx, desired)
 		if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -291,7 +291,7 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 		// Made now, or by an earlier reconcile of this round the cache doesn't
 		// show yet: either way the round made it, and Status.Created names it
 		// through run.made (#1870).
-		run.made = append(run.made, c4v1alpha1.BriefObject{Kind: o.Kind, Name: o.Name})
+		run.made = append(run.made, c4v1beta1.BriefObject{Kind: o.Kind, Name: o.Name})
 		if err == nil {
 			logf.FromContext(ctx).Info("Created story object", "kind", o.Kind, "name", o.Name, "round", run.round)
 		}
@@ -308,8 +308,8 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 	if err := r.Patch(ctx, existing, client.MergeFrom(orig)); err != nil {
 		return false, err
 	}
-	before, _ := orig.(*c4v1alpha1.Container)
-	if c, ok := existing.(*c4v1alpha1.Container); ok && before != nil && c.Spec.Checks != before.Spec.Checks {
+	before, _ := orig.(*c4v1beta1.Container)
+	if c, ok := existing.(*c4v1beta1.Container); ok && before != nil && c.Spec.Checks != before.Spec.Checks {
 		logf.FromContext(ctx).Info("Set the Container's checks from the plan", "container", o.Name,
 			"from", before.Spec.Checks, "checks", c.Spec.Checks, "round", run.round)
 	}
@@ -322,50 +322,50 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 	objMeta := metav1.ObjectMeta{Namespace: ns, Name: o.Name}
 	switch o.Kind {
 	case model.KindProject:
-		return &c4v1alpha1.Project{ObjectMeta: objMeta,
-			Spec: c4v1alpha1.ProjectSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
+		return &c4v1beta1.Project{ObjectMeta: objMeta,
+			Spec: c4v1beta1.ProjectSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
 	case model.KindPerson:
-		return &c4v1alpha1.Person{ObjectMeta: objMeta,
-			Spec: c4v1alpha1.PersonSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
+		return &c4v1beta1.Person{ObjectMeta: objMeta,
+			Spec: c4v1beta1.PersonSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
 	case model.KindSoftwareSystem:
-		return &c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta, Spec: c4v1alpha1.SoftwareSystemSpec{
+		return &c4v1beta1.SoftwareSystem{ObjectMeta: objMeta, Spec: c4v1beta1.SoftwareSystemSpec{
 			DisplayName: o.DisplayName, Description: o.Description, Needs: o.Needs, KPIs: o.KPIs,
-			Location: c4v1alpha1.SystemLocation(o.Location), DomainRefs: o.Domains}}, nil
+			Location: c4v1beta1.SystemLocation(o.Location), DomainRefs: o.Domains}}, nil
 	case model.KindContainer:
-		return &c4v1alpha1.Container{ObjectMeta: objMeta, Spec: c4v1alpha1.ContainerSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
+		return &c4v1beta1.Container{ObjectMeta: objMeta, Spec: c4v1beta1.ContainerSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: o.SoftwareSystem},
 			DisplayName:       o.DisplayName, Description: o.Description,
-			Type:           c4v1alpha1.ContainerType(o.Type),
-			GitProviderRef: c4v1alpha1.LocalRef{Name: o.GitProvider},
+			Type:           c4v1beta1.ContainerType(o.Type),
+			GitProviderRef: c4v1beta1.LocalRef{Name: o.GitProvider},
 			BundleRef:      optionalLocalRef(o.Bundle),
-			FrameworkRef:   c4v1alpha1.LocalRef{Name: o.Framework},
+			FrameworkRef:   c4v1beta1.LocalRef{Name: o.Framework},
 			StandardRef:    optionalLocalRef(o.Standard),
 			ComputeRef:     optionalLocalRef(o.Compute),
 			DeploymentRef:  optionalLocalRef(o.Deployment),
-			Checks:         c4v1alpha1.ChecksMode(o.Checks),
+			Checks:         c4v1beta1.ChecksMode(o.Checks),
 			Operations:     operationsSpec(o.Operations),
 		}}, nil
 	case model.KindDataStore:
-		return &c4v1alpha1.DataStore{ObjectMeta: objMeta, Spec: c4v1alpha1.DataStoreSpec{
-			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
+		return &c4v1beta1.DataStore{ObjectMeta: objMeta, Spec: c4v1beta1.DataStoreSpec{
+			SoftwareSystemRef: c4v1beta1.LocalRef{Name: o.SoftwareSystem},
 			DisplayName:       o.DisplayName, Description: o.Description,
-			ConnectorRef: c4v1alpha1.LocalRef{Name: o.Connector},
+			ConnectorRef: c4v1beta1.LocalRef{Name: o.Connector},
 		}}, nil
 	case model.KindRelationship:
-		return &c4v1alpha1.Relationship{ObjectMeta: objMeta, Spec: c4v1alpha1.RelationshipSpec{
-			Source:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Source.Kind), Name: o.Source.Name},
-			Target:      c4v1alpha1.ElementRef{Kind: c4v1alpha1.ElementKind(o.Target.Kind), Name: o.Target.Name},
+		return &c4v1beta1.Relationship{ObjectMeta: objMeta, Spec: c4v1beta1.RelationshipSpec{
+			Source:      c4v1beta1.ElementRef{Kind: c4v1beta1.ElementKind(o.Source.Kind), Name: o.Source.Name},
+			Target:      c4v1beta1.ElementRef{Kind: c4v1beta1.ElementKind(o.Target.Kind), Name: o.Target.Name},
 			Description: o.Description, Bundles: o.Bundles,
 		}}, nil
 	}
 	return nil, fmt.Errorf("a plan doesn't write %s", o.Kind)
 }
 
-func optionalLocalRef(name string) *c4v1alpha1.LocalRef {
+func optionalLocalRef(name string) *c4v1beta1.LocalRef {
 	if name == "" {
 		return nil
 	}
-	return &c4v1alpha1.LocalRef{Name: name}
+	return &c4v1beta1.LocalRef{Name: name}
 }
 
 // copyStoryText copies the story text a plan may change, displayName,
@@ -376,27 +376,27 @@ func optionalLocalRef(name string) *c4v1alpha1.LocalRef {
 // domainRefs too: its Domains are picked when it is made (#1760).
 func copyStoryText(dst, src client.Object) {
 	switch d := dst.(type) {
-	case *c4v1alpha1.Project:
-		s, _ := src.(*c4v1alpha1.Project)
+	case *c4v1beta1.Project:
+		s, _ := src.(*c4v1beta1.Project)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1alpha1.Person:
-		s, _ := src.(*c4v1alpha1.Person)
+	case *c4v1beta1.Person:
+		s, _ := src.(*c4v1beta1.Person)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1alpha1.SoftwareSystem:
-		s, _ := src.(*c4v1alpha1.SoftwareSystem)
+	case *c4v1beta1.SoftwareSystem:
+		s, _ := src.(*c4v1beta1.SoftwareSystem)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
 		d.Spec.Needs, d.Spec.KPIs = s.Spec.Needs, s.Spec.KPIs
-	case *c4v1alpha1.Container:
-		s, _ := src.(*c4v1alpha1.Container)
+	case *c4v1beta1.Container:
+		s, _ := src.(*c4v1beta1.Container)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
 		if s.Spec.Checks != "" {
 			d.Spec.Checks = s.Spec.Checks
 		}
-	case *c4v1alpha1.DataStore:
-		s, _ := src.(*c4v1alpha1.DataStore)
+	case *c4v1beta1.DataStore:
+		s, _ := src.(*c4v1beta1.DataStore)
 		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1alpha1.Relationship:
-		s, _ := src.(*c4v1alpha1.Relationship)
+	case *c4v1beta1.Relationship:
+		s, _ := src.(*c4v1beta1.Relationship)
 		d.Spec.Description = s.Spec.Description
 	}
 }
@@ -407,14 +407,14 @@ func copyStoryText(dst, src client.Object) {
 // releases the Container (R4, R5). An existing Crew of that name is left
 // alone here; syncParallel keeps the parallel of one the Brief made, and
 // syncPaused its pause.
-func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1alpha1.Container) error {
+func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4v1beta1.Container) error {
 	brief := run.brief
-	crew := &c4v1alpha1.Crew{
+	crew := &c4v1beta1.Crew{
 		ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: c.Name, Labels: map[string]string{
-			c4v1alpha1.LabelBrief: brief.Name, c4v1alpha1.LabelBriefRound: run.round,
+			c4v1beta1.LabelBrief: brief.Name, c4v1beta1.LabelBriefRound: run.round,
 		}},
-		Spec: c4v1alpha1.CrewSpec{
-			ContainerRef: c4v1alpha1.LocalRef{Name: c.Name},
+		Spec: c4v1beta1.CrewSpec{
+			ContainerRef: c4v1beta1.LocalRef{Name: c.Name},
 			Implementer:  brief.Spec.Agents.Implementer,
 			Reviewer:     brief.Spec.Agents.Reviewer,
 			Parallel:     briefParallel(brief),
@@ -429,7 +429,7 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 		// paused, so none starts a Task before syncPaused reaches it.
 		markPaused(crew)
 	}
-	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1alpha1.Crew{})
+	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1beta1.Crew{})
 	if err == nil {
 		return nil
 	}
@@ -439,7 +439,7 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 	if err := r.Create(ctx, crew); err != nil {
 		return client.IgnoreAlreadyExists(err)
 	}
-	run.made = append(run.made, c4v1alpha1.BriefObject{Kind: "Crew", Name: crew.Name})
+	run.made = append(run.made, c4v1beta1.BriefObject{Kind: "Crew", Name: crew.Name})
 	logf.FromContext(ctx).Info("Created Crew", "crew", crew.Name, "round", run.round)
 	return nil
 }
@@ -476,7 +476,7 @@ type issueRepo struct {
 // Brief's status once done, and an issue the cached Brief doesn't show
 // recorded is looked up in the API server's before it is filed, so a closed
 // one is never filed again.
-func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1alpha1.Container,
+func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1beta1.Container,
 	issues []model.PlanIssue) error {
 	repos := map[string]*issueRepo{}
 	for _, issue := range model.FilingOrder(issues) {
@@ -508,9 +508,9 @@ func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready
 
 // filed returns the Brief's record of the round's issue n, or nil when it
 // isn't recorded.
-func (run *roundApply) filed(n int) *c4v1alpha1.BriefIssue {
+func (run *roundApply) filed(n int) *c4v1beta1.BriefIssue {
 	status := &run.brief.Status
-	i := slices.IndexFunc(status.Issues, func(i c4v1alpha1.BriefIssue) bool {
+	i := slices.IndexFunc(status.Issues, func(i c4v1beta1.BriefIssue) bool {
 		return i.Round == status.Round && int(i.N) == n
 	})
 	if i < 0 {
@@ -522,7 +522,7 @@ func (run *roundApply) filed(n int) *c4v1alpha1.BriefIssue {
 // fileIssue files one of the round's issues, or finds it by its marker, then
 // makes it depend on what it builds on and labels it ready, and records it.
 func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos map[string]*issueRepo,
-	c *c4v1alpha1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn,
+	c *c4v1beta1.Container, issues []model.PlanIssue, issue model.PlanIssue, buildsOn []model.BuildsOn,
 	uses usedPackages) error {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -652,13 +652,13 @@ func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
 // patches are made from, the issues the API server's Brief records that the
 // cached one doesn't show yet, so none is filed again and the next patch keeps them.
 func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundApply) error {
-	var current c4v1alpha1.Brief
+	var current c4v1beta1.Brief
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(run.brief), &current); err != nil {
 		return err
 	}
-	for _, status := range []*c4v1alpha1.BriefStatus{&run.brief.Status, &run.orig.Status} {
+	for _, status := range []*c4v1beta1.BriefStatus{&run.brief.Status, &run.orig.Status} {
 		for _, i := range current.Status.Issues {
-			if !slices.ContainsFunc(status.Issues, func(o c4v1alpha1.BriefIssue) bool {
+			if !slices.ContainsFunc(status.Issues, func(o c4v1beta1.BriefIssue) bool {
 				return o.Repository == i.Repository && o.Number == i.Number
 			}) {
 				status.Issues = append(status.Issues, i)
@@ -674,12 +674,12 @@ func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundAppl
 func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repository string, n int,
 	issue gitprovider.Issue) error {
 	status := &run.brief.Status
-	if slices.ContainsFunc(status.Issues, func(i c4v1alpha1.BriefIssue) bool {
+	if slices.ContainsFunc(status.Issues, func(i c4v1beta1.BriefIssue) bool {
 		return i.Repository == repository && int(i.Number) == issue.Number
 	}) {
 		return nil
 	}
-	status.Issues = model.KeepNewest(append(status.Issues, c4v1alpha1.BriefIssue{
+	status.Issues = model.KeepNewest(append(status.Issues, c4v1beta1.BriefIssue{
 		Repository: repository, Number: int32(issue.Number), URL: issue.URL, Title: model.Clip(issue.Title, 255),
 		Round: status.Round, N: int32(n),
 	}), 500)
@@ -693,7 +693,7 @@ func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repo
 // mergePlan puts the round's plan on the brief repository's main, in place of
 // the earlier round's: one commit by the operator, pushed without force. A
 // plan main already holds is merged.
-func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1alpha1.Brief, commit string) error {
+func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1beta1.Brief, commit string) error {
 	provider, err := r.briefGit(ctx, brief)
 	if err != nil {
 		return err
@@ -735,7 +735,7 @@ func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1alpha1.Brief
 
 // roundApplied records an applied round: its history entry, the choices, the
 // prompts it took and everything the Brief made.
-func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, task *c4v1alpha1.Task,
+func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, task *c4v1beta1.Task,
 	plan model.Plan) error {
 	brief := run.brief
 	status := &brief.Status
@@ -744,13 +744,13 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 		return err
 	}
 	summary := model.AppliedRoundSummary(plan, run.catalog, run.bundles)
-	recordRound(status, task, c4v1alpha1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices,
+	recordRound(status, task, c4v1beta1.BriefRound{Outcome: model.ReasonApplied, Summary: summary, Choices: plan.Choices,
 		Unanswered: run.unanswered})
 	status.Choices = model.ClipList(plan.Choices, 50, 500)
 	status.PromptsPlanned = status.RoundPrompts
 	status.Created = created
 	message := fmt.Sprintf("Applied round %d", status.Round)
-	setCondition(&status.Conditions, brief.Generation, c4v1alpha1.ConditionPlanned, metav1.ConditionTrue,
+	setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionPlanned, metav1.ConditionTrue,
 		model.ReasonApplied, model.Clip(message+model.CloseRefused(run.refused), 1000))
 	answered := ""
 	if run.took+run.skipped > 0 {
@@ -772,20 +772,20 @@ func (r *BriefReconciler) roundApplied(ctx context.Context, run *roundApply, tas
 // createdObjects lists every story object and Crew labelled with the Brief,
 // with what this reconcile made and the cache may not show yet; at most the
 // 500 the status holds.
-func (r *BriefReconciler) createdObjects(ctx context.Context, run *roundApply) ([]c4v1alpha1.BriefObject, error) {
+func (r *BriefReconciler) createdObjects(ctx context.Context, run *roundApply) ([]c4v1beta1.BriefObject, error) {
 	opts := []client.ListOption{client.InNamespace(run.brief.Namespace),
-		client.MatchingLabels{c4v1alpha1.LabelBrief: run.brief.Name}}
+		client.MatchingLabels{c4v1beta1.LabelBrief: run.brief.Name}}
 	lists := []struct {
 		kind string
 		list client.ObjectList
 	}{
-		{model.KindProject, &c4v1alpha1.ProjectList{}}, {model.KindPerson, &c4v1alpha1.PersonList{}},
-		{model.KindSoftwareSystem, &c4v1alpha1.SoftwareSystemList{}}, {model.KindDataStore, &c4v1alpha1.DataStoreList{}},
-		{model.KindRelationship, &c4v1alpha1.RelationshipList{}}, {model.KindContainer, &c4v1alpha1.ContainerList{}},
-		{"Crew", &c4v1alpha1.CrewList{}},
+		{model.KindProject, &c4v1beta1.ProjectList{}}, {model.KindPerson, &c4v1beta1.PersonList{}},
+		{model.KindSoftwareSystem, &c4v1beta1.SoftwareSystemList{}}, {model.KindDataStore, &c4v1beta1.DataStoreList{}},
+		{model.KindRelationship, &c4v1beta1.RelationshipList{}}, {model.KindContainer, &c4v1beta1.ContainerList{}},
+		{"Crew", &c4v1beta1.CrewList{}},
 	}
 	out := slices.Clone(run.brief.Status.Created)
-	add := func(o c4v1alpha1.BriefObject) {
+	add := func(o c4v1beta1.BriefObject) {
 		if !slices.Contains(out, o) {
 			out = append(out, o)
 		}
@@ -799,7 +799,7 @@ func (r *BriefReconciler) createdObjects(ctx context.Context, run *roundApply) (
 			return nil, err
 		}
 		for _, item := range items {
-			add(c4v1alpha1.BriefObject{Kind: l.kind, Name: item.GetName()})
+			add(c4v1beta1.BriefObject{Kind: l.kind, Name: item.GetName()})
 		}
 	}
 	for _, o := range run.made {

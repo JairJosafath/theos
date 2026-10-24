@@ -16,16 +16,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 )
 
 // newPlanTask is a planning round of the Brief cel-lens.
-func newPlanTask(ns, name string) *c4v1alpha1.Task {
-	return &c4v1alpha1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.TaskSpec{
-		Kind:     c4v1alpha1.TaskPlan,
-		BriefRef: &c4v1alpha1.LocalRef{Name: "cel-lens"},
-		AgentRef: c4v1alpha1.LocalRef{Name: "planner"},
+func newPlanTask(ns, name string) *c4v1beta1.Task {
+	return &c4v1beta1.Task{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.TaskSpec{
+		Kind:     c4v1beta1.TaskPlan,
+		BriefRef: &c4v1beta1.LocalRef{Name: "cel-lens"},
+		AgentRef: c4v1beta1.LocalRef{Name: "planner"},
 	}}
 }
 
@@ -37,7 +37,7 @@ var _ = Describe("Plan Task", func() {
 	It("defaults a Task's kind to Implement", func() {
 		task := newTask(ns, "implement", "Do it")
 		mustCreate(task)
-		Expect(task.Spec.Kind).To(Equal(c4v1alpha1.TaskImplement))
+		Expect(task.Spec.Kind).To(Equal(c4v1beta1.TaskImplement))
 	})
 
 	It("names a Brief and no Container", func() {
@@ -47,7 +47,7 @@ var _ = Describe("Plan Task", func() {
 		mustCreate(withGoal)
 
 		both := newPlanTask(ns, "both")
-		both.Spec.ContainerRef = c4v1alpha1.LocalRef{Name: "orders-api"}
+		both.Spec.ContainerRef = c4v1beta1.LocalRef{Name: "orders-api"}
 		Expect(k8sClient.Create(ctx, both)).To(MatchError(ContainSubstring("set exactly one of containerRef and briefRef")))
 
 		neither := newPlanTask(ns, "neither")
@@ -56,13 +56,13 @@ var _ = Describe("Plan Task", func() {
 		Expect(k8sClient.Create(ctx, neither)).To(MatchError(ContainSubstring("a Plan Task needs a briefRef")))
 
 		noParent := newTask(ns, "no-parent", "Do it")
-		noParent.Spec.ContainerRef = c4v1alpha1.LocalRef{}
+		noParent.Spec.ContainerRef = c4v1beta1.LocalRef{}
 		Expect(k8sClient.Create(ctx, noParent)).To(MatchError(ContainSubstring("set exactly one of containerRef and briefRef")))
 	})
 
 	It("takes a briefRef only as kind Plan", func() {
 		implement := newPlanTask(ns, "implement-brief")
-		implement.Spec.Kind = c4v1alpha1.TaskImplement
+		implement.Spec.Kind = c4v1beta1.TaskImplement
 		implement.Spec.Goal = "Do it"
 		Expect(k8sClient.Create(ctx, implement)).To(MatchError(ContainSubstring("briefRef needs kind Plan")))
 
@@ -74,7 +74,7 @@ var _ = Describe("Plan Task", func() {
 
 	It("has no reviewer and no issue", func() {
 		reviewed := newPlanTask(ns, "reviewed")
-		reviewed.Spec.ReviewerRef = &c4v1alpha1.LocalRef{Name: "reviewer"}
+		reviewed.Spec.ReviewerRef = &c4v1beta1.LocalRef{Name: "reviewer"}
 		Expect(k8sClient.Create(ctx, reviewed)).To(MatchError(ContainSubstring("a Plan Task has no reviewerRef")))
 
 		issue := newPlanTask(ns, "issue")
@@ -86,18 +86,18 @@ var _ = Describe("Plan Task", func() {
 		task := newPlanTask(ns, "keep")
 		task.Spec.Goal = "Plan the idea."
 		mustCreate(task)
-		Expect(patch(task, func() { task.Spec.Kind = c4v1alpha1.TaskImplement })).
+		Expect(patch(task, func() { task.Spec.Kind = c4v1beta1.TaskImplement })).
 			To(MatchError(ContainSubstring("kind is immutable; create a new Task")))
 		task = newPlanTask(ns, "keep-brief")
 		mustCreate(task)
 		Expect(patch(task, func() { task.Spec.BriefRef.Name = "another" })).
 			To(MatchError(ContainSubstring("briefRef is immutable")))
-		Expect(patch(task, func() { task.Spec.BriefRef, task.Spec.ContainerRef = nil, c4v1alpha1.LocalRef{Name: "orders-api"} })).
+		Expect(patch(task, func() { task.Spec.BriefRef, task.Spec.ContainerRef = nil, c4v1beta1.LocalRef{Name: "orders-api"} })).
 			To(MatchError(ContainSubstring("containerRef and briefRef are immutable; create a new Task")))
 
 		implement := newTask(ns, "keep-implement", "Do it")
 		mustCreate(implement)
-		Expect(patch(implement, func() { implement.Spec.Kind = c4v1alpha1.TaskPlan })).
+		Expect(patch(implement, func() { implement.Spec.Kind = c4v1beta1.TaskPlan })).
 			To(MatchError(ContainSubstring("kind is immutable; create a new Task")))
 	})
 
@@ -111,20 +111,20 @@ var _ = Describe("Plan Task run", func() {
 
 	// roundTask makes the Brief cel-lens with its repository and bot, the
 	// planner with rounds tries, and the Task planning the Brief's round.
-	roundTask := func(name string, rounds int32, round string) *c4v1alpha1.Task {
+	roundTask := func(name string, rounds int32, round string) *c4v1beta1.Task {
 		GinkgoHelper()
 		createFactory(ns)
 		// The Brief's own planner is missing, so it plans no round of its own
 		// and leaves these Tasks to the test.
 		brief := newBrief(ns, "cel-lens")
 		brief.Spec.Agents.Planner.Name = "absent"
-		mustCreate(brief, &c4v1alpha1.Agent{ObjectMeta: objectMeta(ns, "planner"),
-			Spec: c4v1alpha1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
+		mustCreate(brief, &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "planner"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), &corev1.Secret{})).To(Succeed())
 		}).Should(Succeed())
 		task := newPlanTask(ns, name)
-		task.Labels = map[string]string{c4v1alpha1.LabelBrief: "cel-lens", c4v1alpha1.LabelBriefRound: round}
+		task.Labels = map[string]string{c4v1beta1.LabelBrief: "cel-lens", c4v1beta1.LabelBriefRound: round}
 		mustCreate(task)
 		return task
 	}
@@ -137,12 +137,12 @@ var _ = Describe("Plan Task run", func() {
 	}
 	verdict := func(name, commit, refusals string) {
 		GinkgoHelper()
-		task := &c4v1alpha1.Task{}
+		task := &c4v1beta1.Task{}
 		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
 		Expect(patch(task, func() {
-			task.Annotations = map[string]string{c4v1alpha1.AnnotationPlanChecked: commit}
+			task.Annotations = map[string]string{c4v1beta1.AnnotationPlanChecked: commit}
 			if refusals != "" {
-				task.Annotations[c4v1alpha1.AnnotationPlanRefusals] = refusals
+				task.Annotations[c4v1beta1.AnnotationPlanRefusals] = refusals
 			}
 		})).To(Succeed())
 	}
@@ -155,7 +155,7 @@ var _ = Describe("Plan Task run", func() {
 		Eventually(func(g Gomega) {
 			env = sandboxEnv(g, "cel-lens-plan-2-r1-plan")
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.Branch).To(Equal("plan/2"))
 		}).Should(Succeed())
@@ -177,7 +177,7 @@ var _ = Describe("Plan Task run", func() {
 			&agentrunner.Result{Role: "plan", Commit: "sha-p1", Summary: "Planned the linter."}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Commit).To(Equal("sha-p1"))
 			g.Expect(task.Status.Summary).To(Equal("Planned the linter."))
 			g.Expect(condition(task.Status.Conditions, ConditionProgressing)).To(
@@ -187,14 +187,14 @@ var _ = Describe("Plan Task run", func() {
 		By("ignoring a verdict on another commit")
 		verdict("cel-lens-plan-2", "sha-other", "")
 		Consistently(func(g Gomega) {
-			g.Expect(getTask(g, ns, "cel-lens-plan-2").Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(getTask(g, ns, "cel-lens-plan-2").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}, "1s").Should(Succeed())
 
 		By("ending Merged when the Brief accepts it")
 		verdict("cel-lens-plan-2", "sha-p1", "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-2")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.CompletedAt).NotTo(BeNil())
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Message", "The Brief accepted the plan")))
@@ -215,7 +215,7 @@ var _ = Describe("Plan Task run", func() {
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskImplementing))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Feedback).To(Equal("The Brief refused the plan:\nContainer/web: type is missing"))
 			g.Expect(sandboxEnv(g, "cel-lens-plan-1-r2-plan")).To(ContainElements(
 				map[string]any{"name": "C4_ROUND", "value": "1"},
@@ -228,7 +228,7 @@ var _ = Describe("Plan Task run", func() {
 			&agentrunner.Result{Role: "plan", Commit: "sha-p2"}, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskChecking))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Commit).To(Equal("sha-p2"))
 		}).Should(Succeed())
 
@@ -236,7 +236,7 @@ var _ = Describe("Plan Task run", func() {
 		verdict("cel-lens-plan-1", "sha-p2", "Container/web: still no type")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
 				HaveField("Status", metav1.ConditionFalse), HaveField("Message", ContainSubstring("Failed after 2 rounds"))))
 		}).Should(Succeed())
@@ -253,9 +253,9 @@ var _ = Describe("Plan Task run", func() {
 		roundTask("unlabelled", 3, "")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "unlabelled")
-			g.Expect(task.Status.Phase).To(Equal(c4v1alpha1.TaskFailed))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(
-				HaveField("Message", ContainSubstring(c4v1alpha1.LabelBriefRound)))
+				HaveField("Message", ContainSubstring(c4v1beta1.LabelBriefRound)))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			sandbox := newSandbox()

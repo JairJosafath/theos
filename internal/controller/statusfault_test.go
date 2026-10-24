@@ -15,12 +15,12 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 // taskStatusFaults fails the Task reconciler's next status writes of chosen
 // Tasks, as an API server that refuses them would.
-var taskStatusFaults = &statusFaults{left: map[client.ObjectKey]int{}, when: map[client.ObjectKey]func(*c4v1alpha1.Task) bool{}}
+var taskStatusFaults = &statusFaults{left: map[client.ObjectKey]int{}, when: map[client.ObjectKey]func(*c4v1beta1.Task) bool{}}
 
 // errStatusFault is the error a refused status write returns.
 var errStatusFault = errors.New("status write refused by the test")
@@ -28,12 +28,12 @@ var errStatusFault = errors.New("status write refused by the test")
 type statusFaults struct {
 	mu   sync.Mutex
 	left map[client.ObjectKey]int
-	when map[client.ObjectKey]func(*c4v1alpha1.Task) bool
+	when map[client.ObjectKey]func(*c4v1beta1.Task) bool
 }
 
 // failNext makes the next n status writes of the Task key that would write a
 // status when matches fail.
-func (f *statusFaults) failNext(key client.ObjectKey, n int, when func(*c4v1alpha1.Task) bool) {
+func (f *statusFaults) failNext(key client.ObjectKey, n int, when func(*c4v1beta1.Task) bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.left[key], f.when[key] = n, when
@@ -47,7 +47,7 @@ func (f *statusFaults) pending(key client.ObjectKey) int {
 }
 
 func (f *statusFaults) take(obj client.Object) bool {
-	task, ok := obj.(*c4v1alpha1.Task)
+	task, ok := obj.(*c4v1beta1.Task)
 	if !ok {
 		return false
 	}

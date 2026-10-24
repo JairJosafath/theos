@@ -13,19 +13,19 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // A later release whose publishing failed doesn't hide one that went out.
 func TestNotePublished(t *testing.T) {
 	r := &BriefReconciler{}
-	brief := &c4v1alpha1.Brief{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cel-lens"}}
-	release := func(tag, state string) *c4v1alpha1.CrewRelease {
-		return &c4v1alpha1.CrewRelease{Tag: tag, Publish: &c4v1alpha1.CrewReleasePublish{State: state, URL: "u/" + tag}}
+	brief := &c4v1beta1.Brief{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cel-lens"}}
+	release := func(tag, state string) *c4v1beta1.CrewRelease {
+		return &c4v1beta1.CrewRelease{Tag: tag, Publish: &c4v1beta1.CrewReleasePublish{State: state, URL: "u/" + tag}}
 	}
 	steps := []struct {
-		last *c4v1alpha1.CrewRelease
+		last *c4v1beta1.CrewRelease
 		want model.Shipped
 	}{
 		{nil, model.Shipped{}},

@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -24,9 +24,9 @@ import (
 // checksBeforeRelease reports whether the Container's repository runs its full
 // check only before a release, as its Standard files were last rendered: the
 // gate waits only for a full check the repository has.
-func checksBeforeRelease(container *c4v1alpha1.Container) bool {
+func checksBeforeRelease(container *c4v1beta1.Container) bool {
 	return container != nil && container.Status.Standard != nil &&
-		container.Status.Standard.Checks == c4v1alpha1.ChecksBeforeRelease
+		container.Status.Standard.Checks == c4v1beta1.ChecksBeforeRelease
 }
 
 // fullCheck runs release step's full check before its tag: it pushes the
@@ -36,7 +36,7 @@ func checksBeforeRelease(container *c4v1alpha1.Container) bool {
 // per commit. It returns step when the check passed, so the Crew tags it,
 // else the step that holds the release instead: FullCheckRunning,
 // FullCheckFailed or NoFullCheck. status.fullCheck records the check.
-func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1alpha1.Crew, status *c4v1alpha1.CrewStatus,
+func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider gitprovider.Provider, repo gitprovider.Repository, step model.ReleaseStep,
 	release *model.ReleaseMilestone) (model.ReleaseStep, error) {
 	log := logf.FromContext(ctx)
@@ -57,7 +57,7 @@ func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1alpha1.Crew, s
 				return step, fmt.Errorf("pushing %s: %w", branch, err)
 			}
 		}
-		check = &c4v1alpha1.CrewFullCheck{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now())}
+		check = &c4v1beta1.CrewFullCheck{Tag: step.Tag, Commit: step.Commit, Time: metav1.NewTime(r.now())}
 		status.FullCheck = check
 		log.Info("Started the full check of a release", "tag", step.Tag, "commit", step.Commit, "branch", branch,
 			"reused", at == step.Commit)
@@ -101,7 +101,7 @@ func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1alpha1.Crew, s
 // in run, unless the release has it for this commit already, and records it.
 func (r *CrewReconciler) fileFullCheckFix(ctx context.Context, provider gitprovider.Provider,
 	repo gitprovider.Repository, step model.ReleaseStep, release *model.ReleaseMilestone, run model.ReleaseRun,
-	check *c4v1alpha1.CrewFullCheck) error {
+	check *c4v1beta1.CrewFullCheck) error {
 	if release != nil && model.FullCheckFiled(*release, step.Commit) {
 		for _, f := range release.FullChecks {
 			if f.Commit == step.Commit {

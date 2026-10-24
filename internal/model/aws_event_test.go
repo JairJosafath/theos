@@ -8,14 +8,14 @@ import (
 
 // eventPlan is a planner's plan for an event consumer on AWS: a worker on
 // aws-event-ts with aws-standard, and no Compute or Deployment.
-const eventPlan = `apiVersion: c4.factory.io/v1alpha1
+const eventPlan = `apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: order-events

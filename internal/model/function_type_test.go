@@ -8,14 +8,14 @@ import (
 
 // functionPlan is a planner's plan for a serverless API on AWS: a function on
 // aws-lambda-ts with aws-standard, and no Compute or Deployment.
-const functionPlan = `apiVersion: c4.factory.io/v1alpha1
+const functionPlan = `apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: notes
 spec:
   description: Keeps notes
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: notes-api

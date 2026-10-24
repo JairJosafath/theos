@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -24,7 +24,7 @@ import (
 
 func TestBuildSandboxWorkspace(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	size := resource.MustParse("3Gi")
@@ -38,10 +38,10 @@ func TestBuildSandboxWorkspace(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			run := sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 				name:      "add-crop-r1-implement", role: "implement",
 				workspaceMemory: tt.memory,
 			}
@@ -67,7 +67,7 @@ func TestBuildSandboxWorkspace(t *testing.T) {
 
 func TestBuildSandboxGoCache(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -78,13 +78,13 @@ func TestBuildSandboxGoCache(t *testing.T) {
 		{name: "the node's shared cache when set", cache: "/var/cache/c4factory/go/sandbox"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")}
+			agent := &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")}
 			agent.Spec.Image = "c4factory/agent-go:dev"
 			agent.Spec.Env = []corev1.EnvVar{{Name: "GOCACHE", Value: "/agent/own"}}
 			run := sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
 				agent:     agent,
 				name:      "add-crop-r1-implement", role: "implement",
 				goCache: tt.cache,
@@ -433,7 +433,7 @@ func TestRunStateTellsADeadlineAcrossAnOutage(t *testing.T) {
 
 func TestBuildSandboxStandardChangeEnv(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	gated := []string{"Makefile", ".gitea/"}
@@ -454,13 +454,13 @@ func TestBuildSandboxStandardChangeEnv(t *testing.T) {
 			want: map[string]string{agentrunner.EnvAllowedPaths: "", agentrunner.EnvResumed: ""}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			task := &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
+			task := &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
 			task.Spec.Issue, task.Spec.AllowedProtectedPaths = 2, tt.allowed
 			run := sandboxRun{
 				task:      task,
-				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-				agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+				status:    &c4v1beta1.TaskStatus{Round: 1},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 				name:      "add-crop-r1-" + tt.role, role: tt.role,
 				allowedPaths: task.Spec.AllowedProtectedPaths, resumed: tt.resumed,
 			}
@@ -541,14 +541,14 @@ func envNames(env []corev1.EnvVar) []string {
 
 func TestBuildSandboxImplementEnv(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	sandbox, err := buildSandbox(sandboxRun{
-		task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-		status:    &c4v1alpha1.TaskStatus{Round: 2, Branch: "task/add-crop"},
-		container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-		agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+		task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+		status:    &c4v1beta1.TaskStatus{Round: 2, Branch: "task/add-crop"},
+		container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+		agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 		name:      "add-crop-r2-implement", role: model.RoleImplementer, gitSecret: "image-shrink-agent-git",
 	}, scheme, time.Now())
 	if err != nil {
@@ -560,7 +560,7 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 	if got := envNames(podOf(t, sandbox).Containers[0].Env); !reflect.DeepEqual(got, want) {
 		t.Errorf("env %v, want %v", got, want)
 	}
-	if got := sandbox.GetLabels(); got[c4v1alpha1.LabelContainer] != "image-shrink" || got[c4v1alpha1.LabelBrief] != "" {
+	if got := sandbox.GetLabels(); got[c4v1beta1.LabelContainer] != "image-shrink" || got[c4v1beta1.LabelBrief] != "" {
 		t.Errorf("labels %v, want the Container's and no Brief's", got)
 	}
 }
@@ -572,7 +572,7 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 // comes last, so it wins.
 func TestBuildSandboxGoProxy(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -605,12 +605,12 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 				t.Fatal(err)
 			}
 			repo := provider.Repository("image-shrink")
-			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")}
+			agent := &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")}
 			agent.Spec.Env = tt.own
 			sandbox, err := buildSandbox(sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-				status:    &c4v1alpha1.TaskStatus{Round: 1, Branch: "task/add-crop"},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
 				agent:     agent, name: "add-crop-r1-implement", role: model.RoleImplementer,
 				repoURL: repo.CloneURL, gitSecret: "image-shrink-agent-git", goProxy: repo.GoProxy,
 			}, scheme, time.Now())
@@ -637,7 +637,7 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 // so a Secret without one still runs the pod.
 func TestBuildSandboxPackages(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -677,10 +677,10 @@ func TestBuildSandboxPackages(t *testing.T) {
 			repo := provider.Repository("image-shrink")
 			for _, role := range []string{model.RoleImplementer, model.RoleReviewer} {
 				sandbox, err := buildSandbox(sandboxRun{
-					task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-					status:    &c4v1alpha1.TaskStatus{Round: 1, Branch: "task/add-crop"},
-					container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-					agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+					task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+					status:    &c4v1beta1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+					container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+					agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 					name:      "add-crop-r1-" + role, role: role,
 					repoURL: repo.CloneURL, gitSecret: "image-shrink-agent-git",
 					npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
@@ -705,9 +705,9 @@ func TestBuildSandboxPackages(t *testing.T) {
 	// package field (TestBuildSandboxPlanEnv has its whole env).
 	t.Run("the planner", func(t *testing.T) {
 		sandbox, err := buildSandbox(sandboxRun{
-			task:   &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")},
-			status: &c4v1alpha1.TaskStatus{Round: 1, Branch: "plan/4"},
-			agent:  &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+			task:   &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")},
+			status: &c4v1beta1.TaskStatus{Round: 1, Branch: "plan/4"},
+			agent:  &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "planner")},
 			name:   "cel-lens-plan-4-r1-plan", role: model.RolePlanner,
 			repoURL: "http://gitea/apps/brief-cel-lens.git", gitSecret: "brief-cel-lens-git",
 			brief: "cel-lens", briefRound: 4,
@@ -728,7 +728,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 		t.Fatalf("model.RolePlanner = %q, but c4agent plans as %q", model.RolePlanner, agentrunner.RolePlan)
 	}
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -772,14 +772,14 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			task := &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")}
+			task := &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "cel-lens-plan-4")}
 			task.Spec.Goal = tt.goal
-			agent := &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")}
+			agent := &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "planner")}
 			agent.Spec.Harness, agent.Spec.Model = "stand-in", "opus"
 			agent.Spec.SessionTokenLimit = 130000
 			sandbox, err := buildSandbox(sandboxRun{
 				task:   task,
-				status: &c4v1alpha1.TaskStatus{Round: 2, Branch: "plan/4", Feedback: tt.feedback},
+				status: &c4v1beta1.TaskStatus{Round: 2, Branch: "plan/4", Feedback: tt.feedback},
 				agent:  agent, name: "cel-lens-plan-4-r2-plan", role: model.RolePlanner,
 				repoURL: "http://gitea/apps/brief-cel-lens.git", gitSecret: "brief-cel-lens-git", goal: tt.goal,
 				maxRounds: 3, brief: "cel-lens", briefRound: 4,
@@ -790,8 +790,8 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 			if got := podOf(t, sandbox).Containers[0].Env; !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("env\n%v\nwant\n%v", got, tt.want)
 			}
-			want := map[string]string{LabelTask: "cel-lens-plan-4", c4v1alpha1.LabelProject: "apps",
-				LabelAgentSandbox: "true", c4v1alpha1.LabelBrief: "cel-lens"}
+			want := map[string]string{LabelTask: "cel-lens-plan-4", c4v1beta1.LabelProject: "apps",
+				LabelAgentSandbox: "true", c4v1beta1.LabelBrief: "cel-lens"}
 			if got := sandbox.GetLabels(); !reflect.DeepEqual(got, want) {
 				t.Errorf("labels %v, want %v", got, want)
 			}
@@ -801,20 +801,20 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 
 func TestBuildSandboxSharedPullSecrets(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	implement := sandboxRun{
-		task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-		status:    &c4v1alpha1.TaskStatus{Round: 1},
-		container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-		agent:     &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+		task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+		status:    &c4v1beta1.TaskStatus{Round: 1},
+		container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+		agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
 		name:      "add-crop-r1-implement", role: model.RoleImplementer,
 	}
 	plan := sandboxRun{
-		task:   &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "plan-shop")},
-		status: &c4v1alpha1.TaskStatus{Round: 1},
-		agent:  &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+		task:   &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "plan-shop")},
+		status: &c4v1beta1.TaskStatus{Round: 1},
+		agent:  &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "planner")},
 		name:   "plan-shop-r1-plan", role: model.RolePlanner, brief: "shop", briefRound: 1,
 	}
 	for _, tt := range []struct {
@@ -849,19 +849,19 @@ func TestBuildSandboxSharedPullSecrets(t *testing.T) {
 // stand-in, nothing (#1136).
 func TestBuildSandboxModelProxy(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := c4v1alpha1.AddToScheme(scheme); err != nil {
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	const proxy = "http://c4-model-proxy.c4-factory-system.svc:8080"
-	withSecret := func(name string) *c4v1alpha1.Agent {
-		return &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude"), Spec: c4v1alpha1.AgentSpec{
-			CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: name}}}
+	withSecret := func(name string) *c4v1beta1.Agent {
+		return &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude"), Spec: c4v1beta1.AgentSpec{
+			CredentialsSecretRef: &c4v1beta1.LocalRef{Name: name}}}
 	}
 	r := &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system",
 		ModelProxyURL: proxy}
 	for _, tt := range []struct {
 		name      string
-		agent     *c4v1alpha1.Agent
+		agent     *c4v1beta1.Agent
 		r         *TaskReconciler
 		wantProxy bool
 		wantFrom  string
@@ -869,16 +869,16 @@ func TestBuildSandboxModelProxy(t *testing.T) {
 		{name: "the shared token goes through the proxy", agent: withSecret("claude-credentials"), r: r,
 			wantProxy: true},
 		{name: "another Secret comes in as env", agent: withSecret("my-token"), r: r, wantFrom: "my-token"},
-		{name: "a stand-in has neither", agent: &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "stand-in")}, r: r},
+		{name: "a stand-in has neither", agent: &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "stand-in")}, r: r},
 		{name: "the shared token without a proxy comes in as env", agent: withSecret("claude-credentials"),
 			r:        &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system"},
 			wantFrom: "claude-credentials"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sandbox, err := buildSandbox(sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
 				agent:     tt.agent, name: "add-crop-r1-implement", role: model.RoleImplementer,
 				gitSecret: "image-shrink-agent-git", modelProxyURL: tt.r.sandboxModelProxy(tt.agent),
 			}, scheme, time.Now())

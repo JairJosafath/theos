@@ -16,20 +16,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 )
 
 var _ = Describe("Session", func() {
 	It("is owned by its Container, counts while Active and turns Stale without heartbeats", func() {
 		ns := newProjectNamespace()
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		session := newSession(ns, "orders-api-k7f3q", "orders-api")
 		mustCreate(newSystem(ns, "webshop-core"), container, session)
 
 		By("the client reporting in")
 		orig := session.DeepCopy()
-		session.Status = c4v1alpha1.SessionStatus{
-			Phase:         c4v1alpha1.SessionActive,
+		session.Status = c4v1beta1.SessionStatus{
+			Phase:         c4v1beta1.SessionActive,
 			LastHeartbeat: &metav1.Time{Time: time.Now()},
 		}
 		Expect(k8sClient.Status().Patch(ctx, session, client.MergeFrom(orig))).To(Succeed())
@@ -37,8 +37,8 @@ var _ = Describe("Session", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, session.Name), session)).To(Succeed())
 			g.Expect(controlledBy(session, container)).To(BeTrue())
-			g.Expect(session.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelContainer, "orders-api"))
-			g.Expect(session.Labels).To(HaveKeyWithValue(c4v1alpha1.LabelSoftwareSystem, "webshop-core"))
+			g.Expect(session.Labels).To(HaveKeyWithValue(c4v1beta1.LabelContainer, "orders-api"))
+			g.Expect(session.Labels).To(HaveKeyWithValue(c4v1beta1.LabelSoftwareSystem, "webshop-core"))
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.ActiveSessions).To(BeEquivalentTo(1))
 		}).Should(Succeed())
@@ -46,7 +46,7 @@ var _ = Describe("Session", func() {
 		By("the heartbeats stopping")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, session.Name), session)).To(Succeed())
-			g.Expect(session.Status.Phase).To(Equal(c4v1alpha1.SessionStale))
+			g.Expect(session.Status.Phase).To(Equal(c4v1beta1.SessionStale))
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.ActiveSessions).To(BeZero())
 		}).Should(Succeed())

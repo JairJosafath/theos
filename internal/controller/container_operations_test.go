@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -43,7 +43,7 @@ func operationsFile(rpo, email string) string {
 // newOperationsFramework registers opsFramework's template for ns, with
 // infra/operations.ts.tmpl when renders, and returns the Framework, which
 // says it reads the block either way.
-func newOperationsFramework(ns string, renders bool) *c4v1alpha1.Framework {
+func newOperationsFramework(ns string, renders bool) *c4v1beta1.Framework {
 	GinkgoHelper()
 	url := templatesURL + ns + "/" + opsFramework
 	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.6.0"))
@@ -52,31 +52,31 @@ func newOperationsFramework(ns string, renders bool) *c4v1alpha1.Framework {
 		tree[model.OperationsFile+".tmpl"] = scaffold.File{Data: []byte(operationsTemplate)}
 	}
 	gitFake.addTemplate(url, "v1.3.0", tree)
-	spec := newFrameworkSpec(url, "v1.3.0", c4v1alpha1.ContainerTypeService)
+	spec := newFrameworkSpec(url, "v1.3.0", c4v1beta1.ContainerTypeService)
 	spec.ReadsOperations = true
-	return &c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, opsFramework), Spec: spec}
+	return &c4v1beta1.Framework{ObjectMeta: objectMeta(ns, opsFramework), Spec: spec}
 }
 
 // createOperationsContainer creates orders-api, with the block ops, on the
 // Framework opsFramework, in a namespace with a factory, and waits until it is
 // scaffolded with OperationsApplied True.
-func createOperationsContainer(ns string, ops *c4v1alpha1.OperationsSpec) {
+func createOperationsContainer(ns string, ops *c4v1beta1.OperationsSpec) {
 	GinkgoHelper()
 	createFactory(ns)
-	container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-	container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: opsFramework}
+	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+	container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: opsFramework}
 	container.Spec.Operations = ops
 	mustCreate(newOperationsFramework(ns, true), newSystem(ns, "webshop-core"), container)
-	eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+	eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
 }
 
 // changeOperations changes orders-api's spec.operations with mutate.
-func changeOperations(ns string, mutate func(*c4v1alpha1.OperationsSpec)) {
+func changeOperations(ns string, mutate func(*c4v1beta1.OperationsSpec)) {
 	GinkgoHelper()
 	container := getContainer(Default, ns)
 	Expect(patch(container, func() {
 		if container.Spec.Operations == nil {
-			container.Spec.Operations = &c4v1alpha1.OperationsSpec{}
+			container.Spec.Operations = &c4v1beta1.OperationsSpec{}
 		}
 		mutate(container.Spec.Operations)
 	})).To(Succeed())
@@ -84,9 +84,9 @@ func changeOperations(ns string, mutate func(*c4v1alpha1.OperationsSpec)) {
 
 // openedOperations waits for an operations update to rpo in flight, and
 // returns it.
-func openedOperations(ns, rpo string) c4v1alpha1.OperationsUpdateStatus {
+func openedOperations(ns, rpo string) c4v1beta1.OperationsUpdateStatus {
 	GinkgoHelper()
-	var update c4v1alpha1.OperationsUpdateStatus
+	var update c4v1beta1.OperationsUpdateStatus
 	Eventually(func(g Gomega) {
 		container := getContainer(g, ns)
 		g.Expect(container.Status.OperationsUpdate).NotTo(BeNil())
@@ -95,10 +95,10 @@ func openedOperations(ns, rpo string) c4v1alpha1.OperationsUpdateStatus {
 		g.Expect(update.Stopped).To(BeEmpty())
 		g.Expect(update.MergeCommit).To(BeEmpty())
 		g.Expect(update.PullRequest).NotTo(BeZero())
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
+		g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdating))
 		g.Expect(cond.Message).To(Equal("Pull request " + update.PullRequestURL +
 			" renders infra/operations.ts from spec.operations; it merges once CI passes"))
 	}).Should(Succeed())
@@ -107,25 +107,25 @@ func openedOperations(ns, rpo string) c4v1alpha1.OperationsUpdateStatus {
 
 // mergedOperations waits for orders-api's operations update to have merged
 // update's pull request.
-func mergedOperations(ns string, update c4v1alpha1.OperationsUpdateStatus) {
+func mergedOperations(ns string, update c4v1beta1.OperationsUpdateStatus) {
 	GinkgoHelper()
-	container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonUpdateMerged)
+	container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonUpdateMerged)
 	head := gitFake.mainHead(ns, "orders-api")
 	Expect(container.Status.OperationsUpdate).To(PointTo(MatchFields(IgnoreExtras, Fields{
 		"PullRequest": Equal(update.PullRequest), "MergeCommit": Equal(head.Hash), "Stopped": BeEmpty()})))
-	Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).To(Equal(
+	Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(Equal(
 		"Pull request " + update.PullRequestURL + " merged spec.operations into infra/operations.ts as " + head.Hash))
 	Expect(container.Status.Operations).To(Equal(update.Operations), "status records the block the merge rendered")
 }
 
 // eventuallyOperationsApplied waits for orders-api's OperationsApplied and
 // returns the Container.
-func eventuallyOperationsApplied(ns string, status metav1.ConditionStatus, reason string) *c4v1alpha1.Container {
+func eventuallyOperationsApplied(ns string, status metav1.ConditionStatus, reason string) *c4v1beta1.Container {
 	GinkgoHelper()
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
-		cond := condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.Reason).To(Equal(reason))
@@ -141,10 +141,10 @@ var _ = Describe("Container operations", func() {
 
 		container := getContainer(Default, ns)
 		Expect(container.Spec.Operations).To(BeNil(), "the defaults are the factory's, never written into spec")
-		Expect(container.Status.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
-			Backups:  &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(35))},
-			Recovery: &c4v1alpha1.OperationsRecovery{RPO: "1h", RTO: "4h"},
-			Alerts:   &c4v1alpha1.OperationsAlerts{},
+		Expect(container.Status.Operations).To(Equal(&c4v1beta1.OperationsSpec{
+			Backups:  &c4v1beta1.OperationsBackups{RetentionDays: new(int32(35))},
+			Recovery: &c4v1beta1.OperationsRecovery{RPO: "1h", RTO: "4h"},
+			Alerts:   &c4v1beta1.OperationsAlerts{},
 		}))
 	})
 
@@ -155,18 +155,18 @@ var _ = Describe("Container operations", func() {
 		func() {
 			ns := newProjectNamespace()
 			createWebshop(ns)
-			container := eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
-			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied)).To(BeNil())
+			container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+			Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied)).To(BeNil())
 			Expect(container.Status.Operations).To(BeNil(), "nothing was rendered, so nothing is recorded")
 
 			By("setting the block")
 			pushes := gitFake.pushCount()
 			Expect(patch(container, func() {
-				container.Spec.Operations = &c4v1alpha1.OperationsSpec{
-					Recovery: &c4v1alpha1.OperationsRecovery{RPO: "5m"}}
+				container.Spec.Operations = &c4v1beta1.OperationsSpec{
+					Recovery: &c4v1beta1.OperationsRecovery{RPO: "5m"}}
 			})).To(Succeed())
-			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonNotReadByFramework)
-			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).To(Equal(
+			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonNotReadByFramework)
+			Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(Equal(
 				"Framework python-fastapi doesn't read spec.operations (readsOperations is not set), " +
 					"so its repository has none of it; change the repository by a Task"))
 			Expect(container.Status.Operations).To(BeNil())
@@ -178,7 +178,7 @@ var _ = Describe("Container operations", func() {
 			By("leaving the block out again")
 			Expect(patch(container, func() { container.Spec.Operations = nil })).To(Succeed())
 			Eventually(func(g Gomega) {
-				g.Expect(condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionOperationsApplied)).
+				g.Expect(condition(getContainer(g, ns).Status.Conditions, c4v1beta1.ConditionOperationsApplied)).
 					To(BeNil())
 			}).Should(Succeed())
 		})
@@ -187,18 +187,18 @@ var _ = Describe("Container operations", func() {
 	It("scaffolds a go-cli Container with the block, and says from the start that go-cli doesn't read it", func() {
 		ns := newProjectNamespace()
 		createFactory(ns)
-		container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeCLI)
-		container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: "go-cli"}
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeCLI)
+		container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: "go-cli"}
 		container.Spec.ComputeRef, container.Spec.DeploymentRef = nil, nil
-		container.Spec.Operations = &c4v1alpha1.OperationsSpec{Alerts: &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"}}
+		container.Spec.Operations = &c4v1beta1.OperationsSpec{Alerts: &c4v1beta1.OperationsAlerts{Email: "ops@example.com"}}
 		mustCreate(
-			&c4v1alpha1.Framework{ObjectMeta: objectMeta(ns, "go-cli"),
-				Spec: newFrameworkSpec(templatesURL+"go-cli", "v1.0.0", c4v1alpha1.ContainerTypeCLI)},
+			&c4v1beta1.Framework{ObjectMeta: objectMeta(ns, "go-cli"),
+				Spec: newFrameworkSpec(templatesURL+"go-cli", "v1.0.0", c4v1beta1.ContainerTypeCLI)},
 			newSystem(ns, "webshop-core"), container)
 
-		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonNotReadByFramework)
-		Expect(container.Status.Phase).To(Equal(c4v1alpha1.ContainerReady))
-		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
+		container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonNotReadByFramework)
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).
 			To(HavePrefix("Framework go-cli doesn't read spec.operations"))
 		Expect(container.Status.Operations).To(BeNil())
 		Expect(gitFake.repo(ns, "orders-api").files).NotTo(HaveKey(model.OperationsFile))
@@ -208,18 +208,18 @@ var _ = Describe("Container operations", func() {
 		func() {
 			ns := newProjectNamespace()
 			createFactory(ns)
-			container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
-			container.Spec.FrameworkRef = c4v1alpha1.LocalRef{Name: opsFramework}
-			container.Spec.Operations = &c4v1alpha1.OperationsSpec{
-				Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
-				Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+			container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: opsFramework}
+			container.Spec.Operations = &c4v1beta1.OperationsSpec{
+				Backups: &c4v1beta1.OperationsBackups{RetentionDays: new(int32(0))},
+				Alerts:  &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 			}
 			mustCreate(newOperationsFramework(ns, false), newSystem(ns, "webshop-core"), container)
 
-			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
-			Expect(container.Spec.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
-				Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(0))},
-				Alerts:  &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
+			Expect(container.Spec.Operations).To(Equal(&c4v1beta1.OperationsSpec{
+				Backups: &c4v1beta1.OperationsBackups{RetentionDays: new(int32(0))},
+				Alerts:  &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 			}), "a client reads back only the fields it set")
 			Expect(container.Status.Operations.Backups.RetentionDays).To(HaveValue(BeZero()))
 			Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
@@ -228,42 +228,42 @@ var _ = Describe("Container operations", func() {
 			By("changing the block after the scaffold, on a Framework that says it reads it but renders no infra/operations.ts")
 			pushes := gitFake.pushCount()
 			Expect(patch(container, func() {
-				container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+				container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 			})).To(Succeed())
-			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonChangedAfterScaffold)
-			Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).
+			container = eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonChangedAfterScaffold)
+			Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).
 				To(ContainSubstring("the Framework " + opsFramework + " at v1.3.0 renders no infra/operations.ts"))
 			Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps what the scaffold rendered")
 			Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped",
-				c4v1alpha1.ReasonChangedAfterScaffold)))
+				c4v1beta1.ReasonChangedAfterScaffold)))
 			Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
 				"nothing reaches the repository")
 			Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 
 			By("writing the default out, which is the block the scaffold rendered")
 			Expect(patch(container, func() {
-				container.Spec.Operations.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "1h"}
+				container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "1h"}
 			})).To(Succeed())
-			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1alpha1.ReasonAppliedAtScaffold)
+			container = eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
 			Expect(container.Status.OperationsUpdate).To(BeNil())
 		})
 
 	// #1119: a change to the block reaches the repository the way a Standard bump does.
 	It("renders infra/operations.ts again from a changed block, and merges it once CI passes", func() {
 		ns := newProjectNamespace()
-		createOperationsContainer(ns, &c4v1alpha1.OperationsSpec{
-			Alerts: &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"}})
+		createOperationsContainer(ns, &c4v1beta1.OperationsSpec{
+			Alerts: &c4v1beta1.OperationsAlerts{Email: "ops@example.com"}})
 		Expect(mainFile(ns, model.OperationsFile)).To(Equal(operationsFile("1h", "ops@example.com")))
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		update := openedOperations(ns, "5m")
 		Expect(update.Branch).To(HavePrefix("operations-update/"))
-		Expect(update.Operations).To(Equal(&c4v1alpha1.OperationsSpec{
-			Backups:  &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(35))},
-			Recovery: &c4v1alpha1.OperationsRecovery{RPO: "5m", RTO: "4h"},
-			Alerts:   &c4v1alpha1.OperationsAlerts{Email: "ops@example.com"},
+		Expect(update.Operations).To(Equal(&c4v1beta1.OperationsSpec{
+			Backups:  &c4v1beta1.OperationsBackups{RetentionDays: new(int32(35))},
+			Recovery: &c4v1beta1.OperationsRecovery{RPO: "5m", RTO: "4h"},
+			Alerts:   &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 		}), "the update records the block it renders, every field set")
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(update.PullRequest), "Head": Equal(update.Branch),
@@ -282,8 +282,8 @@ var _ = Describe("Container operations", func() {
 		By("waiting while CI runs")
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-			cond := condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionOperationsApplied)
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdating))
+			cond := condition(getContainer(g, ns).Status.Conditions, c4v1beta1.ConditionOperationsApplied)
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdating))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("merging it as admin once CI passes on its commit")
@@ -298,8 +298,8 @@ var _ = Describe("Container operations", func() {
 		By("staying merged on the next passes")
 		Consistently(func(g Gomega) {
 			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
-			cond := condition(getContainer(g, ns).Status.Conditions, c4v1alpha1.ConditionOperationsApplied)
-			g.Expect(cond.Reason).To(Equal(c4v1alpha1.ReasonUpdateMerged))
+			cond := condition(getContainer(g, ns).Status.Conditions, c4v1beta1.ConditionOperationsApplied)
+			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdateMerged))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 	})
 
@@ -307,13 +307,13 @@ var _ = Describe("Container operations", func() {
 		ns := newProjectNamespace()
 		createOperationsContainer(ns, nil)
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		update := openedOperations(ns, "5m")
 		gitFake.setChecks(ns, "orders-api", update.Commit, "failure")
-		container := eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonChecksFailed)
-		Expect(condition(container.Status.Conditions, c4v1alpha1.ConditionOperationsApplied).Message).To(Equal(
+		container := eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonChecksFailed)
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(Equal(
 			"CI is failure on http://gitea/" + ns + "/orders-api/actions/runs/1; the update merges once a re-run " +
 				"passes, or close " + update.PullRequestURL + " to drop it"))
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
@@ -328,13 +328,13 @@ var _ = Describe("Container operations", func() {
 		ns := newProjectNamespace()
 		createOperationsContainer(ns, nil)
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		first := openedOperations(ns, "5m")
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "15m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "15m"}
 		})
 		second := openedOperations(ns, "15m")
 		Expect(second.Branch).NotTo(Equal(first.Branch))
@@ -358,10 +358,10 @@ var _ = Describe("Container operations", func() {
 		tree := gitFake.template(url, "v1.3.0")
 		gitFake.dropTemplate(url, "v1.3.0")
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
-		eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1alpha1.ReasonGitError)
+		eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonGitError)
 		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
 
 		By("opening it at a recheck once the host answers, with no change to the Container")
@@ -376,8 +376,8 @@ var _ = Describe("Container operations", func() {
 		createOperationsContainer(ns, nil)
 		gitFake.leaveMergeCommitsUnnamed(ns, "orders-api")
 
-		changeOperations(ns, func(o *c4v1alpha1.OperationsSpec) {
-			o.Recovery = &c4v1alpha1.OperationsRecovery{RPO: "5m"}
+		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
+			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		update := openedOperations(ns, "5m")
 		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
@@ -386,23 +386,23 @@ var _ = Describe("Container operations", func() {
 	})
 
 	DescribeTable("refuses a value outside the block's patterns and ranges",
-		func(ops c4v1alpha1.OperationsSpec, field string) {
+		func(ops c4v1beta1.OperationsSpec, field string) {
 			ns := newProjectNamespace()
-			container := newContainer(ns, "orders-api", "webshop-core", c4v1alpha1.ContainerTypeService)
+			container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 			container.Spec.Operations = &ops
 			Expect(k8sClient.Create(ctx, container)).To(MatchError(ContainSubstring("spec.operations." + field)))
 		},
-		Entry("a negative retention", c4v1alpha1.OperationsSpec{
-			Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(-1))}}, "backups.retentionDays"),
-		Entry("a retention over ten years", c4v1alpha1.OperationsSpec{
-			Backups: &c4v1alpha1.OperationsBackups{RetentionDays: new(int32(3651))}}, "backups.retentionDays"),
-		Entry("a region that isn't one", c4v1alpha1.OperationsSpec{
-			Backups: &c4v1alpha1.OperationsBackups{CopyToRegion: "Europe"}}, "backups.copyToRegion"),
-		Entry("an objective in words", c4v1alpha1.OperationsSpec{
-			Recovery: &c4v1alpha1.OperationsRecovery{RPO: "1 hour"}}, "recovery.rpo"),
-		Entry("an objective in weeks", c4v1alpha1.OperationsSpec{
-			Recovery: &c4v1alpha1.OperationsRecovery{RTO: "1w"}}, "recovery.rto"),
-		Entry("an email that isn't one", c4v1alpha1.OperationsSpec{
-			Alerts: &c4v1alpha1.OperationsAlerts{Email: "the ops team"}}, "alerts.email"),
+		Entry("a negative retention", c4v1beta1.OperationsSpec{
+			Backups: &c4v1beta1.OperationsBackups{RetentionDays: new(int32(-1))}}, "backups.retentionDays"),
+		Entry("a retention over ten years", c4v1beta1.OperationsSpec{
+			Backups: &c4v1beta1.OperationsBackups{RetentionDays: new(int32(3651))}}, "backups.retentionDays"),
+		Entry("a region that isn't one", c4v1beta1.OperationsSpec{
+			Backups: &c4v1beta1.OperationsBackups{CopyToRegion: "Europe"}}, "backups.copyToRegion"),
+		Entry("an objective in words", c4v1beta1.OperationsSpec{
+			Recovery: &c4v1beta1.OperationsRecovery{RPO: "1 hour"}}, "recovery.rpo"),
+		Entry("an objective in weeks", c4v1beta1.OperationsSpec{
+			Recovery: &c4v1beta1.OperationsRecovery{RTO: "1w"}}, "recovery.rto"),
+		Entry("an email that isn't one", c4v1beta1.OperationsSpec{
+			Alerts: &c4v1beta1.OperationsAlerts{Email: "the ops team"}}, "alerts.email"),
 	)
 })

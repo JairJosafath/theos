@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
@@ -45,7 +45,7 @@ var _ = Describe("Container ships its image to a gitlab target (#1806)", func() 
 			deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		}
 		shipRelease(ns, "v0.1.0", true)
-		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "img"}, c4v1alpha1.ContainerDeploy{Target: "plain"})
+		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "img"}, c4v1beta1.ContainerDeploy{Target: "plain"})
 
 		repo := "acme/" + ns + "-img/orders-api"
 		want := gitlabRegistryFake.host + "/" + repo + "@" + digest

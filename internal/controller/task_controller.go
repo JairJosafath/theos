@@ -29,7 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
@@ -142,22 +142,22 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	ctx = withEndedRuns(ctx)
 	// Read the live Task: steps have side effects (sandboxes, merges), and the cache
 	// can lag behind our own last status write.
-	var task c4v1alpha1.Task
+	var task c4v1beta1.Task
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &task); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !task.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-	if task.Spec.Kind == c4v1alpha1.TaskPlan {
+	if task.Spec.Kind == c4v1beta1.TaskPlan {
 		return r.reconcilePlan(ctx, &task)
 	}
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
-		status.Phase = c4v1alpha1.TaskPending
+		status.Phase = c4v1beta1.TaskPending
 	}
 
-	var container c4v1alpha1.Container
+	var container c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.ContainerRef.Name}, &container)
 	if apierrors.IsNotFound(err) {
 		r.progress(&task, status, metav1.ConditionFalse, "ContainerNotFound",
@@ -168,7 +168,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	labels := projectLabels(task.Namespace)
-	labels[c4v1alpha1.LabelContainer] = container.Name
+	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -176,14 +176,14 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// too, or a status written since the read would be overwritten (#591).
 	status = task.Status.DeepCopy()
 	if status.Phase == "" {
-		status.Phase = c4v1alpha1.TaskPending
+		status.Phase = c4v1beta1.TaskPending
 	}
 	if isFinal(status.Phase) {
-		if status.Phase == c4v1alpha1.TaskFailed {
+		if status.Phase == c4v1beta1.TaskFailed {
 			result := r.tendAbandonedPull(ctx, &task, status, &container)
 			return result, r.writeStatus(ctx, &task, status)
 		}
-		if status.Phase != c4v1alpha1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
+		if status.Phase != c4v1beta1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
 		// Merged before the Task recorded merge commits, or the read failed: a Crew
@@ -201,7 +201,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return result, r.writeStatus(ctx, &task, status)
 	}
 
-	var agent c4v1alpha1.Agent
+	var agent c4v1beta1.Agent
 	err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.AgentRef.Name}, &agent)
 	if apierrors.IsNotFound(err) {
 		r.progress(&task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+task.Spec.AgentRef.Name+" not found")
@@ -212,7 +212,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	agents := taskAgents{implementer: &agent, reviewer: &agent}
 	if ref := task.Spec.ReviewerRef; ref != nil {
-		agents.reviewer = &c4v1alpha1.Agent{}
+		agents.reviewer = &c4v1beta1.Agent{}
 		err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, agents.reviewer)
 		if apierrors.IsNotFound(err) {
 			r.progress(&task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+ref.Name+" not found")
@@ -240,7 +240,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // queueForSlot keeps the Task's place in the queue for an agent slot while its
 // step waits for one, and gives it up otherwise.
-func (r *TaskReconciler) queueForSlot(status *c4v1alpha1.TaskStatus, step model.TaskStep, result *ctrl.Result) {
+func (r *TaskReconciler) queueForSlot(status *c4v1beta1.TaskStatus, step model.TaskStep, result *ctrl.Result) {
 	if step.SlotWait {
 		// Queue for a slot. Sandboxes of other Tasks don't wake this one; look again.
 		if status.SlotWaitSince == nil {
@@ -256,14 +256,14 @@ func (r *TaskReconciler) queueForSlot(status *c4v1alpha1.TaskStatus, step model.
 }
 
 // facts gathers what the next step depends on.
-func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, agent *c4v1alpha1.Agent) (model.TaskFacts, error) {
+func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agent *c4v1beta1.Agent) (model.TaskFacts, error) {
 	facts := model.TaskFacts{
 		Phase:          string(status.Phase),
 		Container:      container.Name,
 		Round:          int(status.Round),
 		MaxRounds:      int(agent.Spec.MaxRounds),
-		ContainerReady: container.Status.Phase == c4v1alpha1.ContainerReady,
+		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady,
 		Protected:      model.Protected(container.Choices().Standard != ""),
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
@@ -304,7 +304,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	// A Crew's Task stops at the Crew's cost cap (#1893); a Crew that is gone
 	// caps nothing.
 	if crewName := task.Labels[LabelCrew]; crewName != "" {
-		var crew c4v1alpha1.Crew
+		var crew c4v1beta1.Crew
 		switch err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: crewName}, &crew); {
 		case apierrors.IsNotFound(err):
 		case err != nil:
@@ -316,8 +316,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 	}
 
 	// A Crew's Tasks leave their concurrency to the Crew; others take turns.
-	if status.Phase == c4v1alpha1.TaskPending && task.Labels[LabelCrew] == "" {
-		var tasks c4v1alpha1.TaskList
+	if status.Phase == c4v1beta1.TaskPending && task.Labels[LabelCrew] == "" {
+		var tasks c4v1beta1.TaskList
 		if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
 			client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
 			return facts, err
@@ -329,7 +329,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		}
 		facts.BlockedBy = model.BlockingTask(task.Name, refs)
 	}
-	if status.Phase == c4v1alpha1.TaskPending && facts.Protected && facts.ContainerReady && facts.BlockedBy == "" {
+	if status.Phase == c4v1beta1.TaskPending && facts.Protected && facts.ContainerReady && facts.BlockedBy == "" {
 		if err := r.baseFacts(ctx, container, &facts); err != nil {
 			return facts, err
 		}
@@ -351,7 +351,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 		facts.Run = run
 	}
 
-	if status.Phase == c4v1alpha1.TaskChecking && status.Commit != "" {
+	if status.Phase == c4v1beta1.TaskChecking && status.Commit != "" {
 		if err := r.checkFacts(ctx, task, status, container, &facts); err != nil {
 			return facts, err
 		}
@@ -366,7 +366,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1alpha1.Task, statu
 
 // baseFacts reads the CI state of main's head for the checks main requires,
 // before round 1: round 1 starts only on a green base.
-func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1alpha1.Container,
+func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1beta1.Container,
 	facts *model.TaskFacts) error {
 	git, err := gitAccessFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace,
 		container.Spec.GitProviderRef.Name)
@@ -388,8 +388,8 @@ func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1alpha1.Co
 // checkFacts reads the CI result on the round's commit while the Task is
 // Checking: its state and failed log, and the runs at the commit while it
 // waits, or while a failure may still be the one from before a rerun.
-func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
-	container *c4v1alpha1.Container, facts *model.TaskFacts) error {
+func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, facts *model.TaskFacts) error {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, container.Spec.GitProviderRef.Name)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, 
 	if err != nil {
 		return err
 	}
-	status.Checks = &c4v1alpha1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
+	status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
 	facts.Checks, facts.ChecksURL = checks.State, checks.URL
 	failed := checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError
 	facts.ChecksReruns, facts.ChecksRerunDue = int(status.ChecksReruns), status.ChecksRerunDue
@@ -433,9 +433,9 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1alpha1.Task, 
 // ended while its branch, with main merged in, was checked again: a gated
 // merge merges only with the approval of a review run that still lasts. Asked
 // once those checks passed.
-func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	facts *model.TaskFacts) {
-	if len(task.Spec.AllowedProtectedPaths) > 0 && status.Phase == c4v1alpha1.TaskChecking &&
+	if len(task.Spec.AllowedProtectedPaths) > 0 && status.Phase == c4v1beta1.TaskChecking &&
 		status.MergeWhenChecksPass && facts.Checks == gitprovider.CheckSuccess {
 		facts.ApprovalEnded = r.reviewRun(ctx, task, status) == nil
 	}
@@ -445,7 +445,7 @@ func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1alpha1.Tas
 // again have given their result, and the state of its runs while they haven't. Runs that can't
 // be read are unknown, which waits.
 func (r *TaskReconciler) rerunState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
-	status *c4v1alpha1.TaskStatus) (model.CIRun, bool) {
+	status *c4v1beta1.TaskStatus) (model.CIRun, bool) {
 	runs, err := provider.CommitRuns(ctx, repo, status.Commit)
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read the CI runs of the Task's commit", "commit", status.Commit,
@@ -560,12 +560,12 @@ func (r *TaskReconciler) runnerPodFate(ctx context.Context, namespace, runner st
 
 // noFreeSlot reports whether the Task must wait for an agent slot: all are taken,
 // or a Task that has waited longer goes first.
-func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1alpha1.Task) (bool, error) {
+func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1beta1.Task) (bool, error) {
 	held, err := r.slotHolders(ctx)
 	if err != nil {
 		return false, err
 	}
-	var tasks c4v1alpha1.TaskList
+	var tasks c4v1beta1.TaskList
 	if err := r.List(ctx, &tasks); err != nil {
 		return false, err
 	}
@@ -614,12 +614,12 @@ func (r *TaskReconciler) slotHolders(ctx context.Context) ([]string, error) {
 // pullFacts reads whether an approved change's pull request misses what merged
 // into main since its checks ran, and whether the Git host says it merges: an approved change merges
 // only on checks that ran against the main it merges into.
-func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.TaskStatus, facts *model.TaskFacts) error {
+func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.TaskStatus, facts *model.TaskFacts) error {
 	run := facts.Run
-	approved := status.Phase == c4v1alpha1.TaskReviewing && run.Done && run.Result != nil &&
+	approved := status.Phase == c4v1beta1.TaskReviewing && run.Done && run.Result != nil &&
 		run.Result.Verdict == model.VerdictApprove
-	updated := status.Phase == c4v1alpha1.TaskChecking && status.MergeWhenChecksPass &&
+	updated := status.Phase == c4v1beta1.TaskChecking && status.MergeWhenChecksPass &&
 		facts.Checks == gitprovider.CheckSuccess
 	if !approved && !updated || status.PullRequest == 0 {
 		return nil
@@ -635,8 +635,8 @@ func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1alpha1.Co
 
 // pullRequest reads the Task's pull request: whether main moved since its
 // branch took it in, and whether it conflicts with main.
-func (r *TaskReconciler) pullRequest(ctx context.Context, container *c4v1alpha1.Container,
-	status *c4v1alpha1.TaskStatus) (gitprovider.PullRequest, error) {
+func (r *TaskReconciler) pullRequest(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.TaskStatus) (gitprovider.PullRequest, error) {
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return gitprovider.PullRequest{}, err
@@ -647,30 +647,30 @@ func (r *TaskReconciler) pullRequest(ctx context.Context, container *c4v1alpha1.
 }
 
 // runRole is the role of the sandbox a phase waits on.
-func runRole(phase c4v1alpha1.TaskPhase) string {
+func runRole(phase c4v1beta1.TaskPhase) string {
 	switch phase {
-	case c4v1alpha1.TaskImplementing:
+	case c4v1beta1.TaskImplementing:
 		return model.RoleImplementer
-	case c4v1alpha1.TaskReviewing:
+	case c4v1beta1.TaskReviewing:
 		return model.RoleReviewer
 	}
 	return ""
 }
 
-func sandboxName(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, role string) string {
+func sandboxName(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, role string) string {
 	return model.SandboxName(task.Name, int(status.Round), int(status.Restarts), role,
 		int(status.ReviewAttempts+status.ReviewAgains)+1, int(status.Reruns))
 }
 
-func isFinal(phase c4v1alpha1.TaskPhase) bool {
-	return phase == c4v1alpha1.TaskMerged || phase == c4v1alpha1.TaskFailed
+func isFinal(phase c4v1beta1.TaskPhase) bool {
+	return phase == c4v1beta1.TaskMerged || phase == c4v1beta1.TaskFailed
 }
 
 // failedNoCI reports whether a Task failed through its CI runner's fault (CI
 // never reported on its commit, or the runner ran out of room), so it costs
 // its issue no try.
-func failedNoCI(status *c4v1alpha1.TaskStatus) bool {
-	if status.Phase != c4v1alpha1.TaskFailed {
+func failedNoCI(status *c4v1beta1.TaskStatus) bool {
+	if status.Phase != c4v1beta1.TaskFailed {
 		return false
 	}
 	cond := meta.FindStatusCondition(status.Conditions, ConditionSucceeded)
@@ -684,12 +684,12 @@ func (r *TaskReconciler) now() time.Time {
 	return time.Now()
 }
 
-func (r *TaskReconciler) progress(task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus,
+func (r *TaskReconciler) progress(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	s metav1.ConditionStatus, reason, message string) {
 	setCondition(&status.Conditions, task.Generation, ConditionProgressing, s, reason, message)
 }
 
-func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus) error {
+func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) error {
 	status.ObservedGeneration = task.Generation
 	if status.Phase != task.Status.Phase || status.PhaseChangedAt == nil {
 		now := metav1.NewTime(r.now())
@@ -710,7 +710,7 @@ func (r *TaskReconciler) writeStatus(ctx context.Context, task *c4v1alpha1.Task,
 
 // recordTransition adds the Task's current phase, round and Progressing reason to
 // its timeline when they changed.
-func recordTransition(status *c4v1alpha1.TaskStatus, now time.Time) []c4v1alpha1.TaskTransition {
+func recordTransition(status *c4v1beta1.TaskStatus, now time.Time) []c4v1beta1.TaskTransition {
 	next := model.Transition{At: now, Phase: string(status.Phase), Round: int(status.Round)}
 	if cond := meta.FindStatusCondition(status.Conditions, ConditionProgressing); cond != nil {
 		next.Reason, next.Message = cond.Reason, cond.Message
@@ -724,9 +724,9 @@ func recordTransition(status *c4v1alpha1.TaskStatus, now time.Time) []c4v1alpha1
 	if !added {
 		return status.History
 	}
-	out := make([]c4v1alpha1.TaskTransition, 0, len(recorded))
+	out := make([]c4v1beta1.TaskTransition, 0, len(recorded))
 	for _, tr := range recorded {
-		out = append(out, c4v1alpha1.TaskTransition{At: metav1.NewTime(tr.At), Phase: c4v1alpha1.TaskPhase(tr.Phase),
+		out = append(out, c4v1beta1.TaskTransition{At: metav1.NewTime(tr.At), Phase: c4v1beta1.TaskPhase(tr.Phase),
 			Round: int32(tr.Round), Reason: tr.Reason, Message: tr.Message})
 	}
 	return out
@@ -743,7 +743,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	// A Container becoming Ready, or a Task finishing, can start the Tasks waiting on it.
 	containerTasks := func(ctx context.Context, ns, container string) []reconcile.Request {
-		var tasks c4v1alpha1.TaskList
+		var tasks c4v1beta1.TaskList
 		if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(ns),
 			client.MatchingFields{indexTaskContainer: container}); err != nil {
 			return nil
@@ -760,7 +760,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return containerTasks(ctx, obj.GetNamespace(), obj.GetName())
 	})
 	fromTask := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		task, ok := obj.(*c4v1alpha1.Task)
+		task, ok := obj.(*c4v1beta1.Task)
 		if !ok {
 			return nil
 		}
@@ -769,7 +769,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// A Crew's cost cap changing, or the Crew going away, resumes its Tasks
 	// waiting at the cap (#1893).
 	fromCrew := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		var tasks c4v1alpha1.TaskList
+		var tasks c4v1beta1.TaskList
 		if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(obj.GetNamespace()),
 			client.MatchingLabels{LabelCrew: obj.GetName()}); err != nil {
 			return nil
@@ -783,15 +783,15 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return reqs
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&c4v1alpha1.Task{}).
+		For(&c4v1beta1.Task{}).
 		Owns(newSandbox()).
 		Watches(&corev1.Pod{}, podTask, podFinished()).
-		Watches(&c4v1alpha1.Container{}, fromContainer, containerPhaseChanges()).
-		Watches(&c4v1alpha1.Task{}, fromTask, taskPhaseChanges()).
-		Watches(&c4v1alpha1.Crew{}, fromCrew, crewBudgetChanges()).
-		Watches(&c4v1alpha1.Agent{}, handler.EnqueueRequestsFromMapFunc(
+		Watches(&c4v1beta1.Container{}, fromContainer, containerPhaseChanges()).
+		Watches(&c4v1beta1.Task{}, fromTask, taskPhaseChanges()).
+		Watches(&c4v1beta1.Crew{}, fromCrew, crewBudgetChanges()).
+		Watches(&c4v1beta1.Agent{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
-				var tasks c4v1alpha1.TaskList
+				var tasks c4v1beta1.TaskList
 				if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(obj.GetNamespace())); err != nil {
 					return nil
 				}
@@ -810,7 +810,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // gitRepo returns the Provider and repository of a Task's Container.
-func (r *TaskReconciler) gitRepo(ctx context.Context, container *c4v1alpha1.Container) (gitprovider.Provider,
+func (r *TaskReconciler) gitRepo(ctx context.Context, container *c4v1beta1.Container) (gitprovider.Provider,
 	gitprovider.Repository, error) {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err != nil {

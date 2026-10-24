@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
 )
 
@@ -28,7 +28,7 @@ func fenceScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{
-		corev1.AddToScheme, networkingv1.AddToScheme, c4v1alpha1.AddToScheme,
+		corev1.AddToScheme, networkingv1.AddToScheme, c4v1beta1.AddToScheme,
 	} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
@@ -49,11 +49,11 @@ func TestBuildSandboxPodHasNoClusterAccess(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sandbox, err := buildSandbox(sandboxRun{
-				task:      &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
-				status:    &c4v1alpha1.TaskStatus{Round: 1},
-				container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
-				agent: &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude"),
-					Spec: c4v1alpha1.AgentSpec{TimeoutMinutes: tt.minutes}},
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent: &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude"),
+					Spec: c4v1beta1.AgentSpec{TimeoutMinutes: tt.minutes}},
 				name: "add-crop-r1-implement", role: model.RoleImplementer,
 			}, fenceScheme(t), now)
 			if err != nil {
@@ -91,9 +91,9 @@ func TestBuildSandboxPodHasNoClusterAccess(t *testing.T) {
 
 func TestAgentNetworkFence(t *testing.T) {
 	scheme := fenceScheme(t)
-	project := &c4v1alpha1.Project{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "apps", UID: "project-1"}}
-	provider := func(name, url string) *c4v1alpha1.GitProvider {
-		return &c4v1alpha1.GitProvider{ObjectMeta: objectMeta("apps", name), Spec: c4v1alpha1.GitProviderSpec{URL: url}}
+	project := &c4v1beta1.Project{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "apps", UID: "project-1"}}
+	provider := func(name, url string) *c4v1beta1.GitProvider {
+		return &c4v1beta1.GitProvider{ObjectMeta: objectMeta("apps", name), Spec: c4v1beta1.GitProviderSpec{URL: url}}
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project,
 		provider("gitea", "http://gitea-http.gitea.svc.cluster.local:3000"),
@@ -193,12 +193,12 @@ func TestAgentNetworkFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, run := range []sandboxRun{
-		{container: &c4v1alpha1.Container{ObjectMeta: objectMeta("apps", "image-shrink")}, role: model.RoleImplementer},
+		{container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")}, role: model.RoleImplementer},
 		{brief: "cel-lens", role: model.RolePlanner},
 	} {
-		run.task = &c4v1alpha1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
-		run.status = &c4v1alpha1.TaskStatus{Round: 1}
-		run.agent = &c4v1alpha1.Agent{ObjectMeta: objectMeta("apps", "claude")}
+		run.task = &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
+		run.status = &c4v1beta1.TaskStatus{Round: 1}
+		run.agent = &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")}
 		run.name = "add-crop-r1"
 		sandbox, err := buildSandbox(run, scheme, time.Now())
 		if err != nil {
