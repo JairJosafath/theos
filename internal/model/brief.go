@@ -971,9 +971,23 @@ func checkCreatedRelationship(plan Plan, current CurrentModel, o PlanObject, ref
 	target, _ := findObject(plan.Objects, o.Target)
 	if source.Kind == KindContainer && target.Kind == KindDataStore {
 		for _, entry := range current.Catalog {
-			if entry.Side == SideConnector && entry.Name == target.Connector && !entry.Supports(source.Type) {
+			if entry.Side != SideConnector || entry.Name != target.Connector {
+				continue
+			}
+			if !entry.Supports(source.Type) {
 				refuse(subject, "DataStore %s's Connector %s does not support %s, the type of Container %s",
 					target.Name, entry.Name, source.Type, source.Name)
+			}
+			// #1958: the operator's NotWired check, so the round fails with
+			// the message the Container would show. An empty Framework is
+			// refused on the Container itself.
+			framework := planFramework(source, current.Bundles)
+			if framework == "" {
+				continue
+			}
+			if err := CheckWiring(framework, []CatalogEntry{entry}); err != nil {
+				refuse(subject, "DataStore %s's Connector %v, the Framework of Container %s",
+					target.Name, err, source.Name)
 			}
 		}
 	}
