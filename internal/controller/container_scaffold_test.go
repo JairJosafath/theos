@@ -135,6 +135,7 @@ var _ = Describe("Container scaffolding", func() {
 		for p := range repo.files {
 			Expect(p).NotTo(HavePrefix(".c4factory/"), "a template's inputs are never pushed")
 		}
+		Expect(repo.files).NotTo(HaveKey(scaffold.LicensePath), "no license set writes no LICENSE (#1788)")
 
 		var devcontainer map[string]any
 		Expect(json.Unmarshal(repo.files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
@@ -480,6 +481,25 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("package.json",
 			HaveField("Data", BeEquivalentTo("{\n  \"name\": \"@acme/orders-api\"\n}\n"))),
 			"the scaffold's provider Config carries the GitProvider's packages")
+	})
+
+	It("writes LICENSE from the Project's spec.license (#1788)", func() {
+		ns := newProjectNamespace()
+		var project c4v1alpha1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+		orig := project.DeepCopy()
+		project.Spec.License = "MIT"
+		Expect(k8sClient.Patch(ctx, &project, client.MergeFrom(orig))).To(Succeed())
+		createWebshop(ns)
+
+		eventuallyOrdersAPI(ns, c4v1alpha1.ContainerReady)
+		repo := gitFake.repo(ns, "orders-api")
+		Expect(repo.files).To(HaveKey(scaffold.LicensePath))
+		Expect(string(repo.files[scaffold.LicensePath].Data)).To(ContainSubstring("Copyright (c) %d Test story",
+			time.Now().Year()), "the copyright line names the Project's displayName and the year")
+		identity, err := scaffold.ParseIdentity(repo.files[scaffold.IdentityPath].Data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(identity.License).To(Equal("MIT"))
 	})
 
 	It("fails when two layers write the same path, naming it", func() {

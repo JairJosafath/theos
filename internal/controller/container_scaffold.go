@@ -140,9 +140,13 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1alpha
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1alpha1.ConditionScaffolded, c4v1alpha1.ReasonFailed, err.Error())
 	}
+	license, err := r.resolveLicense(ctx, container)
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1alpha1.ConditionScaffolded, err)
+	}
 	in := scaffoldInput(view, ci, res.use.Connectors,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container), repo.NpmScope)
+		specOperations(container), repo.NpmScope, license)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1alpha1.ReasonFailed
@@ -251,8 +255,10 @@ func (r *ContainerReconciler) condition(container *c4v1alpha1.Container, status 
 // (model.EffectiveChecks), ops its operations block, the defaults filled in,
 // and npmScope the scope the repository's npm package is named under
 // (gitprovider.Repository.NpmScope; empty means gitprovider.DefaultNpmScope).
+// license is the license the repository carries (resolveLicense); a caller
+// that only writes a message passes none.
 func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []string,
-	checks string, ops model.Operations, npmScope string) scaffold.Input {
+	checks string, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
 	if npmScope == "" {
 		npmScope = gitprovider.DefaultNpmScope
 	}
@@ -274,8 +280,23 @@ func scaffoldInput(container *c4v1alpha1.Container, ci model.CI, connectors []st
 		Checks:         checks,
 		Operations:     ops,
 		NpmScope:       npmScope,
+		License:        license,
 	}
 	return in
+}
+
+// resolveLicense is the license the Container's repository carries: its own
+// spec.license, else its Project's, the Project read by its namespace's name
+// (#1788). A Project that is missing leaves only the Container's, with the
+// namespace as the holder; the namespace is the Project's name.
+func (r *ContainerReconciler) resolveLicense(ctx context.Context,
+	container *c4v1alpha1.Container) (scaffold.License, error) {
+	var project c4v1alpha1.Project
+	if _, err := r.lookup(ctx, container.Namespace, container.Namespace, &project); err != nil {
+		return scaffold.License{}, fmt.Errorf("reading Project %s: %w", container.Namespace, err)
+	}
+	return scaffold.ResolveLicense(string(container.Spec.License), string(project.Spec.License),
+		project.Spec.DisplayName, container.Namespace, time.Now()), nil
 }
 
 // withBundle is a copy of the Container carrying bundle as its status.bundle,
