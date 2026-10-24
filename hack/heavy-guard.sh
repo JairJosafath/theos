@@ -26,6 +26,11 @@
 #                   (default: this checkout's leased cluster, else c4factory)
 set -uo pipefail
 
+# In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile) the hook does
+# nothing, before it reads its input: the sandbox has no heavy-job slots, no
+# cluster lease, no claim and no main to pull (#1894).
+[ "${IS_SANDBOX:-}" = 1 ] && exit 0
+
 IFS= read -r -d '' input
 # First a loose match on the raw JSON, with builtins only: it lets through
 # every command the exact match below finds, and the rest go without a

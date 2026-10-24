@@ -14,7 +14,9 @@
 # exports C4_HEADLESS, C4_RELAY_WORKER and, to its children, C4_RELAY_CHILD,
 # C4_RELAY_TRIAGE and C4_RELAY_MAINTAIN) sees the same environment as one run
 # from a shell: under the maintainer session, relay_test.sh's --triage dry run
-# took the maintainer's lock (#1564).
+# took the maintainer's lock (#1564); and with IS_SANDBOX cleared, so the
+# hooks' tests see the hooks at work when the tests run in an agent sandbox,
+# where the hooks do nothing (#1894).
 set -uo pipefail
 
 DIR=${1:-$(dirname "$0")}
@@ -32,7 +34,7 @@ fi
 run() {
   local start=$SECONDS rc
   env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u C4_HEAVY_SLOT \
-    -u C4_HEADLESS -u C4_RELAY_WORKER -u C4_RELAY_CHILD -u C4_RELAY_TRIAGE -u C4_RELAY_MAINTAIN \
+    -u C4_HEADLESS -u C4_RELAY_WORKER -u C4_RELAY_CHILD -u C4_RELAY_TRIAGE -u C4_RELAY_MAINTAIN -u IS_SANDBOX \
     bash "$1" >"$LOGS/$2.log" 2>&1 </dev/null
   rc=$?
   echo "$rc $((SECONDS - start))" >"$LOGS/$2.rc"
