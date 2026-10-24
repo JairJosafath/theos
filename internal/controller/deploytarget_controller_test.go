@@ -24,10 +24,6 @@ import (
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
-// deployWait bounds the wait for a DeployTarget's Ready: the Secret is read
-// every second.
-const deployWait = 10 * time.Second
-
 func newDeployTarget(ns, name, secret string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		GitHub:               &c4v1alpha1.DeployTargetGitHub{Repository: "acme/orders-cli"},
@@ -46,6 +42,14 @@ func newArgoCDTarget(ns, name, argoNS, destNS string) *c4v1alpha1.DeployTarget {
 func newCloudFormationTarget(ns, name, secret, account string) *c4v1alpha1.DeployTarget {
 	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
 		CloudFormation:       &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1", Account: account},
+		CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: secret}}}
+}
+
+// newGitLabTarget is a gitlab target for project on gitlabFake, its Secret
+// named secret.
+func newGitLabTarget(ns, name, secret, project string) *c4v1alpha1.DeployTarget {
+	return &c4v1alpha1.DeployTarget{ObjectMeta: objectMeta(ns, name), Spec: c4v1alpha1.DeployTargetSpec{
+		GitLab:               &c4v1alpha1.DeployTargetGitLab{URL: gitlabFake.URL(), Project: project},
 		CredentialsSecretRef: &c4v1alpha1.LocalRef{Name: secret}}}
 }
 
@@ -72,7 +76,7 @@ func deployReady(dt *c4v1alpha1.DeployTarget, status metav1.ConditionStatus, rea
 		g.Expect(cond.Reason).To(Equal(reason), cond.Message)
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.ObservedGeneration).To(Equal(dt.Generation))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return cond
 }
 
@@ -100,22 +104,22 @@ var _ = Describe("DeployTarget", func() {
 			dt.Spec.GitHub.Repository = "https://github.com/acme/orders-cli"
 		}, "repository must be owner/name"),
 		Entry("a source folder going up (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("apps/../secrets")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new("apps/../secrets")}
 		}, "path must have no '.', '..' or '.git' folder in it"),
 		Entry("a source folder in .git (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new(".git/hooks")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new(".git/hooks")}
 		}, "path must have no '.', '..' or '.git' folder in it"),
 		Entry("a source folder that isn't a path (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{Path: new("/orders")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{Path: new("/orders")}
 		}, "spec.github.source.path"),
 		Entry("a source tagPrefix with '..' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders..cli/")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("orders..cli/")}
 		}, "tagPrefix must make a git tag name"),
 		Entry("a source tagPrefix with a leading '/' (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("/orders")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("/orders")}
 		}, "tagPrefix must make a git tag name"),
 		Entry("a source tagPrefix with a space (#1599)", func(dt *c4v1alpha1.DeployTarget) {
-			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("orders cli/")}
+			dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{TagPrefix: new("orders cli/")}
 		}, "spec.github.source.tagPrefix"),
 		Entry("a server url over http (#1605)", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.URL = "http://ghe.example.com"
@@ -125,6 +129,12 @@ var _ = Describe("DeployTarget", func() {
 		}, "url must be https://host, with no path"),
 		Entry("github.com as a server url (#1605)", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub.URL = "https://github.com"
+		}, "leave it unset for github.com"),
+		Entry("github.com in capitals as a server url (#1809)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://GitHub.com"
+		}, "leave it unset for github.com"),
+		Entry("www.github.com in capitals with a port as a server url (#1809)", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub.URL = "https://WWW.GitHub.COM:443"
 		}, "leave it unset for github.com"),
 		Entry("more than 50 parameters", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.Parameters = map[string]string{}
@@ -146,7 +156,7 @@ var _ = Describe("DeployTarget", func() {
 		Entry("github and argoCD", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{
 				Destination: c4v1alpha1.DeployTargetArgoCDDestination{Namespace: "apps"}}
-		}, "set exactly one target member: github, argoCD or cloudFormation"),
+		}, "set exactly one target member: github, gitlab, argoCD or cloudFormation"),
 		Entry("an argoCD target with no destination", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.ArgoCD = &c4v1alpha1.DeployTargetArgoCD{}
@@ -154,7 +164,7 @@ var _ = Describe("DeployTarget", func() {
 		// The cloudFormation member (#1609).
 		Entry("github and cloudFormation", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1"}
-		}, "set exactly one target member: github, argoCD or cloudFormation"),
+		}, "set exactly one target member: github, gitlab, argoCD or cloudFormation"),
 		Entry("a cloudFormation target with no region", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub = nil
 			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{}
@@ -175,6 +185,63 @@ var _ = Describe("DeployTarget", func() {
 		Entry("a cloudFormation target with no Secret", func(dt *c4v1alpha1.DeployTarget) {
 			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
 			dt.Spec.CloudFormation = &c4v1alpha1.DeployTargetCloudFormation{Region: "eu-west-1"}
+		}, "set credentialsSecretRef unless the member is argoCD"),
+		// The gitlab member (#1804, docs/plans/gitlab-deploy.md decision 1).
+		Entry("github and gitlab", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders"}
+		}, "set exactly one target member: github, gitlab, argoCD or cloudFormation"),
+		Entry("a gitlab target with no project", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{}
+		}, "project must be the project's full path, group/project or deeper"),
+		Entry("a gitlab project that isn't group/project", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "orders"}
+		}, "project must be the project's full path, group/project or deeper"),
+		Entry("a gitlab project given as a URL", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "https://gitlab.com/acme/orders"}
+		}, "project must be the project's full path, group/project or deeper"),
+		Entry("gitlab.com as a gitlab url", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://gitlab.com/"}
+		}, "url is for a self-hosted GitLab; leave it unset for gitlab.com"),
+		Entry("GitLab.com in capitals as a gitlab url", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://GitLab.com:443"}
+		}, "url is for a self-hosted GitLab; leave it unset for gitlab.com"),
+		Entry("a gitlab url with a '..' segment", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://git.example.com/gitlab/.."}
+		}, "url must be https://host[:port], with at most the instance's relative URL root as its path"),
+		Entry("a gitlab url over http", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "http://git.example.com"}
+		}, "url must be https://host[:port], with at most the instance's relative URL root as its path"),
+		Entry("a gitlab url with a bad path", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://git.example.com//x"}
+		}, "url must be https://host[:port], with at most the instance's relative URL root as its path"),
+		Entry("a gitlab url with a query", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", URL: "https://git.example.com/?x=1"}
+		}, "url must be https://host[:port], with at most the instance's relative URL root as its path"),
+		Entry("a gitlab tagPrefix with '..'", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", TagPrefix: new("orders..cli/")}
+		}, "tagPrefix must make a git tag name"),
+		Entry("a gitlab tagPrefix with a space", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders", TagPrefix: new("orders cli/")}
+		}, "spec.gitlab.tagPrefix"),
+		Entry("a gitlab source folder going up", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub = nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders",
+				Source: &c4v1alpha1.DeployTargetSource{Path: new("apps/../secrets")}}
+		}, "path must have no '.', '..' or '.git' folder in it"),
+		Entry("a gitlab target with no Secret", func(dt *c4v1alpha1.DeployTarget) {
+			dt.Spec.GitHub, dt.Spec.CredentialsSecretRef = nil, nil
+			dt.Spec.GitLab = &c4v1alpha1.DeployTargetGitLab{Project: "acme/orders"}
 		}, "set credentialsSecretRef unless the member is argoCD"),
 		// An argoCD target on another cluster (#1590).
 		Entry("a gitURL with a path", func(dt *c4v1alpha1.DeployTarget) {
@@ -351,6 +418,33 @@ var _ = Describe("DeployTarget", func() {
 		Expect(cond.Message).To(ContainSubstring("AWS refused the credential in Secret prod-aws of " +
 			"DeployTarget prod for account 123456789012 in region eu-west-1"))
 		Expect(cond.Message).To(ContainSubstring("Whoever owns DeployTarget prod sets Secret prod-aws"))
+	})
+
+	It("is Ready on the project's token when the member is gitlab, on the url's instance (#1804)", func() {
+		ns := newProjectNamespace()
+		gitlabFake.AddProject("acme/"+ns, "glpat-"+ns)
+		dt := newGitLabTarget(ns, "staging", "staging-gitlab", "acme/"+ns)
+		mustCreate(dt)
+		cond := deployReady(dt, metav1.ConditionFalse, "SecretMissing")
+		Expect(cond.Message).To(ContainSubstring("Secret staging-gitlab, with the key token, is missing"))
+		Expect(cond.Message).To(ContainSubstring("a project access token with the Maintainer role"))
+
+		mustCreate(newDeploySecret(ns, "staging-gitlab", map[string]string{"token": "glpat-" + ns}))
+		cond = deployReady(dt, metav1.ConditionTrue, "Ready")
+		Expect(cond.Message).To(ContainSubstring("GitLab accepts the credential in Secret staging-gitlab for " +
+			strings.TrimPrefix(gitlabFake.URL(), "https://") + "/acme/" + ns))
+		Expect(dt.Status.CheckedTime).NotTo(BeNil())
+	})
+
+	It("is CredentialRefused when GitLab refuses a gitlab target's token (#1804)", func() {
+		ns := newProjectNamespace()
+		gitlabFake.AddProject("acme/"+ns, "glpat-"+ns)
+		dt := newGitLabTarget(ns, "prod", "prod-gitlab", "acme/"+ns)
+		mustCreate(newDeploySecret(ns, "prod-gitlab", map[string]string{"token": "wrong"}), dt)
+		cond := deployReady(dt, metav1.ConditionFalse, "CredentialRefused")
+		Expect(cond.Message).To(ContainSubstring("GitLab refused the credential in Secret prod-gitlab of " +
+			"DeployTarget prod for"))
+		Expect(cond.Message).To(ContainSubstring("Whoever owns DeployTarget prod sets Secret prod-gitlab"))
 	})
 
 	It("is Unreachable when AWS can't be reached for a cloudFormation target (#1609)", func() {

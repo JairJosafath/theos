@@ -72,6 +72,20 @@ its build context, and `cdk deploy` builds it, with Docker, on the deployer's
 machine.{{ end }}{{ if $site }} Vite builds the site at synth, into an asset there, offline
 too; `npm run dev` serves it on your machine.{{ end }}
 
+{{ if .Domains -}}
+## The domains
+
+This system is about {{ range $i, $d := .Domains }}{{ if $i }}, {{ end }}{{ $d }}{{ end }}. Before you plan a
+change, read each domain's guide and the topic files it names for the part
+you touch:
+
+{{ range .Domains }}- `docs/agents/domain/{{ . }}/README.md`
+{{ end }}
+Follow their practices, and where they list a choice, make theirs unless the
+issue says otherwise. Like `AGENTS.md`, they belong to the factory and never
+change here.
+
+{{ end -}}
 ## Workflow
 
 1. Read the issue, its acceptance criteria, and your role guide:

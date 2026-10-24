@@ -363,7 +363,7 @@ func sourceStep(f PublishFacts, tag string) (step PublishStep, done *PublishedSo
 		return PublishStep{Action: PublishReadSource}, nil
 	}
 	return NextSourceStep(SourceShip{Source: *f.Source, Files: f.SourceFiles, Repository: f.Repository,
-		App: f.App, Owner: f.Namespace + "/" + f.Container, Tag: f.Tag, GitHubTag: tag}, f.GitHubSource)
+		App: f.App, Owner: f.Namespace + "/" + f.Container, Tag: f.Tag, ReleaseTag: tag}, f.GitHubSource)
 }
 
 // SourceShip is a release's source shipped to a GitHub repository: where it
@@ -379,7 +379,7 @@ type SourceShip struct {
 	App        string
 	Owner      string
 	Tag        string
-	GitHubTag  string
+	ReleaseTag string
 }
 
 // NextSourceStep is the next write that publishes s's source, given gh, what
@@ -391,7 +391,7 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 	sourceTag := SourceTag(src, s.Tag)
 	for _, file := range s.Files.Files {
 		if file.Size > MaxSourceBlob {
-			return fail(PublishSourceTooLarge, "%s is %d MiB, over the 100 MiB GitHub takes; the source of %s isn't published",
+			return fail(PublishSourceTooLarge, "%s is %d MiB, over the 100 MiB a source file may be; the source of %s isn't published",
 				file.Path, file.Size>>20, s.Tag), nil
 		}
 	}
@@ -430,7 +430,7 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 	}
 	return PublishStep{Action: PublishSourceCommit, SourceCommit: &SourceCommit{
 		Path: src.Path, Files: s.Files.Files, Upload: upload, Tree: s.Files.Tree, Parent: gh.Head,
-		Message: SourceMessage(s.App, s.Owner, s.Tag, s.GitHubTag),
+		Message: SourceMessage(s.App, s.Owner, s.Tag, s.ReleaseTag),
 	}}, nil
 }
 

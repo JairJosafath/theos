@@ -80,8 +80,8 @@ func TestConversionRoundTrip(t *testing.T) {
 			}
 		})
 	}
-	if kinds != 19 {
-		t.Errorf("round-tripped %d kinds, want all 19", kinds)
+	if kinds != 20 {
+		t.Errorf("round-tripped %d kinds, want all 20", kinds)
 	}
 }
 

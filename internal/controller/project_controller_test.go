@@ -51,13 +51,14 @@ var _ = Describe("Project", func() {
 			Spec: newCatalogSpec("http://gitea:3000/templates/k8s-manifests", "v1.2.1", c4v1alpha1.ContainerTypeService)}
 		connector := &c4v1alpha1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
 			Spec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1alpha1.ContainerTypeService)}
+		domain := newDomain(ns, "webshop")
 		bundle := &c4v1alpha1.Bundle{ObjectMeta: objectMeta(ns, "python-service"),
 			Spec: c4v1alpha1.BundleSpec{FrameworkRef: c4v1alpha1.LocalRef{Name: "python-fastapi"}}}
-		mustCreate(person, system, provider, framework, compute, deployment, connector, bundle)
+		mustCreate(person, system, provider, framework, compute, deployment, connector, domain, bundle)
 
 		var project c4v1alpha1.Project
 		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
-		for _, obj := range []client.Object{person, system, provider, framework, compute, deployment, connector, bundle} {
+		for _, obj := range []client.Object{person, system, provider, framework, compute, deployment, connector, domain, bundle} {
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, key(ns, obj.GetName()), obj)).To(Succeed())
 				g.Expect(controlledBy(obj, &project)).To(BeTrue(), "%T %s should be owned by the Project", obj, obj.GetName())
@@ -161,5 +162,14 @@ var _ = Describe("Project", func() {
 				ChartVersion:    testChartVersion,
 			}))
 		}).Should(Succeed())
+	})
+
+	It("takes a license only from the fixed set of SPDX ids (#1859)", func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "story-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		project := &c4v1alpha1.Project{ObjectMeta: objectMeta(ns.Name, ns.Name), Spec: c4v1alpha1.ProjectSpec{License: "WTFPL"}}
+		Expect(k8sClient.Create(ctx, project)).To(MatchError(ContainSubstring("license")))
+		project.Spec.License = "MIT"
+		Expect(k8sClient.Create(ctx, project)).To(Succeed())
 	})
 })

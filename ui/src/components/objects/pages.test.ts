@@ -75,6 +75,7 @@ describe('the read-only object pages', () => {
     ['Compute', 'small', 'Its template'],
     ['Deployment', 'k8s-manifests', 'Its template'],
     ['Bundle', 'python-service', 'Its entries'],
+    ['Domain', 'webshop', 'Its template'],
     ['GitProvider', 'gitea', 'Where repositories go'],
     ['DeployTarget', 'prod', 'Where it ships'],
   ] as const)('opens a %s page', (kind, name, section) => {
@@ -90,6 +91,30 @@ describe('the read-only object pages', () => {
     expect(t).toContain('Containers 5, 2 Ready')
     expect(t).toContain('Operator 0.14.0')
     expect(t).toContain('Chart not reported yet')
+  })
+
+  it('shows the Project’s license when set, and nothing when not (#1863)', () => {
+    // The demo's Project sets MIT, so the demo shows it.
+    expect(text(page('Project', 'webshop'))).toContain('License MIT')
+    const data = demoStory(NOW)
+    delete data.project!.spec!.license
+    expect(text(page('Project', 'webshop', data))).not.toContain('License')
+  })
+
+  it('shows a Container’s own license, else the Project’s as from the Project, else nothing (#1863)', () => {
+    const data = demoStory(NOW)
+    const c = data.containers.find((x) => x.metadata.name === 'orders-api')!
+    // The Project's MIT, inherited.
+    expect(text(page('Container', 'orders-api', data))).toContain('License MIT · from the Project')
+    // Its own wins over the Project's, with no note.
+    c.spec.license = 'Apache-2.0'
+    const own = text(page('Container', 'orders-api', data))
+    expect(own).toContain('License Apache-2.0')
+    expect(own).not.toContain('from the Project')
+    // Neither set: no row.
+    delete c.spec.license
+    delete data.project!.spec!.license
+    expect(text(page('Container', 'orders-api', data))).not.toContain('License')
   })
 
   it('says why an AddedAfterScaffold Relationship is not applied, and links its Container’s repository', () => {
@@ -171,6 +196,73 @@ describe('the Bundle page', () => {
     expect(text(html)).toMatch(/Standard gone-standard · not in the catalog/)
     expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=gone-standard"')
     expect(text(html)).toContain('None: an entry is not in the catalog.')
+  })
+})
+
+describe('the Domain page', () => {
+  it('shows its template and where it lands, and the systems that name it with how many Containers hold it', () => {
+    const html = page('Domain', 'webshop')
+    const t = text(html)
+    expect(t).toContain('Webshop')
+    expect(t).toMatch(/Template http:\/\/gitea[^ ]*\/templates\/webshop-domain/)
+    expect(t).toMatch(/Pinned at v1.0.0/)
+    expect(t).toMatch(/Lands under docs\/agents\/domain\/webshop\//)
+    expect(t).toContain('Systems that name it')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=SoftwareSystem&amp;name=webshop-core"')
+    // orders-api was scaffolded with it; the system's four other Containers were not.
+    expect(t).toMatch(/webshop-core · 1 of 5 Containers scaffolded with it/)
+  })
+
+  it('lists no system when none names it', () => {
+    const data = demoStory(NOW)
+    data.systems[0].spec!.domainRefs = []
+    const html = page('Domain', 'webshop', data)
+    expect(html).not.toContain('kind=SoftwareSystem')
+  })
+})
+
+describe('a system’s Domains', () => {
+  it('links each Domain to its page with the catalog’s pinned ref', () => {
+    const html = page('SoftwareSystem', 'webshop-core')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Domain&amp;name=webshop"')
+    expect(text(html)).toMatch(/Domains webshop @ v1.0.0/)
+  })
+
+  it('says when a named Domain is not in the catalog, and None when the system names none', () => {
+    const data = demoStory(NOW)
+    data.systems[0].spec!.domainRefs = ['webshop', 'payments']
+    expect(text(page('SoftwareSystem', 'webshop-core', data))).toMatch(/payments · not in the catalog/)
+    data.systems[0].spec!.domainRefs = undefined
+    expect(text(page('SoftwareSystem', 'webshop-core', data))).toMatch(/Domains None\. Containers/)
+  })
+})
+
+describe('a Container’s Domains', () => {
+  it('shows the Domains it was scaffolded with, linked, at the ref in scaffoldedFrom, and that they are applied', () => {
+    const html = page('Container', 'orders-api')
+    const t = text(html)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Domain&amp;name=webshop"')
+    expect(t).toMatch(/Domains webshop @ v1.0.0 Scaffolded from/)
+    expect(t).toContain('Its system’s Domains are the ones it was scaffolded with')
+  })
+
+  it('says a Domain named after the scaffold is not in the repository, with the operator’s message', () => {
+    const html = page('Container', 'inventory-api')
+    const t = text(html)
+    // Scaffolded with none, so the row says so; the condition explains the difference.
+    expect(t).toMatch(/Domains None\. Scaffolded from/)
+    expect(t).toContain(
+      'Its system’s Domains changed after the scaffold; the repository keeps the ones it was scaffolded with',
+    )
+    expect(t).toContain('Domains added after the scaffold: webshop; scaffolding happens once')
+    // The Relationship wording for the same reason stays its own.
+    expect(t).not.toContain('Added after scaffolding, so the repository does not include it')
+  })
+
+  it('says a Container not yet scaffolded has no Domains yet', () => {
+    const data = demoStory(NOW)
+    const pending = data.containers.find((c) => !c.status?.scaffoldedFrom?.length)!
+    expect(text(page('Container', pending.metadata.name, data))).toMatch(/Domains Not scaffolded yet\. Scaffolded from/)
   })
 })
 
@@ -288,7 +380,7 @@ describe('github targets (#1603)', () => {
     )
     expect(t).toContain('Secret oss-github')
     expect(t).toMatch(
-      /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on GHCR\./,
+      /The operator reads its keys token \(a fine-grained token\), or appId, installationId and privateKey \(a GitHub App\); and packagesToken, when there, for images on its registry\./,
     )
   })
 
@@ -497,5 +589,47 @@ describe('an optional kind still loading', () => {
     const loading: Connection = { ...LIVE, settled: false }
     const data = { ...demoStory(NOW), computes: [] }
     expect(text(page('Compute', 'small', data, loading))).toContain('Loading the Compute')
+  })
+})
+
+describe('gitlab targets (#1807)', () => {
+  const gitlab = (member: DeployTarget['spec']['gitlab']): DeployTarget => ({
+    metadata: { name: 'lab', namespace: 'webshop' },
+    spec: { gitlab: member, credentialsSecretRef: { name: 'lab-gitlab' } },
+  })
+  const plain = (html: string) => text(html).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/ ,/g, ',')
+  const page = (target: DeployTarget) =>
+    renderToStaticMarkup(createElement(DeployTargetPage, { target, containers: [] }))
+
+  it('shows a gitlab.com project: its releases page, tags, source, registry image and the Secret’s key, unset parts as the operator fills them', () => {
+    const html = page(gitlab({ project: 'Webshop-Co/Apps/Webshop', source: {} }))
+    const t = plain(html)
+    expect(t).toContain('Tool GitLab releases (gitlab)')
+    expect(t).toContain('Where Webshop-Co/Apps/Webshop')
+    expect(html).toContain('href="https://gitlab.com/Webshop-Co/Apps/Webshop/-/releases"')
+    expect(t).toContain('Tags <container>-v1.2.3 (tagPrefix not set: the Container’s name and -)')
+    expect(t).not.toContain('Latest')
+    expect(t).toContain('Source folder <container>, tagged <container>/v1.2.3 (path not set: each Container’s name)')
+    expect(t).toContain(
+      'Image registry.gitlab.com/webshop-co/apps/webshop/<container> · copied to the project’s container registry, for a Container whose release builds an image, when the registry is on and the token has write_registry',
+    )
+    expect(t).not.toContain('the instance names its registry')
+    expect(t).toContain('Secret lab-gitlab')
+    expect(t).toMatch(
+      /The operator reads its key token, a project access token with the Maintainer role and the scopes api, read_registry and write_registry/,
+    )
+    expect(t).not.toContain('packagesToken')
+  })
+
+  it('shows a self-hosted instance at url without source: its releases page there, the release only, and a registry only the project tells', () => {
+    const html = page(
+      gitlab({ url: 'https://git.example.com/gitlab', project: 'webshop-co/orders-cli', tagPrefix: '' }),
+    )
+    const t = plain(html)
+    expect(html).toContain('href="https://git.example.com/gitlab/webshop-co/orders-cli/-/releases"')
+    expect(t).toContain('Tags v1.2.3')
+    expect(t).toContain('Source not published: the release only')
+    expect(t).toContain('Image <registry>/webshop-co/orders-cli ·')
+    expect(t).toContain('the instance names its registry')
   })
 })

@@ -521,3 +521,47 @@ func TestPushACutStreamIsNotInvalid(t *testing.T) {
 		t.Fatalf("err %v, want the cut and not ErrInvalid", err)
 	}
 }
+
+// pushOnly is a registry whose credential may write but not read a
+// manifest: every GET or HEAD of one is 403, as AWS's minimal ECR push
+// policy (no ecr:BatchGetImage) or a token scoped to push alone answers.
+func pushOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		read := r.Method == http.MethodGet || r.Method == http.MethodHead
+		if read && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"errors":[{"code":"DENIED","message":"not authorized to read"}]}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// TestCopyNamesAMissingReadPermission (#1877): a credential that may push
+// but not read the tag fails the copy at once with ErrReadRefused, a
+// refusal naming the read the credential lacks, nothing written: it is no
+// transient failure, as the tag-never-moves rule (#1770) needs the read.
+func TestCopyNamesAMissingReadPermission(t *testing.T) {
+	ctx := context.Background()
+	from, to := newRegistry(t, nil), newRegistry(t, pushOnly)
+	pushed := must(Push(ctx, from.Registry, "shop/web", "v1.0.0", stream(t, layout(t, twoPlatforms(t)))))
+
+	err := Copy(ctx, from.Registry, "shop/web", pushed.Digest, to.Registry, "mirror/web", "v1.0.0")
+	if !errors.Is(err, ErrReadRefused) || !Refused(err) {
+		t.Fatalf("Copy() = %v; want ErrReadRefused, a refusal", err)
+	}
+	for _, want := range []string{"read tags", "mirror/web:v1.0.0", "403 Forbidden", "as well as push"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Copy() = %v; want it to say %q", err, want)
+		}
+	}
+	if n := to.puts.Load(); n != 0 {
+		t.Errorf("the refused copy put %d manifests, want none", n)
+	}
+	if n := to.uploads.Load(); n != 0 {
+		t.Errorf("the refused copy started %d uploads, want none", n)
+	}
+	if err := Copy(ctx, from.Registry, "shop/web", pushed.Digest, to.Registry, "mirror/web", ""); err != nil {
+		t.Errorf("an untagged copy needs no read: %v", err)
+	}
+}

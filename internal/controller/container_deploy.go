@@ -463,11 +463,25 @@ func isGiteaError(err error) bool {
 func containerTarget(dt *c4v1alpha1.DeployTarget, container *c4v1alpha1.Container) ports.Target {
 	target, _ := deployTarget(dt)
 	if gh := dt.Spec.GitHub; gh != nil {
-		target.Settings[model.GitHubSettingTagPrefix] = model.GitHubTagPrefix(gh.TagPrefix, container.Name)
+		target.Settings[model.GitHubSettingTagPrefix] = model.ReleaseTagPrefix(gh.TagPrefix, container.Name)
 		if !model.GitHubTakesLatest(gh.Latest) {
 			target.Settings[model.GitHubSettingLatest] = "false"
 		}
 		if src := gh.Source; src != nil {
+			target.Settings[model.GitHubSettingSourcePath] = container.Name
+			if src.Path != nil {
+				target.Settings[model.GitHubSettingSourcePath] = *src.Path
+			}
+			if src.TagPrefix != nil {
+				target.Settings[model.GitHubSettingSourceTagPrefix] = *src.TagPrefix
+			}
+		}
+	}
+	// A gitlab target's source goes under the same settings as a github
+	// target's: the deployers read them alike (#1805).
+	if gl := dt.Spec.GitLab; gl != nil {
+		target.Settings[model.GitLabSettingTagPrefix] = model.ReleaseTagPrefix(gl.TagPrefix, container.Name)
+		if src := gl.Source; src != nil {
 			target.Settings[model.GitHubSettingSourcePath] = container.Name
 			if src.Path != nil {
 				target.Settings[model.GitHubSettingSourcePath] = *src.Path

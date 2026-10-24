@@ -24,6 +24,17 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionWait, message: "Waiting for Container photo-editor to be Ready"},
 		{name: "waits behind an earlier Task", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			BlockedBy: "add-crop", Round: 1, MaxRounds: 3}, want: ActionWait, message: "Waiting for Task add-crop"},
+		{name: "waits while main is red (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "failure", BaseURL: "https://ci/1", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Main's checks failed (https://ci/1): round 1 starts only on a green base"},
+		{name: "waits while main's checks run (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "pending", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Waiting for main's checks to end before round 1"},
+		{name: "starts on a green main (#1892)", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Base: "success", Round: 1, MaxRounds: 3}, want: ActionStartImplement},
+		{name: "waits behind an earlier Task before reading main", facts: TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, BlockedBy: "add-crop", Base: "failure", Round: 1, MaxRounds: 3},
+			want: ActionWait, message: "Waiting for Task add-crop"},
 		{name: "starts when the Container is Ready", facts: TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
 			Round: 1, MaxRounds: 3}, want: ActionStartImplement},
 		{name: "a new Task starts pending", facts: TaskFacts{Protected: true, ContainerReady: true, MaxRounds: 3},
@@ -178,6 +189,74 @@ func TestNextTaskStep(t *testing.T) {
 				t.Errorf("Reason = %q for a run blocked %v", got.Reason, blocked)
 			}
 		})
+	}
+}
+
+// A Crew's cost cap (#1893): at the summed cost of its runs reaching the cap
+// the Task starts no further run, under it or with no cap it goes on, and a
+// raised cap resumes it. The cap is read before the slot and agent gates, so a
+// Task at it holds no place in the slot queue.
+func TestNextTaskStepOverBudget(t *testing.T) {
+	pending := TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Round: 1, MaxRounds: 3}
+	reviewing := TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: "success"}
+	with := func(f TaskFacts, cost, budget int64) TaskFacts {
+		f.CostMilliUSD, f.BudgetMilliUSD = cost, budget
+		return f
+	}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		reason  string
+		message string
+	}{
+		{name: "stops at the cap before round 1", facts: with(pending, 1000, 1000), want: ActionWait,
+			reason: ReasonOverBudget, message: "The Task's runs cost $1.00, at its Crew's cap of $1; raise the Crew's taskBudgetUSD"},
+		{name: "stops over the cap", facts: with(pending, 1250, 1000), want: ActionWait, reason: ReasonOverBudget,
+			message: "cost $1.25, at its Crew's cap of $1"},
+		{name: "starts no review at the cap", facts: with(reviewing, 2000, 2000), want: ActionWait, reason: ReasonOverBudget},
+		{name: "goes on under the cap", facts: with(pending, 999, 1000), want: ActionStartImplement},
+		{name: "reviews under the cap", facts: with(reviewing, 999, 1000), want: ActionStartReview},
+		{name: "goes on with no cap", facts: with(pending, 5000, 0), want: ActionStartImplement},
+		{name: "a raised cap resumes it", facts: with(pending, 1000, 2000), want: ActionStartImplement},
+		{name: "a raised cap resumes the review", facts: with(reviewing, 2000, 3000), want: ActionStartReview},
+		{name: "the cap beats a full house", facts: with(TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Round: 1, MaxRounds: 3, NoFreeSlot: true}, 1000, 1000), want: ActionWait,
+			reason: ReasonOverBudget},
+		{name: "the cap beats an unavailable agent", facts: with(TaskFacts{Phase: TaskPending, Protected: true,
+			ContainerReady: true, Round: 1, MaxRounds: 3, AgentBackIn: time.Minute}, 1000, 1000), want: ActionWait,
+			reason: ReasonOverBudget},
+		{name: "a running round is not stopped", facts: with(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true}}, 1000, 1000), want: ActionWait, reason: ""},
+		{name: "a pushed round still opens its pull request", facts: with(TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: RunState{Started: true, Done: true, Result: &RunResult{Commit: "abc"}}}, 1000, 1000),
+			want: ActionOpenPR},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.facts.Container = "photo-editor"
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || got.Reason != tt.reason || !strings.Contains(got.Message, tt.message) {
+				t.Fatalf("NextTaskStep() = %+v, want %s reason %q with %q", got, tt.want, tt.reason, tt.message)
+			}
+			if got.SlotWait {
+				t.Errorf("SlotWait = true; a Task at its cap holds no slot place")
+			}
+		})
+	}
+}
+
+// A Task on a red main waits under its own reason and looks at main again,
+// which sends no event when it turns green (#1892).
+func TestNextTaskStepBaseRed(t *testing.T) {
+	step := NextTaskStep(TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Base: "error",
+		Round: 1, MaxRounds: 3})
+	if step.Action != ActionWait || step.Reason != ReasonBaseRed || !step.Recheck {
+		t.Errorf("NextTaskStep on a red main = %+v, want a rechecked wait with reason %s", step, ReasonBaseRed)
+	}
+	if pending := NextTaskStep(TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true, Base: "pending",
+		Round: 1, MaxRounds: 3}); pending.Reason != "" || !pending.Recheck {
+		t.Errorf("NextTaskStep on a pending main = %+v, want a rechecked plain wait", pending)
 	}
 }
 

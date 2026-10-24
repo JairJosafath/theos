@@ -10,6 +10,7 @@ import type { Tone } from './describe'
 /** The target's member, the tool that owns the place, and where in it. */
 export function memberOf(target: DeployTarget): { member: string; label: string; where: string } {
   if (target.spec.github) return { member: 'github', label: 'GitHub releases', where: target.spec.github.repository }
+  if (target.spec.gitlab) return { member: 'gitlab', label: 'GitLab releases', where: target.spec.gitlab.project }
   if (target.spec.argoCD) {
     const { namespace, server } = target.spec.argoCD.destination
     const where = server && server !== 'https://kubernetes.default.svc' ? `${namespace} on ${server}` : namespace
@@ -30,9 +31,13 @@ export function memberOf(target: DeployTarget): { member: string; label: string;
   return { member, label: member, where: '' }
 }
 
-/** Where a github target puts each release's source, unset parts named as the operator fills them; undefined when it publishes none. */
-export function githubSource(target: DeployTarget): { path: string; tagPrefix: string } | undefined {
-  const source = target.spec.github?.source
+/**
+ * Where a github or gitlab target puts each release's source (the members
+ * share the shape, api's DeployTargetSource), unset parts named as the
+ * operator fills them; undefined when it publishes none.
+ */
+export function sourceOf(target: DeployTarget): { path: string; tagPrefix: string } | undefined {
+  const source = target.spec.github?.source ?? target.spec.gitlab?.source
   if (!source) return undefined
   const path = source.path ?? '<container>'
   const tagPrefix = source.tagPrefix ?? (path === '.' ? '' : `${path}/`)
@@ -50,15 +55,89 @@ export const GITHUB_SECRET_KEYS = {
 } as const
 
 /**
- * The image a Container's release goes to on GHCR at a github target:
- * ghcr.io/owner/name/<container>, lower-cased, or ghcr.io/owner/name when
- * the target's tagPrefix is "" (model.GitHubImage). Undefined for another member.
+ * The hosts a github target publishes to, as model.GitHubHostsOf builds them:
+ * github.com and ghcr.io when url is unset, else the GitHub Enterprise Server
+ * at url (its web site) and its registry at containers.<host> (#1809).
+ * Undefined for another member.
+ */
+export function githubHosts(target: DeployTarget): { web: string; registry: string } | undefined {
+  const github = target.spec.github
+  if (!github) return undefined
+  const url = (github.url ?? '').replace(/\/+$/, '')
+  if (url === '') return { web: 'https://github.com', registry: 'ghcr.io' }
+  return { web: url, registry: `containers.${url.replace(/^https:\/\//, '')}` }
+}
+
+/** The page of a github target's releases on its host: github.com's, or the Enterprise Server's at url (#1809). */
+export function githubReleasesURL(target: DeployTarget): string | undefined {
+  const hosts = githubHosts(target)
+  if (!hosts || !target.spec.github) return undefined
+  return `${hosts.web}/${target.spec.github.repository}/releases`
+}
+
+/**
+ * The image a Container's release goes to at a github target's registry:
+ * <registry>/owner/name/<container>, lower-cased, or <registry>/owner/name
+ * when the target's tagPrefix is "" (model.GitHubImage); the registry is
+ * ghcr.io, or the Enterprise Server's at url (githubHosts). Undefined for
+ * another member.
  */
 export function githubImage(target: DeployTarget, container = '<container>'): string | undefined {
   const github = target.spec.github
-  if (!github) return undefined
+  const hosts = githubHosts(target)
+  if (!github || !hosts) return undefined
   const repository = github.tagPrefix === '' ? github.repository : `${github.repository}/${container}`
-  return `ghcr.io/${repository.toLowerCase()}`
+  return `${hosts.registry}/${repository.toLowerCase()}`
+}
+
+/**
+ * The keys a gitlab target's Secret holds, by name: the operator reads them
+ * (internal/model, GitLabSecretToken), the UI never does. One token, any
+ * GitLab access token (docs/plans/gitlab-deploy.md, decision 2); the project's
+ * registry takes the same one, so there is no second key for images.
+ */
+export const GITLAB_SECRET_KEYS = { token: 'token' } as const
+
+/** gitlab.com's container registry; a self-hosted instance names its own, which the UI can't tell from url. */
+export const GITLAB_COM_REGISTRY = 'registry.gitlab.com'
+
+/**
+ * The hosts a gitlab target publishes to, as model.GitLabHostsOf builds the
+ * web one: gitlab.com when url is unset, else the instance at url, a trailing
+ * slash dropped (a path is an instance under a relative URL root). The
+ * registry is registry.gitlab.com for gitlab.com; a self-hosted instance's is
+ * its own setting, which the operator reads from the project and the UI
+ * can't know, so it is undefined. Undefined for another member.
+ */
+export function gitlabHosts(target: DeployTarget): { web: string; registry?: string } | undefined {
+  const gitlab = target.spec.gitlab
+  if (!gitlab) return undefined
+  const url = (gitlab.url ?? '').replace(/\/+$/, '')
+  if (url === '') return { web: 'https://gitlab.com', registry: GITLAB_COM_REGISTRY }
+  return { web: url }
+}
+
+/** The page of a gitlab target's releases on its host: gitlab.com's, or the self-hosted instance's at url. */
+export function gitlabReleasesURL(target: DeployTarget): string | undefined {
+  const hosts = gitlabHosts(target)
+  if (!hosts || !target.spec.gitlab) return undefined
+  return `${hosts.web}/${target.spec.gitlab.project}/-/releases`
+}
+
+/**
+ * The image a Container's release goes to at a gitlab target: the project's
+ * container_registry_image_prefix, <registry>/<project> lower-cased, then
+ * /<container>, or the prefix alone when the target's tagPrefix is ""
+ * (docs/plans/gitlab-deploy.md, decision 5). The registry is
+ * registry.gitlab.com for gitlab.com; a self-hosted instance's is shown as
+ * <registry>, since only the project tells it. Undefined for another member.
+ */
+export function gitlabImage(target: DeployTarget, container = '<container>'): string | undefined {
+  const gitlab = target.spec.gitlab
+  const hosts = gitlabHosts(target)
+  if (!gitlab || !hosts) return undefined
+  const prefix = `${hosts.registry ?? '<registry>'}/${gitlab.project.toLowerCase()}`
+  return gitlab.tagPrefix === '' ? prefix : `${prefix}/${container.toLowerCase()}`
 }
 
 /** The target's tier as asked; unset is development, the CRD's documented default. */

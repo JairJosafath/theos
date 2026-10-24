@@ -6,8 +6,10 @@ package gitlab
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -95,20 +97,24 @@ func packageName(app string) string {
 	return container
 }
 
-// Ship takes the next write of shipping s as a GitLab release: the first of
-// the release's files the project's generic package lacks, or holds at
-// another size, is uploaded; with them all there the release is created,
-// linking them; nothing once the release is out. A release of the tag that
-// the factory didn't make is left alone and fails with reason TagTaken.
-// The source and the image are steps 3 and 4 of docs/plans/gitlab-deploy.md.
+// Ship takes the next write of shipping s as a GitLab release: with a source
+// folder set, the release's source goes out first, as one commit on the
+// default branch and its source tag (docs/plans/gitlab-deploy.md, Decision
+// 4), and the release is of that commit; then the first of the release's
+// files the project's generic package lacks, or holds at another size, is
+// uploaded; with them all there the release is created, linking them;
+// nothing once the release is out. A release of the tag that the factory
+// didn't make is left alone and fails with reason TagTaken. The image is
+// step 4 of docs/plans/gitlab-deploy.md.
 func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) error {
-	tag := model.GitHubTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
+	tag := model.ReleaseTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
 	names := make([]string, len(s.Files))
 	for i, f := range s.Files {
 		names[i] = f.Name
 	}
 	plan, problem := model.ReleaseShipment(model.ReleaseShipmentFacts{Type: s.Type, Deployment: s.Deployment,
-		Framework: s.Framework, ScaffoldedFrom: s.ScaffoldedFrom, Files: names})
+		Framework: s.Framework, ScaffoldedFrom: s.ScaffoldedFrom, Files: names,
+		Source: t.Settings[model.GitHubSettingSourcePath] != "" && s.Source != nil})
 	if problem != "" {
 		return &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New(problem)}
 	}
@@ -124,26 +130,38 @@ func (d *Deployer) Ship(ctx context.Context, t ports.Target, s ports.Shipment) e
 			files = append(files, model.ReleaseAsset{ID: int64(i), Name: f.Name, Size: f.Size})
 		}
 	}
+	release, err := c.Release(ctx, tag)
+	if err != nil {
+		return portError(err)
+	}
+	commit := s.Commit
+	if plan.Source && release == nil {
+		// The source goes out first, and the release is of its commit; a
+		// release that is out keeps the source it went out with.
+		done, err := d.shipSource(ctx, c, t, s, tag)
+		if err != nil || done == nil {
+			return portError(err)
+		}
+		commit = done.Commit
+	}
 	pkg, version := packageName(s.App), model.GitLabPackageVersion(tag)
-	facts, held, err := shipFacts(ctx, c, tag, pkg, version, s.Commit)
+	facts, held, err := shipFacts(ctx, c, release, pkg, version, commit, tag)
 	if err != nil {
 		return portError(err)
 	}
 	ship := model.GitLabShip{Tag: tag, Name: model.ReleaseName(s.DisplayName, s.Version),
-		Body: model.ReleaseBody(s.Notes, marker), Marker: marker, Commit: s.Commit, Files: files}
+		Body: model.ReleaseBody(s.Notes, marker), Marker: marker, Commit: commit, Files: files}
 	step := model.NextGitLabStep(ship, facts)
 	return portError(d.write(ctx, c, t, s, step, files, held))
 }
 
-// shipFacts reads what NextGitLabStep decides on: the release of tag, the
-// package's files, and the tag's commit when the release has a source
-// commit to check it against. held maps each package file's id to its
-// package, for the delete.
-func shipFacts(ctx context.Context, c gitprovider.GitLabProject, tag, pkg, version,
-	commit string) (facts model.GitLabFacts, held map[int64]int64, err error) {
-	if facts.Release, err = c.Release(ctx, tag); err != nil {
-		return facts, nil, err
-	}
+// shipFacts reads what NextGitLabStep decides on, given release, the
+// release of tag as Ship read it: the package's files, and the tag's commit
+// when the release has a source commit to check it against. held maps each
+// package file's id to its package, for the delete.
+func shipFacts(ctx context.Context, c gitprovider.GitLabProject, release *model.TargetRelease, pkg, version,
+	commit, tag string) (facts model.GitLabFacts, held map[int64]int64, err error) {
+	facts.Release = release
 	if facts.Release != nil {
 		// The release is out: its files aren't read, nothing is written.
 		return facts, nil, nil
@@ -171,7 +189,7 @@ func shipFacts(ctx context.Context, c gitprovider.GitLabProject, tag, pkg, versi
 func (d *Deployer) write(ctx context.Context, c gitprovider.GitLabProject, t ports.Target, s ports.Shipment,
 	step model.PublishStep, files []model.ReleaseAsset, held map[int64]int64) error {
 	log := logr.FromContextOrDiscard(ctx)
-	tag := model.GitHubTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
+	tag := model.ReleaseTag(t.Settings[model.GitLabSettingTagPrefix], s.Version)
 	pkg, version := packageName(s.App), model.GitLabPackageVersion(tag)
 	switch step.Action {
 	case model.PublishFail:
@@ -237,6 +255,221 @@ func packageFileURL(t ports.Target, pkg, version, name string) string {
 		"/packages/generic/" + url.PathEscape(pkg) + "/" + url.PathEscape(version) + "/" + url.PathEscape(name)
 }
 
+// sourceTarget is where the target puts a release's source, and the source
+// tag of version; ok is false when it publishes none. The settings are the
+// github member's, as the controller sets them for both.
+func sourceTarget(t ports.Target, version string) (src model.PublishSource, tag string, ok bool) {
+	src.Path = t.Settings[model.GitHubSettingSourcePath]
+	if src.Path == "" {
+		return src, "", false
+	}
+	if prefix, set := t.Settings[model.GitHubSettingSourceTagPrefix]; set {
+		src.TagPrefix = &prefix
+	}
+	return src, model.SourceTag(src, version), true
+}
+
+// shipSource reads the project's head and source tag and takes the next
+// write of publishing s's source, as model.NextGitLabSourceStep says. done is
+// the source commit and tag once both are there, and nil when it wrote.
+func (d *Deployer) shipSource(ctx context.Context, c gitprovider.GitLabProject, t ports.Target, s ports.Shipment,
+	tag string) (done *model.PublishedSource, err error) {
+	src, sourceTag, _ := sourceTarget(t, s.Version)
+	ship := model.SourceShip{Source: src, Files: s.Source, Web: hosts(t).Web,
+		Repository: t.Settings[model.GitLabSettingProject], App: s.DisplayName, Owner: s.App, Tag: s.Version,
+		ReleaseTag: tag}
+	// What fails before any read: a symlink, a file too large.
+	if step, _ := model.NextGitLabSourceStep(ship, nil); step.Action == model.PublishFail {
+		return nil, &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
+	}
+	facts, branch, head, err := readSource(ctx, c, src.Path, sourceTag)
+	if err != nil {
+		return nil, err
+	}
+	step, done := model.NextGitLabSourceStep(ship, facts)
+	if done != nil {
+		return done, nil
+	}
+	log := logr.FromContextOrDiscard(ctx)
+	switch step.Action {
+	case model.PublishFail:
+		return nil, &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
+	case model.PublishSourceCommit:
+		actions := model.GitLabSourceActions(step.SourceCommit.Files, head)
+		commit, err := commitSource(ctx, c, s, branch, facts.Head, step.SourceCommit, actions)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("Committed release source", "commit", commit, "path", step.SourceCommit.Path,
+			"actions", len(actions))
+	case model.PublishSourceTag:
+		if err := c.CreateTag(ctx, step.Tag, step.Commit); err != nil {
+			return nil, err
+		}
+		log.Info("Tagged release source", "sourceTag", step.Tag, "commit", step.Commit)
+	}
+	return nil, nil
+}
+
+// readSource reads what NextGitLabSourceStep decides on: the default
+// branch's head, the folder path's tree at it and at sourceTag. branch is the
+// default branch, head the folder's files at its head, paths from the
+// folder's root.
+func readSource(ctx context.Context, c gitprovider.GitLabProject, path, sourceTag string) (facts *model.GitHubSource,
+	branch string, head []model.SourceFile, err error) {
+	info, err := c.Project(ctx)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	facts = &model.GitHubSource{}
+	if branch = info.DefaultBranch; branch == "" {
+		// An empty project: no head to put the source on.
+		return facts, "", nil, nil
+	}
+	if facts.Head, err = c.Branch(ctx, branch); err != nil {
+		return nil, "", nil, err
+	}
+	if facts.Head != "" {
+		if head, facts.HeadTree, err = folderFiles(ctx, c, facts.Head, path); err != nil {
+			return nil, "", nil, err
+		}
+		for _, f := range head {
+			facts.HeadBlobs = append(facts.HeadBlobs, f.Blob)
+		}
+	}
+	if facts.TagCommit, err = c.Tag(ctx, sourceTag); err != nil || facts.TagCommit == "" {
+		return facts, branch, head, err
+	}
+	if _, facts.TagTree, err = folderFiles(ctx, c, facts.TagCommit, path); err != nil {
+		return nil, "", nil, err
+	}
+	return facts, branch, head, nil
+}
+
+// folderFiles are the files under path at ref, paths from the folder's root,
+// and their git tree, "" when there is no folder there.
+func folderFiles(ctx context.Context, c gitprovider.GitLabProject, ref, path string) ([]model.SourceFile, string, error) {
+	query := path
+	if path == "." {
+		query = ""
+	}
+	entries, err := c.Tree(ctx, ref, query)
+	if err != nil {
+		return nil, "", err
+	}
+	var files []model.SourceFile
+	for _, e := range entries {
+		if e.Type != "blob" {
+			continue
+		}
+		rel := e.Path
+		if path != "." {
+			rel = strings.TrimPrefix(e.Path, path+"/")
+		}
+		files = append(files, model.SourceFile{Path: rel, Mode: model.FileMode(e.Mode), Blob: e.ID})
+	}
+	if len(files) == 0 {
+		return nil, "", nil
+	}
+	tree, err := model.TreeSHA(files)
+	if err != nil {
+		return nil, "", &gitprovider.ReleaseError{Reason: gitprovider.ReasonGitLabError,
+			Message: fmt.Sprintf("gitlab: the tree of %s at %s: %v", path, ref, err)}
+	}
+	return files, tree, nil
+}
+
+// rooted is the folder path's file at rel, from the repository's root.
+func rooted(path, rel string) string {
+	if path == "." {
+		return rel
+	}
+	return path + "/" + rel
+}
+
+// commitSource makes the one commit of sc's source on branch, whose head
+// the actions were decided on: actions on the folder, each create's and
+// update's content streamed from s.ReadSource and sent base64, the mode set
+// by chmod. Every change of a file names head as its last_commit_id, so a
+// commit that landed on the branch since fails BranchMoved and the next poll
+// decides again. A failure of ReadSource itself is a SourceError, the Git
+// host's side.
+func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Shipment, branch, head string,
+	sc *model.SourceCommit, actions []model.GitLabSourceAction) (string, error) {
+	if len(actions) == 0 {
+		return "", fmt.Errorf("the folder %s differs from the source of %s, yet no file does", sc.Path, s.Version)
+	}
+	want := map[string]int{}
+	for i, a := range actions {
+		if a.Action == model.GitLabActionCreate || a.Action == model.GitLabActionUpdate {
+			want[a.File.Path] = i
+		}
+	}
+	content := make([]string, len(actions))
+	if len(want) > 0 {
+		if s.ReadSource == nil {
+			return "", &SourceError{Err: errors.New("the shipment can't stream its source")}
+		}
+		readErr := s.ReadSource(ctx, func(path string, _ int64, r io.Reader) error {
+			i, ok := want[path]
+			if !ok {
+				return nil
+			}
+			delete(want, path)
+			b, err := io.ReadAll(r)
+			if err != nil {
+				return err
+			}
+			if sha := model.BlobSHA(b); sha != actions[i].File.Blob {
+				return fmt.Errorf("%s read back as blob %s, not %s", path, sha, actions[i].File.Blob)
+			}
+			content[i] = base64.StdEncoding.EncodeToString(b)
+			return nil
+		})
+		switch {
+		case readErr != nil:
+			return "", &SourceError{Err: readErr}
+		case len(want) > 0:
+			return "", &SourceError{Err: fmt.Errorf("the source of %s changed while it was published: %d files are gone",
+				s.Version, len(want))}
+		}
+	}
+	commit := gitprovider.GitLabCommit{Branch: branch, Message: sc.Message}
+	for i, a := range actions {
+		action := gitprovider.GitLabCommitAction{Action: a.Action, FilePath: rooted(sc.Path, a.File.Path)}
+		switch a.Action {
+		case model.GitLabActionCreate:
+			action.Content, action.Encoding = content[i], "base64"
+		case model.GitLabActionUpdate:
+			action.Content, action.Encoding, action.LastCommitID = content[i], "base64", head
+		case model.GitLabActionChmod:
+			executable := a.File.Mode == model.ModeExecutable
+			action.ExecuteFilemode, action.LastCommitID = &executable, head
+		default:
+			action.LastCommitID = head
+		}
+		commit.Actions = append(commit.Actions, action)
+	}
+	sha, err := c.CreateCommit(ctx, commit)
+	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); ok && re.Reason == gitprovider.ReasonGitLabRejected &&
+		strings.Contains(re.Message, "has changed since") {
+		// As GitHub's path: the next poll reads the branch again and decides.
+		return "", &gitprovider.ReleaseError{Reason: model.PublishBranchMoved, Status: re.Status, Message: fmt.Sprintf(
+			"gitlab: another commit landed on %s first; the next poll puts the source of %s on it", branch, s.Version)}
+	}
+	return sha, err
+}
+
+// SourceError is a release's source that couldn't be read again: the Git
+// host's side, not GitLab's.
+type SourceError struct {
+	Err error
+}
+
+func (e *SourceError) Error() string { return fmt.Sprintf("reading release source: %v", e.Err) }
+
+func (e *SourceError) Unwrap() error { return e.Err }
+
 // FileError is a release file that couldn't be opened: the Git host's side,
 // not GitLab's.
 type FileError struct {
@@ -263,7 +496,7 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 	}
 	facts := model.GitLabDeployFacts{App: app, Version: version, TagPrefix: t.Settings[model.GitLabSettingTagPrefix],
 		Releases: releases}
-	tag := model.GitHubTag(facts.TagPrefix, version)
+	tag := model.ReleaseTag(facts.TagPrefix, version)
 	if version != "" && model.GitHubMarkedRelease(app, tag, releases) == nil {
 		files, err := c.PackageFiles(ctx, packageName(app), model.GitLabPackageVersion(tag))
 		if err != nil {
@@ -272,8 +505,19 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 		facts.Shipping = len(files) > 0
 	}
 	run := model.GitLabDeployState(facts)
-	return ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
-		Reason: run.Reason, Message: run.Message}, nil
+	state := ports.DeployState{Version: run.Version, Phase: run.Phase, Health: run.Health, URL: run.URL,
+		Reason: run.Reason, Message: run.Message}
+	if src, sourceTag, ok := sourceTarget(t, run.Version); ok && run.Version != "" {
+		commit, err := c.Tag(ctx, sourceTag)
+		if err != nil {
+			return ports.DeployState{}, portError(err)
+		}
+		if commit != "" {
+			state.Source = &model.PublishedSource{Commit: commit, Tag: sourceTag,
+				URL: model.GitLabSourceURL(hosts(t).Web, t.Settings[model.GitLabSettingProject], src.Path, sourceTag)}
+		}
+	}
+	return state, nil
 }
 
 // portError makes a GitLab failure one of the port's errors where it is one,
@@ -285,6 +529,9 @@ func portError(err error) error {
 		return nil
 	}
 	if _, ok := errors.AsType[*FileError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*SourceError](err); ok {
 		return err
 	}
 	re, ok := errors.AsType[*gitprovider.ReleaseError](err)

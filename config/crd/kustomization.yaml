@@ -21,13 +21,20 @@ resources:
 - bases/c4.factory.io_briefs.yaml
 - bases/c4.factory.io_deploytargets.yaml
 - bases/c4.factory.io_bundles.yaml
+- bases/c4.factory.io_domains.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
-# Every CRD converts by the operator's webhook.
+# A CRD whose kind's versions differ in shape converts by the operator's
+# webhook; the rest by the API server (docs/plans/api-versions.md, decision 3).
 - path: patches/webhook_conversion.yaml
   target:
     kind: CustomResourceDefinition
+    annotationSelector: c4.factory.io/conversion=webhook
+- path: patches/none_conversion.yaml
+  target:
+    kind: CustomResourceDefinition
+    annotationSelector: c4.factory.io/conversion!=webhook
 # +kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # Teaches kustomize to name config/default's webhook Service in the CRDs.

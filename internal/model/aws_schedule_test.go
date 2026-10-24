@@ -61,7 +61,7 @@ func TestPlannerGuideStatesTheAWSScheduleCue(t *testing.T) {
 	for _, rule := range []string{
 		"An idea that runs on a schedule on AWS (every night, every hour, a cron, EventBridge Scheduler) is a `job`",
 		"such as `aws-schedule-ts`",
-		"since the schedule and the table are in its CDK app",
+		"since the schedule is in its CDK app",
 		"A `service`, `static-site`, `worker` or `job` that names no AWS runs in the cluster",
 	} {
 		if !strings.Contains(guide, rule) {

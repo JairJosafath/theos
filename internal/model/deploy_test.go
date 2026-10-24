@@ -43,8 +43,8 @@ func TestGitHubTagPrefix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GitHubTagPrefix(tt.set, "orders-cli"); got != tt.want {
-				t.Errorf("GitHubTagPrefix(%v, orders-cli) = %q, want %q", tt.set, got, tt.want)
+			if got := ReleaseTagPrefix(tt.set, "orders-cli"); got != tt.want {
+				t.Errorf("ReleaseTagPrefix(%v, orders-cli) = %q, want %q", tt.set, got, tt.want)
 			}
 		})
 	}
@@ -73,6 +73,11 @@ func TestDeployMembers(t *testing.T) {
 		{name: "github, with a Deployment", member: DeployMemberGitHub, c: DeployContainer{Deployment: "k8s-manifests"},
 			wantKeys: []string{"token"}},
 		{name: "github, deploying itself", member: DeployMemberGitHub, c: DeployContainer{DeploysItself: true},
+			wantKeys: []string{"token"}},
+		// A GitLab release needs nothing of a Container but its releases
+		// either (#1804).
+		{name: "gitlab, a bare Container", member: DeployMemberGitLab, wantKeys: []string{"token"}},
+		{name: "gitlab, deploying itself", member: DeployMemberGitLab, c: DeployContainer{DeploysItself: true},
 			wantKeys: []string{"token"}},
 		// An argoCD target needs no Secret and a Container that writes
 		// deploy/k8s/ (#1588).
@@ -116,7 +121,7 @@ func TestDeployMembers(t *testing.T) {
 		})
 	}
 	if got := DeployMemberNames(); !slices.Equal(got, []string{DeployMemberArgoCD, DeployMemberCloudFormation,
-		DeployMemberGitHub}) {
+		DeployMemberGitHub, DeployMemberGitLab}) {
 		t.Errorf("DeployMemberNames() = %v", got)
 	}
 }

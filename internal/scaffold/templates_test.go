@@ -80,6 +80,10 @@ var templateCombos = []struct {
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"the factory itself", "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "factory-self"},
+	}},
 	{"react web app", "static-site", []side{
 		{model.SideFramework, "react-vite"},
 		{model.SideStandard, "ts-standard"},
@@ -155,15 +159,33 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws queue consumer with dynamodb", "worker", []side{
+		{model.SideFramework, "aws-queue-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws scheduled job", "job", []side{
 		{model.SideFramework, "aws-schedule-ts"},
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 	}},
+	{"aws scheduled job with dynamodb", "job", []side{
+		{model.SideFramework, "aws-schedule-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+	}},
 	{"aws event consumer", "worker", []side{
 		{model.SideFramework, "aws-event-ts"},
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
+	}},
+	{"aws event consumer with dynamodb", "worker", []side{
+		{model.SideFramework, "aws-event-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
 	}},
 	{"aws static site", "static-site", []side{
 		{model.SideFramework, "aws-static-site-ts"},
@@ -1417,5 +1439,45 @@ func TestOperatorStandardDockerBuildxRemovesTheBuilder(t *testing.T) {
 				t.Errorf("docker-buildx ran buildx rm %d times, want 1 (#1779); calls:\n%s\nmake:\n%s", removed, calls, out)
 			}
 		})
+	}
+}
+
+// TestFactorySelfWritesItsCheckAsIs checks that factory-self writes one file,
+// its Gitea workflow, with the template's bytes (it is no .tmpl), and that the
+// workflow's one job is check and runs make check (#1890).
+func TestFactorySelfWritesItsCheckAsIs(t *testing.T) {
+	const workflow = ".gitea/workflows/check.yaml"
+	layers, result := renderCombo(t, "operator", []side{
+		{model.SideFramework, "go-kubebuilder"},
+		{model.SideStandard, "factory-self"},
+	})
+	src := ciDir + "giteaActions/" + workflow
+	if got := layers[1].Files.Paths(); !slices.Equal(got, []string{src}) {
+		t.Errorf("factory-self holds %v, want only %s", got, src)
+	}
+	got, ok := result.Files[workflow]
+	if !ok {
+		t.Fatalf("%s not written", workflow)
+	}
+	if want := layers[1].Files[src].Data; !bytes.Equal(got.Data, want) {
+		t.Errorf("%s differs from the template's bytes:\n%s", workflow, got.Data)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			RunsOn string `yaml:"runs-on"`
+			Steps  []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(got.Data, &wf); err != nil {
+		t.Fatal(err)
+	}
+	if len(wf.Jobs) != 1 {
+		t.Fatalf("%s has jobs %v, want only check", workflow, wf.Jobs)
+	}
+	check, ok := wf.Jobs["check"]
+	if !ok || check.RunsOn != "go" || len(check.Steps) == 0 || check.Steps[len(check.Steps)-1].Run != "make check" {
+		t.Errorf("%s's job check = %+v, want it to run on go and end with make check", workflow, check)
 	}
 }

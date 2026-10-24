@@ -6,10 +6,12 @@ to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
 
-// Package compat guards the v1alpha1 compatibility promise (docs/design.md,
-// "Compatibility"): an object a client stored under the last release still
-// validates after an upgrade. baseline/ is config/crd/bases as of the last
-// release; hack/release.sh copies it there as it tags.
+// Package compat guards the compatibility promise (docs/design.md,
+// "Compatibility"): an object a client stored under the last release, at any
+// version it served, still validates after an upgrade, and no version the last
+// release served is missing unless dropped.txt names it. baseline/ is
+// config/crd/bases as of the last release; hack/release.sh copies it there as
+// it tags.
 package compat
 
 import (
@@ -72,9 +74,11 @@ type crd struct {
 	Metadata struct {
 		Name string `json:"name"`
 	} `json:"metadata"`
-	Spec struct {
-		Versions []crdVersion `json:"versions"`
-	} `json:"spec"`
+	Spec crdSpec `json:"spec"`
+}
+
+type crdSpec struct {
+	Versions []crdVersion `json:"versions"`
 }
 
 // typeOf names a schema's type, int-or-string included.
@@ -204,9 +208,10 @@ func compareSchema(path string, base, cur *schema, breaks *[]string) {
 }
 
 // compareCRDs lists every break between the base CRDs and the current ones,
-// by CRD name: a CRD or served version gone, or a schema change compareSchema
-// finds.
-func compareCRDs(base, cur map[string]crd) []string {
+// by CRD name: a CRD gone, a served version gone that dropped doesn't name
+// (as dropped.txt does: a version, or <crd>/<version>), or a schema change
+// compareSchema finds.
+func compareCRDs(base, cur map[string]crd, dropped map[string]bool) []string {
 	var breaks []string
 	for _, name := range slices.Sorted(maps.Keys(base)) {
 		c, ok := cur[name]
@@ -222,7 +227,9 @@ func compareCRDs(base, cur map[string]crd) []string {
 				return v.Name == bv.Name && v.Served
 			})
 			if i < 0 {
-				breaks = append(breaks, fmt.Sprintf("%s/%s: no longer served", name, bv.Name))
+				if !dropped[bv.Name] && !dropped[name+"/"+bv.Name] {
+					breaks = append(breaks, fmt.Sprintf("%s/%s: no longer served", name, bv.Name))
+				}
 				continue
 			}
 			bs, cs := bv.Schema.OpenAPIV3Schema, c.Spec.Versions[i].Schema.OpenAPIV3Schema
@@ -257,15 +264,39 @@ func readCRDs(t *testing.T, dir string) map[string]crd {
 	return crds
 }
 
+// readDropped reads dropped.txt: the first word of every line that is not
+// blank or a comment, a version or <crd>/<version>.
+func readDropped(t *testing.T, file string) map[string]bool {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parseDropped(string(data))
+}
+
+func parseDropped(text string) map[string]bool {
+	dropped := map[string]bool{}
+	for line := range strings.SplitSeq(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		dropped[fields[0]] = true
+	}
+	return dropped
+}
+
 // TestCRDsKeepTheLastRelease holds config/crd/bases to the promise against the
 // last release's CRDs.
 func TestCRDsKeepTheLastRelease(t *testing.T) {
 	base := readCRDs(t, "baseline")
 	cur := readCRDs(t, filepath.Join("..", "..", "config", "crd", "bases"))
-	if breaks := compareCRDs(base, cur); len(breaks) > 0 {
-		t.Errorf("the CRDs break the v1alpha1 compatibility promise (docs/design.md, \"Compatibility\"): "+
-			"an object stored under the last release would stop validating. Add the field beside the old one, "+
-			"or wait for v1beta1 (#1082):\n  %s", strings.Join(breaks, "\n  "))
+	if breaks := compareCRDs(base, cur, readDropped(t, "dropped.txt")); len(breaks) > 0 {
+		t.Errorf("the CRDs break the compatibility promise (docs/design.md, \"Compatibility\"): "+
+			"an object stored under the last release would stop validating, or a version it served is gone. "+
+			"Add the field beside the old one in every served version, or name a dropped version in "+
+			"test/compat/dropped.txt with the release notes' line:\n  %s", strings.Join(breaks, "\n  "))
 	}
 }
 
@@ -574,12 +605,92 @@ func TestCompareCRDs(t *testing.T) {
 		{"a version no longer served is refused",
 			map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", false))},
 			[]string{"things.c4.factory.io/v1alpha1: no longer served"}},
+		// #1616: the drop is accepted only when dropped.txt names the version.
+		{"a dropped version named in dropped.txt is accepted",
+			map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", false), version("v1beta1", true))}, nil},
+		{"a dropped version named for one CRD in dropped.txt is accepted",
+			map[string]crd{"things.c4.factory.io": parse(version("v1beta1", true))}, nil},
+		{"a dropped version named for another CRD is refused",
+			map[string]crd{"things.c4.factory.io": parse(version("v1beta1", true))},
+			[]string{"things.c4.factory.io/v1alpha1: no longer served"}},
+	}
+	dropped := map[string]map[string]bool{
+		"a dropped version named in dropped.txt is accepted": parseDropped(
+			"# notes\nv1alpha1  Removed the v1alpha1 API versions.\n"),
+		"a dropped version named for one CRD in dropped.txt is accepted": parseDropped(
+			"things.c4.factory.io/v1alpha1 Removed things' v1alpha1.\n"),
+		"a dropped version named for another CRD is refused": parseDropped(
+			"others.c4.factory.io/v1alpha1 Removed others' v1alpha1.\n"),
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := compareCRDs(base, c.cur); !slices.Equal(got, c.want) {
+			if got := compareCRDs(base, c.cur, dropped[c.name]); !slices.Equal(got, c.want) {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
 		})
 	}
+}
+
+// TestDroppedNamesOnlyDroppedVersions holds dropped.txt to what is dropped:
+// a line naming a version the tree still serves, or one the baseline never
+// served, is stale (#1616).
+func TestDroppedNamesOnlyDroppedVersions(t *testing.T) {
+	base := readCRDs(t, "baseline")
+	cur := readCRDs(t, filepath.Join("..", "..", "config", "crd", "bases"))
+	if stale := staleDropped(base, cur, readDropped(t, "dropped.txt")); len(stale) > 0 {
+		t.Errorf("test/compat/dropped.txt names what is not dropped; remove the line:\n  %s", strings.Join(stale, "\n  "))
+	}
+}
+
+func TestStaleDropped(t *testing.T) {
+	version := func(name string, served bool) crdVersion {
+		return crdVersion{Name: name, Served: served}
+	}
+	things := func(versions ...crdVersion) map[string]crd {
+		return map[string]crd{"things.c4.factory.io": {Spec: crdSpec{Versions: versions}}}
+	}
+	base := things(version("v1alpha1", true))
+	cur := things(version("v1alpha1", true), version("v1beta1", true))
+	got := staleDropped(base, cur, parseDropped(
+		"v1alpha1 x\nthings.c4.factory.io/v1alpha1 x\nv0 x\nothers.c4.factory.io/v1alpha1 x\n"))
+	want := []string{"others.c4.factory.io/v1alpha1: the baseline never served it",
+		"things.c4.factory.io/v1alpha1: still served", "v0: the baseline never served it", "v1alpha1: still served"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	cur = things(version("v1beta1", true))
+	if got := staleDropped(base, cur, parseDropped("v1alpha1 x\nthings.c4.factory.io/v1alpha1 x\n")); len(got) > 0 {
+		t.Errorf("got %q, want none", got)
+	}
+}
+
+// staleDropped lists the entries of dropped that name no dropped version: a
+// version (or <crd>/<version>) the baseline never served, or one the current
+// CRDs still serve.
+func staleDropped(base, cur map[string]crd, dropped map[string]bool) []string {
+	serves := func(crds map[string]crd, name, version string) bool {
+		for n, c := range crds {
+			if name != "" && n != name {
+				continue
+			}
+			if slices.ContainsFunc(c.Spec.Versions, func(v crdVersion) bool { return v.Name == version && v.Served }) {
+				return true
+			}
+		}
+		return false
+	}
+	var stale []string
+	for _, entry := range slices.Sorted(maps.Keys(dropped)) {
+		name, version, _ := strings.Cut(entry, "/")
+		if version == "" {
+			name, version = "", entry
+		}
+		switch {
+		case !serves(base, name, version):
+			stale = append(stale, entry+": the baseline never served it")
+		case serves(cur, name, version):
+			stale = append(stale, entry+": still served")
+		}
+	}
+	return stale
 }

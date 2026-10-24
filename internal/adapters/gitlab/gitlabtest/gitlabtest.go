@@ -1,13 +1,18 @@
 // Package gitlabtest is a fake GitLab over httptest, serving the REST calls a
-// gitlab deploy target makes (projects, the token's scopes, releases, tags and
-// the generic package registry) for the projects added to it. The adapter's
+// gitlab deploy target makes (projects, the token's scopes, releases, tags,
+// the repository's branches, trees and commits, and the generic package
+// registry) for the projects added to it. The adapter's
 // tests and the controllers' envtest share it.
 package gitlabtest
 
 import (
+	"crypto/sha1" //nolint:gosec // git's object ids
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +23,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // DefaultScopes are a new project's token's scopes: what the design asks of
@@ -38,11 +45,37 @@ type Server struct {
 
 // New starts a fake GitLab, closed when t ends.
 func New(t testing.TB) *Server {
-	s := &Server{projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
-	t.Cleanup(s.srv.Close)
+	s := Start()
+	t.Cleanup(s.Close)
 	return s
 }
+
+// Start starts a fake GitLab the caller closes with Close: for a suite
+// without a testing.TB, such as Ginkgo's.
+func Start() *Server {
+	s := newServer()
+	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
+	return s
+}
+
+// StartTLS starts a fake GitLab over TLS, so its URL() is an https one a
+// DeployTarget's url takes; only Client() trusts its certificate. The caller
+// closes it with Close.
+func StartTLS() *Server {
+	s := newServer()
+	s.srv = httptest.NewTLSServer(http.HandlerFunc(s.serve))
+	return s
+}
+
+func newServer() *Server {
+	return &Server{projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+}
+
+// Client is an HTTP client that trusts the fake's certificate.
+func (s *Server) Client() *http.Client { return s.srv.Client() }
+
+// Close stops the fake.
+func (s *Server) Close() { s.srv.Close() }
 
 // URL is the instance's address, without /api/v4: a GitLabConfig's URL.
 func (s *Server) URL() string { return s.srv.URL }
@@ -69,7 +102,15 @@ type Project struct {
 	token    string
 	releases []*Release
 	tags     map[string]string
+	// commits holds each commit's whole tree by its sha, path to blob.
+	commits  map[string]map[string]blob
 	packages []*pkg
+}
+
+// blob is a file in a commit's tree.
+type blob struct {
+	content []byte
+	mode    string
 }
 
 // Release is a release on a project.
@@ -113,9 +154,55 @@ func (s *Server) AddProject(path, token string) *Project {
 	s.nextID++
 	p := &Project{ID: s.nextID, Path: path, Scopes: slices.Clone(DefaultScopes), RegistryEnabled: true,
 		PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
-		s: s, token: token, tags: map[string]string{}}
+		s: s, token: token, tags: map[string]string{}, commits: map[string]map[string]blob{}}
+	p.commits[p.DefaultBranchHead] = map[string]blob{}
 	s.projects[path] = p
 	return p
+}
+
+// Folder returns the files under path at ref, a commit's sha or a tag's
+// name, by their full path; nil when ref is not a commit the fake knows.
+func (p *Project) Folder(ref, path string) map[string]string {
+	p.s.mu.Lock()
+	defer p.s.mu.Unlock()
+	tree, ok := p.commits[p.resolve(ref)]
+	if !ok {
+		return nil
+	}
+	out := map[string]string{}
+	for name, b := range tree {
+		if path == "" || name == path || strings.HasPrefix(name, path+"/") {
+			out[name] = string(b.content)
+		}
+	}
+	return out
+}
+
+// Mode is the mode of the file at path at commit ref (a branch, tag or sha),
+// "100644" or "100755"; "" when there is no such file.
+func (p *Project) Mode(ref, path string) string {
+	p.s.mu.Lock()
+	defer p.s.mu.Unlock()
+	return p.commits[p.resolve(ref)][path].mode
+}
+
+// Tag returns the commit tag name names, "" when there is none.
+func (p *Project) Tag(name string) string {
+	p.s.mu.Lock()
+	defer p.s.mu.Unlock()
+	return p.tags[name]
+}
+
+// resolve makes ref a commit's sha: the default branch's head, a tag's
+// commit, or the sha itself.
+func (p *Project) resolve(ref string) string {
+	switch {
+	case ref == p.DefaultBranch:
+		return p.DefaultBranchHead
+	case p.tags[ref] != "":
+		return p.tags[ref]
+	}
+	return ref
 }
 
 // Releases returns the project's releases, newest first.
@@ -251,14 +338,27 @@ func (p *Project) serve(w http.ResponseWriter, r *http.Request, seg []string) {
 		p.info(w)
 	case n >= 1 && seg[0] == segReleases:
 		p.serveReleases(w, r, seg[1:])
-	case get && n == 3 && seg[0] == "repository" && seg[1] == "tags":
+	case get && n == 3 && seg[0] == segRepository && seg[1] == "tags":
 		commit, ok := p.tags[seg[2]]
 		if !ok {
 			writeJSON(w, http.StatusNotFound, msg("404 Tag Not Found"))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[2], "target": commit,
-			"commit": map[string]string{"id": commit}})
+			keyCommit: map[string]string{"id": commit}})
+	case r.Method == http.MethodPost && n == 2 && seg[0] == segRepository && seg[1] == "tags":
+		p.createTag(w, r)
+	case get && n == 3 && seg[0] == segRepository && seg[1] == "branches":
+		if seg[2] != p.DefaultBranch {
+			writeJSON(w, http.StatusNotFound, msg("404 Branch Not Found"))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[2],
+			keyCommit: map[string]string{"id": p.DefaultBranchHead}})
+	case get && n == 2 && seg[0] == segRepository && seg[1] == "tree":
+		p.tree(w, r)
+	case r.Method == http.MethodPost && n == 2 && seg[0] == segRepository && seg[1] == "commits":
+		p.createCommit(w, r)
 	case n >= 1 && seg[0] == segPackages:
 		p.servePackages(w, r, seg[1:])
 	default:
@@ -336,9 +436,9 @@ func (p *Project) releaseJSON(r *Release) map[string]any {
 	}
 	return map[string]any{"tag_name": r.Tag, keyName: r.Name, "description": r.Description,
 		"created_at": r.CreatedAt.Format(time.RFC3339), "released_at": r.CreatedAt.Format(time.RFC3339),
-		"commit": map[string]string{"id": r.Commit},
-		"_links": map[string]string{"self": p.s.srv.URL + "/" + p.Path + "/-/releases/" + r.Tag},
-		"assets": map[string]any{"links": links}}
+		keyCommit: map[string]string{"id": r.Commit},
+		"_links":  map[string]string{"self": p.s.srv.URL + "/" + p.Path + "/-/releases/" + r.Tag},
+		"assets":  map[string]any{"links": links}}
 }
 
 func (p *Project) listReleases(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +504,173 @@ func (p *Project) createRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	p.releases = append(p.releases, rel)
 	writeJSON(w, http.StatusCreated, p.releaseJSON(rel))
+}
+
+// createTag makes a tag at a ref: the default branch, a tag, or a commit's
+// sha. A tag already there is a 400, as on GitLab.
+func (p *Project) createTag(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		TagName string `json:"tag_name"`
+		Ref     string `json:"ref"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.TagName == "" || in.Ref == "" {
+		writeJSON(w, http.StatusBadRequest, msg("tag_name and ref are required"))
+		return
+	}
+	if _, ok := p.tags[in.TagName]; ok {
+		writeJSON(w, http.StatusBadRequest, msg("Tag "+in.TagName+" already exists"))
+		return
+	}
+	commit := p.resolve(in.Ref)
+	if _, ok := p.commits[commit]; !ok {
+		writeJSON(w, http.StatusBadRequest, msg("Target "+in.Ref+" is invalid"))
+		return
+	}
+	p.tags[in.TagName] = commit
+	writeJSON(w, http.StatusCreated, map[string]any{keyName: in.TagName, "target": commit,
+		keyCommit: map[string]string{"id": commit}})
+}
+
+// tree serves the repository tree at ref under path, recursive or not,
+// blobs with their content's sha and a "tree" entry per directory. A path
+// with nothing under it is a 404, as on GitLab.
+func (p *Project) tree(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	ref := q.Get("ref")
+	if ref == "" {
+		ref = p.DefaultBranch
+	}
+	files, ok := p.commits[p.resolve(ref)]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, msg("404 Tree Not Found"))
+		return
+	}
+	prefix := strings.Trim(q.Get("path"), "/")
+	if prefix != "" {
+		prefix += "/"
+	}
+	recursive := q.Get("recursive") == "true"
+	dirs := map[string]bool{}
+	var items []any
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		rest, under := strings.CutPrefix(name, prefix)
+		if !under {
+			continue
+		}
+		parts := strings.Split(rest, "/")
+		for i := 1; i < len(parts); i++ {
+			dir := prefix + strings.Join(parts[:i], "/")
+			if dirs[dir] || (!recursive && i > 1) {
+				continue
+			}
+			dirs[dir] = true
+			items = append(items, map[string]any{"id": blobID(dir), keyName: parts[i-1], "type": "tree",
+				"path": dir, "mode": "040000"})
+		}
+		if recursive || len(parts) == 1 {
+			items = append(items, map[string]any{"id": model.BlobSHA(files[name].content), keyName: parts[len(parts)-1],
+				"type": "blob", "path": name, "mode": files[name].mode})
+		}
+	}
+	if len(items) == 0 && prefix != "" {
+		writeJSON(w, http.StatusNotFound, msg("404 Tree Not Found"))
+		return
+	}
+	writePage(w, r, items)
+}
+
+// createCommit applies a commit's actions to the branch's head and advances
+// the branch. Only the default branch exists on the fake.
+// The actions of a commit, as the Commits API names them.
+const (
+	actionCreate = "create"
+	actionUpdate = "update"
+	actionDelete = "delete"
+	actionChmod  = "chmod"
+)
+
+func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Branch  string `json:"branch"`
+		Message string `json:"commit_message"`
+		Actions []struct {
+			Action          string `json:"action"`
+			FilePath        string `json:"file_path"`
+			Content         string `json:"content"`
+			Encoding        string `json:"encoding"`
+			ExecuteFilemode *bool  `json:"execute_filemode"`
+			LastCommitID    string `json:"last_commit_id"`
+		} `json:"actions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Branch == "" || in.Message == "" {
+		writeJSON(w, http.StatusBadRequest, msg("branch and commit_message are required"))
+		return
+	}
+	if in.Branch != p.DefaultBranch {
+		writeJSON(w, http.StatusBadRequest, msg("You can only create or edit files when you are on a branch"))
+		return
+	}
+	files := maps.Clone(p.commits[p.DefaultBranchHead])
+	for _, a := range in.Actions {
+		content := []byte(a.Content)
+		if a.Encoding == "base64" {
+			var err error
+			if content, err = base64.StdEncoding.DecodeString(a.Content); err != nil {
+				writeJSON(w, http.StatusBadRequest, msg("content is not base64"))
+				return
+			}
+		}
+		held, exists := files[a.FilePath]
+		switch {
+		case a.FilePath == "":
+			writeJSON(w, http.StatusBadRequest, msg("file_path is required"))
+			return
+		case a.Action == actionCreate && exists:
+			writeJSON(w, http.StatusBadRequest, msg("A file with this name already exists"))
+			return
+		case (a.Action == actionUpdate || a.Action == actionDelete || a.Action == actionChmod) && !exists:
+			writeJSON(w, http.StatusBadRequest, msg("A file with this name doesn't exist"))
+			return
+		case a.Action != "create" && a.LastCommitID != "" && a.LastCommitID != p.DefaultBranchHead:
+			// As GitLab: the head the change was decided on moved.
+			writeJSON(w, http.StatusBadRequest,
+				msg("You are attempting to update a file that has changed since you started editing it."))
+			return
+		case a.Action == actionDelete:
+			delete(files, a.FilePath)
+		case a.Action == actionCreate:
+			// A create is 100644 whatever execute_filemode says: GitLab reads
+			// it on chmod alone.
+			files[a.FilePath] = blob{content: content, mode: "100644"}
+		case a.Action == actionUpdate:
+			files[a.FilePath] = blob{content: content, mode: held.mode}
+		case a.Action == actionChmod:
+			if a.ExecuteFilemode == nil {
+				writeJSON(w, http.StatusBadRequest, msg("execute_filemode is required for chmod"))
+				return
+			}
+			mode := "100644"
+			if *a.ExecuteFilemode {
+				mode = "100755"
+			}
+			files[a.FilePath] = blob{content: held.content, mode: mode}
+		default:
+			writeJSON(w, http.StatusBadRequest, msg("action "+a.Action+" is not known"))
+			return
+		}
+	}
+	p.s.nextID++
+	id := blobID(fmt.Sprintf("commit %d %s %s", p.s.nextID, p.DefaultBranchHead, in.Message))
+	p.commits[id] = files
+	p.DefaultBranchHead = id
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "short_id": id[:8], "title": in.Message,
+		"message": in.Message, "parent_ids": []string{}})
+}
+
+// blobID is a 40-hex id of s, for the fake's trees and commits.
+func blobID(s string) string {
+	sum := sha1.Sum([]byte(s)) //nolint:gosec // an id, not a secret
+	return hex.EncodeToString(sum[:])
 }
 
 // listPackages filters as GitLab does: package_name matches any name
@@ -523,12 +790,14 @@ func writePage(w http.ResponseWriter, r *http.Request, items []any) {
 
 // Path segments and keys the fake uses more than once.
 const (
-	segReleases  = "releases"
-	segPackages  = "packages"
-	packageFiles = "package_files"
-	generic      = "generic"
-	keyName      = "name"
-	notFound     = "404 Not Found"
+	segReleases   = "releases"
+	segRepository = "repository"
+	segPackages   = "packages"
+	packageFiles  = "package_files"
+	generic       = "generic"
+	keyName       = "name"
+	keyCommit     = "commit"
+	notFound      = "404 Not Found"
 )
 
 // msg is GitLab's error body with a message, errMsg with an error.

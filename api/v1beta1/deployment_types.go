@@ -14,6 +14,7 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog,shortName=c4deploy
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Types",type=string,JSONPath=".spec.supportedTypes"
 // +kubebuilder:printcolumn:name="Ref",type=string,JSONPath=".spec.template.ref"

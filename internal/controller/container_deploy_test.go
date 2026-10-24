@@ -96,7 +96,7 @@ func readyTarget(ns, name string, tier c4v1alpha1.DeployTier) {
 // sourceTarget makes github DeployTarget name in ns, Ready, shipping the
 // source to folder path (nil: each Container's name) of its own repository,
 // which it returns.
-func sourceTarget(ns, name string, source c4v1alpha1.DeployTargetGitHubSource) string {
+func sourceTarget(ns, name string, source c4v1alpha1.DeployTargetSource) string {
 	GinkgoHelper()
 	repository := "acme/" + ns + "-" + name
 	githubFake.addRepository(repository, "t0ken")
@@ -169,7 +169,7 @@ func deployOfIs(ns, name, target, phase, reason, version, deployed string) *c4v1
 			want = metav1.ConditionTrue
 		}
 		g.Expect(cond.Status).To(Equal(want))
-	}, deployWait).Should(Succeed())
+	}).Should(Succeed())
 	return d
 }
 
@@ -201,7 +201,7 @@ func saidOnce(ns, reason, note string) {
 		g.Expect(matching).To(HaveLen(1))
 		g.Expect(matching[0].Series).To(BeNil())
 	}
-	Eventually(said, deployWait).Should(Succeed())
+	Eventually(said).Should(Succeed())
 	Consistently(said, 3*time.Second).Should(Succeed())
 }
 
@@ -316,7 +316,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &c)).To(Succeed())
 			g.Expect(c.Status.Deploys).To(BeEmpty())
 			g.Expect(condition(c.Status.Conditions, c4v1alpha1.ConditionDeployed)).To(BeNil())
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("ships two Containers to one github target under their names, and bare tags when tagPrefix is empty (#1486)", func() {
@@ -364,7 +364,7 @@ var _ = Describe("Container deploys", func() {
 			}
 			g.Expect(published(shared)).To(ConsistOf("orders-api-v0.1.0", "orders-cli-v0.1.0"))
 			g.Expect(published(bare)).To(ConsistOf("v0.1.0"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 	})
 
 	It("copies the published image to GHCR by digest and reports it, and copies nothing without a packagesToken (#1600)", func() {
@@ -403,7 +403,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(d.Image).To(Equal(want))
 			d, _ = deployOfContainer(g, ns, "orders-api", "plain")
 			g.Expect(d.Image).To(BeEmpty())
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		got, err := oci.Resolve(ctx, oci.Registry{Host: ghcrFake.host}, ghcrRepo, "v0.1.0")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(Equal(digest))
@@ -416,7 +416,7 @@ var _ = Describe("Container deploys", func() {
 	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetSource{})
 		all, app := appSource("example.com/orders")
 		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
 		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
@@ -483,7 +483,7 @@ var _ = Describe("Container deploys", func() {
 		dt := newDeployTarget(ns, "ghes", "ghes-github")
 		dt.Spec.GitHub.Repository = repository
 		dt.Spec.GitHub.URL = githubFake.enterprise.URL
-		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{}
+		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{}
 		mustCreate(newDeploySecret(ns, "ghes-github", map[string]string{"appId": "78",
 			"installationId": installation, "privateKey": string(pemKey),
 			model.GitHubSecretPackagesToken: "pkg-" + strings.Repeat("x", 8)}), dt)
@@ -521,7 +521,7 @@ var _ = Describe("Container deploys", func() {
 	It("publishes no source holding a secret or lacking a license, and ships the next clean release (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetGitHubSource{})
+		repository := sourceTarget(ns, "open", c4v1alpha1.DeployTargetSource{})
 		head := githubFake.ref(repository, "heads/main")
 		leaky, leaked := leakedSource("example.com/orders")
 		gitFake.setSource(ns, "orders-api", "v0.1.0", leaky...)
@@ -563,14 +563,14 @@ var _ = Describe("Container deploys", func() {
 	It("checks the source against each github target's own Secret (#1602)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		public := sourceTarget(ns, "public", c4v1alpha1.DeployTargetGitHubSource{})
+		public := sourceTarget(ns, "public", c4v1alpha1.DeployTargetSource{})
 		// The mirror's token sits in the source: only the mirror knows it.
 		token := rand.Text()
 		mirror := "acme/" + ns + "-mirror"
 		githubFake.addRepository(mirror, token)
 		dt := newDeployTarget(ns, "mirror", "mirror-github")
 		dt.Spec.GitHub.Repository = mirror
-		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetGitHubSource{}
+		dt.Spec.GitHub.Source = &c4v1alpha1.DeployTargetSource{}
 		mustCreate(newDeploySecret(ns, "mirror-github", map[string]string{"token": token}), dt)
 		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		all, _ := appSource("example.com/orders")
@@ -589,7 +589,7 @@ var _ = Describe("Container deploys", func() {
 			g.Expect(d.Reason).To(Equal(model.DeploySecretFound))
 			g.Expect(d.Message).To(ContainSubstring("config/app.env line 1: a credential the operator holds"))
 			g.Expect(d.Message).NotTo(ContainSubstring(token))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Expect(githubFake.ref(public, "tags/orders-api/v0.1.0")).NotTo(BeEmpty())
 		Expect(githubFake.releases(mirror)).To(BeEmpty())
 		Expect(githubFake.ref(mirror, "tags/orders-api/v0.1.0")).To(BeEmpty())
@@ -613,7 +613,7 @@ var _ = Describe("Container deploys", func() {
 	})
 
 	DescribeTable("fails the later of two Containers whose folders of one github target overlap (#1599)",
-		func(source c4v1alpha1.DeployTargetGitHubSource, problem string) {
+		func(source c4v1alpha1.DeployTargetSource, problem string) {
 			ns := newProjectNamespace()
 			deployingContainer(ns)
 			cli := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
@@ -635,11 +635,11 @@ var _ = Describe("Container deploys", func() {
 				g.Expect(d.Phase).To(Equal(model.DeployPhaseFailed), d.Message)
 				g.Expect(d.Reason).To(Equal(model.DeployFolderOverlaps))
 				g.Expect(d.Message).To(And(ContainSubstring(problem), ContainSubstring("orders-cli"), ContainSubstring("orders-api")))
-			}, deployWait).Should(Succeed())
+			}).Should(Succeed())
 		},
-		Entry("the whole repository", c4v1alpha1.DeployTargetGitHubSource{Path: new(".")}, "folder"),
+		Entry("the whole repository", c4v1alpha1.DeployTargetSource{Path: new(".")}, "folder"),
 		Entry("their own folders under the target's one source tag prefix",
-			c4v1alpha1.DeployTargetGitHubSource{TagPrefix: new("")}, "source tag prefix"),
+			c4v1alpha1.DeployTargetSource{TagPrefix: new("")}, "source tag prefix"),
 	)
 
 	It("scaffolds another Container while one Container's Ship is still uploading (#1446)", func() {
@@ -650,7 +650,7 @@ var _ = Describe("Container deploys", func() {
 		DeferCleanup(release)
 		shipRelease(ns, "v0.1.0", true)
 		setDeploy(ns, c4v1alpha1.ContainerDeploy{Target: "oss"})
-		Eventually(func() int { return deployFake.Blocked(targetName(ns, "oss")) }, deployWait).Should(Equal(1))
+		Eventually(func() int { return deployFake.Blocked(targetName(ns, "oss")) }).Should(Equal(1))
 
 		other := newContainer(ns, "orders-cli", "webshop-core", c4v1alpha1.ContainerTypeService)
 		other.Spec.StandardRef = &c4v1alpha1.LocalRef{Name: "python-strict"}
@@ -736,7 +736,7 @@ var _ = Describe("Container deploys", func() {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.WantedVersion).To(Equal("v0.2.0"))
 			g.Expect(d.Message).To(Equal("Deploying v0.1.0 to staging; v0.2.0 ships once it ends"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		Consistently(func() int {
 			return deployFake.Deploys(targetName(ns, "staging"), ns+"/orders-api")
 		}, 2*time.Second).Should(Equal(1))
@@ -745,7 +745,7 @@ var _ = Describe("Container deploys", func() {
 			Phase: ports.PhaseDeployed, Health: ports.HealthHealthy})
 		Eventually(func() int {
 			return deployFake.Deploys(targetName(ns, "staging"), ns+"/orders-api")
-		}, deployWait).Should(Equal(2))
+		}).Should(Equal(2))
 	})
 
 	It("says when a release lacks what the target needs, and ships it again only for another version", func() {
@@ -809,7 +809,7 @@ var _ = Describe("Container deploys", func() {
 		Eventually(func(g Gomega) {
 			d, _ := deployOf(g, ns, "staging")
 			g.Expect(d.Message).To(ContainSubstring("DeployTarget staging is not ready: GitHub refused the credential"))
-		}, deployWait).Should(Succeed())
+		}).Should(Succeed())
 		deployIs(ns, "staging", model.DeployPhaseWaiting, model.DeployTargetNotReady, "", model.DeployTargetNotReady)
 
 		By("a Framework the target can't take, first in the condition")

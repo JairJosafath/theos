@@ -1,8 +1,11 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { copyVaultName } from './backups';
+import { DATA_STORES } from './connectors';
+import type { Connect } from './connectors';
 import {
   JobStack,
   LOST_RUN_METRICS,
@@ -17,11 +20,18 @@ const OPERATIONS: Operations = {
   alerts: { email: '' },
 };
 
-/** The stack's template for `tier`, with `operations` changed as given. */
+/** The stack's own tables, without a data store: its runs and its idempotency records. */
+const TABLES = 2;
+
+/**
+ * The stack's template for `tier`, with `operations` changed as given, and
+ * `dataStores` in place of the Connectors' (none, unless a test names them).
+ */
 function synth(
   tier: Tier,
   backups: Partial<Operations['backups']> = {},
   alerts: Partial<Operations['alerts']> = {},
+  dataStores: readonly (readonly [string, Connect])[] = [],
 ): Template {
   const operations: Operations = {
     ...OPERATIONS,
@@ -32,6 +42,7 @@ function synth(
     new JobStack(new App(), 'test', {
       tier,
       operations,
+      dataStores,
     }),
   );
 }
@@ -343,6 +354,44 @@ describe('JobStack', () => {
         },
       },
     );
+  });
+});
+
+describe('JobStack data stores', () => {
+  it("connects the function to each Connector's data store and alarms on its table", () => {
+    const connected: string[] = [];
+    const connect: Connect = (scope, fn, rules) => {
+      connected.push(fn.node.id);
+      return new Table(scope, 'Store', {
+        partitionKey: { name: 'pk', type: AttributeType.STRING },
+        deletionProtection: rules.keepData,
+      });
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    expect(connected).toEqual(['Handler']);
+    template.resourceCountIs('AWS::DynamoDB::Table', TABLES + 1);
+    template.resourceCountIs(
+      'AWS::CloudWatch::Alarm',
+      LOST_RUN_METRICS.length + 1 + 3 + (TABLES + 1) * 3,
+    );
+    // Its table is data: backed up with the stack's own (#1267).
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    const backedUp = ['Runs', 'Store'].map((name) => tables.find((id) => id.startsWith(name)));
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: backedUp.map((id) => ({ 'Fn::GetAtt': [id, 'Arn'] })),
+      }),
+    });
+  });
+
+  it('connects the data stores of the rendered infra/connectors.ts by default', () => {
+    const template = Template.fromStack(
+      new JobStack(new App(), 'test', {
+        tier: 'production',
+        operations: OPERATIONS,
+      }),
+    );
+    template.resourceCountIs('AWS::DynamoDB::Table', TABLES + DATA_STORES.length);
   });
 });
 

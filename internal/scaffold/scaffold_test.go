@@ -412,6 +412,15 @@ func TestCommitMessageRoundTrip(t *testing.T) {
 	if info, err := ParseCommitMessage(CommitMessage(in, from, rels)); err != nil || !reflect.DeepEqual(info.Bundle, want) {
 		t.Errorf("bundle = %+v, %v, want %+v", info.Bundle, err, want)
 	}
+	if info.Domains != nil {
+		t.Errorf("domains of a Container whose system names none = %v, want none", info.Domains)
+	}
+	// The commit records the Domains by name, so a recovered scaffold knows
+	// them without inferring them from scaffoldedFrom (#1757).
+	in.Domains = []string{"billing", "webshop"}
+	if info, err := ParseCommitMessage(CommitMessage(in, from, rels)); err != nil || !slices.Equal(info.Domains, in.Domains) {
+		t.Errorf("domains = %v, %v, want %v", info.Domains, err, in.Domains)
+	}
 	if _, err := ParseCommitMessage("Initial commit\n"); !errors.Is(err, ErrNotOurs) {
 		t.Errorf("ParseCommitMessage(foreign) error = %v, want ErrNotOurs", err)
 	}

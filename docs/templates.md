@@ -52,6 +52,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | go-operator-standard | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
+| factory-self | Standard | | yes | yes | yes | n/a | n/a | yes | n/a |
 | aws-lambda-ts | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-go | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
 | aws-lambda-py | Framework | | yes | yes | yes | yes | #1071 | yes, #1420 | yes |
@@ -174,7 +175,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.6.0)
+### python-standard (v1.7.0)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
@@ -186,6 +187,10 @@ without its port, which `uv` matches on, and its login is `__token__` when
 `C4_PYPI_TOKEN` is set (#1696). Since v1.6.0 it supports a `job` with
 python-cli, and `AGENTS.md` has a job's rules: run once, exit non-zero on
 failure, safe to redo (#1595).
+Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -200,7 +205,7 @@ failure, safe to redo (#1595).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.6.2)
+### ts-standard (v1.7.0)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
@@ -210,6 +215,10 @@ own registries and the workflow's token, so `npm ci` fetches factory
 packages; `AGENTS.md` says how one is added (#1231). Since v1.6.2 `~/.netrc`
 names the index's host without its port, which `uv` matches on, and its
 login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
+Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes", "node cli" and "vscode extension".
@@ -414,10 +423,14 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.3.0) and go-operator-standard (v1.3.1)
+### go-standard (v1.4.0) and go-operator-standard (v1.4.0)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
+Since v1.4.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
   go-kubebuilder. go-standard: its `make check` in `make test-templates`'
@@ -431,12 +444,24 @@ envtest).
   `AGENTS.md.tmpl` (`log.FromContext`, key-value pairs).
 - README, Deploy, Auth: n/a: Standards.
 
+### factory-self (v1.0.0)
+
+The Standard of the factory's own repository, adopted by Container
+`c4factory` ([self-hosting.md](plans/self-hosting.md), decision 5). Its only
+file is a plain `.gitea/workflows/check.yaml`, the same bytes in the
+repository; its `protectedPaths` are the fence agents may not change.
+
+- CI: its job `check` runs `make check` on runner `go`;
+  `TestFactorySelfWritesItsCheckAsIs` checks the file and its bytes.
+- Tests, Lint, Logging: the factory's own `make check`.
+- README, Deploy, Auth: n/a: a Standard.
+
 ### The AWS Frameworks
 
 aws-lambda-ts (v1.4.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.3.0) and
 aws-fargate-ts (v2.1.0): a Node service behind an HTTPS load balancer.
-aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.1.1): an SQS, EventBridge
+aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.2.0): an SQS, EventBridge
 Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
 aws-standard.
@@ -468,7 +493,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.19.1)
+### aws-standard (v1.20.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -479,6 +504,10 @@ host without its port, as ts-standard v1.6.2's does (#1696). Since v1.19.0
 `dist/` (`infra/dist.ts`, tested by `infra/dist.test.ts` on a synth) for
 gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
 (#1610).
+Since v1.20.0 `AGENTS.md` tells the implementer which Domains the system is
+about and to read `docs/agents/domain/<name>/README.md` and its topic files
+before planning a change, and the reviewer guide to check the change against
+each domain's common mistakes; without Domains both read as before (#1758).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
@@ -495,7 +524,7 @@ gitea-release to attach (#1607); v1.19.1's runbook passes Prettier
   and `make dist` only writes the assembly the `cloudFormation` DeployTarget
   ships.
 
-### dynamodb (v1.2.0)
+### dynamodb (v1.3.0)
 
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
 on-demand, encrypted table for a function Container. Since v1.1.0
@@ -508,26 +537,30 @@ Framework and the Connector instead of getting a file nothing calls (#1739,
 [docs/plans/aws-data-stores.md](plans/aws-data-stores.md)). Since v1.2.0 it
 supports `service` too, for aws-fargate-ts (the task role and the App
 container's environment) and aws-ec2-ts (the instance role and the unit's
-environment) (#1742).
+environment) (#1742), and since v1.3.0 `worker` and `job`, for aws-queue-ts,
+aws-event-ts and aws-schedule-ts (#1741).
 
 - CI: `make test-templates`, combos "aws lambda function with dynamodb",
   "aws lambda function in go with dynamodb", "aws python lambda function
-  with dynamodb", "aws fargate service with dynamodb" and "aws ec2 service
-  with dynamodb": their `make check`.
+  with dynamodb", "aws fargate service with dynamodb", "aws ec2 service
+  with dynamodb", "aws queue consumer with dynamodb", "aws event consumer
+  with dynamodb" and "aws scheduled job with dynamodb": their `make check`.
 - Tests: `infra/connector_dynamodb.test.ts`, in the Frameworks' vitest
   include, a non-Lambda grantee included;
   `TestDynamoDBConnectorConnectsToAWSLambdaTS`,
   `TestDynamoDBConnectorConnectsToOtherAWSLambdas`,
   `TestDynamoDBConnectorConnectsToAWSServices`,
-  `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt` and
-  `TestDynamoDBConnectorFailsAServiceFrameworkThatDoesNotWireIt`
+  `TestDynamoDBConnectorConnectsToAWSWorkersAndJobs`,
+  `TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt`,
+  `TestDynamoDBConnectorFailsAServiceFrameworkThatDoesNotWireIt` and
+  `TestDynamoDBConnectorFailsAWorkerFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered.
 - Deploy: the table is part of the stack, retained and deletion-protected in
   production. aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it in
-  (#1393, #1740), and aws-fargate-ts and aws-ec2-ts (#1742); the other AWS
-  Frameworks fail the Container until their step of the plan (aws-queue-ts,
-  aws-event-ts and aws-schedule-ts: #1741).
+  (#1393, #1740), aws-fargate-ts and aws-ec2-ts (#1742), and aws-queue-ts,
+  aws-event-ts and aws-schedule-ts (#1741); the other AWS Frameworks fail
+  the Container until their step of the plan.
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 

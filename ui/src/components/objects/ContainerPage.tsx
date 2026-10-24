@@ -12,7 +12,17 @@
 
 import { useContext } from 'react'
 import type { ContainerWriter } from '../../k8s/containers'
-import type { Brief, CatalogEntry, Container, Crew, DeployTarget, Relationship, Session } from '../../k8s/types'
+import type {
+  Brief,
+  CatalogEntry,
+  Container,
+  Crew,
+  DeployTarget,
+  Domain,
+  Project,
+  Relationship,
+  Session,
+} from '../../k8s/types'
 import { choicesOf } from '../../model/choices'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
 import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
@@ -37,6 +47,8 @@ export function ContainerPage({
   briefs,
   crews,
   deployTargets,
+  domains,
+  project,
   writer,
 }: {
   container: Container
@@ -46,6 +58,10 @@ export function ContainerPage({
   briefs: Brief[]
   crews: Crew[]
   deployTargets: DeployTarget[]
+  /** The catalog's Domains, for their pinned refs; the ones in the repository are status.scaffoldedDomains. */
+  domains: Domain[]
+  /** Its Project, for the license it is scaffolded with when the Container names none. */
+  project?: Project
   writer: ContainerWriter
 }) {
   const session = useContext(SessionContext)
@@ -70,6 +86,8 @@ export function ContainerPage({
   const choices = choicesOf(container)
   const framework = frameworks.find((f) => f.metadata.name === choices.framework)
   const fromBundle = choices.bundle ? <span className="muted small"> · from bundle {choices.bundle}</span> : null
+  // The license the scaffold writes: the Container's own, else the Project's (docs/plans/license.md).
+  const license = container.spec.license ?? project?.spec?.license
   return (
     <main className="shell-page object-page">
       <ObjectHeader
@@ -167,11 +185,43 @@ export function ContainerPage({
               </dd>
             </>
           ) : null}
+          {license ? (
+            <>
+              <dt>License</dt>
+              <dd className="mono">
+                {license}
+                {container.spec.license ? null : <span className="muted small"> · from the Project</span>}
+              </dd>
+            </>
+          ) : null}
           <dt>Git provider</dt>
           <dd className="mono">
             <a href={pageHref(ns, 'GitProvider', container.spec.gitProviderRef.name)}>
               {container.spec.gitProviderRef.name}
             </a>
+          </dd>
+          <dt>Domains</dt>
+          <dd>
+            {/* What the repository holds (status.scaffoldedDomains), not what its system names now:
+                a Domain is rendered once, at the scaffold; DomainsApplied above says when they differ. */}
+            {!status?.scaffoldedFrom?.length ? (
+              <span className="muted">Not scaffolded yet.</span>
+            ) : status.scaffoldedDomains?.length ? (
+              <ul className="object-list">
+                {status.scaffoldedDomains.map((d) => {
+                  const from = status.scaffoldedFrom?.map(splitTemplateRef).find((t) => t.name === d)
+                  const version = from?.version ?? domains.find((e) => e.metadata.name === d)?.spec.template.ref
+                  return (
+                    <li key={d} className="mono">
+                      <a href={pageHref(ns, 'Domain', d)}>{d}</a>
+                      {version ? <span className="muted"> @ {version}</span> : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <span className="muted">None.</span>
+            )}
           </dd>
           <dt>Scaffolded from</dt>
           <dd>

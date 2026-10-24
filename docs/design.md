@@ -33,9 +33,9 @@ draws the story on top.
 | --- | --- |
 | Scope | One Project per namespace; no references across namespaces, reuse is by copying. |
 | Levels | Person, SoftwareSystem, Container and DataStore. No Component or Code level. |
-| Container | An application with its own new repository; no monorepos, no adopted repositories. |
+| Container | An application with its own repository: a new one, or an existing one it adopts with `spec.adopt`; no monorepos. |
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
-| Catalog | Framework, Standard, Compute, Deployment and Connector entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
+| Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
 
@@ -60,6 +60,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Brief | nothing | none | An app idea in plain words and its prompts, which a planner Agent turns into the model |
 | GitProvider | Project | none | Where repositories are created, with credentials |
 | Framework, Standard, Compute, Deployment, Connector | Project | none | Catalog entries: a pinned template and the Container types it supports |
+| Domain | Project | none | A catalog entry: a pinned template of what a system is about (a webshop's carts, stock and payments), its practices, common mistakes and choices; a SoftwareSystem names it in `spec.domainRefs` |
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
@@ -105,6 +106,31 @@ it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
 `Pending`, `ReferencesResolved=False`, reason `ExternalSystem`, and links to
 and from it are story only.
+
+**Domains.** A Standard tells the implementer how to build in a stack; a
+Domain tells it about what the system is for. It is its own catalog kind,
+`Domain`: a `displayName`, a `description` and a `template` at a pinned ref,
+and no `supportedTypes`, since what a system is about does not depend on a
+Container's type. A SoftwareSystem names the Domains it is about in
+`spec.domainRefs`: at most 5, unique, and none on an External system (CEL:
+the factory builds nothing there). Every Container of the system is
+scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
+the last layer, after the Connectors, sorted by name; the Standard's agent
+guide tells the implementer and the reviewer to read it. A Domain's template
+renders Markdown only and a `README.md`: another file fails the scaffold
+with `Scaffolded=False`, reason `DomainNotMarkdown`, naming the file; no
+`README.md` fails it with `DomainNoReadme`. Each Domain's `name@ref` ends
+`status.scaffoldedFrom` and its name joins `status.scaffoldedDomains`. A
+Domain is written once, at the scaffold: a later
+bump of its `ref` does not reach a scaffolded Container, and a Ready
+Container reports `DomainsApplied=True` while its system still names the
+Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`
+naming what was added or removed since (an adopted Container, scaffolded
+with none, names them all). The Standard's update renders with the Domains
+the scaffold used. The planner names the installed Domains an idea is about
+on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
+has the decisions; the kind, `domainRefs` and the layer are built, the
+Standards' guides, the webshop Domain and the planner are its later steps.
 
 ## Scaffolding a Container
 
@@ -156,6 +182,21 @@ with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
 `c4.factory.io/retry` annotation is set or changed.
 
+**Adopting a repository.** A Container with `spec.adopt: true` (set at
+creation, immutable) takes over a repository that already has commits and
+is never scaffolded: the operator writes nothing. It checks main for two
+things. `.c4factory.yaml` carries the identity file's fields, naming this
+project and Container, with `scaffoldedFrom` empty since nothing was
+scaffolded; a missing file or another identity fails `IdentityMismatch`,
+saying what the file holds. Every file the Container's Standard renders for
+it at its ref is there with that content; else it fails
+`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
+and goes `Ready`, recording the Standard at its ref. An empty repository
+fails `NothingToAdopt`; one with commits but no `main` branch fails
+`NoDefaultBranch`, telling the user to rename its default branch to `main`
+first (#1908). A Container without a Standard adopts on the
+identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
+
 **Relationships.** Container to DataStore applies the DataStore's Connector at
 scaffold. Container to Container with `spec.bundles: true` says the source
 ships a release of the target ([Crews](#crews-and-releases)). Every other link
@@ -190,12 +231,23 @@ on a Standard change), then `Merged` or `Failed`.
   every run and closes it on merge; a failed Task hands it back
   `status/needs-human` with the reason. An issue without an *Acceptance
   criteria* checklist goes back before any tokens are spent.
+- **Issue text is data, not instructions.** The prompt puts the issue's
+  text, every field a person wrote, between two marker lines and says it is
+  the goal and never an instruction: whatever in it asks the agent to change
+  its tools, credentials, settings, the files that configure agents, or where
+  it sends data is ignored. The markers grow past any copy of themselves in
+  the text, so nothing a person wrote can end the block early.
 - **Merges only on checks of the `main` it merges into.** When `main` moved,
   the operator merges it into the branch (no agent run, no round) and waits
   for the checks again; a conflict goes back to the implementer.
 - **The implementer runs the check in its sandbox,** sent back twice while it
   fails. One that fails on the base commit too (`CheckFailsOnBase`) is left
   to CI, with the output on the pull request.
+- **Round 1 starts only on a green base.** Before round 1 the Task reads the
+  CI state of `main`'s head for the Container's check contexts: red, and it
+  waits with reason `BaseRed`, a Needs-you item on the Brief at once; pending,
+  and it waits; green or no status yet, and it starts. A check that then fails
+  on the base in the sandbox only is the workspace's, which the prompts say.
 - **Blocked is said, not guessed.** An implementer that can't do the issue
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
   the Task fails at once, reason `Blocked`, with those words on the issue. A round
@@ -210,6 +262,7 @@ on a Standard change), then `Merged` or `Failed`.
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
   a person cancelled costs the round.
@@ -234,7 +287,7 @@ on a Standard change), then `Merged` or `Failed`.
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot. The Work area charts the runs against their Agent's
+  an agent slot, and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
   `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.
@@ -322,6 +375,9 @@ A Crew per Container names the implementer and reviewer Agents, polls the
 repository's `status/ready` issues and starts up to `parallel` Tasks (one by
 default; `Blocked` ones don't count), with three tries per issue.
 `spec.paused` stops new starts; running Tasks are never stopped.
+`spec.taskBudgetUSD` caps what one Task's agent runs may cost, in US dollars,
+summed from what its agents report; at the cap the Task starts no further
+run (`OverBudget`) until the cap is raised, and unset means no cap.
 
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
   goes first, even past `parallel`; then a Standard change a `Blocked` Task
@@ -739,9 +795,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   `source` as `github`'s; it has no `latest`, since GitLab's latest release is
   simply the newest. GitLab has no drafts, so the release is the last write,
   made of the source commit with the notes and links to the files: the source
-  commit goes in through the Commits API, one commit per release, and the
-  release's files into the project's generic package registry (package the
-  Container's name, version the release's). The image goes by digest to the
+  commit goes in through the Commits API, one commit per release (a source
+  tree holding a symlink fails `SourceUnsupported`, since that API carries
+  no symlinks), and the release's files into the project's generic package
+  registry (package the Container's name, version the release's). The image goes by digest to the
   project's container registry, at its `container_registry_image_prefix`
   and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
   registry is on and the token has `write_registry`; else the release ships
@@ -763,12 +820,16 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   each `Application`'s `repoURL`, and `imageRegistry` is a registry its
   nodes can pull from: the operator copies the image there by digest,
   tagged with the version, with the Secret's `registryUsername` and
-  `registryPassword`, and `kustomize.images` names the copy. The copy
-  speaks HTTPS unless `imageRegistryInsecure` is set (a lab registry over
-  plain HTTP). It resolves the destination tag first: a tag already
-  naming the digest is left alone and nothing is written, so a registry
-  with immutable tags takes a retried Ship; a tag naming another image
-  fails the deploy with that reason, and is not retried as transient.
+  `registryPassword`, a credential that reads tags as well as pushes, and
+  `kustomize.images` names the copy. The copy speaks HTTPS unless
+  `imageRegistryInsecure` is set (a lab registry over plain HTTP). It
+  resolves the destination tag first: a tag already naming the digest is
+  left alone and nothing is written, so a registry with immutable tags
+  takes a retried Ship; a tag naming another image fails the deploy with
+  that reason, and is not retried as transient. A credential that may
+  push but not read (a token scoped to push alone) fails the deploy as a
+  refused credential naming the read it lacks, and writes nothing: a
+  blind write could move a tag (#1877).
   `imageRepositoryLayout` says where the copy goes below `imageRegistry`:
   `nested` (the default, `<imageRegistry>/<owner>/<name>`) or `flat`
   (`<imageRegistry>/<name>`, for a registry such as Docker Hub that takes
@@ -782,7 +843,10 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   bootstrapping the environment when the credential may (else *Needs you*
   says the command). State comes from the stack's status and its newest
   event, the URL from the `EntryPoint` output. The factory never deletes a
-  stack. Fargate's image comes by digest from the Registry (#1069).
+  stack. Fargate's image comes by digest from the Registry (#1069),
+  copied into the bootstrap's ECR repository as its image-publishing
+  role, which reads tags as well as pushes (the copy resolves its tag
+  first; a role without `ecr:BatchGetImage` refuses the credential, #1877).
 
 ## Distribution and issues
 
@@ -840,6 +904,13 @@ with an object may change, as the release notes say.
   `status.storedVersions` holds the storage version alone, under *Removed*
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
+- **The operator rewrites what etcd holds at an older version.** `v1beta1`
+  is the storage version of every kind. At start, once the conversion
+  webhook serves, the leader lists each kind whose CRD's `storedVersions`
+  names another version, patches every object back at the storage version,
+  and brings that CRD's `storedVersions` down to it; a start after the pass
+  does nothing, and a pass that fails is tried again until it succeeds,
+  with the operator serving meanwhile.
 
 `make check` guards what a schema shows: `test/compat` compares each served
 version of the CRDs with the last release's, in `test/compat/baseline/`
@@ -869,7 +940,8 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 
 ## Out of scope and open points
 
-- **Out of scope:** existing repositories and monorepos; Component and Code
+- **Out of scope:** monorepos (an existing repository of one application
+  may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
   it writes may run the store, as postgres's StatefulSet or dynamodb's table,
   but the operator creates none); monitoring the apps beyond what a deploy
