@@ -139,9 +139,9 @@ func getContainer(g Gomega, ns string) *c4v1beta1.Container {
 
 // setProjectLicense sets the namespace's Project's spec.license to id; empty
 // clears it.
-func setProjectLicense(ns string, id c4v1alpha1.License) {
+func setProjectLicense(ns string, id c4v1beta1.License) {
 	GinkgoHelper()
-	var project c4v1alpha1.Project
+	var project c4v1beta1.Project
 	Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
 	Expect(patch(&project, func() { project.Spec.License = id })).To(Succeed())
 }
@@ -492,7 +492,7 @@ var _ = Describe("Container Standard update", func() {
 		By("clearing the Project's license, then bumping to a version whose Standard writes LICENSE")
 		setProjectLicense(ns, "")
 		bumpStandard(ns, "v1.2.0")
-		message := stoppedUpdate(ns, c4v1alpha1.ReasonFailed)
+		message := stoppedUpdate(ns, c4v1beta1.ReasonFailed)
 		Expect(message).To(HavePrefix("Could not render the Standard python-strict at v1.2.0"))
 		Expect(message).To(HaveSuffix(": python-strict and the operator both write "+scaffold.LicensePath),
 			"LICENSE is the operator's while the repository holds its license, whatever spec.license says now")
