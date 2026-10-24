@@ -20,7 +20,7 @@ CHART=${2:-dist/chart/templates/crd}
 # shape converts by the API server, strategy None, so a read never waits on
 # the operator (#1830). One the base marks c4.factory.io/conversion: webhook
 # (the kind's versions differ) converts by the operator's webhook, which
-# patches its CA in (docs/plans/api-versions.md, decision 3); it needs
+# patches its CA in (docs/plans/done/api-versions.md, decision 3); it needs
 # webhook.enabled, and the render fails without it, since strategy None would
 # lose what differs.
 guarded() {

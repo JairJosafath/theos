@@ -19,9 +19,13 @@ VERSION=1.2.0 REGISTRY=ghcr.io/o/c4factory REPO=o/c4factory \
   "$NOTES" --prs "$HACK/testdata/release-notes-prs.jsonl" v1.1.0 >"$T/out" 2>&1
 check "drafts from a fixture" $? 0
 
-check "sections in Keep a Changelog order" "$(grep '^### ' "$T/out" | tr '\n' ' ')" "### Added ### Changed ### Fixed ### Security "
+check "sections in Keep a Changelog order" "$(grep '^### ' "$T/out" | tr '\n' ' ')" "### Added ### Changed ### Deprecated ### Removed ### Fixed ### Security "
 check "feat: Added, without the prefix; a title with none takes the branch's type" \
-  "$(section Added)" "$(printf -- '- a Brief kind (#1)\n- Briefs step 2: the planner (#2)\n- AWS: the Go Lambda Framework aws-lambda-go (#15)')"
+  "$(section Added)" "$(printf -- '- a Brief kind (#1)\n- Briefs step 2: the planner (#2)\n- AWS: the Go Lambda Framework aws-lambda-go (#15)\n- the UI speaks v1beta1 (#19)')"
+check "a body line Deprecated: adds a Deprecated line next to the pull request's own (#1618)" \
+  "$(section Deprecated)" "- c4.factory.io/v1alpha1; use v1beta1, and the version may be dropped no earlier than 2027-01-22 (#1963) (#19)"
+check "a body line Removed: adds a Removed line, a chore's too (#1618)" "$(section Removed)" "- c4.factory.io/v1alpha1, deprecated by v0.30.0 (#20)"
+check "  and the chore has no other line" "$(grep -c '(#20)' "$T/out")" 1
 check "fix: Fixed" "$(section Fixed)" "- the UI keeps its session (#3)"
 check "breaking (! or BREAKING CHANGE) and other types: Changed" "$(section Changed)" \
   "$(printf -- '- **Breaking:** Containers name their System (#4)\n- **Breaking:** one reconcile loop (#5)\n- cache the templates (#8)')"

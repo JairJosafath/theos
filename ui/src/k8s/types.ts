@@ -1,9 +1,9 @@
-// TypeScript shapes of the c4.factory.io/v1alpha1 resources, as the Kubernetes API
-// returns them. They mirror api/v1alpha1/*_types.go; every status field is optional
+// TypeScript shapes of the c4.factory.io/v1beta1 resources, as the Kubernetes API
+// returns them. They mirror api/v1beta1/*_types.go; every status field is optional
 // because the operator may not have reported yet.
 
 export const GROUP = 'c4.factory.io'
-export const VERSION = 'v1alpha1'
+export const VERSION = 'v1beta1'
 
 export interface ObjectMeta {
   name: string
@@ -70,7 +70,7 @@ export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
 
-/** The SPDX id of a license the scaffold can write; the schema's enum (api/v1alpha1/shared_types.go). */
+/** The SPDX id of a license the scaffold can write; the schema's enum (api/v1beta1/shared_types.go). */
 export type License =
   | 'MIT'
   | 'Apache-2.0'

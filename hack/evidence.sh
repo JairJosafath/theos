@@ -76,7 +76,7 @@ m2_ownership() {
 m2_policy() {
     kubectl create namespace evidence-policy --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     p 'kubectl apply -f -   # a Project called webshop in namespace evidence-policy'
-    printf 'apiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata: {name: webshop, namespace: evidence-policy}\n' |
+    printf 'apiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata: {name: webshop, namespace: evidence-policy}\n' |
         kubectl apply -f - 2>&1 || true
     kubectl delete namespace evidence-policy --wait=false >/dev/null
 }
@@ -151,7 +151,7 @@ m5_stale() {
 # --- Milestone 6: UI ---------------------------------------------------------
 
 m6_readonly() {
-    local api=http://localhost:8080/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api
+    local api=http://localhost:8080/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api
     p 'curl -X <method> http://localhost:8080/k8s/apis/c4.factory.io/.../containers/orders-api'
     for m in GET POST PUT PATCH DELETE; do
         printf '  %-7s -> %s\n' "$m" "$(curl -s -o /dev/null -w '%{http_code}' -X "$m" "${api/8080/8088}")"
@@ -180,7 +180,7 @@ shot m2-policy "A Project must be named after its namespace" m2_policy
 # A copy of the story in its own namespace, so deleting webshop-core there shows
 # the cascade without touching the sample.
 kubectl create namespace evidence-cascade --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-printf 'apiVersion: c4.factory.io/v1alpha1\nkind: Project\nmetadata: {name: evidence-cascade}\n' |
+printf 'apiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata: {name: evidence-cascade}\n' |
     kubectl -n evidence-cascade apply -f - >/dev/null
 kubectl -n evidence-cascade apply -f config/samples/webshop/story.yaml >/dev/null
 sleep 5
@@ -193,15 +193,15 @@ kubectl -n evidence-catalog apply -f config/samples/webshop/factory.yaml >/dev/n
 kubectl -n evidence-catalog create secret generic gitea-credentials --from-literal=token=unused \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 cat <<'EOF' | kubectl -n evidence-catalog apply -f - >/dev/null
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Project
 metadata: {name: evidence-catalog}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata: {name: webshop-core}
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata: {name: storefront}
 spec:

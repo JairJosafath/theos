@@ -94,7 +94,7 @@ describe('the Brief page’s actions', () => {
     await click()
     const write = await nextWrite(count)
     assert.equal(write.method, 'PATCH')
-    assert.equal(write.path, `/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/briefs/webshop`)
+    assert.equal(write.path, `/apis/c4.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`)
     assert.equal(write.contentType, 'application/json-patch+json')
     return write.body
   }
@@ -183,7 +183,7 @@ describe('the Brief page’s actions', () => {
   it('offers the answers again once a round took the prompt, and waits', async () => {
     await page.getByText('Answered: Retry, for the next round').waitFor({ timeout: 5000 })
     // The storefront #3 answer recommended by the tending round is Wait.
-    const at = `${apiUrl}/apis/c4.factory.io/v1alpha1/namespaces/${namespace}/briefs/webshop`
+    const at = `${apiUrl}/apis/c4.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`
     const webshop = await (await fetch(at)).json()
     api.modify('briefs', { ...webshop, status: { ...webshop.status, promptsPlanned: webshop.spec.prompts.length } })
     const wait = button('Wait storefront #3, as it would')

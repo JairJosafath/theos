@@ -1,5 +1,5 @@
 // A Container's effective catalog choices and what a Bundle supports: the two
-// rules the UI shares with the operator (api/v1alpha1 Container.Choices and
+// rules the UI shares with the operator (api/v1beta1 Container.Choices and
 // internal/model BundleSupportedTypes), so every page reads the same answer
 // whether a Container names its four sides or a Bundle.
 

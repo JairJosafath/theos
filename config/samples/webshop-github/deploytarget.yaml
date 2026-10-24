@@ -15,7 +15,7 @@
 # token with write:packages and read:packages, for the image. Ready says whether GitHub takes
 # it. Not in ../webshop/kustomization.yaml, so `make sample` needs no GitHub account;
 # apply it with: kubectl apply -k config/samples/webshop-github
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DeployTarget
 metadata:
   name: webshop-oss

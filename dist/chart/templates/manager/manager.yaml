@@ -86,7 +86,7 @@ spec:
         - --health-probe-bind-address=:{{ .Values.manager.healthProbe.port }}
         {{- if .Values.webhook.enabled }}
         # The operator issues the webhook certificate into this Secret and
-        # patches its CA into the CRDs (docs/plans/api-versions.md, decision 3).
+        # patches its CA into the CRDs (docs/plans/done/api-versions.md, decision 3).
         - --webhook-port={{ .Values.webhook.port }}
         - --webhook-service={{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
         - --webhook-cert-secret={{ .Release.Name }}-webhook-cert

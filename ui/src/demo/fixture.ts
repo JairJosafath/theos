@@ -33,7 +33,7 @@ import type {
 
 export const DEMO_NAMESPACE = 'webshop'
 
-const API_VERSION = 'c4.factory.io/v1alpha1'
+const API_VERSION = 'c4.factory.io/v1beta1'
 const GITEA = 'http://gitea.gitea.svc.cluster.local:3000'
 /** Where the operator's issue and pull request links point: Gitea's own address, port-forwarded. */
 const GITEA_WEB = 'http://localhost:3000'
