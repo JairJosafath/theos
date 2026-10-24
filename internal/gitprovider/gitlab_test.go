@@ -419,8 +419,9 @@ func gitlabSourceTag(t *testing.T, gl gitprovider.GitLabProject, fp *gitlabtest.
 	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "again",
 		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "web/go.mod", Content: "x"}}})
 	_ = gitlabReason(t, err, gitprovider.ReasonGitLabRejected)
-	// A change decided on the old head is refused, as GitLab does with
-	// last_commit_id; one decided on the new head goes through, and chmod
+	// A last_commit_id that is not the file's own last commit is refused, as
+	// GitLab does (#1950: the file's last commit, not the branch's head);
+	// README.md's is still the first commit, web/go.mod's the second. Chmod
 	// alone moves the mode while an update keeps it.
 	executable, notExecutable := true, false
 	_, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "stale",
@@ -432,7 +433,7 @@ func gitlabSourceTag(t *testing.T, gl gitprovider.GitLabProject, fp *gitlabtest.
 	if _, err = gl.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: "main", Message: "modes",
 		Actions: []gitprovider.GitLabCommitAction{
 			{Action: "chmod", FilePath: "web/go.mod", ExecuteFilemode: &executable, LastCommitID: next},
-			{Action: "update", FilePath: "README.md", Content: "hi again\n", ExecuteFilemode: &notExecutable, LastCommitID: next},
+			{Action: "update", FilePath: "README.md", Content: "hi again\n", ExecuteFilemode: &notExecutable, LastCommitID: commit},
 		}}); err != nil {
 		t.Fatal(err)
 	}

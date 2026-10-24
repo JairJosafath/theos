@@ -407,6 +407,11 @@ export function containerNextStep(container: Container): NextStep | undefined {
           text: 'Pick catalog entries that support this Container’s type; the change retries by itself.',
           command,
         }
+      case 'NotWired':
+        return {
+          text: 'A Connector it reaches is wired only by the Frameworks the condition names. Pick one of them; the change retries by itself.',
+          command,
+        }
       case 'DeploysItself':
         return {
           text: 'Its Framework is its own deployment: remove the Compute, and any Deployment but gitea-release; the change retries by itself.',

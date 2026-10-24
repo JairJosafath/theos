@@ -94,8 +94,11 @@ type GitLabTreeEntry struct {
 // GitLabCommitAction is one change of a commit: Action is "create", "update",
 // "delete" or "chmod", Content the file's bytes, base64 when Encoding is
 // "base64". ExecuteFilemode is read on chmod alone (a create is 100644, an
-// update keeps the mode). LastCommitID, on update, delete and chmod, is the
-// head the change was decided on: a file that changed since is a 400.
+// update keeps the mode). LastCommitID, on update and delete, is the last
+// commit that touched that file, not the branch's head: GitLab compares it
+// with the file's own last commit on the branch and refuses a 400 when they
+// differ, so a head that left the file alone is refused too (#1950). The
+// deployer leaves it off and names the head as the commit's StartSHA.
 type GitLabCommitAction struct {
 	Action          string `json:"action"`
 	FilePath        string `json:"file_path"`
@@ -106,10 +109,15 @@ type GitLabCommitAction struct {
 }
 
 // GitLabCommit is a commit to make on Branch, through the Commits API.
+// StartSHA, when set, is the commit's parent: the head the actions were
+// decided on. GitLab makes the commit on it and moves Branch there only when
+// Branch still is at it, else a 400 "Could not update refs/heads/<branch>.
+// Please refresh and try again." (#1950). Empty, the parent is Branch's head.
 type GitLabCommit struct {
-	Branch  string               `json:"branch"`
-	Message string               `json:"commit_message"`
-	Actions []GitLabCommitAction `json:"actions"`
+	Branch   string               `json:"branch"`
+	StartSHA string               `json:"start_sha,omitempty"`
+	Message  string               `json:"commit_message"`
+	Actions  []GitLabCommitAction `json:"actions"`
 }
 
 // GitLabProject is one GitLab project's REST API, for a deploy target that
