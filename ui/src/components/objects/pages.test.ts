@@ -93,6 +93,30 @@ describe('the read-only object pages', () => {
     expect(t).toContain('Chart not reported yet')
   })
 
+  it('shows the Project’s license when set, and nothing when not (#1863)', () => {
+    // The demo's Project sets MIT, so the demo shows it.
+    expect(text(page('Project', 'webshop'))).toContain('License MIT')
+    const data = demoStory(NOW)
+    delete data.project!.spec!.license
+    expect(text(page('Project', 'webshop', data))).not.toContain('License')
+  })
+
+  it('shows a Container’s own license, else the Project’s as from the Project, else nothing (#1863)', () => {
+    const data = demoStory(NOW)
+    const c = data.containers.find((x) => x.metadata.name === 'orders-api')!
+    // The Project's MIT, inherited.
+    expect(text(page('Container', 'orders-api', data))).toContain('License MIT · from the Project')
+    // Its own wins over the Project's, with no note.
+    c.spec.license = 'Apache-2.0'
+    const own = text(page('Container', 'orders-api', data))
+    expect(own).toContain('License Apache-2.0')
+    expect(own).not.toContain('from the Project')
+    // Neither set: no row.
+    delete c.spec.license
+    delete data.project!.spec!.license
+    expect(text(page('Container', 'orders-api', data))).not.toContain('License')
+  })
+
   it('says why an AddedAfterScaffold Relationship is not applied, and links its Container’s repository', () => {
     const html = page('Relationship', 'orders-api-to-cart-cache')
     expect(html).toContain('aria-current="step"')
