@@ -119,10 +119,13 @@ it against this table. Where the code lives:
   (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
   today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
 
-`internal/ports` holds the Deployer (#1161). Until #1094 lands,
-`internal/gitprovider` holds all of the Git host's ports as one interface,
-`Provider`, and the controllers' fake is `internal/controller/fakegit_test.go`;
-the column *Today* says where each port is now.
+`internal/ports` holds the Deployer (#1161) and the Git host's five ports
+(#1166): GitHost, Issues, CI, AgentAccess and Registry, one file each with
+its shared types and errors. Until #1169 lands, the Gitea adapter stays in
+`internal/gitprovider`, whose `Provider` is the union of the five and whose
+type aliases (`gitprovider.Label = ports.Label`) keep the controllers
+compiling; the controllers' fake is `internal/controller/fakegit_test.go`.
+The column *Today* says where each port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
