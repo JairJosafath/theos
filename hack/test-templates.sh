@@ -47,6 +47,9 @@ combos=(
 	"aws queue consumer|worker|mailer|Mailer|Framework=aws-queue-ts Standard=aws-standard Deployment=gitea-release"
 	"aws scheduled job|job|nightly-report|Nightly Report|Framework=aws-schedule-ts Standard=aws-standard Deployment=gitea-release"
 	"aws event consumer|worker|audit|Audit|Framework=aws-event-ts Standard=aws-standard Deployment=gitea-release"
+	"aws queue consumer with dynamodb|worker|notifier|Notifier|Framework=aws-queue-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws scheduled job with dynamodb|job|cleanup|Cleanup|Framework=aws-schedule-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
+	"aws event consumer with dynamodb|worker|ledger|Ledger|Framework=aws-event-ts Standard=aws-standard Deployment=gitea-release Connector=dynamodb"
 	"aws static site|static-site|landing|Landing|Framework=aws-static-site-ts Standard=aws-standard Deployment=gitea-release"
 )
 
