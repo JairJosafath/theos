@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -57,16 +58,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	if err := yaml.Unmarshal([]byte(workspace[WorkspaceCatalogFile]), &catalog); err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceCatalogFile, err)
 	}
-	// The idea comes first, then the prompts, one line each, then the Git
-	// provider; the idea's own text can't fake the later headings.
-	idea := strings.Index(brief, "\n## Idea")
-	ideaNew := idea >= 0 && strings.HasPrefix(brief[idea:], "\n## Idea (**new**)\n")
-	var prompts []string
-	if i, end := strings.LastIndex(brief, "\n## Prompts\n"), strings.LastIndex(brief, "\n## Git provider\n"); i > idea && end > i {
-		for _, p := range briefNewPrompt.FindAllStringSubmatch(brief[i:end], -1) {
-			prompts = append(prompts, p[1])
-		}
-	}
+	ideaText, ideaNew, prompts := standInBrief(brief)
 
 	files := map[string]string{}
 	var choices []string
@@ -75,13 +67,15 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	// the Brief's own repository.
 	base := strings.TrimPrefix(name, BriefRepository(""))
 	container := standInContainer(objects, base)
+	// system and domains are the SoftwareSystem the round makes, if any, and
+	// the Domains it is about (#1760).
+	system, domains := "", []string(nil)
 	if ideaNew {
 		framework, kind, standard, deployment := standInCatalog(catalog)
 		if framework == "" {
 			return map[string]string{PlanNeedsInputFile: "The catalog has no Framework with a Container type, " +
 				"so the stand-in planner can't add a Container: install one.\n"}, nil
 		}
-		system := ""
 		// The first Internal system: the factory builds nothing in an
 		// External one (#1428).
 		for _, o := range objects {
@@ -91,11 +85,15 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 			}
 		}
 		if system == "" {
-			system = name
+			system, domains = name, standInDomains(catalog, ideaText)
 			objects = append(objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindSoftwareSystem, Name: system,
-				Description: "What Brief " + name + " describes."})
-			choices = append(choices, fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has no Internal one.",
-				system))
+				Description: "What Brief " + name + " describes.", Domains: domains})
+			choice := fmt.Sprintf("The stand-in planner makes SoftwareSystem %s: the namespace has no Internal one.", system)
+			if len(domains) > 0 {
+				choice += fmt.Sprintf(" It is about the %s: each is a word of the idea.", count(len(domains), "Domain")+" "+
+					strings.Join(domains, ", "))
+			}
+			choices = append(choices, choice)
 		}
 		container = standInName(objects, base)
 		added := PlanObject{APIVersion: PlanAPIVersion, Kind: KindContainer, Name: container,
@@ -163,8 +161,54 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 	_, story, _ = strings.Cut(story, "\n") // the workspace's "copy it" header
 	files[PlanModelFile] = story
 	files[PlanChoicesFile] = "- " + strings.Join(choices, "\n- ") + "\n"
-	files[PlanSummaryFile] = fmt.Sprintf("The stand-in planner files %s.\n", count(len(issues), "issue"))
+	summary := fmt.Sprintf("The stand-in planner files %s.", count(len(issues), "issue"))
+	if len(domains) > 0 {
+		summary += fmt.Sprintf(" SoftwareSystem %s is about the %s.", system, count(len(domains), "Domain")+" "+
+			strings.Join(domains, ", "))
+	}
+	files[PlanSummaryFile] = summary + "\n"
 	return files, nil
+}
+
+// standInBrief reads the Brief: the idea's text and whether it is new, and
+// the new prompts. The idea comes first, then the prompts, one line each,
+// then the Git provider; the idea's own text can't fake the later headings.
+func standInBrief(brief string) (ideaText string, ideaNew bool, prompts []string) {
+	idea := strings.Index(brief, "\n## Idea")
+	ideaNew = idea >= 0 && strings.HasPrefix(brief[idea:], "\n## Idea (**new**)\n")
+	end := strings.LastIndex(brief, "\n## Git provider\n")
+	if idea < 0 || end < idea {
+		return "", ideaNew, nil
+	}
+	if i := strings.LastIndex(brief, "\n## Prompts\n"); i > idea && end > i {
+		for _, p := range briefNewPrompt.FindAllStringSubmatch(brief[i:end], -1) {
+			prompts = append(prompts, p[1])
+		}
+	}
+	// Without the heading line, and up to the next heading (the Prompts, the
+	// Requests, the Namespace...): their words aren't the idea's (#1760).
+	_, ideaText, _ = strings.Cut(brief[idea:end], "\n\n")
+	if i := strings.Index(ideaText, "\n## "); i >= 0 {
+		ideaText = ideaText[:i]
+	}
+	return ideaText, ideaNew, prompts
+}
+
+// standInDomains are the catalog's Domains whose name is a word of the idea
+// (lowercased, split on anything but letters and digits), sorted: the stand-in
+// reads nothing else to say what a new system is about (#1760).
+func standInDomains(catalog catalogOut, idea string) []string {
+	words := strings.FieldsFunc(strings.ToLower(idea), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	var out []string
+	for _, d := range catalog.Domains {
+		if slices.Contains(words, d.Name) {
+			out = append(out, d.Name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // standInRequests answers each request of model/requests.yaml: an issue for

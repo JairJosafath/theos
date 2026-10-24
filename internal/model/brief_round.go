@@ -202,6 +202,10 @@ func MissingCatalog(plan Plan, current CurrentModel) []string {
 			need(SideDeployment, o.Deployment)
 		case KindDataStore:
 			need(SideConnector, o.Connector)
+		case KindSoftwareSystem:
+			for _, d := range o.Domains { // #1760
+				need(SideDomain, d)
+			}
 		}
 	}
 	return out

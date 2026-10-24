@@ -45,6 +45,7 @@ func guideExampleCurrent() CurrentModel {
 			{Side: SideCompute, Name: "k8s", SupportedTypes: []string{TypeService}},
 			{Side: SideDeployment, Name: "helm", SupportedTypes: []string{TypeService}},
 			{Side: SideConnector, Name: "postgres", SupportedTypes: []string{TypeService}},
+			{Side: SideDomain, Name: "webshop", Description: "Sells things online."},
 		},
 		Bundles:     []Bundle{{Name: "react-web", Framework: "react-site", Standard: "web-standard"}},
 		GitProvider: "gitea",

@@ -18,6 +18,9 @@ func TestStandInPlan(t *testing.T) {
 		{Side: SideCompute, Name: "small", SupportedTypes: []string{TypeCLI}},
 	}
 	noStandard := []CatalogEntry{{Side: SideFramework, Name: "go-cli", SupportedTypes: []string{TypeCLI}}}
+	// #1760: two Domains are installed; an idea's words name one of them.
+	withDomains := append(slices.Clone(noStandard), CatalogEntry{Side: SideDomain, Name: "webshop"},
+		CatalogEntry{Side: SideDomain, Name: "payments"})
 	// A Deployment ships worker and service, but a-cloud deploys itself, no
 	// Standard fits b-bare, and c-tool's first type is cli: the stand-in takes
 	// c-tool as a worker.
@@ -46,6 +49,9 @@ func TestStandInPlan(t *testing.T) {
 		// one it adds, with its refs, when it adds one.
 		created   []string
 		container PlanObject
+		// domains are the Domains the created SoftwareSystem names, when it
+		// creates one.
+		domains []string
 		// issues are Container: title.
 		issues []string
 		// releases are the Containers releases.yaml names.
@@ -117,6 +123,40 @@ func TestStandInPlan(t *testing.T) {
 			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Catalog: noStandard},
 			created: []string{"SoftwareSystem/lend", "Container/lend"},
 			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
+			name:    "idea, in a new SoftwareSystem about the installed Domains the idea names (#1760)",
+			ws:      BriefWorkspace{Idea: "A Webshop for plants, no payments-provider yet.", Catalog: withDomains},
+			created: []string{"SoftwareSystem/lend", "Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			domains: []string{"payments", "webshop"},
+			issues:  []string{"lend: Stand-in: start lend"},
+		},
+		{
+			name:    "idea, in a new SoftwareSystem, no installed Domain a word of the idea (#1760)",
+			ws:      BriefWorkspace{Idea: "A webshopping site.", Catalog: withDomains},
+			created: []string{"SoftwareSystem/lend", "Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
+			// The Namespace section names the namespace; it is not the idea.
+			name:    "idea with no prompts, the namespace named like a Domain: no Domain (#1760)",
+			ws:      BriefWorkspace{Idea: "Neighbours lend tools.", Namespace: "webshop", Catalog: withDomains},
+			created: []string{"SoftwareSystem/lend", "Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "lend", Type: TypeCLI,
+				GitProvider: "gitea", Framework: "go-cli"},
+			issues: []string{"lend: Stand-in: start lend"},
+		},
+		{
+			name:    "idea naming a Domain, in an existing SoftwareSystem: its Domains stay (#1760)",
+			ws:      BriefWorkspace{Idea: "A webshop for plants.", Catalog: withDomains, Objects: []PlanObject{system}},
+			created: []string{"Container/lend"},
+			container: PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeCLI,
 				GitProvider: "gitea", Framework: "go-cli"},
 			issues: []string{"lend: Stand-in: start lend"},
 		},
@@ -220,6 +260,16 @@ func TestStandInPlan(t *testing.T) {
 					o.APIVersion = ""
 					if !reflect.DeepEqual(o, tc.container) {
 						t.Errorf("container\n got %+v\nwant %+v", o, tc.container)
+					}
+				}
+				if o.Kind == KindSoftwareSystem {
+					if !slices.Equal(o.Domains, tc.domains) {
+						t.Errorf("system %s domains %q, want %q", o.Name, o.Domains, tc.domains)
+					}
+					for _, d := range tc.domains {
+						if !strings.Contains(plan.Summary, d) {
+							t.Errorf("summary %q doesn't name the Domain %s", plan.Summary, d)
+						}
 					}
 				}
 			}
