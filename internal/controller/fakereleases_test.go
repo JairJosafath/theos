@@ -502,8 +502,7 @@ func (p *fakeProvider) PublishImage(ctx context.Context, repo gitprovider.Reposi
 	p.git.mu.Lock()
 	defer p.git.mu.Unlock()
 	s := p.git.releaseState()
-	out := gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag,
-		Repository: repo.ImageRegistry + "/" + strings.ToLower(repo.Name)}
+	out := gitprovider.Image{Outcome: gitprovider.ImageNone, Tag: tag, Repository: repo.ImageRepository()}
 	if s.imageFailures[key] > 0 {
 		s.imageFailures[key]--
 		return out, fmt.Errorf("gitea unavailable")
