@@ -533,8 +533,8 @@ func TestShipUnderRoot(t *testing.T) {
 	if len(rels) != 1 || len(rels[0].Links) != 2 {
 		t.Fatalf("releases = %+v, want one with two links", rels)
 	}
-	want := gl.URL() + "/api/v4/projects/" + url.PathEscape(p.Path) +
-		"/packages/generic/orders-cli/v1.0.0/orders-cli_linux.tar.gz"
+	want := gl.URL() + "/api/v4/projects/" + url.PathEscape(p.Path) + "/packages/generic/orders-cli/" +
+		model.GitLabPackageVersion("cli/v1.0.0") + "/orders-cli_linux.tar.gz"
 	if got := rels[0].Links[0].URL; got != want {
 		t.Errorf("package link = %q, want %q: the download URL under the root", got, want)
 	}
