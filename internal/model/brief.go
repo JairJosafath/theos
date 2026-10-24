@@ -22,7 +22,7 @@ const (
 )
 
 // PlanAPIVersion is the apiVersion the planner writes on every object in a
-// plan: the storage version (docs/plans/api-versions.md, decision 5).
+// plan: the storage version (docs/plans/done/api-versions.md, decision 5).
 const PlanAPIVersion = "c4.factory.io/v1beta1"
 
 // planAPIVersions are the apiVersions a plan may carry: every served version,

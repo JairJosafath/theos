@@ -10,6 +10,7 @@ import {
   type Bundle,
   type Domain,
   type CatalogEntry,
+  type Connector,
   type Container,
   type Crew,
   type DataStore,
@@ -39,7 +40,7 @@ export interface StoryData {
   sessions: Session[]
   /** Catalog entries, used only for display names. Optional: may stay empty. */
   frameworks: CatalogEntry[]
-  connectors: CatalogEntry[]
+  connectors: Connector[]
   /** The rest of the catalog and the Git hosts, for their pages. Optional: may stay empty. */
   standards: Standard[]
   computes: CatalogEntry[]
@@ -85,6 +86,16 @@ export interface Connection {
   unread?: Problem[]
   /** When the data last changed, in ms since the epoch; unset until it does, and for demo data. */
   updatedAt?: number
+  /**
+   * What the API server warned about the lists, each once: a read at a
+   * deprecated version (#1618). The page shows them in a banner.
+   */
+  warnings?: string[]
+}
+
+/** The strings, each once, in first-seen order. */
+function distinct(values: string[]): string[] {
+  return [...new Set(values)]
 }
 
 /** Two sources shown as one: the less connected phase, and both sets of problems. */
@@ -97,6 +108,7 @@ export function mergeConnections(a: Connection, b: Connection): Connection {
     unread: [...(a.unread ?? []), ...(b.unread ?? [])],
     waiting: a.waiting && b.waiting ? [...a.waiting, ...b.waiting] : undefined,
     updatedAt: Math.max(a.updatedAt ?? 0, b.updatedAt ?? 0) || undefined,
+    warnings: distinct([...(a.warnings ?? []), ...(b.warnings ?? [])]),
   }
 }
 
@@ -163,7 +175,8 @@ export function combineConnection(
   else if (required.some((s) => s.state.phase !== 'live' || s.state.error)) phase = 'reconnecting'
   const settled = states.every((s) => s.state.loaded || Boolean(s.state.error))
   const waiting = states.filter((s) => !s.state.loaded && !s.state.error && s.resource).map((s) => s.resource!)
-  return { phase, loaded, settled, problems, unread, waiting }
+  const warnings = distinct(states.map((s) => s.state.warning ?? '').filter(Boolean))
+  return { phase, loaded, settled, problems, unread, waiting, warnings }
 }
 
 /** The failed optional read of this kind, by its plural, if it failed. */
@@ -350,7 +363,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       relationships: this.items<Relationship>(5),
       sessions: this.items<Session>(6),
       frameworks: this.items<CatalogEntry>(7),
-      connectors: this.items<CatalogEntry>(8),
+      connectors: this.items<Connector>(8),
       crews: this.items<Crew>(9),
       agents: this.items<Agent>(10),
       tasks: this.items<Task>(11),

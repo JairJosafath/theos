@@ -48,7 +48,29 @@ describe('combineConnection', () => {
   })
 })
 
+describe('combineConnection warnings', () => {
+  it('collects what the API server warned on each list, each once (#1618)', () => {
+    const deprecated = 'c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1.'
+    const warned: WatchState<unknown> = { ...live, warning: deprecated }
+    const c = combineConnection([
+      { what: 'containers', state: warned, resource: 'containers' },
+      { what: 'people', state: warned, resource: 'people' },
+      { what: 'tasks', state: live, resource: 'tasks' },
+    ])
+    expect(c.warnings).toEqual([deprecated])
+    expect(c.problems).toEqual([])
+    expect(c.phase).toBe('live')
+    expect(combineConnection([{ what: 'tasks', state: live }]).warnings).toEqual([])
+  })
+})
+
 describe('mergeConnections', () => {
+  it('keeps both sources’ warnings, each once (#1618)', () => {
+    const w = (text: string) => combineConnection([{ what: 'x', state: { ...live, warning: text } }])
+    expect(mergeConnections(w('a'), w('a')).warnings).toEqual(['a'])
+    expect(mergeConnections(w('a'), w('b')).warnings).toEqual(['a', 'b'])
+  })
+
   it('keeps both sources’ unread kinds', () => {
     const a = combineConnection([{ what: 'standards', state: refused, optional: true, resource: 'standards' }])
     const b = combineConnection([{ what: 'computes', state: refused, optional: true, resource: 'computes' }])

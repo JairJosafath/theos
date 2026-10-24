@@ -81,7 +81,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    tokens answer too): a 401, a 403 or a 404 is `CredentialRefused` with
    GitLab's message ("can't see the project" for a 404), and a token
    without `api` is `CredentialRefused` naming the scope. A token without
-   `write_registry` is ready: the target ships no image (decision 5).
+   `read_registry` or `write_registry` is ready: the target ships no image
+   (decision 5).
 
 3. **The release is the last write, since GitLab has no drafts.** The ship
    sequence is the source commit and its tag (decision 4), the release's
@@ -155,10 +156,14 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    another fails `TagTaken`, naming the image. The copy comes before the
    release, which names the image in its notes, and
    `status.deploys[].image` reports it. When the project's registry is off
-   (`container_registry_access_level` `disabled`) or the token lacks
-   `write_registry`, no image is copied and the release ships without one,
-   as a `github` target without `packagesToken`; the DeployTarget page says
-   which.
+   (`container_registry_access_level` `disabled`; the project's
+   `container_registry_enabled` is deprecated and not read) or the token
+   lacks `read_registry` or `write_registry` (the copy's first call pulls
+   the source tag, which GitLab grants with `read_registry`;
+   `write_registry` grants the push alone, #1956), no image is copied and
+   the release ships without one, as a `github` target without
+   `packagesToken`; the DeployTarget page says which, and the log line names
+   the missing scope.
 
 6. **A fake GitLab, shared by the adapter's and the controllers' tests.**
    The fake is an `httptest` server in `internal/adapters/gitlab/gitlabtest`

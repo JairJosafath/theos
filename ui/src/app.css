@@ -207,6 +207,22 @@
   margin-top: 4px;
 }
 
+.banner-warning {
+  color: var(--text);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+.banner-warning > svg {
+  color: var(--warn);
+  flex: none;
+  margin-top: 2px;
+}
+
+.banner-warning p + p {
+  margin-top: 4px;
+}
+
 .hero {
   display: flex;
   flex-wrap: wrap;

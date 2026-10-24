@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// The webhook certificate's lifetimes (docs/plans/api-versions.md, decision 3):
+// The webhook certificate's lifetimes (docs/plans/done/api-versions.md, decision 3):
 // the serving certificate lasts a year and is re-issued with under 30 days
 // left; the CA that signs it lasts ten, so a re-issued serving certificate is
 // still trusted by the caBundle every CRD holds and by a replica that has not
@@ -58,7 +58,7 @@ const (
 // of c4.factory.io (a test keeps the list equal to config/crd/bases). The RBAC
 // marker below names the same CRDs. Only one whose versions differ in shape is
 // at strategy Webhook and gets the CA; the rest convert by the API server
-// (#1830, docs/plans/api-versions.md, decision 3).
+// (#1830, docs/plans/done/api-versions.md, decision 3).
 var WebhookCRDs = []string{
 	"agents.c4.factory.io", "briefs.c4.factory.io", "bundles.c4.factory.io", "computes.c4.factory.io",
 	"connectors.c4.factory.io", "containers.c4.factory.io", "crews.c4.factory.io",

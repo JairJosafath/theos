@@ -66,6 +66,27 @@ export function ProblemsBanner({ problems }: { problems: Problem[] }) {
   )
 }
 
+/**
+ * What the API server warned about the page's reads, such as a read at a
+ * deprecated version (#1618). The reads worked, so it is a status, not an alert.
+ */
+export function WarningsBanner({ warnings }: { warnings: string[] }) {
+  const texts = [...new Set(warnings.filter(Boolean))]
+  if (!texts.length) return null
+  return (
+    <div className="banner banner-warning" role="status">
+      <WarningIcon size={16} />
+      <div>
+        {texts.map((text) => (
+          <p key={text}>
+            <strong>The API server warns:</strong> {text}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** The reads behind one panel that failed, said in the panel, with the usual fix. */
 export function ReadProblems({ problems }: { problems: Problem[] }) {
   if (!problems.length) return null

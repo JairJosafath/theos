@@ -148,7 +148,7 @@ function GitLabFacts({ target }: { target: DeployTarget }) {
         <span className="muted small">
           {' '}
           · copied to the project’s container registry, for a Container whose release builds an image, when the registry
-          is on and the token has write_registry
+          is on and the token has read_registry and write_registry
           {gitlab.url ? '; the instance names its registry' : ''}
         </span>
       </dd>

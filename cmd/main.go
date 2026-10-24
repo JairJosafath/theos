@@ -250,7 +250,7 @@ func main() {
 		webhookServerOptions.KeyName = webhookCertKey
 	}
 
-	// The operator issues the webhook certificate itself (docs/plans/api-versions.md,
+	// The operator issues the webhook certificate itself (docs/plans/done/api-versions.md,
 	// decision 3): read or made before the manager starts, so the server
 	// starts with it, and checked again daily.
 	var webhookCert *controller.WebhookCert
@@ -475,13 +475,13 @@ func main() {
 	if webhookOn {
 		// Every c4.factory.io kind converts between its versions here: each
 		// v1alpha1 type is Convertible to its v1beta1 hub
-		// (docs/plans/api-versions.md, decision 3).
+		// (docs/plans/done/api-versions.md, decision 3).
 		mgr.GetWebhookServer().Register("/convert",
 			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	}
 	// Whatever the webhook setting, the leader rewrites what etcd still holds
 	// at a version other than the storage one and brings each CRD's
-	// storedVersions down (docs/plans/api-versions.md, decision 4); a start
+	// storedVersions down (docs/plans/done/api-versions.md, decision 4); a start
 	// after the pass does nothing. A kind at strategy None converts in the
 	// API server; one that converts by this pod's webhook waits until it
 	// serves (#1884). The Service may still route a conversion to an older

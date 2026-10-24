@@ -268,7 +268,7 @@ describe('componentsFromEnv', () => {
 })
 
 describe('createHealthHandler', () => {
-  const projects = '/apis/c4.factory.io/v1alpha1/projects'
+  const projects = '/apis/c4.factory.io/v1beta1/projects'
   const namespaces = [...new Set(DEFAULT_COMPONENTS.map((c) => c.namespace))]
   const answers = {
     '/api/v1/nodes': { status: 200, body: { items: [node] } },

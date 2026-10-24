@@ -1,5 +1,5 @@
 # expect: repository must be owner/name
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

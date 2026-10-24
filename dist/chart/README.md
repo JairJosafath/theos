@@ -149,10 +149,13 @@ same values. `helm uninstall` keeps namespace `gitea` and Gitea's volume, so
 the repositories survive a reinstall, and the project namespaces with their
 models; delete a namespace to drop it.
 
-An upgrade keeps your `c4.factory.io` objects valid: within `v1alpha1` a
-release never removes, renames or retypes a field, never adds a required one
-and never tightens a rule so that an object applied before is refused after;
-a change that must break waits for a `v1beta1` that converts them. See
+An upgrade keeps your `c4.factory.io` objects valid: write them at `v1beta1`;
+`v1alpha1` still works, deprecated (the API server warns on every request at
+it, and it may be dropped no earlier than 2027-01-22, #1963), and converts to
+`v1beta1`. Within a served version a release never removes, renames or retypes
+a field, never adds a required one and never tightens a rule so that an
+object applied before is refused after; a change that must break waits for a
+new version that converts them. See
 [Compatibility](../../docs/design.md#compatibility).
 
 ### Private images
@@ -245,7 +248,7 @@ as the run's artifact); a failing release gets an issue titled
 | `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `pool.size` (default 1 for `base` and `go`, none for `image`) is the per-project pool of that label every GitProvider the chart renders names in its `ci` block, the runners a project's checks run on, since the shared runners serve the templates' checks only (0 turns it off); `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
-| `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/api-versions.md) says which) |
+| `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
 | `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |
 | `metrics`, `prometheus`, `networkPolicy` | the generated metrics endpoint, ServiceMonitor and NetworkPolicy |
 
