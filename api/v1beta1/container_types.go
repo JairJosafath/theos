@@ -84,7 +84,6 @@ type ContainerSpec struct {
 	// content the Standard renders at its ref, then protects main and goes
 	// Ready. An adopted Container is never scaffolded; an empty repository
 	// fails NothingToAdopt. Set at creation and immutable.
-	// +kubebuilder:default=false
 	// +optional
 	Adopt bool `json:"adopt,omitempty"`
 

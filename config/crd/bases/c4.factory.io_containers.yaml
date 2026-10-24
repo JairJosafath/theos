@@ -64,7 +64,6 @@ spec:
             description: spec defines the desired state of Container
             properties:
               adopt:
-                default: false
                 description: |-
                   adopt says the Container takes over a repository that already has
                   commits instead of scaffolding a new one. The operator writes nothing:
@@ -1112,7 +1111,6 @@ spec:
             description: spec defines the desired state of Container
             properties:
               adopt:
-                default: false
                 description: |-
                   adopt says the Container takes over a repository that already has
                   commits instead of scaffolding a new one. The operator writes nothing:
