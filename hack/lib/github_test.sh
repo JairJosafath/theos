@@ -13,7 +13,7 @@
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
-unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS IS_SANDBOX # ./dev setup --lite sets the first, a human the second, the relay the third, an agent sandbox the fourth; each test sets its own
+unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS IS_SANDBOX GH_LAND_GOAL # ./dev setup --lite sets the first, a human the second, the relay the third, an agent sandbox the fourth; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -1593,6 +1593,12 @@ MAKE
   grep -q 'then make test-hack, and merging without the merge turn' "$T/land/.relay/land-40.log"; check "land: says make test-hack (#1524)" $? 0
   out=$(simple "$(files .claude/skills/handoff/SKILL.md docs/design.md)")
   check "land: the simple path runs make test-hack for a skill (#1524)" "$? | $(cat "$T/checked")" "0 | -C $T/land test-hack"
+  # The goal reaches make as an argument, never through the environment: make
+  # test-hack runs this file, whose land must run make check (#1960).
+  printf '#!/bin/sh\necho "${GH_LAND_GOAL:-none}" >"%s/goal-env"\n' "$T" >"$T/bin/goal-make"
+  chmod +x "$T/bin/goal-make"
+  out=$(C4_MAKE=$T/bin/goal-make simple "$(files docs/dev/testenv.md)")
+  check "land: make test-hack does not inherit the goal (#1960)" "$? | $(cat "$T/goal-env")" "0 | none"
   touch "$T/red"
   out=$(simple "$(files .claude/skills/handoff/SKILL.md)")
   check "land: a red make test-hack on the simple path merges nothing (#1524)" "$? $(cat "$T/landed" 2>/dev/null) $(grep -c '#40: make test-hack failed (exit 1)' <<<"$out")" "1  1"
