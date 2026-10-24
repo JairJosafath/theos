@@ -27,7 +27,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 # name|type|container|display name|layers, the layers as hack/render takes them.
 combos=(
-	"fastapi service with postgres|service|orders|Orders|Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres"
+	"fastapi service with postgres|service|orders|Orders|Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres Domain=webshop-domain"
 	"python cli|cli|shop-admin|Shop Admin|Framework=python-cli Standard=python-standard Deployment=gitea-release"
 	"python job on kubernetes|job|nightly-report|Nightly Report|Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests"
 	"react web app on kubernetes|static-site|storefront|Storefront|Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests"

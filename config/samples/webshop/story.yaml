@@ -19,6 +19,9 @@ metadata:
 spec:
   displayName: Webshop Core
   description: Catalog, cart and ordering
+  # The webshop Domain (factory.yaml): every Container here is scaffolded with
+  # its practices, common mistakes and choices under docs/agents/domain/webshop/.
+  domainRefs: [webshop]
   needs:
   - Customers can reorder in two clicks
   - The shop never sees a card number

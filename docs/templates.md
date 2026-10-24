@@ -47,6 +47,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | small | Compute | W | yes | yes | yes | n/a | n/a | n/a | n/a |
 | k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | yes | yes | n/a | n/a |
+| webshop-domain | Domain | W | yes | yes | n/a | yes | n/a | n/a | n/a |
 | go-cli | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | yes | yes | yes | yes |
 | vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
@@ -365,6 +366,33 @@ whose `make dist` writes the same assembly (#1773).
 - Deploy: the Gitea release with the `dist/` files, and an operator's
   image, pushed by the factory.
 - Logging, Auth: n/a: a workflow; it uses the workflow's own token.
+
+### webshop-domain (v1.0.0)
+
+The webshop's Domain (catalog entry `webshop`, #1759; step 4 of
+[plans/domains.md](plans/domains.md)): what a webshop is about, for the
+agents that build and review one, in plain prose and with no stack. A
+`README.md` with a glossary and a line per topic, and a topic file each for
+catalog and search, cart, checkout and orders, stock, payments, pricing and
+money, and accounts and personal data; every topic file has the four
+headings *Practices*, *Common mistakes*, *Controversies* (the choice this
+domain makes and why) and *Sources*. Built as the Domain of a Container
+(`domainRefs: [webshop]` on the webshop's `webshop-core`), every file lands
+under `docs/agents/domain/webshop/`, and the Standard's `AGENTS.md` and
+`docs/agents/reviewer.md` point the implementer and the reviewer at it
+(#1758). A
+Domain is Markdown the agents read, so most promises don't apply.
+
+- CI: rendered in the python-fastapi combination of `templateCombos`
+  (`TestEveryTemplateRenders`), whose Container names the Domain; the
+  shell combo of the same name in `hack/test-templates.sh` renders it too
+  (`hack/render` takes `Domain=webshop-domain`) and runs that repository's
+  `make check` to green.
+- Tests: `TestDomainTemplatesHaveTheShape` checks the shape of every
+  `*-domain` folder (Markdown only, the README names every topic file, the
+  four headings) and builds it as a Container's Domain.
+- README: the template's own `README.md`, the file an agent reads first.
+- Lint, Deploy, Logging, Auth: n/a: prose, with no code, service or user.
 
 ## The other templates
 
