@@ -4,7 +4,7 @@
 # their data in the shop-db DataStore, a schema each. orders-api starts each
 # payment at the payment provider, an External system the story only names,
 # and payments-worker confirms them there and marks the orders paid.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Person
 metadata:
   name: customer
@@ -12,7 +12,7 @@ spec:
   displayName: Customer
   description: Someone who buys from the shop.
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: webshop-core
@@ -29,7 +29,7 @@ spec:
   - Checkout conversion
   - Orders paid within a minute of checkout
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payment-provider
@@ -38,7 +38,7 @@ spec:
   description: Takes card payments on its own page and says whether each one went through.
   location: External
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: storefront
@@ -63,7 +63,7 @@ spec:
   deploy:
     - target: kind-cluster
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: catalog-api
@@ -88,7 +88,7 @@ spec:
   deploy:
     - target: kind-cluster
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: orders-api
@@ -115,7 +115,7 @@ spec:
 ---
 # A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
 # SIGTERM, in the image k8s-manifests builds, with no Service.
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Container
 metadata:
   name: payments-worker
@@ -140,7 +140,7 @@ spec:
   deploy:
     - target: kind-cluster
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: shop-db
@@ -152,7 +152,7 @@ spec:
   connectorRef:
     name: postgres
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: customer-uses-webshop-core
@@ -165,7 +165,7 @@ spec:
     name: webshop-core
   description: Browses, orders, pays and reorders
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: customer-uses-storefront
@@ -178,7 +178,7 @@ spec:
     name: storefront
   description: Browses, orders and reorders, in the browser
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: storefront-to-catalog-api
@@ -191,7 +191,7 @@ spec:
     name: catalog-api
   description: Reads products, prices and stock (JSON over HTTP)
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: storefront-to-orders-api
@@ -204,7 +204,7 @@ spec:
     name: orders-api
   description: Fills the cart, checks out, lists and repeats orders (JSON over HTTP)
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: orders-api-to-catalog-api
@@ -217,7 +217,7 @@ spec:
     name: catalog-api
   description: Prices each line at checkout and on reorder
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: catalog-api-to-shop-db
@@ -230,7 +230,7 @@ spec:
     name: shop-db
   description: Reads and writes the catalog
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: orders-api-to-shop-db
@@ -243,7 +243,7 @@ spec:
     name: shop-db
   description: Reads and writes accounts, carts and orders
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: orders-api-to-payment-provider
@@ -256,7 +256,7 @@ spec:
     name: payment-provider
   description: Starts a payment for each order and sends the customer to pay
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: payments-worker-to-payment-provider
@@ -269,7 +269,7 @@ spec:
     name: payment-provider
   description: Asks whether each pending payment went through
 ---
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: payments-worker-to-orders-api

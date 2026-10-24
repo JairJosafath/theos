@@ -9,7 +9,7 @@ permission. See the LICENSE file.
 package v1beta1
 
 // v1beta1 is the hub every other served version converts through
-// (docs/plans/api-versions.md, decision 3).
+// (docs/plans/done/api-versions.md, decision 3).
 
 // Hub marks Agent as the conversion hub.
 func (*Agent) Hub() {}

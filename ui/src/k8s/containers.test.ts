@@ -35,7 +35,7 @@ describe('retryPatch and taskManifest', () => {
 
   it('makes an Implement Task for the Container with its Crew’s Agents, named by the API server', () => {
     expect(taskManifest('webshop', 'orders-api', crew, 'Add pagination')).toEqual({
-      apiVersion: 'c4.factory.io/v1alpha1',
+      apiVersion: 'c4.factory.io/v1beta1',
       kind: 'Task',
       metadata: { generateName: 'orders-api-', namespace: 'webshop' },
       spec: {
@@ -57,7 +57,7 @@ describe('LiveContainerWriter', () => {
   it('retries with a merge patch on the Container', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl, () => at).retry('webshop', 'orders-api')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
       body: JSON.stringify(retryPatch(at)),
@@ -67,7 +67,7 @@ describe('LiveContainerWriter', () => {
   it('answers the Standard’s files left out with a merge patch on the Container', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).answerStandard('webshop', 'orders-api', 'keep', 'v1.4.0')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
       body: JSON.stringify(standardAnswerPatch('keep', 'v1.4.0')),
@@ -77,7 +77,7 @@ describe('LiveContainerWriter', () => {
   it('sets the checks with a JSON patch of spec.checks alone', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
       body: JSON.stringify([{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }]),
@@ -94,7 +94,7 @@ describe('LiveContainerWriter', () => {
       { target: 'prod', approved: 'v1.2.0' },
       'v1.3.0',
     )
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', {
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
       body: JSON.stringify([
@@ -119,7 +119,7 @@ describe('LiveContainerWriter', () => {
       STALE_APPROVAL,
     )
     expect(fetchImpl).toHaveBeenCalledWith(
-      'k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api',
+      'k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
       expect.objectContaining({
         body: JSON.stringify([
           { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
@@ -146,7 +146,7 @@ describe('LiveContainerWriter', () => {
     const fetchImpl = vi.fn(async () => respond(201, { metadata: { name: 'orders-api-x7k2p' } }))
     const name = await new LiveContainerWriter('k8s', fetchImpl).startTask('webshop', 'orders-api', crew, 'Add paging')
     expect(name).toBe('orders-api-x7k2p')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/tasks', {
+    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(taskManifest('webshop', 'orders-api', crew, 'Add paging')),

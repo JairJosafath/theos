@@ -171,7 +171,7 @@ describe('live updates in the browser', () => {
     const skew = page.locator('.versions-skew')
     // The test build stamps no release, and no Project has reported the operator yet.
     await line
-      .getByText('UI dev · operator unknown · chart unknown · API c4.factory.io/v1alpha1')
+      .getByText('UI dev · operator unknown · chart unknown · API c4.factory.io/v1beta1')
       .waitFor({ timeout: 5000 })
     assert.equal(await skew.count(), 0)
 
@@ -192,7 +192,7 @@ describe('live updates in the browser', () => {
   it('never sends anything but GET', async () => {
     const res = await page.evaluate(
       async () =>
-        (await fetch('k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers/orders-api', { method: 'DELETE' }))
+        (await fetch('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api', { method: 'DELETE' }))
           .status,
     )
     assert.equal(res, 405)

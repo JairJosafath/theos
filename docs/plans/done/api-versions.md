@@ -2,11 +2,11 @@
 
 GitHub issue #1082, filed by the maintainer (`source/dev`, priority/4,
 milestone *1.0: a stable API*). Agent: otter-1082 (the plan). It follows
-decision 1 of [before-clients-return.md](done/before-clients-return.md): the
+decision 1 of [before-clients-return.md](before-clients-return.md): the
 shapes `v1beta1` waited for, the ports (#1093) and the deploy model
 (#1068), are settled, so `v1beta1` is cut once, with conversion from
 `v1alpha1` for every kind. The promise within `v1alpha1` is written
-(#1097, [design.md](../design.md#compatibility)); this plan writes what
+(#1097, [design.md](../../design.md#compatibility)); this plan writes what
 holds across versions and builds the second served version.
 
 ## Goal
@@ -45,7 +45,7 @@ with a warning naming the release that may drop it. Test output goes to
 - The one deprecated field is `Crew.spec.publishReleases` (#1070): the
   design says dropping it is `v1beta1`'s, and a Brief keeps writing it on
   its Crews until a Brief can name DeployTargets, a planner follow-up
-  [deploy.md](done/deploy.md) put after #1070 to #1072, two of which are
+  [deploy.md](deploy.md) put after #1070 to #1072, two of which are
   open.
 
 ## Decisions
@@ -88,7 +88,7 @@ with a warning naming the release that may drop it. Test output goes to
    serves the deprecated field costs a user nothing. So the field stays in
    `v1beta1`, deprecated as it is in `v1alpha1`, and the version after
    `v1beta1` drops it once nothing writes it; step 1 rewords the two lines
-   in `docs/design.md` and [github-deploy.md](done/github-deploy.md) that said
+   in `docs/design.md` and [github-deploy.md](github-deploy.md) that said
    `v1beta1` would. A shape change found while building `v1beta1` is filed
    `status/proposed` for the next version, never slipped into this one.
    Why cut a version that changes nothing: the machinery a breaking
@@ -254,6 +254,18 @@ on` the one before. Steps 2 to 6 join milestone *1.0: a stable API*.
    `kind/feature`. Done when `make check` and `make ui-test` pass, a UI
    test shows the warning from a watch response's `Warning` header, and
    `docs/screenshots/` holds the test output of steps 3, 4 and 6.
+   Built (#1618) with three choices the decision left open: the UI shows
+   whatever `Warning` header the API server puts on the list response of
+   each watcher (the ndjson mux `/k8s-watch` carries no headers), one
+   banner per distinct text on the project, story and factory pages,
+   cleared on a relist without one; since the UI itself reads `v1beta1`,
+   the `v1alpha1` warning reaches kubectl and clients at that version, and
+   the banner shows the day a version the UI reads is deprecated in turn; the deprecating release is named v0.30.0
+   in the marker (so the earliest drop is 2027-01-22, #1963); and the
+   release notes read *Deprecated* and *Removed* entries from a merged
+   commit's body lines `Deprecated: <text>` and `Removed: <text>`, whatever
+   the pull request's type. Test output: `docs/screenshots/api-versions-step3-conversion.txt`,
+   `api-versions-step4-storage.txt` and `api-versions-step6-ui-deprecation.txt`.
 
 ## Not in this plan
 

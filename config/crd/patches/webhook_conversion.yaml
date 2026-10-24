@@ -2,7 +2,7 @@
 # the annotation c4.factory.io/conversion: webhook, from a +kubebuilder:metadata
 # marker on the kind's hub type) converts by the operator's webhook, at path
 # /convert of config/default's webhook Service; the operator patches its CA
-# in (docs/plans/api-versions.md, decision 3).
+# in (docs/plans/done/api-versions.md, decision 3).
 - op: add
   path: /spec/conversion
   value:

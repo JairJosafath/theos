@@ -1,5 +1,5 @@
 # expect: an External system names no domainRefs
-apiVersion: c4.factory.io/v1alpha1
+apiVersion: c4.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payment-provider

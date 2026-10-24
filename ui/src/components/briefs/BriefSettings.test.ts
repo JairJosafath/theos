@@ -21,7 +21,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const ACTING: UiSession = { actions: true, mode: 'service-account', user: null }
 const cli = { container: 'cli', github: { repository: 'me/cli', tokenSecretRef: { name: 'gh' } } }
 const brief: Brief = {
-  apiVersion: 'c4.factory.io/v1alpha1',
+  apiVersion: 'c4.factory.io/v1beta1',
   kind: 'Brief',
   metadata: { name: 'tools', namespace: 'webshop', resourceVersion: '5' },
   spec: { idea: 'Tools', releases: [cli] },
