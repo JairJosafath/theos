@@ -205,7 +205,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		reportDomainsApplied(&container, status, &system)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
-		// were: the pass would act on a newest release it couldn't read (#1570).
+		// were: the pass would act on a newest release it couldn't read (#1570, #1576).
 		if poll := r.keepNewestRelease(ctx, &container, status); poll > 0 {
 			result = sooner(result, ctrl.Result{RequeueAfter: poll})
 		} else {

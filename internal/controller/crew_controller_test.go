@@ -596,6 +596,34 @@ var _ = Describe("Crew", func() {
 		}).Should(Succeed())
 	})
 
+	It("reviews a labelled issue's Task by its route's reviewer once it exists (#1241)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		security := gitFake.addIssue(ns, "orders-api", "Check order auth", clearIssue, []string{model.LabelReady, "security"})
+		crew := newCrew(ns)
+		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "security", Reviewer: &c4v1beta1.LocalRef{Name: "auditor"}}}
+		mustCreate(crew)
+
+		By("waiting for the reviewer the route names")
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+			g.Expect(cond.Message).To(Equal("Agent auditor not found"))
+		}).Should(Succeed())
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, fmt.Sprintf("orders-api-%d", security)), &c4v1beta1.Task{}))).To(BeTrue())
+
+		By("running the labelled issue on the Crew's implementer and the routed reviewer")
+		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "auditor"),
+			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: 2}})
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, fmt.Sprintf("orders-api-%d", security))
+			g.Expect(task.Spec.AgentRef).To(Equal(c4v1beta1.LocalRef{Name: "claude"}))
+			g.Expect(task.Spec.ReviewerRef).To(Equal(&c4v1beta1.LocalRef{Name: "auditor"}))
+		}).Should(Succeed())
+	})
+
 	It("waits for its Agents", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

@@ -293,6 +293,13 @@ func TestCheckPlan(t *testing.T) {
 		return PlanObject{APIVersion: PlanAPIVersion, Kind: KindSoftwareSystem, Name: "payments",
 			Description: "Takes the money", Location: location}
 	}
+	// onBundle puts the existing Container api on a Bundle, in the plan and
+	// the namespace alike, so no "can't change" refusal joins the one under test.
+	onBundle := func(p *Plan, c *CurrentModel, bundle string) {
+		api := object(p, "Container/api")
+		api.Framework, api.Bundle = "", bundle
+		c.Objects[2].Framework, c.Objects[2].Bundle = "", bundle
+	}
 	tests := []struct {
 		name    string
 		change  func(p *Plan, c *CurrentModel)
@@ -453,6 +460,31 @@ func TestCheckPlan(t *testing.T) {
 			rel := object(p, "Relationship/api-to-db")
 			rel.Name, rel.Source = "web-to-db", Ref{KindContainer, "web"}
 		}, "Relationship/web-to-db", "Connector postgres does not support static-site, the type of Container web"},
+		// #1958: the operator's NotWired check, mirrored. A Connector with no
+		// wiredBy takes any Framework (the happy path's postgres).
+		{"a Connector not wired by the Container's Framework", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog, CatalogEntry{Side: SideFramework, Name: "python-fastapi", SupportedTypes: []string{TypeService}},
+				CatalogEntry{Side: SideConnector, Name: "dynamodb", SupportedTypes: []string{TypeService}, WiredBy: []string{"aws-lambda-ts"}})
+			object(p, "Container/api").Framework, c.Objects[2].Framework = "python-fastapi", "python-fastapi"
+			object(p, "DataStore/db").Connector = "dynamodb"
+		}, "Relationship/api-to-db", "DataStore db's Connector dynamodb is not wired by python-fastapi, only by aws-lambda-ts, the Framework of Container api"},
+		{"a Connector wired by the Container's Framework", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog,
+				CatalogEntry{Side: SideConnector, Name: "dynamodb", SupportedTypes: []string{TypeService}, WiredBy: []string{"aws-lambda-ts", "go-service"}})
+			object(p, "DataStore/db").Connector = "dynamodb"
+		}, "", ""},
+		{"a Connector wired by the Framework of the Container's Bundle", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog,
+				CatalogEntry{Side: SideConnector, Name: "dynamodb", SupportedTypes: []string{TypeService}, WiredBy: []string{"go-service"}})
+			onBundle(p, c, "go-k8s")
+			object(p, "DataStore/db").Connector = "dynamodb"
+		}, "", ""},
+		{"a Connector not wired by the Framework of the Container's Bundle", func(p *Plan, c *CurrentModel) {
+			c.Catalog = append(c.Catalog,
+				CatalogEntry{Side: SideConnector, Name: "dynamodb", SupportedTypes: []string{TypeService}, WiredBy: []string{"aws-lambda-ts"}})
+			onBundle(p, c, "go-k8s")
+			object(p, "DataStore/db").Connector = "dynamodb"
+		}, "Relationship/api-to-db", "Connector dynamodb is not wired by go-service, only by aws-lambda-ts"},
 		{"a Container without a type", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").Type = ""
 		}, "Container/web", `type "" is not a Container type; one of static-site, service`},
