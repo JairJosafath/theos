@@ -38,7 +38,9 @@ spec:
 {{- range $.Values.catalog.entries }}
 ---
 # Project {{ $project }}'s catalog entry {{ .name }}: the template the seed
-# pushed to the templates organization, pinned to its tag.
+# pushed to the templates organization, pinned to its tag. The template is
+# named like the entry unless the entry's template says otherwise (the Domain
+# webshop is templates/webshop-domain).
 apiVersion: c4.factory.io/v1alpha1
 kind: {{ .kind }}
 metadata:
@@ -50,7 +52,7 @@ metadata:
 spec:
   {{- toYaml (omit .spec "template") | nindent 2 }}
   template:
-    url: {{ printf "%s/templates/%s" (include "c4-factory.giteaURL" $) .name | quote }}
+    url: {{ printf "%s/templates/%s" (include "c4-factory.giteaURL" $) (.template | default .name) | quote }}
     ref: {{ required (printf "catalog.entries: %s needs a ref, a tag the seed pushes" .name) .ref | quote }}
 {{- end }}
 {{- range $.Values.catalog.bundles }}
