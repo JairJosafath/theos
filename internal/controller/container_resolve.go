@@ -207,6 +207,11 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		spec = o.Spec
 	case *c4v1alpha1.Connector:
 		spec = o.Spec
+	case *c4v1alpha1.Domain:
+		// No supportedTypes: what a system is about doesn't depend on a
+		// Container's type.
+		spec = c4v1alpha1.CatalogEntrySpec{DisplayName: o.Spec.DisplayName, Description: o.Spec.Description,
+			Template: o.Spec.Template}
 	}
 	supported := make([]string, 0, len(spec.SupportedTypes))
 	for _, t := range spec.SupportedTypes {

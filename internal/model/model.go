@@ -32,6 +32,9 @@ const (
 	SideCompute    = "Compute"
 	SideDeployment = "Deployment"
 	SideConnector  = "Connector"
+	// SideDomain renders last, after the Connectors, into
+	// docs/agents/domain/<name>/; it has no supported types.
+	SideDomain = "Domain"
 )
 
 // CatalogEntry is one side of a Container: a pinned template plus the Container

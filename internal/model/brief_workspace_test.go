@@ -226,6 +226,8 @@ func TestBriefWorkspaceCatalog(t *testing.T) {
 		{Side: SideStandard, Name: "go-standard", SupportedTypes: []string{"service"},
 			SupportedFrameworks: []string{"go-service"}},
 		{Side: SideConnector, Name: "postgres", SupportedTypes: []string{"service"}},
+		// #1760: a Domain lists its name and description, no types.
+		{Side: SideDomain, Name: "webshop", Description: " Sells things online. ", SupportedTypes: nil},
 	}
 	got := workspaceFiles(t, BriefWorkspace{Catalog: catalog})[WorkspaceCatalogFile]
 	want := `frameworks:
@@ -249,6 +251,9 @@ connectors:
     - name: postgres
       supportedTypes:
         - service
+domains:
+    - name: webshop
+      description: Sells things online.
 bundles: []
 `
 	if got != want {
@@ -354,6 +359,7 @@ func TestPlannerGuide(t *testing.T) {
 		"## Acceptance criteria",
 		"Explain each choice in `choices.md`, in plain words",
 		"Write `needs-input.md` only for what costs money or touches access",
+		"Name the Domains a new Internal system is about", // #1760
 	} {
 		if !strings.Contains(plannerGuideText, s) {
 			t.Errorf("PLANNER.md lacks %q", s)

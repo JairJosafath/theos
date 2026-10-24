@@ -330,7 +330,7 @@ func storyObject(ns string, o model.PlanObject) (client.Object, error) {
 	case model.KindSoftwareSystem:
 		return &c4v1alpha1.SoftwareSystem{ObjectMeta: objMeta, Spec: c4v1alpha1.SoftwareSystemSpec{
 			DisplayName: o.DisplayName, Description: o.Description, Needs: o.Needs, KPIs: o.KPIs,
-			Location: c4v1alpha1.SystemLocation(o.Location)}}, nil
+			Location: c4v1alpha1.SystemLocation(o.Location), DomainRefs: o.Domains}}, nil
 	case model.KindContainer:
 		return &c4v1alpha1.Container{ObjectMeta: objMeta, Spec: c4v1alpha1.ContainerSpec{
 			SoftwareSystemRef: c4v1alpha1.LocalRef{Name: o.SoftwareSystem},
@@ -372,7 +372,8 @@ func optionalLocalRef(name string) *c4v1alpha1.LocalRef {
 // description, needs and kpis, from src to dst, of the same kind, and a
 // Container's checks when the plan sets it. A SoftwareSystem keeps its
 // location: the round that created it set it, and turning a built system
-// External is a person's edit, not a later plan's (#1150).
+// External is a person's edit, not a later plan's (#1150). It keeps its
+// domainRefs too: its Domains are picked when it is made (#1760).
 func copyStoryText(dst, src client.Object) {
 	switch d := dst.(type) {
 	case *c4v1alpha1.Project:
