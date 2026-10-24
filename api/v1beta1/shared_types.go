@@ -166,17 +166,17 @@ const (
 	// file of the Container's Standard, or holds one with other content than
 	// the Standard renders for this Container at its ref.
 	ReasonStandardFilesDiffer = "StandardFilesDiffer"
-	ReasonLayerConflict        = "LayerConflict"
-	ReasonUnpinnedRef          = "UnpinnedRef"
-	ReasonWaiting              = "WaitingForScaffold"
-	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
-	ReasonUpToDate             = "UpToDate"
-	ReasonUpdating             = "Updating"
-	ReasonChecksFailed         = "ChecksFailed"
-	ReasonUpdateClosed         = "UpdateClosed"
-	ReasonUpdateRefused        = "UpdateRefused"
-	ReasonFilesBehind          = "FilesBehind"
+	ReasonLayerConflict       = "LayerConflict"
+	ReasonUnpinnedRef         = "UnpinnedRef"
+	ReasonWaiting             = "WaitingForScaffold"
+	ReasonAppliedAtScaffold   = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold  = "AddedAfterScaffold"
+	ReasonUpToDate            = "UpToDate"
+	ReasonUpdating            = "Updating"
+	ReasonChecksFailed        = "ChecksFailed"
+	ReasonUpdateClosed        = "UpdateClosed"
+	ReasonUpdateRefused       = "UpdateRefused"
+	ReasonFilesBehind         = "FilesBehind"
 	// ReasonExternalSystem: the Container or DataStore names an External
 	// SoftwareSystem, which the factory never builds.
 	ReasonExternalSystem = "ExternalSystem"
