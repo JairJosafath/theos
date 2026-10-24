@@ -74,6 +74,20 @@ func TestWebshopSampleIsTheReferenceApp(t *testing.T) {
 		t.Fatalf("story.yaml has Containers %v and DataStores %v, want %v and %v", c, d, wantContainers, wantDataStores)
 	}
 
+	// Every SoftwareSystem's domainRefs names a Domain of factory.yaml (#1759);
+	// CheckPlan below lets an existing system keep whatever it names.
+	for _, o := range objects {
+		if o.Kind != model.KindSoftwareSystem {
+			continue
+		}
+		for _, name := range o.Domains {
+			installed := func(e model.CatalogEntry) bool { return e.Side == model.SideDomain && e.Name == name }
+			if !slices.ContainsFunc(catalog, installed) {
+				t.Errorf("SoftwareSystem %s names Domain %q, which factory.yaml doesn't install", o.Name, name)
+			}
+		}
+	}
+
 	for _, o := range objects {
 		if o.Kind != model.KindContainer {
 			continue
@@ -190,7 +204,8 @@ func webshopCatalog(t *testing.T, data []byte) []model.CatalogEntry {
 			t.Fatalf("factory.yaml: %v", err)
 		}
 		switch o.Kind {
-		case model.SideFramework, model.SideStandard, model.SideCompute, model.SideDeployment, model.SideConnector:
+		case model.SideFramework, model.SideStandard, model.SideCompute, model.SideDeployment,
+			model.SideConnector, model.SideDomain:
 			entries = append(entries, model.CatalogEntry{Side: o.Kind, Name: o.Metadata.Name,
 				SupportedTypes: o.Spec.SupportedTypes, SupportedFrameworks: o.Spec.SupportedFrameworks,
 				DeploysItself: o.Spec.DeploysItself})

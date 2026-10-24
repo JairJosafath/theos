@@ -119,20 +119,21 @@ func TestGitHubReadsLatest(t *testing.T) {
 	}
 }
 
-func TestGitHubImage(t *testing.T) {
+func TestImageRepository(t *testing.T) {
 	tests := []struct {
-		name, repository, container, tagPrefix, want string
+		name, home, container, tagPrefix, want string
 	}{
 		{"a prefix gives each Container its own image", "acme/shop", "orders-api", "orders-api-",
 			"acme/shop/orders-api"},
 		{"an empty prefix gives the repository to one Container", "acme/shop", "orders-api", "", "acme/shop"},
 		{"lower-cased, as GHCR wants it", "Acme/Shop", "orders-api", "v", "acme/shop/orders-api"},
 		{"lower-cased without a prefix too", "Acme/Shop", "orders-api", "", "acme/shop"},
+		{"a gitlab project's prefix path, too (#1806)", "acme/Shop/sub", "orders-api", "v", "acme/shop/sub/orders-api"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GitHubImage(tt.repository, tt.container, tt.tagPrefix); got != tt.want {
-				t.Errorf("GitHubImage(%q, %q, %q) = %q, want %q", tt.repository, tt.container, tt.tagPrefix, got,
+			if got := ImageRepository(tt.home, tt.container, tt.tagPrefix); got != tt.want {
+				t.Errorf("ImageRepository(%q, %q, %q) = %q, want %q", tt.home, tt.container, tt.tagPrefix, got,
 					tt.want)
 			}
 		})

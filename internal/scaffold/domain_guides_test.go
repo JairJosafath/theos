@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,6 +35,9 @@ func TestStandardsPointAtTheDomains(t *testing.T) {
 	for _, standard := range guidedStandards {
 		t.Run(standard, func(t *testing.T) {
 			typ, sides := standardCombo(t, standard)
+			// The combo's own Domain (the webshop's, #1759) would be a third
+			// one; the guides are rendered without, then with the two below.
+			sides = slices.DeleteFunc(slices.Clone(sides), func(s side) bool { return s.Side == model.SideDomain })
 			in, layers := loadCombo(t, typ, sides, "")
 			without, err := Build(in, layers, Options{})
 			if err != nil {
