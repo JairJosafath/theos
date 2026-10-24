@@ -218,6 +218,34 @@ var _ = Describe("Brief rounds", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
 
+	It("says why a round's Container stopped while it waits for it, and goes on once it is fixed (#1941)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		var framework c4v1beta1.Framework
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		pinned := framework.Spec.Template.Ref
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
+		mustCreate(newBrief(ns, "cel-lens"))
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+
+		By("naming the linter's reason and message after its phase, and keeping the round waiting")
+		Eventually(func(g Gomega) {
+			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
+			g.Expect(cond).To(And(HaveField("Reason", "Applying"), HaveField("Message", And(
+				ContainSubstring("Round 1 waits for Container linter (Failed: UnpinnedRef, "),
+				ContainSubstring("Framework python-fastapi")))))
+		}, orderWait).Should(Succeed())
+		Expect(getBrief(Default, ns).Status.Phase).To(Equal(c4v1beta1.BriefApplying), "the round isn't Failed")
+
+		By("going on once the Framework's ref is pinned again")
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = pinned })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}, orderWait).Should(Succeed())
+		Expect(gitFake.openIssues(ns, "linter")).To(HaveLen(1))
+	})
+
 	It("plans the idea, applies the model, makes the Crew and files the issues", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)

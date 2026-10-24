@@ -248,7 +248,7 @@ func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply,
 			return nil, err
 		}
 		if c.Status.Phase != c4v1beta1.ContainerReady {
-			waiting = append(waiting, fmt.Sprintf("Container %s (%s)", name, c.Status.Phase))
+			waiting = append(waiting, fmt.Sprintf("Container %s (%s%s)", name, c.Status.Phase, failedWhy(&c)))
 			continue
 		}
 		if slices.Contains(created, name) {
@@ -264,6 +264,27 @@ func (r *BriefReconciler) finishContainers(ctx context.Context, run *roundApply,
 		ready[name] = &c
 	}
 	return waiting, r.fileIssues(ctx, run, ready, issues)
+}
+
+// failedWhy says why a Failed Container stopped, from its failing condition,
+// so the Brief's wait message names it and the reader needn't open the
+// Container (#1941): ": UnpinnedRef, Framework x: ..." after the phase. The
+// round keeps waiting: a fix to the Container lets it go on. Any other phase
+// gets "".
+func failedWhy(c *c4v1beta1.Container) string {
+	if c.Status.Phase != c4v1beta1.ContainerFailed {
+		return ""
+	}
+	for _, cond := range c.Status.Conditions {
+		if cond.Status != metav1.ConditionFalse {
+			continue
+		}
+		if cond.Message == "" {
+			return ": " + cond.Reason
+		}
+		return ": " + cond.Reason + ", " + model.Clip(cond.Message, 300)
+	}
+	return ""
 }
 
 // applyObject creates a plan's object the namespace doesn't have, labelled
