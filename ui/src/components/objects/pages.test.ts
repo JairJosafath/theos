@@ -75,6 +75,7 @@ describe('the read-only object pages', () => {
     ['Compute', 'small', 'Its template'],
     ['Deployment', 'k8s-manifests', 'Its template'],
     ['Bundle', 'python-service', 'Its entries'],
+    ['Domain', 'webshop', 'Its template'],
     ['GitProvider', 'gitea', 'Where repositories go'],
     ['DeployTarget', 'prod', 'Where it ships'],
   ] as const)('opens a %s page', (kind, name, section) => {
@@ -171,6 +172,73 @@ describe('the Bundle page', () => {
     expect(text(html)).toMatch(/Standard gone-standard · not in the catalog/)
     expect(html).toContain('href="/?ns=webshop&amp;kind=Standard&amp;name=gone-standard"')
     expect(text(html)).toContain('None: an entry is not in the catalog.')
+  })
+})
+
+describe('the Domain page', () => {
+  it('shows its template and where it lands, and the systems that name it with how many Containers hold it', () => {
+    const html = page('Domain', 'webshop')
+    const t = text(html)
+    expect(t).toContain('Webshop')
+    expect(t).toMatch(/Template http:\/\/gitea[^ ]*\/templates\/webshop-domain/)
+    expect(t).toMatch(/Pinned at v1.0.0/)
+    expect(t).toMatch(/Lands under docs\/agents\/domain\/webshop\//)
+    expect(t).toContain('Systems that name it')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=SoftwareSystem&amp;name=webshop-core"')
+    // orders-api was scaffolded with it; the system's four other Containers were not.
+    expect(t).toMatch(/webshop-core · 1 of 5 Containers scaffolded with it/)
+  })
+
+  it('lists no system when none names it', () => {
+    const data = demoStory(NOW)
+    data.systems[0].spec!.domainRefs = []
+    const html = page('Domain', 'webshop', data)
+    expect(html).not.toContain('kind=SoftwareSystem')
+  })
+})
+
+describe('a system’s Domains', () => {
+  it('links each Domain to its page with the catalog’s pinned ref', () => {
+    const html = page('SoftwareSystem', 'webshop-core')
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Domain&amp;name=webshop"')
+    expect(text(html)).toMatch(/Domains webshop @ v1.0.0/)
+  })
+
+  it('says when a named Domain is not in the catalog, and None when the system names none', () => {
+    const data = demoStory(NOW)
+    data.systems[0].spec!.domainRefs = ['webshop', 'payments']
+    expect(text(page('SoftwareSystem', 'webshop-core', data))).toMatch(/payments · not in the catalog/)
+    data.systems[0].spec!.domainRefs = undefined
+    expect(text(page('SoftwareSystem', 'webshop-core', data))).toMatch(/Domains None\. Containers/)
+  })
+})
+
+describe('a Container’s Domains', () => {
+  it('shows the Domains it was scaffolded with, linked, at the ref in scaffoldedFrom, and that they are applied', () => {
+    const html = page('Container', 'orders-api')
+    const t = text(html)
+    expect(html).toContain('href="/?ns=webshop&amp;kind=Domain&amp;name=webshop"')
+    expect(t).toMatch(/Domains webshop @ v1.0.0 Scaffolded from/)
+    expect(t).toContain('Its system’s Domains are the ones it was scaffolded with')
+  })
+
+  it('says a Domain named after the scaffold is not in the repository, with the operator’s message', () => {
+    const html = page('Container', 'inventory-api')
+    const t = text(html)
+    // Scaffolded with none, so the row says so; the condition explains the difference.
+    expect(t).toMatch(/Domains None\. Scaffolded from/)
+    expect(t).toContain(
+      'Its system’s Domains changed after the scaffold; the repository keeps the ones it was scaffolded with',
+    )
+    expect(t).toContain('Domains added after the scaffold: webshop; scaffolding happens once')
+    // The Relationship wording for the same reason stays its own.
+    expect(t).not.toContain('Added after scaffolding, so the repository does not include it')
+  })
+
+  it('says a Container not yet scaffolded has no Domains yet', () => {
+    const data = demoStory(NOW)
+    const pending = data.containers.find((c) => !c.status?.scaffoldedFrom?.length)!
+    expect(text(page('Container', pending.metadata.name, data))).toMatch(/Domains Not scaffolded yet\. Scaffolded from/)
   })
 })
 
