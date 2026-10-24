@@ -88,15 +88,24 @@ func TestScaffoldInput(t *testing.T) {
 		NpmScope: "@c4factory",
 	}
 	// An empty scope (a provider that sets none) is the default (#1231).
-	got := scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "")
+	got := scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "",
+		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
 	}
 	// The GitProvider's own scope is passed through (#1231).
 	want.NpmScope = "@acme"
-	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme")
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(@acme) = %+v, want %+v", got, want)
+	}
+	// The resolved license is carried as is (#1788).
+	want.License = scaffold.License{ID: "MIT", Holder: "Web Shop", Year: 2026}
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+		want.License)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scaffoldInput(license) = %+v, want %+v", got, want)
 	}
 }
 
