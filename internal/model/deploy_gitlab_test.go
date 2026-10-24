@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -138,5 +139,91 @@ func TestGitLabDeployState(t *testing.T) {
 				t.Errorf("GitLabDeployState() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGitLabSourceURL(t *testing.T) {
+	if got := GitLabSourceURL("", "acme/orders", "orders-api", "orders-api/v1.0.0"); got !=
+		"https://gitlab.com/acme/orders/-/tree/orders-api/v1.0.0/orders-api" {
+		t.Errorf("gitlab.com: %s", got)
+	}
+	if got := GitLabSourceURL("https://git.example.com/", "acme/orders", ".", "v1.0.0"); got !=
+		"https://git.example.com/acme/orders/-/tree/v1.0.0" {
+		t.Errorf("own instance, root: %s", got)
+	}
+}
+
+// TestGitLabSourceActions covers the one commit that makes the folder hold
+// the release's source: nothing when it already does, else a create, update
+// or delete per path, sorted, and a chmod after the create or update of a
+// path whose mode differs, since the Commits API reads the mode on chmod
+// alone.
+func TestGitLabSourceActions(t *testing.T) {
+	a := SourceFile{Path: "a.go", Mode: ModeFile, Blob: BlobSHA([]byte("a"))}
+	b := SourceFile{Path: "cmd/b.go", Mode: ModeFile, Blob: BlobSHA([]byte("b"))}
+	b2 := SourceFile{Path: "cmd/b.go", Mode: ModeFile, Blob: BlobSHA([]byte("b2"))}
+	run := SourceFile{Path: "run", Mode: ModeFile, Blob: BlobSHA([]byte("x"))}
+	runX := SourceFile{Path: "run", Mode: ModeExecutable, Blob: run.Blob}
+	runX2 := SourceFile{Path: "run", Mode: ModeExecutable, Blob: BlobSHA([]byte("y"))}
+	tests := []struct {
+		name       string
+		want, have []SourceFile
+		actions    []GitLabSourceAction
+	}{
+		{"same", []SourceFile{a, b}, []SourceFile{b, a}, nil},
+		{"empty folder", []SourceFile{b, a, runX}, nil, []GitLabSourceAction{
+			{Action: GitLabActionCreate, File: a}, {Action: GitLabActionCreate, File: b},
+			{Action: GitLabActionCreate, File: runX}, {Action: GitLabActionChmod, File: runX}}},
+		{"changed, mode changed, gone", []SourceFile{b2, runX}, []SourceFile{a, b, run}, []GitLabSourceAction{
+			{Action: GitLabActionDelete, File: SourceFile{Path: "a.go"}},
+			{Action: GitLabActionUpdate, File: b2}, {Action: GitLabActionChmod, File: runX}}},
+		{"content and mode changed", []SourceFile{runX2}, []SourceFile{run}, []GitLabSourceAction{
+			{Action: GitLabActionUpdate, File: runX2}, {Action: GitLabActionChmod, File: runX2}}},
+		{"execute bit dropped", []SourceFile{run}, []SourceFile{runX}, []GitLabSourceAction{
+			{Action: GitLabActionChmod, File: run}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GitLabSourceActions(tt.want, tt.have); !reflect.DeepEqual(got, tt.actions) {
+				t.Errorf("got %v, want %v", got, tt.actions)
+			}
+		})
+	}
+}
+
+// TestNextGitLabSourceStep covers what differs from GitHub: a symlink fails
+// SourceUnsupported before any read (#1805), the done URL is GitLab's, and
+// no step carries the go install warning.
+func TestNextGitLabSourceStep(t *testing.T) {
+	a := SourceFile{Path: "a.go", Mode: ModeFile, Size: 1, Blob: BlobSHA([]byte("a"))}
+	files, err := NewSource(CI{}, []SourceFile{a}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ship := SourceShip{Source: PublishSource{Path: "orders-api"}, Files: files, Repository: "acme/orders",
+		App: "Orders", Owner: "shop/orders-api", Tag: "v1.0.0", ReleaseTag: "api/v1.0.0"}
+
+	step, done := NextGitLabSourceStep(ship, nil)
+	if step.Action != PublishReadGitHubSource || done != nil {
+		t.Errorf("before the read: %+v, %v", step, done)
+	}
+	step, done = NextGitLabSourceStep(ship, &GitHubSource{Head: "h", HeadTree: files.Tree})
+	if step.Action != PublishSourceTag || step.Tag != "orders-api/v1.0.0" || step.Commit != "h" || step.Warning != "" || done != nil {
+		t.Errorf("folder at head: %+v, %v", step, done)
+	}
+	step, done = NextGitLabSourceStep(ship, &GitHubSource{Head: "h", TagCommit: "c", TagTree: files.Tree})
+	if step.Action != "" || done == nil || done.Commit != "c" || done.Tag != "orders-api/v1.0.0" ||
+		done.URL != "https://gitlab.com/acme/orders/-/tree/orders-api/v1.0.0/orders-api" {
+		t.Errorf("published: %+v, %+v", step, done)
+	}
+
+	link := SourceFile{Path: "run", Mode: ModeSymlink, Size: 4, Blob: BlobSHA([]byte("a.go"))}
+	if ship.Files, err = NewSource(CI{}, []SourceFile{a, link}, ""); err != nil {
+		t.Fatal(err)
+	}
+	step, done = NextGitLabSourceStep(ship, nil)
+	if step.Action != PublishFail || step.Reason != PublishSourceUnsupported || done != nil ||
+		!strings.Contains(step.Message, "run is a symlink") {
+		t.Errorf("symlink: %+v, %v", step, done)
 	}
 }

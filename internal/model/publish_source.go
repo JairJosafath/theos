@@ -391,7 +391,7 @@ func NextSourceStep(s SourceShip, gh *GitHubSource) (step PublishStep, done *Pub
 	sourceTag := SourceTag(src, s.Tag)
 	for _, file := range s.Files.Files {
 		if file.Size > MaxSourceBlob {
-			return fail(PublishSourceTooLarge, "%s is %d MiB, over the 100 MiB GitHub takes; the source of %s isn't published",
+			return fail(PublishSourceTooLarge, "%s is %d MiB, over the 100 MiB a source file may be; the source of %s isn't published",
 				file.Path, file.Size>>20, s.Tag), nil
 		}
 	}
