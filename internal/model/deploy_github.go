@@ -66,7 +66,7 @@ func GitHubReadsLatest(f GitHubDeployFacts) bool {
 	if !f.TakesLatest {
 		return false
 	}
-	wanted := GitHubMarkedRelease(f.App, GitHubTag(f.TagPrefix, f.Version), f.Releases)
+	wanted := GitHubMarkedRelease(f.App, ReleaseTag(f.TagPrefix, f.Version), f.Releases)
 	return wanted != nil && !wanted.Draft
 }
 
@@ -90,7 +90,7 @@ func GitHubDeployState(f GitHubDeployFacts) GitHubDeployReport {
 		return GitHubDeployReport{DeployRun: DeployRun{Version: version(r), Phase: DeployPhaseDeployed,
 			Health: DeployHealthHealthy, URL: r.URL}}
 	}
-	if wanted := GitHubMarkedRelease(f.App, GitHubTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
+	if wanted := GitHubMarkedRelease(f.App, ReleaseTag(f.TagPrefix, f.Version), f.Releases); wanted != nil {
 		switch {
 		case wanted.Draft:
 			return deploying(wanted)

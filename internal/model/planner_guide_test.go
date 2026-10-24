@@ -211,7 +211,7 @@ func TestPlannerGuideLeavesReleasingToTheFactory(t *testing.T) {
 		"**The factory makes the releases; plan only what goes in them.**",
 		"the Crew tags `vX.Y.Z` in Gitea",
 		"builds the release's files on `" + ReleaseTags + "` tags",
-		"as `" + GitHubTag("<prefix>", "vX.Y.Z") + "` with the operator's token",
+		"as `" + ReleaseTag("<prefix>", "vX.Y.Z") + "` with the operator's token",
 		"no issue asks agents to tag or publish a release",
 		"to change which tags start the release workflow",
 		"to put a GitHub token in CI",
