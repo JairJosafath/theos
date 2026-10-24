@@ -119,7 +119,12 @@ describe('server.mjs', () => {
         watches.push(res)
         return
       }
-      res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'upstream=1', 'www-authenticate': 'x' })
+      const headers = { 'content-type': 'application/json', 'set-cookie': 'upstream=1', 'www-authenticate': 'x' }
+      if (url.pathname.includes('/v1alpha1/')) {
+        // What the API server adds to a response at a deprecated version.
+        headers.warning = '299 - "c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1."'
+      }
+      res.writeHead(200, headers)
       res.end(JSON.stringify({ kind: 'ContainerList', metadata: { resourceVersion: '1' }, items: [] }))
     })
     upstreamUrl = await listen(upstream)
@@ -210,6 +215,18 @@ describe('server.mjs', () => {
     // Nothing from the API that could set state in the browser comes back.
     assert.equal(res.headers.get('set-cookie'), null)
     assert.equal(res.headers.get('www-authenticate'), null)
+  })
+
+  it('passes the deprecation Warning header of a response at a deprecated version to the browser (#1618)', async () => {
+    const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers`)
+    assert.equal(res.status, 200)
+    assert.equal(
+      res.headers.get('warning'),
+      '299 - "c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1."',
+    )
+    // A response at the current version carries none.
+    const current = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers`)
+    assert.equal(current.headers.get('warning'), null)
   })
 
   it('reads the factory kinds across namespaces: Tasks, Agents and Crews', async () => {
