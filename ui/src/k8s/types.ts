@@ -70,8 +70,28 @@ export type ContainerPhase = 'Pending' | 'Scaffolding' | 'Ready' | 'Failed'
 export type SessionPhase = 'Active' | 'Stale'
 export type Actor = 'agent' | 'human'
 
+/** The SPDX id of a license the scaffold can write; the schema's enum (api/v1alpha1/shared_types.go). */
+export type License =
+  | 'MIT'
+  | 'Apache-2.0'
+  | 'BSD-2-Clause'
+  | 'BSD-3-Clause'
+  | 'ISC'
+  | '0BSD'
+  | 'MPL-2.0'
+  | 'GPL-2.0-only'
+  | 'GPL-3.0-only'
+  | 'LGPL-3.0-only'
+  | 'AGPL-3.0-only'
+  | 'Unlicense'
+
 export interface Project extends K8sObject {
-  spec?: { displayName?: string; description?: string }
+  spec?: {
+    displayName?: string
+    description?: string
+    /** The license its Containers are scaffolded with, unless their own spec.license says otherwise. */
+    license?: License
+  }
   status?: {
     softwareSystems?: number
     containers?: number
@@ -164,6 +184,8 @@ export interface Container extends K8sObject {
     operations?: Operations
     /** The DeployTargets each release ships to, in order (docs/plans/done/deploy.md). */
     deploy?: ContainerDeploy[]
+    /** The license it is scaffolded with, over the Project's; read at the scaffold only (docs/plans/license.md). */
+    license?: License
   }
   status?: {
     phase?: ContainerPhase
@@ -384,6 +406,14 @@ export interface CatalogEntry extends K8sObject {
     deploysItself?: boolean
     /** A Framework only: its template renders infra/operations.ts from a Container's spec.operations. */
     readsOperations?: boolean
+  }
+}
+
+/** A Connector: a catalog entry that may name the Frameworks whose templates wire its files. */
+export interface Connector extends K8sObject {
+  spec: CatalogEntry['spec'] & {
+    /** The Frameworks, by name, that wire it; a Container on any other is refused. Unset means no restriction. */
+    wiredBy?: string[]
   }
 }
 

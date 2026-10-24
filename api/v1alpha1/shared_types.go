@@ -156,6 +156,7 @@ const (
 	ReasonUnsupportedFramework = "UnsupportedFramework"
 	ReasonUnsupportedCI        = "UnsupportedCI"
 	ReasonDeploysItself        = "DeploysItself"
+	ReasonNotWired             = "NotWired"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"
 	ReasonScaffolded           = "Scaffolded"
@@ -220,6 +221,12 @@ const (
 	// can't carry the change to its repository: its Framework says it reads
 	// the block but renders no infra/operations.ts. A Task changes the file.
 	ReasonChangedAfterScaffold = "ChangedAfterScaffold"
+	// ReasonAdoptedRepository: OperationsApplied is False because the
+	// Container's spec.operations changed after it adopted its repository
+	// (spec.adopt). The factory never scaffolded that repository, so it can't
+	// know whether its infra/operations.ts is one it can render again; a Task
+	// changes the file (#1909).
+	ReasonAdoptedRepository = "AdoptedRepository"
 	// ReasonNotReadByFramework: OperationsApplied is False because
 	// spec.operations is set on a Container whose Framework doesn't read the
 	// block (readsOperations is not set), so its repository has none of it;

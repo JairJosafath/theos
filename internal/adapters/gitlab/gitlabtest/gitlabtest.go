@@ -34,7 +34,10 @@ var DefaultScopes = []string{"api", "read_registry", "write_registry"}
 // Server is a fake GitLab instance. Its API is under URL() + "/api/v4".
 type Server struct {
 	srv *httptest.Server
-	mu  sync.Mutex
+	// root is the relative URL root the instance runs under, "" or
+	// "/gitlab": URL() ends in it, and nothing outside it is served (#1916).
+	root string
+	mu   sync.Mutex
 	// projects holds each project by its full path; nextID numbers projects,
 	// releases' links, packages and files.
 	projects map[string]*Project
@@ -44,16 +47,24 @@ type Server struct {
 }
 
 // New starts a fake GitLab, closed when t ends.
-func New(t testing.TB) *Server {
-	s := Start()
+func New(t testing.TB) *Server { return NewUnder(t, "") }
+
+// NewUnder starts a fake GitLab under the relative URL root root ("/gitlab"),
+// as a self-hosted instance served under a path (#1916); "" is the host's
+// root. It is closed when t ends.
+func NewUnder(t testing.TB, root string) *Server {
+	s := StartUnder(root)
 	t.Cleanup(s.Close)
 	return s
 }
 
 // Start starts a fake GitLab the caller closes with Close: for a suite
 // without a testing.TB, such as Ginkgo's.
-func Start() *Server {
-	s := newServer()
+func Start() *Server { return StartUnder("") }
+
+// StartUnder is Start under the relative URL root root.
+func StartUnder(root string) *Server {
+	s := newServer(root)
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	return s
 }
@@ -61,14 +72,21 @@ func Start() *Server {
 // StartTLS starts a fake GitLab over TLS, so its URL() is an https one a
 // DeployTarget's url takes; only Client() trusts its certificate. The caller
 // closes it with Close.
-func StartTLS() *Server {
-	s := newServer()
+func StartTLS() *Server { return StartTLSUnder("") }
+
+// StartTLSUnder is StartTLS under the relative URL root root.
+func StartTLSUnder(root string) *Server {
+	s := newServer(root)
 	s.srv = httptest.NewTLSServer(http.HandlerFunc(s.serve))
 	return s
 }
 
-func newServer() *Server {
-	return &Server{projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+func newServer(root string) *Server {
+	root = strings.TrimRight(root, "/")
+	if root != "" && !strings.HasPrefix(root, "/") {
+		root = "/" + root
+	}
+	return &Server{root: root, projects: map[string]*Project{}, clock: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 }
 
 // Client is an HTTP client that trusts the fake's certificate.
@@ -77,8 +95,19 @@ func (s *Server) Client() *http.Client { return s.srv.Client() }
 // Close stops the fake.
 func (s *Server) Close() { s.srv.Close() }
 
-// URL is the instance's address, without /api/v4: a GitLabConfig's URL.
-func (s *Server) URL() string { return s.srv.URL }
+// URL is the instance's address, its relative URL root included and without
+// /api/v4: a GitLabConfig's URL.
+func (s *Server) URL() string { return s.srv.URL + s.root }
+
+// host is the fake's host and port, the registry host its projects name
+// unless a test sets Project.RegistryHost.
+func (s *Server) host() string {
+	u, err := url.Parse(s.srv.URL)
+	if err != nil {
+		return s.srv.URL
+	}
+	return u.Host
+}
 
 // Project is a project on the fake. Its exported fields are knobs a test sets
 // before it calls the fake.
@@ -90,6 +119,9 @@ type Project struct {
 	// RegistryEnabled is whether its container registry is on; true to begin
 	// with.
 	RegistryEnabled bool
+	// RegistryHost is the host of its container_registry_image_prefix: the
+	// fake's own to begin with; a test points it at a fake registry.
+	RegistryHost string
 	// PackagesEnabled is whether its package registry is on; true to begin
 	// with. Off, the generic upload and the package listing are a 403.
 	PackagesEnabled bool
@@ -153,7 +185,7 @@ func (s *Server) AddProject(path, token string) *Project {
 	defer s.mu.Unlock()
 	s.nextID++
 	p := &Project{ID: s.nextID, Path: path, Scopes: slices.Clone(DefaultScopes), RegistryEnabled: true,
-		PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
+		RegistryHost: s.host(), PackagesEnabled: true, DefaultBranch: "main", DefaultBranchHead: fmt.Sprintf("%040x", 0xdefa017+s.nextID),
 		s: s, token: token, tags: map[string]string{}, commits: map[string]map[string]blob{}}
 	p.commits[p.DefaultBranchHead] = map[string]blob{}
 	s.projects[path] = p
@@ -258,12 +290,12 @@ func (s *Server) tick() time.Time {
 	return s.clock
 }
 
-// serve routes /api/v4 calls. The path is split on its escaped form, since a
-// project's id is its path with its slashes escaped.
+// serve routes /api/v4 calls under the root. The path is split on its escaped
+// form, since a project's id is its path with its slashes escaped.
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), "/api/v4/")
+	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), s.root+"/api/v4/")
 	if !ok {
 		writeJSON(w, http.StatusNotFound, errMsg(notFound))
 		return
@@ -420,10 +452,9 @@ func (p *Project) info(w http.ResponseWriter) {
 	if !p.RegistryEnabled {
 		level = "disabled"
 	}
-	host := strings.TrimPrefix(p.s.srv.URL, "http://")
 	writeJSON(w, http.StatusOK, map[string]any{"id": p.ID, "path_with_namespace": p.Path,
-		"web_url": p.s.srv.URL + "/" + p.Path, "default_branch": p.DefaultBranch,
-		"container_registry_image_prefix": strings.ToLower(host + "/" + p.Path),
+		"web_url": p.s.URL() + "/" + p.Path, "default_branch": p.DefaultBranch,
+		"container_registry_image_prefix": strings.ToLower(p.RegistryHost + "/" + p.Path),
 		"container_registry_access_level": level})
 }
 
@@ -431,13 +462,13 @@ func (p *Project) releaseJSON(r *Release) map[string]any {
 	links := make([]any, 0, len(r.Links))
 	for _, l := range r.Links {
 		links = append(links, map[string]any{"id": l.ID, keyName: l.Name, "url": l.URL,
-			"direct_asset_url": p.s.srv.URL + "/" + p.Path + "/-/releases/" + r.Tag + "/downloads" + l.DirectAssetPath,
+			"direct_asset_url": p.s.URL() + "/" + p.Path + "/-/releases/" + r.Tag + "/downloads" + l.DirectAssetPath,
 			"link_type":        l.LinkType})
 	}
 	return map[string]any{"tag_name": r.Tag, keyName: r.Name, "description": r.Description,
 		"created_at": r.CreatedAt.Format(time.RFC3339), "released_at": r.CreatedAt.Format(time.RFC3339),
 		keyCommit: map[string]string{"id": r.Commit},
-		"_links":  map[string]string{"self": p.s.srv.URL + "/" + p.Path + "/-/releases/" + r.Tag},
+		"_links":  map[string]string{"self": p.s.URL() + "/" + p.Path + "/-/releases/" + r.Tag},
 		"assets":  map[string]any{"links": links}}
 }
 
@@ -708,10 +739,25 @@ func (p *Project) pkgByID(id string) *pkg {
 	return nil
 }
 
+// GitLab's rules for a generic package's name and version
+// (lib/gitlab/regex/packages.rb): letters, digits, '.', '_', '+' and '-',
+// and no ".." in a version. The file name's rule is not modelled: the
+// gitprovider tests upload a name with a space to see it escaped.
+var packageKeyRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
+
 // upload adds a file to the package, making the package when it is new. A
 // file of a name already there is added beside it, as GitLab keeps
-// duplicates.
+// duplicates. A name or version outside GitLab's rule is a 400, as GitLab
+// answers (#1873: a tag prefix with '/' must not reach it as the version).
 func (p *Project) upload(w http.ResponseWriter, r *http.Request, name, version, fileName string) {
+	switch {
+	case !packageKeyRe.MatchString(name):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_name is invalid"))
+		return
+	case !packageKeyRe.MatchString(version), strings.Contains(version, ".."):
+		writeJSON(w, http.StatusBadRequest, errMsg("package_version is invalid"))
+		return
+	}
 	size, err := io.Copy(io.Discard, r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))

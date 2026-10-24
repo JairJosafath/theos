@@ -40,6 +40,7 @@ var templateCombos = []struct {
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "k8s-manifests"},
 		{model.SideConnector, "postgres"},
+		{model.SideDomain, "webshop-domain"},
 	}},
 	{"fastapi worker", "worker", []side{
 		{model.SideFramework, "python-fastapi"},
@@ -1237,7 +1238,14 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		if err != nil {
 			t.Fatalf("read template %s: %v", l.Name, err)
 		}
-		layers = append(layers, Layer{Side: l.Side, Name: l.Name, Ref: "local", Files: files})
+		name := l.Name
+		if l.Side == model.SideDomain {
+			// A Domain's template folder is <name>-domain; its catalog entry,
+			// the layer and the directory it lands in carry the bare name.
+			name = domainName(l.Name)
+			in.Domains = append(in.Domains, name)
+		}
+		layers = append(layers, Layer{Side: l.Side, Name: name, Ref: "local", Files: files})
 		switch l.Side {
 		case model.SideFramework:
 			in.Framework = l.Name
@@ -1479,5 +1487,87 @@ func TestFactorySelfWritesItsCheckAsIs(t *testing.T) {
 	check, ok := wf.Jobs["check"]
 	if !ok || check.RunsOn != "go" || len(check.Steps) == 0 || check.Steps[len(check.Steps)-1].Run != "make check" {
 		t.Errorf("%s's job check = %+v, want it to run on go and end with make check", workflow, check)
+	}
+}
+
+// domainSuffix ends every Domain template's folder under templates/; the
+// catalog entry is the folder's name without it (webshop-domain is the Domain
+// webshop).
+const domainSuffix = "-domain"
+
+func domainName(folder string) string { return strings.TrimSuffix(folder, domainSuffix) }
+
+// TestDomainTemplatesHaveTheShape checks every Domain template in templates/
+// against docs/plans/domains.md, decision 7: Markdown only, a README.md whose
+// topic list names every other file, and in each topic file the four
+// headings Practices, Common mistakes, Controversies and Sources. The
+// template's own .c4factory/ notes are not rendered and are left out. Built
+// as the Domain of a Container, every file lands under
+// docs/agents/domain/<name>/ (#1759).
+func TestDomainTemplatesHaveTheShape(t *testing.T) {
+	entries, err := os.ReadDir(templatesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headings := []string{"## Practices", "## Common mistakes", "## Controversies", "## Sources"}
+	var found int
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasSuffix(e.Name(), domainSuffix) {
+			continue
+		}
+		found++
+		t.Run(e.Name(), func(t *testing.T) {
+			files, err := ReadTree(os.DirFS(filepath.Join(templatesDir, e.Name())))
+			if err != nil {
+				t.Fatal(err)
+			}
+			readme, ok := files["README.md"]
+			if !ok {
+				t.Fatal("no README.md: the index the Standards' guides point at")
+			}
+			var topics []string
+			for _, p := range files.Paths() {
+				if strings.HasPrefix(p, metaDir) {
+					continue
+				}
+				rendered := strings.TrimSuffix(p, templateSuffix)
+				if !strings.HasSuffix(rendered, ".md") {
+					t.Errorf("%s is not Markdown; a Domain holds *.md and *.md.tmpl only", p)
+					continue
+				}
+				if rendered == "README.md" {
+					continue
+				}
+				topics = append(topics, rendered)
+				if !bytes.Contains(readme.Data, []byte("`"+rendered+"`")) {
+					t.Errorf("README.md doesn't name %s; it lists one line per topic file", rendered)
+				}
+				for _, h := range headings {
+					if !bytes.Contains(files[p].Data, []byte("\n"+h+"\n")) {
+						t.Errorf("%s lacks the heading %q", p, h)
+					}
+				}
+			}
+			if len(topics) == 0 {
+				t.Error("no topic file next to README.md")
+			}
+
+			name := domainName(e.Name())
+			in := withDomains(ordersAPI, name)
+			layers := append(webshopLayers(), Layer{Side: model.SideDomain, Name: name, Ref: "local", Files: files})
+			res, err := Build(in, layers, Options{})
+			if err != nil {
+				t.Fatalf("Build() with the Domain: %v", err)
+			}
+			dir := model.DomainDir + name + "/"
+			for _, p := range append(topics, "README.md") {
+				if _, ok := res.Files[dir+p]; !ok {
+					t.Errorf("Build() didn't write %s", dir+p)
+				}
+			}
+		})
+	}
+	if found == 0 {
+		t.Fatalf("no *%s folder under %s; the webshop Domain is templates/webshop-domain", domainSuffix, templatesDir)
 	}
 }

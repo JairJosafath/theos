@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -123,7 +124,7 @@ func TestShipReplacesFile(t *testing.T) {
 	if err := d.Ship(ctx, tg, shipment(file("orders-cli_linux.tar.gz", "short"), file("SHA256SUMS", "s"))); err != nil {
 		t.Fatalf("Ship() = %v", err)
 	}
-	if got := p.Files("orders-cli", "v1.0.0"); got["orders-cli_linux.tar.gz"] != 5 {
+	if got := p.Files("orders-cli", "cli_2fv1.0.0"); got["orders-cli_linux.tar.gz"] != 5 {
 		t.Fatalf("files after the first ship = %v, want the binary at 5 bytes", got)
 	}
 	state, err := d.State(ctx, tg, "acme/orders-cli", "v1.0.0")
@@ -137,7 +138,7 @@ func TestShipReplacesFile(t *testing.T) {
 			t.Fatalf("Ship() %d = %v", i, err)
 		}
 	}
-	if got := p.Files("orders-cli", "v1.0.0"); len(got) != 2 || got["orders-cli_linux.tar.gz"] != 15 {
+	if got := p.Files("orders-cli", "cli_2fv1.0.0"); len(got) != 2 || got["orders-cli_linux.tar.gz"] != 15 {
 		t.Fatalf("files = %v, want the binary replaced at 15 bytes and the sums", got)
 	}
 	rels := p.Releases()
@@ -145,12 +146,67 @@ func TestShipReplacesFile(t *testing.T) {
 		t.Fatalf("releases = %+v, want one of cli/v1.0.0 with two links", rels)
 	}
 	if l := rels[0].Links[0]; l.LinkType != "package" || !strings.HasSuffix(l.URL,
-		"/packages/generic/orders-cli/v1.0.0/orders-cli_linux.tar.gz") || l.DirectAssetPath != "/orders-cli_linux.tar.gz" {
+		"/packages/generic/orders-cli/cli_2fv1.0.0/orders-cli_linux.tar.gz") || l.DirectAssetPath != "/orders-cli_linux.tar.gz" {
 		t.Errorf("link = %+v, want a package link to the generic download URL", l)
 	}
 	state, err = d.State(ctx, tg, "acme/orders-cli", "")
 	if err != nil || state.Phase != ports.PhaseDeployed || state.Version != "v1.0.0" || state.URL == "" {
 		t.Fatalf("State() = %+v, %v, want Deployed v1.0.0 at its page", state, err)
+	}
+}
+
+// Two Containers of one name, in different Projects and with different tag
+// prefixes, ship one version to one GitLab project: each release links its
+// own files, at its own package version, and State tells them apart (#1873).
+func TestShipTwoAppsOfOneName(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	a, p := newTarget(gl, "t0ken")
+	b := a
+	b.Settings = maps.Clone(a.Settings)
+	b.Settings[model.GitLabSettingTagPrefix] = "b-"
+	d := New(nil)
+	sa := shipment(file("web_linux.tar.gz", "the first app"), file("SHA256SUMS", "s"))
+	sa.App, sa.DisplayName = "ns1/web", "Web one"
+	sb := shipment(file("web_linux.tar.gz", "the second app, longer"), file("SHA256SUMS", "s"))
+	sb.App, sb.DisplayName = "ns2/web", "Web two"
+	for i := 0; i < 4 && (marked(p, sa.App) == 0 || marked(p, sb.App) == 0); i++ {
+		for _, x := range []struct {
+			t ports.Target
+			s ports.Shipment
+		}{{a, sa}, {b, sb}} {
+			if err := d.Ship(ctx, x.t, x.s); err != nil {
+				t.Fatalf("Ship(%s) %d = %v", x.s.App, i, err)
+			}
+		}
+	}
+	if got := p.Files("web", "cli_2fv1.0.0"); len(got) != 2 || got["web_linux.tar.gz"] != 13 {
+		t.Errorf("files of ns1/web = %v, want its binary at 13 bytes and the sums", got)
+	}
+	if got := p.Files("web", "b-v1.0.0"); len(got) != 2 || got["web_linux.tar.gz"] != 22 {
+		t.Errorf("files of ns2/web = %v, want its binary at 22 bytes and the sums", got)
+	}
+	links := map[string]string{}
+	for _, r := range p.Releases() {
+		if len(r.Links) != 2 {
+			t.Fatalf("release %s links = %+v, want two", r.Tag, r.Links)
+		}
+		links[r.Tag] = r.Links[0].URL
+	}
+	for tag, want := range map[string]string{"cli/v1.0.0": "/packages/generic/web/cli_2fv1.0.0/web_linux.tar.gz",
+		"b-v1.0.0": "/packages/generic/web/b-v1.0.0/web_linux.tar.gz"} {
+		if !strings.HasSuffix(links[tag], want) {
+			t.Errorf("release %s links %q, want its own package file %s", tag, links[tag], want)
+		}
+	}
+	for _, x := range []struct {
+		t   ports.Target
+		app string
+	}{{a, "ns1/web"}, {b, "ns2/web"}} {
+		state, err := d.State(ctx, x.t, x.app, "")
+		if err != nil || state.Phase != ports.PhaseDeployed || state.Version != "v1.0.0" {
+			t.Errorf("State(%s) = %+v, %v, want Deployed v1.0.0", x.app, state, err)
+		}
 	}
 }
 
@@ -449,5 +505,41 @@ func TestShipNoSourceSetting(t *testing.T) {
 	}
 	if state, err := New(nil).State(context.Background(), tg, s.App, "v1.0.0"); err != nil || state.Source != nil {
 		t.Errorf("State() = %+v, %v, want no source", state, err)
+	}
+}
+
+// A self-hosted GitLab under a relative URL root (#1916): the target's url
+// keeps the root, so every API call, the generic package files' download
+// URLs the release links and the release's page sit under it. The fake
+// serves nothing outside the root, so a ship that dropped it would fail.
+func TestShipUnderRoot(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.NewUnder(t, "/gitlab")
+	if !strings.HasSuffix(gl.URL(), "/gitlab") {
+		t.Fatalf("URL() = %q, want it to end in the root", gl.URL())
+	}
+	tg, p := newTarget(gl, "t0ken")
+	d := New(nil)
+	if err := d.Check(ctx, tg); err != nil {
+		t.Fatalf("Check() = %v", err)
+	}
+	s := shipment(file("orders-cli_linux.tar.gz", "binary"), file("SHA256SUMS", "s"))
+	for i := 0; i < 3 && marked(p, s.App) == 0; i++ {
+		if err := d.Ship(ctx, tg, s); err != nil {
+			t.Fatalf("Ship() %d = %v", i, err)
+		}
+	}
+	rels := p.Releases()
+	if len(rels) != 1 || len(rels[0].Links) != 2 {
+		t.Fatalf("releases = %+v, want one with two links", rels)
+	}
+	want := gl.URL() + "/api/v4/projects/" + url.PathEscape(p.Path) + "/packages/generic/orders-cli/" +
+		model.GitLabPackageVersion("cli/v1.0.0") + "/orders-cli_linux.tar.gz"
+	if got := rels[0].Links[0].URL; got != want {
+		t.Errorf("package link = %q, want %q: the download URL under the root", got, want)
+	}
+	state, err := d.State(ctx, tg, s.App, "")
+	if err != nil || state.Phase != ports.PhaseDeployed || !strings.HasPrefix(state.URL, gl.URL()+"/"+p.Path+"/") {
+		t.Fatalf("State() = %+v, %v, want Deployed at a page under %s/%s", state, err, gl.URL(), p.Path)
 	}
 }

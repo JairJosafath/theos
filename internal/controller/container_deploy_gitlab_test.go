@@ -77,7 +77,7 @@ var _ = Describe("Container deploys to a gitlab target (#1804)", func() {
 			tags = append(tags, r.Tag)
 		}
 		Expect(tags).To(ConsistOf("orders-cli-v0.1.0"))
-		Expect(project.Files("orders-cli", "v0.1.0")).To(
+		Expect(project.Files("orders-cli", "orders-cli-v0.1.0")).To(
 			HaveKeyWithValue("orders-cli-v0.1.0.tar.gz", int64(len(build))))
 	})
 })

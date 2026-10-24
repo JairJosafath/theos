@@ -50,7 +50,7 @@ var _ = Describe("Project", func() {
 		deployment := &c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),
 			Spec: newCatalogSpec("http://gitea:3000/templates/k8s-manifests", "v1.2.1", c4v1beta1.ContainerTypeService)}
 		connector := &c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1beta1.ContainerTypeService)}
+			Spec: c4v1beta1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec("http://gitea:3000/templates/postgres", "v1.1.0", c4v1beta1.ContainerTypeService)}}
 		domain := newDomain(ns, "webshop")
 		bundle := &c4v1beta1.Bundle{ObjectMeta: objectMeta(ns, "python-service"),
 			Spec: c4v1beta1.BundleSpec{FrameworkRef: c4v1beta1.LocalRef{Name: "python-fastapi"}}}

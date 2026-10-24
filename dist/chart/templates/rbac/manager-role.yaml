@@ -111,6 +111,7 @@ rules:
   - datastores.c4.factory.io
   - deployments.c4.factory.io
   - deploytargets.c4.factory.io
+  - domains.c4.factory.io
   - frameworks.c4.factory.io
   - gitproviders.c4.factory.io
   - people.c4.factory.io

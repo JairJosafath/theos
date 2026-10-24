@@ -140,6 +140,10 @@ Standards' guides, the webshop Domain and the planner are its later steps.
 2. **Check choices.** Every entry used, the Connectors reached through
    Relationships included, must list the Container's type, else `Failed`,
    `ChoicesValid=False` ("python-fastapi does not support static-site"). A
+   Connector whose `wiredBy` names the Frameworks that call its files takes
+   only a Container on one of them, else reason `NotWired` ("dynamodb is not
+   wired by python-fastapi, only by aws-lambda-ts and aws-lambda-go"); unset,
+   it takes any ([plans/aws-rds.md](plans/aws-rds.md), decision 7). A
    Framework with `deploysItself: true` (the AWS ones) takes no Compute and
    no Deployment but `gitea-release`, whose release carries its synthesized
    cloud assembly, else reason `DeploysItself`; and `gitea-release` ships a
@@ -196,6 +200,15 @@ fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
 identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
+Adoption checks the Standard's files and nothing of the Framework's: the
+block `spec.operations` names at adoption is recorded as the one the
+repository holds, when the Framework reads it, and a later change is
+refused, `OperationsApplied=False` with reason `AdoptedRepository`, saying
+why: the factory never scaffolded the repository, so it can't know whether
+the `infra/operations.ts` there is one its Framework renders, and a Task
+changes the file (#1909). Opening the pull request anyway, as for a
+scaffolded Container, would write a file the Framework's template shapes
+into a repository that may hold another shape, or none.
 
 **Relationships.** Container to DataStore applies the DataStore's Connector at
 scaffold. Container to Container with `spec.bundles: true` says the source

@@ -60,7 +60,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the template and the Container types it supports
+            description: spec defines the template, the Container types it supports
+              and the Frameworks that wire it
             properties:
               description:
                 description: description says what this entry adds to a Container.
@@ -107,6 +108,18 @@ spec:
                 - ref
                 - url
                 type: object
+              wiredBy:
+                description: |-
+                  wiredBy lists the Frameworks, by name, whose templates call this
+                  Connector's files. When set, a DataStore on this Connector is refused
+                  for a Container whose Framework is not listed (ChoicesValid=False,
+                  reason NotWired). Unset means no restriction: a Connector whose files
+                  stand alone, such as the cluster's postgres, needs no wiring.
+                items:
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
             required:
             - supportedTypes
             - template
@@ -155,7 +168,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the template and the Container types it supports
+            description: spec defines the template, the Container types it supports
+              and the Frameworks that wire it
             properties:
               description:
                 description: description says what this entry adds to a Container.
@@ -202,6 +216,18 @@ spec:
                 - ref
                 - url
                 type: object
+              wiredBy:
+                description: |-
+                  wiredBy lists the Frameworks, by name, whose templates call this
+                  Connector's files. When set, a DataStore on this Connector is refused
+                  for a Container whose Framework is not listed (ChoicesValid=False,
+                  reason NotWired). Unset means no restriction: a Connector whose files
+                  stand alone, such as the cluster's postgres, needs no wiring.
+                items:
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
             required:
             - supportedTypes
             - template

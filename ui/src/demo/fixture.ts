@@ -76,7 +76,11 @@ export function demoStory(now: number): StoryData {
     apiVersion: API_VERSION,
     kind: 'Project',
     metadata: meta('webshop', created),
-    spec: { displayName: 'Webshop', description: 'An online shop where customers browse, order and reorder.' },
+    spec: {
+      displayName: 'Webshop',
+      description: 'An online shop where customers browse, order and reorder.',
+      license: 'MIT',
+    },
     status: {
       softwareSystems: 3,
       containers: 5,

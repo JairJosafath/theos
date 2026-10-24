@@ -12,6 +12,23 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// ConnectorSpec is a catalog entry for what a Container needs to talk to a
+// DataStore: a pinned template, the Container types it supports and, when its
+// files only work with code a Framework renders, the Frameworks that wire it.
+type ConnectorSpec struct {
+	CatalogEntrySpec `json:",inline"`
+
+	// wiredBy lists the Frameworks, by name, whose templates call this
+	// Connector's files. When set, a DataStore on this Connector is refused
+	// for a Container whose Framework is not listed (ChoicesValid=False,
+	// reason NotWired). Unset means no restriction: a Connector whose files
+	// stand alone, such as the cluster's postgres, needs no wiring.
+	// +kubebuilder:validation:MaxItems=64
+	// +listType=set
+	// +optional
+	WiredBy []string `json:"wiredBy,omitempty"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
@@ -28,9 +45,9 @@ type Connector struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the template and the Container types it supports
+	// spec defines the template, the Container types it supports and the Frameworks that wire it
 	// +required
-	Spec CatalogEntrySpec `json:"spec"`
+	Spec ConnectorSpec `json:"spec"`
 }
 
 // +kubebuilder:object:root=true

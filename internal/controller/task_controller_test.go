@@ -301,6 +301,35 @@ var _ = Describe("Task", func() {
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 	})
 
+	It("has no cost cap when its Crew's taskBudgetUSD is 0, which omitempty leaves unset (#1893)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 3)
+		crew := newCrew(ns)
+		crew.Spec.TaskBudgetUSD = 0
+		task := newTask(ns, "add-crop", "Add crop")
+		task.Labels = map[string]string{LabelCrew: crew.Name}
+		mustCreate(crew, task)
+		var stored c4v1beta1.Crew
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crew), &stored)).To(Succeed())
+		Expect(stored.Spec.TaskBudgetUSD).To(BeZero())
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(250_000))}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
+		}).Should(Succeed())
+
+		By("starting the review however much the runs cost")
+		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+		cond := condition(getTask(Default, ns, "add-crop").Status.Conditions, "Progressing")
+		if cond != nil {
+			Expect(cond.Reason).NotTo(Equal(model.ReasonOverBudget))
+		}
+	})
+
 	It("adds up what its runs cost and used, and counts the runs whose agent didn't say", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

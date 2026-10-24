@@ -30,7 +30,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
   (what ships, by type), `ShipMarker` and `ReleaseBody` (finding our
   release), `NextSourceStep` with `SourceShip` (the snapshot, its commit and
   its tag), `PublishChecks`, `FactoryOwnPaths`, `SourceOverlaps`,
-  `ReleaseTagPrefix`, `GitHubImage` and `GitHubImageNotes`.
+  `ReleaseTagPrefix`, `ImageRepository` (`GitHubImage` before step 4) and
+  `GitHubImageNotes`.
 - `NextReleaseStep` is GitHub's: a draft, retargeted, files uploaded to it,
   then published. GitLab has no drafts.
 - The GitHub client and its fake are in `internal/gitprovider` and in
@@ -97,10 +98,22 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
      without it, or the tag at another commit with no release, fails
      `TagTaken`, as on GitHub.
    - The files go to the project's generic package registry, package the
-     Container's name, version the release's version
-     (`PUT /projects/:id/packages/generic/<name>/<version>/<file>`), since a
+     Container's name, version the release's tag
+     (`PUT /projects/:id/packages/generic/<name>/<tag>/<file>`), since a
      GitLab release holds links and no files, and the project upload
-     endpoint is capped for attachments. `*.oci.tar` is left out, as on
+     endpoint is capped for attachments. The version is the tag and not the
+     bare version so that two Containers of one name (`ns1/web` and
+     `ns2/web`), with different tag prefixes, shipping one version to one
+     project keep their files apart (#1873): the tag is already the one key
+     that tells two apps' releases apart in a project, and `TagTaken` guards
+     it; the default prefix is the Container's name and `-`, so prefixing
+     the package *name* instead would read `web-web` on every default
+     target. GitLab's rule for a version (`lib/gitlab/regex/packages.rb`:
+     letters, digits, `.`, `_`, `+` and `-`, no `..`) refuses `/`, which
+     `tagPrefix` allows (a tag folder, `cli/`), so the tag is encoded by
+     `model.GitLabPackageVersion`: `_` is `__` and any other byte outside
+     the rule is `_` and two hex digits (`cli/v1.0.0` is `cli_2fv1.0.0`); a
+     tag within the rule, the default `<name>-vX.Y.Z` included, is itself. `*.oci.tar` is left out, as on
      GitHub. A file there with the same name and size is kept; another size
      is deleted and uploaded again. Each link is `link_type: package` with
      `direct_asset_path: /<file>`. The package registry being off fails the

@@ -436,6 +436,28 @@ var _ = Describe("DeployTarget", func() {
 		Expect(dt.Status.CheckedTime).NotTo(BeNil())
 	})
 
+	It("accepts a gitlab url with a path root and keeps it in the API it calls (#1916)", func() {
+		ns := newProjectNamespace()
+		// The url rule takes an instance under a relative URL root
+		// (docs/plans/gitlab-deploy.md, decision 1): the create is accepted,
+		// and with no Secret the check stops before any call.
+		named := newGitLabTarget(ns, "named", "named-gitlab", "acme/"+ns)
+		named.Spec.GitLab.URL = "https://gitlab.example.com/gitlab"
+		mustCreate(named)
+		deployReady(named, metav1.ConditionFalse, "SecretMissing")
+
+		// An instance that serves only under /gitlab accepts the token: the
+		// API URL kept the root, and the place names it.
+		gitlabRootFake.AddProject("acme/"+ns, "glpat-"+ns)
+		dt := newGitLabTarget(ns, "staging", "staging-gitlab", "acme/"+ns)
+		dt.Spec.GitLab.URL = gitlabRootFake.URL()
+		Expect(dt.Spec.GitLab.URL).To(HaveSuffix("/gitlab"))
+		mustCreate(newDeploySecret(ns, "staging-gitlab", map[string]string{"token": "glpat-" + ns}), dt)
+		cond := deployReady(dt, metav1.ConditionTrue, "Ready")
+		Expect(cond.Message).To(ContainSubstring("GitLab accepts the credential in Secret staging-gitlab for " +
+			strings.TrimPrefix(gitlabRootFake.URL(), "https://") + "/acme/" + ns))
+	})
+
 	It("is CredentialRefused when GitLab refuses a gitlab target's token (#1804)", func() {
 		ns := newProjectNamespace()
 		gitlabFake.AddProject("acme/"+ns, "glpat-"+ns)

@@ -216,7 +216,7 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 // catalogEntry converts any of the six catalog kinds into a model.CatalogEntry.
 func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	var spec c4v1beta1.CatalogEntrySpec
-	var frameworks []string
+	var frameworks, wiredBy []string
 	var checksBeforeRelease, deploysItself, readsOperations bool
 	switch o := obj.(type) {
 	case *c4v1beta1.Framework:
@@ -232,7 +232,8 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 	case *c4v1beta1.Deployment:
 		spec = o.Spec
 	case *c4v1beta1.Connector:
-		spec = o.Spec
+		spec = o.Spec.CatalogEntrySpec
+		wiredBy = o.Spec.WiredBy
 	case *c4v1beta1.Domain:
 		// No supportedTypes: what a system is about doesn't depend on a
 		// Container's type.
@@ -251,6 +252,7 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		TemplateURL:         spec.Template.URL,
 		TemplateRef:         spec.Template.Ref,
 		SupportedFrameworks: frameworks,
+		WiredBy:             wiredBy,
 		ChecksBeforeRelease: checksBeforeRelease,
 		DeploysItself:       deploysItself,
 		ReadsOperations:     readsOperations,
