@@ -102,7 +102,7 @@ Done when:
 - **Protection needs a Standard.**
   - `protectRepository` protects main only when the Container has a Standard.
   - Protected paths come from three places: `AgentNeverPaths`
-    (`internal/model/standard.go`), the CI system's `.gitea/`, and the
+    (`internal/model/fence.go`), the CI system's `.gitea/`, and the
     Standard's `protectedPaths` (at most 64). No per-Container list exists.
   - The check is `model.CheckCommand`, `make check`, which this repository
     has.
