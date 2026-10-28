@@ -608,7 +608,7 @@ export class ServiceStack extends Stack {
     // each other.
     const rollBackOn = [
       ...DEPLOYMENT_ALARMS,
-      ...clusters.map(([name]) => `${name}-Connections-Critical`),
+      ...clusters.map(([name]) => `${name}-Connection-Count-High-Critical`),
     ].map((alarm) => `${this.stackName}-${alarm}`);
     const created = new Set(alarms.monitoring.createdAlarms().map((alarm) => alarm.alarmName));
     for (const name of rollBackOn) {

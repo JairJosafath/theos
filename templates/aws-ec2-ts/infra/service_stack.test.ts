@@ -527,7 +527,7 @@ describe('ServiceStack data stores', () => {
     // table's three, and the cluster's two.
     template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 2 + 3 + 2);
     template.hasResourceProperties('AWS::CloudWatch::Alarm', {
-      AlarmName: 'test-Store-Connections-Critical',
+      AlarmName: 'test-Store-Connection-Count-High-Critical',
       // The Aurora User Guide's 1,669 at 8 ACU, nine tenths of it.
       Threshold: Math.floor(1669 * 0.9),
     });

@@ -671,7 +671,7 @@ describe('ServiceStack data stores', () => {
     });
     // The load balancer's, the service's, the table's, and the cluster's two.
     template.resourceCountIs('AWS::CloudWatch::Alarm', 2 + 7 + 3 + 2);
-    const connections = alarmNamed(template, 'test-Store-Connections-Critical');
+    const connections = alarmNamed(template, 'test-Store-Connection-Count-High-Critical');
     // The Aurora User Guide's 1,669 at 8 ACU, nine tenths of it.
     expect(connections['Threshold']).toBe(Math.floor(1669 * 0.9));
     expect(alarmNamed(template, 'test-Store-CPU-Usage-Critical')['Threshold']).toBe(90);
@@ -679,7 +679,7 @@ describe('ServiceStack data stores', () => {
     template.hasResourceProperties('AWS::ECS::Service', {
       DeploymentConfiguration: Match.objectLike({
         Alarms: Match.objectLike({
-          AlarmNames: Match.arrayWith(['test-Store-Connections-Critical']),
+          AlarmNames: Match.arrayWith(['test-Store-Connection-Count-High-Critical']),
         }),
       }),
     });
