@@ -38,7 +38,8 @@ backed by this Connector, so the cluster is the model's, not the Framework's
   repository runs; this Connector scaffolds no code (decision 9).
 - **Frameworks:** a Framework wires it in its `infra/connectors.ts`, rendered
   with `{{ if has .Connectors "rds" }}`, and alarms on the cluster's CPU and
-  connections like its own tables. `aws-lambda-ts` does (since v1.5.0). The
+  connections like its own tables. `aws-lambda-ts`, `aws-lambda-py` and `aws-lambda-go`
+  do (since v1.5.0). The
   catalog's `wiredBy` names them, so a Container on another Framework is
   refused at `ChoicesValid` (`NotWired`); a Framework that renders no
   `infra/connectors.ts` is refused by `connector_rds.ts.tmpl`'s `{{ fail }}`

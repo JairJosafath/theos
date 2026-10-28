@@ -487,7 +487,7 @@ repository; its `protectedPaths` are the fence agents may not change.
 
 ### The AWS Frameworks
 
-aws-lambda-ts (v1.5.0), aws-lambda-go (v1.4.0) and aws-lambda-py (v1.4.0): an
+aws-lambda-ts (v1.5.0), aws-lambda-go (v1.5.0) and aws-lambda-py (v1.5.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.3.0) and
 aws-fargate-ts (v2.1.0): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.2.0): an SQS, EventBridge
@@ -621,19 +621,23 @@ the stack. Its file refuses a Framework that renders no
 `infra/connectors.ts` with `{{ fail }}`, and the catalog's `wiredBy` refuses
 a Container on a Framework that doesn't wire it (`NotWired`).
 
-- CI: `make test-templates`, combos "aws lambda function with rds" and "aws
-  lambda function with dynamodb and rds": their `make check`
-  ([docs/screenshots/1923-aws-lambda-ts-rds-check.txt](screenshots/1923-aws-lambda-ts-rds-check.txt)).
+- CI: `make test-templates`, combos "aws lambda function with rds", "aws
+  lambda function with dynamodb and rds" and their "in go" and "aws python"
+  twins: their `make check`
+  ([docs/screenshots/1923-aws-lambda-ts-rds-check.txt](screenshots/1923-aws-lambda-ts-rds-check.txt),
+  [1924-aws-lambda-py-rds-check.txt](screenshots/1924-aws-lambda-py-rds-check.txt),
+  [1924-aws-lambda-go-rds-check.txt](screenshots/1924-aws-lambda-go-rds-check.txt)).
 - Tests: `infra/connector_rds.test.ts`, in the Framework's vitest include,
   both tiers and a user with a network;
-  `TestRDSConnectorConnectsToAWSLambdaTS` and
+  `TestRDSConnectorConnectsToAWSLambdaTS`,
+  `TestRDSConnectorConnectsToAWSLambdaPyAndGo` and
   `TestRDSConnectorFailsAFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered, CDK Nag and cfn-lint
   included.
-- Deploy: the cluster is part of the stack; aws-lambda-ts (v1.5.0) wires it,
-  alarms on its CPU and connections and backs it up by `DBClusterArn`. No
-  other Framework does yet.
+- Deploy: the cluster is part of the stack; aws-lambda-ts, aws-lambda-py and
+  aws-lambda-go (v1.5.0) wire it, alarm on its CPU and connections and back
+  it up by `DBClusterArn`. No other Framework does yet.
 - Auth: `grantDataApiAccess` grants the `rds-data` calls on that cluster and
   `GetSecretValue` on its secret only; an ingress rule from the user's
   security groups where it has a network.
