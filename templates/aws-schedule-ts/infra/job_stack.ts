@@ -359,7 +359,8 @@ export class JobStack extends Stack {
       });
     }
     // A cluster near its CPU or its connections is one the function will soon
-    // find slow or closed; both roll a deploy back like the function's own.
+    // find slow or closed; both alarms page like the function's own (this
+    // Framework deploys with no rollback, so none of its alarms rolls one back).
     for (const [name, cluster] of clusters) {
       alarms.monitoring.monitorAuroraCluster({
         // The cluster itself, not its identifier: the monitoring reads its
