@@ -44,9 +44,38 @@ export const SCHEDULE = ScheduleExpression.cron({
 // share of.
 const TIMEOUT = Duration.minutes(5);
 
-// The connections an Aurora PostgreSQL cluster allows per ACU (2 GiB each):
-// its max_connections, DBInstanceClassMemory / 9531392.
-const CONNECTIONS_PER_ACU = 225;
+// Aurora PostgreSQL's max_connections at a Serverless v2 cluster's largest
+// capacity, the lowest column of the table in the Aurora User Guide's
+// "Maximum connections for Aurora Serverless v2", interpolated between its
+// rows: the documented formula, LEAST(DBInstanceClassMemory / 9531392, 5000),
+// counts memory after what the OS keeps, so 2 GiB an ACU overstates it.
+const MAX_CONNECTIONS_BY_ACU: readonly (readonly [number, number])[] = [
+  [1, 189],
+  [4, 823],
+  [8, 1669],
+  [16, 3360],
+  [32, 5000],
+];
+// A cluster whose minimum is 0 or 0.5 ACU stops at 2,000 whatever its largest.
+const LOW_MINIMUM_MAX_CONNECTIONS = 2000;
+
+/** The documented max_connections at `acu`, the first row's below it and the last's above. */
+function documentedMaxConnections(acu: number): number {
+  let previous: readonly [number, number] | undefined;
+  for (const row of MAX_CONNECTIONS_BY_ACU) {
+    const [rowAcu, rowConnections] = row;
+    if (acu >= rowAcu) {
+      previous = row;
+      continue;
+    }
+    if (previous === undefined) {
+      return rowConnections;
+    }
+    const [belowAcu, below] = previous;
+    return Math.floor(below + ((rowConnections - below) * (acu - belowAcu)) / (rowAcu - belowAcu));
+  }
+  return previous === undefined ? 0 : previous[1];
+}
 
 /**
  * Nine tenths of the connections `cluster` allows at its largest, from the
@@ -54,12 +83,21 @@ const CONNECTIONS_PER_ACU = 225;
  * has none the stack can read.
  */
 export function maxConnections(cluster: DatabaseCluster): number {
-  const scaling = (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration;
-  const maxCapacity =
-    scaling !== undefined && 'maxCapacity' in scaling && typeof scaling.maxCapacity === 'number'
-      ? scaling.maxCapacity
+  // The configuration is a lazy token until resolved; a provisioned cluster has none.
+  const scaling: unknown = Stack.of(cluster).resolve(
+    (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration,
+  );
+  const capacity = (name: 'minCapacity' | 'maxCapacity'): number =>
+    typeof scaling === 'object' &&
+    scaling !== null &&
+    name in scaling &&
+    typeof (scaling as Record<string, unknown>)[name] === 'number'
+      ? ((scaling as Record<string, unknown>)[name] as number)
       : 1;
-  return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);
+  const documented = documentedMaxConnections(capacity('maxCapacity'));
+  const connections =
+    capacity('minCapacity') < 1 ? Math.min(documented, LOW_MINIMUM_MAX_CONNECTIONS) : documented;
+  return Math.floor(connections * 0.9);
 }
 
 // How often the schedule tries again to hand a run to Lambda (Lambda
