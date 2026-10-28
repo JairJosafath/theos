@@ -41,6 +41,8 @@ import {
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { AnyPrincipal, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import type { CustomThreshold } from 'cdk-monitoring-constructs';
 import type { Construct } from 'constructs';
@@ -48,7 +50,7 @@ import type { Construct } from 'constructs';
 import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { DATA_STORES } from './connectors';
-import type { Connect } from './connectors';
+import type { Connect, DataStore } from './connectors';
 import { serverAsset } from './server_asset';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
@@ -82,6 +84,61 @@ const HEALTH_CHECK_GRACE = Duration.minutes(10);
 // The slowest answer the latency alarm allows, at the 99th percentile: an
 // item is one DynamoDB call, which takes milliseconds.
 const MAX_LATENCY = Duration.seconds(1);
+// Aurora PostgreSQL's max_connections at a Serverless v2 cluster's largest
+// capacity, the lowest column of the table in the Aurora User Guide's
+// "Maximum connections for Aurora Serverless v2", interpolated between its
+// rows: the documented formula, LEAST(DBInstanceClassMemory / 9531392, 5000),
+// counts memory after what the OS keeps, so 2 GiB an ACU overstates it.
+const MAX_CONNECTIONS_BY_ACU: readonly (readonly [number, number])[] = [
+  [1, 189],
+  [4, 823],
+  [8, 1669],
+  [16, 3360],
+  [32, 5000],
+];
+// A cluster whose minimum is 0 or 0.5 ACU stops at 2,000 whatever its largest.
+const LOW_MINIMUM_MAX_CONNECTIONS = 2000;
+
+/** The documented max_connections at `acu`, the first row's below it and the last's above. */
+function documentedMaxConnections(acu: number): number {
+  let previous: readonly [number, number] | undefined;
+  for (const row of MAX_CONNECTIONS_BY_ACU) {
+    const [rowAcu, rowConnections] = row;
+    if (acu >= rowAcu) {
+      previous = row;
+      continue;
+    }
+    if (previous === undefined) {
+      return rowConnections;
+    }
+    const [belowAcu, below] = previous;
+    return Math.floor(below + ((rowConnections - below) * (acu - belowAcu)) / (rowAcu - belowAcu));
+  }
+  return previous === undefined ? 0 : previous[1];
+}
+
+/**
+ * Nine tenths of the connections `cluster` allows at its largest, from the
+ * Serverless v2 scaling configuration its Connector gave it; 1 ACU's when it
+ * has none the stack can read.
+ */
+export function maxConnections(cluster: DatabaseCluster): number {
+  // The configuration is a lazy token until resolved; a provisioned cluster has none.
+  const scaling: unknown = Stack.of(cluster).resolve(
+    (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration,
+  );
+  const capacity = (name: 'minCapacity' | 'maxCapacity'): number =>
+    typeof scaling === 'object' &&
+    scaling !== null &&
+    name in scaling &&
+    typeof (scaling as Record<string, unknown>)[name] === 'number'
+      ? ((scaling as Record<string, unknown>)[name] as number)
+      : 1;
+  const documented = documentedMaxConnections(capacity('maxCapacity'));
+  const connections =
+    capacity('minCapacity') < 1 ? Math.min(documented, LOW_MINIMUM_MAX_CONNECTIONS) : documented;
+  return Math.floor(connections * 0.9);
+}
 
 /** What the stack is built for. */
 export interface ServiceStackProps extends StackProps {
@@ -209,21 +266,53 @@ export class ServiceStack extends Stack {
       assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
     });
     table.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem');
-    // The DataStores the Container's Relationships name, from their Connectors:
-    // each grants the instance role its calls and puts the table's name in
-    // the environment the server's unit is rendered with. Every store is
-    // connected here, before bootCommands renders the unit: an addEnvironment
-    // after that would be dropped.
+    // The instances' security group, made before the stores so a cluster can
+    // let the instances in; the load balancer adds its own rule when it
+    // targets them.
+    const instanceSecurityGroup = new SecurityGroup(this, 'InstanceSecurityGroup', {
+      vpc,
+      description: 'The service instances: only the load balancer reaches them.',
+      allowAllOutbound: true,
+    });
+    // The DataStores the Container's Relationships name, from their
+    // Connectors: a table or an Aurora cluster each. Each grants the instance
+    // role its calls and puts its names in the environment the server's unit
+    // is rendered with; a cluster goes in the VPC's isolated subnets and lets
+    // the instances in, and the server gets its host and port too. Every
+    // store is connected here, before bootCommands renders the unit: an
+    // addEnvironment after that would be dropped.
     const environment: Record<string, string> = { ...users.environment };
     const user = {
       grantPrincipal: role,
       addEnvironment: (key: string, value: string) => {
         environment[key] = value;
       },
+      network: { vpc, connections: instanceSecurityGroup.connections },
     };
     const stores = (props.dataStores ?? DATA_STORES).map(
       ([name, connect]) => [name, connect(this, user, rules)] as const,
     );
+    const isTable = (store: DataStore): store is Table => store instanceof Table;
+    const tables = stores.flatMap(([name, store]) =>
+      isTable(store) ? [[name, store] as const] : [],
+    );
+    const clusters = stores.flatMap(([name, store]) =>
+      isTable(store) ? [] : [[name, store] as const],
+    );
+    if (clusters.length > 0) {
+      // A cluster's secret, which a driver fetches and its rotation function
+      // changes, and its Data API: the instances have no other way to them.
+      vpc.addInterfaceEndpoint('SecretsManager', {
+        service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+        securityGroups: [endpointSecurityGroup],
+        open: false,
+      });
+      vpc.addInterfaceEndpoint('RdsData', {
+        service: InterfaceVpcEndpointAwsService.RDS_DATA,
+        securityGroups: [endpointSecurityGroup],
+        open: false,
+      });
+    }
     serverLogs.grantWrite(role);
     const server = serverAsset(this, 'Server');
     role.addToPrincipalPolicy(
@@ -252,11 +341,6 @@ export class ServiceStack extends Stack {
       ),
     );
 
-    const instanceSecurityGroup = new SecurityGroup(this, 'InstanceSecurityGroup', {
-      vpc,
-      description: 'The service instances: only the load balancer reaches them.',
-      allowAllOutbound: true,
-    });
     const launchTemplate = new LaunchTemplate(this, 'LaunchTemplate', {
       // Graviton: the same work for less energy and money than x86.
       instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.SMALL),
@@ -532,7 +616,7 @@ export class ServiceStack extends Stack {
         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
-    for (const [name, store] of stores) {
+    for (const [name, store] of tables) {
       alarms.monitoring.monitorDynamoTable({
         table: store,
         alarmFriendlyName: name,
@@ -542,12 +626,25 @@ export class ServiceStack extends Stack {
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
     }
+    // A cluster near its CPU or its connections is one the server will soon
+    // find slow or closed.
+    for (const [name, cluster] of clusters) {
+      alarms.monitoring.monitorAuroraCluster({
+        // The cluster itself, not its identifier: the monitoring reads its
+        // ARN to tell a Serverless cluster.
+        cluster,
+        alarmFriendlyName: name,
+        addCpuUsageAlarm: { Critical: { maxUsagePercent: 90 } },
+        addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },
+      });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table, ...stores.map(([, store]) => store)],
+        tables: [table, ...tables.map(([, store]) => store)],
+        clusters: clusters.map(([, cluster]) => cluster),
       });
     }
 

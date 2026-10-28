@@ -1,6 +1,13 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { SubnetType } from 'aws-cdk-lib/aws-ec2';
+import {
+  AuroraPostgresEngineVersion,
+  ClusterInstance,
+  DatabaseCluster,
+  DatabaseClusterEngine,
+} from 'aws-cdk-lib/aws-rds';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { copyVaultName } from './backups';
@@ -475,12 +482,104 @@ describe('ServiceStack data stores', () => {
     });
   });
 
+  it('puts a cluster store in the VPC, lets the instances in, alarms on it and backs it up by ARN', () => {
+    // A stand-in for what the rds Connector builds with a network: a
+    // Serverless v2 cluster that scales to 8 ACU, in the stack's VPC, that
+    // lets the instances' security group in.
+    const connect: Connect = (scope, user) => {
+      const network = user.network;
+      if (network === undefined) {
+        throw new Error('the stack passes no network');
+      }
+      const cluster = new DatabaseCluster(scope, 'Store', {
+        engine: DatabaseClusterEngine.auroraPostgres({
+          version: AuroraPostgresEngineVersion.VER_16_6,
+        }),
+        writer: ClusterInstance.serverlessV2('Writer'),
+        serverlessV2MaxCapacity: 8,
+        vpc: network.vpc,
+        vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      });
+      cluster.connections.allowDefaultPortFrom(network.connections, 'The Container');
+      return cluster;
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    template.resourceCountIs('AWS::EC2::VPC', 1);
+    template.resourceCountIs('AWS::RDS::DBCluster', 1);
+    const [clusterId] = Object.keys(template.findResources('AWS::RDS::DBCluster'));
+    template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+      SourceSecurityGroupId: {
+        'Fn::GetAtt': [Match.stringLikeRegexp('^InstanceSecurityGroup'), 'GroupId'],
+      },
+      GroupId: { 'Fn::GetAtt': [Match.stringLikeRegexp('^StoreSecurityGroup'), 'GroupId'] },
+    });
+    // The instances reach the cluster's secret and its Data API through
+    // endpoints: they have no other way out.
+    for (const service of ['secretsmanager', 'rds-data']) {
+      template.hasResourceProperties('AWS::EC2::VPCEndpoint', {
+        ServiceName: Match.objectLike({
+          'Fn::Join': ['', Match.arrayWith([`.${service}`])],
+        }),
+        VpcEndpointType: 'Interface',
+      });
+    }
+    // The load balancer's, the group's three, the instances' two, the
+    // table's three, and the cluster's two.
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 1 + 3 + 2 + 3 + 2);
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'test-Store-Connections-Critical',
+      // The Aurora User Guide's 1,669 at 8 ACU, nine tenths of it.
+      Threshold: Math.floor(1669 * 0.9),
+    });
+    // Backed up with the stack's table, after it (#1923).
+    const [itemsId] = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: [
+          { 'Fn::GetAtt': [itemsId, 'Arn'] },
+          { 'Fn::GetAtt': [clusterId, 'DBClusterArn'] },
+        ],
+      }),
+    });
+  });
+
+  it('adds no endpoint for a cluster when no store is one', () => {
+    production.resourceCountIs('AWS::RDS::DBCluster', 0);
+    const services = JSON.stringify(production.findResources('AWS::EC2::VPCEndpoint'));
+    expect(services).not.toContain('.secretsmanager');
+    expect(services).not.toContain('.rds-data');
+  });
+
   it('connects the data stores of the rendered infra/connectors.ts by default', () => {
     const template = Template.fromStack(
       new ServiceStack(new App(), 'test', { tier: 'production', operations: OPERATIONS }),
     );
-    template.resourceCountIs('AWS::DynamoDB::Table', 1 + DATA_STORES.length);
+    // One table or one cluster per store, beside the stack's own table.
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table')).length;
+    const clusters = Object.keys(template.findResources('AWS::RDS::DBCluster')).length;
+    expect(tables - 1 + clusters).toBe(DATA_STORES.length);
   });
+
+  it.runIf(DATA_STORES.some(([name]) => name === 'RDS'))(
+    'puts the rds cluster in the VPC, lets the instances in and hands the server its host and port',
+    () => {
+      const template = Template.fromStack(
+        new ServiceStack(new App(), 'test', { tier: 'production', operations: OPERATIONS }),
+      );
+      // No second VPC: the cluster goes in the stack's own.
+      template.resourceCountIs('AWS::EC2::VPC', 1);
+      template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+        SourceSecurityGroupId: {
+          'Fn::GetAtt': [Match.stringLikeRegexp('^InstanceSecurityGroup'), 'GroupId'],
+        },
+        GroupId: { 'Fn::GetAtt': [Match.stringLikeRegexp('^RDSSecurityGroup'), 'GroupId'] },
+      });
+      const [, launchTemplate] = onlyOf(template, 'AWS::EC2::LaunchTemplate');
+      const userData = JSON.stringify(launchTemplate);
+      expect(userData).toContain('Environment=RDS_HOST=');
+      expect(userData).toContain('Environment=RDS_PORT=');
+    },
+  );
 });
 
 describe('copyVaultName', () => {
