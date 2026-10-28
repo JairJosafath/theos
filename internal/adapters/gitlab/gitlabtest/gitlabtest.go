@@ -372,29 +372,43 @@ func (p *Project) serve(w http.ResponseWriter, r *http.Request, seg []string) {
 		p.info(w)
 	case n >= 1 && seg[0] == segReleases:
 		p.serveReleases(w, r, seg[1:])
-	case get && n == 3 && seg[0] == segRepository && seg[1] == "tags":
-		commit, ok := p.tags[seg[2]]
+	case n >= 1 && seg[0] == segRepository:
+		p.serveRepository(w, r, seg[1:])
+	case n >= 1 && seg[0] == segPackages:
+		p.servePackages(w, r, seg[1:])
+	default:
+		writeJSON(w, http.StatusNotFound, errMsg(notFound))
+	}
+}
+
+// serveRepository routes the /repository calls: tags, branches, the tree,
+// files and commits.
+func (p *Project) serveRepository(w http.ResponseWriter, r *http.Request, seg []string) {
+	get, n := r.Method == http.MethodGet, len(seg)
+	switch {
+	case get && n == 2 && seg[0] == "tags":
+		commit, ok := p.tags[seg[1]]
 		if !ok {
 			writeJSON(w, http.StatusNotFound, msg("404 Tag Not Found"))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[2], "target": commit,
+		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[1], "target": commit,
 			keyCommit: map[string]string{"id": commit}})
-	case r.Method == http.MethodPost && n == 2 && seg[0] == segRepository && seg[1] == "tags":
+	case r.Method == http.MethodPost && n == 1 && seg[0] == "tags":
 		p.createTag(w, r)
-	case get && n == 3 && seg[0] == segRepository && seg[1] == "branches":
-		if seg[2] != p.DefaultBranch {
+	case get && n == 2 && seg[0] == "branches":
+		if seg[1] != p.DefaultBranch {
 			writeJSON(w, http.StatusNotFound, msg("404 Branch Not Found"))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[2],
+		writeJSON(w, http.StatusOK, map[string]any{keyName: seg[1],
 			keyCommit: map[string]string{"id": p.DefaultBranchHead}})
-	case get && n == 2 && seg[0] == segRepository && seg[1] == "tree":
+	case get && n == 1 && seg[0] == "tree":
 		p.tree(w, r)
-	case r.Method == http.MethodPost && n == 2 && seg[0] == segRepository && seg[1] == "commits":
+	case get && n == 2 && seg[0] == "files":
+		p.file(w, r, seg[1])
+	case r.Method == http.MethodPost && n == 1 && seg[0] == "commits":
 		p.createCommit(w, r)
-	case n >= 1 && seg[0] == segPackages:
-		p.servePackages(w, r, seg[1:])
 	default:
 		writeJSON(w, http.StatusNotFound, errMsg(notFound))
 	}
@@ -637,12 +651,29 @@ func (p *Project) lastForPath(head, path string) string {
 	return ""
 }
 
+// file serves the file at path as of ref, its last_commit_id the last
+// commit from ref that changed it, as GitLab's Files API does.
+func (p *Project) file(w http.ResponseWriter, r *http.Request, path string) {
+	ref := r.URL.Query().Get("ref")
+	head := p.resolve(ref)
+	b, ok := p.commits[head][path]
+	if ref == "" || !ok {
+		writeJSON(w, http.StatusNotFound, msg("404 File Not Found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"file_name": path[strings.LastIndex(path, "/")+1:],
+		"file_path": path, "size": len(b.content), "encoding": "base64",
+		"content": base64.StdEncoding.EncodeToString(b.content), "ref": ref, "blob_id": model.BlobSHA(b.content),
+		"commit_id": head, "last_commit_id": p.lastForPath(head, path)})
+}
+
 func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Branch   string `json:"branch"`
-		StartSHA string `json:"start_sha"`
-		Message  string `json:"commit_message"`
-		Actions  []struct {
+		Branch      string `json:"branch"`
+		StartSHA    string `json:"start_sha"`
+		StartBranch string `json:"start_branch"`
+		Message     string `json:"commit_message"`
+		Actions     []struct {
 			Action          string `json:"action"`
 			FilePath        string `json:"file_path"`
 			Content         string `json:"content"`
@@ -659,17 +690,13 @@ func (p *Project) createCommit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, msg("You can only create or edit files when you are on a branch"))
 		return
 	}
-	if _, known := p.commits[in.StartSHA]; in.StartSHA != "" && !known {
-		writeJSON(w, http.StatusBadRequest, msg("Cannot find start_sha: "+in.StartSHA))
-		return
-	}
-	if in.StartSHA != "" && in.StartSHA != p.DefaultBranchHead {
-		// As GitLab: the commit is made on start_sha, and the branch moves to
-		// it only when it still is there (Gitaly's ref update, old oid the
-		// parent). Checked before the actions, as the ref update refuses them
-		// all.
-		writeJSON(w, http.StatusBadRequest,
-			msg("9:Could not update refs/heads/"+in.Branch+". Please refresh and try again."))
+	if in.StartSHA != "" || in.StartBranch != "" {
+		// As GitLab (Commits::CreateService#validate_branch_existence!):
+		// start_sha and start_branch start a new branch, so a commit naming
+		// either to a branch that exists is refused without force, which the
+		// fake doesn't take (#1979). Only the default branch exists here.
+		writeJSON(w, http.StatusBadRequest, msg("A branch called '"+in.Branch+
+			"' already exists. Switch to that branch in order to make changes"))
 		return
 	}
 	files := maps.Clone(p.commits[p.DefaultBranchHead])
