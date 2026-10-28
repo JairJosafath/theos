@@ -7,6 +7,8 @@ import { Architecture, LoggingFormat, Runtime, Tracing } from 'aws-cdk-lib/aws-l
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import type { QueueProps } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
@@ -15,7 +17,7 @@ import path from 'node:path';
 import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { DATA_STORES } from './connectors';
-import type { Connect } from './connectors';
+import type { Connect, DataStore } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 
@@ -25,6 +27,62 @@ const ROOT = path.join(import.meta.dirname, '..');
 // The function's time limit for one batch, which its duration alarm is a
 // share of.
 const TIMEOUT = Duration.seconds(30);
+
+// Aurora PostgreSQL's max_connections at a Serverless v2 cluster's largest
+// capacity, the lowest column of the table in the Aurora User Guide's
+// "Maximum connections for Aurora Serverless v2", interpolated between its
+// rows: the documented formula, LEAST(DBInstanceClassMemory / 9531392, 5000),
+// counts memory after what the OS keeps, so 2 GiB an ACU overstates it.
+const MAX_CONNECTIONS_BY_ACU: readonly (readonly [number, number])[] = [
+  [1, 189],
+  [4, 823],
+  [8, 1669],
+  [16, 3360],
+  [32, 5000],
+];
+// A cluster whose minimum is 0 or 0.5 ACU stops at 2,000 whatever its largest.
+const LOW_MINIMUM_MAX_CONNECTIONS = 2000;
+
+/** The documented max_connections at `acu`, the first row's below it and the last's above. */
+function documentedMaxConnections(acu: number): number {
+  let previous: readonly [number, number] | undefined;
+  for (const row of MAX_CONNECTIONS_BY_ACU) {
+    const [rowAcu, rowConnections] = row;
+    if (acu >= rowAcu) {
+      previous = row;
+      continue;
+    }
+    if (previous === undefined) {
+      return rowConnections;
+    }
+    const [belowAcu, below] = previous;
+    return Math.floor(below + ((rowConnections - below) * (acu - belowAcu)) / (rowAcu - belowAcu));
+  }
+  return previous === undefined ? 0 : previous[1];
+}
+
+/**
+ * Nine tenths of the connections `cluster` allows at its largest, from the
+ * Serverless v2 scaling configuration its Connector gave it; 1 ACU's when it
+ * has none the stack can read.
+ */
+export function maxConnections(cluster: DatabaseCluster): number {
+  // The configuration is a lazy token until resolved; a provisioned cluster has none.
+  const scaling: unknown = Stack.of(cluster).resolve(
+    (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration,
+  );
+  const capacity = (name: 'minCapacity' | 'maxCapacity'): number =>
+    typeof scaling === 'object' &&
+    scaling !== null &&
+    name in scaling &&
+    typeof (scaling as Record<string, unknown>)[name] === 'number'
+      ? ((scaling as Record<string, unknown>)[name] as number)
+      : 1;
+  const documented = documentedMaxConnections(capacity('maxCapacity'));
+  const connections =
+    capacity('minCapacity') < 1 ? Math.min(documented, LOW_MINIMUM_MAX_CONNECTIONS) : documented;
+  return Math.floor(connections * 0.9);
+}
 
 // How long the event source gathers messages into a batch.
 const BATCHING_WINDOW = Duration.seconds(5);
@@ -160,9 +218,17 @@ export class QueueStack extends Stack {
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
     );
-    // The DataStores the Container's Relationships name, from their Connectors.
+    // The DataStores the Container's Relationships name, from their
+    // Connectors: a table or an Aurora cluster each.
     const stores = (props.dataStores ?? DATA_STORES).map(
       ([name, connect]) => [name, connect(this, handler, rules)] as const,
+    );
+    const isTable = (store: DataStore): store is Table => store instanceof Table;
+    const tables = stores.flatMap(([name, store]) =>
+      isTable(store) ? [[name, store] as const] : [],
+    );
+    const clusters = stores.flatMap(([name, store]) =>
+      isTable(store) ? [] : [[name, store] as const],
     );
     handler.addEventSource(
       new SqsEventSource(queue, {
@@ -207,7 +273,7 @@ export class QueueStack extends Stack {
     for (const [name, monitored] of [
       ['Items', table],
       ['Idempotency', idempotency],
-      ...stores,
+      ...tables,
     ] as const) {
       alarms.monitoring.monitorDynamoTable({
         table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
@@ -218,13 +284,27 @@ export class QueueStack extends Stack {
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
     }
+    // A cluster near its CPU or its connections is one the function will soon
+    // find slow or closed; both alarms page like the function's own (this
+    // Framework deploys with no rollback, so none of its alarms rolls one back).
+    for (const [name, cluster] of clusters) {
+      alarms.monitoring.monitorAuroraCluster({
+        // The cluster itself, not its identifier: the monitoring reads its
+        // ARN to tell a Serverless cluster.
+        cluster,
+        alarmFriendlyName: name,
+        addCpuUsageAlarm: { Critical: { maxUsagePercent: 90 } },
+        addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },
+      });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        // The data tables, by ARN; the idempotency records expire and need no restore.
-        tables: [table, ...stores.map(([, store]) => store)],
+        // The data tables and clusters, by ARN; the idempotency records expire and need no restore.
+        tables: [table, ...tables.map(([, store]) => store)],
+        clusters: clusters.map(([, cluster]) => cluster),
       });
     }
 
