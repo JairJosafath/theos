@@ -1,5 +1,7 @@
 # CI on the pull request is the merge gate
 
+Superseded 2026-10-19 by [fresh-start.md](../fresh-start.md): abandoned; main stays the only branch.
+
 Parent issue: #1379. Agent: otter-1379. Written 2026-10-16.
 
 ## Goal

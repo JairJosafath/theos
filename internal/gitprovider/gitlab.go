@@ -98,7 +98,7 @@ type GitLabTreeEntry struct {
 // commit that touched that file, not the branch's head: GitLab compares it
 // with the file's own last commit on the branch and refuses a 400 when they
 // differ, so a head that left the file alone is refused too (#1950). The
-// deployer leaves it off and names the head as the commit's StartSHA.
+// deployer reads it with FileLastCommit (#1979).
 type GitLabCommitAction struct {
 	Action          string `json:"action"`
 	FilePath        string `json:"file_path"`
@@ -108,11 +108,10 @@ type GitLabCommitAction struct {
 	LastCommitID    string `json:"last_commit_id,omitempty"`
 }
 
-// GitLabCommit is a commit to make on Branch, through the Commits API.
-// StartSHA, when set, is the commit's parent: the head the actions were
-// decided on. GitLab makes the commit on it and moves Branch there only when
-// Branch still is at it, else a 400 "Could not update refs/heads/<branch>.
-// Please refresh and try again." (#1950). Empty, the parent is Branch's head.
+// GitLabCommit is a commit to make on Branch, through the Commits API, on
+// Branch's head. StartSHA starts a new Branch from that commit: GitLab
+// refuses it on a Branch that exists, "A branch called '<branch>' already
+// exists" (#1979).
 type GitLabCommit struct {
 	Branch   string               `json:"branch"`
 	StartSHA string               `json:"start_sha,omitempty"`
@@ -147,6 +146,9 @@ type GitLabProject interface {
 	// Tree lists the tree at ref under path (recursive); nil, nil when path
 	// is not there.
 	Tree(ctx context.Context, ref, path string) ([]GitLabTreeEntry, error)
+	// FileLastCommit returns the last commit that touched the file at path
+	// as of ref, its last_commit_id; "" when there is no such file.
+	FileLastCommit(ctx context.Context, ref, path string) (string, error)
 	// CreateCommit commits c.Actions on c.Branch and returns the new
 	// commit's sha.
 	CreateCommit(ctx context.Context, c GitLabCommit) (string, error)
@@ -382,6 +384,18 @@ func (g *gitlabProject) Tree(ctx context.Context, ref, path string) ([]GitLabTre
 	}
 	return nil, &ReleaseError{Reason: ReasonGitLabError,
 		Message: fmt.Sprintf("gitlab: more than %d tree entries to look through", gitlabTreeMaxPages*gitlabPageSize)}
+}
+
+func (g *gitlabProject) FileLastCommit(ctx context.Context, ref, path string) (string, error) {
+	var f struct {
+		LastCommitID string `json:"last_commit_id"`
+	}
+	err := g.call(ctx, http.MethodGet, g.project+"/repository/files/"+url.PathEscape(path)+"?ref="+url.QueryEscape(ref),
+		nil, http.StatusOK, "reading file "+path+" at "+ref, &f)
+	if notFound(err) {
+		return "", nil
+	}
+	return f.LastCommitID, err
 }
 
 func (g *gitlabProject) CreateCommit(ctx context.Context, c GitLabCommit) (string, error) {

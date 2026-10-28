@@ -148,11 +148,11 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if !crew.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-	status := r.observe(ctx, &crew)
 
 	var container c4v1beta1.Container
 	err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: crew.Spec.ContainerRef.Name}, &container)
 	if apierrors.IsNotFound(err) {
+		status := r.observe(ctx, &crew)
 		r.wait(&crew, status, "ContainerNotFound", "Container "+crew.Spec.ContainerRef.Name+" not found")
 		return ctrl.Result{}, r.writeStatus(ctx, &crew, status)
 	}
@@ -164,9 +164,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := adopt(ctx, r.Client, r.Scheme, &container, &crew, labels); err != nil {
 		return ctrl.Result{}, err
 	}
-	// Adopting reads the Crew back, newer than the cache: take its status
-	// too, or a release written since the read is patched away (#591, #1455).
-	status = r.observe(ctx, &crew)
+	// Adopting reads the Crew back, newer than the cache: the status starts
+	// from it, or a release written since the read is patched away (#591, #1455).
+	status := r.observe(ctx, &crew)
 	for _, name := range crewAgentNames(&crew.Spec) {
 		var agent c4v1beta1.Agent
 		err := r.Get(ctx, client.ObjectKey{Namespace: crew.Namespace, Name: name}, &agent)

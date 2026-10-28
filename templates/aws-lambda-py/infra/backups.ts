@@ -4,6 +4,7 @@ import { BackupPlan, BackupPlanRule, BackupResource, BackupVault } from 'aws-cdk
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Schedule } from 'aws-cdk-lib/aws-events';
 import { Key } from 'aws-cdk-lib/aws-kms';
+import type { CfnDBCluster, DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import { Construct } from 'constructs';
 import { createHash } from 'node:crypto';
 
@@ -27,10 +28,12 @@ export interface BackupsProps {
    * Powertools' idempotency table, whose records expire and need no restore.
    */
   readonly tables: readonly Table[];
+  /** The Aurora clusters the Container's Connectors made, backed up with the tables. */
+  readonly clusters?: readonly DatabaseCluster[];
 }
 
 /**
- * Daily AWS Backup backups of the stack's own tables, named by ARN, in a vault
+ * Daily AWS Backup backups of the stack's own tables and clusters, named by ARN, in a vault
  * with its own key, kept `retentionDays` and copied to `copyToRegion` when it
  * is set. Not by the Container's tag: every stack of the Container carries it,
  * a `<name>-development` stack in the same account too, and a same-named
@@ -81,8 +84,15 @@ export class Backups extends Construct {
         copyActions,
       }),
     );
+    // A cluster by the ARN CloudFormation returns for it (`DBClusterArn`),
+    // which the Standard's rules look for, not the one CDK formats from its id.
     const selection = this.plan.addSelection('Tables', {
-      resources: props.tables.map((table) => BackupResource.fromArn(table.tableArn)),
+      resources: [
+        ...props.tables.map((table) => BackupResource.fromArn(table.tableArn)),
+        ...(props.clusters ?? []).map((cluster) =>
+          BackupResource.fromArn((cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn),
+        ),
+      ],
     });
     Validations.of(selection).acknowledge({
       id: 'AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup]',

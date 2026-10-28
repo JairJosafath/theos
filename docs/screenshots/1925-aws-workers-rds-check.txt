@@ -1,0 +1,379 @@
+# make check in scaffolded aws-queue-ts, aws-schedule-ts and aws-event-ts v1.3.0 + aws-standard Containers
+# with the rds Connector v1.0.0 (issue #1925), alone and beside the dynamodb Connector v1.0.0. Six copies:
+# go run ./hack/render -out $S/<name> -type <worker|job> Framework=<framework> Standard=aws-standard Deployment=gitea-release Connector=rds
+# go run ./hack/render -out $S/<name> -type <worker|job> Framework=<framework> Standard=aws-standard Deployment=gitea-release Connector=dynamodb Connector=rds
+# (queue and event are -type worker, schedule is -type job; spec.operations left out: the defaults)
+# then in each, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1:
+# env -i PATH=$PATH HOME=$S/home NO_COLOR=1 npm_config_cache=$S/npm UV_CACHE_DIR=$S/uv make check
+# on 2026-10-28. synth writes both tiers, cdk.out/production/ and cdk.out/development/, under CDK Nag's
+# AWS Solutions and Serverless checks, and cfn-lint lints both with --include-checks I. Bundling lines are cut.
+
+### queue-rds: Framework=aws-queue-ts Connector=rds
+Rendered 52 files from aws-queue-ts@local, aws-standard@local, gitea-release@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/queue-rds
+npm ci --no-audit --no-fund
+
+added 180 packages in 27s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/queue-rds
+
+ ✓ src/batch.test.ts (3 tests) 39ms
+ ✓ src/consume.test.ts (9 tests) 141ms
+ ✓ src/items.test.ts (26 tests) 128ms
+ ✓ src/item_store.test.ts (1 test) 37ms
+
+ ✓ infra/connector_rds.test.ts (7 tests) 18222ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 13428ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 1504ms
+     ✓ gives a user without a network a VPC of two isolated zones with a flow log and no way out 565ms
+     ✓ throws the cluster away with the stack in development, pausing when idle and never rotating 345ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 625ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 1023ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 690ms
+
+ ✓ infra/dist.test.ts (4 tests) 36180ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 19967ms
+     ✓ writes the Framework's stacks for both tiers 16008ms
+
+ ✓ infra/standard.test.ts (100 tests) 40219ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 911ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 773ms
+   ✓ the AwsSolutions rules on a cluster and its credentials (2)
+     ✓ find a cluster without deletion protection in production, and not in development 439ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 319ms
+
+ ✓ infra/queue_stack.test.ts (20 tests) 49423ms
+   ✓ QueueStack (14)
+     ✓ defaults the alert email to alerts.email 4344ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 2437ms
+     ✓ copies the backups to the vault in copyToRegion 2320ms
+   ✓ QueueStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 2241ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 2290ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 1497ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 2493ms
+
+ Test Files  8 passed (8)
+      Tests  170 passed (170)
+   Start at  23:53:44
+   Duration  58.47s (tests 81%, import 14%, transform 6%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+
+### queue-both: Framework=aws-queue-ts Connector=dynamodb Connector=rds
+Rendered 54 files from aws-queue-ts@local, aws-standard@local, gitea-release@local, dynamodb@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/queue-both
+npm ci --no-audit --no-fund
+
+added 180 packages in 35s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/queue-both
+
+ ✓ src/consume.test.ts (9 tests) 56ms
+ ✓ src/items.test.ts (26 tests) 53ms
+ ✓ src/batch.test.ts (3 tests) 39ms
+ ✓ src/item_store.test.ts (1 test) 11ms
+
+ ✓ infra/connector_dynamodb.test.ts (4 tests) 10361ms
+   ✓ connectDynamoDB (4)
+     ✓ keeps an on-demand table keyed by pk and sk, kept and recoverable in production 9777ms
+ ✓ infra/connector_rds.test.ts (7 tests) 15006ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 12148ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 864ms
+     ✓ gives a user without a network a VPC of two isolated zones with a flow log and no way out 310ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 521ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 447ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 421ms
+
+ ✓ infra/dist.test.ts (4 tests) 22409ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 11807ms
+     ✓ ships each asset once for both tiers, a directory zipped and a file as it is 353ms
+     ✓ writes the Framework's stacks for both tiers 10227ms
+
+ ✓ infra/standard.test.ts (100 tests) 24945ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 702ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 478ms
+
+ ✓ infra/queue_stack.test.ts (20 tests) 33348ms
+   ✓ QueueStack (14)
+     ✓ defaults the alert email to alerts.email 2172ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1519ms
+     ✓ copies the backups to the vault in copyToRegion 1352ms
+   ✓ QueueStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 1425ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 1352ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 2053ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 3245ms
+
+ Test Files  9 passed (9)
+      Tests  174 passed (174)
+   Start at  23:57:10
+   Duration  38.74s (tests 80%, import 12%, transform 8%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+
+### schedule-rds: Framework=aws-schedule-ts Connector=rds
+Rendered 50 files from aws-schedule-ts@local, aws-standard@local, gitea-release@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/schedule-rds
+npm ci --no-audit --no-fund
+
+added 178 packages in 31s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/schedule-rds
+
+ ✓ src/job.test.ts (8 tests) 68ms
+ ✓ src/runs.test.ts (21 tests) 91ms
+ ✓ src/run_store.test.ts (1 test) 20ms
+
+ ✓ infra/connector_rds.test.ts (7 tests) 27772ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 24575ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 909ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 559ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 722ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 598ms
+
+ ✓ infra/dist.test.ts (4 tests) 41062ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 27442ms
+     ✓ writes the Framework's stacks for both tiers 13308ms
+
+ ✓ infra/standard.test.ts (100 tests) 45102ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 672ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 404ms
+   ✓ the AwsSolutions rules on a cluster and its credentials (2)
+     ✓ find a cluster without deletion protection in production, and not in development 308ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 312ms
+
+ ✓ infra/job_stack.test.ts (21 tests) 52765ms
+   ✓ JobStack (15)
+     ✓ defaults the alert email to alerts.email 6507ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 2329ms
+     ✓ copies the backups to the vault in copyToRegion 2101ms
+   ✓ JobStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 2335ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 1633ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 1706ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 2070ms
+
+ Test Files  7 passed (7)
+      Tests  162 passed (162)
+   Start at  23:45:06
+   Duration  59.13s (tests 85%, import 9%, transform 6%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+
+### schedule-both: Framework=aws-schedule-ts Connector=dynamodb Connector=rds
+Rendered 52 files from aws-schedule-ts@local, aws-standard@local, gitea-release@local, dynamodb@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/schedule-both
+npm ci --no-audit --no-fund
+
+added 178 packages in 28s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/schedule-both
+
+ ✓ src/job.test.ts (8 tests) 30ms
+ ✓ src/runs.test.ts (21 tests) 36ms
+ ✓ src/run_store.test.ts (1 test) 14ms
+
+ ✓ infra/connector_dynamodb.test.ts (4 tests) 6191ms
+   ✓ connectDynamoDB (4)
+     ✓ keeps an on-demand table keyed by pk and sk, kept and recoverable in production 5549ms
+ ✓ infra/connector_rds.test.ts (7 tests) 8415ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 6063ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 815ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 451ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 352ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 302ms
+
+ ✓ infra/dist.test.ts (4 tests) 13502ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 5572ms
+     ✓ writes the Framework's stacks for both tiers 7688ms
+
+ ✓ infra/standard.test.ts (100 tests) 15774ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 416ms
+
+ ✓ infra/job_stack.test.ts (21 tests) 19517ms
+   ✓ JobStack (15)
+     ✓ defaults the alert email to alerts.email 1621ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1320ms
+     ✓ copies the backups to the vault in copyToRegion 1349ms
+   ✓ JobStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 1057ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 1121ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 805ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 965ms
+
+ Test Files  8 passed (8)
+      Tests  166 passed (166)
+   Start at  23:48:08
+   Duration  24.91s (tests 72%, import 22%, transform 6%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+
+### event-rds: Framework=aws-event-ts Connector=rds
+Rendered 50 files from aws-event-ts@local, aws-standard@local, gitea-release@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/event-rds
+npm ci --no-audit --no-fund
+
+added 178 packages in 23s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/event-rds
+
+ ✓ src/consume.test.ts (12 tests) 61ms
+ ✓ src/items.test.ts (36 tests) 51ms
+ ✓ src/item_store.test.ts (1 test) 18ms
+
+ ✓ infra/connector_rds.test.ts (7 tests) 5552ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 3483ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 520ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 331ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 445ms
+
+ ✓ infra/dist.test.ts (4 tests) 12033ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 5007ms
+     ✓ writes the Framework's stacks for both tiers 6764ms
+
+ ✓ infra/standard.test.ts (100 tests) 14455ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 438ms
+
+ ✓ infra/event_stack.test.ts (21 tests) 17820ms
+   ✓ EventStack (15)
+     ✓ defaults the alert email to alerts.email 2561ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1301ms
+     ✓ copies the backups to the vault in copyToRegion 1193ms
+   ✓ EventStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 987ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 907ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 881ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 1014ms
+
+ Test Files  7 passed (7)
+      Tests  181 passed (181)
+   Start at  23:49:56
+   Duration  22.03s (tests 75%, import 17%, transform 8%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+
+### event-both: Framework=aws-event-ts Connector=dynamodb Connector=rds
+Rendered 52 files from aws-event-ts@local, aws-standard@local, gitea-release@local, dynamodb@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/event-both
+npm ci --no-audit --no-fund
+
+added 178 packages in 21s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/event-both
+
+ ✓ src/consume.test.ts (12 tests) 43ms
+ ✓ src/items.test.ts (36 tests) 53ms
+ ✓ src/item_store.test.ts (1 test) 12ms
+
+ ✓ infra/connector_dynamodb.test.ts (4 tests) 3066ms
+   ✓ connectDynamoDB (4)
+     ✓ keeps an on-demand table keyed by pk and sk, kept and recoverable in production 2659ms
+
+ ✓ infra/connector_rds.test.ts (7 tests) 5795ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 3938ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 510ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 368ms
+
+ ✓ infra/dist.test.ts (4 tests) 11032ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 4018ms
+     ✓ writes the Framework's stacks for both tiers 6811ms
+
+ ✓ infra/standard.test.ts (100 tests) 13491ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 301ms
+
+ ✓ infra/event_stack.test.ts (21 tests) 17067ms
+   ✓ EventStack (15)
+     ✓ defaults the alert email to alerts.email 1672ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1165ms
+     ✓ copies the backups to the vault in copyToRegion 1095ms
+   ✓ EventStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 1064ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 885ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 710ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 988ms
+
+ Test Files  8 passed (8)
+      Tests  185 passed (185)
+   Start at  23:51:33
+   Duration  20.63s (tests 75%, import 20%, transform 5%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+EXIT 0
+

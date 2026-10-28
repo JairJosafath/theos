@@ -182,8 +182,10 @@ systemd, `--install` adds two crontab lines instead, at boot and every 5
 minutes, which start the watch unless one runs. `touch .relay/stop` still stops
 it for good: the unit doesn't restart a watch that exits for the stop file, and
 cron doesn't start one while the file is there. `hack/relay-watch.sh` starts
-the unit again (with the unit's worker count), `--uninstall` removes the unit or
-the crontab lines. Install from the main checkout, not a worktree; the unit and
+the unit again (with the unit's worker count); on a cron install, `rm -f
+.relay/stop` alone, and cron's next tick starts the watch under its own
+login ([testenv.md](testenv.md), "The restore depends on the install").
+`--uninstall` removes the unit or the crontab lines. Install from the main checkout, not a worktree; the unit and
 cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `C4_CLUSTER*`
 settings, and the GitHub token from the git credential helper, not `GH_TOKEN`.
 They also get the Claude Code login of the shell you install from

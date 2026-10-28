@@ -2,7 +2,7 @@
 
 Issue: #1095. Written 2026-10-15, after #1093 put the per-CI table in
 `internal/model` and named the CI system an input to scaffolding
-([design](../design.md#factory-components-ports-and-adapters)).
+([design](../../design.md#factory-components-ports-and-adapters)).
 
 ## Goal
 

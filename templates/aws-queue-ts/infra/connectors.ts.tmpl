@@ -2,20 +2,35 @@
 // Connector of a DataStore it uses, each made by the Connector's own
 // infra/connector_<name>.ts. The factory renders this list from the
 // Connectors at scaffold; the stack connects each to the function and alarms
-// on its table, and its backup plan selects the table by the stack's tag.
+// on it, and its backup plan selects it by ARN.
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import type { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import type { Construct } from 'constructs';
+{{- if or (has .Connectors "dynamodb") (has .Connectors "rds") }}
+{{ end }}
 {{- if has .Connectors "dynamodb" }}
-
 import { connectDynamoDB } from './connector_dynamodb';
+{{- end }}
+{{- if has .Connectors "rds" }}
+import { connectRDS } from './connector_rds';
 {{- end }}
 import type { TierRules } from './standard';
 
-/** Makes a data store's table in `scope` for the tier's `rules`, and lets `fn` use it. */
-export type Connect = (scope: Construct, fn: LambdaFunction, rules: TierRules) => Table;
+/** What a Connector makes: a DynamoDB table (`dynamodb`) or an Aurora cluster (`rds`). */
+export type DataStore = Table | DatabaseCluster;
+
+/** Makes a data store in `scope` for the tier's `rules`, and lets `fn` use it. */
+export type Connect = (scope: Construct, fn: LambdaFunction, rules: TierRules) => DataStore;
 
 /** Each data store: its name, which its alarms carry, and how it connects. */
 export const DATA_STORES: readonly (readonly [string, Connect])[] = [
-  {{- if has .Connectors "dynamodb" }}['DynamoDB', connectDynamoDB]{{ end -}}
+{{- if and (has .Connectors "dynamodb") (has .Connectors "rds") }}
+  ['DynamoDB', connectDynamoDB],
+  ['RDS', connectRDS],
+{{ else if has .Connectors "dynamodb" -}}
+['DynamoDB', connectDynamoDB]
+{{- else if has .Connectors "rds" -}}
+['RDS', connectRDS]
+{{- end -}}
 ];

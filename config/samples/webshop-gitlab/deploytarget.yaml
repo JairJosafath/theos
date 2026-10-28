@@ -7,7 +7,7 @@
 #
 # It needs Secret webshop-gitlab, which you create yourself; only the
 # operator reads it. Its key: token, a project access token with the
-# Maintainer role and the scopes api, read_registry and write_registry (a
+# Maintainer role and the api scope, which covers the container registry (a
 # group or personal access token works the same). Ready says whether GitLab
 # takes it. Not in ../webshop/kustomization.yaml, so `make sample` needs no
 # GitLab account; apply it with: kubectl apply -k config/samples/webshop-gitlab

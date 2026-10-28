@@ -820,11 +820,12 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   registry (package the Container's name, version the release's). The image goes by digest to the
   project's container registry, at its `container_registry_image_prefix`
   and `/<name>` (the prefix alone when `tagPrefix` is `""`), when the
-  registry is on and the token has `read_registry` and `write_registry`;
-  else the release ships without one. The Secret holds `token`, a project access token with the
-  Maintainer role and the scopes `api`, `read_registry` and `write_registry`
-  (a group or personal access token works the same); a deploy token can't
-  call the API and is not taken.
+  registry is on and the token has `api` (it grants the whole registry,
+  #1980), or else both `read_registry` and `write_registry`; else the
+  release ships without one. The Secret holds `token`, a project access
+  token with the Maintainer role and the `api` scope, which covers the
+  container registry (a group or personal access token works the same); a
+  deploy token can't call the API and is not taken.
 - **Kubernetes targets** (#1072, [plans/k8s-deploy.md](plans/k8s-deploy.md)):
   an `argoCD` target names Argo CD's namespace and project and the
   destination; the operator writes one Argo CD `Application` per Container
