@@ -66,8 +66,7 @@ The finding is a credential in the repository or in what Helm renders. Fix the
 design with the table above, push, and wait for the check to pass. A flagged
 literal in a test becomes a generated value (the Go and UI rows), not a
 low-entropy placeholder. If the fix doesn't fit in the session, leave the pull
-request open and unmerged and hand off with the finding and the fix (the
-`handoff` skill).
+request open and unmerged, say the finding and the fix, and stop.
 
 Never an ignore rule (`.gitguardian.yaml`, dashboard exclusions), a
 false-positive mark, a rename that hides the name from the detector, or a
