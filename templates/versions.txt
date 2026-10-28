@@ -18,8 +18,8 @@ aws-lambda-ts v1.5.0
 aws-ec2-ts v1.3.0
 aws-event-ts v1.2.0
 aws-fargate-ts v2.1.0
-aws-lambda-go v1.4.0
-aws-lambda-py v1.4.0
+aws-lambda-go v1.5.0
+aws-lambda-py v1.5.0
 aws-queue-ts v1.2.0
 aws-schedule-ts v1.2.0
 aws-static-site-ts v1.0.0
