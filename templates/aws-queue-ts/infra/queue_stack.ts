@@ -7,6 +7,8 @@ import { Architecture, LoggingFormat, Runtime, Tracing } from 'aws-cdk-lib/aws-l
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import type { QueueProps } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
@@ -15,7 +17,7 @@ import path from 'node:path';
 import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { DATA_STORES } from './connectors';
-import type { Connect } from './connectors';
+import type { Connect, DataStore } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 
@@ -25,6 +27,24 @@ const ROOT = path.join(import.meta.dirname, '..');
 // The function's time limit for one batch, which its duration alarm is a
 // share of.
 const TIMEOUT = Duration.seconds(30);
+
+// The connections an Aurora PostgreSQL cluster allows per ACU (2 GiB each):
+// its max_connections, DBInstanceClassMemory / 9531392.
+const CONNECTIONS_PER_ACU = 225;
+
+/**
+ * Nine tenths of the connections `cluster` allows at its largest, from the
+ * Serverless v2 scaling configuration its Connector gave it; 1 ACU's when it
+ * has none the stack can read.
+ */
+export function maxConnections(cluster: DatabaseCluster): number {
+  const scaling = (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration;
+  const maxCapacity =
+    scaling !== undefined && 'maxCapacity' in scaling && typeof scaling.maxCapacity === 'number'
+      ? scaling.maxCapacity
+      : 1;
+  return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);
+}
 
 // How long the event source gathers messages into a batch.
 const BATCHING_WINDOW = Duration.seconds(5);
@@ -160,9 +180,17 @@ export class QueueStack extends Stack {
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
     );
-    // The DataStores the Container's Relationships name, from their Connectors.
+    // The DataStores the Container's Relationships name, from their
+    // Connectors: a table or an Aurora cluster each.
     const stores = (props.dataStores ?? DATA_STORES).map(
       ([name, connect]) => [name, connect(this, handler, rules)] as const,
+    );
+    const isTable = (store: DataStore): store is Table => store instanceof Table;
+    const tables = stores.flatMap(([name, store]) =>
+      isTable(store) ? [[name, store] as const] : [],
+    );
+    const clusters = stores.flatMap(([name, store]) =>
+      isTable(store) ? [] : [[name, store] as const],
     );
     handler.addEventSource(
       new SqsEventSource(queue, {
@@ -207,7 +235,7 @@ export class QueueStack extends Stack {
     for (const [name, monitored] of [
       ['Items', table],
       ['Idempotency', idempotency],
-      ...stores,
+      ...tables,
     ] as const) {
       alarms.monitoring.monitorDynamoTable({
         table: Table.fromTableName(this, `Monitored${name}`, monitored.tableName),
@@ -218,13 +246,26 @@ export class QueueStack extends Stack {
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
     }
+    // A cluster near its CPU or its connections is one the function will soon
+    // find slow or closed; both roll a deploy back like the function's own.
+    for (const [name, cluster] of clusters) {
+      alarms.monitoring.monitorAuroraCluster({
+        // The cluster itself, not its identifier: the monitoring reads its
+        // ARN to tell a Serverless cluster.
+        cluster,
+        alarmFriendlyName: name,
+        addCpuUsageAlarm: { Critical: { maxUsagePercent: 90 } },
+        addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },
+      });
+    }
 
     if (rules.backups && backups.retentionDays > 0) {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        // The data tables, by ARN; the idempotency records expire and need no restore.
-        tables: [table, ...stores.map(([, store]) => store)],
+        // The data tables and clusters, by ARN; the idempotency records expire and need no restore.
+        tables: [table, ...tables.map(([, store]) => store)],
+        clusters: clusters.map(([, cluster]) => cluster),
       });
     }
 

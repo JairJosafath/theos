@@ -388,7 +388,10 @@ describe('EventStack data stores', () => {
         operations: OPERATIONS,
       }),
     );
-    template.resourceCountIs('AWS::DynamoDB::Table', TABLES + DATA_STORES.length);
+    // One table or one cluster per store, beside the stack's own tables.
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table')).length;
+    const clusters = Object.keys(template.findResources('AWS::RDS::DBCluster')).length;
+    expect(tables - TABLES + clusters).toBe(DATA_STORES.length);
   });
 });
 

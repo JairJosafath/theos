@@ -322,6 +322,54 @@ func TestDynamoDBConnectorConnectsToAWSWorkersAndJobs(t *testing.T) {
 	}
 }
 
+// TestRDSConnectorConnectsToAWSWorkersAndJobs: aws-queue-ts, aws-event-ts and
+// aws-schedule-ts wire the rds Connector, alone and beside dynamodb (#1925).
+func TestRDSConnectorConnectsToAWSWorkersAndJobs(t *testing.T) {
+	for _, tc := range []struct{ typ, framework string }{
+		{model.TypeWorker, "aws-queue-ts"},
+		{model.TypeWorker, "aws-event-ts"},
+		{model.TypeJob, "aws-schedule-ts"},
+	} {
+		t.Run(tc.framework, func(t *testing.T) {
+			with := renderAWS(t, tc.typ, tc.framework, "rds")
+			if _, ok := with.Files["infra/connector_rds.ts"]; !ok {
+				t.Error("the rds Connector writes no infra/connector_rds.ts")
+			}
+			connectors := string(with.Files["infra/connectors.ts"].Data)
+			for _, want := range []string{
+				"import { connectRDS } from './connector_rds';",
+				"export type DataStore = Table | DatabaseCluster;",
+				"= [['RDS', connectRDS]];",
+			} {
+				if !strings.Contains(connectors, want) {
+					t.Errorf("infra/connectors.ts lacks %q:\n%s", want, connectors)
+				}
+			}
+			if strings.Contains(connectors, "connector_dynamodb") {
+				t.Errorf("infra/connectors.ts imports the dynamodb Connector it doesn't have:\n%s", connectors)
+			}
+			if readme := string(with.Files["README.md"].Data); !strings.Contains(readme, "RDS_CLUSTER_ARN") {
+				t.Error("README.md doesn't say what RDS_* names")
+			}
+
+			both := renderAWS(t, tc.typ, tc.framework, "dynamodb", "rds")
+			connectors = string(both.Files["infra/connectors.ts"].Data)
+			if want := "  ['DynamoDB', connectDynamoDB],\n  ['RDS', connectRDS],\n];"; !strings.Contains(connectors, want) {
+				t.Errorf("infra/connectors.ts with both Connectors lacks %q:\n%s", want, connectors)
+			}
+			for _, path := range []string{"infra/connector_dynamodb.ts", "infra/connector_rds.ts"} {
+				if _, ok := both.Files[path]; !ok {
+					t.Errorf("both Connectors write no %s", path)
+				}
+			}
+
+			if readme := string(renderAWS(t, tc.typ, tc.framework).Files["README.md"].Data); strings.Contains(readme, "RDS_CLUSTER_ARN") {
+				t.Error("README.md names RDS_CLUSTER_ARN without the Connector")
+			}
+		})
+	}
+}
+
 // A worker Framework that renders no infra/connectors.ts (go-cli, a real one)
 // fails with the Connector's own message, as a function one does (#1741).
 func TestDynamoDBConnectorFailsAWorkerFrameworkThatDoesNotWireIt(t *testing.T) {

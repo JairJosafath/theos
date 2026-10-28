@@ -690,10 +690,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
-        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
+        description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -701,10 +701,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
-        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
+        description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
         supportedTypes: [job]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -712,10 +712,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
-        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector."
+        description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
         supportedTypes: [worker]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -844,12 +844,12 @@ catalog:
       ref: v1.0.0
       spec:
         displayName: Amazon Aurora PostgreSQL
-        description: "An Aurora Serverless v2 PostgreSQL 16 cluster in the Container's CDK stack, one per Container with a database named after it, encrypted with its own key, its credentials a Secrets Manager secret (rotated every 30 days in production), the Data API on and IAM database authentication on; kept, protected, snapshotted and backed up in production like the Framework's own tables, paused and thrown away in development. Hands whatever the Framework connects RDS_CLUSTER_ARN, RDS_SECRET_ARN and RDS_DATABASE and the Data API grants; in the Framework's VPC also RDS_HOST and RDS_PORT, else in an isolated VPC of its own. aws-lambda-ts wires it; a Framework that doesn't fails the Container."
-        supportedTypes: [function]
+        description: "An Aurora Serverless v2 PostgreSQL 16 cluster in the Container's CDK stack, one per Container with a database named after it, encrypted with its own key, its credentials a Secrets Manager secret (rotated every 30 days in production), the Data API on and IAM database authentication on; kept, protected, snapshotted and backed up in production like the Framework's own tables, paused and thrown away in development. Hands whatever the Framework connects RDS_CLUSTER_ARN, RDS_SECRET_ARN and RDS_DATABASE and the Data API grants; in the Framework's VPC also RDS_HOST and RDS_PORT, else in an isolated VPC of its own. aws-lambda-ts, aws-queue-ts, aws-event-ts and aws-schedule-ts wire it; a Framework that doesn't fails the Container."
+        supportedTypes: [function, worker, job]
         ## The Frameworks whose infra/connectors.ts calls connectRDS; a
         ## Container on any other is refused at ChoicesValid (NotWired)
         ## (docs/plans/aws-rds.md, decisions 6 and 7).
-        wiredBy: [aws-lambda-ts]
+        wiredBy: [aws-lambda-ts, aws-queue-ts, aws-event-ts, aws-schedule-ts]
     ## A Domain is what a SoftwareSystem is about (spec.domainRefs); every
     ## Container of that system gets it under docs/agents/domain/<name>/,
     ## whatever its type, so it has no supportedTypes (docs/plans/domains.md).
