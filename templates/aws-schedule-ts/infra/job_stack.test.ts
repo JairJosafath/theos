@@ -1,6 +1,14 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
+import type { IVpc } from 'aws-cdk-lib/aws-ec2';
+import {
+  AuroraPostgresEngineVersion,
+  ClusterInstance,
+  DatabaseCluster,
+  DatabaseClusterEngine,
+} from 'aws-cdk-lib/aws-rds';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { copyVaultName } from './backups';
@@ -11,6 +19,7 @@ import {
   LOST_RUN_METRICS,
   RUN_RETRY_ATTEMPTS,
   SCHEDULE_RETRY_ATTEMPTS,
+  maxConnections,
 } from './job_stack';
 import type { Operations, Tier } from './standard';
 
@@ -384,6 +393,113 @@ describe('JobStack data stores', () => {
     });
   });
 
+  it('alarms on a cluster store by its CPU and connections, and backs it up by ARN', () => {
+    // A stand-in for what the rds Connector builds: a Serverless v2 cluster
+    // that scales to 8 ACU, in a VPC of its own.
+    const connect: Connect = (scope) => {
+      const vpc = new Vpc(scope, 'StoreVpc', {
+        natGateways: 0,
+        subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
+      }) as IVpc;
+      return new DatabaseCluster(scope, 'Store', {
+        engine: DatabaseClusterEngine.auroraPostgres({
+          version: AuroraPostgresEngineVersion.VER_16_6,
+        }),
+        writer: ClusterInstance.serverlessV2('Writer'),
+        serverlessV2MaxCapacity: 8,
+        vpc,
+        vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      });
+    };
+    const template = synth('production', {}, {}, [['Store', connect]]);
+    template.resourceCountIs('AWS::RDS::DBCluster', 1);
+    // The stack's own, the function's three, the tables' three each, and the cluster's two.
+    template.resourceCountIs(
+      'AWS::CloudWatch::Alarm',
+      LOST_RUN_METRICS.length + 1 + 3 + TABLES * 3 + 2,
+    );
+    const [clusterId] = Object.keys(template.findResources('AWS::RDS::DBCluster'));
+    const clusterMetric = (name: string) =>
+      Match.arrayWith([
+        Match.objectLike({
+          MetricStat: Match.objectLike({
+            Metric: {
+              Namespace: 'AWS/RDS',
+              MetricName: name,
+              Dimensions: [{ Name: 'DBClusterIdentifier', Value: { Ref: clusterId } }],
+            },
+          }),
+        }),
+      ]);
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      Metrics: clusterMetric('DatabaseConnections'),
+      Threshold: Math.floor(1669 * 0.9),
+    });
+    template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      Metrics: clusterMetric('CPUUtilization'),
+      Threshold: 90,
+    });
+    // Backed up with the tables, after them (#1925).
+    const [itemsId] = Object.keys(template.findResources('AWS::DynamoDB::Table')).filter((id) =>
+      id.startsWith('Runs'),
+    );
+    template.hasResourceProperties('AWS::Backup::BackupSelection', {
+      BackupSelection: Match.objectLike({
+        Resources: [
+          { 'Fn::GetAtt': [itemsId, 'Arn'] },
+          { 'Fn::GetAtt': [clusterId, 'DBClusterArn'] },
+        ],
+      }),
+    });
+  });
+
+  it('reads the connections limit from the cluster scaling, and takes 1 ACU without one', () => {
+    const stack = new JobStack(new App(), 'test', { tier: 'development', operations: OPERATIONS });
+    const vpc = new Vpc(stack, 'Vpc', {
+      natGateways: 0,
+      subnetConfiguration: [{ name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED }],
+    }) as IVpc;
+    const engine = DatabaseClusterEngine.auroraPostgres({
+      version: AuroraPostgresEngineVersion.VER_16_6,
+    });
+    const vpcSubnets = { subnetType: SubnetType.PRIVATE_ISOLATED };
+    const scaled = new DatabaseCluster(stack, 'Scaled', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MaxCapacity: 8,
+    });
+    const provisioned = new DatabaseCluster(stack, 'Provisioned', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.provisioned('Writer'),
+    });
+    const between = new DatabaseCluster(stack, 'Between', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MinCapacity: 1,
+      serverlessV2MaxCapacity: 2,
+    });
+    const wide = new DatabaseCluster(stack, 'Wide', {
+      engine,
+      vpc,
+      vpcSubnets,
+      writer: ClusterInstance.serverlessV2('Writer'),
+      serverlessV2MaxCapacity: 32,
+    });
+    // The Aurora User Guide's table: 8 ACU allow 1,669, 1 ACU 189; 2 ACU sit a
+    // third of the way from 189 to 4 ACU's 823; 32 ACU would allow 5,000, but a
+    // minimum of 0.5 ACU (the default) stops at 2,000.
+    expect(maxConnections(scaled)).toBe(Math.floor(1669 * 0.9));
+    expect(maxConnections(provisioned)).toBe(Math.floor(189 * 0.9));
+    expect(maxConnections(between)).toBe(Math.floor(Math.floor(189 + (823 - 189) / 3) * 0.9));
+    expect(maxConnections(wide)).toBe(Math.floor(2000 * 0.9));
+  });
+
   it('connects the data stores of the rendered infra/connectors.ts by default', () => {
     const template = Template.fromStack(
       new JobStack(new App(), 'test', {
@@ -391,7 +507,10 @@ describe('JobStack data stores', () => {
         operations: OPERATIONS,
       }),
     );
-    template.resourceCountIs('AWS::DynamoDB::Table', TABLES + DATA_STORES.length);
+    // One table or one cluster per store, beside the stack's own tables.
+    const tables = Object.keys(template.findResources('AWS::DynamoDB::Table')).length;
+    const clusters = Object.keys(template.findResources('AWS::RDS::DBCluster')).length;
+    expect(tables - TABLES + clusters).toBe(DATA_STORES.length);
   });
 });
 

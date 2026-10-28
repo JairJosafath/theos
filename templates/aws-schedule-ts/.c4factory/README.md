@@ -80,11 +80,15 @@ CloudFormation offline.
 - **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
   `DATA_STORES`: one entry per Connector of a DataStore the Container's
   Relationships name that this Framework knows (`dynamodb`, whose
-  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
-  stack calls each entry with the function and the tier's `TIER_RULES`, so the
-  Connector makes its table, grants the function its calls and hands it the
-  table's name; the stack alarms on the table like its own and backs it up
-  by ARN. The `Runs` table stays beside it as the starter's example; the
+  `infra/connector_dynamodb.ts` makes the table, and since v1.3.0 `rds`,
+  whose `infra/connector_rds.ts` makes an Aurora Serverless v2 PostgreSQL
+  cluster), and none otherwise. A `DataStore` is a `Table` or a
+  `DatabaseCluster`. The stack calls each entry with the function and the
+  tier's `TIER_RULES`, so the Connector makes its store, grants the function
+  its calls and hands it the store's name or ARNs; the stack alarms on a
+  table like its own, on a cluster by its CPU (90%) and its connections (nine
+  tenths of what its largest capacity allows, `maxConnections`), and backs
+  each up by ARN (`Arn`, `DBClusterArn`). The `Runs` table stays beside it as the starter's example; the
   README says new data goes in the DataStore's table. `infra/connectors.ts`
   is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
