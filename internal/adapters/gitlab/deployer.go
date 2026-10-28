@@ -530,13 +530,13 @@ func rooted(path, rel string) string {
 // commitSource makes the one commit of sc's source on branch, whose head
 // the actions were decided on: actions on the folder, each create's and
 // update's content streamed from s.ReadSource and sent base64, the mode set
-// by chmod. The commit names head as its start_sha, its parent, so GitLab
-// refuses it when another commit landed on the branch since: that fails
-// BranchMoved and the next poll decides again. No action names a
-// last_commit_id: GitLab compares that with the last commit that touched
-// the file, not with the head, and refused every update of a file the head
-// commit left alone (#1950). A failure of ReadSource itself is a
-// SourceError, the Git host's side.
+// by chmod. Each update, delete and chmod names its file's last commit as of
+// head as its last_commit_id, so GitLab refuses it when another commit
+// touched that file since: that fails BranchMoved and the next poll decides
+// again. GitLab compares last_commit_id with the file's own last commit, not
+// with the head (#1950), and the commit names no start_sha: that starts a new
+// branch, refused on one that exists (#1979). A failure of ReadSource itself
+// is a SourceError, the Git host's side.
 func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Shipment, branch, head string,
 	sc *model.SourceCommit, actions []model.GitLabSourceAction) (string, error) {
 	if len(actions) == 0 {
@@ -577,9 +577,16 @@ func commitSource(ctx context.Context, c gitprovider.GitLabProject, s ports.Ship
 				s.Version, len(want))}
 		}
 	}
-	commit := gitprovider.GitLabCommit{Branch: branch, StartSHA: head, Message: sc.Message}
+	commit := gitprovider.GitLabCommit{Branch: branch, Message: sc.Message}
 	for i, a := range actions {
 		action := gitprovider.GitLabCommitAction{Action: a.Action, FilePath: rooted(sc.Path, a.File.Path)}
+		if a.Action != model.GitLabActionCreate {
+			last, err := c.FileLastCommit(ctx, head, action.FilePath)
+			if err != nil {
+				return "", err
+			}
+			action.LastCommitID = last
+		}
 		switch a.Action {
 		case model.GitLabActionCreate, model.GitLabActionUpdate:
 			action.Content, action.Encoding = content[i], "base64"

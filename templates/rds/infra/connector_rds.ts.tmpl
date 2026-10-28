@@ -1,0 +1,252 @@
+{{ if not (has .FrameworkFiles "infra/connectors.ts") }}{{ fail (printf "the %s Framework doesn't wire the rds Connector: it renders no infra/connectors.ts, so a Container on it can't take a DataStore on rds" .Framework) }}{{ end -}}
+import { Duration, RemovalPolicy, Stack, Token, Validations } from 'aws-cdk-lib';
+import {
+  FlowLogDestination,
+  FlowLogTrafficType,
+  InterfaceVpcEndpointAwsService,
+  SecurityGroup,
+  SubnetType,
+  Vpc,
+} from 'aws-cdk-lib/aws-ec2';
+import type {
+  Connections,
+  IInterfaceVpcEndpoint,
+  ISecurityGroup,
+  IVpc,
+  SubnetSelection,
+} from 'aws-cdk-lib/aws-ec2';
+import type { IGrantable } from 'aws-cdk-lib/aws-iam';
+import { Key } from 'aws-cdk-lib/aws-kms';
+import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import {
+  AuroraPostgresEngineVersion,
+  ClusterInstance,
+  Credentials,
+  DatabaseCluster,
+  DatabaseClusterEngine,
+} from 'aws-cdk-lib/aws-rds';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import type { Construct } from 'constructs';
+
+import type { TierRules } from './standard';
+
+/** The environment variable that hands the user the cluster's ARN, for the Data API. */
+export const RDS_CLUSTER_ARN = 'RDS_CLUSTER_ARN';
+/** The environment variable that hands the user the ARN of the secret holding the credentials. */
+export const RDS_SECRET_ARN = 'RDS_SECRET_ARN';
+/** The environment variable that hands the user the database's name. */
+export const RDS_DATABASE = 'RDS_DATABASE';
+/** The environment variable that hands a user in the cluster's VPC the writer's host name. */
+export const RDS_HOST = 'RDS_HOST';
+/** The environment variable that hands a user in the cluster's VPC the writer's port. */
+export const RDS_PORT = 'RDS_PORT';
+
+/** The database, named after the Container in snake case, as the postgres Connector's is. */
+export const RDS_DATABASE_NAME = '{{ snake .Container }}';
+
+/** Aurora Serverless v2 capacity, in ACUs; the repository's to raise. */
+export interface Capacity {
+  readonly min: number;
+  readonly max: number;
+}
+
+/** Where the tier keeps data: never paused, up to 8 ACU, with a reader. */
+export const PRODUCTION_CAPACITY: Capacity = { min: 0.5, max: 8 };
+/** Elsewhere: pauses after `AUTO_PAUSE` idle and costs nothing at rest, up to 1 ACU. */
+export const DEVELOPMENT_CAPACITY: Capacity = { min: 0, max: 1 };
+/** How long a development cluster is idle before it pauses: Aurora's least. */
+export const AUTO_PAUSE = Duration.minutes(5);
+
+/** The database's user, which the generated secret holds the password of. */
+export const RDS_USER = 'app';
+/** How often the secret rotates where the tier keeps data. */
+export const ROTATION = Duration.days(30);
+/** Aurora keeps a point in time this long back where the tier recovers data; 1 day, its least, elsewhere. */
+export const BACKUP_RETENTION_DAYS = 35;
+
+/** The network of a user in a VPC: the cluster goes in it and takes its connections. */
+export interface Network {
+  readonly vpc: IVpc;
+  readonly connections: Connections;
+}
+
+/**
+ * What uses a data store: something the cluster can grant to, which takes the
+ * cluster's ARN, secret and database from its environment. A Lambda `Function`
+ * is one; a Fargate task passes its task role and its container definition's
+ * `addEnvironment`, an EC2 instance its instance role and the environment its
+ * unit reads. One with a `network` (a Framework with a VPC) gets the cluster
+ * in its VPC, an ingress rule from its security groups and `RDS_HOST` and
+ * `RDS_PORT`, for a driver with a pool; one without reaches it only through
+ * the Data API.
+ */
+export type DataStoreUser = IGrantable & {
+  addEnvironment(key: string, value: string): unknown;
+  readonly network?: Network;
+};
+
+/**
+ * The DataStore on the `rds` Connector: one Aurora Serverless v2 PostgreSQL
+ * cluster per Container, a database named `RDS_DATABASE_NAME`, encrypted with
+ * its own key, its credentials a generated secret in Secrets Manager. Where
+ * the tier keeps data it has a reader that scales with the writer, deletion
+ * protection and a final snapshot on removal, and its key and secret outlive
+ * the stack; elsewhere it goes with the stack. Where the tier recovers data
+ * Aurora keeps 35 days of points in time and the secret rotates every 30
+ * days; elsewhere 1 day and no rotation. `user` gets `grantDataApiAccess`
+ * (the `rds-data` calls on the cluster and `GetSecretValue` on its secret)
+ * and `RDS_CLUSTER_ARN`, `RDS_SECRET_ARN` and `RDS_DATABASE`; a `user` with a
+ * `network` also `RDS_HOST`, `RDS_PORT` and an ingress rule. The cluster
+ * takes the user's VPC, else one of its own: two zones of isolated subnets, a
+ * flow log and, where the secret rotates, a Secrets Manager endpoint for the
+ * rotation function. IAM database authentication is on; the IAM database
+ * user is a migration the repository runs. The Framework's
+ * `infra/connectors.ts` calls this and alarms on the cluster it returns.
+ */
+export function connectRDS(
+  scope: Construct,
+  user: DataStoreUser,
+  rules: TierRules,
+): DatabaseCluster {
+  const { vpc, vpcSubnets, rotation } = user.network
+    ? frameworkNetwork(user.network)
+    : ownNetwork(scope, rules);
+  const key = new Key(scope, 'RDSKey', {
+    description: `Encrypts the database of ${Stack.of(scope).stackName}.`,
+    enableKeyRotation: true,
+    removalPolicy: rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+  });
+  const capacity = rules.keepData ? PRODUCTION_CAPACITY : DEVELOPMENT_CAPACITY;
+  const cluster = new DatabaseCluster(scope, 'RDS', {
+    engine: DatabaseClusterEngine.auroraPostgres({
+      version: AuroraPostgresEngineVersion.VER_16_13,
+    }),
+    writer: ClusterInstance.serverlessV2('Writer'),
+    // A reader in a second zone where the tier keeps data: a failover under a
+    // minute, at the writer's size so it takes over without scaling first.
+    readers: rules.keepData
+      ? [ClusterInstance.serverlessV2('Reader', { scaleWithWriter: true })]
+      : [],
+    serverlessV2MinCapacity: capacity.min,
+    serverlessV2MaxCapacity: capacity.max,
+    serverlessV2AutoPauseDuration: AUTO_PAUSE,
+    vpc,
+    vpcSubnets,
+    defaultDatabaseName: RDS_DATABASE_NAME,
+    // A secret nobody reads at scaffold or deploy: the Data API resolves it by
+    // ARN, a driver fetches it on each new connection, never an environment variable.
+    credentials: Credentials.fromGeneratedSecret(RDS_USER),
+    storageEncryptionKey: key,
+    enableDataApi: true,
+    iamAuthentication: true,
+    deletionProtection: rules.keepData,
+    removalPolicy: rules.keepData ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
+    backup: { retention: Duration.days(rules.pointInTimeRecovery ? BACKUP_RETENTION_DAYS : 1) },
+  });
+  // `cluster.secret` is the attachment that binds the generated secret to the
+  // cluster; the secret itself is the cluster's `Secret` child, and that is
+  // what outlives the stack where the tier keeps data.
+  const secret = cluster.secret;
+  const generated = cluster.node.tryFindChild('Secret');
+  if (secret === undefined || !(generated instanceof Secret)) {
+    throw new Error('the RDS cluster has no generated secret: its credentials must be generated');
+  }
+  generated.applyRemovalPolicy(rules.keepData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY);
+  if (rules.pointInTimeRecovery) {
+    cluster.addRotationSingleUser({
+      automaticallyAfter: ROTATION,
+      ...rotation,
+    });
+  }
+  Validations.of(cluster).acknowledge({
+    id: 'AwsSolutions-RDS11',
+    reason:
+      "The cluster listens on the default port in isolated subnets, reached through the Data API or an ingress rule from the user's security group: another port would hide it from nothing.",
+  });
+
+  cluster.grantDataApiAccess(user);
+  user.addEnvironment(RDS_CLUSTER_ARN, cluster.clusterArn);
+  user.addEnvironment(RDS_SECRET_ARN, secret.secretArn);
+  user.addEnvironment(RDS_DATABASE, RDS_DATABASE_NAME);
+  if (user.network) {
+    cluster.connections.allowDefaultPortFrom(user.network.connections, 'The Container');
+    user.addEnvironment(RDS_HOST, cluster.clusterEndpoint.hostname);
+    user.addEnvironment(RDS_PORT, Token.asString(cluster.clusterEndpoint.port));
+  }
+  return cluster;
+}
+
+/** Where the cluster goes and how its rotation function reaches Secrets Manager. */
+interface ClusterNetwork {
+  readonly vpc: IVpc;
+  readonly vpcSubnets: SubnetSelection;
+  /**
+   * In the Connector's own VPC, the Secrets Manager endpoint and the security
+   * group of the rotation function, the only one the endpoint lets in; the
+   * Framework's VPC has its own way out.
+   */
+  readonly rotation?: {
+    readonly endpoint: IInterfaceVpcEndpoint;
+    readonly securityGroup: ISecurityGroup;
+  };
+}
+
+/** The user's VPC: its private subnets when it has them, else its isolated ones. */
+function frameworkNetwork(network: Network): ClusterNetwork {
+  return {
+    vpc: network.vpc,
+    vpcSubnets: {
+      subnetType:
+        network.vpc.privateSubnets.length > 0
+          ? SubnetType.PRIVATE_WITH_EGRESS
+          : SubnetType.PRIVATE_ISOLATED,
+    },
+  };
+}
+
+/**
+ * A VPC for a user with none: two zones of isolated subnets, no NAT gateway
+ * and no public subnet (free), a flow log of rejected traffic, and where the
+ * secret rotates a Secrets Manager interface endpoint, the rotation
+ * function's only way out. The Data API reaches in from outside.
+ */
+function ownNetwork(scope: Construct, rules: TierRules): ClusterNetwork {
+  // tsconfig's exactOptionalPropertyTypes keeps a Vpc from passing as the
+  // IVpc the cluster takes (an optional property it leaves undefined).
+  const vpc = new Vpc(scope, 'RDSVpc', {
+    maxAzs: 2,
+    natGateways: 0,
+    subnetConfiguration: [
+      { name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
+    ],
+    // Restricting the default security group takes a custom resource: a
+    // Lambda function CDK writes, with no log group of its own. Nothing here
+    // uses the default group; the cluster gets its own.
+    restrictDefaultSecurityGroup: false,
+  }) as IVpc;
+  const flowLogs = new LogGroup(scope, 'RDSFlowLogs', {
+    retention: rules.logRetention,
+    removalPolicy: RemovalPolicy.DESTROY,
+  });
+  vpc.addFlowLog('FlowLog', {
+    destination: FlowLogDestination.toCloudWatchLogs(flowLogs),
+    trafficType: FlowLogTrafficType.REJECT,
+  });
+  const vpcSubnets: SubnetSelection = { subnetType: SubnetType.PRIVATE_ISOLATED };
+  if (!rules.pointInTimeRecovery) {
+    return { vpc, vpcSubnets };
+  }
+  // An open endpoint lets the whole VPC's CIDR in, a token CDK Nag's EC23
+  // rule cannot read; this one lets in the rotation function's group alone.
+  const endpoint = vpc.addInterfaceEndpoint('SecretsManager', {
+    service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+    subnets: vpcSubnets,
+    open: false,
+  });
+  const securityGroup = new SecurityGroup(scope, 'RDSRotationSecurityGroup', {
+    vpc,
+    description: 'The secret rotation function, the one way into the Secrets Manager endpoint.',
+  });
+  endpoint.connections.allowDefaultPortFrom(securityGroup, 'The secret rotation function');
+  return { vpc, vpcSubnets, rotation: { endpoint, securityGroup } };
+}

@@ -213,12 +213,13 @@ func (p *deployPass) shippedImage(ctx context.Context, version string) (string, 
 		}
 		return "", nil
 	}
-	if p.repo.ImageRegistry == "" {
+	repository := p.repo.ImageRepository()
+	if repository == "" {
 		return "", nil
 	}
 	digest, err := p.provider.ImageDigest(ctx, p.repo, version)
 	if err != nil || digest == "" {
 		return "", err
 	}
-	return p.repo.ImageRegistry + "/" + strings.ToLower(p.repo.Name) + "@" + digest, nil
+	return repository + "@" + digest, nil
 }

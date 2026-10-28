@@ -114,7 +114,7 @@ alarms and runbooks) were written down and left to the reader.
    condition says `ChangedAfterScaffold`: a Task changes the file like any
    other code. A field a client sets today is
    never removed or reinterpreted (the `v1alpha1` promise of
-   [plans/before-clients-return.md](before-clients-return.md)). `rpo` and
+   [plans/done/before-clients-return.md](done/before-clients-return.md)). `rpo` and
    `rto` are stated objectives for the production tier: they are written
    into the runbook and the README, the planner derives them from the idea,
    and the Standard's test checks the two things it can see (point-in-time

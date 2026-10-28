@@ -2,7 +2,7 @@
 
 GitHub issue #1082, filed by the maintainer (`source/dev`, priority/4,
 milestone *1.0: a stable API*). Agent: otter-1082 (the plan). It follows
-decision 1 of [before-clients-return.md](../before-clients-return.md): the
+decision 1 of [before-clients-return.md](before-clients-return.md): the
 shapes `v1beta1` waited for, the ports (#1093) and the deploy model
 (#1068), are settled, so `v1beta1` is cut once, with conversion from
 `v1alpha1` for every kind. The promise within `v1alpha1` is written
