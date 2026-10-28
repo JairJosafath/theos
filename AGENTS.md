@@ -6,7 +6,6 @@ one Git repository per Container from pinned templates, then only reports. Read
 [docs/design.md](docs/design.md) for the what and why, and
 [docs/architecture.md](docs/architecture.md) for where code goes.
 
-
 This file is loaded into every session, so it holds only what is true for every
 task. Read the rest when the task needs it:
 
@@ -68,7 +67,6 @@ worth repeating:
 - **Templates are pinned.** A template `ref` is a tag or commit, never a branch.
 - **Children name their parent in `spec`;** the operator sets the ownerReference so
   deletion cascades.
-
 
 ### Agents Never Touch a Cluster
 Go tests are the gate: `make check` for every change, `make test-gitea` and
@@ -140,7 +138,7 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   behaviour and the Gitea Actions runner itself are not tested before release.
 - **A bug fix brings its test.** It adds a test that failed before the fix
   and names the issue in the spec or table case (`#1019`), at the lowest tier
-  that sees the bug, and the pull request body names the test.
+  that sees the bug, and the commit message names the test.
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).
