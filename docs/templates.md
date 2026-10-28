@@ -490,7 +490,7 @@ repository; its `protectedPaths` are the fence agents may not change.
 aws-lambda-ts (v1.5.0), aws-lambda-go (v1.5.0) and aws-lambda-py (v1.5.0): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.4.0) and
 aws-fargate-ts (v2.2.0): a Node service behind an HTTPS load balancer.
-aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.2.0): an SQS, EventBridge
+aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.3.0): an SQS, EventBridge
 Scheduler or EventBridge consumer on Lambda. aws-static-site-ts (v1.0.0): a
 site on S3 behind CloudFront and WAF. Each is a CDK app paired with
 aws-standard.
@@ -606,7 +606,8 @@ aws-event-ts and aws-schedule-ts (#1741).
 ### rds (v1.0.0)
 
 A Connector: a CDK construct (`infra/connector_rds.ts`) making one Aurora
-Serverless v2 PostgreSQL 16 cluster for a function or service Container, with a
+Serverless v2 PostgreSQL 16 cluster for a function, service, worker or job
+Container (`worker` and `job` since #1925, `service` since #1926), with a
 database named after the Container, its own customer managed key, a
 generated secret in Secrets Manager, the Data API and IAM database
 authentication on (#1923, [docs/plans/aws-rds.md](plans/aws-rds.md)).
@@ -622,30 +623,34 @@ the stack. Its file refuses a Framework that renders no
 a Container on a Framework that doesn't wire it (`NotWired`).
 
 - CI: `make test-templates`, combos "aws lambda function with rds", "aws
-  lambda function with dynamodb and rds", their "in go" and "aws python"
-  twins, and "aws fargate service with rds", "aws ec2 service with rds"
-  and theirs with dynamodb: their `make check`
+  lambda function with dynamodb and rds" and their "in go" and "aws python"
+  twins, "aws queue consumer with rds", "aws scheduled job with rds", "aws
+  event consumer with rds", "aws fargate service with rds", "aws ec2 service
+  with rds" and their "with dynamodb and rds" twins: their `make check`
   ([docs/screenshots/1923-aws-lambda-ts-rds-check.txt](screenshots/1923-aws-lambda-ts-rds-check.txt),
   [1924-aws-lambda-py-rds-check.txt](screenshots/1924-aws-lambda-py-rds-check.txt),
   [1924-aws-lambda-go-rds-check.txt](screenshots/1924-aws-lambda-go-rds-check.txt),
+  [1925-aws-workers-rds-check.txt](screenshots/1925-aws-workers-rds-check.txt),
   [1926-aws-fargate-ts-rds-check.txt](screenshots/1926-aws-fargate-ts-rds-check.txt),
   [1926-aws-ec2-ts-rds-check.txt](screenshots/1926-aws-ec2-ts-rds-check.txt)).
 - Tests: `infra/connector_rds.test.ts`, in the Framework's vitest include,
   both tiers and a user with a network;
   `TestRDSConnectorConnectsToAWSLambdaTS`,
   `TestRDSConnectorConnectsToAWSLambdaPyAndGo`,
+  `TestRDSConnectorConnectsToAWSWorkersAndJobs`,
   `TestRDSConnectorConnectsToAWSServices` and
   `TestRDSConnectorFailsAFrameworkThatDoesNotWireIt`
   (`internal/scaffold/aws_connectors_test.go`).
 - Lint: aws-standard's `make check` once rendered, CDK Nag and cfn-lint
   included.
 - Deploy: the cluster is part of the stack; aws-lambda-ts, aws-lambda-py and
-  aws-lambda-go (v1.5.0), aws-fargate-ts (v2.2.0) and aws-ec2-ts (v1.4.0)
-  wire it, alarm on its CPU and connections and back it up by
-  `DBClusterArn`. The two services pass their VPC and security group, so
-  the cluster joins the VPC (aws-ec2-ts adds a Secrets Manager and an RDS
-  Data API endpoint to its VPC, which has no way out); aws-fargate-ts rolls
-  a deployment back on its connections alarm.
+  aws-lambda-go (v1.5.0), aws-queue-ts, aws-event-ts and aws-schedule-ts
+  (v1.3.0), aws-fargate-ts (v2.2.0) and aws-ec2-ts (v1.4.0) wire it, alarm
+  on its CPU and connections and back it up by `DBClusterArn`. The two
+  services pass their VPC and security group, so the cluster joins the VPC
+  (aws-ec2-ts adds a Secrets Manager and an RDS Data API endpoint to its
+  VPC, which has no way out); aws-fargate-ts rolls a deployment back on its
+  connections alarm.
 - Auth: `grantDataApiAccess` grants the `rds-data` calls on that cluster and
   `GetSecretValue` on its secret only; an ingress rule from the user's
   security groups where it has a network.
