@@ -1,0 +1,83 @@
+# make check in a scaffolded aws-lambda-py v1.5.0 + aws-standard Container with the rds Connector v1.0.0 (issue #1924):
+# go run ./hack/render -out $S/py -type function Framework=aws-lambda-py Standard=aws-standard Deployment=gitea-release Connector=rds
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1:
+# env -i PATH=$PATH HOME=$S/home NO_COLOR=1 npm_config_cache=$S/npm UV_CACHE_DIR=$S/uv make check
+# on 2026-10-28. synth writes both tiers, cdk.out/production/ and cdk.out/development/, under CDK Nag's
+# AWS Solutions and Serverless checks, and cfn-lint lints both with --include-checks I. Bundling and download lines are cut.
+
+npm ci --no-audit --no-fund
+added 141 packages in 3m
+uv sync --locked
+Using CPython 3.14.4 interpreter at: /usr/bin/python3.14
+Creating virtual environment at: .venv
+Resolved 26 packages in 15ms
+Prepared 24 packages in 11.79s
+Installed 24 packages in 3.10s
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+uv run --no-sync ruff format --diff .
+25 files already formatted
+node_modules/.bin/eslint --max-warnings 0 .
+uv run --no-sync ruff check --no-fix .
+All checks passed!
+node_modules/.bin/tsc --noEmit
+uv run --no-sync mypy app tests
+Success: no issues found in 10 source files
+uv run --no-sync pytest --strict-markers --strict-config
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: $S/py
+configfile: pyproject.toml
+testpaths: tests
+collected 63 items
+tests/test_api.py .........                                              [ 14%]
+tests/test_item_store.py ....                                            [ 20%]
+tests/test_items.py ...................................                  [ 76%]
+tests/test_once.py ...............                                       [100%]
+============================== 63 passed in 2.23s ==============================
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $S/py
+ ✓ infra/connector_rds.test.ts (7 tests) 10508ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 7042ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 1084ms
+     ✓ gives a user without a network a VPC of two isolated zones with a flow log and no way out 340ms
+     ✓ throws the cluster away with the stack in development, pausing when idle and never rotating 471ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 416ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 579ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 540ms
+ ✓ infra/dist.test.ts (4 tests) 39431ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 8929ms
+     ✓ ships each asset once for both tiers, a directory zipped and a file as it is 316ms
+     ✓ writes the Framework's stacks for both tiers 29690ms
+ ✓ infra/standard.test.ts (100 tests) 48473ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 1292ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 831ms
+   ✓ the AwsSolutions rules on a cluster and its credentials (2)
+     ✓ find a cluster without deletion protection in production, and not in development 362ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 356ms
+ ✓ infra/api_stack.test.ts (18 tests) 55340ms
+   ✓ ApiStack (12)
+     ✓ defaults the alert email to alerts.email 9483ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 2562ms
+     ✓ copies the backups to the vault in copyToRegion 2032ms
+   ✓ ApiStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 2368ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 2733ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 1964ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 1934ms
+ Test Files  4 passed (4)
+      Tests  129 passed (129)
+   Start at  22:44:05
+   Duration  65.14s (tests 80%, import 14%, transform 6%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+Installed 9 packages in 1.22s
+exit 0

@@ -178,8 +178,12 @@ func TestRDSConnectorConnectsToAWSLambdaPyAndGo(t *testing.T) {
 			if backups := string(result.Files["infra/backups.ts"].Data); !strings.Contains(backups, "(cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn") {
 				t.Error("infra/backups.ts doesn't select a cluster by its DBClusterArn")
 			}
-			if readme := string(result.Files["README.md"].Data); !strings.Contains(readme, "RDS_CLUSTER_ARN") {
-				t.Error("README.md doesn't say what RDS_CLUSTER_ARN names")
+			sdk := map[string]string{"aws-lambda-py": "execute_statement", "aws-lambda-go": "ExecuteStatement"}[framework]
+			readme := string(result.Files["README.md"].Data)
+			for _, want := range []string{"RDS_CLUSTER_ARN", "RDS_SECRET_ARN", "RDS_DATABASE", sdk} {
+				if !strings.Contains(readme, want) {
+					t.Errorf("README.md lacks %q", want)
+				}
 			}
 
 			both := renderAWS(t, model.TypeFunction, framework, "dynamodb", "rds")

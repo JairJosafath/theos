@@ -97,8 +97,8 @@ owner, with their own credentials.
 {{- if has .Connectors "rds" }} The
   `rds` DataStore's Aurora PostgreSQL cluster is made by
   `infra/connector_rds.ts`, and the function reads `RDS_CLUSTER_ARN`,
-  `RDS_SECRET_ARN` and `RDS_DATABASE`. Query it through the Data API:
-  boto3's `rds-data` client:
+  `RDS_SECRET_ARN` and `RDS_DATABASE`. Query it through the Data API
+  with boto3's `rds-data` client,
   `execute_statement(resourceArn=..., secretArn=..., database=..., sql=...)`,
   the first three from those variables. The IAM database user is a migration
   this repository runs.

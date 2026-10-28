@@ -86,9 +86,10 @@ the function with Go and synthesizes the CloudFormation offline.
   its calls and hands it the store's name or ARNs; the stack alarms on a
   table like its own, on a cluster by its CPU (90%) and its connections (nine
   tenths of what its largest capacity allows, `maxConnections`), and backs
-  each up by ARN (`Arn`, `DBClusterArn`). The `Items` table stays beside it as the starter's example; the
-  README says new data goes in the DataStore's table. `infra/connectors.ts`
-  is aws-lambda-ts's.
+  each up by ARN (`Arn`, `DBClusterArn`). The `Items` table stays beside it
+  as the starter's example; the README says new data goes in the DataStore's
+  table, or for an `rds` one its cluster through the Data API.
+  `infra/connectors.ts` is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
   `vitest.config.mts`, `cdk.json`, `src/` (with `go.mod` and `go.sum`),
   `infra/stacks.ts`, `infra/api_stack.ts`, `infra/api_stack.test.ts`,
