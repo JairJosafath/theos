@@ -635,10 +635,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-ec2-ts
-      ref: v1.3.0
+      ref: v1.4.0
       spec:
         displayName: Service on AWS EC2 (TypeScript)
-        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector."
+        description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -646,10 +646,10 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-fargate-ts
-      ref: v2.1.0
+      ref: v2.2.0
       spec:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
-        description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector."
+        description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
         supportedTypes: [service]
         # Its CDK app in infra/ is its deployment: no Compute, no Deployment.
         deploysItself: true
@@ -844,12 +844,12 @@ catalog:
       ref: v1.0.0
       spec:
         displayName: Amazon Aurora PostgreSQL
-        description: "An Aurora Serverless v2 PostgreSQL 16 cluster in the Container's CDK stack, one per Container with a database named after it, encrypted with its own key, its credentials a Secrets Manager secret (rotated every 30 days in production), the Data API on and IAM database authentication on; kept, protected, snapshotted and backed up in production like the Framework's own tables, paused and thrown away in development. Hands whatever the Framework connects RDS_CLUSTER_ARN, RDS_SECRET_ARN and RDS_DATABASE and the Data API grants; in the Framework's VPC also RDS_HOST and RDS_PORT, else in an isolated VPC of its own. aws-lambda-ts, aws-lambda-py and aws-lambda-go wire it; a Framework that doesn't fails the Container."
-        supportedTypes: [function]
+        description: "An Aurora Serverless v2 PostgreSQL 16 cluster in the Container's CDK stack, one per Container with a database named after it, encrypted with its own key, its credentials a Secrets Manager secret (rotated every 30 days in production), the Data API on and IAM database authentication on; kept, protected, snapshotted and backed up in production like the Framework's own tables, paused and thrown away in development. Hands whatever the Framework connects RDS_CLUSTER_ARN, RDS_SECRET_ARN and RDS_DATABASE and the Data API grants; in the Framework's VPC also RDS_HOST and RDS_PORT, else in an isolated VPC of its own. aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-fargate-ts and aws-ec2-ts wire it; a Framework that doesn't fails the Container."
+        supportedTypes: [function, service]
         ## The Frameworks whose infra/connectors.ts calls connectRDS; a
         ## Container on any other is refused at ChoicesValid (NotWired)
         ## (docs/plans/aws-rds.md, decisions 6 and 7).
-        wiredBy: [aws-lambda-ts, aws-lambda-py, aws-lambda-go]
+        wiredBy: [aws-lambda-ts, aws-lambda-py, aws-lambda-go, aws-fargate-ts, aws-ec2-ts]
     ## A Domain is what a SoftwareSystem is about (spec.domainRefs); every
     ## Container of that system gets it under docs/agents/domain/<name>/,
     ## whatever its type, so it has no supportedTypes (docs/plans/domains.md).

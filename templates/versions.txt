@@ -15,9 +15,9 @@ node-cli v1.1.1
 python-cli v1.2.0
 ts-standard v1.7.0
 aws-lambda-ts v1.5.0
-aws-ec2-ts v1.3.0
+aws-ec2-ts v1.4.0
 aws-event-ts v1.2.0
-aws-fargate-ts v2.1.0
+aws-fargate-ts v2.2.0
 aws-lambda-go v1.5.0
 aws-lambda-py v1.5.0
 aws-queue-ts v1.2.0

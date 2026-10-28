@@ -21,6 +21,7 @@ import {
   FlowLogDestination,
   FlowLogTrafficType,
   GatewayVpcEndpointAwsService,
+  SecurityGroup,
   SubnetType,
   Vpc,
 } from 'aws-cdk-lib/aws-ec2';
@@ -49,6 +50,8 @@ import {
 import { PolicyStatement, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { LogGroup } from 'aws-cdk-lib/aws-logs';
 import type { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { CfnDBCluster } from 'aws-cdk-lib/aws-rds';
+import type { DatabaseCluster } from 'aws-cdk-lib/aws-rds';
 import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import type { CustomThreshold } from 'cdk-monitoring-constructs';
 import type { Construct } from 'constructs';
@@ -56,7 +59,7 @@ import type { Construct } from 'constructs';
 import { Alarms } from './alarms';
 import { Backups } from './backups';
 import { DATA_STORES } from './connectors';
-import type { Connect } from './connectors';
+import type { Connect, DataStore } from './connectors';
 import { TIER_RULES } from './standard';
 import type { Operations, Tier } from './standard';
 import { Users } from './user_pool';
@@ -102,12 +105,30 @@ const MAX_5XX_PERCENT = 5;
 const ROLLBACK_MINUTES = 3;
 // The alarms that fail a deployment and roll it back, by their names after
 // the stack's: the share of 5xx above, from the load balancer or the tasks,
-// or a task failing its health check.
+// or a task failing its health check. Each cluster's connections alarm is
+// added to them in the stack.
 const DEPLOYMENT_ALARMS = [
   'LoadBalancer-5xx-Rate-Critical',
   'Service-5xx-Rate-Critical',
   'Service-Unhealthy-Tasks-Critical',
 ];
+// The connections an Aurora PostgreSQL cluster allows per ACU (2 GiB each):
+// its max_connections, DBInstanceClassMemory / 9531392.
+const CONNECTIONS_PER_ACU = 225;
+
+/**
+ * Nine tenths of the connections `cluster` allows at its largest, from the
+ * Serverless v2 scaling configuration its Connector gave it; 1 ACU's when it
+ * has none the stack can read.
+ */
+export function maxConnections(cluster: DatabaseCluster): number {
+  const scaling = (cluster.node.defaultChild as CfnDBCluster).serverlessV2ScalingConfiguration;
+  const maxCapacity =
+    scaling !== undefined && 'maxCapacity' in scaling && typeof scaling.maxCapacity === 'number'
+      ? scaling.maxCapacity
+      : 1;
+  return Math.floor(CONNECTIONS_PER_ACU * maxCapacity * 0.9);
+}
 
 /** What the stack is built for. */
 export interface ServiceStackProps extends StackProps {
@@ -228,20 +249,38 @@ export class ServiceStack extends Stack {
     Validations.of(taskDefinition).acknowledge({
       id: 'AwsSolutions-ECS2',
       reason:
-        'The variables name the stack’s own table and user pool and app client, the tables of the data stores the Container’s Relationships name and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
+        'The variables name the stack’s own table and user pool and app client, the tables, clusters, secrets, hosts and ports of the data stores the Container’s Relationships name and, where the tier traces, the collector’s address in the task and the service’s name in its traces; none is a secret.',
     });
     // Only the calls the service makes.
     table.grant(taskDefinition.taskRole, 'dynamodb:GetItem', 'dynamodb:PutItem');
-    // The DataStores the Container's Relationships name, from their Connectors:
-    // each grants the task role its calls and hands the app the table's name.
+    // The tasks' security group, made before the stores so a cluster can let
+    // the tasks in; the load balancer adds its own rule when it targets them.
+    const serviceSecurityGroup = new SecurityGroup(this, 'ServiceSecurityGroup', {
+      vpc,
+      description: 'The service tasks: the load balancer reaches them.',
+      allowAllOutbound: true,
+    });
+    // The DataStores the Container's Relationships name, from their
+    // Connectors: a table or an Aurora cluster each. Each grants the task role
+    // its calls and hands the app its names; a cluster goes in the VPC's
+    // private subnets and lets the tasks in, and the app gets its host and
+    // port too.
     const user = {
       grantPrincipal: taskDefinition.taskRole,
       addEnvironment: (key: string, value: string) => {
         app.addEnvironment(key, value);
       },
+      network: { vpc, connections: serviceSecurityGroup.connections },
     };
     const stores = (props.dataStores ?? DATA_STORES).map(
       ([name, connect]) => [name, connect(this, user, rules)] as const,
+    );
+    const isTable = (store: DataStore): store is Table => store instanceof Table;
+    const tables = stores.flatMap(([name, store]) =>
+      isTable(store) ? [[name, store] as const] : [],
+    );
+    const clusters = stores.flatMap(([name, store]) =>
+      isTable(store) ? [] : [[name, store] as const],
     );
     // ECS pulls the image with the execution role: pulls from the bootstrap's
     // container-assets repository only, and ecr:GetAuthorizationToken, an
@@ -283,6 +322,7 @@ export class ServiceStack extends Stack {
       maxHealthyPercent: 200,
       circuitBreaker: { enable: true, rollback: true },
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+      securityGroups: [serviceSecurityGroup],
       assignPublicIp: false,
     });
     const scaling = service.autoScaleTaskCount({ minCapacity: MIN_TASKS, maxCapacity: MAX_TASKS });
@@ -499,7 +539,7 @@ export class ServiceStack extends Stack {
         addReadThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
         addWriteThrottledEventsCountAlarm: { Critical: { maxThrottledEventsThreshold: 0 } },
       });
-    for (const [name, store] of stores) {
+    for (const [name, store] of tables) {
       alarms.monitoring.monitorDynamoTable({
         table: store,
         alarmFriendlyName: name,
@@ -510,11 +550,28 @@ export class ServiceStack extends Stack {
       });
     }
 
+    // A cluster near its CPU or its connections is one the tasks will soon
+    // find slow or closed; a deployment that runs it out of connections rolls
+    // back.
+    for (const [name, cluster] of clusters) {
+      alarms.monitoring.monitorAuroraCluster({
+        // The cluster itself, not its identifier: the monitoring reads its
+        // ARN to tell a Serverless cluster.
+        cluster,
+        alarmFriendlyName: name,
+        addCpuUsageAlarm: { Critical: { maxUsagePercent: 90 } },
+        addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },
+      });
+    }
+
     // A deployment that sets off one of these rolls back. ECS reads the
     // alarms by name: the names are written out, since a reference to an
     // alarm, whose metric names the service, would make the two depend on
     // each other.
-    const rollBackOn = DEPLOYMENT_ALARMS.map((alarm) => `${this.stackName}-${alarm}`);
+    const rollBackOn = [
+      ...DEPLOYMENT_ALARMS,
+      ...clusters.map(([name]) => `${name}-Connections-Critical`),
+    ].map((alarm) => `${this.stackName}-${alarm}`);
     const created = new Set(alarms.monitoring.createdAlarms().map((alarm) => alarm.alarmName));
     for (const name of rollBackOn) {
       if (!created.has(name)) {
@@ -527,7 +584,8 @@ export class ServiceStack extends Stack {
       new Backups(this, 'Backups', {
         retentionDays: backups.retentionDays,
         copyToRegion: backups.copyToRegion,
-        tables: [table, ...stores.map(([, store]) => store)],
+        tables: [table, ...tables.map(([, store]) => store)],
+        clusters: clusters.map(([, cluster]) => cluster),
       });
     }
 
