@@ -167,8 +167,8 @@ var deployMembers = map[string]DeployMember{
 	// Decision 2). A GitLab release needs nothing of a Container but its
 	// releases.
 	DeployMemberGitLab: {Name: DeployMemberGitLab, Tool: "GitLab", SecretKeys: []string{GitLabSecretToken},
-		Holds: "a project access token with the Maintainer role and the scopes api, read_registry and " +
-			"write_registry (a group or personal access token works the same)"},
+		Holds: "a project access token with the Maintainer role and the api scope, which covers the " +
+			"container registry (a group or personal access token works the same)"},
 	// sessionToken is optional, so it isn't a key the Secret must hold.
 	DeployMemberCloudFormation: {Name: DeployMemberCloudFormation, Tool: "AWS",
 		SecretKeys: []string{"accessKeyId", "secretAccessKey"},

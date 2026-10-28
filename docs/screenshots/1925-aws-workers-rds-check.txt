@@ -139,7 +139,6 @@ CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/
 uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
 EXIT 0
 
-ALLDONE
 ### schedule-rds: Framework=aws-schedule-ts Connector=rds
 Rendered 50 files from aws-schedule-ts@local, aws-standard@local, gitea-release@local, rds@local into /home/lenovo/.cache/c4factory/tmp/relay-3/tmp.NYXnNrtwzg/schedule-rds
 npm ci --no-audit --no-fund

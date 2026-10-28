@@ -157,6 +157,19 @@ var templateCombos = []struct {
 		{model.SideDeployment, "gitea-release"},
 		{model.SideConnector, "dynamodb"},
 	}},
+	{"aws lambda function in go with rds", "function", []side{
+		{model.SideFramework, "aws-lambda-go"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws lambda function in go with dynamodb and rds", "function", []side{
+		{model.SideFramework, "aws-lambda-go"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+		{model.SideConnector, "rds"},
+	}},
 	{"aws python lambda function", "function", []side{
 		{model.SideFramework, "aws-lambda-py"},
 		{model.SideStandard, "aws-standard"},
@@ -167,6 +180,19 @@ var templateCombos = []struct {
 		{model.SideStandard, "aws-standard"},
 		{model.SideDeployment, "gitea-release"},
 		{model.SideConnector, "dynamodb"},
+	}},
+	{"aws python lambda function with rds", "function", []side{
+		{model.SideFramework, "aws-lambda-py"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws python lambda function with dynamodb and rds", "function", []side{
+		{model.SideFramework, "aws-lambda-py"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+		{model.SideConnector, "rds"},
 	}},
 	{"aws queue consumer", "worker", []side{
 		{model.SideFramework, "aws-queue-ts"},
