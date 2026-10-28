@@ -1,0 +1,93 @@
+# make check in a scaffolded aws-fargate-ts v2.2.0 + aws-standard Container with the rds Connector v1.0.0 (issue #1926):
+# go run ./hack/render -out $S/fg -type service Framework=aws-fargate-ts Standard=aws-standard Deployment=gitea-release Connector=rds
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables, an empty HOME, Node v24.22.0, uv 0.13.1:
+# env -i "PATH=$PATH" HOME=$S/home NO_COLOR=1 npm_config_cache=$S/npm make check
+# on 2026-10-29; it exited 0. synth writes both tiers, cdk.out/production/ and cdk.out/development/, under CDK Nag's
+# AWS Solutions and Serverless checks, and cfn-lint lints both with --include-checks I. Bundling and download lines are cut.
+
+npm ci --no-audit --no-fund
+
+added 195 packages in 58s
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+node_modules/.bin/eslint --max-warnings 0 .
+node_modules/.bin/tsc --noEmit
+node_modules/.bin/vitest run
+
+ RUN  v5.0.3 /tmp/wren1926/fg
+
+ ✓ src/api.test.ts (15 tests) 46ms
+ ✓ src/server.test.ts (9 tests) 104ms
+ ✓ src/auth.test.ts (16 tests) 87ms
+ ✓ src/items.test.ts (25 tests) 152ms
+ ✓ src/item_store.test.ts (4 tests) 47ms
+ ✓ src/tracing.test.ts (4 tests) 86ms
+ ✓ infra/connector_rds.test.ts (7 tests) 24242ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 13720ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 2049ms
+     ✓ gives a user without a network a VPC of two isolated zones with a flow log and no way out 1928ms
+     ✓ throws the cluster away with the stack in development, pausing when idle and never rotating 1342ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 2044ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 1795ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 1244ms
+ ✓ infra/dist.test.ts (4 tests) 55920ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 26410ms
+     ✓ ships each asset once for both tiers, a directory zipped and a file as it is 814ms
+     ✓ writes the Framework's stacks for both tiers 28645ms
+ ✓ infra/service_stack.test.ts (35 tests) 70189ms
+   ✓ ServiceStack (29)
+     ✓ pulls from the repository of the bootstrap qualifier the deployer copies to 5445ms
+     ✓ defaults the alert email to alerts.email 5930ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 3188ms
+     ✓ copies the backups to the vault in copyToRegion 5190ms
+   ✓ ServiceStack data stores (4)
+     ✓ connects the tasks to each Connector's data store and alarms on its table 2691ms
+     ✓ puts a cluster store in the VPC, lets the tasks in, alarms on it and backs it up by ARN 1117ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 2552ms
+     ✓ puts the rds cluster in the VPC, lets the tasks in and hands them its host and port 6592ms
+ ✓ infra/standard.test.ts (100 tests) 82486ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 3038ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 2247ms
+   ✓ an Aurora cluster, in production (9)
+     ✓ as the rds Connector builds it keeps every rule 1392ms
+     ✓ encrypted with the AWS-managed key fails the encryption rule 1112ms
+     ✓ encrypted with a key outside the stack fails the encryption rule 961ms
+     ✓ selected for backup by its CfnDBCluster's attrDbClusterArn keeps the selection rule 738ms
+     ✓ selected for backup by DatabaseCluster's clusterArn fails the selection rule, naming the fix 1195ms
+   ✓ an Aurora cluster, in development (9)
+     ✓ as the rds Connector builds it keeps every rule 726ms
+     ✓ encrypted with a key outside the stack fails the encryption rule 758ms
+     ✓ selected for backup by its CfnDBCluster's attrDbClusterArn keeps the selection rule 449ms
+     ✓ selected for backup by DatabaseCluster's clusterArn fails the selection rule, naming the fix 390ms
+     ✓ removed the other tier's way fails the removal rule 1236ms
+     ✓ whose key is removed the other tier's way fails the removal rule 866ms
+     ✓ protected from deletion the other tier's way fails the protection rule 691ms
+     ✓ keeping 7 days of backups fails the recovery rule 435ms
+   ✓ the AwsSolutions rules on a cluster and its credentials (2)
+     ✓ find a secret without rotation in production, and not in development 500ms
+     ✓ find a cluster without deletion protection in production, and not in development 2106ms
+   ✓ the Serverless rules (5)
+     ✓ find an asynchronous function without a dead-letter queue, and not one only synchronous callers call 1343ms
+     ✓ take a dead-letter queue for an asynchronous failure destination 421ms
+     ✓ leave to AwsSolutions the rules it checks too 551ms
+     ✓ find an untraced function in production, and not in development 845ms
+
+ Test Files  10 passed (10)
+      Tests  219 passed (219)
+   Start at  00:16:21
+   Duration  93.98s (tests 82%, import 12%, transform 6%)
+
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
