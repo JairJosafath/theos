@@ -6,6 +6,7 @@ one Git repository per Container from pinned templates, then only reports. Read
 [docs/design.md](docs/design.md) for the what and why, and
 [docs/architecture.md](docs/architecture.md) for where code goes.
 
+
 This file is loaded into every session, so it holds only what is true for every
 task. Read the rest when the task needs it:
 
@@ -14,26 +15,23 @@ task. Read the rest when the task needs it:
 | change what the factory does | [docs/design.md](docs/design.md): the spec |
 | add or move code | [docs/architecture.md](docs/architecture.md) and [docs/dev/structure.md](docs/dev/structure.md) |
 | change API types, reconcilers or log lines | [docs/dev/api-and-controllers.md](docs/dev/api-and-controllers.md) |
-| set up a device, or change `./dev` or `.vscode/` | [DEVELOPMENT.md](DEVELOPMENT.md) |
-| run tests, the Kind cluster, images or a deploy | [docs/dev/testenv.md](docs/dev/testenv.md) |
-| run, pause or change the relay (workers, triage, the maintainer) | [docs/dev/testenv.md](docs/dev/testenv.md) |
-| tune a device (memory, disk, CPU, the cluster pool, the self-hosted runners) | [docs/dev/devices.md](docs/dev/devices.md) |
-| watch or drive the running factory (Crews, Tasks, Gitea) | the `factory-ops` skill |
-| act as the maintainer, decide who decides, or review and clean up what the relay's agents did | [GOVERNANCE.md](GOVERNANCE.md) and the `maintainer` skill |
-| triage a `status/proposed` issue | the `triage` skill |
-| plan or cut a release, or set a milestone | [ROADMAP.md](ROADMAP.md) |
+| run tests | [docs/dev/testenv.md](docs/dev/testenv.md) |
 | make, store, pass or test a credential, or a secret scanner fails a pull request | the `secrets` skill |
-| take an issue, or continue work someone left in flight (a relay session, or the user said to) | `hack/lib/github.sh take N` and the `handoff` skill: claims, your agent name, the branch, the newest handoff |
 | work on a plan step | its plan in [docs/plans/](docs/plans/); finished plans are in [docs/plans/done/](docs/plans/done/) |
+
+## You Are an Agent in a Crew
+
+You are an Agent in a Crew. The operator gives you one Task from a Gitea
+issue; you commit on the branch it names; the operator opens the pull request,
+the reviewer judges it and the operator merges it. Never push to main, merge,
+or touch a cluster. The paths in the factory-self Standard's protectedPaths
+are the owner's: if the Task needs one changed, say so and stop.
 
 ## Project Architecture
 
 Business rules live in `internal/model` and `internal/scaffold` and must not
 import Kubernetes, controller-runtime, `net/http` or `api/`; `make lint` enforces
-the layering. `make check` gates every change; `hack/lib/github.sh land` runs it
-before it merges, so run it by hand only when you need its whole output. A tree
-that already passed on this device answers from the cache, which counts as a
-pass (`FORCE=1 make check` reruns it).
+the layering. `make check` gates every change.
 
 ## Critical Rules
 
@@ -71,18 +69,12 @@ worth repeating:
 - **Children name their parent in `spec`;** the operator sets the ownerReference so
   deletion cascades.
 
+
 ### Agents Never Touch a Cluster
 Go tests are the gate: `make check` for every change, `make test-gitea` and
-`make seed-local` for the Gitea code and the seed. A Kind cluster exists only
-when a human asks to run tests in it. Agents never create, lease or deploy to
-one, and never run `make e2e`; `hack/lib/github.sh cluster acquire` refuses
-without `C4_HUMAN_CLUSTER=1`, which only a human sets in their own shell. The
-human runs `make e2e` against a Kind cluster of the device's pool, never a
-real dev or prod cluster. What only a real node would catch is not tested
-before release. The one exception is a verifier session: one the owner
-starts from their own shell with `C4_HUMAN_CLUSTER=1` to run one plan step
-that needs a cluster (its issue names the step). It leases a pool cluster,
-does only what the step says, releases the cluster and ends.
+`make seed-local` for the Gitea code and the seed. Agents never create or
+deploy to a cluster, and never run `make e2e`. What only a real node would
+catch is not tested before release.
 
 ## After Making Changes
 
@@ -98,15 +90,13 @@ make lint-fix   # Auto-fix code style
 make test       # Run unit and envtest tests
 ```
 
-**Before finishing any change** (`land` runs it for you):
+**Before finishing any change:**
 ```
 make check      # manifests, generate, fmt, vet, lint, test and the UI's check in one go
 ```
 
 ## How to Work
 
-- **No new relay, landing or CI feature until the reference-app milestone
-  closes;** file the idea `status/proposed` at priority/8.
 - **Plan before building.** For work that spans more than one package or issue,
   write a short plan in `docs/plans/` first: goal, steps, and how you'll know it's done.
 - **Designing is our job.** Whoever files an issue says what they want; how the
@@ -148,131 +138,11 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   `make check` runs tiers 1, 2 and 4 for every change, and the UI's own
   check (`make ui-test`: typecheck, eslint, Prettier, its tests). Node and kubelet
   behaviour and the Gitea Actions runner itself are not tested before release.
-- **Small pull requests to main.** One branch per issue, the one `take` names
-  (`<type>/<N>-<slug>`, from an up-to-date main), pushed after every commit; a
-  pull request to main whose body says `Closes #N`, merged with
-  `hack/lib/github.sh land PR`. `land`'s check is the check: while you work,
-  run the targeted tests (`make test-hack`, `go test ./internal/...`,
-  `make ui-test`), then land; `land` merges `origin/main` in and runs
-  `make check` before it queues, then takes the merge turn, one across every
-  device, and merges at once, checking again under the turn only when main
-  moved. It merges exactly the head it checked: a push to the branch while
-  it waits refuses the merge, so land again after one. Run `make check` by
-  hand only when `land` failed and you need the whole output. Over 400 changed lines it wants a review pass first, the
-  `handoff` skill's "Review before landing". While yolo mode is on
-  (`hack/lib/github.sh yolo status`), `land` merges at once, with no check,
-  review pass or merge turn; only the closing-keyword refusals stay. A
-  docs-only pull request (`*.md`, `docs/`, `.claude/skills/`; under 200
-  lines) takes `land`'s simple path: no heavy-job slot, no merge turn, only
-  the checks those files have. No long-lived or stacked branches. A plan's pull request says
-  `Refs #N` and never a closing word next to `#N`; the parent gets a
-  `Depends on #S` line per step, goes `status/waiting` and closes itself when
-  its last step closes. Never close a parent by hand (`hack/close-guard.sh`
-  and `hack/lib/github.sh close` refuse). The `handoff` skill has the procedure.
-- **Main keeps itself current.** `hack/pull.sh` fast-forwards local main when
-  that is safe and never touches a branch or uncommitted work. VS Code runs it
-  every 5 minutes, Claude Code at session start, the relay before each session;
-  run it yourself before you branch or pick an issue.
 - **A bug fix brings its test.** It adds a test that failed before the fix
   and names the issue in the spec or table case (`#1019`), at the lowest tier
-  that sees the bug, and the pull request body names the test. `land` and
-  `merge` refuse a pull request closing a `kind/bug` issue that changes no
-  test file (`*_test.go`, `*_test.sh`, `*.test.ts`, `*.test.mjs`), unless a
-  line of its body says `No test: <why>` (a docs-only or chart-only fix).
+  that sees the bug, and the pull request body names the test.
 - **Show, don't claim.** When a plan is done, save evidence in
   `docs/screenshots/`. Test output is the evidence; no plan asks an agent for
   Kind evidence (`kubectl get` output, screenshots of a running factory).
 - **Report honestly.** If a check fails or a step is skipped, say so in the commit or
   PR with the output.
-
-## Working in Sessions
-
-Quality drops as a session's context grows, long before the window is full.
-Hand off at about 80k tokens and never go on past 120k, and keep each session
-to one piece of work. The context guard hook (`hack/context-guard.sh`) says
-when.
-
-- **Work on the factory is GitHub issues** on `JairJosafath/c4factory`, one per
-  piece of work, labeled `status/*`, `priority/*`, `kind/*` and
-  `source/dev` (developing the factory) or `source/user` with `user/<name>`
-  (reported from a device running the Helm release); `hack/lib/github.sh`
-  reads and writes them. No issue needs a cluster: every one is verified by Go
-  tests, so a device without Kind (`./dev setup --lite`, `C4_CLUSTER=none`)
-  works every ready issue. `priority/1` to `priority/10` order the relay's
-  picks, 1 first; an issue with none counts as 5. 1 is something broken now
-  (a red main, a dead relay, a failed release check); `priority/2` is the
-  webshop's path, the issues in the milestone *Reference app: the webshop
-  ships*, and a `kind/bug` whose fix is under `templates/`; 3 marks what makes
-  development itself faster (the relay, `land`, `make check`, flakes, the
-  scripts); 4 is the rest of the goal's work (the templates, the apps they
-  produce, packages, the Brief's planner, deploys); 8 or lower is a refactor
-  of the factory's own components that changes nothing a user of the
-  templates would notice. [ROADMAP.md](ROADMAP.md) has the goal behind the
-  rule. What each status means:
-  - `status/proposed`: filed, not yet decided. Whoever may decide readies it:
-    the owner (a session the user runs files what the user decided as
-    `ready`), the maintainer, or the relay's triage (the `triage` skill). An
-    agent files a follow-up `proposed` only when it needs a decision (below).
-  - `status/ready`: decided and unblocked; the relay picks it.
-  - `status/in-progress`: an agent holds a claim.
-  - `status/waiting`: a plan's parent, waiting on its steps, not on an agent.
-  - `status/needs-maintainer`: an agent escalated it; the newest comment says
-    what it needs.
-  - `status/needs-human`: the maintainer sent it to the owner; only the
-    maintainer sets it.
-- **Issues are the relay's.** Relay agents pick up every ready issue. A session
-  the user started picks or takes one only when the user says to work it in
-  that session; the list above says who readies what.
-- **One issue, plan step or fix per session.** Start the next one fresh.
-- **A follow-up stays with its finder.** Fix it in the pull request when it
-  is already there: under about 30 lines, in a file the pull request changes,
-  in the issue's scope, named under `Also fixes:` in its body. File it
-  `hack/lib/github.sh create --next` when you can name its test (a bug's
-  failing test, a chore's or doc's Done-when): it is ready, and your relay
-  worker's next session starts on it. File it `status/proposed` when it needs
-  a decision. The `handoff` skill has the details.
-- **Agents work in parallel.** Take an issue with `hack/lib/github.sh take N`
-  before working it; it names you (`otter-23`). Sign commits with an
-  `Agent: otter-23` trailer and say it in the pull request and handoff. One
-  agent per checkout: a second one on the device uses a git worktree. If the
-  heartbeat hook says your claim was taken over, push to `<branch>-<name>`,
-  comment that on the issue and stop. A step that waits on another issue says
-  `Depends on #M` in its body. The `handoff` skill has the details.
-- **Read on demand.** Open the docs in the table above when the task needs them,
-  not up front. Read files in parts, not whole.
-- **Delegate broad searches** to a subagent; it returns the conclusion, not the
-  file dumps. Keep large outputs out of the context: filter with `jq`, `grep`,
-  `tail`, `--tail=N`, and summary flags.
-- **Hand off at about 80k tokens,** mid-task if need be: finish the small
-  step in flight, commit, push, and the `handoff` skill posts the in-flight
-  state as a comment on the issue, saying exactly where it stands; then end
-  the session. Past 120k, stop at once and hand off. Hand off, too, when a
-  claim is lost or the user says stop. The next session starts by reading the newest handoff. Close the
-  issue when its work lands.
-- **The relay** (`hack/relay.sh`, kept running by `hack/relay-watch.sh`) runs
-  headless sessions, each on the in-progress or next ready issue. Its triage
-  session readies sound `status/proposed` issues (the `triage` skill); its
-  maintainer session (`hack/relay.sh --maintain`, the `maintainer` skill)
-  decides escalations, keeps the pinned *Maintainer report* and cuts releases.
-  Agents escalate with `hack/lib/github.sh status N needs-maintainer` and a
-  comment saying what is needed; only the maintainer sets `status/needs-human`.
-  The relay's pauses, strikes and idle rule are in
-  [docs/dev/testenv.md](docs/dev/testenv.md).
-- **A refused command is not a failed one.** Auto mode may refuse a command (a
-  merge, a release, an edit to an issue you didn't file). Say which command was
-  refused, once, in the pull request, the handoff or the report, and go on with
-  what you can; escalate with `needs-maintainer` if it blocks the issue. The
-  allow rules in `.claude/settings.json` are the owner's: never edit them, and
-  never do the refused thing through another command.
-- **On a device running many sessions, memory is the limit.** A session at rest is cheap;
-  heavy jobs (`make check`, `test`, `lint`, `vulncheck`, `docker-build`, `deploy`, `e2e`) are
-  not, so they queue device-wide for `HEAVY_JOBS` slots (default 2): a `make`
-  that waits for one prints who holds them, and that wait is not a hang;
-  [docs/dev/devices.md](docs/dev/devices.md) has the numbers.
-- **Scratch goes under `$TMPDIR`.** `/tmp` is a small tmpfs every session on the
-  device shares; one session's copies and caches filled it and failed every
-  `make check` (#1269). Make scratch with `mktemp -d` (it honours `$TMPDIR`; the
-  relay points it at `~/.cache/c4factory/tmp/<worktree>`, outside any git
-  checkout (#1307), and removes it after the session), never a literal `/tmp/...` path, and remove it before you land.
-- **Standing facts belong here or in docs,** in-flight state in a handoff. Ask:
-  is it true next month?
