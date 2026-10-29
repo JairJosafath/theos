@@ -525,7 +525,7 @@ aws-standard.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.21.1)
+### aws-standard (v1.22.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -554,7 +554,11 @@ release that carries the `attrDbClusterArn` selection, the key-of-the-stack
 encryption rule and the secret acknowledgement, which landed after v1.21.0
 was tagged, and its `infra/standard.test.ts` passes a rendered copy's `tsc`
 under `exactOptionalPropertyTypes`: the probe cluster's overrides allow
-`undefined` and its props are cast as `DatabaseClusterProps` (#1987).
+`undefined` and its props are cast as `DatabaseClusterProps` (#1987). Since v1.22.0 a Container
+with the `rds` Connector has its runbook restore the cluster to a point in
+time and when it is gone, its AWS digest an _Aurora PostgreSQL_ section,
+and its implementer guide the data rule (`RDS_*`, the Data API or a
+driver with the secret) (#1927).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

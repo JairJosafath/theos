@@ -591,3 +591,43 @@ func TestEachRelationalConnectorFailsTheOtherPlace(t *testing.T) {
 		t.Errorf(".env.example doesn't start with its first comment:\n%.120s", env)
 	}
 }
+
+// With the rds Connector, aws-standard's runbook restores the cluster, its
+// AWS digest has the relational rules and its implementer guide the data
+// rule, in every Framework that wires it; without it, none of them (#1927).
+func TestAWSStandardSaysHowToRestoreAndQueryTheRDSCluster(t *testing.T) {
+	says := map[string][]string{
+		"docs/runbook.md":            {"## Restore the database to a point in time", "## The database is gone", "restore-db-cluster-to-point-in-time"},
+		"docs/style/aws.md":          {"## Aurora PostgreSQL", "`RDS_SECRET_ARN`", "never SQL built from strings"},
+		"docs/agents/implementer.md": {"`RDS_CLUSTER_ARN`", "the SDK's `rds-data`"},
+	}
+	for _, tc := range []struct{ typ, framework string }{
+		{model.TypeFunction, "aws-lambda-ts"},
+		{model.TypeFunction, "aws-lambda-py"},
+		{model.TypeFunction, "aws-lambda-go"},
+		{model.TypeWorker, "aws-queue-ts"},
+		{model.TypeWorker, "aws-event-ts"},
+		{model.TypeJob, "aws-schedule-ts"},
+		{model.TypeService, "aws-fargate-ts"},
+		{model.TypeService, "aws-ec2-ts"},
+	} {
+		t.Run(tc.framework, func(t *testing.T) {
+			with := renderAWS(t, tc.typ, tc.framework, "rds")
+			without := renderAWS(t, tc.typ, tc.framework)
+			for path, wants := range says {
+				for _, want := range wants {
+					if !strings.Contains(string(with.Files[path].Data), want) {
+						t.Errorf("with rds, %s lacks %q", path, want)
+					}
+					if strings.Contains(string(without.Files[path].Data), want) {
+						t.Errorf("without rds, %s says %q", path, want)
+					}
+				}
+			}
+			network := strings.Contains(string(with.Files["docs/style/aws.md"].Data), "`RDS_HOST`")
+			if vpc := tc.framework == "aws-fargate-ts" || tc.framework == "aws-ec2-ts"; network != vpc {
+				t.Errorf("docs/style/aws.md names RDS_HOST: %t, want %t", network, vpc)
+			}
+		})
+	}
+}

@@ -1,4 +1,66 @@
 {{- /* Only a Framework version with infra/operations.ts has the tiers, alarms and backups this runbook answers (#1249). */ -}}
+{{- /* The rds Connector's cluster: the same sections in every Framework that wires it. */ -}}
+{{- define "rds" }}
+{{- if has .Connectors "rds" }}
+
+## Restore the database to a point in time
+
+The `rds` Connector's Aurora PostgreSQL cluster (`RDS`) holds the
+relational data, in the database `{{ snake .Container }}`. In production it
+has deletion protection on, leaves a final snapshot when the stack is
+deleted, and keeps its key (`RDSKey`) and its secret; Aurora keeps every
+point in time of the last 35 days.
+
+When: bad writes or deleted rows, within the last 35 days.
+
+1. Find the last good moment, as for a table, and the cluster's identifier,
+   subnet group, security groups and key:
+   `aws rds describe-db-clusters --db-cluster-identifier <cluster>`.
+2. Restore to a new cluster beside the live one:
+   `aws rds restore-db-cluster-to-point-in-time --source-db-cluster-identifier <cluster> --db-cluster-identifier <cluster>-restored --restore-to-time <time, ISO 8601> --db-subnet-group-name <its subnet group> --vpc-security-group-ids <its security groups> --kms-key-id <its key> --serverless-v2-scaling-configuration MinCapacity=0.5,MaxCapacity=8 --enable-http-endpoint`.
+   A restored cluster has no instance: add a writer with
+   `aws rds create-db-instance --db-cluster-identifier <cluster>-restored --db-instance-identifier <cluster>-restored-writer --db-instance-class db.serverless --engine aurora-postgresql`,
+   and wait for `aws rds wait db-instance-available --db-instance-identifier <cluster>-restored-writer`.
+3. The restored cluster's user has the password of that moment, which a
+   rotation since may have changed: set it to the secret's
+   (`aws rds modify-db-cluster --db-cluster-identifier <cluster>-restored --master-user-password <the secret's password> --apply-immediately`),
+   then check it holds what you expect with
+   `aws rds-data execute-statement --resource-arn <restored cluster ARN> --secret-arn <secret ARN> --database {{ snake .Container }} --sql "<a select>"`.
+4. Repair the live database from it: write back the rows the damage
+   changed, with statements through the Data API, or `pg_dump --data-only`
+   of the tables from the restored cluster into `psql` on the live one,
+   from a host that reaches both. The live cluster keeps its endpoint, its
+   secret, its alarms, its backups and its place in the stack.
+5. Delete the restored cluster (`aws rds delete-db-instance`, then
+   `aws rds delete-db-cluster --skip-final-snapshot`) and write down what
+   happened and when.
+{{- if ne .Operations.Backups.RetentionDays 0 }}
+
+A backup in the vault restores the same way: in the AWS Backup console,
+_Protected resources_, the cluster, the recovery point, _Restore_, with a
+new cluster identifier, its subnet group, security groups and key; or
+`aws backup start-restore-job` with the recovery point's ARN and a role
+that has `AWSBackupServiceRolePolicyForRestores`. Then go on from step 2's
+writer.
+{{- if .Operations.Backups.CopyToRegion }} A copy in {{ .Operations.Backups.CopyToRegion }} restores there, with a key
+of that region.
+{{- end }}
+{{- end }}
+
+## The database is gone
+
+Deletion protection keeps the cluster from being deleted until it is turned
+off. If it was, restore it under its own identifier from its final snapshot
+(`aws rds restore-db-cluster-from-snapshot`){{ if ne .Operations.Backups.RetentionDays 0 }} or a backup from the vault{{ end }},
+in its subnet group and security groups, with its key; then add its writer
+and its reader as step 2 of the restore adds a writer, and set
+again what a restore doesn't carry: the Data API
+(`aws rds enable-http-endpoint`), IAM database authentication, deletion
+protection, the 35 days of points in time and the three `c4factory:` tags.
+The stack's secret still holds the user; deploy the stack again, as
+above, to put its alarms and rotation back.
+{{- end }}
+{{- end -}}
 {{- if has .FrameworkFiles "infra/operations.ts" -}}
 {{ if eq .Framework "aws-lambda-ts" "aws-lambda-py" "aws-lambda-go" "aws-queue-ts" "aws-schedule-ts" "aws-event-ts" -}}
 {{- $ops := .Operations -}}
@@ -207,6 +269,7 @@ live (`expiration`, for the `Idempotency` table){{ end }} and the three
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
+{{- template "rds" . }}
 {{- if $queue }}
 
 ## Send dead-lettered messages back
@@ -671,6 +734,7 @@ three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack
 again (`{{ $deploy }}`) and check it reports no drift.
+{{- template "rds" . }}
 
 ## Roll a deployment back
 
@@ -1135,6 +1199,7 @@ three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
+{{- template "rds" . }}
 
 ## Roll a deployment back
 
