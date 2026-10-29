@@ -27,6 +27,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // taskAgents are the Agents of a Task's roles; one Agent may play both.
@@ -409,7 +410,7 @@ func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1beta1.T
 // creating the bot user and the Secret the first time. The Secret is owned by the
 // Container, so it goes when the Container goes.
 func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1beta1.Container,
-	provider gitprovider.Provider, repo gitprovider.Repository) (string, error) {
+	provider ports.AgentAccess, repo gitprovider.Repository) (string, error) {
 	r.revokeOldAgentTokens(ctx, container.Namespace, container.Name, "")
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -617,7 +618,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 
 // mergeCommit reads the commit the pull request's merge made on the default
 // branch; empty when it can't be read yet, for the Task to read again once Merged.
-func (r *TaskReconciler) mergeCommit(ctx context.Context, provider gitprovider.Provider,
+func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost,
 	repo gitprovider.Repository, status *c4v1beta1.TaskStatus) string {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -632,7 +633,7 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider gitprovider.P
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
 // approval; a push since the review makes the merge fail. A Standard change goes
 // through gatedMerge, which may refuse it or wait for CI.
-func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider gitprovider.Provider,
+func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHost,
 	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent) (refusal string, err error) {
 	if len(task.Spec.AllowedProtectedPaths) > 0 {
@@ -1028,7 +1029,7 @@ func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container 
 // implementer's pull requests are opened as the bot: they are its work, and the
 // Git host refuses a review of one's own pull request, so the operator's user
 // could not review them otherwise.
-func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1beta1.Container) (gitprovider.Provider,
+func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1beta1.Container) (ports.GitHost,
 	gitprovider.Repository, error) {
 	var gp c4v1beta1.GitProvider
 	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name},

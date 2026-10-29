@@ -24,6 +24,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // ConditionModulePublished says whether go get finds a Crew's last release's
@@ -65,7 +66,7 @@ type moduleAnswer struct {
 // fetchable, is a Normal Event; a module Go can't take, or can't fetch, a
 // Warning Event, once per release.
 func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository) {
+	provider ports.Registry, repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil {
 		return

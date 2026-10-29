@@ -17,6 +17,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The owner's Actions variables and secrets that name its package
@@ -92,7 +93,7 @@ func (r *ProjectReconciler) ensurePackagesActions(ctx context.Context, project *
 // default spec.packages, else the three variables from the provider's
 // addresses and each token secret whose Secret has a readToken.
 func (r *ProjectReconciler) packagesActionsOf(ctx context.Context, gp *c4v1beta1.GitProvider,
-	provider gitprovider.Provider) (packagesActions, error) {
+	provider ports.GitHost) (packagesActions, error) {
 	want := packagesActions{variables: map[string]string{}, secrets: map[string]string{}}
 	npmSecret, pypiSecret := packagesSecrets(gp)
 	if packagesOf(gp) == (gitprovider.Packages{}) && npmSecret == "" && pypiSecret == "" {

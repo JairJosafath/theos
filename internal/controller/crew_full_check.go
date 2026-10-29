@@ -19,6 +19,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // checksBeforeRelease reports whether the Container's repository runs its full
@@ -37,7 +38,11 @@ func checksBeforeRelease(container *c4v1beta1.Container) bool {
 // else the step that holds the release instead: FullCheckRunning,
 // FullCheckFailed or NoFullCheck. status.fullCheck records the check.
 func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository, step model.ReleaseStep,
+	provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+	}, repo gitprovider.Repository, step model.ReleaseStep,
 	release *model.ReleaseMilestone) (model.ReleaseStep, error) {
 	log := logf.FromContext(ctx)
 	branch := model.FullCheckBranch(step.Tag)
@@ -99,7 +104,7 @@ func (r *CrewReconciler) fullCheck(ctx context.Context, crew *c4v1beta1.Crew, st
 
 // fileFullCheckFix files the issue to fix release step's full check, failed
 // in run, unless the release has it for this commit already, and records it.
-func (r *CrewReconciler) fileFullCheckFix(ctx context.Context, provider gitprovider.Provider,
+func (r *CrewReconciler) fileFullCheckFix(ctx context.Context, provider ports.Issues,
 	repo gitprovider.Repository, step model.ReleaseStep, release *model.ReleaseMilestone, run model.ReleaseRun,
 	check *c4v1beta1.CrewFullCheck) error {
 	if release != nil && model.FullCheckFiled(*release, step.Commit) {

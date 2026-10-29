@@ -22,6 +22,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // defaultContainerChecksRecheck is how often a Ready Container reads its checks
@@ -61,7 +62,13 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 // providerFor returns the Provider for a GitProvider in namespace ns, with its
 // credentials read straight from the API server.
 func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, git GitClient,
-	ns, name string) (gitprovider.Provider, error) {
+	ns, name string) (interface {
+	ports.GitHost
+	ports.Issues
+	ports.CI
+	ports.AgentAccess
+	ports.Registry
+}, error) {
 	access, err := gitAccessFor(ctx, c, apiReader, git, ns, name)
 	return access.provider, err
 }
@@ -71,8 +78,14 @@ func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, 
 type gitAccess struct {
 	gitProvider *c4v1beta1.GitProvider
 	creds       gitprovider.Credentials
-	provider    gitprovider.Provider
-	ci          model.CI
+	provider    interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+		ports.AgentAccess
+		ports.Registry
+	}
+	ci model.CI
 }
 
 // gitAccessFor reads a GitProvider in namespace ns and its credentials, straight
