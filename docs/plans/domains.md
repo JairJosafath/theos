@@ -30,8 +30,14 @@ and the reviewer to read them before they plan or review a change.
   and fails a non-Markdown file (`DomainNotMarkdownError`) or a missing
   `README.md` (`DomainNoReadmeError`); `reportDomainsApplied`
   (`internal/controller/container_domains.go`) sets `DomainsApplied` on a
-  Ready Container from `model.ScaffoldedDomains` against the system's
-  `domainRefs`.
+  Ready Container from the Domains the scaffold recorded against the
+  system's `domainRefs`, compared by `model.DomainsDiff`
+  (`internal/model/domain.go`, `TestDomainsDiff`). The scaffold records
+  them in `status.scaffoldedDomains` and in its commit's `Scaffolded-Domain`
+  trailers (`scaffold.CommitMessage`, `internal/scaffold/identity.go`);
+  `ParseCommitMessage` reads the trailers back when a retry finds its own
+  commit, and the controller's `scaffoldedDomains` reads the status, never
+  inferring them from `scaffoldedFrom` (#1757).
 - `model.AgentNeverPaths` (`internal/model/fence.go`) is `AGENTS.md`,
   `docs/agents/` and `.c4factory.yaml`: the fence refuses an agent's change
   there and the plan check refuses an issue asking for one. A file under

@@ -130,8 +130,9 @@ naming what was added or removed since (an adopted Container, scaffolded
 with none, names them all). The Standard's update renders with the Domains
 the scaffold used. The planner names the installed Domains an idea is about
 on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
-has the decisions; the kind, `domainRefs` and the layer are built, the
-Standards' guides, the webshop Domain and the planner are its later steps.
+has the decisions; all its steps are built: the kind, `domainRefs`, the
+layer, the Standards' guides, the webshop Domain, the planner and the UI's
+Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
 
 ## Scaffolding a Container
 
