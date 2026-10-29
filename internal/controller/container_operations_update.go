@@ -22,8 +22,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -144,7 +144,7 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 				return
 			}
 			// A state the host leaves empty is pending, so the model doesn't ask again.
-			f.Checks = cmp.Or(checks.State, gitprovider.CheckPending)
+			f.Checks = cmp.Or(checks.State, ports.CheckPending)
 			f.ChecksURL, f.Contexts, f.CI = checks.URL, checks.Contexts, git.ci
 		case model.OperationsReadFiles:
 			git, ok := u.access(ctx)
@@ -154,7 +154,7 @@ func (u *operationsUpdate) run(ctx, gitCtx context.Context) {
 			changed, err := git.provider.PullRequestFiles(gitCtx, git.provider.Repository(u.container.Name),
 				int(u.status.OperationsUpdate.PullRequest))
 			switch {
-			case errors.Is(err, gitprovider.ErrTooManyFiles):
+			case errors.Is(err, ports.ErrTooManyFiles):
 				f.Files = &model.UpdateFiles{Unchecked: err.Error()}
 			case err != nil:
 				u.gitError(ctx, err) // never merge a path nobody checked
@@ -251,8 +251,8 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	if !ok {
 		return
 	}
-	var creds *gitprovider.Credentials
-	if gitprovider.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
+	var creds *ports.Credentials
+	if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 		creds = &git.creds
 	}
 	files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
@@ -283,7 +283,7 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	}
 
 	repo := git.provider.Repository(u.container.Name)
-	current, base, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch,
+	current, base, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch,
 		[]string{model.OperationsFile})
 	if err != nil {
 		u.gitError(ctx, err)
@@ -294,10 +294,10 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		return
 	}
 	branch := model.OperationsUpdateBranch(to)
-	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commit, err := git.provider.PushBranch(gitCtx, repo, base, branch, scaffold.Tree{model.OperationsFile: file},
 		nil, scaffold.OperationsMessage(in, from), author)
-	if errors.Is(err, gitprovider.ErrEmptyChange) {
+	if errors.Is(err, ports.ErrEmptyChange) {
 		// main got there between the read and the push.
 		u.alreadyUpToDate(ctx, to, base)
 		return
@@ -306,7 +306,7 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 		u.gitError(ctx, err)
 		return
 	}
-	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
+	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, ports.DefaultBranch,
 		model.OperationsUpdateTitle(), model.OperationsUpdateBody(from, to))
 	if err != nil {
 		u.gitError(ctx, err)
@@ -331,12 +331,12 @@ func (u *operationsUpdate) alreadyUpToDate(ctx context.Context, to model.Operati
 // readPullRequest reads the update's pull request. When quiet, the update
 // stopped and a Git error is only logged: the condition keeps saying why it
 // stopped.
-func (u *operationsUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool) (gitprovider.PullRequest, bool) {
+func (u *operationsUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool) (ports.PullRequest, bool) {
 	update := u.status.OperationsUpdate
 	if quiet {
 		git, err := gitAccessFor(ctx, u.r.Client, u.r.APIReader, u.r.Git, u.container.Namespace,
 			u.container.Spec.GitProviderRef.Name)
-		var pr gitprovider.PullRequest
+		var pr ports.PullRequest
 		if err == nil {
 			pr, err = git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name),
 				int(update.PullRequest))
@@ -350,7 +350,7 @@ func (u *operationsUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bo
 	}
 	git, ok := u.access(ctx)
 	if !ok {
-		return gitprovider.PullRequest{}, false
+		return ports.PullRequest{}, false
 	}
 	pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name), int(update.PullRequest))
 	if err != nil {
@@ -461,7 +461,7 @@ func (u *operationsUpdate) mainHead(ctx, gitCtx context.Context) string {
 		git = &access
 	}
 	head, err := git.provider.BranchCommit(gitCtx, git.provider.Repository(u.container.Name),
-		gitprovider.DefaultBranch)
+		ports.DefaultBranch)
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read main for a merged operations update", "error", err.Error())
 	}

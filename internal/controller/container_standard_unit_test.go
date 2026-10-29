@@ -15,8 +15,9 @@ import (
 	"testing"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitea"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -169,7 +170,7 @@ func TestStandardUpdateRendersWithScaffoldedDomains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: "http://gitea", Owner: "apps"})
+	provider, err := gitea.Client{}.Provider(ports.Config{URL: "http://gitea", Owner: "apps"})
 	if err != nil {
 		t.Fatal(err)
 	}

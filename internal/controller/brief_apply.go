@@ -27,7 +27,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -470,8 +469,8 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 // its labels made and its open issues listed once.
 type issueRepo struct {
 	provider ports.Issues
-	repo     gitprovider.Repository
-	open     []gitprovider.Issue
+	repo     ports.Repository
+	open     []ports.Issue
 	// minor and patch are the IDs of the milestones the round's other work and
 	// its fixes go into, once an issue needs each.
 	minor, patch int64
@@ -569,10 +568,10 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 	provider, repo := ir.provider, ir.repo
 	byHand := model.IsByHand(issue.Labels)
 	// Filed, but not recorded before a restart: found by its marker.
-	i := slices.IndexFunc(ir.open, func(o gitprovider.Issue) bool {
+	i := slices.IndexFunc(ir.open, func(o ports.Issue) bool {
 		return model.HasIssueMarker(o.Body, brief.Name, round, issue.N)
 	})
-	var filed gitprovider.Issue
+	var filed ports.Issue
 	if i >= 0 {
 		filed = ir.open[i]
 	} else {
@@ -626,7 +625,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		for _, b := range buildsOn {
 			owner, name, _ := strings.Cut(b.Repository, "/")
 			if err := provider.AddIssueDependency(gitCtx, repo, filed.Number,
-				gitprovider.Repository{Owner: owner, Name: name}, b.Number); err != nil {
+				ports.Repository{Owner: owner, Name: name}, b.Number); err != nil {
 				return fmt.Errorf("making it depend on %s#%d: %w", b.Repository, b.Number, err)
 			}
 		}
@@ -652,18 +651,18 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 
 // briefIssueLabels are the labels the issues need: the factory's, and any
 // other the planner asked for.
-func briefIssueLabels(issues []model.PlanIssue) []gitprovider.Label {
+func briefIssueLabels(issues []model.PlanIssue) []ports.Label {
 	labels := issueLabels()
 	for _, issue := range issues {
 		for _, name := range model.BriefIssueLabels(issue.Labels) {
 			switch {
-			case slices.ContainsFunc(labels, func(l gitprovider.Label) bool { return l.Name == name }):
+			case slices.ContainsFunc(labels, func(l ports.Label) bool { return l.Name == name }):
 			case name == model.LabelByHand:
 				l := model.ByHandLabel()
 				labels = append(labels,
-					gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+					ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 			default:
-				labels = append(labels, gitprovider.Label{Name: name, Color: briefLabelColor})
+				labels = append(labels, ports.Label{Name: name, Color: briefLabelColor})
 			}
 		}
 	}
@@ -694,7 +693,7 @@ func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundAppl
 // and number in the plan, and writes the status at once, so a later reconcile
 // never files it again, even once it is closed.
 func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repository string, n int,
-	issue gitprovider.Issue) error {
+	issue ports.Issue) error {
 	status := &run.brief.Status
 	if slices.ContainsFunc(status.Issues, func(i c4v1beta1.BriefIssue) bool {
 		return i.Repository == repository && int(i.Number) == issue.Number
@@ -732,7 +731,7 @@ func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1beta1.Brief,
 		return fmt.Errorf("branch %s is at %s, not the accepted plan %s", model.PlanBranch(int(brief.Status.Round)),
 			sha, commit)
 	}
-	onMain, head, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, dir)
+	onMain, head, err := provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, dir)
 	if err != nil {
 		return err
 	}
@@ -745,7 +744,7 @@ func (r *BriefReconciler) mergePlan(ctx context.Context, brief *c4v1beta1.Brief,
 	slices.Sort(removes)
 	message := fmt.Sprintf("Plan round %d of Brief %s\n", brief.Status.Round, brief.Name)
 	_, err = provider.PushDefaultBranch(gitCtx, repo, head, plan, removes, message, briefAuthor())
-	if errors.Is(err, gitprovider.ErrEmptyChange) {
+	if errors.Is(err, ports.ErrEmptyChange) {
 		return nil
 	}
 	if err != nil {

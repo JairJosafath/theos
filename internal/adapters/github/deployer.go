@@ -14,17 +14,16 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // Releases builds the release client of a GitHub repository, and the token
-// a target's Secret gives: gitprovider.Client on github.com, a fake GitHub in
+// a target's Secret gives: Client on github.com, a fake GitHub in
 // tests.
 type Releases interface {
-	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
+	GitHubReleases(cfg ports.GitHubConfig) (ports.ReleaseTarget, error)
 	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
 }
 
@@ -52,7 +51,7 @@ func WithImageRegistry(host string) Option {
 // GitHub Enterprise Server when releases is nil.
 func New(releases Releases, opts ...Option) *Deployer {
 	if releases == nil {
-		releases = gitprovider.Client{}
+		releases = Client{}
 	}
 	d := &Deployer{releases: releases}
 	for _, o := range opts {
@@ -69,14 +68,14 @@ func hosts(t ports.Target) model.GitHubHosts {
 // client is the target's repository, with the Secret's token or its GitHub
 // App's installation token, minted at the target's API for that repository
 // alone. A mint GitHub refuses is CredentialRefused.
-func (d *Deployer) client(ctx context.Context, t ports.Target) (gitprovider.ReleaseTarget, error) {
+func (d *Deployer) client(ctx context.Context, t ports.Target) (ports.ReleaseTarget, error) {
 	h := hosts(t)
 	repository := t.Settings[model.GitHubSettingRepository]
 	token, err := d.releases.GitHubToken(ctx, h.API, repository, t.Secret)
 	if err != nil {
 		return nil, portError(err)
 	}
-	return d.releases.GitHubReleases(gitprovider.GitHubConfig{Repository: repository,
+	return d.releases.GitHubReleases(ports.GitHubConfig{Repository: repository,
 		Token: token, APIURL: h.API, UploadURL: h.Upload})
 }
 
@@ -209,7 +208,7 @@ func (d *Deployer) shipImage(ctx context.Context, t ports.Target, packages oci.R
 	case have == digest:
 		return ref + "@" + digest, false, nil
 	case have != "":
-		return "", false, &gitprovider.ReleaseError{Reason: gitprovider.ReasonTagTaken,
+		return "", false, &ports.ReleaseError{Reason: ports.ReasonTagTaken,
 			Message: fmt.Sprintf("github: image %s:%s names %s, not the release's %s; it is left alone", ref,
 				s.Version, have, digest)}
 	}
@@ -236,7 +235,7 @@ func registryError(ref string, err error) error {
 }
 
 // release is r as the model sees it, nil for nil.
-func release(r *gitprovider.TargetRelease) *model.TargetRelease {
+func release(r *ports.TargetRelease) *model.TargetRelease {
 	if r == nil {
 		return nil
 	}
@@ -247,14 +246,14 @@ func release(r *gitprovider.TargetRelease) *model.TargetRelease {
 // marked returns the release of tag whose body holds marker, with its files
 // when it is a draft; nil when there is none. A published release of tag
 // without it is TagTaken.
-func marked(ctx context.Context, c gitprovider.ReleaseTarget, tag, marker string,
+func marked(ctx context.Context, c ports.ReleaseTarget, tag, marker string,
 	files []model.ReleaseAsset) (*model.TargetRelease, error) {
 	found, err := c.FindRelease(ctx, tag, marker)
 	if err != nil || found == nil {
 		return nil, err
 	}
 	if !strings.Contains(found.Body, marker) {
-		return nil, &gitprovider.ReleaseError{Reason: gitprovider.ReasonTagTaken,
+		return nil, &ports.ReleaseError{Reason: ports.ReasonTagTaken,
 			Message: fmt.Sprintf("github: a release %s the factory didn't make is there; it is left alone", tag)}
 	}
 	rel := release(found)
@@ -278,7 +277,7 @@ func marked(ctx context.Context, c gitprovider.ReleaseTarget, tag, marker string
 }
 
 // write takes step, logging what it wrote.
-func (d *Deployer) write(ctx context.Context, c gitprovider.ReleaseTarget, s ports.Shipment,
+func (d *Deployer) write(ctx context.Context, c ports.ReleaseTarget, s ports.Shipment,
 	step model.PublishStep) error {
 	log := logr.FromContextOrDiscard(ctx)
 	switch step.Action {
@@ -334,10 +333,10 @@ func sourceTarget(t ports.Target, version string) (src model.PublishSource, tag 
 // shipSource reads the repository's head and source tag and takes the next
 // write of publishing s's source, as model.NextSourceStep says. done is the
 // source commit and tag once both are there, and nil when it wrote.
-func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, t ports.Target, s ports.Shipment,
+func (d *Deployer) shipSource(ctx context.Context, c ports.ReleaseTarget, t ports.Target, s ports.Shipment,
 	tag string) (done *model.PublishedSource, err error) {
 	src, sourceTag, _ := sourceTarget(t, s.Version)
-	gh, err := gitprovider.ReadSourceFolder(ctx, c, src.Path, sourceTag)
+	gh, err := ports.ReadSourceFolder(ctx, c, src.Path, sourceTag)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +349,7 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, 
 	log := logr.FromContextOrDiscard(ctx)
 	switch step.Action {
 	case model.PublishFail:
-		return nil, &gitprovider.ReleaseError{Reason: step.Reason, Message: step.Message}
+		return nil, &ports.ReleaseError{Reason: step.Reason, Message: step.Message}
 	case model.PublishSourceCommit:
 		commit, err := commitSource(ctx, c, s, gh, step.SourceCommit)
 		if err != nil {
@@ -373,14 +372,14 @@ func (d *Deployer) shipSource(ctx context.Context, c gitprovider.ReleaseTarget, 
 // commitSource uploads the blobs GitHub lacks, streamed from s.ReadSource,
 // builds the folder's tree and the root tree, the head's with only the folder
 // replaced, commits it on the head and fast-forwards the default branch.
-func commitSource(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipment, gh gitprovider.SourceFolder,
+func commitSource(ctx context.Context, c ports.SourceTarget, s ports.Shipment, gh ports.SourceFolder,
 	sc *model.SourceCommit) (string, error) {
 	if err := uploadBlobs(ctx, c, s, sc.Upload); err != nil {
 		return "", err
 	}
-	entries := make([]gitprovider.GitTreeEntry, 0, len(sc.Files))
+	entries := make([]ports.GitTreeEntry, 0, len(sc.Files))
 	for _, f := range sc.Files {
-		entries = append(entries, gitprovider.GitTreeEntry{Path: f.Path, Mode: string(f.Mode), Type: "blob", SHA: f.Blob})
+		entries = append(entries, ports.GitTreeEntry{Path: f.Path, Mode: string(f.Mode), Type: "blob", SHA: f.Blob})
 	}
 	folder, err := c.CreateTree(ctx, "", entries)
 	if err != nil {
@@ -391,7 +390,7 @@ func commitSource(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipm
 	}
 	root := folder
 	if sc.Path != "." {
-		if root, err = c.CreateTree(ctx, gh.HeadRoot, []gitprovider.GitTreeEntry{
+		if root, err = c.CreateTree(ctx, gh.HeadRoot, []ports.GitTreeEntry{
 			{Path: sc.Path, Mode: "040000", Type: "tree", SHA: folder}}); err != nil {
 			return "", err
 		}
@@ -405,7 +404,7 @@ func commitSource(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipm
 
 // uploadBlobs streams each file of upload from s.ReadSource into a blob. A
 // failure of ReadSource itself is a SourceError, the Git host's side.
-func uploadBlobs(ctx context.Context, c gitprovider.SourceTarget, s ports.Shipment, upload []model.SourceFile) error {
+func uploadBlobs(ctx context.Context, c ports.SourceTarget, s ports.Shipment, upload []model.SourceFile) error {
 	if len(upload) == 0 {
 		return nil
 	}
@@ -506,7 +505,7 @@ func (d *Deployer) State(ctx context.Context, t ports.Target, app, version strin
 
 // deployFacts reads what GitHubDeployState decides on: every release, and
 // GitHub's Latest only when GitHubReadsLatest says it matters.
-func deployFacts(ctx context.Context, c gitprovider.ReleaseTarget, t ports.Target, app,
+func deployFacts(ctx context.Context, c ports.ReleaseTarget, t ports.Target, app,
 	version string) (model.GitHubDeployFacts, error) {
 	all, err := c.ListReleases(ctx)
 	if err != nil {
@@ -540,11 +539,11 @@ func portError(err error) error {
 	if _, ok := errors.AsType[*SourceError](err); ok {
 		return err
 	}
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	re, ok := errors.AsType[*ports.ReleaseError](err)
 	switch {
-	case !ok, re.Reason == gitprovider.ReasonGitHubError:
+	case !ok, re.Reason == ports.ReasonGitHubError:
 		return &ports.Error{Kind: ports.ErrUnreachable, Cause: err}
-	case re.Reason == gitprovider.ReasonUnauthorized, re.Reason == gitprovider.ReasonRepositoryNotFound:
+	case re.Reason == ports.ReasonUnauthorized, re.Reason == ports.ReasonRepositoryNotFound:
 		return &ports.Error{Kind: ports.ErrCredentialRefused, Cause: err}
 	}
 	return err

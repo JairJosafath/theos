@@ -19,7 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // ordersModule is the module path of orders-api in namespace ns: the fake
@@ -350,13 +350,13 @@ var _ = Describe("Crew Go modules with no Go proxy", func() {
 			GoModule: &c4v1beta1.CrewReleaseGoModule{State: "Published", Path: module, Version: "v0.15.1"}}}
 		r := &CrewReconciler{}
 
-		r.publishGoModule(ctx, crew, status, nil, gitprovider.Repository{})
+		r.publishGoModule(ctx, crew, status, nil, ports.Repository{})
 		Expect(status.LastRelease.GoModule.State).To(Equal("Waiting"))
 		Expect(condition(status.Conditions, ConditionModulePublished).Reason).To(Equal("WaitsForRelease"))
 
 		status.LastRelease.Publish = &c4v1beta1.CrewReleasePublish{State: "Published",
 			Source: &c4v1beta1.CrewReleaseSource{Commit: "abc", Tag: "engine/v0.15.1", Private: new(false)}}
-		r.publishGoModule(ctx, crew, status, nil, gitprovider.Repository{})
+		r.publishGoModule(ctx, crew, status, nil, ports.Repository{})
 		m := status.LastRelease.GoModule
 		Expect(m.State).To(Equal("Published"))
 		Expect(m.CheckedTime).To(BeNil(), "no proxy was asked")

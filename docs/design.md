@@ -688,8 +688,8 @@ controllers call, not by one product's API;
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own
   package under `internal/adapters`, and only `cmd/main.go` imports adapters
-  (`make lint` enforces it). The Deployer is there today; the Git host is
-  still one interface, `gitprovider.Provider`, until #1094 splits it.
+  (`make lint` enforces it). The Deployer and the Git host's five ports are
+  there today, with Gitea in `internal/adapters/gitea`.
 - **What a host lacks** its adapter emulates, or the port makes an optional
   capability (a second small interface, a condition reason when missing):
   Go modules, npm and PyPI, a project's own runners, webhooks.

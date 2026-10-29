@@ -26,7 +26,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
@@ -73,7 +72,7 @@ func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1beta1.Brief) 
 		return nil, errNeedsInput{fmt.Sprintf("Secret %s of GitProvider %s is missing: make it with the Git host's "+
 			"username and token, so the Brief has a repository to plan in", provider.Spec.CredentialsSecretRef.Name, name)}
 	}
-	return r.Git.Provider(gitprovider.Config{
+	return r.Git.Provider(ports.Config{
 		Kind:        string(provider.Spec.Provider),
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,
@@ -131,9 +130,9 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1beta1
 		// Only the operator writes main; the bot pushes plan branches. Protected
 		// before the bot exists, so it never could, and again when the
 		// repository moved to another GitProvider.
-		if err := provider.ProtectBranch(gitCtx, repo, gitprovider.DefaultBranch,
-			gitprovider.BranchRule{OperatorPushes: true}); err != nil {
-			return "", fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
+		if err := provider.ProtectBranch(gitCtx, repo, ports.DefaultBranch,
+			ports.BranchRule{OperatorPushes: true}); err != nil {
+			return "", fmt.Errorf("protecting %s: %w", ports.DefaultBranch, err)
 		}
 	}
 	if err := r.holdForBot(ctx, brief); err != nil {
@@ -142,7 +141,7 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1beta1
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
 		map[string]string{c4v1beta1.LabelProject: brief.Namespace, c4v1beta1.LabelBrief: brief.Name},
 		map[string]string{"repository": repo.CloneURL}, r.now(),
-		func() (gitprovider.Credentials, error) {
+		func() (ports.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo,
 				model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name)))
 		}); err != nil {
@@ -248,9 +247,9 @@ func (r *BriefReconciler) leaveBot(ctx context.Context, brief *c4v1beta1.Brief, 
 
 // writeWorkspace puts files on main: as its first commit in an empty
 // repository, else as one more commit when any of them differs.
-func writeWorkspace(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
+func writeWorkspace(ctx context.Context, provider ports.GitHost, repo ports.Repository,
 	files scaffold.Tree) error {
-	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commits, err := provider.History(ctx, repo, 1)
 	if err != nil {
 		return err
@@ -259,7 +258,7 @@ func writeWorkspace(ctx context.Context, provider ports.GitHost, repo gitprovide
 		_, err := provider.PushInitialCommit(ctx, repo, files, briefWorkspaceMessage, author)
 		return err
 	}
-	current, head, err := provider.ReadFiles(ctx, repo, gitprovider.DefaultBranch, model.WorkspaceFiles)
+	current, head, err := provider.ReadFiles(ctx, repo, ports.DefaultBranch, model.WorkspaceFiles)
 	if err != nil {
 		return err
 	}
@@ -267,7 +266,7 @@ func writeWorkspace(ctx context.Context, provider ports.GitHost, repo gitprovide
 		return nil
 	}
 	_, err = provider.PushDefaultBranch(ctx, repo, head, files, nil, briefWorkspaceMessage, author)
-	if errors.Is(err, gitprovider.ErrEmptyChange) {
+	if errors.Is(err, ports.ErrEmptyChange) {
 		return nil
 	}
 	return err
@@ -404,7 +403,7 @@ func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider interf
 	ports.GitHost
 	ports.Issues
 },
-	c *c4v1beta1.Container, issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
+	c *c4v1beta1.Container, issue ports.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return failedRelease(gitCtx, provider, provider.Repository(c.Name), issue, tasks)
@@ -412,7 +411,7 @@ func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider interf
 
 // readGoneProposal is goneProposal with the workspace's Git timeout.
 func (r *BriefReconciler) readGoneProposal(ctx context.Context, provider ports.GitHost,
-	c *c4v1beta1.Container, issue gitprovider.Issue) (string, error) {
+	c *c4v1beta1.Container, issue ports.Issue) (string, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return goneProposal(gitCtx, provider, provider.Repository(c.Name), issue)
@@ -422,7 +421,7 @@ func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]i
 	ports.GitHost
 	ports.Issues
 },
-	c *c4v1beta1.Container) ([]gitprovider.Issue, error) {
+	c *c4v1beta1.Container) ([]ports.Issue, error) {
 	name := c.Spec.GitProviderRef.Name
 	provider, ok := providers[name]
 	if !ok {
@@ -581,7 +580,7 @@ func installedBundles(ctx context.Context, c client.Reader, ns string) ([]model.
 // Secrets.
 func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Reader, owner client.Object,
 	name string, labels, extra map[string]string, now time.Time,
-	access func() (gitprovider.Credentials, error)) (string, error) {
+	access func() (ports.Credentials, error)) (string, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.GetNamespace(), Name: name}, &secret)
 	current := err == nil && len(secret.Data["token"]) > 0

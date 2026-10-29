@@ -15,7 +15,7 @@ api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
-internal/gitprovider/              GitProvider interface and the Gitea implementation (REST + go-git)
+internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
 internal/modelproxy/               The model proxy's handler: drop the client's credential, add the Secret's, forward unbuffered

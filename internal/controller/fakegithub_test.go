@@ -20,7 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // fakeGitHub is GitHub's release and issues API over httptest, for the repositories made
@@ -98,21 +99,21 @@ func newFakeGitHub() *fakeGitHub {
 // GitHubReleases is the real client, pointed at the fake: github.com's
 // stands for the plain server, and a GitHub Enterprise Server's URLs, the
 // enterprise one's, are kept.
-func (f *fakeGitHub) GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error) {
+func (f *fakeGitHub) GitHubReleases(cfg ports.GitHubConfig) (ports.ReleaseTarget, error) {
 	if cfg.APIURL != "" {
-		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubReleases(cfg)
+		return github.Client{HTTP: f.enterprise.Client()}.GitHubReleases(cfg)
 	}
 	cfg.APIURL, cfg.UploadURL = f.server.URL, f.server.URL
-	return gitprovider.Client{}.GitHubReleases(cfg)
+	return github.Client{}.GitHubReleases(cfg)
 }
 
 // GitHubToken is the real client's, minting a GitHub App's token at the
 // fake: at apiURL when set, the enterprise server's.
 func (f *fakeGitHub) GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error) {
 	if apiURL != "" {
-		return gitprovider.Client{HTTP: f.enterprise.Client()}.GitHubToken(ctx, apiURL, repository, secret)
+		return github.Client{HTTP: f.enterprise.Client()}.GitHubToken(ctx, apiURL, repository, secret)
 	}
-	return gitprovider.Client{}.GitHubToken(ctx, f.server.URL, repository, secret)
+	return github.Client{}.GitHubToken(ctx, f.server.URL, repository, secret)
 }
 
 // enterpriseUsed is how many requests repository took through the

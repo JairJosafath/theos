@@ -69,8 +69,8 @@ type BriefReconciler struct {
 	// ModelProxyURL, when set, is the model proxy's URL: an Agent on a shared
 	// Secret then needs it in SourceNamespace only, never in the project's.
 	ModelProxyURL string
-	// Issues reaches the GitHub repositories a Brief takes requests from; nil
-	// means GitHub.
+	// Issues reaches the GitHub repositories a Brief takes requests from.
+	// cmd/main.go builds it.
 	Issues IssueTrackers
 	// requestsReads are what each Brief last read of each repository's issues.
 	requestsMu    sync.Mutex

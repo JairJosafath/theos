@@ -16,7 +16,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
@@ -67,7 +66,7 @@ func (r *ProjectReconciler) ensurePackagesActions(ctx context.Context, project *
 			}
 			continue
 		}
-		actions, ok := provider.(gitprovider.OwnerActions)
+		actions, ok := provider.(ports.OwnerActions)
 		if !ok {
 			continue
 		}
@@ -96,7 +95,7 @@ func (r *ProjectReconciler) packagesActionsOf(ctx context.Context, gp *c4v1beta1
 	provider ports.GitHost) (packagesActions, error) {
 	want := packagesActions{variables: map[string]string{}, secrets: map[string]string{}}
 	npmSecret, pypiSecret := packagesSecrets(gp)
-	if packagesOf(gp) == (gitprovider.Packages{}) && npmSecret == "" && pypiSecret == "" {
+	if packagesOf(gp) == (ports.Packages{}) && npmSecret == "" && pypiSecret == "" {
 		return want, nil
 	}
 	repo := provider.Repository("")
@@ -123,7 +122,7 @@ func (r *ProjectReconciler) readToken(ctx context.Context, ns, name string) (str
 
 // applyPackagesActions sets want's variables and secrets on the owner and
 // deletes the rest of the five.
-func applyPackagesActions(ctx context.Context, actions gitprovider.OwnerActions, want packagesActions) error {
+func applyPackagesActions(ctx context.Context, actions ports.OwnerActions, want packagesActions) error {
 	for _, name := range []string{ActionsVarNpmScope, ActionsVarNpmRegistry, ActionsVarPyPIIndex} {
 		var err error
 		if value, ok := want.variables[name]; ok {

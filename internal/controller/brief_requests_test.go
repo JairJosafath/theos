@@ -20,8 +20,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // requestsBrief makes Brief cel-lens with a releases entry taking requests
@@ -204,7 +204,7 @@ var _ = Describe("Brief requests", func() {
 		mine := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
 		Eventually(func(g Gomega) {
 			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
-				HaveField("Reason", gitprovider.ReasonTokenLacksMembers)))
+				HaveField("Reason", ports.ReasonTokenLacksMembers)))
 			g.Expect(requestNumbers(g, ns)).To(And(HaveLen(2), HaveKeyWithValue(int32(mate), letThrough),
 				HaveKeyWithValue(int32(mine), letThrough)), "a member found unsure stays")
 			g.Expect(briefEventNotes(g, ns, "Requests")).To(ContainElement(ContainSubstring(repository)))
@@ -224,7 +224,7 @@ var _ = Describe("Brief requests", func() {
 		githubFake.setLacksIssues(repository, true)
 		Eventually(func(g Gomega) {
 			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
-				HaveField("Reason", gitprovider.ReasonTokenLacksIssues),
+				HaveField("Reason", ports.ReasonTokenLacksIssues),
 				HaveField("Message", HavePrefix(repository+": "))))
 			g.Expect(briefEventNotes(g, ns, "Requests")).To(ContainElement(ContainSubstring("TokenLacksIssues")))
 		}).Should(Succeed())
@@ -241,7 +241,7 @@ var _ = Describe("Brief requests", func() {
 		githubFake.closeIssue(repository, n)
 		Eventually(func(g Gomega) {
 			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
-				HaveField("Reason", gitprovider.ReasonGitHubUnavailable)))
+				HaveField("Reason", ports.ReasonGitHubUnavailable)))
 		}).Should(Succeed())
 		Expect(requestNumbers(Default, ns)).To(HaveKey(int32(n)))
 		Expect(getBrief(Default, ns).Status.Phase).NotTo(Equal(c4v1beta1.BriefFailed))

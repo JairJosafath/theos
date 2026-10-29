@@ -18,7 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -26,9 +26,9 @@ import (
 var (
 	ordersTarball = fake.ReleaseFile{Name: "c4factory-orders-api-0.1.0.tgz", Data: []byte("tgz")}
 	ordersWheel   = fake.ReleaseFile{Name: "orders_api-0.1.0-py3-none-any.whl", Data: []byte("whl")}
-	ordersNpm     = fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.1.0",
+	ordersNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.1.0",
 		File: ordersTarball.Name}
-	ordersPyPI = fake.Package{Ecosystem: gitprovider.EcosystemPyPI, Name: "orders-api", Version: "0.1.0",
+	ordersPyPI = fake.Package{Ecosystem: ports.EcosystemPyPI, Name: "orders-api", Version: "0.1.0",
 		File: ordersWheel.Name}
 )
 
@@ -143,7 +143,7 @@ var _ = Describe("Crew release packages", func() {
 
 	It("leaves an unscoped npm tarball alone and names it, publishing the wheel", func() {
 		ns := newProjectNamespace()
-		unscoped := fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "orders-api", Version: "0.1.0",
+		unscoped := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "orders-api", Version: "0.1.0",
 			File: "orders-api-0.1.0.tgz"}
 		packagedRelease(ns, "completed", "success",
 			[]fake.ReleaseFile{{Name: unscoped.File, Data: []byte("tgz")}, ordersWheel}, unscoped, ordersPyPI)
@@ -164,7 +164,7 @@ var _ = Describe("Crew release packages", func() {
 
 	It("reports a tarball whose version isn't the tag's as Invalid, once", func() {
 		ns := newProjectNamespace()
-		wrong := fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.2.0",
+		wrong := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.2.0",
 			File: "c4factory-orders-api-0.2.0.tgz"}
 		packagedRelease(ns, "completed", "success",
 			[]fake.ReleaseFile{{Name: wrong.File, Data: []byte("tgz")}, ordersWheel}, wrong, ordersPyPI)
@@ -212,7 +212,7 @@ var _ = Describe("Crew release packages", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		setNpmScope(ns, "@acme")
-		other := fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "@c4factory/x", Version: "0.1.0",
+		other := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/x", Version: "0.1.0",
 			File: "c4factory-x-0.1.0.tgz"}
 		packagedReleaseOf(ns, "completed", "success", []fake.ReleaseFile{{Name: other.File, Data: []byte("tgz")}}, other)
 

@@ -809,7 +809,7 @@ func (p *Project) pkgByID(id string) *pkg {
 // GitLab's rules for a generic package's name and version
 // (lib/gitlab/regex/packages.rb): letters, digits, '.', '_', '+' and '-',
 // and no ".." in a version. The file name's rule is not modelled: the
-// gitprovider tests upload a name with a space to see it escaped.
+// GitLab client's tests upload a name with a space to see it escaped.
 var packageKeyRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
 
 // upload adds a file to the package, making the package when it is new. A

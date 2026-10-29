@@ -26,7 +26,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -58,7 +57,7 @@ const publishTimeout = 30 * time.Minute
 // ReleaseTargets builds the clients of the repositories a Crew publishes its
 // releases to.
 type ReleaseTargets interface {
-	GitHubReleases(cfg gitprovider.GitHubConfig) (gitprovider.ReleaseTarget, error)
+	GitHubReleases(cfg ports.GitHubConfig) (ports.ReleaseTarget, error)
 	// GitHubToken is the token a Secret's data gives: its token, or its
 	// GitHub App's installation token.
 	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
@@ -74,7 +73,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1beta1.Cre
 		ports.GitHost
 		ports.Issues
 		ports.Registry
-	}, repo gitprovider.Repository,
+	}, repo ports.Repository,
 	tasks []c4v1beta1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
@@ -107,7 +106,7 @@ func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1beta1.Cre
 	}
 	token, err := r.publishToken(ctx, crew.Namespace, facts.Secret, spec.GitHub.Repository)
 	facts.SecretFound = token != ""
-	_, refused := errors.AsType[*gitprovider.ReleaseError](err)
+	_, refused := errors.AsType[*ports.ReleaseError](err)
 	switch {
 	case refused:
 		// GitHub refused to mint the GitHub App's token: the credential is
@@ -184,15 +183,15 @@ type publishPass struct {
 		ports.GitHost
 		ports.Issues
 	}
-	repo  gitprovider.Repository
+	repo  ports.Repository
 	spec  *c4v1beta1.CrewPublishReleases
 	token string
 	tag   string
 	facts *model.PublishFacts
 	// merged are the issues of the Container's Merged Tasks.
 	merged []int
-	target gitprovider.ReleaseTarget
-	gitea  *gitprovider.Release
+	target ports.ReleaseTarget
+	gitea  *ports.Release
 	// source is the release's source, once this pass put its tag out.
 	source *c4v1beta1.CrewReleaseSource
 	// private is whether GitHub reports the repository private, once read.
@@ -212,7 +211,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		}
 		if p.gitea != nil {
 			// The image goes to a registry, not to the GitHub release.
-			p.gitea.Assets = slices.DeleteFunc(p.gitea.Assets, func(a gitprovider.ReleaseAsset) bool {
+			p.gitea.Assets = slices.DeleteFunc(p.gitea.Assets, func(a ports.ReleaseAsset) bool {
 				return model.IsImageArchive(a.Name)
 			})
 		}
@@ -241,7 +240,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		p.r.publishSources.Store(p.crew.UID, sourceRead{tag: p.tag, source: p.facts.SourceFiles})
 	case model.PublishReadRepository, model.PublishReadGitHub, model.PublishReadGitHubSource:
 		if p.target == nil {
-			p.target, err = p.r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{
+			p.target, err = p.r.Publish.GitHubReleases(ports.GitHubConfig{
 				Repository: p.spec.GitHub.Repository, Token: p.token})
 			if err != nil {
 				p.log.Error(err, "Failed to build the GitHub client")
@@ -250,7 +249,7 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		}
 		switch action {
 		case model.PublishReadRepository:
-			var repo gitprovider.TargetRepository
+			var repo ports.TargetRepository
 			if repo, err = p.target.Repository(ctx); err == nil {
 				p.facts.Remote = &model.PublishTarget{Repository: repo.FullName, ID: repo.ID}
 				p.private = new(repo.Private)
@@ -258,8 +257,8 @@ func (p *publishPass) read(ctx context.Context, action model.PublishAction) bool
 		case model.PublishReadGitHub:
 			p.facts.GitHub, err = targetReleases(ctx, p.target, *p.facts)
 		default:
-			var gh gitprovider.SourceFolder
-			if gh, err = gitprovider.ReadSourceFolder(ctx, p.target, p.facts.Source.Path,
+			var gh ports.SourceFolder
+			if gh, err = ports.ReadSourceFolder(ctx, p.target, p.facts.Source.Path,
 				model.SourceTag(*p.facts.Source, p.tag)); err == nil {
 				p.facts.GitHubSource = gh.Facts
 			}
@@ -295,7 +294,7 @@ func (p *publishPass) write(ctx context.Context, step model.PublishStep) (bool, 
 		if ok, err = p.ship(ctx, step); !ok {
 			return false, nil
 		}
-		if errors.Is(err, gitprovider.ErrRefExists) {
+		if errors.Is(err, ports.ErrRefExists) {
 			// Made since it was read: the next poll reads whose it is.
 			return true, nil
 		}
@@ -375,7 +374,7 @@ func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1beta1.Crew,
 // publishToken reads the token from the Secret named name, live, so a Secret
 // created after a failure is used on the next poll: its token, or its GitHub
 // App's installation token for repository alone; "" when there is neither. A
-// mint GitHub refuses is a *gitprovider.ReleaseError.
+// mint GitHub refuses is a *ports.ReleaseError.
 func (r *CrewReconciler) publishToken(ctx context.Context, ns, name, repository string) (string, error) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
@@ -385,11 +384,11 @@ func (r *CrewReconciler) publishToken(ctx context.Context, ns, name, repository 
 	if err != nil {
 		return "", err
 	}
-	return r.releaseTargets().GitHubToken(ctx, "", repository, secret.Data)
+	return r.Publish.GitHubToken(ctx, "", repository, secret.Data)
 }
 
 // sourceRelease is the Gitea release as the rule reads it.
-func sourceRelease(rel *gitprovider.Release) *model.SourceRelease {
+func sourceRelease(rel *ports.Release) *model.SourceRelease {
 	if rel == nil {
 		return &model.SourceRelease{Missing: true}
 	}
@@ -402,7 +401,7 @@ func sourceRelease(rel *gitprovider.Release) *model.SourceRelease {
 
 // releaseIssues reads the closed issues of the release's milestone, which the
 // Crew closed when it tagged the release, and keeps those a Task merged.
-func releaseIssues(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func releaseIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	tag string, merged []int) ([]model.ReleaseIssue, error) {
 	id, err := provider.EnsureMilestone(ctx, repo, tag, "")
 	if err != nil {
@@ -434,7 +433,7 @@ func mergedIssues(tasks []c4v1beta1.Task) []int {
 
 // targetReleases reads the GitHub release the operator made for the tag, or
 // one of that tag someone else made, with its files.
-func targetReleases(ctx context.Context, target gitprovider.ReleaseTarget,
+func targetReleases(ctx context.Context, target ports.ReleaseTarget,
 	facts model.PublishFacts) (*model.TargetReleases, error) {
 	tag := model.ReleaseTag(facts.TagPrefix, facts.Tag)
 	found, err := target.FindRelease(ctx, tag, model.PublishMarker(facts.Namespace, facts.Container, tag))
@@ -526,11 +525,11 @@ func isSourceStep(step model.PublishStep) bool {
 // releaseSource streams the files of the Git host's tag for the Deployer,
 // each with its path and size; a failure of the Git host's own, not of each,
 // is a giteaError.
-func releaseSource(provider ports.GitHost, repo gitprovider.Repository,
+func releaseSource(provider ports.GitHost, repo ports.Repository,
 	tag string) func(context.Context, func(string, int64, io.Reader) error) error {
 	return func(ctx context.Context, each func(path string, size int64, content io.Reader) error) error {
 		var eachErr error
-		err := provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
+		err := provider.ReadSource(ctx, repo, tag, func(f ports.SourceFile, content io.Reader) error {
 			eachErr = each(f.Path, f.Size, content)
 			return eachErr
 		})
@@ -543,8 +542,8 @@ func releaseSource(provider ports.GitHost, repo gitprovider.Repository,
 
 // releaseFiles are the files of a Git host's release, each streamed from it
 // when the Deployer sends it; a failure to give one is a giteaError.
-func releaseFiles(provider ports.GitHost, repo gitprovider.Repository,
-	assets []gitprovider.ReleaseAsset) []ports.File {
+func releaseFiles(provider ports.GitHost, repo ports.Repository,
+	assets []ports.ReleaseAsset) []ports.File {
 	files := make([]ports.File, 0, len(assets))
 	for _, a := range assets {
 		files = append(files, ports.File{Name: a.Name, Size: a.Size,
@@ -698,11 +697,4 @@ func (r *CrewReconciler) notePublishSkipped(ctx context.Context, crew *c4v1beta1
 		prev.Tag, crew.Spec.PublishReleases.GitHub.Repository)
 	logf.FromContext(ctx).Info("Left a release unpublished", "tag", prev.Tag)
 	r.event(crew, corev1.EventTypeWarning, reasonReleaseNotPublished, "PublishRelease", message)
-}
-
-func (r *CrewReconciler) releaseTargets() ReleaseTargets {
-	if r.Publish != nil {
-		return r.Publish
-	}
-	return gitprovider.Client{}
 }

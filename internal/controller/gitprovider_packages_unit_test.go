@@ -18,28 +18,28 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 func TestPackagesOf(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		packages *c4v1beta1.PackagesSpec
-		want     gitprovider.Packages
+		want     ports.Packages
 		npm, py  string
 	}{
 		{name: "none leaves every registry to the host"},
 		{name: "an empty packages too", packages: &c4v1beta1.PackagesSpec{}},
 		{name: "npm alone", packages: &c4v1beta1.PackagesSpec{NPM: &c4v1beta1.NpmPackagesSpec{
 			Scope: "@acme", Registry: "https://npm.example.com/", CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-npm"}}},
-			want: gitprovider.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/"}, npm: "acme-npm"},
+			want: ports.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/"}, npm: "acme-npm"},
 		{name: "pypi alone, without a Secret", packages: &c4v1beta1.PackagesSpec{PyPI: &c4v1beta1.PyPIPackagesSpec{
 			Index: "https://pypi.example.com/simple", Upload: "https://pypi.example.com/"}},
-			want: gitprovider.Packages{PyPIIndex: "https://pypi.example.com/simple", PyPIUpload: "https://pypi.example.com/"}},
+			want: ports.Packages{PyPIIndex: "https://pypi.example.com/simple", PyPIUpload: "https://pypi.example.com/"}},
 		{name: "both", packages: &c4v1beta1.PackagesSpec{
 			NPM:  &c4v1beta1.NpmPackagesSpec{Scope: "@acme", CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-npm"}},
 			PyPI: &c4v1beta1.PyPIPackagesSpec{Index: "https://pypi.example.com/simple", CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-pypi"}}},
-			want: gitprovider.Packages{NpmScope: "@acme", PyPIIndex: "https://pypi.example.com/simple"}, npm: "acme-npm", py: "acme-pypi"},
+			want: ports.Packages{NpmScope: "@acme", PyPIIndex: "https://pypi.example.com/simple"}, npm: "acme-npm", py: "acme-pypi"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := &c4v1beta1.GitProvider{}
@@ -92,7 +92,7 @@ func TestPackagesWithTokens(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := gitprovider.Packages{NpmScope: "@acme", NpmToken: tt.wantNpm,
+			want := ports.Packages{NpmScope: "@acme", NpmToken: tt.wantNpm,
 				PyPIIndex: "https://pypi.example.com/simple", PyPIToken: tt.want}
 			if got != want {
 				t.Errorf("packagesWithTokens = %+v, want %+v", got, want)

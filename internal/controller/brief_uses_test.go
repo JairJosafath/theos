@@ -16,8 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -26,9 +26,9 @@ import (
 var (
 	coreTarball = fake.ReleaseFile{Name: "c4factory-core-0.1.0.tgz", Data: []byte("tgz")}
 	coreWheel   = fake.ReleaseFile{Name: "core-0.1.0-py3-none-any.whl", Data: []byte("whl")}
-	coreNpm     = fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "@c4factory/core", Version: "0.1.0",
+	coreNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/core", Version: "0.1.0",
 		File: coreTarball.Name}
-	corePyPI = fake.Package{Ecosystem: gitprovider.EcosystemPyPI, Name: "core", Version: "0.1.0", File: coreWheel.Name}
+	corePyPI = fake.Package{Ecosystem: ports.EcosystemPyPI, Name: "core", Version: "0.1.0", File: coreWheel.Name}
 )
 
 // usesPlan is the cel-lens plan of a core and a CLI that uses the core's
@@ -109,7 +109,7 @@ func releaseCoreRun(ns, tag, run string) {
 
 // coreReleaseRun sets the core's release run of v0.1.0 to status and conclusion.
 func coreReleaseRun(ns, status, conclusion string) {
-	gitFake.SetRuns(ns, "core", "v0.1.0", "abc123", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
+	gitFake.SetRuns(ns, "core", "v0.1.0", "abc123", ports.WorkflowRun{ID: 5, Workflow: "release.yaml",
 		Status: status, Conclusion: conclusion, URL: "http://gitea/" + ns + "/core/actions/runs/5"})
 }
 

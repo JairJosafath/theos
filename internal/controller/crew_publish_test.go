@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -62,7 +62,7 @@ func publishingCrew(ns, repository string, change ...func(*c4v1beta1.Crew)) []fa
 	// The image archive goes to the registry; the GitHub copy leaves it out.
 	gitFake.SetRelease(ns, "orders-api", "v0.1.0", "",
 		append(slices.Clone(files), fake.ReleaseFile{Name: "orders-api-v0.1.0.oci.tar", Data: []byte("an image")})...)
-	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5,
+	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", ports.WorkflowRun{ID: 5,
 		Workflow: "release.yaml", Status: "completed", Conclusion: "success"})
 	crew := newCrew(ns)
 	crew.Spec.TagReleases = true

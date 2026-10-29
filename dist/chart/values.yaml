@@ -767,7 +767,7 @@ catalog:
         supportedFrameworks: [go-kubebuilder]
         # The fence: the runner and prompt, the model credential, the sandbox and
         # its network, branch protection, the chart, the check and the agents' rules.
-        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/gitprovider/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
+        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/adapters/gitea/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
     - kind: Standard
       name: ts-standard
       ref: v1.7.0

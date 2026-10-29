@@ -17,14 +17,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // packagesOf is a GitProvider's spec.packages as the Provider's settings:
 // the registries it names, with "" for each it leaves to the host's own.
 // The tokens are not here: packagesWithTokens adds the ones that publish.
-func packagesOf(gp *c4v1beta1.GitProvider) gitprovider.Packages {
-	var p gitprovider.Packages
+func packagesOf(gp *c4v1beta1.GitProvider) ports.Packages {
+	var p ports.Packages
 	if gp.Spec.Packages == nil {
 		return p
 	}
@@ -61,7 +61,7 @@ const packagesTokenKey = "token"
 // a registry on another host (#1729). No Secret, or none with the key, leaves
 // the token "", which publishes with the host's own credentials.
 func packagesWithTokens(ctx context.Context, apiReader client.Reader, gp *c4v1beta1.GitProvider) (
-	gitprovider.Packages, error) {
+	ports.Packages, error) {
 	p := packagesOf(gp)
 	npm, pypi := packagesSecrets(gp)
 	var err error

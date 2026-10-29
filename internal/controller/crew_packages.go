@@ -19,7 +19,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -56,7 +55,7 @@ const packagesTimeout = 5 * time.Minute
 // PublishPyPIPackage); a file left unpublished is a Warning Event, once per
 // release.
 func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider ports.Registry, repo gitprovider.Repository) {
+	provider ports.Registry, repo ports.Repository) {
 	release := status.LastRelease
 	if release == nil {
 		return
@@ -91,7 +90,7 @@ func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1beta1.Cr
 			pkg := model.ReleasePackage{Outcome: string(p.Outcome), Ecosystem: p.Ecosystem, Name: p.Name,
 				Version: p.Version, File: p.File, Reason: p.Reason}
 			facts.Packages = append(facts.Packages, pkg)
-			if p.Outcome == gitprovider.PackagePublished {
+			if p.Outcome == ports.PackagePublished {
 				uploaded = append(uploaded, pkg)
 			}
 		}

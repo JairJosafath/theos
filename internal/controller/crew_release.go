@@ -22,7 +22,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -66,7 +65,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		ports.GitHost
 		ports.Issues
 		ports.CI
-	}, repo gitprovider.Repository,
+	}, repo ports.Repository,
 	tasks []c4v1beta1.Task) (*model.Issue, string) {
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -74,7 +73,7 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 	facts, titles, err := releaseFacts(gitCtx, provider, repo, tasks)
 	facts.Prepare = crew.Spec.PrepareReleases
 	var step model.ReleaseStep
-	var filed gitprovider.Issue
+	var filed ports.Issue
 	if err == nil {
 		step = model.NextRelease(facts)
 		switch {
@@ -163,7 +162,7 @@ func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1beta1.Cr
 		ports.Issues
 		ports.CI
 	},
-	repo gitprovider.Repository, step model.ReleaseStep, release *model.ReleaseMilestone) (model.ReleaseStep, error) {
+	repo ports.Repository, step model.ReleaseStep, release *model.ReleaseMilestone) (model.ReleaseStep, error) {
 	var err error
 	if step.CreateTag && checksBeforeRelease(container) {
 		if step, err = r.fullCheck(ctx, crew, status, provider, repo, step, release); err != nil {
@@ -187,7 +186,7 @@ func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1beta1.Cr
 // endFullCheck deletes the branch of release tag's full check once the tag is
 // made, whoever made it, and forgets the check.
 func endFullCheck(ctx context.Context, status *c4v1beta1.CrewStatus, provider ports.GitHost,
-	repo gitprovider.Repository, tag string) error {
+	repo ports.Repository, tag string) error {
 	if status.FullCheck == nil || status.FullCheck.Tag != tag {
 		return nil
 	}
@@ -204,7 +203,7 @@ func endFullCheck(ctx context.Context, status *c4v1beta1.CrewStatus, provider po
 // first, so a poll that fails half way finds it and moves the rest. A comment
 // goes before its move, so a failed one is made again; a failure between a
 // release's last move and closing it leaves that release empty, to a person.
-func settleMilestones(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func settleMilestones(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	step model.ReleaseStep) error {
 	for i, m := range step.Moved {
 		if err := provider.CommentIssue(ctx, repo, m.Issue, model.MovedComment(step, m)); err != nil {
@@ -248,13 +247,13 @@ func milestoneOf(facts model.ReleaseFacts, id int64) *model.ReleaseMilestone {
 
 // filePrepareIssue files release step.Tag's prepare issue in its milestone,
 // labelled kind/release and ready.
-func filePrepareIssue(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
-	step model.ReleaseStep, titles map[int]string) (gitprovider.Issue, error) {
+func filePrepareIssue(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	step model.ReleaseStep, titles map[int]string) (ports.Issue, error) {
 	l := model.ReleaseLabel()
 	labels := append(issueLabels(),
-		gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+		ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
-		return gitprovider.Issue{}, err
+		return ports.Issue{}, err
 	}
 	title, body := model.PrepareIssue(step.Tag, step.Merged, titles)
 	return provider.CreateIssue(ctx, repo, title, body, []string{model.LabelRelease, model.LabelReady}, step.Milestone)
@@ -270,7 +269,7 @@ const maxPreviousTags = 5
 func releaseFacts(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
-}, repo gitprovider.Repository,
+}, repo ports.Repository,
 	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, error) {
 	var facts model.ReleaseFacts
 	titles := map[int]string{}
@@ -371,7 +370,7 @@ func (r *CrewReconciler) event(crew *c4v1beta1.Crew, eventType, reason, action, 
 // when it refused only some runs, the release stays Failed, and a new value
 // re-runs those.
 func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider ports.CI, repo gitprovider.Repository) {
+	provider ports.CI, repo ports.Repository) {
 	value := crew.Annotations[c4v1beta1.AnnotationRerunRelease]
 	release := status.LastRelease
 	run := ""
@@ -454,7 +453,7 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew,
 // went, until they all ended well, and reports a run that failed with a Warning
 // Event and one that ended well with a Normal Event, once per change.
 func (r *CrewReconciler) watchReleaseRun(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider ports.CI, repo gitprovider.Repository) {
+	provider ports.CI, repo ports.Repository) {
 	release := status.LastRelease
 	if release == nil || release.Run == model.RunSucceeded {
 		return

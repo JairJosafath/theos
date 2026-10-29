@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -28,16 +28,16 @@ import (
 // factory's own among them, and the app's alone as they are published.
 func appSource(module string) (all []fake.SourceFile, app map[string]string) {
 	all = []fake.SourceFile{
-		{Path: "go.mod", Mode: gitprovider.SourcePlain, Data: "module " + module + "\n\ngo 1.25\n"},
-		{Path: "main.go", Mode: gitprovider.SourcePlain, Data: "package main\n\nfunc main() {}\n"},
-		{Path: "scripts/run.sh", Mode: gitprovider.SourceExecutable, Data: "#!/bin/sh\ngo run .\n"},
-		{Path: "run", Mode: gitprovider.SourceSymlink, Data: "scripts/run.sh"},
-		{Path: "LICENSE", Mode: gitprovider.SourcePlain, Data: "MIT License\n"},
-		{Path: "README.md", Mode: gitprovider.SourcePlain, Data: "# orders-api\n"},
-		{Path: "AGENTS.md", Mode: gitprovider.SourcePlain, Data: "# Agents\n"},
-		{Path: ".c4factory.yaml", Mode: gitprovider.SourcePlain, Data: "container: orders-api\n"},
-		{Path: ".gitea/workflows/ci.yaml", Mode: gitprovider.SourcePlain, Data: "on: push\n"},
-		{Path: "docs/agents/review.md", Mode: gitprovider.SourcePlain, Data: "Review well.\n"},
+		{Path: "go.mod", Mode: ports.SourcePlain, Data: "module " + module + "\n\ngo 1.25\n"},
+		{Path: "main.go", Mode: ports.SourcePlain, Data: "package main\n\nfunc main() {}\n"},
+		{Path: "scripts/run.sh", Mode: ports.SourceExecutable, Data: "#!/bin/sh\ngo run .\n"},
+		{Path: "run", Mode: ports.SourceSymlink, Data: "scripts/run.sh"},
+		{Path: "LICENSE", Mode: ports.SourcePlain, Data: "MIT License\n"},
+		{Path: "README.md", Mode: ports.SourcePlain, Data: "# orders-api\n"},
+		{Path: "AGENTS.md", Mode: ports.SourcePlain, Data: "# Agents\n"},
+		{Path: ".c4factory.yaml", Mode: ports.SourcePlain, Data: "container: orders-api\n"},
+		{Path: ".gitea/workflows/ci.yaml", Mode: ports.SourcePlain, Data: "on: push\n"},
+		{Path: "docs/agents/review.md", Mode: ports.SourcePlain, Data: "Review well.\n"},
 	}
 	app = map[string]string{}
 	for _, f := range all[:6] {
@@ -52,7 +52,7 @@ func appSource(module string) (all []fake.SourceFile, app map[string]string) {
 func leakedSource(module string) ([]fake.SourceFile, string) {
 	all, _ := appSource(module)
 	token := "gh" + "p_" + rand.Text() + rand.Text()[:10]
-	return append(all, fake.SourceFile{Path: "config/app.env", Mode: gitprovider.SourcePlain, Data: "PORT=8080\nTOKEN=" + token + "\n"}),
+	return append(all, fake.SourceFile{Path: "config/app.env", Mode: ports.SourcePlain, Data: "PORT=8080\nTOKEN=" + token + "\n"}),
 		token
 }
 

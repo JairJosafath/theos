@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
@@ -374,7 +373,7 @@ var _ = Describe("Container deploys", func() {
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		withImage, without := "Acme/"+ns+"-Shop", "acme/"+ns+"-plain"
 		for name, repository := range map[string]string{"oss": withImage, "plain": without} {
@@ -493,7 +492,7 @@ var _ = Describe("Container deploys", func() {
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		all, app := appSource("example.com/orders")
 		gitFake.SetSource(ns, "orders-api", "v0.1.0", all...)
@@ -575,7 +574,7 @@ var _ = Describe("Container deploys", func() {
 		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		all, _ := appSource("example.com/orders")
 		gitFake.SetSource(ns, "orders-api", "v0.1.0", append(all,
-			fake.SourceFile{Path: "config/app.env", Mode: gitprovider.SourcePlain, Data: "TOKEN=" + token + "\n"})...)
+			fake.SourceFile{Path: "config/app.env", Mode: ports.SourcePlain, Data: "TOKEN=" + token + "\n"})...)
 		gitFake.SetRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
 			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")})
 		crewRelease(ns, "v0.1.0", model.RunSucceeded)

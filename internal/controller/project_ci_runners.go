@@ -31,8 +31,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // ConditionCIRunners reports the project's CI runner pool: True while every
@@ -453,7 +453,7 @@ func (r *ProjectReconciler) runnerToken(ctx context.Context, ns, name string,
 		}
 		return "", err.Error(), nil, nil
 	}
-	runners, ok := provider.(gitprovider.OwnerRunners)
+	runners, ok := provider.(ports.OwnerRunners)
 	if !ok {
 		return "", reasonCannotRegister, nil, nil
 	}

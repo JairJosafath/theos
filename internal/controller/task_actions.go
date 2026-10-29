@@ -25,7 +25,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -122,7 +121,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	case model.ActionRetry:
 		review := r.reviewFrom(ctx, task, status)
 		if review != nil && review.Verdict == model.VerdictChanges && status.Phase == c4v1beta1.TaskReviewing {
-			r.review(ctx, task, status, container, agents.reviewer, gitprovider.ReviewRequestChanges, review.Summary)
+			r.review(ctx, task, status, container, agents.reviewer, ports.ReviewRequestChanges, review.Summary)
 		} else {
 			r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
 		}
@@ -205,7 +204,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, gitprovider.DefaultBranch,
+	pr, err := provider.OpenPullRequest(gitCtx, repo, status.Branch, ports.DefaultBranch,
 		pullTitle(task, status), pullBody(task, agents, status.Round, run.Result.Summary, run.Result.Extra))
 	if err != nil {
 		return ctrl.Result{}, err
@@ -410,15 +409,15 @@ func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1beta1.T
 // creating the bot user and the Secret the first time. The Secret is owned by the
 // Container, so it goes when the Container goes.
 func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1beta1.Container,
-	provider ports.AgentAccess, repo gitprovider.Repository) (string, error) {
+	provider ports.AgentAccess, repo ports.Repository) (string, error) {
 	r.revokeOldAgentTokens(ctx, container.Namespace, container.Name, "")
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	// The scopes are kept with the token, so a token made with fewer is made again.
 	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, agentGitSecret(container.Name),
 		map[string]string{c4v1beta1.LabelProject: container.Namespace, c4v1beta1.LabelContainer: container.Name},
-		map[string]string{"scopes": gitprovider.AgentTokenScopes}, r.now(),
-		func() (gitprovider.Credentials, error) {
+		map[string]string{"scopes": ports.AgentTokenScopes}, r.now(),
+		func() (ports.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 		})
 }
@@ -588,7 +587,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	err = provider.UpdatePullRequest(gitCtx, repo, int(status.PullRequest))
-	if errors.Is(err, gitprovider.ErrConflict) {
+	if errors.Is(err, ports.ErrConflict) {
 		return r.apply(ctx, task, status, container, agents, model.ConflictStep(int(status.Round)))
 	}
 	if err != nil {
@@ -619,7 +618,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 // mergeCommit reads the commit the pull request's merge made on the default
 // branch; empty when it can't be read yet, for the Task to read again once Merged.
 func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost,
-	repo gitprovider.Repository, status *c4v1beta1.TaskStatus) string {
+	repo ports.Repository, status *c4v1beta1.TaskStatus) string {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
@@ -634,7 +633,7 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 // approval; a push since the review makes the merge fail. A Standard change goes
 // through gatedMerge, which may refuse it or wait for CI.
 func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHost,
-	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent) (refusal string, err error) {
 	if len(task.Spec.AllowedProtectedPaths) > 0 {
 		return r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
@@ -650,7 +649,7 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHo
 func (r *TaskReconciler) approve(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent) {
 	if status.Review != nil {
-		r.review(ctx, task, status, container, reviewer, gitprovider.ReviewApprove, status.Review.Summary)
+		r.review(ctx, task, status, container, reviewer, ports.ReviewApprove, status.Review.Summary)
 	}
 }
 
@@ -822,7 +821,7 @@ func progressOf(status *c4v1beta1.TaskStatus) model.TaskProgress {
 func failedChecks(status *c4v1beta1.TaskStatus) bool {
 	checks := status.Checks
 	return checks != nil && checks.Commit == status.Commit &&
-		(checks.State == gitprovider.CheckFailure || checks.State == gitprovider.CheckError)
+		(checks.State == ports.CheckFailure || checks.State == ports.CheckError)
 }
 
 // setProgress copies a transition's result back into status.
@@ -1030,24 +1029,24 @@ func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container 
 // Git host refuses a review of one's own pull request, so the operator's user
 // could not review them otherwise.
 func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1beta1.Container) (ports.GitHost,
-	gitprovider.Repository, error) {
+	ports.Repository, error) {
 	var gp c4v1beta1.GitProvider
 	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name},
 		&gp); err != nil {
-		return nil, gitprovider.Repository{}, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
+		return nil, ports.Repository{}, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
 	}
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: agentGitSecret(container.Name)},
 		&secret); err != nil {
-		return nil, gitprovider.Repository{}, fmt.Errorf("agent Git access of %s: %w", container.Name, err)
+		return nil, ports.Repository{}, fmt.Errorf("agent Git access of %s: %w", container.Name, err)
 	}
-	provider, err := r.Git.Provider(gitprovider.Config{
+	provider, err := r.Git.Provider(ports.Config{
 		Kind: string(gp.Spec.Provider), URL: gp.Spec.URL, Owner: gp.Spec.Owner,
-		Credentials: gitprovider.Credentials{Username: string(secret.Data["username"]), Token: string(secret.Data["token"])},
+		Credentials: ports.Credentials{Username: string(secret.Data["username"]), Token: string(secret.Data["token"])},
 		Packages:    packagesOf(&gp),
 	})
 	if err != nil {
-		return nil, gitprovider.Repository{}, err
+		return nil, ports.Repository{}, err
 	}
 	return provider, provider.Repository(container.Name), nil
 }

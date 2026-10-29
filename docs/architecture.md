@@ -21,8 +21,8 @@ The board's source is [images/architecture.excalidraw](images/architecture.excal
      │        │        │               │
      │        │        └───────────┐   └──► Kubernetes API (Sessions)
      ▼        ▼                    ▼
-internal/  internal/        internal/gitprovider
- model  ◄── scaffold         (Gitea over HTTP, Git with go-git)
+internal/  internal/        internal/ports ◄── internal/adapters/*
+ model  ◄── scaffold         (interfaces)      (Gitea over HTTP, Git with go-git, …)
 (pure rules) (pure rendering)
      ▲        ▲
      └────────┴── api/v1beta1 types never reach these two
@@ -35,12 +35,11 @@ every scaffolded repository.
 | --- | --- | --- | --- |
 | API types | `api/v1beta1` (the hub the operator imports), `api/v1alpha1` (converts to it) | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
-| Adapters | `internal/gitprovider` | `net/http`, go-git, business rules | Kubernetes, controller-runtime, `api/`, `internal/controller` |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
-| Adapters | `internal/adapters/*` (`github`, the Deployer, from #1161; the rest from #1094) | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
+| Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `argocd`, `cloudformation` | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
 | OCI images | `internal/oci` | the standard library, `net/http`, go-containerregistry; host adapters use it | Kubernetes, controller-runtime, `api/`, any other `internal/` package |
-| Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/gitprovider`, `internal/controller` |
-| Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/gitprovider`; `internal/modelproxy` any other `internal/` package |
+| Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
+| Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/adapters`; `internal/modelproxy` any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
@@ -79,7 +78,7 @@ pods only in the components' and the Projects' namespaces.
   grows an `if` about templates or types, that logic belongs in `internal/model` or
   `internal/scaffold`.
 - **The Git host sits behind an interface, but only Gitea is proven.** The
-  controllers use `gitprovider.Provider`, whose shape is Gitea's. The ports a
+  controllers use the ports in `internal/ports`, whose shape is Gitea's. The ports a
   second host plugs into, and the rule for calling one swappable, are in
   [Ports](#ports).
 
@@ -105,8 +104,8 @@ it against this table. Where the code lives:
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds
   the adapters a GitProvider names and gives each reconciler the ports it
   calls. A depguard rule denies `internal/adapters` in `internal/controller`
-  outside its tests, which wire adapters onto the fakes; #1094 adds
-  `internal/gitprovider` to it.
+  and `internal/sessionclient` outside their tests, which wire adapters onto
+  the fakes.
 - **A host's events reach the controllers through the operator's receiver**
   (`internal/controller/git_events.go`, from #1084): the adapter checks a
   delivery's signature and says what it concerns, the receiver finds the
@@ -121,21 +120,23 @@ it against this table. Where the code lives:
 
 `internal/ports` holds the Deployer (#1161) and the Git host's five ports
 (#1166): GitHost, Issues, CI, AgentAccess and Registry, one file each with
-its shared types and errors. Until #1169 lands, the Gitea adapter stays in
-`internal/gitprovider`, whose `Provider` is the union of the five and whose
-type aliases (`gitprovider.Label = ports.Label`) keep the controllers
-compiling; the controllers' fake is `internal/controller/fakegit_test.go`.
+its shared types and errors, and `ports.Provider`, the union of the five
+that `GitClient` (`internal/controller`) returns; the Gitea adapter is
+`internal/adapters/gitea`, the controllers' fake `internal/ports/fake`. The
+GitHub clients' interfaces are in `internal/ports/deployer.go`
+(`ReleaseTarget`, `SourceTarget`) and `internal/ports/intake.go`
+(`IssueTracker`, request intake), their code in `internal/adapters/github`.
 The column *Today* says where each port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
-| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/gitprovider` until #1169 |
+| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/adapters/gitea` |
 | Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `ports.Issues` (`internal/ports/issues.go`) and `IssueTracker` |
-| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094); OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers' | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `ports.CI` (`internal/ports/ci.go`); `OwnerRunners` (`internal/gitprovider/runners.go`); the per-CI table `model.CI` (`internal/model/ci.go`); the per-project runner pool `project_ci_runners.go` and its pod spec `ci_runner_pod.go` in `internal/controller` |
+| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094); OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers' | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `ports.CI` (`internal/ports/ci.go`); `OwnerRunners` (`internal/ports/ci.go`); the per-CI table `model.CI` (`internal/model/ci.go`); the per-project runner pool `project_ci_runners.go` and its pod spec `ci_runner_pod.go` in `internal/controller` |
 | AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `ports.AgentAccess` (`internal/ports/agentaccess.go`) |
-| Registry | Go modules (optional), Go proxy address, a release's image archive pushed by digest (#1069, [plan](plans/images.md)), a release's npm tarballs and Python wheels and sdists published to the npm and PyPI registries, with the scope, registry and index addresses a repository's apps install from (#1229, [plan](plans/done/app-packages.md)) | the host's own, else `GitProvider.spec.registry.<member>`; npm scope and registry, PyPI index and upload by `GitProvider.spec.packages` | Gitea packages | to write (#1094); packages: a fake registry in `make test`, Gitea with npm and uv installs in `make test-gitea` | GitProvider Secret for the operator; CI only attaches release files with its job token | `ports.Registry` (`internal/ports/registry.go`), `Repository.GoProxy`, `Repository.NpmScope`, `NpmRegistry`, `PyPIIndex`, `PyPIUpload`; `PublishReleasePackages` (`internal/gitprovider/gitea_packages.go`) |
+| Registry | Go modules (optional), Go proxy address, a release's image archive pushed by digest (#1069, [plan](plans/images.md)), a release's npm tarballs and Python wheels and sdists published to the npm and PyPI registries, with the scope, registry and index addresses a repository's apps install from (#1229, [plan](plans/done/app-packages.md)) | the host's own, else `GitProvider.spec.registry.<member>`; npm scope and registry, PyPI index and upload by `GitProvider.spec.packages` | Gitea packages | to write (#1094); packages: a fake registry in `make test`, Gitea with npm and uv installs in `make test-gitea` | GitProvider Secret for the operator; CI only attaches release files with its job token | `ports.Registry` (`internal/ports/registry.go`), `Repository.GoProxy`, `Repository.NpmScope`, `NpmRegistry`, `PyPIIndex`, `PyPIUpload`; `PublishReleasePackages` (`internal/adapters/gitea/gitea_packages.go`) |
 | AgentRuntime | start a run, its state and result, stop it, list held runs; the fence is the adapter's | Helm installs one; no field until a second | Agent Sandbox | to write; the sandbox's pod spec and fence tests in `make test` | operator ServiceAccount; the sandbox gets no Kubernetes token | `SandboxGVK`, `buildSandbox`, `runState` in `internal/controller` |
-| Deployer | check a target's credential, ship a built release to it (one write per call where the adapter is the tool, as for GitHub releases), read its state back; a Deployment template writes the tool's files | the `DeployTarget`'s member, by a map from member name to adapter in `cmd/main.go` (`github`; `argoCD` #1072 ([plans/k8s-deploy.md](plans/k8s-deploy.md)), `cloudFormation` #1071 ([plans/aws-deploy.md](plans/aws-deploy.md)), `gitlab` #1606 ([plans/gitlab-deploy.md](plans/gitlab-deploy.md)), `flux` later); the member requirement table is `model.DeployMember` (`internal/model/deploy.go`) | GitHub releases (`internal/adapters/github`), which the Crew's `publishReleases` copy calls too; Argo CD (`internal/adapters/argocd`, #1586): one `Application` per Container by server-side apply, wired to the `argoCD` member (#1588); AWS CloudFormation (`internal/adapters/cloudformation`, #1608): a release's cloud assembly published to the CDK bootstrap's bucket and deployed as change sets through the bootstrap's roles, wired to the `cloudFormation` member (#1609); GitLab releases (`internal/adapters/gitlab`, #1803): a release's files in the project's generic package registry, the release made last and linking them, the image copied by digest to the project's container registry (#1806), wired to the `gitlab` member (#1804) | `contract.Deployer(t, env)` ([plans/done/deploy.md](plans/done/deploy.md)): the fake (`internal/ports/fake`), the GitHub adapter on the publish tests' fake GitHub, and the Argo CD adapter on envtest with Argo CD's CRDs (`test/crds/argocd`) and a fake Argo CD that syncs each Application, and the CloudFormation adapter on a fake AWS API, and the GitLab adapter on a fake GitLab (`internal/adapters/gitlab/gitlabtest`), in `make test`; the state rule is `model.ArgoCDDeployState`, table-tested | the DeployTarget's `credentialsSecretRef` (and a Crew's `publishReleases.github.tokenSecretRef`, which the Crew hands the adapter as the target's Secret), operator only; CI never holds it | `ports.Deployer` (`internal/ports/deployer.go`); the GitHub adapter calls `ReleaseTarget` in `internal/gitprovider/github.go`, the only GitHub writer |
+| Deployer | check a target's credential, ship a built release to it (one write per call where the adapter is the tool, as for GitHub releases), read its state back; a Deployment template writes the tool's files | the `DeployTarget`'s member, by a map from member name to adapter in `cmd/main.go` (`github`; `argoCD` #1072 ([plans/k8s-deploy.md](plans/k8s-deploy.md)), `cloudFormation` #1071 ([plans/aws-deploy.md](plans/aws-deploy.md)), `gitlab` #1606 ([plans/gitlab-deploy.md](plans/gitlab-deploy.md)), `flux` later); the member requirement table is `model.DeployMember` (`internal/model/deploy.go`) | GitHub releases (`internal/adapters/github`), which the Crew's `publishReleases` copy calls too; Argo CD (`internal/adapters/argocd`, #1586): one `Application` per Container by server-side apply, wired to the `argoCD` member (#1588); AWS CloudFormation (`internal/adapters/cloudformation`, #1608): a release's cloud assembly published to the CDK bootstrap's bucket and deployed as change sets through the bootstrap's roles, wired to the `cloudFormation` member (#1609); GitLab releases (`internal/adapters/gitlab`, #1803): a release's files in the project's generic package registry, the release made last and linking them, the image copied by digest to the project's container registry (#1806), wired to the `gitlab` member (#1804) | `contract.Deployer(t, env)` ([plans/done/deploy.md](plans/done/deploy.md)): the fake (`internal/ports/fake`), the GitHub adapter on the publish tests' fake GitHub, and the Argo CD adapter on envtest with Argo CD's CRDs (`test/crds/argocd`) and a fake Argo CD that syncs each Application, and the CloudFormation adapter on a fake AWS API, and the GitLab adapter on a fake GitLab (`internal/adapters/gitlab/gitlabtest`), in `make test`; the state rule is `model.ArgoCDDeployState`, table-tested | the DeployTarget's `credentialsSecretRef` (and a Crew's `publishReleases.github.tokenSecretRef`, which the Crew hands the adapter as the target's Secret), operator only; CI never holds it | `ports.Deployer` (`internal/ports/deployer.go`); the GitHub adapter calls `ports.ReleaseTarget`, built by `internal/adapters/github/github.go`, the only GitHub writer |
 
 No port is swappable yet: none has two real adapters passing a full contract (Issues on GitHub covers intake only). A port is called
 swappable here once its fake and two real adapters pass its contract.
@@ -145,12 +146,12 @@ swappable here once its fake and two real adapters pass its contract.
 1. `internal/controller` resolves the Container's references and converts the
    resources into `model` values.
 2. `internal/model` checks every catalog entry supports the Container type.
-3. `internal/gitprovider` creates the repository and fetches each template at its
+3. The Gitea adapter creates the repository and `internal/adapters/git` fetches each template at its
    pinned ref.
 4. `internal/scaffold` renders the layers in order (Framework, Standard, Compute,
    Deployment, Connectors, Domains), fails on a path owned by two layers, adds `.devcontainer/` and
    `.c4factory.yaml`, and returns one file tree.
-5. `internal/gitprovider` pushes that tree as a single commit.
+5. The Gitea adapter pushes that tree as a single commit.
 6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom`,
    `scaffoldedDomains` and `appliedRelationships` with `appliedConnectors` (what each Relationship added).
 
@@ -164,12 +165,12 @@ Containers at once.
 1. `internal/controller` takes the ref the Container's Standard files are at from
    `status.standard`, or before the first update from `scaffoldedFrom`
    (`model.ScaffoldedRef`). It compares it with the Standard's ref.
-2. `internal/gitprovider` fetches the template at both refs; `internal/scaffold`
-   renders each with the scaffold's input (`RenderLayer`); `gitprovider` reads
+2. `internal/adapters/git` fetches the template at both refs; `internal/scaffold`
+   renders each with the scaffold's input (`RenderLayer`); the Gitea adapter reads
    `main`'s copy of every path either render has (`ReadFiles`).
 3. `internal/scaffold.PlanUpdate` decides by whole files what to write, remove
    and leave out. Nothing to write: the controller records the new ref.
-4. `internal/gitprovider` pushes one commit onto the `main` commit it read
+4. The Gitea adapter pushes one commit onto the `main` commit it read
    (`PushBranch`, branch `model.StandardUpdateBranch`) and opens a pull request
    with `model`'s title and body. The controller records it in
    `status.standard.update`.
@@ -178,7 +179,7 @@ Containers at once.
    decides every step from the facts the controller reads, one read at a time:
    whether to plan, record a merge, drop, stop, wait or merge. Once CI is green,
    `model.StandardUpdateRefusal` checks the required checks and the paths, and
-   `gitprovider` merges it as admin (`ForceMergePullRequest`). The controller
+   the Gitea adapter merges it as admin (`ForceMergePullRequest`). The controller
    moves `status.standard.ref` and reports each step in the condition
    `StandardUpdated`.
 
@@ -213,7 +214,7 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    request; `AgentBackAt` sets an unavailable agent's wait; and `IssueClosed`,
    `PullRequestClosed` and `GatedMergeRefused` end the Task.
 3. To start a run, the controller makes sure the Container's agent bot user exists
-   (`gitprovider.EnsureAgentAccess`, token in Secret `<container>-agent-git`) and
+   (`ports.EnsureAgentAccess`, token in Secret `<container>-agent-git`) and
    creates an Agent Sandbox `Sandbox` owned by the Task, with the role's Agent
    (`spec.agentRef` implements, `spec.reviewerRef` reviews) and its harness and
    model. Its pod mounts no ServiceAccount token; the project's NetworkPolicy lets
@@ -290,16 +291,16 @@ templates' `go.mod`), which no public proxy knows. Agent sandboxes of a
 Container's Tasks get `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`,
 `GOPROXY=http://127.0.0.1:3127,direct` and `GONOSUMDB=c4factory.local`
 (`buildSandbox`, from the GitProvider's URL and owner through
-`gitprovider.Repository.GoProxy`). c4agent serves `agentrunner.GoProxy` there
+`ports.Repository.GoProxy`). c4agent serves `agentrunner.GoProxy` there
 while the agent works: `c4factory.local/` paths go to the registry and nowhere
-else, with the bot's credentials over https (`gitprovider.AgentTokenScopes`
+else, with the bot's credentials over https (`ports.AgentTokenScopes`
 lets it read the owner's packages; the token's name carries its scopes, so an
 operator upgrade that changes them makes a new token beside the old one
 instead of revoking what a running sandbox of the Container holds. The agent
 Git Secret's `c4.factory.io/old-tokens-before` annotation records when; at
 the start and end of each run, once every sandbox of the Container started
 after it (`model.OldTokensUnused`), the operator revokes the old tokens
-(`gitprovider.RevokeOldAgentTokens`) and drops the annotation), and every
+(`ports.RevokeOldAgentTokens`) and drops the annotation), and every
 other path to
 proxy.golang.org. The go command has no per-path proxy, and with a list of
 the registry, then the public proxy, it would ask the public proxy for a
@@ -312,7 +313,7 @@ asked for them. [plans/done/app-modules.md](plans/done/app-modules.md) has why.
 ## npm and PyPI packages of the factory's apps
 
 The same sandboxes get `C4_NPM_SCOPE`, `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`
-(`buildSandbox`, through `gitprovider.Repository.NpmScope`, `NpmRegistry` and
+(`buildSandbox`, through `ports.Repository.NpmScope`, `NpmRegistry` and
 `PyPIIndex`): `GitProvider.spec.packages` where it is set, else the scope
 `@c4factory` and the host's own registries,
 `<gitea>/api/packages/<owner>/npm/` and `.../pypi/simple`. The planner's gets
@@ -326,7 +327,7 @@ proxy: npm sends a scope, and uv a package, to its own registry. When
 `spec.packages` departs from the default, `ProjectReconciler` sets the three
 names as the owner's Actions variables and the read tokens as its Actions
 secrets, and deletes them when it returns to it
-(`internal/controller/project_packages.go`, `gitprovider.OwnerActions`), so a
+(`internal/controller/project_packages.go`, `ports.OwnerActions`), so a
 workflow reads them with the host's own as the fallback.
 [plans/done/app-packages.md](plans/done/app-packages.md), decision 5, has why.
 
@@ -335,7 +336,7 @@ The Crew publishes a release's packages to the same registries
 release runs succeed, it reads the release's npm tarballs, wheels and sdists
 and uploads each to the npm registry or the PyPI index, by default the
 host's own under the owner, with the GitProvider's credentials
-(`gitprovider.Provider.PublishReleasePackages`, `gitea_packages.go`; the
+(`ports.Registry.PublishReleasePackages`, `gitea_packages.go`; the
 registries come from `packagesOf` in `gitprovider_packages.go`). A file is
 published only at the tag's version and only under the scope; one outside
 either, or a version the registry already has, is an outcome the decision
@@ -377,7 +378,7 @@ each run compiles only what changed:
 1. Every minute, and when a Task on its Container changes phase or the Container
    turns Ready, `internal/controller` reads the Crew, adopts it under its
    Container, checks its Agents exist, and lists the Container's Tasks live.
-2. Through `gitprovider` it makes sure the status labels exist, lists the open
+2. Through the Issues port it makes sure the status labels exist, lists the open
    issues labelled `status/ready`, and reads each one's open dependencies.
 3. `internal/model.NextCrewStep` decides: issues without an acceptance criteria
    checklist, already merged, or tried three times go back to a person; issues

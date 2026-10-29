@@ -58,7 +58,7 @@ say() { echo "make test: $*" >&2; }
 # since the layering forbids the import. A listed directory that holds no
 # package of the module is ignored.
 declare -A readers=(
-  [templates]="hack/template-go-kubebuilder internal/controller internal/gitprovider internal/model internal/scaffold test/chart"
+  [templates]="hack/template-go-kubebuilder internal/controller internal/adapters/gitea internal/model internal/scaffold test/chart"
   [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
   [api]="internal/scaffold"
   [dist]="internal/model test/chart"
@@ -66,7 +66,7 @@ declare -A readers=(
   [hack/seed]="test/chart"
   [hack/boilerplate.go.txt]="hack/template-go-kubebuilder"
   [hack/new.sh]="hack/template-go-kubebuilder"
-  [hack/setup.sh]="internal/gitprovider"
+  [hack/setup.sh]="internal/adapters/git"
   [hack/go-test.sh]="internal/controller"
   [hack/release.sh]="test/compat"
 )

@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -69,8 +68,8 @@ type CrewReconciler struct {
 	Now func() time.Time
 	// Recorder emits the Crew's Events about releases; nil emits none.
 	Recorder events.EventRecorder
-	// Publish reaches the repositories releases are published to; nil means
-	// gitprovider.Client{}.
+	// Publish reaches the repositories releases are published to. cmd/main.go
+	// builds it.
 	Publish ReleaseTargets
 	// Deployers ship releases by DeployTarget member; publishing a release
 	// copies it through the github member's. cmd/main.go builds them.
@@ -200,7 +199,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ports.CI
 		ports.Registry
 	}
-	var repo gitprovider.Repository
+	var repo ports.Repository
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -303,7 +302,7 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, cont
 		ports.Issues
 		ports.CI
 		ports.Registry
-	}, repo gitprovider.Repository,
+	}, repo ports.Repository,
 	tasks []c4v1beta1.Task) (*model.Issue, string) {
 	if crew.Spec.TagReleases {
 		r.rerunRelease(ctx, crew, status, provider, repo)
@@ -377,7 +376,7 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 
 // readyIssues reads the open issues labelled ready, what blocks each, and which
 // are Standard changes.
-func readyIssues(ctx context.Context, provider ports.Issues, repo gitprovider.Repository) ([]model.Issue, error) {
+func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.Issue, error) {
 	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
 		return nil, err
 	}
@@ -402,7 +401,7 @@ func readyIssues(ctx context.Context, provider ports.Issues, repo gitprovider.Re
 // taskReleases sets the release of each active Task's issue, so that a release
 // with work in progress holds back the later ones, and whether it is a
 // release's prepare issue, which runs alone.
-func taskReleases(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func taskReleases(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	tasks []model.CrewTask, ready []model.Issue) error {
 	for i, t := range tasks {
 		if t.Final || t.Issue == 0 {
@@ -423,7 +422,7 @@ func taskReleases(ctx context.Context, provider ports.Issues, repo gitprovider.R
 }
 
 // release is an issue's milestone as a release; nil when it has no due date.
-func release(issue gitprovider.Issue) *model.Release {
+func release(issue ports.Issue) *model.Release {
 	if issue.MilestoneDue.IsZero() {
 		return nil
 	}

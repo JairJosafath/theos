@@ -140,7 +140,7 @@ spec:
             cpu: 10m
             memory: 64Mi
         # The root filesystem is read-only; a Go module is repacked through
-        # files here when a release publishes it (internal/gitprovider).
+        # files here when a release publishes it (internal/adapters/gitea).
         volumeMounts:
         - name: tmp
           mountPath: /tmp

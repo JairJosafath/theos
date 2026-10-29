@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -76,7 +75,7 @@ func waitingSuggestions(brief *c4v1beta1.Brief) []model.Suggestion {
 
 // waitingSuggestion is open issue i of Container c, a reviewer's suggestion
 // that waits for an answer.
-func waitingSuggestion(c *c4v1beta1.Container, i gitprovider.Issue) model.Suggestion {
+func waitingSuggestion(c *c4v1beta1.Container, i ports.Issue) model.Suggestion {
 	return model.Suggestion{Container: c.Name, Repository: repositoryName(c), Number: i.Number, Title: i.Title,
 		URL: i.URL, Criteria: model.MissingAcceptanceCriteria(i.Body) == ""}
 }
@@ -135,7 +134,7 @@ func (r *BriefReconciler) suggestionsToCheck(ctx context.Context, brief *c4v1bet
 				continue
 			}
 			issue, err := provider.GetIssue(gitCtx, repo, n)
-			if errors.Is(err, gitprovider.ErrIssueNotFound) {
+			if errors.Is(err, ports.ErrIssueNotFound) {
 				continue
 			}
 			if err != nil {
@@ -199,7 +198,7 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 		}
 		repo := provider.Repository(c.Name)
 		issue, err := provider.GetIssue(gitCtx, repo, a.Issue)
-		if errors.Is(err, gitprovider.ErrIssueNotFound) {
+		if errors.Is(err, ports.ErrIssueNotFound) {
 			continue // deleted on the Git host: nothing waits
 		}
 		if err != nil {
@@ -251,7 +250,7 @@ func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1beta1.Bri
 		return "", err
 	}
 	issue, err := provider.GetIssue(ctx, provider.Repository(c.Name), a.Issue)
-	if errors.Is(err, gitprovider.ErrIssueNotFound) {
+	if errors.Is(err, ports.ErrIssueNotFound) {
 		return model.FoundGone, nil
 	}
 	if err != nil {
@@ -264,8 +263,8 @@ func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1beta1.Bri
 // it. A take's ready label, what marks it answered, comes last, so a try
 // that stops part way is done again whole. A skip closes first, so a try that
 // stops after it leaves the issue closed without its comment.
-func answerSuggestion(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
-	issue gitprovider.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
+func answerSuggestion(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	issue ports.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
 	if a.Answer == model.AnswerTake {
 		if issue.Milestone != milestone {
 			if err := provider.SetIssueMilestone(ctx, repo, issue.Number, milestone); err != nil {

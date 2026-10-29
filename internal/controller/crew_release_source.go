@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -72,7 +71,7 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1beta1.Cre
 // secrets as it streams, known among them, and the files kept are checked
 // (model.PublishChecks) into the source's Problems.
 func readSource(ctx context.Context, c client.Reader, container *c4v1beta1.Container,
-	provider ports.GitHost, repo gitprovider.Repository, tag string, known []string) (*model.ReleaseSource, error) {
+	provider ports.GitHost, repo ports.Repository, tag string, known []string) (*model.ReleaseSource, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
 		return nil, err
@@ -80,11 +79,11 @@ func readSource(ctx context.Context, c client.Reader, container *c4v1beta1.Conta
 	var files []model.SourceFile
 	var checked []model.CheckedFile
 	module := ""
-	err = provider.ReadSource(ctx, repo, tag, func(f gitprovider.SourceFile, content io.Reader) error {
+	err = provider.ReadSource(ctx, repo, tag, func(f ports.SourceFile, content io.Reader) error {
 		file := model.SourceFile{Path: f.Path, Mode: model.FileMode(f.Mode), Size: f.Size}
 		var scan model.SecretScan
 		var err error
-		if f.Path == "go.mod" && f.Mode != gitprovider.SourceSymlink && f.Size <= maxGoMod {
+		if f.Path == "go.mod" && f.Mode != ports.SourceSymlink && f.Size <= maxGoMod {
 			var data []byte
 			if data, err = io.ReadAll(content); err != nil {
 				return err
@@ -186,8 +185,8 @@ type sourceRead struct {
 // publishFailure is a failed GitHub call as the rule reads it: a branch that
 // moved on is no failure, the next poll builds on it.
 func publishFailure(err error) *model.PublishFailure {
-	if errors.Is(err, gitprovider.ErrNotFastForward) {
+	if errors.Is(err, ports.ErrNotFastForward) {
 		return &model.PublishFailure{Reason: model.PublishBranchMoved, Detail: err.Error()}
 	}
-	return &model.PublishFailure{Reason: gitprovider.ReleaseReason(err), Detail: err.Error()}
+	return &model.PublishFailure{Reason: ports.ReleaseReason(err), Detail: err.Error()}
 }

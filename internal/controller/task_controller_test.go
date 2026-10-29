@@ -26,8 +26,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
@@ -161,7 +161,7 @@ var _ = Describe("Task", func() {
 		var secret corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
 		Expect(string(secret.Data["username"])).To(Equal(ns + "-orders-api-agent"))
-		Expect(string(secret.Data["scopes"])).To(Equal(gitprovider.AgentTokenScopes))
+		Expect(string(secret.Data["scopes"])).To(Equal(ports.AgentTokenScopes))
 		Expect(env).To(ContainElements(
 			map[string]any{"name": "C4_GO_REGISTRY", "value": "http://gitea.gitea.svc.cluster.local:3000/api/packages/" + ns + "/go"},
 			map[string]any{"name": "GOPROXY", "value": "http://127.0.0.1:3127,direct"},
@@ -199,7 +199,7 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Review).To(HaveField("Verdict", "changes"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewRequestChanges),
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", ports.ReviewRequestChanges),
 			HaveField("Commit", "sha-r1"), HaveField("Body", ContainSubstring("Test an empty image.")))),
 			"the reviewer's verdict is a review in the Git host")
 
@@ -931,7 +931,7 @@ var _ = Describe("Agent tokens after an upgrade", func() {
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 		var secret corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
-		Expect(string(secret.Data["scopes"])).To(Equal(gitprovider.AgentTokenScopes))
+		Expect(string(secret.Data["scopes"])).To(Equal(ports.AgentTokenScopes))
 		Expect(secret.Annotations).To(HaveKey(annotationOldTokensBefore))
 
 		By("keeping the old token while the sandbox started before it runs")

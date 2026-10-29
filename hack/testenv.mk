@@ -111,23 +111,23 @@ cluster-delete: ## Delete the Kind cluster and everything in it.
 	$(KIND) delete cluster --name '$(KIND_CLUSTER)'
 
 .PHONY: test-gitea
-test-gitea: ## Run the gitprovider integration tests: against C4_GITEA_URL if set, else a local Gitea (make gitea-local).
+test-gitea: ## Run the Gitea adapter's integration tests: against C4_GITEA_URL if set, else a local Gitea (make gitea-local).
 	@if [ -n "$$C4_GITEA_URL" ]; then \
 		echo "Testing against C4_GITEA_URL=$$C4_GITEA_URL"; \
 	else \
 		$(MAKE) --no-print-directory gitea-local && hack/gitea-local.sh fixtures && \
 		set -a && . .gitea-local/credentials.env && set +a; \
 	fi && \
-	go test -count=1 -v ./internal/gitprovider/ -run Integration
+	go test -count=1 -v ./internal/adapters/gitea/ -run Integration
 
 .PHONY: test-gitea-kind
-test-gitea-kind: ## Run the gitprovider integration tests against the seeded Gitea of the Kind cluster.
+test-gitea-kind: ## Run the Gitea adapter's integration tests against the seeded Gitea of the Kind cluster.
 	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000 >/dev/null 2>&1 & pf=$$!; \
 	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
 	C4_GITEA_URL=http://localhost:$(GITEA_PORT) \
 	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
 	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
-	go test -count=1 -v ./internal/gitprovider/ -run Integration
+	go test -count=1 -v ./internal/adapters/gitea/ -run Integration
 
 ##@ Local Gitea
 

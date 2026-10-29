@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/contract"
@@ -102,7 +101,7 @@ func TestShipTagTaken(t *testing.T) {
 	tg, p := newTarget(gl, "t0ken")
 	p.AddRelease("cli/v1.0.0", "someone else's release")
 	err := New(nil).Ship(context.Background(), tg, shipment(file("orders-cli_linux.tar.gz", "bin")))
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	re, ok := errors.AsType[*ports.ReleaseError](err)
 	if !ok || re.Reason != model.PublishTagTaken {
 		t.Fatalf("Ship() = %v, want a ReleaseError with reason TagTaken", err)
 	}
@@ -217,8 +216,8 @@ func TestShipPackagesOff(t *testing.T) {
 	tg, p := newTarget(gl, "t0ken")
 	p.PackagesEnabled = false
 	err := New(nil).Ship(context.Background(), tg, shipment(file("orders-cli_linux.tar.gz", "bin")))
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
-	if !ok || re.Reason != gitprovider.ReasonGitLabRejected || errors.Is(err, ports.ErrUnreachable) {
+	re, ok := errors.AsType[*ports.ReleaseError](err)
+	if !ok || re.Reason != ReasonGitLabRejected || errors.Is(err, ports.ErrUnreachable) {
 		t.Fatalf("Ship() = %v, want GitLabRejected, not a port error", err)
 	}
 }
@@ -232,7 +231,7 @@ func TestShipTagAtAnotherCommit(t *testing.T) {
 	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
 	s.Commit = strings.Repeat("b", 40)
 	err := New(nil).Ship(context.Background(), tg, s)
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	re, ok := errors.AsType[*ports.ReleaseError](err)
 	if !ok || re.Reason != model.PublishTagTaken {
 		t.Fatalf("Ship() = %v, want a ReleaseError with reason TagTaken", err)
 	}
@@ -244,19 +243,19 @@ func TestShipTagAtAnotherCommit(t *testing.T) {
 // racing makes the fake's release appear between Ship's read and its write,
 // as another reconcile would: CreateRelease then gets GitLab's 409.
 type racing struct {
-	gitprovider.GitLabProject
+	GitLabProject
 	p *gitlabtest.Project
 }
 
-func (r racing) CreateRelease(ctx context.Context, rel gitprovider.GitLabRelease) (model.TargetRelease, error) {
+func (r racing) CreateRelease(ctx context.Context, rel GitLabRelease) (model.TargetRelease, error) {
 	r.p.AddRelease(rel.Tag, rel.Description)
 	return r.GitLabProject.CreateRelease(ctx, rel)
 }
 
 type racingProjects struct{ p *gitlabtest.Project }
 
-func (r racingProjects) GitLab(cfg gitprovider.GitLabConfig) (gitprovider.GitLabProject, error) {
-	c, err := gitprovider.Client{}.GitLab(cfg)
+func (r racingProjects) GitLab(cfg GitLabConfig) (GitLabProject, error) {
+	c, err := Client{}.GitLab(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -294,8 +293,8 @@ func TestShipEmptyProject(t *testing.T) {
 	for i := 0; i < 3 && err == nil; i++ {
 		err = d.Ship(ctx, tg, s)
 	}
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
-	if !ok || re.Reason != gitprovider.ReasonGitLabRejected || !strings.Contains(re.Message, "is empty") {
+	re, ok := errors.AsType[*ports.ReleaseError](err)
+	if !ok || re.Reason != ReasonGitLabRejected || !strings.Contains(re.Message, "is empty") {
 		t.Fatalf("Ship() = %v, want GitLabRejected saying the project is empty", err)
 	}
 	if errors.Is(err, ports.ErrUnreachable) || errors.Is(err, ports.ErrCredentialRefused) {
@@ -444,18 +443,18 @@ func TestShipSourceBranchMoved(t *testing.T) {
 	gl := gitlabtest.New(t)
 	tg, p := newTarget(gl, "t0ken")
 	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
-	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+	c, err := Client{}.GitLab(GitLabConfig{URL: gl.URL(),
 		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
-		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "orders-api/main.go", Content: "theirs"}}}); err != nil {
+	if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []GitLabCommitAction{{Action: "create", FilePath: "orders-api/main.go", Content: "theirs"}}}); err != nil {
 		t.Fatal(err)
 	}
 	stale := p.DefaultBranchHead
-	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs again",
-		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go", Content: "theirs 2"}}}); err != nil {
+	if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "theirs again",
+		Actions: []GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go", Content: "theirs 2"}}}); err != nil {
 		t.Fatal(err)
 	}
 	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
@@ -465,7 +464,7 @@ func TestShipSourceBranchMoved(t *testing.T) {
 	actions := model.GitLabSourceActions(s.Source.Files, []model.SourceFile{{Path: "main.go", Mode: model.ModeFile,
 		Blob: model.BlobSHA([]byte("theirs"))}})
 	_, err = commitSource(ctx, c, s, p.DefaultBranch, stale, step, actions)
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	re, ok := errors.AsType[*ports.ReleaseError](err)
 	if !ok || re.Reason != model.PublishBranchMoved || !strings.Contains(re.Message, "another commit landed") {
 		t.Fatalf("commitSource on a moved branch = %v, want BranchMoved", err)
 	}
@@ -494,13 +493,13 @@ func TestShipSourceAfterOutsideCommit(t *testing.T) {
 
 	// Someone else's commit touches main.go alone: the head no longer is
 	// go.mod's last commit.
-	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+	c, err := Client{}.GitLab(GitLabConfig{URL: gl.URL(),
 		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
-		Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go",
+	if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []GitLabCommitAction{{Action: "update", FilePath: "orders-api/main.go",
 			Content: "package main // theirs\n"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -536,20 +535,20 @@ func TestShipSourceOnExistingBranch(t *testing.T) {
 	gl := gitlabtest.New(t)
 	tg, p := newTarget(gl, "t0ken")
 	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
-	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+	c, err := Client{}.GitLab(GitLabConfig{URL: gl.URL(),
 		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
 	if err != nil {
 		t.Fatal(err)
 	}
 	theirs := func(path, content string) {
 		t.Helper()
-		if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
-			Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: path, Content: content}}}); err != nil {
+		if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+			Actions: []GitLabCommitAction{{Action: "update", FilePath: path, Content: content}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
-		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "orders-api/go.mod", Content: "old"},
+	if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []GitLabCommitAction{{Action: "create", FilePath: "orders-api/go.mod", Content: "old"},
 			{Action: "create", FilePath: "orders-api/main.go", Content: "old"},
 			{Action: "create", FilePath: "README.md", Content: "readme"}}}); err != nil {
 		t.Fatal(err)
@@ -579,7 +578,7 @@ func TestShipSourceOnExistingBranch(t *testing.T) {
 	folder[0].Blob = model.BlobSHA([]byte("module example.com/orders\n"))
 	actions = model.GitLabSourceActions(s.Source.Files, folder)
 	_, err = commitSource(ctx, c, s, p.DefaultBranch, head, step, actions)
-	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Reason != model.PublishBranchMoved {
+	if re, ok := errors.AsType[*ports.ReleaseError](err); !ok || re.Reason != model.PublishBranchMoved {
 		t.Fatalf("commitSource of a file their commit touched = %v, want BranchMoved", err)
 	}
 	if got := p.Folder(p.DefaultBranch, "orders-api"); got["orders-api/main.go"] != "theirs" {
@@ -593,18 +592,18 @@ func TestFakeStartSHAOnExistingBranch(t *testing.T) {
 	ctx := context.Background()
 	gl := gitlabtest.New(t)
 	tg, p := newTarget(gl, "t0ken")
-	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+	c, err := Client{}.GitLab(GitLabConfig{URL: gl.URL(),
 		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "a",
-		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "a", Content: "a"}}}); err != nil {
+	if _, err := c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: "a",
+		Actions: []GitLabCommitAction{{Action: "create", FilePath: "a", Content: "a"}}}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, StartSHA: p.DefaultBranchHead,
-		Message: "b", Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "b", Content: "b"}}})
-	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Status != 400 ||
+	_, err = c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, StartSHA: p.DefaultBranchHead,
+		Message: "b", Actions: []GitLabCommitAction{{Action: "create", FilePath: "b", Content: "b"}}})
+	if re, ok := errors.AsType[*ports.ReleaseError](err); !ok || re.Status != 400 ||
 		!strings.Contains(re.Message, "already exists") {
 		t.Fatalf("commit with start_sha the head = %v, want a 400: the branch exists", err)
 	}
@@ -623,30 +622,30 @@ func TestFakeLastCommitIDIsPerFile(t *testing.T) {
 	ctx := context.Background()
 	gl := gitlabtest.New(t)
 	tg, p := newTarget(gl, "t0ken")
-	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+	c, err := Client{}.GitLab(GitLabConfig{URL: gl.URL(),
 		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
 	if err != nil {
 		t.Fatal(err)
 	}
-	commit := func(msg string, actions ...gitprovider.GitLabCommitAction) (string, error) {
-		return c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: msg, Actions: actions})
+	commit := func(msg string, actions ...GitLabCommitAction) (string, error) {
+		return c.CreateCommit(ctx, GitLabCommit{Branch: p.DefaultBranch, Message: msg, Actions: actions})
 	}
-	both, err := commit("a and b", gitprovider.GitLabCommitAction{Action: "create", FilePath: "a", Content: "a"},
-		gitprovider.GitLabCommitAction{Action: "create", FilePath: "b", Content: "b"})
+	both, err := commit("a and b", GitLabCommitAction{Action: "create", FilePath: "a", Content: "a"},
+		GitLabCommitAction{Action: "create", FilePath: "b", Content: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := commit("a alone", gitprovider.GitLabCommitAction{Action: "update", FilePath: "a", Content: "a2"})
+	head, err := commit("a alone", GitLabCommitAction{Action: "update", FilePath: "a", Content: "a2"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = commit("b at the head", gitprovider.GitLabCommitAction{Action: "update", FilePath: "b", Content: "b2",
+	_, err = commit("b at the head", GitLabCommitAction{Action: "update", FilePath: "b", Content: "b2",
 		LastCommitID: head})
-	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Status != 400 ||
+	if re, ok := errors.AsType[*ports.ReleaseError](err); !ok || re.Status != 400 ||
 		!strings.Contains(re.Message, "has changed since") {
 		t.Fatalf("update of b with the head as last_commit_id = %v, want a 400: the head left b alone", err)
 	}
-	if _, err := commit("b at its last commit", gitprovider.GitLabCommitAction{Action: "update", FilePath: "b",
+	if _, err := commit("b at its last commit", GitLabCommitAction{Action: "update", FilePath: "b",
 		Content: "b2", LastCommitID: both}); err != nil {
 		t.Fatalf("update of b with its own last commit = %v, want it to land", err)
 	}
@@ -664,7 +663,7 @@ func TestShipSourceSymlink(t *testing.T) {
 	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
 	s.Source, s.ReadSource = source(map[string]string{"main.go": "package main\n", "run": "main.go"}, "run")
 	err := New(nil).Ship(context.Background(), tg, s)
-	re, ok := errors.AsType[*gitprovider.ReleaseError](err)
+	re, ok := errors.AsType[*ports.ReleaseError](err)
 	if !ok || re.Reason != model.PublishSourceUnsupported || !strings.Contains(re.Message, "run is a symlink") {
 		t.Fatalf("Ship() = %v, want a ReleaseError SourceUnsupported naming run", err)
 	}

@@ -25,8 +25,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -223,10 +223,10 @@ func (u *standardUpdate) read(ctx, gitCtx context.Context, action model.Standard
 			return false
 		}
 		// A state the host leaves empty is pending, so the model doesn't ask again.
-		f.Checks = cmp.Or(checks.State, gitprovider.CheckPending)
+		f.Checks = cmp.Or(checks.State, ports.CheckPending)
 		f.ChecksURL, f.Contexts, f.CI = checks.URL, checks.Contexts, git.ci
 	case model.StandardReadMain:
-		_, head, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, nil)
+		_, head, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, nil)
 		if err != nil {
 			u.gitError(ctx, err)
 			return false
@@ -235,7 +235,7 @@ func (u *standardUpdate) read(ctx, gitCtx context.Context, action model.Standard
 	case model.StandardReadFiles:
 		changed, err := git.provider.PullRequestFiles(gitCtx, repo, int(u.status.Standard.Update.PullRequest))
 		switch {
-		case errors.Is(err, gitprovider.ErrTooManyFiles):
+		case errors.Is(err, ports.ErrTooManyFiles):
 			f.Files = &model.UpdateFiles{Unchecked: err.Error()}
 		case err != nil:
 			u.gitError(ctx, err) // never merge a path nobody checked
@@ -274,8 +274,8 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	if !ok {
 		return
 	}
-	var creds *gitprovider.Credentials
-	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
+	var creds *ports.Credentials
+	if ports.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
 	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, creds)
@@ -286,7 +286,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	stopped := func(reason string) *c4v1beta1.StandardUpdateStatus {
 		return &c4v1beta1.StandardUpdateStatus{Ref: to.Ref, Checks: c4v1beta1.ChecksMode(to.Checks), Stopped: reason}
 	}
-	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
+	if errors.Is(err, ports.ErrUnpinnedRef) {
 		s.Update = stopped(c4v1beta1.ReasonUnpinnedRef)
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", name, err))
 		return
@@ -366,7 +366,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		paths = append(paths, p)
 	}
 	slices.Sort(paths)
-	current, base, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, slices.Compact(paths))
+	current, base, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, slices.Compact(paths))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
@@ -401,10 +401,10 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	}
 
 	branch := model.StandardUpdateBranch(name, to)
-	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commit, err := git.provider.PushBranch(gitCtx, repo, base, branch, plan.Files, plan.Removes,
 		scaffold.UpdateMessage(in, name, from, to, plan), author)
-	if errors.Is(err, gitprovider.ErrEmptyChange) {
+	if errors.Is(err, ports.ErrEmptyChange) {
 		// main got there between the read and the push.
 		u.alreadyUpToDate(ctx, to, behindAfter)
 		return
@@ -413,7 +413,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		u.gitError(ctx, err)
 		return
 	}
-	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
+	pr, err := git.provider.OpenPullRequest(gitCtx, repo, branch, ports.DefaultBranch,
 		model.StandardUpdateTitle(name, from, to), model.StandardUpdateBody(name, from, to, plan.Paths(), plan.Merged,
 			leftOut))
 	if err != nil {
@@ -516,8 +516,8 @@ func (e *renderError) Error() string { return fmt.Sprintf("at %s: %v", e.ref, e.
 // Git host's credentials when it lives on the same host.
 func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	standard *c4v1beta1.Standard) (*standardRenders, error) {
-	var creds *gitprovider.Credentials
-	if gitprovider.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
+	var creds *ports.Credentials
+	if ports.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
 	license, err := u.scaffoldedLicense(ctx, gitCtx, git)
@@ -579,8 +579,8 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if !found {
 			return nil, &frameworkNotFoundError{name: name}
 		}
-		var creds *gitprovider.Credentials
-		if gitprovider.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
+		var creds *ports.Credentials
+		if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 			creds = &git.creds
 		}
 		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
@@ -656,7 +656,7 @@ func (r *standardRenders) bases(ctx context.Context, behind []c4v1beta1.Standard
 func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
 	s := u.status.Standard
 	switch {
-	case errors.Is(err, gitprovider.ErrUnpinnedRef):
+	case errors.Is(err, ports.ErrUnpinnedRef):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err))
 	case errors.As(err, new(*renderError)):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
@@ -749,7 +749,7 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		return
 	}
 	repo := git.provider.Repository(u.container.Name)
-	current, base, err := git.provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, pathsOf(behind))
+	current, base, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, pathsOf(behind))
 	if err != nil {
 		u.answered = false
 		u.gitError(ctx, err)
@@ -767,16 +767,16 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		return
 	}
 	branch := model.StandardTakeBranch(s.Name, s.Ref)
-	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commit, err := git.provider.PushBranch(gitCtx, repo, base, branch, take.Files, take.Removes,
 		scaffold.TakeMessage(renders.in, s.Name, s.Ref, take), author)
-	if errors.Is(err, gitprovider.ErrEmptyChange) {
+	if errors.Is(err, ports.ErrEmptyChange) {
 		upToDate()
 		return
 	}
 	if err == nil {
-		var pr gitprovider.PullRequest
-		pr, err = git.provider.OpenPullRequest(gitCtx, repo, branch, gitprovider.DefaultBranch,
+		var pr ports.PullRequest
+		pr, err = git.provider.OpenPullRequest(gitCtx, repo, branch, ports.DefaultBranch,
 			model.StandardTakeTitle(s.Name, s.Ref, take.Paths()), model.StandardTakeBody(s.Name, s.Ref, take.Taken))
 		if err == nil {
 			s.Update = &c4v1beta1.StandardUpdateStatus{
@@ -894,12 +894,12 @@ func setBehind(s *c4v1beta1.ContainerStandardStatus, behind []c4v1beta1.Standard
 // readPullRequest reads the update's pull request. When quiet, the update
 // stopped and a Git error is only logged: the condition keeps saying why it
 // stopped.
-func (u *standardUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool) (gitprovider.PullRequest, bool) {
+func (u *standardUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool) (ports.PullRequest, bool) {
 	update := u.status.Standard.Update
 	if quiet {
 		git, err := gitAccessFor(ctx, u.r.Client, u.r.APIReader, u.r.Git, u.container.Namespace,
 			u.container.Spec.GitProviderRef.Name)
-		var pr gitprovider.PullRequest
+		var pr ports.PullRequest
 		if err == nil {
 			pr, err = git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name),
 				int(update.PullRequest))
@@ -913,7 +913,7 @@ func (u *standardUpdate) readPullRequest(ctx, gitCtx context.Context, quiet bool
 	}
 	git, ok := u.access(ctx)
 	if !ok {
-		return gitprovider.PullRequest{}, false
+		return ports.PullRequest{}, false
 	}
 	pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name), int(update.PullRequest))
 	if err != nil {

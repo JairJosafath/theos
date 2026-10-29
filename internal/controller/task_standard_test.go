@@ -30,8 +30,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 var _ = Describe("Task allowedProtectedPaths", func() {
@@ -710,7 +710,7 @@ var _ = Describe("Task with a gated merge", func() {
 		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
 		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{1}))
 		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
-		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewApprove),
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", ports.ReviewApprove),
 			HaveField("Commit", "sha-1"))))
 	})
 
@@ -906,7 +906,7 @@ var _ = Describe("Task with a gated merge", func() {
 
 // gateProvider is a Git host for gatedMerge's checks alone; any other call panics.
 type gateProvider struct {
-	gitprovider.Provider
+	ports.Provider
 	checks   string
 	contexts map[string]string // nil means one "check / check (pull_request)" in the checks' state
 	files    []string
@@ -914,20 +914,20 @@ type gateProvider struct {
 	merges   int
 }
 
-func (p *gateProvider) CombinedStatus(_ context.Context, _ gitprovider.Repository, ref string) (gitprovider.CheckStatus,
+func (p *gateProvider) CombinedStatus(_ context.Context, _ ports.Repository, ref string) (ports.CheckStatus,
 	error) {
 	contexts := p.contexts
 	if contexts == nil {
 		contexts = map[string]string{"check / check (pull_request)": p.checks}
 	}
-	return gitprovider.CheckStatus{Commit: ref, State: p.checks, Contexts: contexts}, nil
+	return ports.CheckStatus{Commit: ref, State: p.checks, Contexts: contexts}, nil
 }
 
-func (p *gateProvider) PullRequestFiles(_ context.Context, _ gitprovider.Repository, _ int) ([]string, error) {
+func (p *gateProvider) PullRequestFiles(_ context.Context, _ ports.Repository, _ int) ([]string, error) {
 	return p.files, p.filesErr
 }
 
-func (p *gateProvider) ForceMergePullRequest(_ context.Context, _ gitprovider.Repository, _ int, _, _, _ string) error {
+func (p *gateProvider) ForceMergePullRequest(_ context.Context, _ ports.Repository, _ int, _, _, _ string) error {
 	p.merges++
 	return nil
 }
@@ -955,7 +955,7 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 			provider: gateProvider{checks: "success", filesErr: errors.New("connection refused")}, err: "connection refused"},
 		{name: "refuses a change too large to check every path", review: approved,
 			provider: gateProvider{checks: "success", filesErr: fmt.Errorf("pull request 1 changes 1000 files or more: %w",
-				gitprovider.ErrTooManyFiles)}, refusal: "1000 files or more"},
+				ports.ErrTooManyFiles)}, refusal: "1000 files or more"},
 		{name: "refuses a protected path outside the allowance", review: approved,
 			provider: gateProvider{checks: "success", files: []string{"Makefile", ".gitea/workflows/check.yaml"}},
 			refusal:  ".gitea/workflows/check.yaml"},
@@ -975,7 +975,7 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 				Build()
 			container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
 				Spec: c4v1beta1.ContainerSpec{GitProviderRef: c4v1beta1.LocalRef{Name: "gitea"}}}
-			refusal, err := (&TaskReconciler{Client: c}).gatedMerge(context.Background(), &p, gitprovider.Repository{},
+			refusal, err := (&TaskReconciler{Client: c}).gatedMerge(context.Background(), &p, ports.Repository{},
 				task, status, container, nil)
 			if p.merges != 0 {
 				t.Errorf("merged %d times, want none", p.merges)
@@ -1001,7 +1001,7 @@ func TestGatedMergeMergesNothingItCouldNotCheck(t *testing.T) {
 func TestStandardChangeToReuse(t *testing.T) {
 	const branch = "standard/orders-api-1"
 	marker := model.ProposalMarker(branch)
-	issues := []gitprovider.Issue{
+	issues := []ports.Issue{
 		{Number: 2, Body: "Why\n\n" + marker + "\n"},
 		{Number: 3, Body: "Quoting " + marker + " inline\n"},
 		{Number: 4, Body: "Why\n" + model.ProposalMarker("standard/orders-api-10") + "\n"},
@@ -1009,7 +1009,7 @@ func TestStandardChangeToReuse(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name   string
-		issues []gitprovider.Issue
+		issues []ports.Issue
 		skip   int
 		want   int // 0 means none
 	}{

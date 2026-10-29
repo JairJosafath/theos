@@ -7,7 +7,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -63,7 +62,7 @@ func protection(ctx context.Context, c client.Reader, container *c4v1beta1.Conta
 // nothing for a Container without a Standard, which has no checks to require.
 // It is safe to repeat, so it also brings older repositories up to date.
 func protectRepository(ctx context.Context, c client.Reader, provider ports.GitHost,
-	repo gitprovider.Repository, container *c4v1beta1.Container) error {
+	repo ports.Repository, container *c4v1beta1.Container) error {
 	if !model.Protected(container.Choices().Standard != "") {
 		return nil
 	}
@@ -71,9 +70,9 @@ func protectRepository(ctx context.Context, c client.Reader, provider ports.GitH
 	if err != nil {
 		return err
 	}
-	rule := gitprovider.BranchRule{StatusContexts: ci.CheckContexts, ProtectedPaths: paths}
-	if err := provider.ProtectBranch(ctx, repo, gitprovider.DefaultBranch, rule); err != nil {
-		return fmt.Errorf("protecting %s: %w", gitprovider.DefaultBranch, err)
+	rule := ports.BranchRule{StatusContexts: ci.CheckContexts, ProtectedPaths: paths}
+	if err := provider.ProtectBranch(ctx, repo, ports.DefaultBranch, rule); err != nil {
+		return fmt.Errorf("protecting %s: %w", ports.DefaultBranch, err)
 	}
 	if err := provider.ProtectTags(ctx, repo, model.ReleaseTags); err != nil {
 		return fmt.Errorf("protecting tags %s: %w", model.ReleaseTags, err)

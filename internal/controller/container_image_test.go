@@ -16,7 +16,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
@@ -57,7 +56,7 @@ var _ = Describe("Container images", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		shipRelease(ns, "v0.1.0", true)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
@@ -84,7 +83,7 @@ var _ = Describe("Container images", func() {
 	})
 
 	DescribeTable("says why a release's image is left unpublished, once",
-		func(img gitprovider.Image, state, event, message string) {
+		func(img ports.Image, state, event, message string) {
 			ns := newProjectNamespace()
 			deployingContainer(ns)
 			if img.Outcome != "" {
@@ -100,12 +99,12 @@ var _ = Describe("Container images", func() {
 			Consistently(func() int { return gitFake.ImagePushes(ns + "/orders-api@v0.1.0") },
 				3*time.Second).Should(Equal(1))
 		},
-		Entry("no archive", gitprovider.Image{}, model.ImageStateNoImage, "",
+		Entry("no archive", ports.Image{}, model.ImageStateNoImage, "",
 			"Release v0.1.0 has no image archive"),
-		Entry("an invalid archive", gitprovider.Image{Outcome: gitprovider.ImageInvalid,
+		Entry("an invalid archive", ports.Image{Outcome: ports.ImageInvalid,
 			Reason: "the archive has no index.json"}, model.ImageStateInvalid, model.ImageEventInvalid,
 			"the archive has no index.json"),
-		Entry("a tag that names another image", gitprovider.Image{Outcome: gitprovider.ImageTagTaken,
+		Entry("a tag that names another image", ports.Image{Outcome: ports.ImageTagTaken,
 			Reason: "v0.1.0 already names sha256:other"}, model.ImageStateTagTaken, model.ImageEventTagTaken,
 			"v0.1.0 already names sha256:other"),
 	)
@@ -113,7 +112,7 @@ var _ = Describe("Container images", func() {
 	It("tries a failed push again at the next poll", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		gitFake.FailImagePushes(ns, "orders-api", 2)
 		shipRelease(ns, "v0.1.0", true)
@@ -162,7 +161,7 @@ var _ = Describe("Container images", func() {
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		release := gitFake.HoldImagePushes(ns, "orders-api")
 		DeferCleanup(release)
@@ -192,7 +191,7 @@ var _ = Describe("Container images", func() {
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		gitFake.FailImagePushes(ns, "orders-api", 5)
 		shipRelease(ns, "v0.1.0", true)
@@ -220,7 +219,7 @@ var _ = Describe("Container images", func() {
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImageTagTaken,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImageTagTaken,
 			Reason: "v0.1.0 already names sha256:other"})
 		gitFake.SetRegistryImage(ns, "orders-api", "v0.1.0", "sha256:other")
 		shipRelease(ns, "v0.1.0", true)
@@ -235,7 +234,7 @@ var _ = Describe("Container images", func() {
 		deployingContainer(ns)
 		readyTarget(ns, "staging", c4v1beta1.DeployTierDevelopment)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "staging"})
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		imageIs(ns, "v0.1.0", model.ImageStatePublished)

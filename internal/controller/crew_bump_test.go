@@ -17,8 +17,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -38,7 +38,7 @@ func skewCrewClock(d time.Duration) {
 // releaseRun sets the run orders-api's v0.1.0 tag started to status and
 // conclusion.
 func releaseRun(ns, status, conclusion string) {
-	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
+	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", ports.WorkflowRun{ID: 5, Workflow: "release.yaml",
 		Status: status, Conclusion: conclusion, URL: "http://gitea/" + ns + "/orders-api/actions/runs/5"})
 }
 

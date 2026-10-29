@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -139,7 +138,7 @@ type deployPass struct {
 		ports.GitHost
 		ports.Registry
 	}
-	repo gitprovider.Repository
+	repo ports.Repository
 }
 
 // read adds to facts what the entry's DeployTarget says and, when the entry

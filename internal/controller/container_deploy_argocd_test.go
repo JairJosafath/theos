@@ -23,8 +23,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // newArgoNamespace makes a fresh namespace standing for one where Argo CD
@@ -145,7 +145,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("writes the Application with the image digest and shows what Argo CD reports (#1588)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTarget(ns)
@@ -192,7 +192,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("copies the image to the target's imageRegistry and names the copy and its gitURL (#1590)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTargetWith(ns, func(dt *c4v1beta1.DeployTarget) {
@@ -238,7 +238,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("fails a Container whose name joins to another's Application name, naming it (#1677, #1669)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTarget(ns)

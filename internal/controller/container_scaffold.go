@@ -21,16 +21,16 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
-// GitClient reaches Git hosts. gitprovider.Client implements it; tests use a fake.
+// GitClient reaches Git hosts and fetches templates. cmd/main.go builds it
+// from the Gitea and Git adapters; tests use a fake.
 type GitClient interface {
-	Provider(cfg gitprovider.Config) (gitprovider.Provider, error)
-	FetchTemplate(ctx context.Context, url, ref string, creds *gitprovider.Credentials) (scaffold.Tree, error)
+	Provider(cfg ports.Config) (ports.Provider, error)
+	FetchTemplate(ctx context.Context, url, ref string, creds *ports.Credentials) (scaffold.Tree, error)
 }
 
 // defaultScaffoldTimeout bounds one attempt at creating and filling a repository.
@@ -79,7 +79,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 
-	provider, err := r.Git.Provider(gitprovider.Config{
+	provider, err := r.Git.Provider(ports.Config{
 		Kind:        string(res.provider.Spec.Provider),
 		URL:         res.provider.Spec.URL,
 		Owner:       res.provider.Spec.Owner,
@@ -139,7 +139,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 
 	layers, err := r.fetchLayers(gitCtx, res)
-	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
+	if errors.Is(err, ports.ErrUnpinnedRef) {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
 	}
 	if err != nil {
@@ -176,7 +176,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 
 	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
-	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
@@ -199,7 +199,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 // scaffold's is.
 func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, res resolved, view *c4v1beta1.Container, provider ports.GitHost,
-	repo gitprovider.Repository) (ctrl.Result, error) {
+	repo ports.Repository) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	// Only the Standard is checked, rendered from what a later Standard update
 	// renders an adopted Container with: no Framework ref and no Connectors
@@ -212,7 +212,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 	}
 	layers, err := r.fetchLayers(gitCtx, standardOnly)
-	if errors.Is(err, gitprovider.ErrUnpinnedRef) {
+	if errors.Is(err, ports.ErrUnpinnedRef) {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
 	}
 	if err != nil {
@@ -222,14 +222,14 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
 	}
-	onMain, _, err := provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, []string{scaffold.IdentityPath})
-	if errors.Is(err, gitprovider.ErrBranchNotFound) {
+	onMain, _, err := provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, []string{scaffold.IdentityPath})
+	if errors.Is(err, ports.ErrBranchNotFound) {
 		// #1908: the commits History found are on another branch; no retry
 		// makes main appear.
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonNoDefaultBranch,
 			fmt.Sprintf("Repository %s has commits but no %s branch; an adopted repository names its project and "+
 				"Container and carries its Standard's files on %s, so rename its default branch to %s first",
-				repo.WebURL, gitprovider.DefaultBranch, gitprovider.DefaultBranch, gitprovider.DefaultBranch))
+				repo.WebURL, ports.DefaultBranch, ports.DefaultBranch, ports.DefaultBranch))
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -238,7 +238,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if !found {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonIdentityMismatch,
 			fmt.Sprintf("Repository %s has no %s on %s; an adopted repository names its project and Container there",
-				repo.WebURL, scaffold.IdentityPath, gitprovider.DefaultBranch))
+				repo.WebURL, scaffold.IdentityPath, ports.DefaultBranch))
 	}
 	id, err := scaffold.ParseIdentity(identity.Data)
 	if err != nil {
@@ -271,14 +271,14 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 		rendered, standardRef = tree, layer.Ref
 	}
-	onMain, _, err = provider.ReadFiles(gitCtx, repo, gitprovider.DefaultBranch, rendered.Paths())
+	onMain, _, err = provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, rendered.Paths())
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
 	if differ := scaffold.ChangedPaths(rendered, onMain); len(differ) > 0 {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonStandardFilesDiffer,
 			fmt.Sprintf("Repository %s: %s differs from Standard %s at %s in %s; an adopted repository carries the "+
-				"Standard's files as it renders them", repo.WebURL, gitprovider.DefaultBranch, res.choices.Standard,
+				"Standard's files as it renders them", repo.WebURL, ports.DefaultBranch, res.choices.Standard,
 				standardRef, strings.Join(differ, ", ")))
 	}
 
@@ -295,8 +295,8 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]scaffold.Layer, error) {
 	layers := make([]scaffold.Layer, 0, len(res.entries))
 	for _, entry := range res.entries {
-		var creds *gitprovider.Credentials
-		if gitprovider.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
+		var creds *ports.Credentials
+		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
 			creds = &res.creds
 		}
 		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, creds)
@@ -372,13 +372,13 @@ func (r *ContainerReconciler) condition(container *c4v1beta1.Container, status *
 // names, sorted, checks is when CI runs the full check
 // (model.EffectiveChecks), ops its operations block, the defaults filled in,
 // and npmScope the scope the repository's npm package is named under
-// (gitprovider.Repository.NpmScope; empty means gitprovider.DefaultNpmScope).
+// (ports.Repository.NpmScope; empty means ports.DefaultNpmScope).
 // license is the license the repository carries (resolveLicense); a caller
 // that only writes a message passes none.
 func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, domains []string,
 	checks string, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
 	if npmScope == "" {
-		npmScope = gitprovider.DefaultNpmScope
+		npmScope = ports.DefaultNpmScope
 	}
 	choices := container.Choices()
 	in := scaffold.Input{
@@ -427,7 +427,7 @@ func (r *ContainerReconciler) resolveLicense(ctx context.Context,
 // id, or none from before the identity file, carries none.
 func (r *ContainerReconciler) scaffoldedLicense(ctx, gitCtx context.Context, git *gitAccess,
 	container *c4v1beta1.Container) (scaffold.License, error) {
-	files, _, err := git.provider.ReadFiles(gitCtx, git.provider.Repository(container.Name), gitprovider.DefaultBranch,
+	files, _, err := git.provider.ReadFiles(gitCtx, git.provider.Repository(container.Name), ports.DefaultBranch,
 		[]string{scaffold.IdentityPath})
 	if err != nil {
 		return scaffold.License{}, err

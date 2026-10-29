@@ -17,8 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -56,8 +56,8 @@ func beforeReleaseContainer(ns string) {
 
 // fullCheckRun is a run of check.yaml the push of v0.1.0's release-check
 // branch at 5a-merge started.
-func fullCheckRun(ns string, id int64, status, conclusion string) gitprovider.WorkflowRun {
-	return gitprovider.WorkflowRun{ID: id, Workflow: "check.yaml", Event: "push", Ref: "refs/heads/" + checkBranch,
+func fullCheckRun(ns string, id int64, status, conclusion string) ports.WorkflowRun {
+	return ports.WorkflowRun{ID: id, Workflow: "check.yaml", Event: "push", Ref: "refs/heads/" + checkBranch,
 		Status: status, Conclusion: conclusion, URL: "http://gitea/" + ns + "/orders-api/actions/runs/7"}
 }
 
@@ -107,7 +107,7 @@ var _ = Describe("Crew release full checks", func() {
 		}).Should(Succeed())
 
 		// The light check of main failed at that commit: only the branch's runs count.
-		mainRun := gitprovider.WorkflowRun{ID: 3, Workflow: "check.yaml", Event: "push", Ref: "refs/heads/main",
+		mainRun := ports.WorkflowRun{ID: 3, Workflow: "check.yaml", Event: "push", Ref: "refs/heads/main",
 			Status: "completed", Conclusion: "failure"}
 		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "in_progress", ""), mainRun)
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/7"
