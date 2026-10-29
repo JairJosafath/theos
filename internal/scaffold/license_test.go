@@ -10,17 +10,17 @@ import (
 	"time"
 )
 
-// The schema's enum (api/v1alpha1/shared_types.go, type License) and the
+// The schema's enum (api/v1beta1/shared_types.go, type License) and the
 // embedded texts under licenses/ stay in step: every id has a text and every
 // text an id (#1788).
 func TestLicenseIDsMatchEnum(t *testing.T) {
-	src, err := os.ReadFile("../../api/v1alpha1/shared_types.go")
+	src, err := os.ReadFile("../../api/v1beta1/shared_types.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := regexp.MustCompile(`\+kubebuilder:validation:Enum=([^\n]+)\ntype License string`).FindSubmatch(src)
 	if m == nil {
-		t.Fatal("no Enum marker on type License in api/v1alpha1/shared_types.go")
+		t.Fatal("no Enum marker on type License in api/v1beta1/shared_types.go")
 	}
 	enum := strings.Split(strings.TrimSpace(string(m[1])), ";")
 	slices.Sort(enum)
