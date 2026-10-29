@@ -20,6 +20,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The Git host is where people follow the work: issues say who works on them and
@@ -43,7 +44,7 @@ func agentName(agent *c4v1beta1.Agent) string {
 
 // announce marks an issue as taken: in progress, assigned to the Container's
 // agent bot, with a comment naming the Task and its Agents.
-func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) announce(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	task *c4v1beta1.Task, container *c4v1beta1.Container, agents taskAgents) {
 	n := int(task.Spec.Issue)
 	notes := []error{
@@ -63,7 +64,7 @@ func (r *TaskReconciler) announce(ctx context.Context, provider gitprovider.Prov
 // commit the try starts at instead of implementing, when the earlier try's
 // unreviewed commit is still the head and its checks now pass
 // (model.StartsAtReview); empty otherwise.
-func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider gitprovider.Provider,
+func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider ports.GitHost,
 	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) (string, error) {
 	var list c4v1beta1.TaskList
 	if err := r.List(ctx, &list, client.InNamespace(task.Namespace),
@@ -130,7 +131,7 @@ func tryHistory(history []c4v1beta1.TaskTransition) []model.TryStep {
 // noteContinued says on the pull request a Task took over that it goes on with
 // it. The caller posts it once, with the run's new sandbox, so a retry after a
 // failed status write doesn't post it again.
-func (r *TaskReconciler) noteContinued(ctx context.Context, provider gitprovider.Provider,
+func (r *TaskReconciler) noteContinued(ctx context.Context, provider ports.GitHost,
 	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
 	if err := provider.CommentPullRequest(ctx, repo, int(status.PullRequest), fmt.Sprintf(
 		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, status.Continues)); err != nil {
@@ -158,7 +159,10 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1beta1.Task, statu
 // proposed issues and the criteria the review left open as one kind/by-hand
 // issue for a person (status.byHand), both in the Later milestone, outside any
 // release, and closes it. It returns the follow-ups' addresses.
-func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
+	ports.GitHost
+	ports.Issues
+}, repo gitprovider.Repository,
 	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, followUps []model.FollowUp,
 	open []model.OpenCriterion) []string {
 	n := int(task.Spec.Issue)
@@ -231,7 +235,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider gitprovider.Pr
 // fileByHand files the open criteria as the Task's kind/by-hand issue,
 // status/needs-human so no Crew picks it, and returns its address. When the
 // Task's status lost the address, the issue is found again by its marker.
-func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, open []model.OpenCriterion,
 	milestone int64) (string, error) {
 	var existing []gitprovider.Issue
@@ -263,7 +267,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider gitprovider.Pr
 // done: it says instead that the Task ended (ended, how) and why the host
 // refused, and labels the issue status/needs-human so a person sees it. It
 // returns the notes' errors.
-func (r *TaskReconciler) endIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) endIssue(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	task *c4v1beta1.Task, comment, ended string) []error {
 	n := int(task.Spec.Issue)
 	notes := []error{

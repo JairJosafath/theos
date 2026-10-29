@@ -24,6 +24,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The reviewers' suggestions for a Brief's apps (#375): the Brief lists the
@@ -263,7 +264,7 @@ func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1beta1.Bri
 // it. A take's ready label, what marks it answered, comes last, so a try
 // that stops part way is done again whole. A skip closes first, so a try that
 // stops after it leaves the issue closed without its comment.
-func answerSuggestion(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func answerSuggestion(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	issue gitprovider.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
 	if a.Answer == model.AnswerTake {
 		if issue.Milestone != milestone {

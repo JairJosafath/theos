@@ -135,8 +135,11 @@ type deployPass struct {
 	// image is the newest release's, status.image.
 	image *c4v1beta1.ContainerImageStatus
 	// provider and repo reach the Container's repository, once a ship needs it.
-	provider gitprovider.Provider
-	repo     gitprovider.Repository
+	provider interface {
+		ports.GitHost
+		ports.Registry
+	}
+	repo gitprovider.Repository
 }
 
 // read adds to facts what the entry's DeployTarget says and, when the entry

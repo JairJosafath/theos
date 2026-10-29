@@ -194,7 +194,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
-	var provider gitprovider.Provider
+	var provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+		ports.Registry
+	}
 	var repo gitprovider.Repository
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
@@ -293,7 +298,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // switches say. It returns the prepare issue filed now, if any, and the
 // release whose prepare issue waits for the Tasks at work, if any.
 func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
-	status *c4v1beta1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	status *c4v1beta1.CrewStatus, provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+		ports.Registry
+	}, repo gitprovider.Repository,
 	tasks []c4v1beta1.Task) (*model.Issue, string) {
 	if crew.Spec.TagReleases {
 		r.rerunRelease(ctx, crew, status, provider, repo)
@@ -367,7 +377,7 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 
 // readyIssues reads the open issues labelled ready, what blocks each, and which
 // are Standard changes.
-func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository) ([]model.Issue, error) {
+func readyIssues(ctx context.Context, provider ports.Issues, repo gitprovider.Repository) ([]model.Issue, error) {
 	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
 		return nil, err
 	}
@@ -392,7 +402,7 @@ func readyIssues(ctx context.Context, provider gitprovider.Provider, repo gitpro
 // taskReleases sets the release of each active Task's issue, so that a release
 // with work in progress holds back the later ones, and whether it is a
 // release's prepare issue, which runs alone.
-func taskReleases(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func taskReleases(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	tasks []model.CrewTask, ready []model.Issue) error {
 	for i, t := range tasks {
 		if t.Final || t.Issue == 0 {
