@@ -56,7 +56,7 @@ func createFactoryAt(ns, frameworkRef string) {
 		&c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, "k8s-manifests"),
 			Spec: newCatalogSpec(templatesURL+"k8s-manifests", "v1.9.1", service, worker, job)},
 		&c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres"),
-			Spec: c4v1beta1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec(templatesURL+"postgres", "v1.2.0", service, worker)}},
+			Spec: c4v1beta1.ConnectorSpec{CatalogEntrySpec: newCatalogSpec(templatesURL+"postgres", "v1.3.0", service, worker)}},
 	)
 }
 

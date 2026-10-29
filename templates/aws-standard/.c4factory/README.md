@@ -211,7 +211,11 @@ byte for byte.
   `attrDbClusterArn` selection, the key-of-the-stack encryption rule and
   the secret acknowledgement that landed after v1.21.0 was tagged, and
   its `infra/standard.test.ts` passes a rendered copy's `tsc` under
-  `exactOptionalPropertyTypes` (#1987).
+  `exactOptionalPropertyTypes` (#1987). Since v1.22.0 a Container with the
+  `rds` Connector has its runbook restore the cluster to a point in time
+  and when it is gone, its AWS digest an _Aurora PostgreSQL_ section, and
+  its implementer guide the data rule (`RDS_*`, the Data API or a driver
+  with the secret) (#1927).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

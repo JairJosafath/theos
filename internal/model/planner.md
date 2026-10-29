@@ -151,7 +151,16 @@ Push the branch `plan/<round>` with these files:
    `aws-lambda-go`, `aws-fargate-ts`, `aws-ec2-ts`, `aws-queue-ts`,
    `aws-event-ts` and `aws-schedule-ts`); a Framework that doesn't wire it
    fails the Container, so never put it on a Container that runs in the
-   cluster, and plan no DataStore for a `static-site` on
+   cluster. Data that is relational (tables that join, SQL, a schema the
+   idea names, or an idea that asks for Postgres, Aurora or RDS) goes on
+   `rds` instead of `dynamodb` on the `aws-*` Frameworks and on
+   `postgres` in the cluster: a Container that keeps relational data
+   gets one DataStore on the one its Framework takes, never both. On
+   `rds` it is an Aurora PostgreSQL cluster in the Container's CDK
+   stack, named in `RDS_CLUSTER_ARN`, `RDS_SECRET_ARN` and
+   `RDS_DATABASE`; two DataStores on `rds` for one Container are one
+   cluster, so plan one, and `postgres` on an `aws-*` Framework fails
+   the Container. Either way, plan no DataStore for a `static-site` on
    `aws-static-site-ts`: it has no Lambda or task to read one. A
    `service`, `static-site`, `worker` or `job` that names no AWS runs in
    the cluster, on its other Frameworks. When no Framework in
