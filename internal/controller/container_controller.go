@@ -90,6 +90,10 @@ type ContainerReconciler struct {
 	// *imagePush by UID, and imagePushEnded wakes the Container when one ends.
 	imagePushing   sync.Map
 	imagePushEnded chan event.GenericEvent
+	// uids remembers each Container's UID by NamespacedName, so a reconcile
+	// that finds the Container gone (it carries no finalizer, so the Get is
+	// NotFound with no object) still knows whose entries to forget (#1629).
+	uids sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -146,11 +150,22 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	var container c4v1beta1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
+		if apierrors.IsNotFound(err) {
+			if uid, ok := r.uids.LoadAndDelete(req.NamespacedName); ok {
+				r.forget(uid.(types.UID))
+			}
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !container.DeletionTimestamp.IsZero() {
+		r.uids.Delete(req.NamespacedName)
 		r.forget(container.UID)
 		return ctrl.Result{}, nil
+	}
+	// A Container deleted and made again under its name between two
+	// reconciles has a new UID; the old one's entries go.
+	if old, loaded := r.uids.Swap(req.NamespacedName, container.UID); loaded && old.(types.UID) != container.UID {
+		r.forget(old.(types.UID))
 	}
 
 	active, err := r.countSessions(ctx, &container)
