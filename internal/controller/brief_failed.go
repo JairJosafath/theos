@@ -25,6 +25,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // A Brief's failed issues (plans/brief-failed-issues.md): the issues of the
@@ -52,7 +53,10 @@ func failedIssue(name string, number int, title, url string, labels []string, bo
 // tagged, else nil: the
 // milestone's closed issues a Task merged, and when the step's last try
 // stopped, from the Container's tasks.
-func failedRelease(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func failedRelease(ctx context.Context, provider interface {
+	ports.GitHost
+	ports.Issues
+}, repo gitprovider.Repository,
 	issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
 	if !slices.Contains(issue.Labels, model.LabelRelease) || issue.Milestone == 0 {
 		return nil, nil
@@ -349,7 +353,10 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1beta1.Bri
 // its close waits, the open issues it waits on.
 type answering struct {
 	answer   model.FailedAnswer
-	provider gitprovider.Provider
+	provider interface {
+		ports.GitHost
+		ports.Issues
+	}
 	repo     gitprovider.Repository
 	issue    gitprovider.Issue
 	blockers []string
@@ -391,7 +398,10 @@ func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1bet
 // clarification is appended once a round. A close closes first, so a try
 // that stops after it leaves the issue closed without its comment, or its
 // proposal undeleted.
-func answerFailedIssue(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func answerFailedIssue(ctx context.Context, provider interface {
+	ports.GitHost
+	ports.Issues
+}, repo gitprovider.Repository,
 	issue gitprovider.Issue, a model.FailedAnswer, round int, comment string) error {
 	if a.Answer == model.AnswerRetry {
 		if body := model.ClarifiedBody(issue.Body, round, a.Clarify); body != issue.Body {

@@ -24,6 +24,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // When a request ships (docs/plans/done/brief-requests.md, decision 9's released
@@ -45,7 +46,7 @@ type shipCheck struct {
 // none: its issues count as done.
 type shipContainer struct {
 	gone      bool
-	provider  gitprovider.Provider
+	provider  ports.Issues
 	repo      gitprovider.Repository
 	publishes bool
 	last      *c4v1beta1.CrewRelease

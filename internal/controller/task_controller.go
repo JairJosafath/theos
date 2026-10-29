@@ -32,6 +32,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // Task condition types.
@@ -444,7 +445,7 @@ func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1beta1.Task
 // rerunState reads whether the runs at the Task's commit whose failed jobs ran
 // again have given their result, and the state of its runs while they haven't. Runs that can't
 // be read are unknown, which waits.
-func (r *TaskReconciler) rerunState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) rerunState(ctx context.Context, provider ports.CI, repo gitprovider.Repository,
 	status *c4v1beta1.TaskStatus) (model.CIRun, bool) {
 	runs, err := provider.CommitRuns(ctx, repo, status.Commit)
 	if err != nil {
@@ -473,7 +474,7 @@ func workflowRuns(runs []gitprovider.WorkflowRun) []model.WorkflowRun {
 // yet, whether a runner is online while one is queued, and, when canceller,
 // who cancelled a failed one. Runs that can't be read are unknown, which waits
 // up to model.QueuedChecksLimit.
-func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) ciRun(ctx context.Context, provider ports.CI, repo gitprovider.Repository,
 	namespace, commit string, canceller bool) model.CIRun {
 	ci := model.CIRun{Commit: commit}
 	runs, err := provider.CommitRuns(ctx, repo, commit)
@@ -489,7 +490,7 @@ func (r *TaskReconciler) ciRun(ctx context.Context, provider gitprovider.Provide
 // queued, and, when canceller, who cancelled a failed one that ended
 // cancelled: asked only when the failure is read, as it costs a call a job.
 // namespace is the Task's, where the CI runner pool's pods are.
-func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) runState(ctx context.Context, provider ports.CI, repo gitprovider.Repository,
 	namespace, commit string, seen []model.WorkflowRun, canceller bool) model.CIRun {
 	ci := model.CIRun{Commit: commit}
 	state, run := model.CommitRunState(seen)
@@ -512,7 +513,7 @@ func (r *TaskReconciler) runState(ctx context.Context, provider gitprovider.Prov
 // canceller tells who cancelled the cancelled runs at a Task's commit: by the
 // fate of the pool pod a cancelled job ran on (#1140), else whether the job's
 // runner stayed online (model.Canceller).
-func (r *TaskReconciler) canceller(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) canceller(ctx context.Context, provider ports.CI, repo gitprovider.Repository,
 	namespace string, cancelled []model.WorkflowRun) string {
 	var jobs []model.CIJob
 	online, known := map[int64]bool{}, map[int64]bool{}
@@ -810,7 +811,12 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // gitRepo returns the Provider and repository of a Task's Container.
-func (r *TaskReconciler) gitRepo(ctx context.Context, container *c4v1beta1.Container) (gitprovider.Provider,
+func (r *TaskReconciler) gitRepo(ctx context.Context, container *c4v1beta1.Container) (interface {
+	ports.GitHost
+	ports.Issues
+	ports.CI
+	ports.AgentAccess
+},
 	gitprovider.Repository, error) {
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err != nil {

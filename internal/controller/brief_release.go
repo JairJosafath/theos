@@ -24,6 +24,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The Brief's releases (docs/plans/done/brief-releases.md): a released Container's
@@ -224,7 +225,7 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1bet
 // open release (R6). A fix goes into the patch slot right after the release in
 // progress (patchMilestone), and into the round's release milestone while the
 // repository has no release yet.
-func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
+func releaseMilestone(ctx context.Context, provider ports.Issues, repo gitprovider.Repository, brief string,
 	round int, fix bool) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
@@ -279,7 +280,7 @@ func releaseMilestone(ctx context.Context, provider gitprovider.Provider, repo g
 // goes into the round's release milestone. The round's own release milestone,
 // minor once made, is left out of where the patch goes, as it holds the
 // round's other work; a new patch is due before it.
-func patchMilestone(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository, brief string,
+func patchMilestone(ctx context.Context, provider ports.Issues, repo gitprovider.Repository, brief string,
 	round int, others []gitprovider.Milestone, minor *gitprovider.Milestone) (int64, error) {
 	var releases []model.ReleaseMilestone
 	for _, m := range others {

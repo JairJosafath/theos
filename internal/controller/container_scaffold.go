@@ -23,6 +23,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -197,7 +198,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 // as scaffolded. Its spec.operations is recorded as it is now, as a recovered
 // scaffold's is.
 func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1beta1.Container,
-	status *c4v1beta1.ContainerStatus, res resolved, view *c4v1beta1.Container, provider gitprovider.Provider,
+	status *c4v1beta1.ContainerStatus, res resolved, view *c4v1beta1.Container, provider ports.GitHost,
 	repo gitprovider.Repository) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	// Only the Standard is checked, rendered from what a later Standard update

@@ -21,6 +21,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // reasonBumpFiled is the Event of a filed bump issue.
@@ -141,7 +142,7 @@ func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bum
 // releaseTakingWork returns the ID of repo's release due first that has no
 // prepare issue, open or closed (model.ReleaseTakingWork), or 0 when there is
 // none.
-func releaseTakingWork(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository) (int64, error) {
+func releaseTakingWork(ctx context.Context, provider ports.Issues, repo gitprovider.Repository) (int64, error) {
 	milestones, err := provider.ListMilestones(ctx, repo)
 	if err != nil {
 		return 0, fmt.Errorf("milestones: %w", err)
