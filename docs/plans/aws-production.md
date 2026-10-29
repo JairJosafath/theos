@@ -221,17 +221,14 @@ alarms and runbooks) were written down and left to the reader.
     calls and fits one repository per Container poorly; it gets its own
     issue when a Brief asks for one.
 
-11. **The data stays in the Framework.** Today each AWS Framework makes its
-    own table, and the planner plans no DataStore for it. Modelling AWS data
-    stores as DataStores with Connectors (DynamoDB, RDS) is the right shape
-    and a bigger change than this plan; it is filed as a proposed follow-up
-    (#1117), and this plan's backup rules are written per resource so that
-    Connector can reuse them. #1117 added the `dynamodb` Connector v1.0.0,
-    wired into `aws-lambda-ts` v1.2.0 through its `infra/connectors.ts`; the
-    Framework's own tables stay. [aws-data-stores.md](aws-data-stores.md)
-    (#1393) wired it into every AWS Framework with a Lambda or a task, and
-    the planner now plans a `dynamodb` DataStore for an AWS Container that
-    keeps data (#1743).
+11. **The data lives in a DataStore beside the Framework's own table.**
+    The planner plans a `dynamodb` DataStore for an AWS Container that
+    keeps data (#1743), and the `dynamodb` Connector (#1117) makes its
+    table, wired into every AWS Framework with a Lambda or a task through
+    its `infra/connectors.ts` ([aws-data-stores.md](aws-data-stores.md),
+    #1393). Each Framework still makes its own starter table beside the
+    Connector's (aws-data-stores.md, decision 1). This plan's backup rules
+    are written per resource so the Connectors reuse them.
 
 ## Track A, per Framework
 
