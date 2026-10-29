@@ -273,7 +273,7 @@ func (d *Deployer) shipImage(ctx context.Context, c gitprovider.GitLabProject, i
 			Message: fmt.Sprintf("gitlab: image %s:%s names %s, not the release's %s; it is left alone", ref,
 				s.Version, have, digest)}
 	}
-	err = s.CopyImage(ctx, ports.Registry{Host: host, Username: user, Password: registry.Password},
+	err = s.CopyImage(ctx, ports.ImageRegistry{Host: host, Username: user, Password: registry.Password},
 		repository, s.Version)
 	if errors.Is(err, oci.ErrSource) {
 		return "", false, err

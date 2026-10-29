@@ -62,11 +62,24 @@ host-neutral guard passes with today's allowlist; `make check` and
    - *Issues:* labels, issues, comments, assignment, dependencies
      (`OpenBlockers`, `AddIssueDependency`) and milestones.
    - *CI:* `TagRuns`, `CommitRuns`, `RerunFailedJobs`, `CheckLog` (the log a
-     status links to is the CI's) and `RunnersOnline`.
+     status links to is the CI's), `RunnersOnline`, and the two that came
+     after this plan, `RunnerOnline` and `RunJobs` (`WorkflowJob`).
    - *AgentAccess:* `EnsureAgentAccess`, `RemoveAgentAccess`,
      `RevokeOldAgentTokens`.
-   - *Registry:* `PublishGoModule`, the optional capability the design names.
-     `Repository.GoProxy` stays a field of `Repository` in this issue.
+   - *Registry:* `PublishGoModule`, the optional capability the design names,
+     and the package and image methods that came after this plan:
+     `PublishReleasePackages`, `PublishImage`, `ImageDigest` and `CopyImage`,
+     with their outcome types and `ErrNoRelease`. `Repository.GoProxy` stays
+     a field of `Repository` in this issue.
+
+   Two names changed in #1166, both because a port imports no adapter
+   library: the Deployer's struct `ports.Registry` (a registry's address and
+   login) became `ports.ImageRegistry`, so the port `Registry` could take
+   the name the table gives it; and `CopyImage` takes a `ports.ImageRegistry`
+   where it took an `oci.Registry`, the Gitea adapter and the controllers'
+   fake converting to `oci.Registry` themselves. The tests that name the
+   struct were renamed with it; the step's "no test changed" predates
+   `CopyImage` (#1590).
 
    `Provider` stays, as the union of the five, for `GitClient` and
    `cmd/main.go`; helpers take the narrowest one or an inline union of two.

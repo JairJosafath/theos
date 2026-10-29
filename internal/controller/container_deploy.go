@@ -356,12 +356,10 @@ func sourceTagPrefix(settings map[string]string, path string) string {
 // copyImage is a Shipment's CopyImage for image, host/repository@digest in
 // the owner's registry: the Git provider copies it with its own credential,
 // and a failure to read it there is the Git host's (#1590).
-func (p *deployPass) copyImage(image string) func(context.Context, ports.Registry, string, string) error {
-	return func(ctx context.Context, to ports.Registry, repository, tag string) error {
+func (p *deployPass) copyImage(image string) func(context.Context, ports.ImageRegistry, string, string) error {
+	return func(ctx context.Context, to ports.ImageRegistry, repository, tag string) error {
 		_, digest, _ := strings.Cut(image, "@")
-		err := p.provider.CopyImage(ctx, p.repo, digest,
-			oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password, Insecure: to.Insecure},
-			repository, tag)
+		err := p.provider.CopyImage(ctx, p.repo, digest, to, repository, tag)
 		if errors.Is(err, oci.ErrSource) {
 			return giteaError{err}
 		}

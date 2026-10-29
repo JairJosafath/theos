@@ -42,7 +42,7 @@ func TestGitHubDeployerImage(t *testing.T) {
 		return ports.Shipment{App: app, DisplayName: "Orders API", Version: version,
 			Type: model.TypeService, Deployment: model.DeploymentK8sManifests,
 			Image: owner.host + "/" + repo + "@" + digest,
-			CopyImage: func(ctx context.Context, to ports.Registry, repository, tag string) error {
+			CopyImage: func(ctx context.Context, to ports.ImageRegistry, repository, tag string) error {
 				return oci.Copy(ctx, oci.Registry{Host: owner.host}, repo, digest,
 					oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password}, repository, tag)
 			}}, digest
@@ -103,7 +103,7 @@ func TestGitHubDeployerImage(t *testing.T) {
 	t.Run("another digest under the tag is TagTaken, naming the image", func(t *testing.T) {
 		tg := target("acme/billing", "billing-", true)
 		other, _ := pushed(t, "ns/billing-old", "v1.0.0")
-		if err := other.CopyImage(ctx, ports.Registry{Host: ghcr.host}, "acme/billing/billing", "v1.0.0"); err != nil {
+		if err := other.CopyImage(ctx, ports.ImageRegistry{Host: ghcr.host}, "acme/billing/billing", "v1.0.0"); err != nil {
 			t.Fatalf("copy: %v", err)
 		}
 		s, _ := pushed(t, "ns/billing", "v1.0.0")
@@ -138,7 +138,7 @@ func TestGitHubDeployerImage(t *testing.T) {
 	t.Run("a copy that fails to write is unreachable", func(t *testing.T) {
 		tg := target("acme/refused", "x-", true)
 		s, _ := pushed(t, "ns/refused", "v1.0.0")
-		s.CopyImage = func(context.Context, ports.Registry, string, string) error {
+		s.CopyImage = func(context.Context, ports.ImageRegistry, string, string) error {
 			return errors.New("boom")
 		}
 		if err := d.Ship(ctx, tg, s); !errors.Is(err, ports.ErrUnreachable) {
