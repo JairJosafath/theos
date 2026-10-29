@@ -24,6 +24,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -87,7 +88,7 @@ func standardContainer(ns string, labels map[string]string) {
 	GinkgoHelper()
 	createOnStandard(ns, standardRefs(), false, "", labels)
 	eventuallyAt(ns, "v1.0.0")
-	Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("AGENTS.md",
+	Expect(gitFake.MainFiles(ns, "orders-api")).To(HaveKeyWithValue("AGENTS.md",
 		HaveField("Data", BeEquivalentTo("Rules for orders-api, which uses postgres\n"))))
 }
 
@@ -108,7 +109,7 @@ func createOnStandard(ns string, refs map[string]scaffold.Tree, checksBeforeRele
 	GinkgoHelper()
 	url := templatesURL + ns + "/" + updatedStandard
 	for ref, tree := range refs {
-		gitFake.addTemplate(url, ref, tree)
+		gitFake.AddTemplate(url, ref, tree)
 	}
 	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 	container.Labels = labels
@@ -267,7 +268,7 @@ func makefileChange(ref string) string {
 
 func mainFile(ns, path string) string {
 	GinkgoHelper()
-	files := gitFake.mainFiles(ns, "orders-api")
+	files := gitFake.MainFiles(ns, "orders-api")
 	Expect(files).To(HaveKey(path))
 	return string(files[path].Data)
 }
@@ -282,27 +283,27 @@ var _ = Describe("Container Standard update", func() {
 		Expect(update.Branch).To(Equal("standard-update/python-strict-v1.1.0"))
 		Expect(update.Paths).To(Equal([]string{"AGENTS.md", implementer}))
 		Expect(update.LeftOut).To(BeEmpty())
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(update.PullRequest), "Head": Equal(update.Branch),
 			"HeadSHA": Equal(update.Commit), "State": Equal("open")})))
 
 		By("waiting while CI runs")
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
 			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonUpdating))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("merging it as admin once CI passes on its commit")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
 		Expect(mainFile(ns, implementer)).To(Equal("Implement the issue.\nRun make check before you finish.\n"))
 		Expect(mainFile(ns, "AGENTS.md")).To(Equal("Rules for orders-api, which uses postgres.\nRun make check.\n"))
 		Expect(mainFile(ns, reviewer)).To(Equal("Review the change.\n"))
-		head := gitFake.mainHead(ns, "orders-api")
+		head := gitFake.MainHead(ns, "orders-api")
 		Expect(head.Message).To(HavePrefix("Update the Standard python-strict to v1.1.0\n\n"))
 		Expect(head.Message).To(ContainSubstring("Standard-Update: python-strict@v1.0.0..v1.1.0"))
-		Expect(gitFake.hasBranch(ns, "orders-api", update.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", update.Branch)).To(BeFalse())
 
 		container := getContainer(Default, ns)
 		Expect(container.Status.ScaffoldedFrom).To(ContainElement("python-strict@v1.0.0"),
@@ -312,14 +313,14 @@ var _ = Describe("Container Standard update", func() {
 	It("leaves out a file the repository changed in the same lines, and flags it until it merges", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
 
 		bumpStandard(ns, "v1.2.0")
 		update := openedUpdate(ns, "v1.2.0")
 		Expect(update.Paths).To(Equal([]string{"AGENTS.md", implementer, reviewer}))
 		Expect(update.LeftOut).To(Equal([]string{makefile}))
 		annotate := "kubectl -n " + ns + " annotate container orders-api c4.factory.io/standard-"
-		_, body := gitFake.pullText(ns, "orders-api", int(update.PullRequest))
+		_, body := gitFake.PullText(ns, "orders-api", int(update.PullRequest))
 		Expect(body).To(ContainSubstring("- take the Standard's version: `" + annotate + "take=v1.2.0`\n" +
 			"- or keep the repository's: `" + annotate + "keep=v1.2.0`\n"))
 		Expect(body).To(ContainSubstring("### `Makefile`\n\nWhat the Standard changed in it from `v1.0.0` to "+
@@ -327,11 +328,11 @@ var _ = Describe("Container Standard update", func() {
 			"-\ttrue\n+\tmake lint test\n```\n\nThe repository's lines taking it drops:\n\n```diff\n-\tpytest\n```\n"),
 			"the pull request shows the Standard's change to the file it leaves out, and what a take would drop")
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.2.0", makefile)
 		Expect(mainFile(ns, makefile)).To(Equal("check:\n\tpytest\n"))
 		Expect(mainFile(ns, implementer)).To(HaveSuffix("Ask when unsure.\n"))
-		Expect(gitFake.mainFiles(ns, "orders-api")).NotTo(HaveKey(reviewer), "v1.2.0 drops the reviewer's guide")
+		Expect(gitFake.MainFiles(ns, "orders-api")).NotTo(HaveKey(reviewer), "v1.2.0 drops the reviewer's guide")
 		container := getContainer(Default, ns)
 		Expect(update.Behind).To(Equal([]c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.0.0",
 			Change: makefileChange("v1.2.0")}}), "the update holds the change until it merges")
@@ -350,10 +351,10 @@ var _ = Describe("Container Standard update", func() {
 		next := openedUpdate(ns, "v1.3.0")
 		Expect(next.Paths).To(Equal([]string{implementer}))
 		Expect(next.LeftOut).To(Equal([]string{makefile}))
-		_, body = gitFake.pullText(ns, "orders-api", int(next.PullRequest))
+		_, body = gitFake.PullText(ns, "orders-api", int(next.PullRequest))
 		Expect(body).To(ContainSubstring("--- Makefile (v1.0.0)\n+++ Makefile (v1.3.0)\n"),
 			"a carried-over file is diffed from the ref its copy is at")
-		gitFake.setChecks(ns, "orders-api", next.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", next.Commit, "success")
 		eventuallyAt(ns, "v1.3.0", makefile)
 		container = getContainer(Default, ns)
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1beta1.StandardFile{
@@ -368,7 +369,7 @@ var _ = Describe("Container Standard update", func() {
 		Expect(last.Paths).To(Equal([]string{makefile}))
 		Expect(last.Merged).To(Equal([]string{makefile}))
 		Expect(last.LeftOut).To(BeEmpty())
-		gitFake.setChecks(ns, "orders-api", last.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", last.Commit, "success")
 		eventuallyAt(ns, "v1.4.0")
 		Expect(mainFile(ns, makefile)).To(Equal("lint:\n\truff check\n\ncheck:\n\tpytest\n"))
 	})
@@ -376,7 +377,7 @@ var _ = Describe("Container Standard update", func() {
 	It("merges a file the repository changed in other lines, and names it", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("# Our own targets.\ncheck:\n\ttrue\n")}})
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("# Our own targets.\ncheck:\n\ttrue\n")}})
 
 		bumpStandard(ns, "v1.2.0")
 		update := openedUpdate(ns, "v1.2.0")
@@ -384,10 +385,10 @@ var _ = Describe("Container Standard update", func() {
 		Expect(update.Merged).To(Equal([]string{makefile}))
 		Expect(update.LeftOut).To(BeEmpty())
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 		Expect(mainFile(ns, makefile)).To(Equal("# Our own targets.\ncheck:\n\tmake lint test\n"))
-		Expect(gitFake.mainHead(ns, "orders-api").Message).
+		Expect(gitFake.MainHead(ns, "orders-api").Message).
 			To(ContainSubstring("Merged with the repository's changes since v1.0.0: Makefile.\n"))
 	})
 
@@ -397,20 +398,20 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		first := openedUpdate(ns, "v1.1.0")
 
-		gitFake.closePull(ns, "orders-api", int(first.PullRequest))
+		gitFake.ClosePull(ns, "orders-api", int(first.PullRequest))
 		message := stoppedUpdate(ns, c4v1beta1.ReasonUpdateClosed)
 		Expect(message).To(Equal("Pull request " + first.PullRequestURL +
 			" was closed without merging; python-strict stays at v1.0.0 until its ref or the checks change again"))
-		Expect(gitFake.hasBranch(ns, "orders-api", first.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", first.Branch)).To(BeFalse())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonUpdateClosed))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		bumpStandard(ns, "v1.2.0")
 		second := openedUpdate(ns, "v1.2.0")
 		Expect(second.PullRequest).NotTo(Equal(first.PullRequest))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(2))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(2))
 	})
 
 	It("closes an update the Standard moved past and opens one for its new ref", func() {
@@ -423,13 +424,13 @@ var _ = Describe("Container Standard update", func() {
 		second := openedUpdate(ns, "v1.2.0")
 		Expect(second.Branch).To(Equal("standard-update/python-strict-v1.2.0"))
 		Expect(second.Paths).To(Equal([]string{"AGENTS.md", makefile, implementer, reviewer}))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(
 			MatchFields(IgnoreExtras, Fields{"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"),
 				"Merged": BeFalse()}),
 			MatchFields(IgnoreExtras, Fields{"Number": BeEquivalentTo(second.PullRequest), "State": Equal("open")})))
-		Expect(gitFake.hasBranch(ns, "orders-api", first.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", first.Branch)).To(BeFalse())
 
-		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 		Expect(mainFile(ns, makefile)).To(Equal("check:\n\tmake lint test\n"))
 	})
@@ -450,7 +451,7 @@ var _ = Describe("Container Standard update", func() {
 		Expect(err).NotTo(HaveOccurred())
 		newer = maps.Clone(newer)
 		newer["infra/operations.ts"] = scaffold.File{Data: []byte("export const operations = {};\n")}
-		gitFake.addTemplate(url, "v1.3.1-1249", newer)
+		gitFake.AddTemplate(url, "v1.3.1-1249", newer)
 		var framework c4v1beta1.Framework
 		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
 		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "v1.3.1-1249" })).To(Succeed())
@@ -458,7 +459,7 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdate(ns, "v1.1.0")
 		Expect(update.Paths).To(ContainElement(frameworkDoc))
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
 		Expect(mainFile(ns, frameworkDoc)).To(Equal("pyproject\n"),
 			"the Standard sees the Framework at v1.3.0, the scaffold's, not at its newest ref")
@@ -502,7 +503,7 @@ var _ = Describe("Container Standard update", func() {
 		}).Should(Succeed())
 		bumpStandard(ns, "v1.2.0")
 		update := openedUpdate(ns, "v1.2.0")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 	})
 
@@ -512,7 +513,7 @@ var _ = Describe("Container Standard update", func() {
 		const ref = "v1.6.0-1443"
 		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.addTemplate(url, ref, files)
+		gitFake.AddTemplate(url, ref, files)
 		createFactoryAt(ns, ref)
 		standardContainer(ns, nil)
 		Expect(getContainer(Default, ns).Status.ScaffoldedFrom).To(ContainElement("python-fastapi@" + ref))
@@ -520,17 +521,17 @@ var _ = Describe("Container Standard update", func() {
 		By("breaking the Framework's template at the ref the Container was scaffolded from")
 		broken := maps.Clone(files)
 		broken["docs/broken.md.tmpl"] = scaffold.File{Data: []byte("{{ end }}\n")}
-		gitFake.addTemplate(url, ref, broken)
+		gitFake.AddTemplate(url, ref, broken)
 		bumpStandard(ns, "v1.1.0")
 		message := frameworkStopped(ns, c4v1beta1.ReasonFailed)
 		Expect(message).To(HavePrefix("Could not render the Framework python-fastapi at " + ref + ": "))
 		Expect(message).To(ContainSubstring("docs/broken.md.tmpl"))
 
 		By("mending the template")
-		gitFake.addTemplate(url, ref, files)
+		gitFake.AddTemplate(url, ref, files)
 		bumpStandard(ns, "v1.2.0")
 		update := openedUpdate(ns, "v1.2.0")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 	})
 	It("renders an update with the license the repository was scaffolded with, not the current one (#1788)", func() {
@@ -550,7 +551,7 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdate(ns, "v1.1.0")
 		Expect(update.Paths).To(ContainElement(licenseDoc))
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
 		Expect(mainFile(ns, licenseDoc)).To(Equal("Licensed under MIT.\n"),
 			"the update renders with the id .c4factory.yaml records, not spec.license as it stands")
@@ -577,12 +578,12 @@ var _ = Describe("Container Standard update", func() {
 		first := openedUpdate(ns, "v1.1.0")
 
 		// A reconcile queued before the update opened still reads no update in flight.
-		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
+		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: fakeGitClient{gitFake},
 			ScaffoldTimeout: testScaffoldTimeout}
 		status := stale.Status.DeepCopy()
 		r.updateStandard(ctx, stale, status, r.liveContainer(ctx, stale))
 		Expect(status.Standard).To(Equal(stale.Status.Standard))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(first.PullRequest), "HeadSHA": Equal(first.Commit), "State": Equal("open")})))
 	})
 
@@ -592,7 +593,7 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdate(ns, "v1.1.0")
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "failure")
 		Eventually(func(g Gomega) {
 			container := getContainer(g, ns)
 			cond := standardCondition(g, container)
@@ -601,12 +602,12 @@ var _ = Describe("Container Standard update", func() {
 				"the update merges once a re-run passes, or close " + update.PullRequestURL + " to drop it"))
 			g.Expect(container.Status.Standard.Update).To(PointTo(HaveField("Stopped", BeEmpty())))
 		}).Should(Succeed())
-		Consistently(func() []int { return gitFake.forcedMerges(ns, "orders-api") }).
+		Consistently(func() []int { return gitFake.ForcedMerges(ns, "orders-api") }).
 			WithTimeout(2 * time.Second).Should(BeEmpty())
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
 	})
 
 	It("plans an update whose CI failed again once main moves (#1447)", func() {
@@ -614,9 +615,9 @@ var _ = Describe("Container Standard update", func() {
 		updatableContainer(ns)
 		bumpStandard(ns, "v1.1.0")
 		first := openedUpdate(ns, "v1.1.0")
-		Expect(first.Base).To(Equal(gitFake.mainHead(ns, "orders-api").Hash))
+		Expect(first.Base).To(Equal(gitFake.MainHead(ns, "orders-api").Hash))
 
-		gitFake.setChecks(ns, "orders-api", first.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", first.Commit, "failure")
 		Eventually(func(g Gomega) {
 			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonChecksFailed))
 		}).Should(Succeed())
@@ -626,8 +627,8 @@ var _ = Describe("Container Standard update", func() {
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		// The Crew's fix lands on main in its own pull request.
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
-		fixed := gitFake.mainHead(ns, "orders-api").Hash
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		fixed := gitFake.MainHead(ns, "orders-api").Hash
 		Eventually(func(g Gomega) {
 			g.Expect(getContainer(g, ns).Status.Standard.Update).
 				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
@@ -636,22 +637,22 @@ var _ = Describe("Container Standard update", func() {
 		Expect(second.Base).To(Equal(fixed))
 		Expect(second.Commit).NotTo(Equal(first.Commit))
 		Expect(second.Paths).To(Equal(first.Paths))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ContainElement(MatchFields(IgnoreExtras, Fields{
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ContainElement(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"), "Merged": BeFalse()})))
 		Expect(standardCondition(Default, getContainer(Default, ns)).Reason).NotTo(Equal(c4v1beta1.ReasonChecksFailed))
 
-		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
 		Expect(mainFile(ns, "src/app.py")).To(Equal("fixed = True\n"))
 	})
 
 	It("files one issue for the Crew per target ref whose update's CI failed (#1491)", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)
-		failureIssues := func() []fakeIssue {
-			var out []fakeIssue
-			for _, issue := range gitFake.openIssues(ns, "orders-api") {
+		failureIssues := func() []fake.Issue {
+			var out []fake.Issue
+			for _, issue := range gitFake.OpenIssues(ns, "orders-api") {
 				if slices.Contains(issue.Labels, model.LabelBug) {
 					out = append(out, issue)
 				}
@@ -670,7 +671,7 @@ var _ = Describe("Container Standard update", func() {
 
 		bumpStandard(ns, "v1.1.0")
 		first := openedUpdate(ns, "v1.1.0")
-		gitFake.setChecks(ns, "orders-api", first.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", first.Commit, "failure")
 		issue := filed("v1.1.0")
 		Consistently(func(g Gomega) {
 			g.Expect(failureIssues()).To(HaveLen(1), "a second pass files nothing")
@@ -679,17 +680,17 @@ var _ = Describe("Container Standard update", func() {
 		Expect(got.Number).To(BeEquivalentTo(issue.Number))
 		Expect(got.URL).To(Equal(issue.URL))
 		Expect(got.Title).To(Equal("Standard " + updatedStandard + " v1.1.0 fails this repository's check"))
-		Expect(got.filedLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
+		Expect(got.FiledLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
 		Expect(got.Body).To(ContainSubstring(first.PullRequestURL))
 
 		// The Crew's fix lands on main; the update is planned again and fails again.
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
 		Eventually(func(g Gomega) {
 			g.Expect(getContainer(g, ns).Status.Standard.Update).
 				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
 		}).Should(Succeed())
 		second := openedUpdate(ns, "v1.1.0")
-		gitFake.setChecks(ns, "orders-api", second.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "failure")
 		Eventually(func(g Gomega) {
 			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonChecksFailed))
 		}).Should(Succeed())
@@ -698,13 +699,13 @@ var _ = Describe("Container Standard update", func() {
 			g.Expect(getContainer(g, ns).Status.Standard.FailureIssue).To(Equal(issue))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
-		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
 
 		// A newer target ref files its own.
 		bumpStandard(ns, "v1.2.0")
 		third := openedUpdate(ns, "v1.2.0")
-		gitFake.setChecks(ns, "orders-api", third.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", third.Commit, "failure")
 		newer := filed("v1.2.0")
 		Expect(newer.Number).NotTo(Equal(issue.Number))
 		Eventually(failureIssues).Should(HaveLen(2))
@@ -716,14 +717,14 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdate(ns, "v1.1.0")
 
-		gitFake.pushBranch(ns, "orders-api", update.Branch, "sha-person")
-		gitFake.setChecks(ns, "orders-api", "sha-person", "success")
+		gitFake.PushBranchHead(ns, "orders-api", update.Branch, "sha-person")
+		gitFake.SetChecks(ns, "orders-api", "sha-person", "success")
 		message := stoppedUpdate(ns, c4v1beta1.ReasonUpdateRefused)
 		Expect(message).To(Equal("Someone else pushed to standard-update/python-strict-v1.1.0; a person looks at " +
 			update.PullRequestURL))
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+			g.Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 	})
 
@@ -733,12 +734,12 @@ var _ = Describe("Container Standard update", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdate(ns, "v1.1.0")
 
-		gitFake.setPullFiles(ns, "orders-api", int(update.PullRequest), "AGENTS.md", implementer, makefile)
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetPullFiles(ns, "orders-api", int(update.PullRequest), "AGENTS.md", implementer, makefile)
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		message := stoppedUpdate(ns, c4v1beta1.ReasonUpdateRefused)
 		Expect(message).To(Equal("The update may not merge: the pull request changes Makefile, which the update " +
 			"did not plan; a person looks at " + update.PullRequestURL))
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
 	})
 
 	It("leaves a Standard added after the scaffold alone", func() {
@@ -768,7 +769,7 @@ var _ = Describe("Container Standard update", func() {
 				"its updates don't reach this Container"))
 			g.Expect(c.Status.Standard).To(BeNil())
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 	})
 
 	It("records the change to a file left out of an update that opens no pull request", func() {
@@ -776,19 +777,19 @@ var _ = Describe("Container Standard update", func() {
 		updatableContainer(ns)
 		v102 := standardRefs()["v1.0.0"]
 		v102[makefile] = scaffold.File{Data: []byte("check:\n\tmake lint test\n")}
-		gitFake.addTemplate(templatesURL+ns+"/"+updatedStandard, "v1.0.2", v102)
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
-		head := gitFake.mainHead(ns, "orders-api")
+		gitFake.AddTemplate(templatesURL+ns+"/"+updatedStandard, "v1.0.2", v102)
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
+		head := gitFake.MainHead(ns, "orders-api")
 
 		bumpStandard(ns, "v1.0.2")
 		eventuallyAt(ns, "v1.0.2", makefile)
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty(), "the update has nothing else to write")
-		Expect(gitFake.mainHead(ns, "orders-api")).To(Equal(head))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty(), "the update has nothing else to write")
+		Expect(gitFake.MainHead(ns, "orders-api")).To(Equal(head))
 		want := []c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.0.0", Change: makefileChange("v1.0.2")}}
 		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal(want))
 
 		By("keeping the change, as the update planned it, through later passes")
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest -x\n")}})
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest -x\n")}})
 		answer(ns, c4v1beta1.AnnotationStandardKeep, "v0.9.9") // ignored, after a pass
 		eventuallyAnswered(ns)
 		Consistently(func(g Gomega) {
@@ -799,12 +800,12 @@ var _ = Describe("Container Standard update", func() {
 	It("records a ref that renders the files main already holds, without a pull request", func() {
 		ns := newProjectNamespace()
 		updatableContainer(ns)
-		head := gitFake.mainHead(ns, "orders-api")
+		head := gitFake.MainHead(ns, "orders-api")
 
 		bumpStandard(ns, "v1.0.1")
 		eventuallyAt(ns, "v1.0.1")
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.mainHead(ns, "orders-api")).To(Equal(head))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.MainHead(ns, "orders-api")).To(Equal(head))
 	})
 
 	It("plans an update again when main moved with conflicting changes", func() {
@@ -814,8 +815,8 @@ var _ = Describe("Container Standard update", func() {
 		first := openedUpdate(ns, "v1.1.0")
 
 		// A person changed the implementer's guide on main meanwhile.
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{implementer: {Data: []byte("Our own rules.\n")}})
-		gitFake.conflict(ns, "orders-api", int(first.PullRequest), true)
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{implementer: {Data: []byte("Our own rules.\n")}})
+		gitFake.Conflict(ns, "orders-api", int(first.PullRequest), true)
 		Eventually(func(g Gomega) {
 			g.Expect(getContainer(g, ns).Status.Standard.Update).
 				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
@@ -824,10 +825,10 @@ var _ = Describe("Container Standard update", func() {
 		Expect(second.Branch).To(Equal(first.Branch))
 		Expect(second.Paths).To(Equal([]string{"AGENTS.md"}))
 		Expect(second.LeftOut).To(Equal([]string{implementer}))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ContainElement(MatchFields(IgnoreExtras, Fields{
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ContainElement(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"), "Merged": BeFalse()})))
 
-		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "success")
 		eventuallyAt(ns, "v1.1.0", implementer)
 		Expect(mainFile(ns, implementer)).To(Equal("Our own rules.\n"))
 	})

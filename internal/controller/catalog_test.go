@@ -17,9 +17,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
-const templatesURL = "http://gitea.gitea.svc.cluster.local:3000/templates/"
+const templatesURL = fake.TemplatesURL
 
 // createFactory creates the sample GitProvider and catalog: the smallest set that
 // exercises every layer, with the supported types from the design.

@@ -23,6 +23,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 const clearIssue = "## Goal\n\nValidate orders.\n\n## Acceptance criteria\n\n- [ ] Rejects an empty order\n"
@@ -80,10 +81,10 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		vague := gitFake.addIssue(ns, "orders-api", "Make it better", "Somehow.", []string{model.LabelReady})
-		blocked := gitFake.addIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady}, "#3")
-		first := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		gitFake.addIssue(ns, "orders-api", "Someday", clearIssue, []string{model.LabelProposed})
+		vague := gitFake.AddIssue(ns, "orders-api", "Make it better", "Somehow.", []string{model.LabelReady})
+		blocked := gitFake.AddIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady}, "#3")
+		first := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		gitFake.AddIssue(ns, "orders-api", "Someday", clearIssue, []string{model.LabelProposed})
 		mustCreate(newCrew(ns))
 
 		By("starting a Task for the lowest ready issue without open dependencies")
@@ -101,9 +102,9 @@ var _ = Describe("Crew", func() {
 
 		By("handing an issue without acceptance criteria back to a person")
 		Eventually(func(g Gomega) {
-			issue := gitFake.issue(ns, "orders-api", vague)
+			issue := gitFake.Issue(ns, "orders-api", vague)
 			g.Expect(issue.Labels).To(Equal([]string{model.LabelNeedsHuman}))
-			g.Expect(issue.comments).To(ContainElement(ContainSubstring(`no "Acceptance criteria" section`)))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring(`no "Acceptance criteria" section`)))
 		}).Should(Succeed())
 
 		By("running the implementer on the issue, with its model, and marking the issue taken")
@@ -116,26 +117,26 @@ var _ = Describe("Crew", func() {
 			))
 			g.Expect(env).To(ContainElement(And(HaveKeyWithValue("name", "C4_GOAL"),
 				HaveKeyWithValue("value", ContainSubstring("Issue #3: Validate orders")))))
-			issue := gitFake.issue(ns, "orders-api", first)
+			issue := gitFake.Issue(ns, "orders-api", first)
 			g.Expect(issue.Labels).To(Equal([]string{model.LabelInProgress}))
-			g.Expect(issue.assignees).To(Equal([]string{ns + "-orders-api-agent"}))
-			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Task `orders-api-3` picked this up")))
+			g.Expect(issue.Assignees).To(Equal([]string{ns + "-orders-api-agent"}))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("Task `orders-api-3` picked this up")))
 			g.Expect(getTask(g, ns, "orders-api-3").Status.IssueTitle).To(Equal("Validate orders"))
 		}).Should(Succeed())
 
 		By("opening a pull request that closes the issue")
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-3", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-3", "sha-1")
 		finishSandbox(ns, "orders-api-3-r1-implement", "orders-api-3",
 			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Validated orders."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 
 		By("reviewing with the reviewer Agent's model")
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, "orders-api-3-r1-review-a1")).
 				To(ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-opus-5-5"}))
 		}).Should(Succeed())
-		pr := gitFake.pullRequests(ns, "orders-api")[0]
-		Expect(gitFake.pullAuthor(ns, "orders-api", pr.Number)).To(Equal(ns+"-orders-api-agent"),
+		pr := gitFake.PullRequests(ns, "orders-api")[0]
+		Expect(gitFake.PullAuthor(ns, "orders-api", pr.Number)).To(Equal(ns+"-orders-api-agent"),
 			"the implementer opens its pull request, so the operator may review it")
 		finishSandbox(ns, "orders-api-3-r1-review-a1", "orders-api-3", &agentrunner.Result{Role: "review",
 			Verdict: "approve", Summary: "Every criterion met.", FollowUps: []model.FollowUp{
@@ -148,7 +149,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.FollowUps).To(HaveLen(1))
 		}).Should(Succeed())
-		mergeCommit := gitFake.pullRequests(ns, "orders-api")[0].MergeCommit
+		mergeCommit := gitFake.PullRequests(ns, "orders-api")[0].MergeCommit
 		Expect(mergeCommit).NotTo(BeEmpty())
 		Expect(getTask(Default, ns, "orders-api-3").Status.MergeCommit).To(Equal(mergeCommit),
 			"the Task records the commit its merge made, where a release is tagged")
@@ -162,29 +163,29 @@ var _ = Describe("Crew", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-3").Status.MergeCommit).To(Equal(mergeCommit))
 		}).Should(Succeed())
-		Expect(gitFake.reviews(ns, "orders-api", pr.Number)).To(ConsistOf(And(
+		Expect(gitFake.Reviews(ns, "orders-api", pr.Number)).To(ConsistOf(And(
 			HaveField("Event", gitprovider.ReviewApprove), HaveField("Commit", "sha-1"),
 			HaveField("Body", And(ContainSubstring("Agent `reviewer` (claude-opus-5-5)"), ContainSubstring("Every criterion met."))))))
-		issue := gitFake.issue(ns, "orders-api", first)
+		issue := gitFake.Issue(ns, "orders-api", first)
 		Expect(issue.State).To(Equal("closed"))
 		Expect(issue.Labels).To(BeEmpty())
-		Expect(issue.comments).To(ContainElement(ContainSubstring("Merged in")))
-		var followUp *fakeIssue
-		for _, i := range gitFake.openIssues(ns, "orders-api") {
+		Expect(issue.Comments).To(ContainElement(ContainSubstring("Merged in")))
+		var followUp *fake.Issue
+		for _, i := range gitFake.OpenIssues(ns, "orders-api") {
 			if i.Title == "Validate addresses" {
 				followUp = &i
 			}
 		}
 		Expect(followUp).NotTo(BeNil())
 		Expect(followUp.Labels).To(Equal([]string{model.LabelProposed}))
-		Expect(followUp.milestone).To(Equal("Later"), "follow-ups are filed outside any release")
+		Expect(followUp.InMilestone).To(Equal("Later"), "follow-ups are filed outside any release")
 		Expect(followUp.Body).To(ContainSubstring("Postcodes are not checked."))
 		Expect(followUp.Body).To(ContainSubstring("- [ ] An order with an unknown postcode is rejected"))
 		Expect(model.MissingAcceptanceCriteria(followUp.Body)).To(BeEmpty(),
 			"a follow-up moved into a release is ready as it stands")
 
 		By("starting the blocked issue once its dependency is closed")
-		gitFake.setBlockers(ns, "orders-api", blocked)
+		gitFake.SetBlockers(ns, "orders-api", blocked)
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(blocked)))
 		}).Should(Succeed())
@@ -194,19 +195,19 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", nil, "OOMKilled")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
-			issue := gitFake.issue(ns, "orders-api", n)
+			issue := gitFake.Issue(ns, "orders-api", n)
 			g.Expect(issue.Labels).To(Equal([]string{model.LabelNeedsHuman}))
-			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Task `orders-api-1` failed")))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("Task `orders-api-1` failed")))
 			g.Expect(getCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewIdle))
 		}).Should(Succeed())
 
-		Expect(gitFake.labelIssue(ns, "orders-api", n, model.LabelReady)).To(Succeed())
+		Expect(gitFake.LabelIssue(ns, "orders-api", n, model.LabelReady)).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1-2").Spec.Issue).To(Equal(int32(n)))
 		}).Should(Succeed())
@@ -217,14 +218,14 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		n := gitFake.addIssue(ns, "orders-api", "Show orders in the README", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Show orders in the README", clearIssue, []string{model.LabelReady})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-1",
 				Summary: "Listed the orders.\n\nOpen: a screenshot of the dashboard: no browser here."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1", &agentrunner.Result{Role: "review",
 			Verdict: "approve", Summary: "Every criterion met but the screenshot.", Open: []model.OpenCriterion{
@@ -237,8 +238,8 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.ByHand).NotTo(BeEmpty())
 			byHand = task.Status.ByHand
 		}).Should(Succeed())
-		var filed []fakeIssue
-		for _, i := range gitFake.openIssues(ns, "orders-api") {
+		var filed []fake.Issue
+		for _, i := range gitFake.OpenIssues(ns, "orders-api") {
 			if model.IsByHand(i.Labels) {
 				filed = append(filed, i)
 			}
@@ -248,24 +249,24 @@ var _ = Describe("Crew", func() {
 		Expect(issue.URL).To(Equal(byHand))
 		Expect(issue.Title).To(Equal("By hand: Show orders in the README"))
 		Expect(issue.Labels).To(ConsistOf(model.LabelByHand, model.LabelNeedsHuman), "no Crew picks it")
-		Expect(issue.milestone).To(Equal("Later"), "no release waits on it")
-		pr := gitFake.pullRequests(ns, "orders-api")[0]
+		Expect(issue.InMilestone).To(Equal("Later"), "no release waits on it")
+		pr := gitFake.PullRequests(ns, "orders-api")[0]
 		Expect(issue.Body).To(And(ContainSubstring(pr.URL), ContainSubstring(fmt.Sprintf("for #%d", n)),
 			ContainSubstring("- [ ] The README has a screenshot of the dashboard\n  Needs a person: No browser in the sandbox."),
 			ContainSubstring(model.ByHandMarker("orders-api-1"))))
 
-		merged := gitFake.issue(ns, "orders-api", n)
+		merged := gitFake.Issue(ns, "orders-api", n)
 		Expect(merged.State).To(Equal("closed"), "its pull request did the agents' part")
-		Expect(merged.comments).To(ContainElement(And(ContainSubstring("Merged in"), ContainSubstring(byHand))))
+		Expect(merged.Comments).To(ContainElement(And(ContainSubstring("Merged in"), ContainSubstring(byHand))))
 	})
 
 	It("works on several issues at once, each on its own branch", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		first := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		second := gitFake.addIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady})
-		gitFake.addIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
+		first := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		second := gitFake.AddIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady})
+		gitFake.AddIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 2
 		mustCreate(crew)
@@ -284,13 +285,13 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		later := gitFake.addIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
-		sooner := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
-		chained := gitFake.addIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady},
+		later := gitFake.AddIssue(ns, "orders-api", "Price orders", clearIssue, []string{model.LabelReady})
+		sooner := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		chained := gitFake.AddIssue(ns, "orders-api", "Report invalid orders", clearIssue, []string{model.LabelReady},
 			fmt.Sprintf("#%d", sooner))
-		gitFake.setIssueRelease(ns, "orders-api", later, "v0.2.0", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+		gitFake.SetIssueRelease(ns, "orders-api", later, "v0.2.0", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 		for _, n := range []int{sooner, chained} {
-			gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
+			gitFake.SetIssueRelease(ns, "orders-api", n, "v0.1.1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC))
 		}
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 2
@@ -311,17 +312,17 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		n := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
 
 		By("finding the pull request conflicts once approved")
-		pr := gitFake.pullRequests(ns, "orders-api")[0]
-		gitFake.conflict(ns, "orders-api", pr.Number, true)
+		pr := gitFake.PullRequests(ns, "orders-api")[0]
+		gitFake.Conflict(ns, "orders-api", pr.Number, true)
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
@@ -331,17 +332,17 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Merge main into your branch"))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ResolvingConflicts")))
 		}, "30s").Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 
 		By("merging once the implementer merged main, its runs in sandboxes named afresh")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Restarts).To(Equal(int32(1)))
 			sandboxExists(g, ns, "orders-api-1-r1-implement-s1")
 		}, "30s").Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
-		gitFake.conflict(ns, "orders-api", pr.Number, false)
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-2")
+		gitFake.Conflict(ns, "orders-api", pr.Number, false)
 		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-2"}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-2", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-2", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-s1-a1") }, "30s").Should(Succeed())
 		finishSandbox(ns, "orders-api-1-r1-review-s1-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Conflicts resolved."}, "")
@@ -350,7 +351,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}, "30s").Should(Succeed())
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	// approvedBehindMain runs a Crew's Task to its approval while main moved since
@@ -358,17 +359,17 @@ var _ = Describe("Crew", func() {
 	approvedBehindMain := func(ns string) (pr gitprovider.PullRequest, head string) {
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
 
 		By("merging main into the branch once approved, as another change merged since its checks ran")
-		pr = gitFake.pullRequests(ns, "orders-api")[0]
-		gitFake.fallBehind(ns, "orders-api", pr.Number)
+		pr = gitFake.PullRequests(ns, "orders-api")[0]
+		gitFake.FallBehind(ns, "orders-api", pr.Number)
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
@@ -377,11 +378,11 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "main moving costs no round")
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
 			g.Expect(task.Status.Commit).NotTo(Equal("sha-1"))
-			g.Expect(task.Status.Commit).To(Equal(gitFake.pullRequests(ns, "orders-api")[0].HeadSHA))
+			g.Expect(task.Status.Commit).To(Equal(gitFake.PullRequests(ns, "orders-api")[0].HeadSHA))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "UpdatingBranch")))
 			head = task.Status.Commit
 		}, "30s").Should(Succeed())
-		Consistently(func() bool { return gitFake.pullRequests(ns, "orders-api")[0].Merged }, "2s").
+		Consistently(func() bool { return gitFake.PullRequests(ns, "orders-api")[0].Merged }, "2s").
 			Should(BeFalse(), "it waits for the checks on the new head")
 		return pr, head
 	}
@@ -391,8 +392,8 @@ var _ = Describe("Crew", func() {
 		pr, first := approvedBehindMain(ns)
 
 		By("merging main in again when main moved again while the checks ran")
-		gitFake.fallBehind(ns, "orders-api", pr.Number)
-		gitFake.setChecks(ns, "orders-api", first, "success")
+		gitFake.FallBehind(ns, "orders-api", pr.Number)
+		gitFake.SetChecks(ns, "orders-api", first, "success")
 		var head string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
@@ -401,10 +402,10 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeTrue())
 			head = task.Status.Commit
 		}, "30s").Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 
 		By("merging once the new head's checks pass, with no new review")
-		gitFake.setChecks(ns, "orders-api", head, "success")
+		gitFake.SetChecks(ns, "orders-api", head, "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
@@ -412,7 +413,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.Review).NotTo(BeNil())
 			g.Expect(task.Status.Review.Verdict).To(Equal(model.VerdictApprove))
 		}, "30s").Should(Succeed())
-		Expect(gitFake.issue(ns, "orders-api", 1).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", 1).State).To(Equal("closed"))
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
 			To(BeTrue(), "no reviewer runs again")
 	})
@@ -421,7 +422,7 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		pr, head := approvedBehindMain(ns)
 
-		gitFake.setChecks(ns, "orders-api", head, "failure")
+		gitFake.SetChecks(ns, "orders-api", head, "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
@@ -429,7 +430,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(task.Status.MergeWhenChecksPass).To(BeFalse())
 			g.Expect(task.Status.Feedback).To(ContainSubstring("main moved since its checks ran"))
 		}, "30s").Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[pr.Number-1].Merged).To(BeFalse())
+		Expect(gitFake.PullRequests(ns, "orders-api")[pr.Number-1].Merged).To(BeFalse())
 	})
 
 	It("merges a cleanly updated branch the Git host is still testing, not sending it back for conflicts", func() {
@@ -437,8 +438,8 @@ var _ = Describe("Crew", func() {
 		pr, head := approvedBehindMain(ns)
 
 		By("waiting while the Git host says the pull request doesn't merge, as it tests it against main")
-		gitFake.retest(ns, "orders-api", pr.Number, true)
-		gitFake.setChecks(ns, "orders-api", head, "success")
+		gitFake.Retest(ns, "orders-api", pr.Number, true)
+		gitFake.SetChecks(ns, "orders-api", head, "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			cond := meta.FindStatusCondition(task.Status.Conditions, ConditionProgressing)
@@ -452,7 +453,7 @@ var _ = Describe("Crew", func() {
 		}, "2s").Should(Succeed())
 
 		By("merging once the Git host found it merges")
-		gitFake.retest(ns, "orders-api", pr.Number, false)
+		gitFake.Retest(ns, "orders-api", pr.Number, false)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
@@ -464,15 +465,15 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }, "30s").Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement", Commit: "sha-1"}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }, "30s").Should(Succeed())
-		pr := gitFake.pullRequests(ns, "orders-api")[0]
-		gitFake.conflict(ns, "orders-api", pr.Number, true)
+		pr := gitFake.PullRequests(ns, "orders-api")[0]
+		gitFake.Conflict(ns, "orders-api", pr.Number, true)
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
@@ -484,7 +485,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s1")).To(ContainElement(
 				map[string]any{"name": agentrunner.EnvPullRequest, "value": fmt.Sprint(pr.Number)}))
 		}, "30s").Should(Succeed())
-		gitFake.conflict(ns, "orders-api", pr.Number, false)
+		gitFake.Conflict(ns, "orders-api", pr.Number, false)
 		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Main merges cleanly; nothing to resolve."}, "")
 
@@ -503,7 +504,7 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Paused = true
 		mustCreate(crew)
@@ -558,8 +559,8 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		docs := gitFake.addIssue(ns, "orders-api", "Document orders", clearIssue, []string{model.LabelReady, "kind/docs"})
-		other := gitFake.addIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
+		docs := gitFake.AddIssue(ns, "orders-api", "Document orders", clearIssue, []string{model.LabelReady, "kind/docs"})
+		other := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 2
 		crew.Spec.Routes = []c4v1beta1.CrewRoute{
@@ -600,7 +601,7 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		security := gitFake.addIssue(ns, "orders-api", "Check order auth", clearIssue, []string{model.LabelReady, "security"})
+		security := gitFake.AddIssue(ns, "orders-api", "Check order auth", clearIssue, []string{model.LabelReady, "security"})
 		crew := newCrew(ns)
 		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "security", Reviewer: &c4v1beta1.LocalRef{Name: "auditor"}}}
 		mustCreate(crew)

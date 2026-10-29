@@ -65,7 +65,7 @@ func closeFiled(ns string, issues ...string) {
 		var n int
 		_, err := fmt.Sscan(number, &n)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(gitFake.closeIssue(ns, container, n)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, container, n)).To(Succeed())
 	}
 }
 

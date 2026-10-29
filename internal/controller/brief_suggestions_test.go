@@ -62,13 +62,13 @@ func twoContainersPlan(ns string, issues int, answers string) scaffold.Tree {
 // criteria, and a closed issue at every other number not yet filed.
 func fileSuggestions(ns, name string, numbers []int) {
 	GinkgoHelper()
-	for n := gitFake.issueCount(ns, name) + 1; n <= slices.Max(numbers); n++ {
+	for n := gitFake.IssueCount(ns, name) + 1; n <= slices.Max(numbers); n++ {
 		if !slices.Contains(numbers, n) {
-			Expect(gitFake.closeIssue(ns, name, gitFake.addIssue(ns, name, fmt.Sprintf("Done %d", n), "", nil))).
+			Expect(gitFake.CloseIssueByHand(ns, name, gitFake.AddIssue(ns, name, fmt.Sprintf("Done %d", n), "", nil))).
 				To(Succeed())
 			continue
 		}
-		Expect(gitFake.addIssue(ns, name, fmt.Sprintf("Suggestion %d", n), model.FollowUpIssue(model.FollowUp{
+		Expect(gitFake.AddIssue(ns, name, fmt.Sprintf("Suggestion %d", n), model.FollowUpIssue(model.FollowUp{
 			Body: "A reviewer's idea.", Criteria: []string{fmt.Sprintf("Suggestion %d is done", n)}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})).To(Equal(n))
 	}
@@ -90,24 +90,24 @@ var _ = Describe("Brief suggestions", func() {
 		}).Should(Succeed())
 
 		By("listing the suggestions a reviewer filed, and not a person's proposed issue")
-		safety := gitFake.addIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
+		safety := gitFake.AddIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
 			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
-		gitFake.setIssueMilestone(ns, "linter", safety, model.FollowUpMilestone)
-		caching := gitFake.addIssue(ns, "linter", "Think about caching", model.FollowUpIssue(model.FollowUp{
+		gitFake.PutInMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		caching := gitFake.AddIssue(ns, "linter", "Think about caching", model.FollowUpIssue(model.FollowUp{
 			Body: "Rules are read often."}, "Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"),
 			[]string{model.LabelProposed})
-		gitFake.addIssue(ns, "linter", "A person's idea", "Dark mode.", []string{model.LabelProposed})
+		gitFake.AddIssue(ns, "linter", "A person's idea", "Dark mode.", []string{model.LabelProposed})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.SuggestionsWaiting).To(Equal(int32(2)))
 			g.Expect(b.Status.Suggestions).To(Equal([]c4v1beta1.BriefSuggestion{
 				{Container: "linter", Number: int32(safety), Title: "Reject control characters",
-					URL: gitFake.issue(ns, "linter", safety).URL, Criteria: true},
+					URL: gitFake.Issue(ns, "linter", safety).URL, Criteria: true},
 				{Container: "linter", Number: int32(caching), Title: "Think about caching",
-					URL: gitFake.issue(ns, "linter", caching).URL},
+					URL: gitFake.Issue(ns, "linter", caching).URL},
 			}))
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceSuggestionsFile].Data)).To(
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceSuggestionsFile].Data)).To(
 				ContainSubstring("title: Reject control characters"))
 		}).Should(Succeed())
 
@@ -140,17 +140,17 @@ var _ = Describe("Brief suggestions", func() {
 			g.Expect(b.Status.SuggestionsWaiting).To(BeZero())
 			g.Expect(b.Status.Suggestions).To(BeEmpty())
 		}).Should(Succeed())
-		taken := gitFake.issue(ns, "linter", safety)
+		taken := gitFake.Issue(ns, "linter", safety)
 		Expect(taken.State).To(Equal("open"))
 		Expect(taken.Labels).NotTo(ContainElement(model.LabelProposed))
-		Expect(taken.milestone).To(BeEmpty())
-		Expect(taken.comments).To(ContainElement(And(ContainSubstring("Taken for Brief `cel-lens` in round 2"),
+		Expect(taken.InMilestone).To(BeEmpty())
+		Expect(taken.Comments).To(ContainElement(And(ContainSubstring("Taken for Brief `cel-lens` in round 2"),
 			ContainSubstring("> "+prompt))))
-		skipped := gitFake.issue(ns, "linter", caching)
+		skipped := gitFake.Issue(ns, "linter", caching)
 		Expect(skipped.State).To(Equal("closed"))
-		Expect(skipped.comments).To(ConsistOf(And(ContainSubstring("not taken"),
+		Expect(skipped.Comments).To(ConsistOf(And(ContainSubstring("not taken"),
 			ContainSubstring("The planner: The prompt skips the rest."), ContainSubstring("> "+prompt))))
-		Expect(gitFake.issue(ns, "linter", 4).State).To(Equal("open"), "a person's issue is the person's")
+		Expect(gitFake.Issue(ns, "linter", 4).State).To(Equal("open"), "a person's issue is the person's")
 		Expect(briefEventNotes(Default, ns, eventPlanned)).To(ContainElement(
 			ContainSubstring("took 1 and skipped 1 reviewers' suggestions")))
 	})
@@ -167,7 +167,7 @@ var _ = Describe("Brief suggestions", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
-		caching := gitFake.addIssue(ns, "linter", "Think about caching", model.FollowUpIssue(model.FollowUp{
+		caching := gitFake.AddIssue(ns, "linter", "Think about caching", model.FollowUpIssue(model.FollowUp{
 			Body: "Rules are read often."}, "Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"),
 			[]string{model.LabelProposed})
 		Eventually(func(g Gomega) {
@@ -175,8 +175,8 @@ var _ = Describe("Brief suggestions", func() {
 		}).Should(Succeed())
 
 		By("a round whose close the host refuses for a dependency added on the host")
-		other := gitFake.addIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
-		gitFake.blockOnClose(ns, "linter", caching, fmt.Sprintf("#%d", other))
+		other := gitFake.AddIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
+		gitFake.BlockOnClose(ns, "linter", caching, fmt.Sprintf("#%d", other))
 		brief = getBrief(Default, ns)
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Skip the caching idea."} })).To(Succeed())
 		planRound(ns, 2, 1, suggestionsPlan(ns,
@@ -188,21 +188,21 @@ var _ = Describe("Brief suggestions", func() {
 			g.Expect(cond.Message).To(ContainSubstring(fmt.Sprintf("answering linter#%d", caching)))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			issue := gitFake.issue(ns, "linter", caching)
+			issue := gitFake.Issue(ns, "linter", caching)
 			g.Expect(issue.State).To(Equal("open"))
-			g.Expect(issue.comments).To(BeEmpty())
+			g.Expect(issue.Comments).To(BeEmpty())
 		}, "500ms").Should(Succeed())
 
 		By("closing and commenting it once the dependency is closed")
-		Expect(gitFake.closeIssue(ns, "linter", other)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "linter", other)).To(Succeed())
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 			g.Expect(b.Status.Suggestions).To(BeEmpty())
 		}).Should(Succeed())
-		skipped := gitFake.issue(ns, "linter", caching)
+		skipped := gitFake.Issue(ns, "linter", caching)
 		Expect(skipped.State).To(Equal("closed"))
-		Expect(skipped.comments).To(ConsistOf(ContainSubstring("not taken")))
+		Expect(skipped.Comments).To(ConsistOf(ContainSubstring("not taken")))
 	})
 })
 
@@ -229,10 +229,10 @@ var _ = Describe("Brief suggestions a prompt names that don't wait", func() {
 				Criteria: []string{fmt.Sprintf("Suggestion %d is done", n)}}, "Agent `reviewer`",
 				"http://gitea/pulls/2", 1, "linter-1")
 		}
-		waiting := gitFake.addIssue(ns, "linter", "Waiting", suggestion(1), []string{model.LabelProposed})
-		closed := gitFake.addIssue(ns, "linter", "Closed", suggestion(2), []string{model.LabelProposed})
-		Expect(gitFake.closeIssue(ns, "linter", closed)).To(Succeed())
-		ready := gitFake.addIssue(ns, "linter", "Taken", suggestion(3), []string{model.LabelReady})
+		waiting := gitFake.AddIssue(ns, "linter", "Waiting", suggestion(1), []string{model.LabelProposed})
+		closed := gitFake.AddIssue(ns, "linter", "Closed", suggestion(2), []string{model.LabelProposed})
+		Expect(gitFake.CloseIssueByHand(ns, "linter", closed)).To(Succeed())
+		ready := gitFake.AddIssue(ns, "linter", "Taken", suggestion(3), []string{model.LabelReady})
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
 		}).Should(Succeed())
@@ -275,10 +275,10 @@ var _ = Describe("Brief suggestions a prompt names that don't wait", func() {
 		))
 		Expect(b.Status.SuggestionsWaiting).To(Equal(int32(1)), "the waiting one still waits")
 		for _, n := range []int{waiting, closed, ready} {
-			Expect(gitFake.issue(ns, "linter", n).comments).NotTo(ContainElement(ContainSubstring("for Brief `cel-lens`")),
+			Expect(gitFake.Issue(ns, "linter", n).Comments).NotTo(ContainElement(ContainSubstring("for Brief `cel-lens`")),
 				"linter#%d", n)
 		}
-		Expect(gitFake.issue(ns, "linter", closed).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "linter", closed).State).To(Equal("closed"))
 	})
 })
 
@@ -315,10 +315,10 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 			g.Expect(b.Status.Suggestions).To(HaveLen(model.MaxSuggestions))
 			g.Expect(b.Status.Suggestions).NotTo(ContainElement(And(HaveField("Container", "linter-vscode"),
 				HaveField("Number", int32(385)))))
-			listed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceSuggestionsFile].Data)
+			listed := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceSuggestionsFile].Data)
 			g.Expect(strings.Count(listed, "- container: ")).To(Equal(62))
 			g.Expect(listed).To(ContainSubstring("- container: linter-vscode\n  repository: linter-vscode\n" +
-				"  issue: 385\n  title: Suggestion 385\n  url: " + gitFake.issue(ns, "linter-vscode", 385).URL))
+				"  issue: 385\n  title: Suggestion 385\n  url: " + gitFake.Issue(ns, "linter-vscode", 385).URL))
 			g.Expect(listed).To(ContainSubstring("- container: linter\n  repository: linter\n  issue: 364\n"))
 		}).Should(Succeed())
 
@@ -351,17 +351,17 @@ var _ = Describe("Brief suggestions past the status's list", func() {
 		// the spec waits for what it asserts rather than for the status (#1293).
 		Eventually(func(g Gomega) {
 			for _, n := range newest {
-				taken := gitFake.issue(ns, "linter-vscode", n)
+				taken := gitFake.Issue(ns, "linter-vscode", n)
 				// The Crew may have worked a taken one by now (#1504).
 				g.Expect(taken.Labels).NotTo(ContainElement(model.LabelProposed), "linter-vscode#%d", n)
-				g.Expect(taken.comments).To(ContainElement(ContainSubstring("Taken for Brief `cel-lens` in round 2")))
+				g.Expect(taken.Comments).To(ContainElement(ContainSubstring("Taken for Brief `cel-lens` in round 2")))
 			}
 		}).Should(Succeed())
 		for _, n := range []int{364, 371} {
-			untouched := gitFake.issue(ns, "linter", n)
+			untouched := gitFake.Issue(ns, "linter", n)
 			Expect(untouched.State).To(Equal("open"))
 			Expect(untouched.Labels).To(ConsistOf(model.LabelProposed), "linter#%d", n)
-			Expect(untouched.comments).To(BeEmpty())
+			Expect(untouched.Comments).To(BeEmpty())
 		}
 	})
 })

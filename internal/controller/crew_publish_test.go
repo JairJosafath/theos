@@ -28,6 +28,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // unreadableSecrets holds the Secrets, namespace/name, the Crew reconciler is
@@ -52,16 +53,16 @@ func (r secretReader) Get(ctx context.Context, key client.ObjectKey, obj client.
 // with files in Gitea, and a Crew that tags it and publishes it to repository
 // with the token in Secret orders-api-github, changed by change when given. It
 // returns the files.
-func publishingCrew(ns, repository string, change ...func(*c4v1beta1.Crew)) []fakeFile {
+func publishingCrew(ns, repository string, change ...func(*c4v1beta1.Crew)) []fake.ReleaseFile {
 	GinkgoHelper()
 	readyContainer(ns)
 	crewAgents(ns, 1)
 	mergedIssue(ns)
-	files := []fakeFile{{"orders-api.vsix", []byte("a vsix")}, {"SHA256SUMS", []byte("abc  orders-api.vsix\n")}}
+	files := []fake.ReleaseFile{{Name: "orders-api.vsix", Data: []byte("a vsix")}, {Name: "SHA256SUMS", Data: []byte("abc  orders-api.vsix\n")}}
 	// The image archive goes to the registry; the GitHub copy leaves it out.
-	gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "",
-		append(slices.Clone(files), fakeFile{"orders-api-v0.1.0.oci.tar", []byte("an image")})...)
-	gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5,
+	gitFake.SetRelease(ns, "orders-api", "v0.1.0", "",
+		append(slices.Clone(files), fake.ReleaseFile{Name: "orders-api-v0.1.0.oci.tar", Data: []byte("an image")})...)
+	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5,
 		Workflow: "release.yaml", Status: "completed", Conclusion: "success"})
 	crew := newCrew(ns)
 	crew.Spec.TagReleases = true
@@ -127,7 +128,7 @@ const publishWait = 90 * time.Second
 // publishedTo waits for the Crew's release to be published to repository with
 // the notes of its merged issue and files, checks GitHub holds it so, and
 // returns it.
-func publishedTo(ns, repository string, files []fakeFile) fakeGitHubRelease {
+func publishedTo(ns, repository string, files []fake.ReleaseFile) fakeGitHubRelease {
 	const notes = "- Validate orders (#1)\n"
 	GinkgoHelper()
 	url := "https://github.com/" + repository + "/releases/tag/v0.1.0"
@@ -153,8 +154,8 @@ func publishedTo(ns, repository string, files []fakeFile) fakeGitHubRelease {
 	Expect(rel.Body).To(Equal(notes + "\n<!-- c4factory: " + ns + "/orders-api v0.1.0 -->\n"))
 	Expect(rel.assets).To(HaveLen(len(files)))
 	for i, f := range files {
-		Expect(rel.assets[i].Name).To(Equal(f.name))
-		Expect(rel.assets[i].data).To(Equal(f.data))
+		Expect(rel.assets[i].Name).To(Equal(f.Name))
+		Expect(rel.assets[i].data).To(Equal(f.Data))
 	}
 	return rel
 }
@@ -181,7 +182,7 @@ var _ = Describe("Crew publishing releases", func() {
 		files := publishingCrew(ns, repository)
 
 		rel := publishedTo(ns, repository, files)
-		Expect(gitFake.giteaReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"),
+		Expect(gitFake.ReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"),
 			"the notes are written on Gitea too")
 		Expect(rel.Name).To(Equal("orders-api v0.1.0"), "named after the Container, with no display name")
 		Expect(rel.makeLatest).To(Equal("true"))
@@ -195,13 +196,13 @@ var _ = Describe("Crew publishing releases", func() {
 		mustCreate(publishSecret(ns, token))
 		files := publishingCrew(ns, repository, func(*c4v1beta1.Crew) {
 			// Closed by prompt, as not doable: no Task merged it.
-			n := gitFake.addIssue(ns, "orders-api", "Check the cost of every expression", clearIssue, nil)
-			gitFake.setIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
-			Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+			n := gitFake.AddIssue(ns, "orders-api", "Check the cost of every expression", clearIssue, nil)
+			gitFake.SetIssueRelease(ns, "orders-api", n, "v0.1.0", releaseDue)
+			Expect(gitFake.CloseIssueByHand(ns, "orders-api", n)).To(Succeed())
 		})
 
 		publishedTo(ns, repository, files)
-		Expect(gitFake.giteaReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"))
+		Expect(gitFake.ReleaseBody(ns, "orders-api", "v0.1.0")).To(Equal("- Validate orders (#1)\n"))
 	})
 
 	It("names a release after the app's display name, and leaves Latest alone when latest is false", func() {

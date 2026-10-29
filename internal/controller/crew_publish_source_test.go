@@ -21,26 +21,27 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // appSource is the files of orders-api at v0.1.0 for module path, the
 // factory's own among them, and the app's alone as they are published.
-func appSource(module string) (all []fakeSourceFile, app map[string]string) {
-	all = []fakeSourceFile{
-		{"go.mod", gitprovider.SourcePlain, "module " + module + "\n\ngo 1.25\n"},
-		{"main.go", gitprovider.SourcePlain, "package main\n\nfunc main() {}\n"},
-		{"scripts/run.sh", gitprovider.SourceExecutable, "#!/bin/sh\ngo run .\n"},
-		{"run", gitprovider.SourceSymlink, "scripts/run.sh"},
-		{"LICENSE", gitprovider.SourcePlain, "MIT License\n"},
-		{"README.md", gitprovider.SourcePlain, "# orders-api\n"},
-		{"AGENTS.md", gitprovider.SourcePlain, "# Agents\n"},
-		{".c4factory.yaml", gitprovider.SourcePlain, "container: orders-api\n"},
-		{".gitea/workflows/ci.yaml", gitprovider.SourcePlain, "on: push\n"},
-		{"docs/agents/review.md", gitprovider.SourcePlain, "Review well.\n"},
+func appSource(module string) (all []fake.SourceFile, app map[string]string) {
+	all = []fake.SourceFile{
+		{Path: "go.mod", Mode: gitprovider.SourcePlain, Data: "module " + module + "\n\ngo 1.25\n"},
+		{Path: "main.go", Mode: gitprovider.SourcePlain, Data: "package main\n\nfunc main() {}\n"},
+		{Path: "scripts/run.sh", Mode: gitprovider.SourceExecutable, Data: "#!/bin/sh\ngo run .\n"},
+		{Path: "run", Mode: gitprovider.SourceSymlink, Data: "scripts/run.sh"},
+		{Path: "LICENSE", Mode: gitprovider.SourcePlain, Data: "MIT License\n"},
+		{Path: "README.md", Mode: gitprovider.SourcePlain, Data: "# orders-api\n"},
+		{Path: "AGENTS.md", Mode: gitprovider.SourcePlain, Data: "# Agents\n"},
+		{Path: ".c4factory.yaml", Mode: gitprovider.SourcePlain, Data: "container: orders-api\n"},
+		{Path: ".gitea/workflows/ci.yaml", Mode: gitprovider.SourcePlain, Data: "on: push\n"},
+		{Path: "docs/agents/review.md", Mode: gitprovider.SourcePlain, Data: "Review well.\n"},
 	}
 	app = map[string]string{}
 	for _, f := range all[:6] {
-		app[f.path] = f.data
+		app[f.Path] = f.Data
 	}
 	return all, app
 }
@@ -48,10 +49,10 @@ func appSource(module string) (all []fakeSourceFile, app map[string]string) {
 // leakedSource is the files of appSource with config/app.env, whose line 2
 // holds a made-up GitHub token, random each run (the secrets skill), and the
 // token.
-func leakedSource(module string) ([]fakeSourceFile, string) {
+func leakedSource(module string) ([]fake.SourceFile, string) {
 	all, _ := appSource(module)
 	token := "gh" + "p_" + rand.Text() + rand.Text()[:10]
-	return append(all, fakeSourceFile{"config/app.env", gitprovider.SourcePlain, "PORT=8080\nTOKEN=" + token + "\n"}),
+	return append(all, fake.SourceFile{Path: "config/app.env", Mode: gitprovider.SourcePlain, Data: "PORT=8080\nTOKEN=" + token + "\n"}),
 		token
 }
 
@@ -61,7 +62,7 @@ func leakedSource(module string) ([]fakeSourceFile, string) {
 func sourceCrew(ns, repository, path, module string) map[string]string {
 	GinkgoHelper()
 	all, app := appSource(module)
-	gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
+	gitFake.SetSource(ns, "orders-api", "v0.1.0", all...)
 	publishingCrew(ns, repository, func(crew *c4v1beta1.Crew) {
 		crew.Spec.PublishReleases.TagPrefix = path + "-"
 		crew.Spec.PublishReleases.Latest = new(false)
@@ -254,7 +255,7 @@ var _ = Describe("Crew publishing a release's source", func() {
 		head := githubFake.ref(repository, "heads/main")
 		sourceCrew(ns, repository, "engine", "github.com/"+repository+"/engine")
 		leaky, leaked := leakedSource("github.com/" + repository + "/engine")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", leaky...)
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", leaky...)
 		mustCreate(publishSecret(ns, token))
 
 		publishFailedWith(ns, "SecretFound", "the source of v0.1.0 isn't published: config/app.env line 2: "+
@@ -272,8 +273,8 @@ var _ = Describe("Crew publishing a release's source", func() {
 		githubFake.addRepository(repository, token)
 		sourceCrew(ns, repository, "engine", "github.com/"+repository+"/engine")
 		all, _ := appSource("github.com/" + repository + "/engine")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", slices.DeleteFunc(all, func(f fakeSourceFile) bool {
-			return f.path == "LICENSE"
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", slices.DeleteFunc(all, func(f fake.SourceFile) bool {
+			return f.Path == "LICENSE"
 		})...)
 		mustCreate(publishSecret(ns, token))
 

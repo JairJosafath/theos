@@ -44,7 +44,7 @@ func adoptableFilesWith(ns string, mutate func(string, *c4v1beta1.Container)) sc
 	source := newProjectNamespace()
 	createAdoptingWebshopWith(source, false, mutate)
 	eventuallyOrdersAPI(source, c4v1beta1.ContainerReady)
-	files := maps.Clone(gitFake.repo(source, "orders-api").files)
+	files := maps.Clone(gitFake.Repo(source, "orders-api").Files)
 	id, err := scaffold.ParseIdentity(files[scaffold.IdentityPath].Data)
 	Expect(err).NotTo(HaveOccurred())
 	id.Project, id.ScaffoldedFrom = ns, nil
@@ -94,7 +94,7 @@ func failedAdoption(ns, reason string) *metav1.Condition {
 	cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 	Expect(cond).NotTo(BeNil())
 	Expect(cond.Reason).To(Equal(reason))
-	Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "an adopted repository is never written")
+	Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "an adopted repository is never written")
 	return cond
 }
 
@@ -103,7 +103,7 @@ func failedAdoption(ns, reason string) *metav1.Condition {
 var _ = Describe("Container adoption", func() {
 	It("adopts a repository carrying its identity and its Standard's files, and protects main", func() {
 		ns := newProjectNamespace()
-		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFiles(ns))
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFiles(ns))
 		createAdoptingWebshop(ns)
 
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
@@ -111,8 +111,8 @@ var _ = Describe("Container adoption", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		Expect(cond.Message).To(ContainSubstring("Adopted repository"))
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "nothing pushed")
-		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "nothing pushed")
+		Expect(gitFake.ProtectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
 		Expect(container.Status.Standard).To(Equal(&c4v1beta1.ContainerStandardStatus{
 			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1beta1.ChecksEveryChange}))
@@ -124,7 +124,7 @@ var _ = Describe("Container adoption", func() {
 	It("refuses a change to spec.operations after the adoption, AdoptedRepository, until it is undone", func() {
 		ns := newProjectNamespace()
 		ops := &c4v1beta1.OperationsSpec{Alerts: &c4v1beta1.OperationsAlerts{Email: "ops@example.com"}}
-		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFilesWith(ns, onOperationsFramework(ops)))
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", adoptableFilesWith(ns, onOperationsFramework(ops)))
 		createAdoptingWebshopWith(ns, true, onOperationsFramework(ops))
 
 		container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonAppliedAtScaffold)
@@ -135,7 +135,7 @@ var _ = Describe("Container adoption", func() {
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
 
 		By("changing the block after the adoption")
-		pushes := gitFake.pushCount()
+		pushes := gitFake.PushCount()
 		Expect(patch(container, func() {
 			container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})).To(Succeed())
@@ -144,9 +144,9 @@ var _ = Describe("Container adoption", func() {
 			To(ContainSubstring("the factory never scaffolded, so it can't know whether the Framework " + opsFramework))
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps the block recorded at adoption")
 		Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped", c4v1beta1.ReasonAdoptedRepository)))
-		Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes), "nothing reaches the repository")
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "an adopted repository is never written")
+		Consistently(gitFake.PushCount).WithTimeout(time.Second).Should(Equal(pushes), "nothing reaches the repository")
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "an adopted repository is never written")
 
 		By("writing the recorded block back")
 		Expect(patch(container, func() {
@@ -160,12 +160,12 @@ var _ = Describe("Container adoption", func() {
 		ns := newProjectNamespace()
 		files := adoptableFiles(ns)
 		delete(files, scaffold.IdentityPath)
-		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
 		cond := failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch)
 		Expect(cond.Message).To(ContainSubstring("has no .c4factory.yaml on main"))
-		Expect(gitFake.protectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+		Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
 	})
 
 	It("fails IdentityMismatch when .c4factory.yaml names another project, saying what it holds", func() {
@@ -177,7 +177,7 @@ var _ = Describe("Container adoption", func() {
 		data, err := id.Marshal()
 		Expect(err).NotTo(HaveOccurred())
 		files[scaffold.IdentityPath] = scaffold.File{Data: data}
-		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
 		cond := failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch)
@@ -190,7 +190,7 @@ var _ = Describe("Container adoption", func() {
 		files := adoptableFiles(ns)
 		Expect(files).To(HaveKey("AGENTS.md"), "the Standard's file")
 		files["AGENTS.md"] = scaffold.File{Data: []byte("edited by hand\n")}
-		gitFake.seedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
 		cond := failedAdoption(ns, c4v1beta1.ReasonStandardFilesDiffer)
@@ -199,13 +199,13 @@ var _ = Describe("Container adoption", func() {
 
 	It("fails NoDefaultBranch when the repository's only branch is not main (#1908)", func() {
 		ns := newProjectNamespace()
-		gitFake.seedRepoBranch(ns, "orders-api", "master", "Import orders-api\n", adoptableFiles(ns))
+		gitFake.SeedRepoBranch(ns, "orders-api", "master", "Import orders-api\n", adoptableFiles(ns))
 		createAdoptingWebshop(ns)
 
 		cond := failedAdoption(ns, c4v1beta1.ReasonNoDefaultBranch)
 		Expect(cond.Message).To(ContainSubstring("has commits but no main branch"))
 		Expect(cond.Message).To(ContainSubstring("rename its default branch to main"))
-		Expect(gitFake.protectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+		Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
 	})
 
 	It("fails NothingToAdopt on an empty repository", func() {
@@ -217,7 +217,7 @@ var _ = Describe("Container adoption", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonNothingToAdopt))
 		Expect(cond.Message).To(ContainSubstring("has no commits to adopt"))
-		Expect(gitFake.repo(ns, "orders-api").commits).To(BeEmpty(), "never scaffolded")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(BeEmpty(), "never scaffolded")
 	})
 
 	It("refuses a change of spec.adopt either way", func() {

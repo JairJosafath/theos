@@ -63,14 +63,14 @@ func proposingTask(ns string) int {
 	GinkgoHelper()
 	readyContainer(ns)
 	mustCreate(newAgent(ns, 3))
-	n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
-	gitFake.setIssueMilestone(ns, "orders-api", n, "v0.1.0")
+	n := gitFake.AddIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+	gitFake.PutInMilestone(ns, "orders-api", n, "v0.1.0")
 	task := newTask(ns, "orders-api-1", "")
 	task.Spec.Issue = int32(n)
 	task.Labels = map[string]string{LabelCrew: "orders-api"} // only a Crew's Task may propose
 	mustCreate(task)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 	return n
 }
 
@@ -81,7 +81,7 @@ var makefileProposal = model.Proposal{Branch: "standard/orders-api-1", Paths: []
 func finishWithProposal(ns string) {
 	GinkgoHelper()
 	p := makefileProposal
-	gitFake.pushBranch(ns, "orders-api", p.Branch, "sha-proposal") // as the runner does
+	gitFake.PushBranchHead(ns, "orders-api", p.Branch, "sha-proposal") // as the runner does
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
 		Commit: "sha-1", Summary: "Wrote scripts/dist.mjs.", Proposal: &p}, "")
 }
@@ -89,7 +89,7 @@ func finishWithProposal(ns string) {
 // standardChangeIssues are the open issues labelled kind/standard-change.
 func standardChangeIssues(ns string) []int {
 	var out []int
-	for _, i := range gitFake.openIssues(ns, "orders-api") {
+	for _, i := range gitFake.OpenIssues(ns, "orders-api") {
 		if slices.Contains(i.Labels, model.LabelStandardChange) {
 			out = append(out, i.Number)
 		}
@@ -120,21 +120,21 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 
 		By("filing the issue as the operator, in the waiting issue's milestone")
-		filed := gitFake.issue(ns, "orders-api", m)
+		filed := gitFake.Issue(ns, "orders-api", m)
 		Expect(filed.Title).To(Equal(fmt.Sprintf("Standard change for #%d: Makefile", n)))
 		Expect(filed.Labels).To(ConsistOf(model.LabelStandardChange, model.LabelReady))
-		Expect(filed.milestone).To(Equal("v0.1.0"))
+		Expect(filed.InMilestone).To(Equal("v0.1.0"))
 		Expect(filed.Body).To(ContainSubstring("make dist must build the packages"))
 		Expect(model.HasProposalMarker(filed.Body, "standard/orders-api-1")).To(BeTrue())
 		Expect(standardChangeIssues(ns)).To(Equal([]int{m}))
 
 		By("blocking the waiting issue on it, and saying so there")
-		waiting := gitFake.issue(ns, "orders-api", n)
-		Expect(waiting.blockers).To(ContainElement(fmt.Sprintf("#%d", m)))
-		Expect(waiting.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` needs a Standard change"),
+		waiting := gitFake.Issue(ns, "orders-api", n)
+		Expect(waiting.Blockers).To(ContainElement(fmt.Sprintf("#%d", m)))
+		Expect(waiting.Comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` needs a Standard change"),
 			ContainSubstring(fmt.Sprintf("#%d", m)))))
 		Expect(waiting.State).To(Equal("open"))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 
 		By("running no agent while it waits")
 		Consistently(func(g Gomega) {
@@ -152,7 +152,7 @@ var _ = Describe("Task with a Standard change", func() {
 		n := proposingTask(ns)
 		// A first try filed the issue, but its status write was lost.
 		title, body := model.StandardChangeIssue(n, "orders-api-1", makefileProposal)
-		filed := gitFake.addIssue(ns, "orders-api", title, body, []string{model.LabelStandardChange, model.LabelReady})
+		filed := gitFake.AddIssue(ns, "orders-api", title, body, []string{model.LabelStandardChange, model.LabelReady})
 		finishWithProposal(ns)
 
 		Eventually(func(g Gomega) {
@@ -162,13 +162,13 @@ var _ = Describe("Task with a Standard change", func() {
 				"Issue": Equal(int32(filed)), "Count": Equal(int32(1))})))
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(Equal([]int{filed}))
-		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(ContainElement(fmt.Sprintf("#%d", filed)))
+		Expect(gitFake.Issue(ns, "orders-api", n).Blockers).To(ContainElement(fmt.Sprintf("#%d", filed)))
 	})
 
 	It("fails, filing nothing, when its issue was closed during the round", func() {
 		ns := newProjectNamespace()
 		n := proposingTask(ns)
-		Expect(gitFake.closeIssue(ns, "orders-api", n)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", n)).To(Succeed())
 		finishWithProposal(ns)
 
 		Eventually(func(g Gomega) {
@@ -181,7 +181,7 @@ var _ = Describe("Task with a Standard change", func() {
 				"Message": Equal(fmt.Sprintf("Issue #%d was closed before the Task finished", n))})))
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(BeEmpty())
-		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(BeEmpty())
+		Expect(gitFake.Issue(ns, "orders-api", n).Blockers).To(BeEmpty())
 		expectSandboxGone(ns, "orders-api-1-r1-implement")
 	})
 
@@ -190,7 +190,7 @@ var _ = Describe("Task with a Standard change", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "orders-api-1", "Package it"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishWithProposal(ns)
 
 		Eventually(func(g Gomega) {
@@ -209,12 +209,12 @@ var _ = Describe("Task with a Standard change", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3))
-		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
 		task := newTask(ns, "orders-api-1", "")
 		task.Spec.Issue = int32(n)
 		mustCreate(task)
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishWithProposal(ns)
 
 		Eventually(func(g Gomega) {
@@ -227,7 +227,7 @@ var _ = Describe("Task with a Standard change", func() {
 				"Message": And(ContainSubstring("only a Crew's Task can propose"), ContainSubstring("Makefile"))})))
 		}).Should(Succeed())
 		Expect(standardChangeIssues(ns)).To(BeEmpty())
-		Expect(gitFake.issue(ns, "orders-api", n).blockers).To(BeEmpty())
+		Expect(gitFake.Issue(ns, "orders-api", n).Blockers).To(BeEmpty())
 	})
 
 	It("fails when its Standard change is closed without a merge", func() {
@@ -240,7 +240,7 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskBlocked))
 		}).Should(Succeed())
 
-		Expect(gitFake.closeIssue(ns, "orders-api", m)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", m)).To(Succeed())
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
@@ -249,19 +249,19 @@ var _ = Describe("Task with a Standard change", func() {
 				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
 					ContainSubstring("closed without a merge"))})))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+		Expect(issue.Comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("closed without a merge"))))
-		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 
 	It("resumes when its Standard change merges, and ends when that did the whole issue", func() {
 		ns := newProjectNamespace()
 		n, m := blockedBesideChange(ns, 2)
 		mergeChange(ns, 1)
-		Expect(gitFake.issue(ns, "orders-api", m).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", m).State).To(Equal("closed"))
 
 		By("resuming the round it was in, told the change merged")
 		Eventually(func(g Gomega) {
@@ -272,9 +272,9 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(task.Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "Resumed")))
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "orders-api", n).comments).
+		Expect(gitFake.Issue(ns, "orders-api", n).Comments).
 			To(ContainElement(ContainSubstring(fmt.Sprintf("Standard change #%d merged", m))))
-		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse(), "the proposal is merged")
+		Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeFalse(), "the proposal is merged")
 
 		By("ending it Merged when the resumed run finds the branch equals main")
 		finishResumed(ns, 1)
@@ -287,13 +287,13 @@ var _ = Describe("Task with a Standard change", func() {
 				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("DoneByStandardChange"),
 				"Message": ContainSubstring(fmt.Sprintf("Standard change #%d did the whole issue", m))})))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("closed"))
 		Expect(issue.Labels).NotTo(ContainElement(model.LabelInProgress))
-		Expect(issue.comments).To(ContainElement(fmt.Sprintf(
+		Expect(issue.Comments).To(ContainElement(fmt.Sprintf(
 			"Done by Standard change #%d (%s): with it merged, this issue needed nothing more.", m,
 			task.Status.StandardChange.IssueURL)))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1), "the resumed Task opened no pull request")
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1), "the resumed Task opened no pull request")
 		expectSandboxGone(ns, "orders-api-1-r1-implement-s1")
 	})
 
@@ -308,18 +308,18 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 		}).Should(Succeed())
 
-		other := gitFake.addIssue(ns, "orders-api", "Sign the package", clearIssue, nil)
-		gitFake.blockOnClose(ns, "orders-api", n, fmt.Sprintf("#%d", other))
+		other := gitFake.AddIssue(ns, "orders-api", "Sign the package", clearIssue, nil)
+		gitFake.BlockOnClose(ns, "orders-api", n, fmt.Sprintf("#%d", other))
 		finishResumed(ns, 1)
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 		Expect(issue.Labels).NotTo(ContainElement(model.LabelInProgress))
 		var refusals []string
-		for _, c := range issue.comments {
+		for _, c := range issue.Comments {
 			if strings.Contains(c, "refused") {
 				refusals = append(refusals, c)
 			}
@@ -329,27 +329,27 @@ var _ = Describe("Task with a Standard change", func() {
 			ContainSubstring(fmt.Sprintf("Standard change #%d", m)),
 			ContainSubstring("The host refused to close this issue"),
 			ContainSubstring(fmt.Sprintf("#%d", other)))))
-		Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Done by Standard change")))
+		Expect(issue.Comments).NotTo(ContainElement(ContainSubstring("Done by Standard change")))
 	})
 
 	It("closes its pull request when its Standard change did the whole issue", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 1
 		mustCreate(crew)
 
 		By("opening a pull request in round 1, whose checks fail")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Wrote scripts/dist.mjs."}, "")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequest).To(Equal(int32(1)))
 		}).Should(Succeed())
-		gitFake.setChecks(ns, "orders-api", "sha-1", "failure")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "failure")
 
 		By("proposing a Standard change in round 2")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
@@ -372,11 +372,11 @@ var _ = Describe("Task with a Standard change", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded).Reason).To(Equal("DoneByStandardChange"))
 		}).Should(Succeed())
-		pulls := gitFake.pullRequests(ns, "orders-api")
+		pulls := gitFake.PullRequests(ns, "orders-api")
 		Expect(pulls).To(HaveLen(2))
 		Expect(pulls[0]).To(And(HaveField("State", "closed"), HaveField("Merged", false)))
 		Expect(pulls[1].Merged).To(BeTrue(), "the Standard change")
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("counts only the first run after the resume as resumed, not a conflict-resolution run", func() {
@@ -390,15 +390,15 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed(), fmt.Sprintf("resumed after Standard change #%d", m))
 
 		By("the resumed run changing the branch, so a pull request is opened and reviewed")
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-r1")
 		finishSandbox(ns, "orders-api-1-r1-implement-s1", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Uses the dist target."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-s1-a1") }).Should(Succeed())
 
 		By("sending the approved, conflicting change back to resolve conflicts")
-		pulls := gitFake.pullRequests(ns, "orders-api")
-		gitFake.conflict(ns, "orders-api", pulls[len(pulls)-1].Number, true)
+		pulls := gitFake.PullRequests(ns, "orders-api")
+		gitFake.Conflict(ns, "orders-api", pulls[len(pulls)-1].Number, true)
 		finishSandbox(ns, "orders-api-1-r1-review-s1-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Good."}, "")
 		Eventually(func(g Gomega) {
@@ -429,28 +429,28 @@ var _ = Describe("Task with a Standard change", func() {
 				"Message": And(ContainSubstring(fmt.Sprintf("Standard change #%d will not merge", m)),
 					ContainSubstring("Task orders-api-2 failed"), ContainSubstring("make dist fails"))})))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+		Expect(issue.Comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("will not merge"))))
-		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(),
+		Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(),
 			"the Standard change is open, and a retry merges its proposal")
 
 		By("retrying the Standard change, which starts with its proposal still there")
 		// #889: what answering a failed issue with a retry does.
-		Expect(gitFake.labelIssue(ns, "orders-api", m, model.LabelReady)).To(Succeed())
+		Expect(gitFake.LabelIssue(ns, "orders-api", m, model.LabelReady)).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-2-2").Spec.Issue).To(Equal(int32(m)))
 			sandboxExists(g, ns, "orders-api-2-2-r1-implement")
 		}).Should(Succeed())
-		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue())
+		Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeTrue())
 
 		By("deleting the proposal once the retry merged the Standard change")
 		mergeChangeTask(ns, "orders-api-2-2", 1)
-		Expect(gitFake.issue(ns, "orders-api", m).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", m).State).To(Equal("closed"))
 		Expect(getTask(Default, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed), "nothing resumed it")
-		Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeFalse())
 	})
 
 	It("stops both Tasks, blocked, when its Standard change is turned back for scope twice", func() {
@@ -480,8 +480,8 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-2-r3-implement"), newSandbox()))).
 			To(BeTrue(), "no third round")
-		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
-		Expect(gitFake.issue(ns, "orders-api", m).Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(gitFake.Issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(gitFake.Issue(ns, "orders-api", m).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
 
 	It("stops both Tasks, blocked, when a round leaves its Standard change's paths as on main", func() {
@@ -516,12 +516,12 @@ func blockedBesideChange(ns string, rounds int32) (n, m int) {
 	GinkgoHelper()
 	readyContainer(ns)
 	crewAgents(ns, rounds)
-	n = gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+	n = gitFake.AddIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
 	crew := newCrew(ns)
 	crew.Spec.Parallel = 1
 	mustCreate(crew)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 	finishWithProposal(ns)
 	m = n + 1 // the Standard change the Task files
 	Eventually(func(g Gomega) {
@@ -529,7 +529,7 @@ func blockedBesideChange(ns string, rounds int32) (n, m int) {
 		g.Expect(getTask(g, ns, "orders-api-2").Spec.Issue).To(Equal(int32(m)))
 		sandboxExists(g, ns, "orders-api-2-r1-implement")
 	}).Should(Succeed())
-	Expect(gitFake.hasBranch(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(), "the change still reads it")
+	Expect(gitFake.BranchExists(ns, "orders-api", makefileProposal.Branch)).To(BeTrue(), "the change still reads it")
 	return n, m
 }
 
@@ -544,21 +544,21 @@ func mergeChange(ns string, pr int) {
 // mergeChangeTask is mergeChange for the Standard change Task named task.
 func mergeChangeTask(ns, task string, pr int) {
 	GinkgoHelper()
-	gitFake.pushBranch(ns, "orders-api", "task/"+task, "sha-change")
+	gitFake.PushBranchHead(ns, "orders-api", "task/"+task, "sha-change")
 	finishSandbox(ns, task+"-r1-implement", task,
 		&agentrunner.Result{Role: "implement", Commit: "sha-change", Summary: "Added the dist target."}, "")
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, task).Status.PullRequest).To(Equal(int32(pr)))
 	}).Should(Succeed())
-	gitFake.setPullFiles(ns, "orders-api", pr, "Makefile")
-	gitFake.setChecks(ns, "orders-api", "sha-change", "success")
+	gitFake.SetPullFiles(ns, "orders-api", pr, "Makefile")
+	gitFake.SetChecks(ns, "orders-api", "sha-change", "success")
 	Eventually(func(g Gomega) { sandboxExists(g, ns, task+"-r1-review-a1") }).Should(Succeed())
 	finishSandbox(ns, task+"-r1-review-a1", task,
 		&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Only the dist target."}, "")
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 	}).Should(Succeed())
-	Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{pr}))
+	Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{pr}))
 }
 
 // finishResumed has the resumed implement run of orders-api-1 in round find its
@@ -579,7 +579,7 @@ var _ = Describe("Crew with a Standard change", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 2)
-		n := gitFake.addIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Package it", clearIssue, []string{model.LabelReady})
 		crew := newCrew(ns)
 		crew.Spec.Parallel = 1
 		mustCreate(crew)
@@ -588,7 +588,7 @@ var _ = Describe("Crew with a Standard change", func() {
 				NotTo(ContainElement(HaveKeyWithValue("name", "C4_ALLOWED_PATHS")), "an ordinary issue is ungated")
 		}).Should(Succeed())
 		Expect(getTask(Default, ns, "orders-api-1").Spec.AllowedProtectedPaths).To(BeEmpty())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 		finishWithProposal(ns)
 
 		m := n + 1 // the Standard change the Task files
@@ -608,7 +608,7 @@ var _ = Describe("Crew with a Standard change", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		n := gitFake.addIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
+		n := gitFake.AddIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
 			[]string{model.LabelReady, model.LabelStandardChange})
 		mustCreate(newCrew(ns))
 		Eventually(func(g Gomega) {
@@ -632,7 +632,7 @@ func gatedTaskInReview(ns string, files ...string) int {
 	GinkgoHelper()
 	readyContainer(ns)
 	crewAgents(ns, 2)
-	n := gitFake.addIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
+	n := gitFake.AddIssue(ns, "orders-api", "Standard change for #9: Makefile", clearIssue,
 		[]string{model.LabelStandardChange, model.LabelReady})
 	task := newTask(ns, "orders-api-1", "")
 	task.Spec.Issue = int32(n)
@@ -640,14 +640,14 @@ func gatedTaskInReview(ns string, files ...string) int {
 	task.Spec.AllowedProtectedPaths = []string{"Makefile"}
 	mustCreate(task)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-1")
+	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 		&agentrunner.Result{Role: "implement", Commit: "sha-1", Summary: "Added the dist target."}, "")
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, "orders-api-1").Status.PullRequest).To(Equal(int32(1)))
 	}).Should(Succeed())
-	gitFake.setPullFiles(ns, "orders-api", 1, files...)
-	gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+	gitFake.SetPullFiles(ns, "orders-api", 1, files...)
+	gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
 	return n
 }
@@ -684,7 +684,7 @@ var _ = Describe("Task with a gated merge", func() {
 		n := gatedTaskInReview(ns, "Makefile")
 
 		By("waiting, neither refusing nor merging, while CI runs again on the reviewed commit")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "pending")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "pending")
 		approveGated(ns)
 		Eventually(func(g Gomega) {
 			g.Expect(condition(getTask(g, ns, "orders-api-1").Status.Conditions, ConditionProgressing).Reason).
@@ -694,30 +694,30 @@ var _ = Describe("Task with a gated merge", func() {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
-			g.Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+			g.Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 		}, "2s").Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "the approval is posted once, with the merge")
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(BeEmpty(), "the approval is posted once, with the merge")
 
 		By("merging past the protected-file rule once CI passed")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
 				"Status": Equal(metav1.ConditionTrue), "Reason": Equal("Merged")})))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
-		Expect(gitFake.reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewApprove),
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewApprove),
 			HaveField("Commit", "sha-1"))))
 	})
 
 	It("checks and reviews it again, not fails, when the review expires while CI is pending", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "pending")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "pending")
 		approveGated(ns)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "orders-api-1")
@@ -744,27 +744,27 @@ var _ = Describe("Task with a gated merge", func() {
 		}, "2s").Should(Succeed())
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r1-review-a2"), newSandbox()))).
 			To(BeTrue(), "no reviewer run is spent on a CI wait")
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(
+		Expect(gitFake.PullComments(ns, "orders-api", 1)).To(ContainElement(
 			ContainSubstring("ended while CI ran again on the reviewed commit")))
 
 		By("reviewing it again once CI passed, and merging on that approval")
-		gitFake.setChecks(ns, "orders-api", "sha-1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a2") }).Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
 		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictApprove, Summary: "Still only the dist target."}, "")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("checks and reviews it again, not fails, when the review expires while CI runs with main merged in", func() {
 		// #812: main kept moving while the shared runner was busy.
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile")
-		gitFake.fallBehind(ns, "orders-api", 1)
+		gitFake.FallBehind(ns, "orders-api", 1)
 		approveGated(ns)
 		var head string
 		Eventually(func(g Gomega) {
@@ -777,7 +777,7 @@ var _ = Describe("Task with a gated merge", func() {
 
 		By("expiring the review sandbox before the checks with main merged in pass")
 		expireSandbox(ns, "orders-api-1-r1-review-a1", 0)
-		gitFake.setChecks(ns, "orders-api", head, "success")
+		gitFake.SetChecks(ns, "orders-api", head, "success")
 		// The reconciler creates the sandbox before it writes the Task's status (#829).
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, "orders-api-1-r1-review-a2")
@@ -788,7 +788,7 @@ var _ = Describe("Task with a gated merge", func() {
 			g.Expect(task.Status.History).To(ContainElement(HaveField("Reason", "ApprovalEnded")))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(BeNil())
 		}).Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty(), "never merged without a lasting approval")
 
 		By("merging on the new approval")
 		finishSandbox(ns, "orders-api-1-r1-review-a2", "orders-api-1",
@@ -796,15 +796,15 @@ var _ = Describe("Task with a gated merge", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("refuses a Standard change whose CI no longer reports the check main requires", func() {
 		ns := newProjectNamespace()
 		n := gatedTaskInReview(ns, "Makefile")
 		By("renaming the workflow, so CI passes under a context main's protection doesn't require")
-		gitFake.setCheckContexts(ns, "orders-api", "sha-1", "success",
+		gitFake.SetCheckContexts(ns, "orders-api", "sha-1", "success",
 			map[string]string{"CI / check (pull_request)": "success"})
 		approveGated(ns)
 		Eventually(func(g Gomega) {
@@ -814,9 +814,9 @@ var _ = Describe("Task with a gated merge", func() {
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
 				"Message": ContainSubstring(`no passing check matches "check*"`)})))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.Issue(ns, "orders-api", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	})
 
 	It("merges a Standard change with the unprotected files its checks need", func() {
@@ -827,8 +827,8 @@ var _ = Describe("Task with a gated merge", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		}).Should(Succeed())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{1}))
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{1}))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("names an unprotected file a later round adds on the open pull request", func() {
@@ -837,11 +837,11 @@ var _ = Describe("Task with a gated merge", func() {
 		finishSandbox(ns, "orders-api-1-r1-review-a1", "orders-api-1",
 			&agentrunner.Result{Role: "review", Verdict: model.VerdictChanges, Summary: "CI must pass."}, "")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r2-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-2")
 		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
 			Commit: "sha-2", Summary: "Updated the test.", Extra: []string{"tests/test_release.py"}}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(And(HavePrefix("Round 2: "),
+			g.Expect(gitFake.PullComments(ns, "orders-api", 1)).To(ContainElement(And(HavePrefix("Round 2: "),
 				ContainSubstring("It also changes `tests/test_release.py`, which no Standard protects"))))
 		}).Should(Succeed())
 	})
@@ -858,7 +858,7 @@ var _ = Describe("Task with a gated merge", func() {
 		taskStatusFaults.failNext(taskKey, 1, func(t *c4v1beta1.Task) bool {
 			return t.Status.Phase == c4v1beta1.TaskChecking && t.Status.Round == 2
 		})
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-2")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-2")
 		finishSandbox(ns, "orders-api-1-r2-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
 			Commit: "sha-2", Summary: "Updated the test.", Extra: []string{"tests/test_release.py"}}, "")
 		Eventually(func(g Gomega) {
@@ -870,12 +870,12 @@ var _ = Describe("Task with a gated merge", func() {
 		// The note follows the status write (#906), so the status can show
 		// before it is posted (#1254): wait for it, then make sure it stays one.
 		notes := func() int {
-			return countContaining(gitFake.pullComments(ns, "orders-api", 1),
+			return countContaining(gitFake.PullComments(ns, "orders-api", 1),
 				"It also changes `tests/test_release.py`, which no Standard protects")
 		}
 		Eventually(notes).Should(Equal(1))
 		Consistently(notes, "1s").Should(Equal(1))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 	})
 
 	It("refuses a Standard change that touches a path it may not", func() {
@@ -890,16 +890,16 @@ var _ = Describe("Task with a gated merge", func() {
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal("GatedMergeRefused"),
 				"Message": ContainSubstring("ruff.toml")})))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
-		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "a refused change gets no approval")
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(BeEmpty(), "a refused change gets no approval")
 		expectSandboxGone(ns, "orders-api-1-r1-review-a1") // #1293
 
 		By("handing the issue back")
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.State).To(Equal("open"))
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+		Expect(issue.Comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring("ruff.toml"))))
 	})
 })

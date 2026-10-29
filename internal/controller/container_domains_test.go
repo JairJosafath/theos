@@ -22,7 +22,7 @@ import (
 func addDomainTemplate(ns, name string, tree scaffold.Tree) {
 	GinkgoHelper()
 	domain := newDomain(ns, name)
-	gitFake.addTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, tree)
+	gitFake.AddTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, tree)
 	mustCreate(domain)
 }
 
@@ -57,7 +57,7 @@ var _ = Describe("Container domains", func() {
 		Expect(container.Status.ScaffoldedFrom).To(Equal(append(append([]string{}, ordersAPIScaffoldedFrom...),
 			"webshop@v1.0.0")), "each Domain's name@ref follows the Connectors")
 		Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"webshop"}), "the scaffold records its Domains by name")
-		files := gitFake.mainFiles(ns, "orders-api")
+		files := gitFake.MainFiles(ns, "orders-api")
 		Expect(files).To(HaveKeyWithValue("docs/agents/domain/webshop/README.md",
 			HaveField("Data", BeEquivalentTo("# webshop\n"))))
 		Expect(files).To(HaveKey("docs/agents/domain/webshop/carts.md"))
@@ -87,7 +87,7 @@ var _ = Describe("Container domains", func() {
 		}).Should(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		Expect(container.Status.ScaffoldedFrom).To(HaveLen(len(ordersAPIScaffoldedFrom)+1), "nothing is rescaffolded")
-		Expect(gitFake.mainFiles(ns, "orders-api")).NotTo(HaveKey("docs/agents/domain/billing/README.md"))
+		Expect(gitFake.MainFiles(ns, "orders-api")).NotTo(HaveKey("docs/agents/domain/billing/README.md"))
 	})
 
 	It("reports a Domain removed from the system since the scaffold (#1757)", func() {
@@ -99,7 +99,7 @@ var _ = Describe("Container domains", func() {
 
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
 		Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"billing", "webshop"}))
-		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKey("docs/agents/domain/billing/README.md"))
+		Expect(gitFake.MainFiles(ns, "orders-api")).To(HaveKey("docs/agents/domain/billing/README.md"))
 
 		By("dropping billing from the system: the scaffold's files stay, the condition says so")
 		var system c4v1beta1.SoftwareSystem
@@ -117,7 +117,7 @@ var _ = Describe("Container domains", func() {
 		}).Should(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"billing", "webshop"}), "the record is the scaffold's")
-		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKey("docs/agents/domain/billing/README.md"),
+		Expect(gitFake.MainFiles(ns, "orders-api")).To(HaveKey("docs/agents/domain/billing/README.md"),
 			"nothing is removed from the repository")
 
 		By("swapping billing for payments: the message names both changes")

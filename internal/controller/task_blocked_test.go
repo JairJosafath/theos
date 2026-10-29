@@ -26,7 +26,7 @@ var _ = Describe("Task whose agent can't start its issue", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3))
-		n := gitFake.addIssue(ns, "orders-api", "Use the new engine", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Use the new engine", clearIssue, []string{model.LabelReady})
 		task := newTask(ns, "orders-api-1", "")
 		task.Spec.Issue = int32(n)
 		mustCreate(task)
@@ -44,9 +44,9 @@ var _ = Describe("Task whose agent can't start its issue", func() {
 				"Status": Equal(metav1.ConditionFalse), "Reason": Equal(model.ReasonBlocked),
 				"Message": Equal(model.BlockedMessage(note))})))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "orders-api", n)
+		issue := gitFake.Issue(ns, "orders-api", n)
 		Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-		Expect(issue.comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
+		Expect(issue.Comments).To(ContainElement(And(ContainSubstring("Task `orders-api-1` failed"),
 			ContainSubstring(note))))
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r2-implement"), newSandbox()))).To(BeTrue())
 	})

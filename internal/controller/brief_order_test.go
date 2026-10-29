@@ -121,10 +121,10 @@ var _ = Describe("Brief issue order", func() {
 	It("files an issue after the ones it builds on, depending on them, and labels it ready last", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		release := gitFake.hang(ns, "core")
+		release := gitFake.Hang(ns, "core")
 		DeferCleanup(release)
-		gitFake.failDependencies(ns, "cli", errors.New("gitea: dependencies are down"))
-		DeferCleanup(func() { gitFake.failDependencies(ns, "cli", nil) })
+		gitFake.FailDependencies(ns, "cli", errors.New("gitea: dependencies are down"))
+		DeferCleanup(func() { gitFake.FailDependencies(ns, "cli", nil) })
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, orderedPlan(ns))
 
@@ -139,35 +139,35 @@ var _ = Describe("Brief issue order", func() {
 				HaveField("Message", ContainSubstring("waits for Container core"))))
 		}, orderWait).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "cli")).To(BeEmpty())
+			g.Expect(gitFake.OpenIssues(ns, "cli")).To(BeEmpty())
 			g.Expect(getBrief(g, ns).Status.Issues).To(BeEmpty())
 		}, "1s").Should(Succeed())
 
 		By("filing the core's issue once the core is Ready, then the CLI's, not ready while its dependency fails")
 		release()
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
-			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", model.ReasonApplyFailed),
 				HaveField("Message", ContainSubstring("dependencies are down"))))
 		}, orderWait).Should(Succeed())
-		cli := gitFake.issue(ns, "cli", 1)
+		cli := gitFake.Issue(ns, "cli", 1)
 		Expect(cli.Labels).NotTo(ContainElement(model.LabelReady), "no Crew may take it before it depends on the core's")
-		Expect(cli.blockers).To(BeEmpty())
+		Expect(cli.Blockers).To(BeEmpty())
 		Expect(getBrief(Default, ns).Status.Issues).To(HaveLen(1), "the CLI's isn't recorded until it is done")
 
 		By("making it depend on the core's issue, then labelling it ready")
-		gitFake.failDependencies(ns, "cli", nil)
+		gitFake.FailDependencies(ns, "cli", nil)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}, orderWait).Should(Succeed())
-		cli = gitFake.issue(ns, "cli", 1)
-		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
+		cli = gitFake.Issue(ns, "cli", 1)
+		Expect(cli.Blockers).To(Equal([]string{ns + "/core#1"}))
 		Expect(cli.Labels).To(ContainElements(model.LabelReady, "kind/feature"))
 		Expect(cli.Body).To(ContainSubstring("\nBuilds on " + ns + "/core#1 (The checker).\n"))
 		Expect(model.HasIssueMarker(cli.Body, "cel-lens", 1, 2)).To(BeTrue())
-		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 		Expect(getBrief(Default, ns).Status.Issues).To(ConsistOf(
 			HaveField("Repository", ns+"/core"), HaveField("Repository", ns+"/cli")))
 	})
@@ -195,12 +195,12 @@ The README shows the CLI checking a file.
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}, orderWait).Should(Succeed())
-		core, cli := gitFake.issue(ns, "core", 1), gitFake.issue(ns, "cli", 1)
-		Expect(core.milestone).To(BeEmpty())
+		core, cli := gitFake.Issue(ns, "core", 1), gitFake.Issue(ns, "cli", 1)
+		Expect(core.InMilestone).To(BeEmpty())
 		Expect(cli.Labels).To(ConsistOf(model.LabelNeedsHuman, "kind/docs", model.LabelByHand),
 			"no Crew may pick a person's work")
-		Expect(cli.milestone).To(Equal(model.FollowUpMilestone))
-		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
+		Expect(cli.InMilestone).To(Equal(model.FollowUpMilestone))
+		Expect(cli.Blockers).To(Equal([]string{ns + "/core#1"}))
 
 		By("listing it with the Brief's failed issues, for the person")
 		Eventually(func(g Gomega) {
@@ -216,9 +216,9 @@ The README shows the CLI checking a file.
 		By("finding the core's issue filed, and the CLI's filed with its dependency but not labelled ready")
 		plan, err := model.ParsePlan(planFiles(orderedPlan(ns)))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.addIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
+		gitFake.AddIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
 			[]string{model.LabelReady, "kind/feature"})
-		gitFake.addIssue(ns, "cli", "Check a file from the command line",
+		gitFake.AddIssue(ns, "cli", "Check a file from the command line",
 			model.BriefIssueBody(plan.Issues[1], "cel-lens", 1,
 				model.BuildsOn{Repository: ns + "/core", Number: 1, Title: "The checker"}),
 			[]string{"kind/feature"}, ns+"/core#1")
@@ -231,10 +231,10 @@ The README shows the CLI checking a file.
 			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).
 				To(HaveField("Status", metav1.ConditionTrue))
 		}, orderWait).Should(Succeed())
-		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
-		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
-		cli := gitFake.issue(ns, "cli", 1)
-		Expect(cli.blockers).To(Equal([]string{ns + "/core#1"}))
+		Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
+		cli := gitFake.Issue(ns, "cli", 1)
+		Expect(cli.Blockers).To(Equal([]string{ns + "/core#1"}))
 		Expect(cli.Labels).To(ContainElement(model.LabelReady))
 		Expect(getBrief(Default, ns).Status.Issues).To(HaveLen(2))
 	})

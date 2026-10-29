@@ -135,33 +135,33 @@ var _ = Describe("Container scaffolding", func() {
 		}
 
 		By("pushing the uv project, the manifests and a devcontainer with Postgres")
-		repo := gitFake.repo(ns, "orders-api")
-		Expect(repo.commits).To(HaveLen(1))
-		Expect(repo.commits[0].Message).To(ContainSubstring("C4-Factory-Container: " + ns + "/orders-api"))
-		Expect(repo.files).To(HaveKey("pyproject.toml"))
-		Expect(string(repo.files["pyproject.toml"].Data)).To(ContainSubstring(`name = "orders-api"`))
-		Expect(string(repo.files["pyproject.toml"].Data)).To(ContainSubstring("psycopg"))
-		Expect(repo.files).To(HaveKey("app/main.py"))
-		Expect(repo.files).To(HaveKey("Dockerfile"))
-		Expect(repo.files).To(HaveKey("deploy/k8s/compute.yaml"))
-		Expect(repo.files).To(HaveKey("deploy/k8s/service.yaml"))
-		Expect(repo.files).To(HaveKey("deploy/k8s/connector-postgres.yaml"))
-		Expect(repo.files).To(HaveKey(".devcontainer/compose.yaml"))
-		Expect(repo.files).To(HaveKey(".devcontainer/compose.postgres.yaml"))
-		for p := range repo.files {
+		repo := gitFake.Repo(ns, "orders-api")
+		Expect(repo.Commits).To(HaveLen(1))
+		Expect(repo.Commits[0].Message).To(ContainSubstring("C4-Factory-Container: " + ns + "/orders-api"))
+		Expect(repo.Files).To(HaveKey("pyproject.toml"))
+		Expect(string(repo.Files["pyproject.toml"].Data)).To(ContainSubstring(`name = "orders-api"`))
+		Expect(string(repo.Files["pyproject.toml"].Data)).To(ContainSubstring("psycopg"))
+		Expect(repo.Files).To(HaveKey("app/main.py"))
+		Expect(repo.Files).To(HaveKey("Dockerfile"))
+		Expect(repo.Files).To(HaveKey("deploy/k8s/compute.yaml"))
+		Expect(repo.Files).To(HaveKey("deploy/k8s/service.yaml"))
+		Expect(repo.Files).To(HaveKey("deploy/k8s/connector-postgres.yaml"))
+		Expect(repo.Files).To(HaveKey(".devcontainer/compose.yaml"))
+		Expect(repo.Files).To(HaveKey(".devcontainer/compose.postgres.yaml"))
+		for p := range repo.Files {
 			Expect(p).NotTo(HavePrefix(".c4factory/"), "a template's inputs are never pushed")
 		}
-		Expect(repo.files).NotTo(HaveKey(scaffold.LicensePath), "no license set writes no LICENSE (#1788)")
+		Expect(repo.Files).NotTo(HaveKey(scaffold.LicensePath), "no license set writes no LICENSE (#1788)")
 
 		var devcontainer map[string]any
-		Expect(json.Unmarshal(repo.files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
+		Expect(json.Unmarshal(repo.Files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
 		Expect(devcontainer).To(HaveKeyWithValue("name", "Orders API"))
 		Expect(devcontainer).To(HaveKeyWithValue("service", "app"))
 		Expect(devcontainer).To(HaveKeyWithValue("features", HaveKey("./c4session")),
 			"the Session client is part of every devcontainer")
-		Expect(repo.files[".devcontainer/c4session/install.sh"].Executable).To(BeTrue())
+		Expect(repo.Files[".devcontainer/c4session/install.sh"].Executable).To(BeTrue())
 
-		identity, err := scaffold.ParseIdentity(repo.files[scaffold.IdentityPath].Data)
+		identity, err := scaffold.ParseIdentity(repo.Files[scaffold.IdentityPath].Data)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(identity.Project).To(Equal(ns))
 		Expect(identity.Container).To(Equal("orders-api"))
@@ -175,36 +175,36 @@ var _ = Describe("Container scaffolding", func() {
 		}).Should(Succeed())
 
 		By("a repeat reconcile changing nothing")
-		pushes := gitFake.pushCount()
+		pushes := gitFake.PushCount()
 		before := container.Status.DeepCopy()
 		orig := container.DeepCopy()
 		container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: time.Now().String()}
 		Expect(k8sClient.Patch(ctx, container, client.MergeFrom(orig))).To(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pushCount()).To(Equal(pushes))
+			g.Expect(gitFake.PushCount()).To(Equal(pushes))
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.ScaffoldedFrom).To(Equal(before.ScaffoldedFrom))
 			g.Expect(container.Status.Conditions).To(Equal(before.Conditions))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1))
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1))
 	})
 
 	It("comes back to a Container its cache has not seen Ready yet", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
-		pushes := gitFake.pushCount()
+		pushes := gitFake.PushCount()
 
 		// An event queued during the scaffold absorbs the requeue ready asked
 		// for, and its reconcile still reads the Container as Scaffolding.
 		stale := container.DeepCopy()
 		stale.Status.Phase = c4v1beta1.ContainerScaffolding
-		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: gitFake,
+		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: fakeGitClient{gitFake},
 			ScaffoldTimeout: testScaffoldTimeout}
 		result, err := r.scaffold(ctx, stale, resolved{}, stale.Status.DeepCopy())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "nothing else reconciles a Ready Container")
-		Expect(gitFake.pushCount()).To(Equal(pushes))
+		Expect(gitFake.PushCount()).To(Equal(pushes))
 	})
 
 	It("writes manifests that name only files it wrote, with or without a Compute", func() {
@@ -219,12 +219,12 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(catalogAPI.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
 
-		ordersFiles := gitFake.repo(ns, "orders-api").files
+		ordersFiles := gitFake.Repo(ns, "orders-api").Files
 		// auth.yaml: python-fastapi's OIDC issuer and audience (#1540).
 		Expect(kustomizationFiles(ordersFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
 			"deploy/k8s/service.yaml", "deploy/k8s/auth.yaml", "deploy/k8s/connector-postgres.yaml",
 			"deploy/k8s/compute.yaml"))
-		catalogFiles := gitFake.repo(ns, "catalog-api").files
+		catalogFiles := gitFake.Repo(ns, "catalog-api").Files
 		Expect(kustomizationFiles(catalogFiles)).To(ConsistOf("deploy/k8s/deployment.yaml",
 			"deploy/k8s/service.yaml", "deploy/k8s/auth.yaml"))
 		for _, files := range []scaffold.Tree{ordersFiles, catalogFiles} {
@@ -270,15 +270,15 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonAddedAfterScaffold))
 		}).Should(Succeed())
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "no second scaffold")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "no second scaffold")
 	})
 
 	It("recognises its own commit from an earlier attempt", func() {
 		ns := newProjectNamespace()
 		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api"}
-		gitFake.seedRepo(ns, "orders-api",
+		gitFake.SeedRepo(ns, "orders-api",
 			scaffold.CommitMessage(in, ordersAPIScaffoldedFrom, []model.AppliedRelationship{ordersDBApplied}))
-		pushes := gitFake.pushCount()
+		pushes := gitFake.PushCount()
 		createWebshop(ns)
 
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
@@ -287,13 +287,13 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(container.Status.AppliedConnectors).To(ConsistOf(ordersDBConnector))
 		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded).Message).
 			To(ContainSubstring("earlier attempt"))
-		Expect(gitFake.pushCount()).To(Equal(pushes))
+		Expect(gitFake.PushCount()).To(Equal(pushes))
 	})
 
 	It("reads a commit from before targets were recorded as applied by name", func() {
 		ns := newProjectNamespace()
 		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api"}
-		gitFake.seedRepo(ns, "orders-api", scaffold.CommitMessage(in, ordersAPIScaffoldedFrom,
+		gitFake.SeedRepo(ns, "orders-api", scaffold.CommitMessage(in, ordersAPIScaffoldedFrom,
 			[]model.AppliedRelationship{{Name: "orders-api-to-orders-db"}}))
 		createWebshop(ns)
 
@@ -324,12 +324,12 @@ var _ = Describe("Container scaffolding", func() {
 			element(c4v1beta1.ElementDataStore, "cache-db")))
 
 		eventuallyApplied(ns, "orders-api-to-orders-db", metav1.ConditionFalse, c4v1beta1.ReasonAddedAfterScaffold)
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1), "no second scaffold")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "no second scaffold")
 	})
 
 	It("stops when the repository has commits it didn't make", func() {
 		ns := newProjectNamespace()
-		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
 		createWebshop(ns)
 
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
@@ -339,8 +339,8 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(cond.Message).To(ContainSubstring("has commits C4 Factory didn't make"))
 
 		By("not trying again on its own")
-		reads := gitFake.historyCount(ns, "orders-api")
-		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
+		reads := gitFake.HistoryCount(ns, "orders-api")
+		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
 
@@ -359,14 +359,14 @@ var _ = Describe("Container scaffolding", func() {
 		var rel c4v1beta1.Relationship
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), &rel)).To(Succeed())
 		Expect(patch(&rel, func() { metav1.SetMetaDataLabel(&rel.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
-		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "2s").Should(Equal(reads))
+		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 	})
 
 	It("stays Ready when its SoftwareSystem goes missing", func() {
 		ns := newProjectNamespace()
 		createWebshop(ns)
 		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
-		reads := gitFake.historyCount(ns, "orders-api")
+		reads := gitFake.HistoryCount(ns, "orders-api")
 
 		// Envtest has no garbage collector, so the Container outlives its system,
 		// as it would after `kubectl delete --cascade=orphan`.
@@ -387,7 +387,7 @@ var _ = Describe("Container scaffolding", func() {
 			g.Expect(cond).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
-		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
+		Expect(gitFake.HistoryCount(ns, "orders-api")).To(Equal(reads))
 	})
 
 	It("builds nothing for an External system, and scaffolds once it turns Internal", func() {
@@ -412,7 +412,7 @@ var _ = Describe("Container scaffolding", func() {
 			cond := condition(db.Status.Conditions, c4v1beta1.ConditionReferencesResolved)
 			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonExternalSystem))
 		}).Should(Succeed())
-		Consistently(func() int { return gitFake.historyCount(ns, "orders-api") }, "1s").Should(BeZero())
+		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "1s").Should(BeZero())
 
 		By("scaffolding once the system turns Internal")
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
@@ -425,14 +425,14 @@ var _ = Describe("Container scaffolding", func() {
 		}).Should(Succeed())
 
 		By("staying Ready when it turns External again")
-		reads := gitFake.historyCount(ns, "orders-api")
+		reads := gitFake.HistoryCount(ns, "orders-api")
 		Expect(k8sClient.Get(ctx, key(ns, "webshop-core"), system)).To(Succeed())
 		Expect(patch(system, func() { system.Spec.Location = c4v1beta1.SystemExternal })).To(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
 			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}, "1s").Should(Succeed())
-		Expect(gitFake.historyCount(ns, "orders-api")).To(Equal(reads))
+		Expect(gitFake.HistoryCount(ns, "orders-api")).To(Equal(reads))
 	})
 
 	It("defaults a SoftwareSystem's location to Internal", func() {
@@ -449,7 +449,7 @@ var _ = Describe("Container scaffolding", func() {
 
 	It("records a Git host that runs out of time, and tries again", func() {
 		ns := newProjectNamespace()
-		release := gitFake.hang(ns, "orders-api")
+		release := gitFake.Hang(ns, "orders-api")
 		DeferCleanup(release)
 		createWebshop(ns)
 
@@ -467,11 +467,11 @@ var _ = Describe("Container scaffolding", func() {
 
 	It("tries a Failed Container again when the retry annotation changes", func() {
 		ns := newProjectNamespace()
-		gitFake.seedRepo(ns, "orders-api", "Initial commit\n")
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
 		createWebshop(ns)
 		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
 
-		gitFake.clearRepo(ns, "orders-api")
+		gitFake.ClearRepo(ns, "orders-api")
 		Expect(patch(container, func() {
 			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
 		})).To(Succeed())
@@ -482,7 +482,7 @@ var _ = Describe("Container scaffolding", func() {
 
 	It("scaffolds npm packages under the GitProvider's spec.packages.npm.scope (#1728)", func() {
 		ns := newProjectNamespace()
-		gitFake.addTemplate(templatesURL+"scoped-compute", "v1.0.0", scaffold.Tree{
+		gitFake.AddTemplate(templatesURL+"scoped-compute", "v1.0.0", scaffold.Tree{
 			"package.json.tmpl": {Data: []byte("{\n  \"name\": \"{{ .NpmScope }}/{{ .Container }}\"\n}\n")},
 		})
 		createFactory(ns)
@@ -494,7 +494,7 @@ var _ = Describe("Container scaffolding", func() {
 		mustCreate(newSystem(ns, "webshop-core"), container)
 
 		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
-		Expect(gitFake.mainFiles(ns, "orders-api")).To(HaveKeyWithValue("package.json",
+		Expect(gitFake.MainFiles(ns, "orders-api")).To(HaveKeyWithValue("package.json",
 			HaveField("Data", BeEquivalentTo("{\n  \"name\": \"@acme/orders-api\"\n}\n"))),
 			"the scaffold's provider Config carries the GitProvider's packages")
 	})
@@ -509,18 +509,18 @@ var _ = Describe("Container scaffolding", func() {
 		createWebshop(ns)
 
 		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
-		repo := gitFake.repo(ns, "orders-api")
-		Expect(repo.files).To(HaveKey(scaffold.LicensePath))
-		Expect(string(repo.files[scaffold.LicensePath].Data)).To(ContainSubstring("Copyright (c) %d Test story",
+		repo := gitFake.Repo(ns, "orders-api")
+		Expect(repo.Files).To(HaveKey(scaffold.LicensePath))
+		Expect(string(repo.Files[scaffold.LicensePath].Data)).To(ContainSubstring("Copyright (c) %d Test story",
 			time.Now().Year()), "the copyright line names the Project's displayName and the year")
-		identity, err := scaffold.ParseIdentity(repo.files[scaffold.IdentityPath].Data)
+		identity, err := scaffold.ParseIdentity(repo.Files[scaffold.IdentityPath].Data)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(identity.License).To(Equal("MIT"))
 	})
 
 	It("fails when two layers write the same path, naming it", func() {
 		ns := newProjectNamespace()
-		gitFake.addTemplate(templatesURL+"clashing-compute", "v1.0.0", scaffold.Tree{
+		gitFake.AddTemplate(templatesURL+"clashing-compute", "v1.0.0", scaffold.Tree{
 			"pyproject.toml": {Data: []byte("[project]\n")},
 		})
 		createFactory(ns)
@@ -539,7 +539,7 @@ var _ = Describe("Container scaffolding", func() {
 
 	It("fails a template that has no files for the Git host's CI system, naming the ones it has", func() {
 		ns := newProjectNamespace()
-		gitFake.addTemplate(templatesURL+"gitlab-compute", "v1.0.0", scaffold.Tree{
+		gitFake.AddTemplate(templatesURL+"gitlab-compute", "v1.0.0", scaffold.Tree{
 			".c4factory/ci/gitlabCI/.gitlab-ci.yml": {Data: []byte("check:\n")},
 		})
 		createFactory(ns)

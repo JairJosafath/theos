@@ -145,7 +145,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("writes the Application with the image digest and shows what Argo CD reports (#1588)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTarget(ns)
@@ -192,7 +192,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("copies the image to the target's imageRegistry and names the copy and its gitURL (#1590)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTargetWith(ns, func(dt *c4v1beta1.DeployTarget) {
@@ -206,7 +206,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 		Expect(repoURL).To(Equal("https://git.example/" + ns + "/orders-api.git"))
 		images, _, _ := unstructured.NestedStringSlice(app.Object, "spec", "source", "kustomize", "images")
 		Expect(images).To(ConsistOf("orders-api=nodes.example:5000/mirror/" + ns + "/orders-api@" + testDigest))
-		Expect(gitFake.imageCopy("nodes.example:5000/mirror/" + ns + "/orders-api:v0.1.0")).To(Equal(testDigest))
+		Expect(gitFake.ImageCopy("nodes.example:5000/mirror/" + ns + "/orders-api:v0.1.0")).To(Equal(testDigest))
 	})
 
 	It("is ArtifactMissing when the release has no image (#1588)", func() {
@@ -238,7 +238,7 @@ var _ = Describe("Container deploys to Argo CD", func() {
 	It("fails a Container whose name joins to another's Application name, naming it (#1677, #1669)", func() {
 		ns := newProjectNamespace()
 		deployingContainer(ns)
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: testDigest, Platforms: []string{"linux/amd64"}})
 		shipRelease(ns, "v0.1.0", true)
 		argoNS := readyArgoTarget(ns)

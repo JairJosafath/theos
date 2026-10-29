@@ -25,10 +25,10 @@ import (
 func makefileBehind(ns string) {
 	GinkgoHelper()
 	updatableContainer(ns)
-	gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("# Ours.\ncheck:\n\tpytest\n")}})
+	gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("# Ours.\ncheck:\n\tpytest\n")}})
 	bumpStandard(ns, "v1.2.0")
 	update := openedUpdate(ns, "v1.2.0")
-	gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+	gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 	eventuallyAt(ns, "v1.2.0", makefile)
 }
 
@@ -84,23 +84,23 @@ var _ = Describe("Container Standard files behind", func() {
 		Expect(take.Branch).To(Equal("standard-take/python-strict-v1.2.0"))
 		Expect(take.Paths).To(Equal([]string{makefile}))
 		eventuallyAnswered(ns)
-		title, body := gitFake.pullText(ns, "orders-api", int(take.PullRequest))
+		title, body := gitFake.PullText(ns, "orders-api", int(take.PullRequest))
 		Expect(title).To(Equal("Bring Makefile up to date with python-strict v1.2.0"))
 		Expect(body).To(ContainSubstring("## `Makefile`\n\nThe repository's lines it drops:\n\n```diff\n-\tpytest\n```\n"))
 
 		By("waiting while CI runs")
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.forcedMerges(ns, "orders-api")).To(HaveLen(1), "only the update's")
+			g.Expect(gitFake.ForcedMerges(ns, "orders-api")).To(HaveLen(1), "only the update's")
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("merging it as admin once CI passes, the repository's other lines kept")
-		gitFake.setChecks(ns, "orders-api", take.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", take.Commit, "success")
 		eventuallyAt(ns, "v1.2.0")
 		Expect(mainFile(ns, makefile)).To(Equal("# Ours.\ncheck:\n\tmake lint test\n"))
-		head := gitFake.mainHead(ns, "orders-api")
+		head := gitFake.MainHead(ns, "orders-api")
 		Expect(head.Message).To(HavePrefix("Bring Makefile up to date with python-strict v1.2.0\n\n"))
 		Expect(head.Message).To(ContainSubstring("Standard-Take: python-strict@v1.2.0"))
-		Expect(gitFake.hasBranch(ns, "orders-api", take.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", take.Branch)).To(BeFalse())
 	})
 
 	It("leaves the files behind when a person closes the take, ignores a stale answer and records a keep", func() {
@@ -109,11 +109,11 @@ var _ = Describe("Container Standard files behind", func() {
 
 		answer(ns, c4v1beta1.AnnotationStandardTake, "v1.2.0")
 		take := openedTake(ns)
-		gitFake.closePull(ns, "orders-api", int(take.PullRequest))
+		gitFake.ClosePull(ns, "orders-api", int(take.PullRequest))
 		eventuallyAt(ns, "v1.2.0", makefile)
-		Expect(gitFake.hasBranch(ns, "orders-api", take.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", take.Branch)).To(BeFalse())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(2), "the update's and the take's")
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(2), "the update's and the take's")
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("ignoring an answer for another ref")
@@ -139,7 +139,7 @@ var _ = Describe("Container Standard files behind", func() {
 		bumpStandard(ns, "v1.4.0")
 		update := openedUpdate(ns, "v1.4.0")
 		Expect(update.LeftOut).To(Equal([]string{makefile}))
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.4.0", makefile)
 		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal([]c4v1beta1.StandardFile{
 			{Path: makefile, Ref: "v1.2.0", PullRequestURL: update.PullRequestURL,

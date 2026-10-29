@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // The fake GitHub's Git Data API: a repository's blobs, trees, commits and
@@ -27,7 +28,7 @@ type fakeGitStore struct {
 	refs map[string]string
 	// landFirst is a file another app commits to the default branch just
 	// before the next update of it, which then isn't a fast-forward.
-	landFirst *fakeSourceFile
+	landFirst *fake.SourceFile
 }
 
 type fakeTreeEntry struct {
@@ -207,7 +208,7 @@ func (s *fakeGitStore) serveGit(w http.ResponseWriter, req *http.Request, rest [
 		if what == "heads/"+s.branch && s.landFirst != nil {
 			f := s.landFirst
 			s.landFirst = nil
-			s.putFile(f.path, f.data)
+			s.putFile(f.Path, f.Data)
 		}
 		if !in.Force && !s.descends(in.SHA, s.refs[what]) {
 			reply(w, http.StatusUnprocessableEntity, map[string]string{"message": "Update is not a fast forward"})
@@ -333,7 +334,7 @@ func (f *fakeGitHub) putFile(repository, path, data string) {
 func (f *fakeGitHub) landFirst(repository, path, data string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.git[repository].landFirst = &fakeSourceFile{path: path, data: data}
+	f.git[repository].landFirst = &fake.SourceFile{Path: path, Data: data}
 }
 
 // tagHead tags repository's default branch's head, as a person would.

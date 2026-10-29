@@ -19,6 +19,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // checkBranch is the branch whose push runs v0.1.0's full check.
@@ -62,13 +63,11 @@ func fullCheckRun(ns string, id int64, status, conclusion string) gitprovider.Wo
 
 // fullCheckIssues lists the issues of orders-api, open or closed, titled as
 // v0.1.0's full check failing.
-func fullCheckIssues(ns string) []fakeIssue {
-	gitFake.mu.Lock()
-	defer gitFake.mu.Unlock()
-	var out []fakeIssue
-	for _, i := range gitFake.issueState().issues[ns+"/orders-api"] {
+func fullCheckIssues(ns string) []fake.Issue {
+	var out []fake.Issue
+	for _, i := range gitFake.AllIssues(ns, "orders-api") {
 		if i.Title == "Full check fails for v0.1.0" {
-			out = append(out, *i)
+			out = append(out, i)
 		}
 	}
 	return out
@@ -94,7 +93,7 @@ var _ = Describe("Crew release full checks", func() {
 		mustCreate(crew)
 
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.branchCommit(ns, "orders-api", checkBranch)).To(Equal("5a-merge"))
+			g.Expect(gitFake.BranchHead(ns, "orders-api", checkBranch)).To(Equal("5a-merge"))
 			cond := releasedCondition(g, ns, model.FullCheckRunning)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Message).To(Equal("v0.1.0 waits for its full check at 5a-merge on " + checkBranch))
@@ -110,7 +109,7 @@ var _ = Describe("Crew release full checks", func() {
 		// The light check of main failed at that commit: only the branch's runs count.
 		mainRun := gitprovider.WorkflowRun{ID: 3, Workflow: "check.yaml", Event: "push", Ref: "refs/heads/main",
 			Status: "completed", Conclusion: "failure"}
-		gitFake.setCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "in_progress", ""), mainRun)
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "in_progress", ""), mainRun)
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/7"
 		Eventually(func(g Gomega) {
 			cond := releasedCondition(g, ns, model.FullCheckRunning)
@@ -118,15 +117,15 @@ var _ = Describe("Crew release full checks", func() {
 			g.Expect(getCrew(g, ns).Status.FullCheck.Run).To(Equal(model.RunRunning))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
-			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+			g.Expect(gitFake.MilestoneClosed(ns, "orders-api", "v0.1.0")).To(BeFalse())
 		}, 2*time.Second).Should(Succeed())
 
-		gitFake.setCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "success"), mainRun)
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "success"), mainRun)
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
-			g.Expect(gitFake.milestoneClosed(ns, "orders-api", "v0.1.0")).To(BeTrue())
-			g.Expect(gitFake.hasBranch(ns, "orders-api", checkBranch)).To(BeFalse())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			g.Expect(gitFake.MilestoneClosed(ns, "orders-api", "v0.1.0")).To(BeTrue())
+			g.Expect(gitFake.BranchExists(ns, "orders-api", checkBranch)).To(BeFalse())
 			crew := getCrew(g, ns)
 			g.Expect(crew.Status.FullCheck).To(BeNil())
 			g.Expect(crew.Status.LastRelease).NotTo(BeNil())
@@ -141,13 +140,13 @@ var _ = Describe("Crew release full checks", func() {
 		beforeReleaseContainer(ns)
 		crewAgents(ns, 1)
 		mergedIssue(ns)
-		gitFake.pushBranch(ns, "orders-api", checkBranch, "5a-older")
+		gitFake.PushBranchHead(ns, "orders-api", checkBranch, "5a-older")
 		crew := newCrew(ns)
 		crew.Spec.TagReleases = true
 		mustCreate(crew)
 
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.branchCommit(ns, "orders-api", checkBranch)).To(Equal("5a-merge"))
+			g.Expect(gitFake.BranchHead(ns, "orders-api", checkBranch)).To(Equal("5a-merge"))
 			g.Expect(getCrew(g, ns).Status.FullCheck).NotTo(BeNil())
 		}).Should(Succeed())
 	})
@@ -157,20 +156,20 @@ var _ = Describe("Crew release full checks", func() {
 		beforeReleaseContainer(ns)
 		crewAgents(ns, 1)
 		mergedIssue(ns)
-		gitFake.setCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "failure"))
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "failure"))
 		crew := newCrew(ns)
 		crew.Spec.TagReleases = true
 		mustCreate(crew)
 
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/7"
-		var filed fakeIssue
+		var filed fake.Issue
 		Eventually(func(g Gomega) {
 			issues := fullCheckIssues(ns)
 			g.Expect(issues).To(HaveLen(1))
 			filed = issues[0]
 			// The Crew may take the issue before this reads it, so check the labels it was filed with.
-			g.Expect(filed.filedLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
-			g.Expect(filed.milestone).To(Equal("v0.1.0"))
+			g.Expect(filed.FiledLabels).To(ConsistOf(model.LabelBug, model.LabelReady))
+			g.Expect(filed.InMilestone).To(Equal("v0.1.0"))
 			g.Expect(filed.Body).To(ContainSubstring(runURL))
 			cond := releasedCondition(g, ns, model.FullCheckFailed)
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
@@ -178,7 +177,7 @@ var _ = Describe("Crew release full checks", func() {
 				HaveField("Reason", model.FullCheckFailed))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
 			g.Expect(fullCheckIssues(ns)).To(HaveLen(1))
 			// The issue reopened the release; the condition keeps saying why.
 			releasedCondition(g, ns, model.FullCheckFailed)
@@ -193,16 +192,16 @@ var _ = Describe("Crew release full checks", func() {
 
 		// A person re-ran the check and it passed, and closed the issue unmerged:
 		// the release is done again at the same commit, and nothing is filed again.
-		gitFake.setCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 8, "completed", "success"),
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 8, "completed", "success"),
 			fullCheckRun(ns, 7, "completed", "failure"))
-		Expect(gitFake.closeIssue(ns, "orders-api", filed.Number)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", filed.Number)).To(Succeed())
 		// The Crew had started a Task on the issue; it ends with it.
 		task := &c4v1beta1.Task{}
 		Expect(k8sClient.Get(ctx, key(ns, fmt.Sprintf("orders-api-%d", filed.Number)), task)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, task)).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
-			g.Expect(gitFake.hasBranch(ns, "orders-api", checkBranch)).To(BeFalse())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			g.Expect(gitFake.BranchExists(ns, "orders-api", checkBranch)).To(BeFalse())
 		}).Should(Succeed())
 		Expect(fullCheckIssues(ns)).To(HaveLen(1))
 	})
@@ -211,21 +210,21 @@ var _ = Describe("Crew release full checks", func() {
 		ns := newProjectNamespace()
 		beforeReleaseContainer(ns)
 		crewAgents(ns, 1)
-		prepare := gitFake.addIssue(ns, "orders-api", "Prepare v0.1.0", clearIssue, []string{model.LabelRelease})
-		gitFake.setIssueRelease(ns, "orders-api", prepare, "v0.1.0", releaseDue)
-		Expect(gitFake.closeIssue(ns, "orders-api", prepare)).To(Succeed())
+		prepare := gitFake.AddIssue(ns, "orders-api", "Prepare v0.1.0", clearIssue, []string{model.LabelRelease})
+		gitFake.SetIssueRelease(ns, "orders-api", prepare, "v0.1.0", releaseDue)
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", prepare)).To(Succeed())
 		mergedTask(ns, "orders-api-prepare", prepare, "5a-prepare", time.Now().Add(-time.Hour))
 		_, body := model.FullCheckIssue("v0.1.0", "5a-prepare", model.ReleaseRun{URL: "http://gitea/runs/7"})
-		fix := gitFake.addIssue(ns, "orders-api", "Full check fails for v0.1.0", body, []string{model.LabelBug})
-		gitFake.setIssueRelease(ns, "orders-api", fix, "v0.1.0", releaseDue)
-		Expect(gitFake.closeIssue(ns, "orders-api", fix)).To(Succeed())
+		fix := gitFake.AddIssue(ns, "orders-api", "Full check fails for v0.1.0", body, []string{model.LabelBug})
+		gitFake.SetIssueRelease(ns, "orders-api", fix, "v0.1.0", releaseDue)
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", fix)).To(Succeed())
 		mergedTask(ns, "orders-api-fix", fix, "5a-fix", time.Now())
 		crew := newCrew(ns)
 		crew.Spec.TagReleases, crew.Spec.PrepareReleases = true, true
 		mustCreate(crew)
 
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.branchCommit(ns, "orders-api", checkBranch)).To(Equal("5a-fix"))
+			g.Expect(gitFake.BranchHead(ns, "orders-api", checkBranch)).To(Equal("5a-fix"))
 			releasedCondition(g, ns, model.FullCheckRunning)
 		}).Should(Succeed())
 	})
@@ -255,7 +254,7 @@ var _ = Describe("Crew release full checks", func() {
 				HaveField("Reason", model.NoFullCheck))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
 			g.Expect(fullCheckIssues(ns)).To(BeEmpty())
 		}, 2*time.Second).Should(Succeed())
 	})
@@ -270,10 +269,10 @@ var _ = Describe("Crew release full checks", func() {
 		mustCreate(crew)
 
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
 			g.Expect(getCrew(g, ns).Status.FullCheck).To(BeNil())
 		}).Should(Succeed())
 		Expect(crewEvents(Default, ns)).NotTo(ContainElement(HaveField("Reason", model.FullCheckRunning)))
-		Expect(gitFake.hasBranch(ns, "orders-api", checkBranch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", checkBranch)).To(BeFalse())
 	})
 })

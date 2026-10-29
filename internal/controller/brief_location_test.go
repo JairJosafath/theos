@@ -82,7 +82,7 @@ var _ = Describe("Brief location", func() {
 
 		By("showing the planner its location")
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceModelFile].Data)).
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceModelFile].Data)).
 				To(MatchRegexp(`name: payments\nspec:\n +description: Takes the money\n +location: External\n`))
 		}).Should(Succeed())
 

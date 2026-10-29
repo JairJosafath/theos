@@ -37,7 +37,7 @@ var _ = Describe("Brief rounds on a Bundle", func() {
 		By("listing each Bundle with its entries and the types they all support")
 		Eventually(func(g Gomega) {
 			getTask(g, ns, "cel-lens-plan-1")
-			catalog := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceCatalogFile].Data)
+			catalog := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceCatalogFile].Data)
 			g.Expect(catalog).To(ContainSubstring("bundles:\n    - name: go-operator\n      framework: go-kubebuilder\n" +
 				"      supportedTypes:\n        - operator\n    - name: python-service\n      framework: python-fastapi\n" +
 				"      compute: small\n      deployment: k8s-manifests\n      supportedTypes:\n        - service\n"))

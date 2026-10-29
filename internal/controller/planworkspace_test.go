@@ -78,12 +78,7 @@ func (c planRecordingClient) Create(ctx context.Context, obj client.Object, opts
 	if c.plans.refuses(task.Namespace) {
 		return errPlanCreateFault
 	}
-	gitFake.mu.Lock()
-	var brief string
-	if repo := gitFake.repos[task.Namespace+"/"+model.BriefRepository(task.Spec.BriefRef.Name)]; repo != nil {
-		brief = string(repo.files[model.BriefFile].Data)
-	}
-	gitFake.mu.Unlock()
+	brief := string(gitFake.Repo(task.Namespace, model.BriefRepository(task.Spec.BriefRef.Name)).Files[model.BriefFile].Data)
 	err := c.Client.Create(ctx, obj, opts...)
 	if err == nil {
 		c.plans.mu.Lock()

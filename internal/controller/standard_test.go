@@ -21,7 +21,7 @@ import (
 // newStandard returns a Standard that fits the named Frameworks, served by the
 // fake Git host with an AGENTS.md and a Makefile.
 func newStandard(ns, name string, frameworks ...string) *c4v1beta1.Standard {
-	gitFake.addTemplate(templatesURL+name, "v1.0.0", scaffold.Tree{
+	gitFake.AddTemplate(templatesURL+name, "v1.0.0", scaffold.Tree{
 		"AGENTS.md.tmpl": {Data: []byte("Rules for {{ .Container }}, checked by {{ .Standard }}\n")},
 		"Makefile":       {Data: []byte("check:\n\ttrue\n")},
 	})
@@ -87,7 +87,7 @@ var _ = Describe("Container Standard", func() {
 			g.Expect(container.Status.ScaffoldedFrom).To(HaveLen(4))
 			g.Expect(container.Status.ScaffoldedFrom[1]).To(Equal("python-strict@v1.0.0"))
 		}).Should(Succeed())
-		files := gitFake.repo(ns, "orders-api").files
+		files := gitFake.Repo(ns, "orders-api").Files
 		Expect(string(files["AGENTS.md"].Data)).To(Equal("Rules for orders-api, checked by python-strict\n"))
 	})
 
@@ -105,12 +105,12 @@ var _ = Describe("Container Standard", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-worker"), plain)).To(Succeed())
 			g.Expect(plain.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
-		Expect(gitFake.protectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
-		Expect(gitFake.protectedBranches(ns, "orders-worker")).To(BeEmpty())
+		Expect(gitFake.ProtectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
+		Expect(gitFake.ProtectedBranches(ns, "orders-worker")).To(BeEmpty())
 
 		// Checks are polled, from the scaffold on, with nothing else touching the
 		// Container (a nudge here once hid that polling never started).
-		gitFake.setChecks(ns, "orders-api", "main", "success")
+		gitFake.SetChecks(ns, "orders-api", "main", "success")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			g.Expect(container.Status.Checks).NotTo(BeNil())
