@@ -146,6 +146,32 @@ var templateCombos = []struct {
 		{model.SideDeployment, "gitea-release"},
 		{model.SideConnector, "dynamodb"},
 	}},
+	{"aws ec2 service with rds", "service", []side{
+		{model.SideFramework, "aws-ec2-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws ec2 service with dynamodb and rds", "service", []side{
+		{model.SideFramework, "aws-ec2-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws fargate service with rds", "service", []side{
+		{model.SideFramework, "aws-fargate-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "rds"},
+	}},
+	{"aws fargate service with dynamodb and rds", "service", []side{
+		{model.SideFramework, "aws-fargate-ts"},
+		{model.SideStandard, "aws-standard"},
+		{model.SideDeployment, "gitea-release"},
+		{model.SideConnector, "dynamodb"},
+		{model.SideConnector, "rds"},
+	}},
 	{"aws lambda function in go", "function", []side{
 		{model.SideFramework, "aws-lambda-go"},
 		{model.SideStandard, "aws-standard"},
