@@ -143,6 +143,24 @@ func (r *ContainerReconciler) forget(uid types.UID) {
 	}
 }
 
+// remember keeps the UID of the Container by its name. A Container deleted
+// and made again under its name between two reconciles has a new UID, and
+// the old one's entries go.
+func (r *ContainerReconciler) remember(name types.NamespacedName, uid types.UID) {
+	if old, loaded := r.uids.Swap(name, uid); loaded && old.(types.UID) != uid {
+		r.forget(old.(types.UID))
+	}
+}
+
+// forgetName forgets the Container last seen under name, whose Get is
+// NotFound: it carries no finalizer, so no reconcile saw it being deleted
+// (#1629).
+func (r *ContainerReconciler) forgetName(name types.NamespacedName) {
+	if uid, ok := r.uids.LoadAndDelete(name); ok {
+		r.forget(uid.(types.UID))
+	}
+}
+
 // Reconcile adopts the Container, resolves its references, checks its catalog
 // choices and scaffolds its repository once.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -151,9 +169,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var container c4v1beta1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
 		if apierrors.IsNotFound(err) {
-			if uid, ok := r.uids.LoadAndDelete(req.NamespacedName); ok {
-				r.forget(uid.(types.UID))
-			}
+			r.forgetName(req.NamespacedName)
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -162,11 +178,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		r.forget(container.UID)
 		return ctrl.Result{}, nil
 	}
-	// A Container deleted and made again under its name between two
-	// reconciles has a new UID; the old one's entries go.
-	if old, loaded := r.uids.Swap(req.NamespacedName, container.UID); loaded && old.(types.UID) != container.UID {
-		r.forget(old.(types.UID))
-	}
+	r.remember(req.NamespacedName, container.UID)
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
