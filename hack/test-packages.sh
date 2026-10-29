@@ -66,7 +66,7 @@ declare -A readers=(
   [hack/seed]="test/chart"
   [hack/boilerplate.go.txt]="hack/template-go-kubebuilder"
   [hack/new.sh]="hack/template-go-kubebuilder"
-  [hack/setup.sh]="internal/adapters/gitea"
+  [hack/setup.sh]="internal/adapters/git"
   [hack/go-test.sh]="internal/controller"
   [hack/release.sh]="test/compat"
 )
