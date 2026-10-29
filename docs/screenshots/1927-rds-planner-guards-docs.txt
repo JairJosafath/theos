@@ -1,0 +1,64 @@
+# #1927 evidence, 2026-10-29T01:19:34Z, commit 25e51d52 + docs
+
+$ go test ./internal/scaffold -run "RDS|Relational|Connector" -v; go test ./internal/model -run "Relational|Planner" -v
+--- PASS: TestDynamoDBConnectorConnectsToAWSLambdaTS (0.03s)
+--- PASS: TestRDSConnectorConnectsToAWSLambdaTS (0.03s)
+--- PASS: TestRDSConnectorConnectsToAWSLambdaPyAndGo (0.07s)
+--- PASS: TestRDSConnectorConnectsToAWSServices (0.07s)
+--- PASS: TestRDSConnectorFailsAFrameworkThatDoesNotWireIt (0.01s)
+--- PASS: TestDynamoDBConnectorFailsAFrameworkThatDoesNotWireIt (0.01s)
+--- PASS: TestAWSLambdaTSWithoutConnectorsHasNoDataStores (0.01s)
+--- PASS: TestDynamoDBConnectorConnectsToOtherAWSLambdas (0.04s)
+--- PASS: TestDynamoDBConnectorFailsAServiceFrameworkThatDoesNotWireIt (0.01s)
+--- PASS: TestDynamoDBConnectorConnectsToAWSWorkersAndJobs (0.08s)
+--- PASS: TestRDSConnectorConnectsToAWSWorkersAndJobs (0.20s)
+--- PASS: TestDynamoDBConnectorFailsAWorkerFrameworkThatDoesNotWireIt (0.00s)
+--- PASS: TestEachRelationalConnectorFailsTheOtherPlace (0.04s)
+--- PASS: TestAWSStandardSaysHowToRestoreAndQueryTheRDSCluster (0.24s)
+--- PASS: TestDevcontainerWithConnectorsUsesCompose (0.00s)
+--- PASS: TestDevcontainerWithoutConnectorsUsesImage (0.00s)
+PASS
+ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.868s
+--- PASS: TestPlannerGuidePlansADynamoDBDataStoreForAnAWSContainer (0.00s)
+--- PASS: TestPlannerGuidePlansARelationalDataStoreOnTheOneItsFrameworkTakes (0.00s)
+--- PASS: TestPlansWithARelationalDataStoreValidate (0.07s)
+--- PASS: TestPlannerGuideStatesTheEC2Cue (0.00s)
+--- PASS: TestPlannerGuideStatesTheAWSEventCue (0.00s)
+--- PASS: TestPlannerGuideStatesTheAWSQueueCue (0.00s)
+--- PASS: TestPlannerGuideStatesTheAWSScheduleCue (0.00s)
+--- PASS: TestPlannerGuideStatesTheAWSServiceCue (0.00s)
+--- PASS: TestPlannerGuideStatesTheStaticSiteOnAWSCue (0.00s)
+--- PASS: TestPlannerGuideNamesChecks (0.00s)
+--- PASS: TestPlannerGuideShowsParallel (0.01s)
+--- PASS: TestPlannerGuideExampleReleasesItsIssuesContainer (0.01s)
+--- PASS: TestPlannerGuide (0.00s)
+--- PASS: TestPlannerGuideChoosesTheKindOfAppByTheIdea (0.00s)
+--- PASS: TestPlannerGuideWritesPlanAPIVersion (0.00s)
+--- PASS: TestPlannerGuideFailedExample (0.00s)
+--- PASS: TestPlannerGuideStatesTheFunctionCue (0.00s)
+--- PASS: TestPlannerGuideExamplePassesThePlanCheck (0.01s)
+--- PASS: TestPlannerGuideExampleOrdersItsIssues (0.00s)
+--- PASS: TestPlannerGuideShowsUses (0.00s)
+--- PASS: TestPlannerGuideExampleHasEveryField (0.00s)
+--- PASS: TestPlannerGuideExampleWithARenamedFieldIsRefused (0.05s)
+--- PASS: TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet (0.00s)
+--- PASS: TestPlannerGuideAsksForNoTestThatStartsADesktopApp (0.00s)
+--- PASS: TestPlannerGuideLeavesReleasingToTheFactory (0.00s)
+--- PASS: TestPlannerGuideSaysWhenASystemIsExternal (0.00s)
+--- PASS: TestPlannerGuidePrefersABundle (0.00s)
+--- PASS: TestPlannerGuideStatesTheOperatorCue (0.00s)
+ok  	github.com/JairJosafath/c4factory/internal/model	0.193s
+
+# Rendered docs with rds pass Prettier 3 (hack/render, Standard=aws-standard)
+$ (aws-fargate-ts) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!
+$ (aws-lambda-py) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!
+$ (aws-ec2-ts) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!
+$ (aws-lambda-go) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!
+$ (solo-aws-fargate-ts) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!
+$ (solo-aws-lambda-ts) npx prettier --check 'docs/**/*.md' AGENTS.md
+All matched files use Prettier code style!

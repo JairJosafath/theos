@@ -3,6 +3,9 @@
 Parent issue: #1394, a follow-up of #1117 and of decision 3 of
 [aws-production.md](aws-production.md). Written 2026-10-24.
 
+**Status: done.** Steps 1 to 7 landed (#1920, #1921, #1923 to #1927); the
+evidence is `docs/screenshots/192*-*rds*.txt`.
+
 ## Goal
 
 A Container on an AWS Framework with a Relationship to a DataStore on an

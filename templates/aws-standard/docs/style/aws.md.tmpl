@@ -10,6 +10,34 @@
 {{- $queue := eq .Framework "aws-queue-ts" -}}
 {{- $schedule := eq .Framework "aws-schedule-ts" -}}
 {{- $event := eq .Framework "aws-event-ts" -}}
+{{- /* The rds Connector's cluster, in every Framework that wires it. */ -}}
+{{- define "rds" }}
+{{- if has .Connectors "rds" }}
+
+## Aurora PostgreSQL
+
+- Relational data lives in the `rds` Connector's cluster, one per
+  Container, in its database `{{ snake .Container }}`; never a second
+  cluster, an RDS instance or a database on the {{ if eq .Framework "aws-ec2-ts" }}instances{{ else if eq .Framework "aws-fargate-ts" }}tasks{{ else }}function's disk{{ end }}. A record looked up by
+  key alone may stay in DynamoDB. [review]
+- Read `RDS_CLUSTER_ARN`, `RDS_SECRET_ARN` and `RDS_DATABASE` once, at
+  start. A query goes through the Data API ({{ if eq .Framework "aws-lambda-go" }}`github.com/aws/aws-sdk-go-v2/service/rdsdata`{{ else if eq .Framework "aws-lambda-py" }}boto3's `rds-data` client{{ else }}`@aws-sdk/client-rds-data`{{ end }}'s
+  `ExecuteStatement`) with the secret's ARN{{ if eq .Framework "aws-fargate-ts" "aws-ec2-ts" }}, or through a driver
+  (`pg`) with a pool on `RDS_HOST` and `RDS_PORT`, TLS on, the user and
+  password from `GetSecretValue` on `RDS_SECRET_ARN`, fetched again when a
+  login fails: the secret rotates{{ end }}. [review]
+- Every value is a parameter (the Data API's `parameters`{{ if eq .Framework "aws-fargate-ts" "aws-ec2-ts" }}, the driver's
+  `$1`{{ end }}), never SQL built from strings. [review]
+- A write that may be retried is idempotent: `INSERT ... ON CONFLICT`, or
+  a transaction that checks before it writes. [review]
+- The schema is migrations kept in the repository, each applied once and
+  never edited after it lands. [review]
+- The cluster is built by `connectRDS` with the tier's `TIER_RULES`, and
+  the stack alarms on it and backs it up in `Backups`' `clusters`: change
+  its removal policy, deletion protection, backups or rotation only there.
+  [test: the Standard's cluster rules]
+{{- end }}
+{{- end -}}
 {{- if eq .Framework "aws-fargate-ts" -}}
 # AWS container service digest
 
@@ -118,6 +146,7 @@ says why each rule matters.
 - The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
   protection. [test: says what happens to stateful resources; review]
 {{- end }}
+{{- template "rds" . }}
 
 ## The AWS SDK v3
 
@@ -711,6 +740,7 @@ says why each rule matters.
 - The table outlives the stack: `RemovalPolicy.RETAIN` and deletion
   protection. [test: says what happens to stateful resources; review]
 {{- end }}
+{{- template "rds" . }}
 
 {{ if $go -}}
 ## The AWS SDK for Go v2
