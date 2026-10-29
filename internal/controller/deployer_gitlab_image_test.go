@@ -132,6 +132,33 @@ func TestGitLabDeployerImage(t *testing.T) {
 		}
 	})
 
+	// The api scope grants the whole container registry (#1980): a token
+	// with api alone copies the image, as one with read_registry and
+	// write_registry does (#1956).
+	for _, tc := range []struct {
+		name, project, app string
+		scopes             []string
+	}{
+		{name: "#1980 a token with the api scope alone copies the image", project: "acme/vat", app: "vat",
+			scopes: []string{"api"}},
+		{name: "#1956 a token with read_registry and write_registry copies the image", project: "acme/toll",
+			app: "toll", scopes: []string{"read_api", "read_registry", "write_registry"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, tg := target(tc.project, tc.app+"-")
+			p.Scopes = tc.scopes
+			s, digest := pushed(t, "ns/"+tc.app, "v1.0.0")
+			shipUntilDeployed(t, d, tg, s)
+			want := reg.host + "/" + tc.project + "/" + tc.app + "@" + digest
+			if rels := p.Releases(); len(rels) != 1 || !strings.Contains(rels[0].Description, "Image: `"+want+"`") {
+				t.Fatalf("releases = %+v, want one naming %s", rels, want)
+			}
+			if st, err := d.State(ctx, tg, s.App, "v1.0.0"); err != nil || st.Image != want {
+				t.Fatalf("State() = %+v, %v; want image %s", st, err, want)
+			}
+		})
+	}
+
 	t.Run("another digest under the tag is TagTaken, naming the image", func(t *testing.T) {
 		p, tg := target("acme/billing", "billing-")
 		other, _ := pushed(t, "ns/billing-old", "v1.0.0")
@@ -212,20 +239,21 @@ func TestGitLabDeployerImageSkipped(t *testing.T) {
 		}
 	})
 
-	// A token that can't both pull and push ships without an image: the
-	// copy's first call pulls the source tag, which only read_registry grants
-	// (#1956), and the log line names what the token lacks.
+	// A token without api that can't both pull and push ships without an
+	// image: the copy's first call pulls the source tag, which only
+	// read_registry grants (#1956), and the log line names what the token
+	// lacks. Scopes without api never pass Check; Ship is asked here directly.
 	for _, tc := range []struct {
 		name, project, app string
 		scopes             []string
 		missing            string
 	}{
 		{name: "a token without write_registry ships without an image", project: "acme/tax", app: "tax",
-			scopes: []string{"api", "read_registry"}, missing: "write_registry"},
+			scopes: []string{"read_api", "read_registry"}, missing: "write_registry"},
 		{name: "#1956 a token without read_registry ships without an image", project: "acme/duty", app: "duty",
-			scopes: []string{"api", "write_registry"}, missing: "read_registry"},
+			scopes: []string{"read_api", "write_registry"}, missing: "read_registry"},
 		{name: "a token with neither registry scope ships without an image", project: "acme/levy", app: "levy",
-			scopes: []string{"api"}, missing: "read_registry and write_registry"},
+			scopes: []string{"read_api"}, missing: "read_registry and write_registry"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, tg := target(tc.project, tc.app+"-")
@@ -243,7 +271,7 @@ func TestGitLabDeployerImageSkipped(t *testing.T) {
 			if rels := p.Releases(); len(rels) != 1 || strings.Contains(rels[0].Description, "Image:") {
 				t.Errorf("releases = %+v, want one naming no image", rels)
 			}
-			want := fmt.Sprintf("the token lacks the %s scope", tc.missing)
+			want := fmt.Sprintf("the token lacks the api scope, or the %s scope", tc.missing)
 			if got := logged.String(); !strings.Contains(got, "No image copied") || !strings.Contains(got, want) {
 				t.Errorf("logged %q, want %q naming %q", got, "No image copied", want)
 			}

@@ -353,7 +353,7 @@ The relay picks the issue its worker's last session reserved (`create --next`,
 below), else by `priority/N`, 1 first: an issue with no priority label counts
 as 5, and of several labels the lowest counts. 1 is something broken now (a
 red main, a dead relay, a failed release check), 3 what makes development
-itself faster ([docs/plans/velocity.md](../plans/velocity.md)), 10 last.
+itself faster ([docs/plans/done/velocity.md](../plans/done/velocity.md)), 10 last.
 Within a number, the oldest `status/in-progress` issue nobody holds goes
 first, else the oldest `status/ready` one, skipping issues with a live claim
 or an open `Depends on #M`, and claims it (see
@@ -647,6 +647,12 @@ whose tag already exists. The tag starts *Release*, which first runs
 `hack/release.sh --check vX.Y.Z` and builds nothing when the chart or the
 guide names another version; `hack/release_test.sh` holds both to that, and
 `test/chart/guide_version_test.go` keeps main's guide on the chart's version.
+
+A release that deprecates a version gives its drop issue the date: once the
+release is published, the maintainer writes the earliest drop date (the
+release's date plus 90 days) into that issue's body (#1963 for `v1alpha1`).
+The CRDs' warnings, the guide and the chart's README name the rule ("a
+release 90 or more days after v0.30.0"), never the date (#1983).
 
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has

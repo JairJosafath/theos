@@ -67,8 +67,8 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
 
 2. **One credential: `token`, any GitLab access token.** The Secret holds
    `token`, sent as `PRIVATE-TOKEN`. The design names a project access token
-   with the Maintainer role and the scopes `api`, `read_registry` and
-   `write_registry` (Maintainer, since the source commit goes to the default
+   with the Maintainer role and the `api` scope, which covers the container
+   registry (#1980; Maintainer, since the source commit goes to the default
    branch and the tags may be protected). A group access token or a
    personal access token has the same shape and works with no change, so
    "which credential shapes" needs no second key. A deploy token is not
@@ -81,7 +81,7 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    tokens answer too): a 401, a 403 or a 404 is `CredentialRefused` with
    GitLab's message ("can't see the project" for a 404), and a token
    without `api` is `CredentialRefused` naming the scope. A token without
-   `read_registry` or `write_registry` is ready: the target ships no image
+   `api` that lacks `read_registry` or `write_registry` ships no image
    (decision 5).
 
 3. **The release is the last write, since GitLab has no drafts.** The ship
@@ -158,9 +158,10 @@ reaches `Deployed`; `docs/design.md`'s Deploys section names the member
    `status.deploys[].image` reports it. When the project's registry is off
    (`container_registry_access_level` `disabled`; the project's
    `container_registry_enabled` is deprecated and not read) or the token
-   lacks `read_registry` or `write_registry` (the copy's first call pulls
-   the source tag, which GitLab grants with `read_registry`;
-   `write_registry` grants the push alone, #1956), no image is copied and
+   has neither `api` (which grants the whole registry, #1980) nor both
+   `read_registry` and `write_registry` (the copy's first call pulls the
+   source tag, which GitLab grants with `read_registry`; `write_registry`
+   grants the push alone, #1956), no image is copied and
    the release ships without one, as a `github` target without
    `packagesToken`; the DeployTarget page says which, and the log line names
    the missing scope.

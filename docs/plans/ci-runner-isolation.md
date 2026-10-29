@@ -130,7 +130,7 @@ Decided before building, from the code as it stands after #1138 and #1139:
 
 - **Picked by `GitProvider.spec.ci.giteaActions.runners`.** A new optional
   `ci` block whose only member is `giteaActions` (the member name
-  [ci-system-input](ci-system-input.md) reserved; a CEL rule allows exactly
+  [ci-system-input](done/ci-system-input.md) reserved; a CEL rule allows exactly
   one member once there is a second). Its `runners` list has one entry per
   label: `label`, `image`, `size` (idle pods kept, default 1), `resources`,
   `goCache` (bool: mount the project's cache). No block, no pool: the Helm

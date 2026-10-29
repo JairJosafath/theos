@@ -479,8 +479,8 @@ func TestShipSourceBranchMoved(t *testing.T) {
 // commit that touched that file, not with the head, so a source commit that
 // named the head as every file's last_commit_id was refused whenever another
 // commit had touched only some other file since, and the release never shipped:
-// every poll failed BranchMoved. The commit names the head as its start_sha
-// instead, and the fake applies GitLab's per-file rule to last_commit_id.
+// every poll failed BranchMoved. Each action names its file's own last
+// commit instead, and the fake applies GitLab's per-file rule.
 func TestShipSourceAfterOutsideCommit(t *testing.T) {
 	ctx := context.Background()
 	gl := gitlabtest.New(t)
@@ -522,6 +522,97 @@ func TestShipSourceAfterOutsideCommit(t *testing.T) {
 	}
 	if rels := p.Releases(); len(rels) != 2 || p.Tag(rels[0].Tag) != p.Tag("orders-api/v1.1.0") {
 		t.Errorf("releases = %+v, want v1.1.0 at the source tag's commit", rels)
+	}
+}
+
+// The source commit lands on the default branch, which exists, after an
+// outside commit touched another file since the head was read, and fails
+// BranchMoved when that commit touched a file it changes (#1979). It named
+// the head as its start_sha, which GitLab reads as starting a new branch and
+// refuses on one that exists; each file's own last commit, as its
+// last_commit_id, is what tells GitLab the actions are stale.
+func TestShipSourceOnExistingBranch(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	tg.Settings[model.GitHubSettingSourcePath] = "orders-api"
+	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := func(path, content string) {
+		t.Helper()
+		if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+			Actions: []gitprovider.GitLabCommitAction{{Action: "update", FilePath: path, Content: content}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "theirs",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "orders-api/go.mod", Content: "old"},
+			{Action: "create", FilePath: "orders-api/main.go", Content: "old"},
+			{Action: "create", FilePath: "README.md", Content: "readme"}}}); err != nil {
+		t.Fatal(err)
+	}
+	head := p.DefaultBranchHead
+	theirs("README.md", "readme 2")
+
+	s := shipment(file("orders-cli_linux.tar.gz", "bin"))
+	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n", "main.go": "old"})
+	src, _, _ := sourceTarget(tg, s.Version)
+	step := &model.SourceCommit{Path: src.Path, Message: "ours"}
+	folder := []model.SourceFile{{Path: "go.mod", Mode: model.ModeFile, Blob: model.BlobSHA([]byte("old"))},
+		{Path: "main.go", Mode: model.ModeFile, Blob: model.BlobSHA([]byte("old"))}}
+	actions := model.GitLabSourceActions(s.Source.Files, folder)
+	if _, err := commitSource(ctx, c, s, p.DefaultBranch, head, step, actions); err != nil {
+		t.Fatalf("commitSource to the existing %s = %v, want it to land (#1979)", p.DefaultBranch, err)
+	}
+	if got := p.Folder(p.DefaultBranch, ""); got["orders-api/go.mod"] != "module example.com/orders\n" ||
+		got["README.md"] != "readme 2" {
+		t.Errorf("folder = %v, want our go.mod and their README.md", got)
+	}
+
+	// Their commit touches main.go after our read: the update is stale.
+	head = p.DefaultBranchHead
+	theirs("orders-api/main.go", "theirs")
+	s.Source, s.ReadSource = source(map[string]string{"go.mod": "module example.com/orders\n", "main.go": "ours"})
+	folder[0].Blob = model.BlobSHA([]byte("module example.com/orders\n"))
+	actions = model.GitLabSourceActions(s.Source.Files, folder)
+	_, err = commitSource(ctx, c, s, p.DefaultBranch, head, step, actions)
+	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Reason != model.PublishBranchMoved {
+		t.Fatalf("commitSource of a file their commit touched = %v, want BranchMoved", err)
+	}
+	if got := p.Folder(p.DefaultBranch, "orders-api"); got["orders-api/main.go"] != "theirs" {
+		t.Errorf("their change was written over: %v", got)
+	}
+}
+
+// The fake refuses start_sha and start_branch on a branch that exists, as
+// GitLab does: they start a new branch (#1979).
+func TestFakeStartSHAOnExistingBranch(t *testing.T) {
+	ctx := context.Background()
+	gl := gitlabtest.New(t)
+	tg, p := newTarget(gl, "t0ken")
+	c, err := gitprovider.Client{}.GitLab(gitprovider.GitLabConfig{URL: gl.URL(),
+		Project: tg.Settings[model.GitLabSettingProject], Token: string(tg.Secret[model.GitLabSecretToken])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, Message: "a",
+		Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "a", Content: "a"}}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.CreateCommit(ctx, gitprovider.GitLabCommit{Branch: p.DefaultBranch, StartSHA: p.DefaultBranchHead,
+		Message: "b", Actions: []gitprovider.GitLabCommitAction{{Action: "create", FilePath: "b", Content: "b"}}})
+	if re, ok := errors.AsType[*gitprovider.ReleaseError](err); !ok || re.Status != 400 ||
+		!strings.Contains(re.Message, "already exists") {
+		t.Fatalf("commit with start_sha the head = %v, want a 400: the branch exists", err)
+	}
+	if last, err := c.FileLastCommit(ctx, p.DefaultBranch, "a"); err != nil || last != p.DefaultBranchHead {
+		t.Errorf("FileLastCommit(a) = %q, %v, want %q", last, err, p.DefaultBranchHead)
+	}
+	if last, err := c.FileLastCommit(ctx, p.DefaultBranch, "none"); err != nil || last != "" {
+		t.Errorf("FileLastCommit(none) = %q, %v, want \"\"", last, err)
 	}
 }
 

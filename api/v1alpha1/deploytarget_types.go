@@ -71,8 +71,8 @@ type DeployTargetSpec struct {
 	// fine-grained token, or a GitHub App's appId, installationId and
 	// privateKey (its PEM), token winning when both are set; packagesToken
 	// is optional. For gitlab: token, a project access token with the
-	// Maintainer role and the scopes api, read_registry and write_registry (a
-	// group or personal access token works the same). For cloudFormation:
+	// Maintainer role and the api scope, which covers the container registry
+	// (a group or personal access token works the same). For cloudFormation:
 	// accessKeyId, secretAccessKey and an optional sessionToken. Only the operator reads it: it is never mounted
 	// in a sandbox or passed to a CI job.
 	// An argoCD target needs none: the operator uses its own ServiceAccount.
@@ -326,7 +326,7 @@ type DeployTargetStatus struct {
 	CheckedTime *metav1.Time `json:"checkedTime,omitempty"`
 }
 
-// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 (2027-01-22 at the earliest) may drop it (#1963)."
+// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=c4

@@ -95,11 +95,20 @@ owner, with their own credentials.
   promises.
 - `infra/connectors.ts` lists the data stores the Container's Relationships
   connect it to, which C4 Factory renders from their Connectors; the stack
-  connects each to the function, alarms on its table and backs it up.
+  connects each to the function, alarms on it and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
   the function reads its name in `DYNAMODB_TABLE_NAME`. New data goes in that
   table: the `Items` table (`TABLE_NAME`) is the starter's example.
+{{- end }}
+{{- if has .Connectors "rds" }} The
+  `rds` DataStore's Aurora PostgreSQL cluster is made by
+  `infra/connector_rds.ts`, and the function reads `RDS_CLUSTER_ARN`,
+  `RDS_SECRET_ARN` and `RDS_DATABASE`. Query it through the Data API:
+  `@aws-sdk/client-rds-data`'s
+  `ExecuteStatementCommand({ resourceArn, secretArn, database, sql })`, the
+  first three from those variables. The IAM database user is a migration
+  this repository runs.
 {{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and

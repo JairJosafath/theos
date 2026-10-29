@@ -21,7 +21,7 @@ You need:
 - the GitHub CLI (`gh`), logged in, while this repository, the chart and the
   images on GHCR are private.
 
-The commands use the release `0.29.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.30.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
 match the release (`gh` clones it while the repository is private). From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
@@ -29,7 +29,7 @@ its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.29.0
+VERSION=0.30.0
 gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
 ```
 
@@ -1023,7 +1023,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.29.0
+VERSION=0.30.0
 helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
   -n c4-factory-system --reuse-values --wait --timeout 10m
 ```
@@ -1063,8 +1063,8 @@ stays until you delete it.
 
 **Your objects keep working.** Write them at `c4.factory.io/v1beta1`. An
 object at `v1alpha1` still works: the version is deprecated, the API server
-warns on every request at it (kubectl prints the warning), and it may be
-dropped no earlier than 2027-01-22 (#1963). Within a served
+warns on every request at it (kubectl prints the warning), and a release 90
+or more days after v0.30.0 may drop it (#1963). Within a served
 version a release never removes, renames or retypes a field, never adds a
 required one and never tightens a rule so that an object you applied before
 is refused after; a change that must break waits for a new version that

@@ -148,7 +148,7 @@ function GitLabFacts({ target }: { target: DeployTarget }) {
         <span className="muted small">
           {' '}
           · copied to the project’s container registry, for a Container whose release builds an image, when the registry
-          is on and the token has read_registry and write_registry
+          is on and the token has api, or read_registry and write_registry
           {gitlab.url ? '; the instance names its registry' : ''}
         </span>
       </dd>
@@ -161,7 +161,7 @@ function GitLabKeys() {
   return (
     <p className="muted small">
       The operator reads its key <span className="mono">{GITLAB_SECRET_KEYS.token}</span>, a project access token with
-      the Maintainer role and the scopes api, read_registry and write_registry (a group or personal access token works
+      the Maintainer role and the api scope, which covers the container registry (a group or personal access token works
       the same); a deploy token can’t call the API. The same token logs in to the project’s container registry.
     </p>
   )

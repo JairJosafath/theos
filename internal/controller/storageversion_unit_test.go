@@ -11,6 +11,7 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -77,10 +78,15 @@ func TestEveryCRDStoresTheHub(t *testing.T) {
 	}
 }
 
+// isoDate finds a date such as 2027-01-22 in a deprecation warning.
+var isoDate = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
 // TestEveryCRDDeprecatesV1alpha1 holds every generated CRD of our group to
 // docs/plans/done/api-versions.md decision 6 (#1618): the v1alpha1 version is
 // marked deprecated, and its warning (what the API server sends back in a
-// Warning header, which the UI shows) names v1beta1 and the drop issue. The
+// Warning header, which the UI shows) names v1beta1, the 90-day rule and the
+// drop issue, and no date: the earliest drop date lives in #1963's body alone,
+// written when the release that deprecates v1alpha1 ships (#1983). The
 // +kubebuilder:deprecatedversion marker sits above each kind in api/v1alpha1.
 func TestEveryCRDDeprecatesV1alpha1(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "*.yaml"))
@@ -113,10 +119,13 @@ func TestEveryCRDDeprecatesV1alpha1(t *testing.T) {
 				t.Errorf("%s: the %s CRD does not mark %s deprecated; add +kubebuilder:deprecatedversion above the kind in api/%s/%s_types.go and run make manifests",
 					filepath.Base(file), crd.Spec.Names.Kind, old, old, strings.ToLower(crd.Spec.Names.Kind))
 			}
-			for _, want := range []string{hub, "#1963"} {
+			for _, want := range []string{hub, "A release 90 or more days after v0.30.0 may drop it", "#1963"} {
 				if !strings.Contains(v.DeprecationWarning, want) {
 					t.Errorf("%s: the %s CRD's %s deprecation warning %q does not name %q", filepath.Base(file), crd.Spec.Names.Kind, old, v.DeprecationWarning, want)
 				}
+			}
+			if date := isoDate.FindString(v.DeprecationWarning); date != "" {
+				t.Errorf("%s: the %s CRD's %s deprecation warning %q names the date %s; name the rule, the date belongs in #1963's body (#1983)", filepath.Base(file), crd.Spec.Names.Kind, old, v.DeprecationWarning, date)
 			}
 		}
 		if !found {

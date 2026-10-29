@@ -1,0 +1,62 @@
+# make check in a scaffolded aws-lambda-go v1.5.0 + aws-standard Container with the rds Connector v1.0.0 (issue #1924):
+# go run ./hack/render -out $S/go -type function Framework=aws-lambda-go Standard=aws-standard Deployment=gitea-release Connector=rds
+# (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
+# then, with no AWS variables, an empty HOME, Node v24.22.0, Go 1.26.10, golangci-lint v2.13.1 on PATH:
+# env -i PATH=$PATH HOME=$S/home NO_COLOR=1 npm_config_cache=$S/npm GOPATH=$S/gopath GOCACHE=$S/gocache make check
+# on 2026-10-28. synth writes both tiers, cdk.out/production/ and cdk.out/development/, under CDK Nag's
+# AWS Solutions and Serverless checks, and cfn-lint lints both with --include-checks I. Bundling and download lines are cut.
+# A first run under a load average of 24 on 8 cores timed out in infra/standard.test.ts's beforeAll (180 s hook); this rerun passed.
+
+npm ci --no-audit --no-fund
+added 141 packages in 32s
+cd src && go mod download
+cd src && go mod tidy -diff
+node_modules/.bin/prettier --check .
+Checking formatting...
+All matched files use Prettier code style!
+cd src && golangci-lint fmt --diff
+node_modules/.bin/eslint --max-warnings 0 .
+cd src && go vet ./...
+cd src && golangci-lint run
+0 issues.
+node_modules/.bin/tsc --noEmit
+cd src && go test -race -count=1 ./...
+ok  	c4factory.local/webshop/sample-app	1.107s
+node_modules/.bin/vitest run
+ RUN  v5.0.3 $S/go
+ ✓ infra/connector_rds.test.ts (7 tests) 24315ms
+   ✓ connectRDS (7)
+     ✓ keeps an encrypted Aurora Serverless v2 PostgreSQL cluster with a reader in production 21359ms
+     ✓ rotates the secret every 30 days in production, through an endpoint in its own VPC 933ms
+     ✓ throws the cluster away with the stack in development, pausing when idle and never rotating 379ms
+     ✓ hands the function the cluster, its secret and the database, and the Data API calls 525ms
+     ✓ puts the cluster in the user's VPC when it has one, and opens its port to the user 424ms
+     ✓ takes any grantee with an environment, not only a Lambda: a task role and its container 388ms
+ ✓ infra/dist.test.ts (4 tests) 27328ms
+   ✓ make dist (4)
+     ✓ writes each tier flat, with its paths rewritten to the flat names 18254ms
+     ✓ ships each asset once for both tiers, a directory zipped and a file as it is 352ms
+     ✓ writes the Framework's stacks for both tiers 8678ms
+ ✓ infra/standard.test.ts (100 tests) 30736ms
+   ✓ the Standard, in production (12)
+     ✓ leaves no error or warning on any stack 536ms
+   ✓ the Standard, in development (12)
+     ✓ leaves no error or warning on any stack 324ms
+ ✓ infra/api_stack.test.ts (19 tests) 35351ms
+   ✓ ApiStack (13)
+     ✓ defaults the alert email to alerts.email 2042ms
+     ✓ keeps only point-in-time recovery when retentionDays is 0 1435ms
+     ✓ copies the backups to the vault in copyToRegion 1391ms
+   ✓ ApiStack data stores (4)
+     ✓ connects the function to each Connector's data store and alarms on its table 1236ms
+     ✓ alarms on a cluster store by its CPU and connections, and backs it up by ARN 1401ms
+     ✓ reads the connections limit from the cluster scaling, and takes 1 ACU without one 980ms
+     ✓ connects the data stores of the rendered infra/connectors.ts by default 1136ms
+ Test Files  4 passed (4)
+      Tests  130 passed (130)
+   Start at  23:25:39
+   Duration  47.66s (tests 72%, import 24%, transform 4%)
+rm -rf cdk.out
+CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=production -o cdk.out/production && CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true node_modules/.bin/cdk --no-notices synth --quiet -c tier=development -o cdk.out/development && true
+uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/production/*.template.json cdk.out/development/*.template.json
+exit 0
