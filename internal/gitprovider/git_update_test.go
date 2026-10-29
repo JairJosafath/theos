@@ -121,7 +121,7 @@ func TestReadFiles(t *testing.T) {
 	p := localProvider(t)
 	repo := Repository{CloneURL: dir}
 
-	files, sha, err := p.ReadFiles(ctx, repo, defaultBranch, []string{
+	files, sha, err := p.ReadFiles(ctx, repo, DefaultBranch, []string{
 		"AGENTS.md", "scripts/check.sh", "docs/agents/implementer.md",
 		"missing.md",        // not there
 		"docs/missing/x.md", // in a directory that isn't there
@@ -145,7 +145,7 @@ func TestReadFiles(t *testing.T) {
 
 	// It reads the branch where it is now.
 	second := commitOnMain(t, dir, map[string]string{"AGENTS.md": "# agents, theirs\n"})
-	files, sha, err = p.ReadFiles(ctx, repo, defaultBranch, []string{"AGENTS.md"})
+	files, sha, err = p.ReadFiles(ctx, repo, DefaultBranch, []string{"AGENTS.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestReadFilesDirectory(t *testing.T) {
 	})
 	p := localProvider(t)
 
-	files, _, err := p.ReadFiles(ctx, Repository{CloneURL: dir}, defaultBranch, []string{
+	files, _, err := p.ReadFiles(ctx, Repository{CloneURL: dir}, DefaultBranch, []string{
 		"plan/",     // every file below, at any depth
 		"brief.md",  // a file beside it
 		"missing/",  // a directory that isn't there
@@ -252,7 +252,7 @@ func TestPushBranch(t *testing.T) {
 		t.Error("removing ci/'s last file left an empty ci directory")
 	}
 
-	if main, _ := branchAt(t, dir, defaultBranch); main.Hash.String() != base {
+	if main, _ := branchAt(t, dir, DefaultBranch); main.Hash.String() != base {
 		t.Errorf("main moved to %s, want it left at %s", main.Hash, base)
 	}
 
@@ -293,7 +293,7 @@ func TestPushBranchOnOlderBase(t *testing.T) {
 	if !reflect.DeepEqual(files, want) {
 		t.Errorf("branch files = %+v, want base's with the update, without main's newer change", files)
 	}
-	if main, _ := branchAt(t, dir, defaultBranch); main.Hash.String() != newer {
+	if main, _ := branchAt(t, dir, DefaultBranch); main.Hash.String() != newer {
 		t.Errorf("main moved to %s, want it left at %s", main.Hash, newer)
 	}
 }
@@ -351,7 +351,7 @@ func TestPushBranchRefuses(t *testing.T) {
 			want: "not a full commit SHA"},
 		{name: "an empty change", base: base, branch: updateBranch, files: agents, removes: []string{"gone.md"},
 			is: ErrEmptyChange},
-		{name: "the default branch", base: base, branch: defaultBranch, files: update, want: "default branch"},
+		{name: "the default branch", base: base, branch: DefaultBranch, files: update, want: "default branch"},
 		{name: "a path out of the tree", base: base, branch: updateBranch,
 			files: scaffold.Tree{"../x": {Data: []byte("x")}}, want: "invalid path"},
 	} {
@@ -370,7 +370,7 @@ func TestPushBranchRefuses(t *testing.T) {
 			if commit, _ := branchAt(t, dir, updateBranch); commit != nil {
 				t.Errorf("branch %s was pushed at %s", updateBranch, commit.Hash)
 			}
-			if main, _ := branchAt(t, dir, defaultBranch); main.Hash.String() != base {
+			if main, _ := branchAt(t, dir, DefaultBranch); main.Hash.String() != base {
 				t.Errorf("main moved to %s", main.Hash)
 			}
 		})
@@ -393,7 +393,7 @@ func TestPushDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PushDefaultBranch() error = %v", err)
 	}
-	main, files := branchAt(t, dir, defaultBranch)
+	main, files := branchAt(t, dir, DefaultBranch)
 	if main.Hash.String() != sha || len(main.ParentHashes) != 1 || main.ParentHashes[0].String() != base {
 		t.Fatalf("main is at %s (parents %v), want %s on %s", main.Hash, main.ParentHashes, sha, base)
 	}
@@ -406,7 +406,7 @@ func TestPushDefaultBranch(t *testing.T) {
 	if _, err := p.PushDefaultBranch(ctx, repo, base, again, nil, "Stale", updateAuthor); err == nil {
 		t.Fatal("PushDefaultBranch() on a stale base succeeded")
 	}
-	if main, _ := branchAt(t, dir, defaultBranch); main.Hash.String() != sha {
+	if main, _ := branchAt(t, dir, DefaultBranch); main.Hash.String() != sha {
 		t.Errorf("main moved to %s, want it left at %s", main.Hash, sha)
 	}
 }

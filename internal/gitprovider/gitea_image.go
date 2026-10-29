@@ -11,40 +11,8 @@ import (
 
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
-
-// ImageOutcome is what PublishImage did with a release's image archive.
-type ImageOutcome string
-
-const (
-	// ImagePublished means the registry has the image under the tag: pushed
-	// now, or already there with the same digest.
-	ImagePublished ImageOutcome = "Published"
-	// ImageNone means the release has no image archive.
-	ImageNone ImageOutcome = "NoImage"
-	// ImageInvalid means the release's archive can't be pushed: there are two,
-	// or its content is wrong. Reason says why; a retry won't help.
-	ImageInvalid ImageOutcome = "Invalid"
-	// ImageTagTaken means the tag names another digest in the registry, which
-	// the operator never replaces. Reason names both.
-	ImageTagTaken ImageOutcome = "TagTaken"
-)
-
-// Image is the result of publishing a release's image.
-type Image struct {
-	Outcome ImageOutcome
-	// Repository is the image's repository, <host>/<owner>/<repository>.
-	Repository string
-	// Tag is the release's tag, the image's tag.
-	Tag string
-	// Digest is the archive's root manifest digest, also when the tag names
-	// another; "" when there is no archive or it is invalid.
-	Digest string
-	// Platforms are the platforms the image runs on, attestations left out.
-	Platforms []string
-	// Reason says why an image is Invalid or TagTaken.
-	Reason string
-}
 
 // PublishImage pushes the image archive of repo's release of tag, its one
 // file named *.oci.tar, to the owner's container registry on the Git host
@@ -114,9 +82,10 @@ func (g *gitea) ImageDigest(ctx context.Context, repo Repository, tag string) (s
 
 // CopyImage copies repo's image at digest from the owner's registry to
 // toRepository at to, tagged tag.
-func (g *gitea) CopyImage(ctx context.Context, repo Repository, digest string, to oci.Registry,
+func (g *gitea) CopyImage(ctx context.Context, repo Repository, digest string, to ports.ImageRegistry,
 	toRepository, tag string) error {
-	if err := oci.Copy(ctx, g.registry(), imagePath(repo), digest, to, toRepository, tag); err != nil {
+	dest := oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password, Insecure: to.Insecure}
+	if err := oci.Copy(ctx, g.registry(), imagePath(repo), digest, dest, toRepository, tag); err != nil {
 		return fmt.Errorf("gitea: %w", err)
 	}
 	return nil

@@ -563,8 +563,8 @@ func (c *fakeECR) DescribeImages(_ context.Context, in *ecr.DescribeImagesInput,
 
 // copyImage is a Shipment's CopyImage of image into the account's ECR that
 // the registry's host names, logged in with the password its token gives.
-func (f *fakeAWS) copyImage(image string) func(context.Context, ports.Registry, string, string) error {
-	return func(_ context.Context, to ports.Registry, repository, tag string) error {
+func (f *fakeAWS) copyImage(image string) func(context.Context, ports.ImageRegistry, string, string) error {
+	return func(_ context.Context, to ports.ImageRegistry, repository, tag string) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		id, _, _ := strings.Cut(to.Host, ".")

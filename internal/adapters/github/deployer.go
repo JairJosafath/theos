@@ -213,7 +213,7 @@ func (d *Deployer) shipImage(ctx context.Context, t ports.Target, packages oci.R
 			Message: fmt.Sprintf("github: image %s:%s names %s, not the release's %s; it is left alone", ref,
 				s.Version, have, digest)}
 	}
-	err = s.CopyImage(ctx, ports.Registry{Host: packages.Host, Username: packages.Username,
+	err = s.CopyImage(ctx, ports.ImageRegistry{Host: packages.Host, Username: packages.Username,
 		Password: packages.Password}, repository, s.Version)
 	if errors.Is(err, oci.ErrSource) {
 		return "", false, err

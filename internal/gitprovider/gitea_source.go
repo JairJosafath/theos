@@ -10,27 +10,6 @@ import (
 	"strings"
 )
 
-// SourceMode is how git stores a file, as its tree entry's mode.
-type SourceMode string
-
-const (
-	// SourcePlain is a plain file.
-	SourcePlain SourceMode = "100644"
-	// SourceExecutable is a file with its execute bit set.
-	SourceExecutable SourceMode = "100755"
-	// SourceSymlink is a symbolic link; its content is the path it points to.
-	SourceSymlink SourceMode = "120000"
-)
-
-// SourceFile is a file of a repository at a tag, as ReadSource hands it on.
-type SourceFile struct {
-	// Path is the file's slash-separated path in the repository.
-	Path string
-	Mode SourceMode
-	// Size is the content's length in bytes.
-	Size int64
-}
-
 // maxSourceArchive bounds the archive ReadSource downloads. The archive goes to
 // the operator's /tmp, a 1 GiB volume it shares with PublishGoModule's archive
 // and module zip; past that the pod is evicted rather than the read failing.

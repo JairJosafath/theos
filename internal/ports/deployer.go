@@ -95,7 +95,7 @@ type Shipment struct {
 	// CopyImage copies Image, with its digest, to repository at a registry
 	// a target's nodes pull from, tagged tag; nil when there is no Image.
 	// The owner's registry's credential stays with the caller.
-	CopyImage func(ctx context.Context, to Registry, repository, tag string) error
+	CopyImage func(ctx context.Context, to ImageRegistry, repository, tag string) error
 	// Source is the release's source as the Git host holds it at Version,
 	// read and hashed by the caller with the factory's own files left out;
 	// nil where the target holds no source.
@@ -103,17 +103,6 @@ type Shipment struct {
 	// ReadSource streams Source's files again, each with its path and size,
 	// for an adapter that sends the ones the target lacks; nil with no Source.
 	ReadSource func(ctx context.Context, each func(path string, size int64, content io.Reader) error) error
-}
-
-// Registry is an OCI registry a target names and the credential from its
-// Secret that writes there.
-type Registry struct {
-	// Host is host[:port], without a scheme.
-	Host string
-	// Username and Password log in; both empty is anonymous.
-	Username, Password string
-	// Insecure speaks plain HTTP to Host; false is TLS.
-	Insecure bool
 }
 
 // File is a release file, opened only when the adapter sends it.
