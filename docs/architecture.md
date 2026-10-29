@@ -147,12 +147,12 @@ swappable here once its fake and two real adapters pass its contract.
 2. `internal/model` checks every catalog entry supports the Container type.
 3. `internal/gitprovider` creates the repository and fetches each template at its
    pinned ref.
-4. `internal/scaffold` renders the layers in order (Framework, Compute, Deployment,
-   Connectors), fails on a path owned by two layers, adds `.devcontainer/` and
+4. `internal/scaffold` renders the layers in order (Framework, Standard, Compute,
+   Deployment, Connectors, Domains), fails on a path owned by two layers, adds `.devcontainer/` and
    `.c4factory.yaml`, and returns one file tree.
 5. `internal/gitprovider` pushes that tree as a single commit.
-6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom` and
-   `appliedRelationships` with `appliedConnectors` (what each Relationship added).
+6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom`,
+   `scaffoldedDomains` and `appliedRelationships` with `appliedConnectors` (what each Relationship added).
 
 ## Flow of a Standard update
 

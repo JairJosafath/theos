@@ -32,6 +32,18 @@
 - A change to what the stacks keep, or how (a new table or bucket, a new
   key, another backup), updates `docs/runbook.md`'s steps in the same work,
   as a Standard change: the runbook is how the data comes back.
+{{- if has .Connectors "rds" }}
+- Relational data goes in the `rds` Connector's Aurora PostgreSQL
+  cluster, which `infra/connector_rds.ts` scaffolds with its grants and its
+  environment, and no code that queries it. `RDS_CLUSTER_ARN`,
+  `RDS_SECRET_ARN` and `RDS_DATABASE` name the cluster, its secret and the
+  database; a query goes through the Data API (the SDK's `rds-data`
+  client) with them{{ if eq .Framework "aws-fargate-ts" "aws-ec2-ts" }}, or through a driver with a pool on `RDS_HOST` and
+  `RDS_PORT`, with the user and password from `GetSecretValue` on the
+  secret, fetched again when a login fails{{ end }}. The schema is
+  migrations in the repository, the IAM database user among them; the
+  style guide's _Aurora PostgreSQL_ says how to write a query.
+{{- end }}
 {{- end -}}
 # Implementer guide
 

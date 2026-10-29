@@ -780,7 +780,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.21.1
+      ref: v1.22.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -822,7 +822,7 @@ catalog:
         supportedTypes: [cli, extension, operator, function, service, static-site, worker, job]
     - kind: Connector
       name: postgres
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: PostgreSQL
         description: A Postgres in the devcontainer, and on Kubernetes a Postgres StatefulSet and its connection settings, the password from a Secret.

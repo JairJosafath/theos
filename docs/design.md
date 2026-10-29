@@ -130,8 +130,9 @@ naming what was added or removed since (an adopted Container, scaffolded
 with none, names them all). The Standard's update renders with the Domains
 the scaffold used. The planner names the installed Domains an idea is about
 on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
-has the decisions; the kind, `domainRefs` and the layer are built, the
-Standards' guides, the webshop Domain and the planner are its later steps.
+has the decisions; all its steps are built: the kind, `domainRefs`, the
+layer, the Standards' guides, the webshop Domain, the planner and the UI's
+Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
 
 ## Scaffolding a Container
 
@@ -531,7 +532,10 @@ tools and envtest) run every check without a cluster.
   `aws-*` Frameworks, each a CDK app in TypeScript that deploys itself, with
   the `aws-standard` Standard; `make check` synthesizes the stacks offline
   under CDK Nag and cfn-lint, and CI deploys nothing. The `dynamodb`
-  Connector adds a table to the stack.
+  Connector adds a table to the stack, the `rds` Connector an Aurora
+  PostgreSQL Serverless v2 cluster with its secret; an AWS Container keeps
+  relational data in `rds`, never `postgres`, which refuses an AWS Framework
+  ([plans/aws-rds.md](plans/aws-rds.md)).
 - **The tier is where an AWS app runs.** Every AWS repository synthesizes
   both; a deploy target picks one, a hand deploy is `development`.
   `production` keeps and protects data, with point-in-time recovery, a daily
@@ -965,7 +969,7 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
 - **Out of scope:** monorepos (an existing repository of one application
   may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
-  it writes may run the store, as postgres's StatefulSet or dynamodb's table,
+  it writes may run the store, as postgres's StatefulSet, dynamodb's table or rds's cluster,
   but the operator creates none); monitoring the apps beyond what a deploy
   target's tool reports.
 - **One Git host.** Gitea is the only one built; another plugs into the

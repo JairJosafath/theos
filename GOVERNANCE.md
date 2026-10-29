@@ -54,9 +54,8 @@ choice it would make and why. The list is in the *Needs you* section of the
 pinned *Maintainer report* issue, which is the one place the owner reads.
 
 - Credentials, access, accounts and secrets.
-- What agents may run: the permission rules in `.claude/settings.json`. Today
-  they allow exactly `hack/lib/github.sh land` and `hack/release.sh`, the two
-  commands the owner already gave the relay, and no agent widens them.
+- What agents may run: the permission rules in `.claude/settings.json`.
+  The owner widens them, and no agent does.
 - Money: anything that costs more, such as more agents, a bigger model or a
   paid service.
 - Licensing, trademarks, this governance and the Code of Conduct.
