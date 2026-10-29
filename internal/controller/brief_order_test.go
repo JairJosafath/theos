@@ -88,12 +88,36 @@ The CLI checks a file with the core's checker.
 // Project controllers. 10 s ran out on a loaded device (#832) and the suite's
 // 30 s on a loaded CI runner, before Container cli existed (#1848); a passing
 // wait returns as soon as it holds, so only a failing spec waits this long.
+// 90 s ran out too, cli still not made, in a whole shard though never with the
+// spec alone (#1990): the first wait says where the Brief stood, so the next
+// failure names the stall.
 const orderWait = 90 * time.Second
+
+// briefStand says where Brief cel-lens and its round 1 plan Task stand, for a
+// wait that times out before the round applied (#1990).
+func briefStand(ns string) string {
+	var b c4v1beta1.Brief
+	if err := k8sClient.Get(ctx, key(ns, "cel-lens"), &b); err != nil {
+		return "Brief: " + err.Error()
+	}
+	out := fmt.Sprintf("Brief phase %s round %d", b.Status.Phase, b.Status.Round)
+	for _, c := range b.Status.Conditions {
+		out += fmt.Sprintf("; %s=%s %s: %s", c.Type, c.Status, c.Reason, c.Message)
+	}
+	var t c4v1beta1.Task
+	if err := k8sClient.Get(ctx, key(ns, "cel-lens-plan-1"), &t); err != nil {
+		out += "; Task: " + err.Error()
+	} else {
+		out += fmt.Sprintf("; Task phase %s try %d, annotations %v", t.Status.Phase, t.Status.Round, t.Annotations)
+	}
+	return out + fmt.Sprintf("; Brief events %v", briefEvents(Default, ns))
+}
 
 var _ = Describe("Brief issue order", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
 
+	// #1848, #1990: under a whole suite's load the round's Containers came late.
 	It("files an issue after the ones it builds on, depending on them, and labels it ready last", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
@@ -105,10 +129,11 @@ var _ = Describe("Brief issue order", func() {
 		planRound(ns, 1, 1, orderedPlan(ns))
 
 		By("holding the CLI's issue while the core it builds on isn't Ready, though the CLI is")
+		stand := func() string { return briefStand(ns) }
 		Eventually(func(g Gomega) {
 			var cli c4v1beta1.Container
-			g.Expect(k8sClient.Get(ctx, key(ns, "cli"), &cli)).To(Succeed())
-			g.Expect(cli.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+			g.Expect(k8sClient.Get(ctx, key(ns, "cli"), &cli)).To(Succeed(), stand)
+			g.Expect(cli.Status.Phase).To(Equal(c4v1beta1.ContainerReady), stand)
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("waits for Container core"))))

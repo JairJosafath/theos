@@ -137,12 +137,25 @@ to come up healthy, the update stops and CloudFormation rolls back.
   Container promises.
 - `infra/connectors.ts` lists the data stores the Container's Relationships
   connect it to, which C4 Factory renders from their Connectors; the stack
-  connects each to the instances, alarms on its table and backs it up.
+  connects each to the instances, alarms on it and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and
   the server is handed its name in `DYNAMODB_TABLE_NAME`; the starter's
   `src/main.ts` doesn't read it yet. New data goes in that table: the `Items`
   table (`TABLE_NAME`) is the starter's example.
+{{- end }}
+{{- if has .Connectors "rds" }} The
+  `rds` DataStore's Aurora PostgreSQL cluster is made by
+  `infra/connector_rds.ts` in this stack's VPC, and the server is handed
+  `RDS_CLUSTER_ARN`, `RDS_SECRET_ARN`, `RDS_DATABASE`, `RDS_HOST` and
+  `RDS_PORT`. Query it through the Data API
+  (`@aws-sdk/client-rds-data`'s
+  `ExecuteStatementCommand({ resourceArn, secretArn, database, sql })`), or
+  with a PostgreSQL driver such as `pg` at `RDS_HOST`:`RDS_PORT`, with the
+  user name and password of the secret `RDS_SECRET_ARN` names (fetched with
+  `@aws-sdk/client-secrets-manager`). The cluster's security group lets this
+  stack's instances in. The IAM database user is a migration this
+  repository runs.
 {{- end }}
 {{- if .Standard }}
 - `infra/main.ts` is the CDK app `cdk synth` runs (`cdk.json`), and

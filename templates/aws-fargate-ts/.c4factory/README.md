@@ -128,12 +128,20 @@ container asset that synth only stages.
 - **Data stores:** `infra/connectors.ts`, rendered from `.Connectors`, exports
   `DATA_STORES`: one entry per Connector of a DataStore the Container's
   Relationships name that this Framework knows (`dynamodb`, whose
-  `infra/connector_dynamodb.ts` makes the table), and none otherwise. The
+  `infra/connector_dynamodb.ts` makes the table, and since v2.2.0 `rds`,
+  whose `infra/connector_rds.ts` makes an Aurora Serverless v2 PostgreSQL
+  cluster), and none otherwise. A `DataStore` is a `Table` or a
+  `DatabaseCluster`. The
   stack calls each entry with a `DataStoreUser` of the task role and the App
   container's `addEnvironment`, and the tier's `TIER_RULES`, so the Connector
-  makes its table, grants the role its calls and hands the container the
-  table's name; the stack alarms on the table like its own and backs it up
-  by ARN. The `Items` table stays beside it as the
+  makes its store, grants the role its calls and hands the container the
+  store's name or ARNs. The user's `network` is the stack's VPC and the
+  service's security group, so a cluster goes in the VPC's private subnets,
+  lets the tasks in and hands them `RDS_HOST` and `RDS_PORT` too. The stack
+  alarms on a table like its own, on a cluster by its CPU (90%) and its
+  connections (nine tenths of what its largest capacity allows,
+  `maxConnections`, the alarm a deployment rolls back on), and the backup
+  plan names each by ARN (`Arn`, `DBClusterArn`). The `Items` table stays beside it as the
   starter's example; the README says new data goes in the DataStore's table.
   `infra/connectors.ts` is aws-lambda-ts's.
 - **Writes:** `package.json`, `package-lock.json`, `tsconfig.json`,
@@ -188,7 +196,8 @@ container asset that synth only stages.
   the image, and the deployer copies it to ECR by digest (#1610).
   v2.1.0 renders `infra/connectors.ts` and connects the service to each
   `dynamodb` DataStore's table through its task role and the App container's
-  environment, alarming on it and backing it up (#1742).
+  environment, alarming on it and backing it up (#1742). v2.2.0 connects
+  the service to an `rds` DataStore's cluster in its own VPC (#1926).
 - **Devcontainer:** `.c4factory/devcontainer.json` uses `c4factory/go:1.26`, the
   Go and Node toolchain CI and agents use, with ESLint and Prettier set up.
 
