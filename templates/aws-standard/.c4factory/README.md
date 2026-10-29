@@ -207,7 +207,11 @@ byte for byte.
   Standard knows an Aurora cluster: `BACKED_UP_TYPES` gains
   `AWS::RDS::DBCluster`, the backup selection names clusters by
   `DBClusterArn`, and the encryption, removal, deletion protection and
-  recovery rules check every cluster (#1921).
+  recovery rules check every cluster (#1921). v1.21.1 carries the
+  `attrDbClusterArn` selection, the key-of-the-stack encryption rule and
+  the secret acknowledgement that landed after v1.21.0 was tagged, and
+  its `infra/standard.test.ts` passes a rendered copy's `tsc` under
+  `exactOptionalPropertyTypes` (#1987).
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/well-architected.md`, `docs/agents/implementer.md`,

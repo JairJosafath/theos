@@ -206,6 +206,86 @@ func TestRDSConnectorConnectsToAWSLambdaPyAndGo(t *testing.T) {
 	}
 }
 
+// TestRDSConnectorConnectsToAWSServices: aws-fargate-ts and aws-ec2-ts wire
+// the rds Connector with their own VPC and security group, alone and beside
+// dynamodb (#1926, docs/plans/aws-rds.md).
+func TestRDSConnectorConnectsToAWSServices(t *testing.T) {
+	for _, tc := range []struct{ framework, group string }{
+		{"aws-fargate-ts", "serviceSecurityGroup"},
+		{"aws-ec2-ts", "instanceSecurityGroup"},
+	} {
+		t.Run(tc.framework, func(t *testing.T) {
+			result := renderAWS(t, model.TypeService, tc.framework, "rds")
+			for _, path := range []string{"infra/connector_rds.ts", "infra/connector_rds.test.ts"} {
+				if _, ok := result.Files[path]; !ok {
+					t.Errorf("the rds Connector writes no %s", path)
+				}
+			}
+			connectors := string(result.Files["infra/connectors.ts"].Data)
+			for _, want := range []string{
+				"import { connectRDS } from './connector_rds';",
+				"export type DataStore = Table | DatabaseCluster;",
+				"= [['RDS', connectRDS]];",
+			} {
+				if !strings.Contains(connectors, want) {
+					t.Errorf("infra/connectors.ts lacks %q:\n%s", want, connectors)
+				}
+			}
+			if strings.Contains(connectors, "connector_dynamodb") {
+				t.Errorf("infra/connectors.ts imports the dynamodb Connector it doesn't have:\n%s", connectors)
+			}
+			// The cluster joins the stack's VPC behind the user's security
+			// group, is alarmed on and backed up by the ARN the Standard reads.
+			stack := string(result.Files["infra/service_stack.ts"].Data)
+			wants := []string{
+				"network: { vpc, connections: " + tc.group + ".connections },",
+				"alarms.monitoring.monitorAuroraCluster({",
+				"addMaxConnectionCountAlarm: { Critical: { maxConnectionCount: maxConnections(cluster) } },",
+				"clusters: clusters.map(([, cluster]) => cluster),",
+			}
+			if tc.framework == "aws-ec2-ts" {
+				// Its VPC has no way out: the server and the rotation reach
+				// Secrets Manager and the Data API through endpoints.
+				wants = append(wants, "InterfaceVpcEndpointAwsService.SECRETS_MANAGER", "InterfaceVpcEndpointAwsService.RDS_DATA")
+			}
+			for _, want := range wants {
+				if !strings.Contains(stack, want) {
+					t.Errorf("infra/service_stack.ts lacks %q", want)
+				}
+			}
+			if backups := string(result.Files["infra/backups.ts"].Data); !strings.Contains(backups, "(cluster.node.defaultChild as CfnDBCluster).attrDbClusterArn") {
+				t.Error("infra/backups.ts doesn't select a cluster by its DBClusterArn")
+			}
+			readme := string(result.Files["README.md"].Data)
+			for _, want := range []string{"RDS_CLUSTER_ARN", "RDS_SECRET_ARN", "RDS_DATABASE", "RDS_HOST", "RDS_PORT", "ExecuteStatementCommand"} {
+				if !strings.Contains(readme, want) {
+					t.Errorf("README.md lacks %q", want)
+				}
+			}
+
+			both := renderAWS(t, model.TypeService, tc.framework, "dynamodb", "rds")
+			connectors = string(both.Files["infra/connectors.ts"].Data)
+			for _, want := range []string{
+				"import { connectDynamoDB } from './connector_dynamodb';",
+				"import { connectRDS } from './connector_rds';",
+				"  ['DynamoDB', connectDynamoDB],\n  ['RDS', connectRDS],\n];",
+			} {
+				if !strings.Contains(connectors, want) {
+					t.Errorf("infra/connectors.ts with both Connectors lacks %q:\n%s", want, connectors)
+				}
+			}
+			for _, path := range []string{"infra/connector_dynamodb.ts", "infra/connector_rds.ts"} {
+				if _, ok := both.Files[path]; !ok {
+					t.Errorf("both Connectors write no %s", path)
+				}
+			}
+			if readme := string(both.Files["README.md"].Data); !strings.Contains(readme, "DYNAMODB_TABLE_NAME") || !strings.Contains(readme, "RDS_HOST") {
+				t.Error("README.md with both Connectors doesn't name both stores' variables")
+			}
+		})
+	}
+}
+
 // TestRDSConnectorFailsAFrameworkThatDoesNotWireIt: as dynamodb's guard, the
 // rds Connector's file refuses a Framework with no infra/connectors.ts (#1923).
 func TestRDSConnectorFailsAFrameworkThatDoesNotWireIt(t *testing.T) {

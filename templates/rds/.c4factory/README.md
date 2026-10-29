@@ -5,7 +5,7 @@ PostgreSQL cluster. A Container gets it through a Relationship to a DataStore
 backed by this Connector, so the cluster is the model's, not the Framework's
 ([docs/plans/aws-rds.md](../../../docs/plans/aws-rds.md)).
 
-- **Supports:** `function`
+- **Supports:** `function`, `service`, `worker`, `job`
 - **Writes:** `infra/connector_rds.ts` and its test. `connectRDS` makes one
   cluster per Container (PostgreSQL 16, Serverless v2, a database named after
   the Container in snake case), encrypted with its own customer managed key,
@@ -39,7 +39,10 @@ backed by this Connector, so the cluster is the model's, not the Framework's
 - **Frameworks:** a Framework wires it in its `infra/connectors.ts`, rendered
   with `{{ if has .Connectors "rds" }}`, and alarms on the cluster's CPU and
   connections like its own tables. `aws-lambda-ts`, `aws-lambda-py` and `aws-lambda-go`
-  do (since v1.5.0). The
+  do (since v1.5.0), `aws-queue-ts`, `aws-event-ts` and `aws-schedule-ts`
+  (v1.3.0, #1925), and `aws-fargate-ts` (v2.2.0) and `aws-ec2-ts` (v1.4.0)
+  with their own VPC and security group, so the cluster joins that VPC
+  (#1926). The
   catalog's `wiredBy` names them, so a Container on another Framework is
   refused at `ChoicesValid` (`NotWired`); a Framework that renders no
   `infra/connectors.ts` is refused by `connector_rds.ts.tmpl`'s `{{ fail }}`
