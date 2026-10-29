@@ -90,6 +90,10 @@ type ContainerReconciler struct {
 	// *imagePush by UID, and imagePushEnded wakes the Container when one ends.
 	imagePushing   sync.Map
 	imagePushEnded chan event.GenericEvent
+	// uids remembers each Container's UID by NamespacedName, so a reconcile
+	// that finds the Container gone (it carries no finalizer, so the Get is
+	// NotFound with no object) still knows whose entries to forget (#1629).
+	uids sync.Map
 }
 
 // +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
@@ -139,6 +143,24 @@ func (r *ContainerReconciler) forget(uid types.UID) {
 	}
 }
 
+// remember keeps the UID of the Container by its name. A Container deleted
+// and made again under its name between two reconciles has a new UID, and
+// the old one's entries go.
+func (r *ContainerReconciler) remember(name types.NamespacedName, uid types.UID) {
+	if old, loaded := r.uids.Swap(name, uid); loaded && old.(types.UID) != uid {
+		r.forget(old.(types.UID))
+	}
+}
+
+// forgetName forgets the Container last seen under name, whose Get is
+// NotFound: it carries no finalizer, so no reconcile saw it being deleted
+// (#1629).
+func (r *ContainerReconciler) forgetName(name types.NamespacedName) {
+	if uid, ok := r.uids.LoadAndDelete(name); ok {
+		r.forget(uid.(types.UID))
+	}
+}
+
 // Reconcile adopts the Container, resolves its references, checks its catalog
 // choices and scaffolds its repository once.
 func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -146,12 +168,17 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	var container c4v1beta1.Container
 	if err := r.Get(ctx, req.NamespacedName, &container); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.forgetName(req.NamespacedName)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !container.DeletionTimestamp.IsZero() {
+		r.uids.Delete(req.NamespacedName)
 		r.forget(container.UID)
 		return ctrl.Result{}, nil
 	}
+	r.remember(req.NamespacedName, container.UID)
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
