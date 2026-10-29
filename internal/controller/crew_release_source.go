@@ -25,6 +25,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // Events of publishing a release's source.
@@ -71,7 +72,7 @@ func (r *CrewReconciler) sourceOverlaps(ctx context.Context, crew *c4v1beta1.Cre
 // secrets as it streams, known among them, and the files kept are checked
 // (model.PublishChecks) into the source's Problems.
 func readSource(ctx context.Context, c client.Reader, container *c4v1beta1.Container,
-	provider gitprovider.Provider, repo gitprovider.Repository, tag string, known []string) (*model.ReleaseSource, error) {
+	provider ports.GitHost, repo gitprovider.Repository, tag string, known []string) (*model.ReleaseSource, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
 		return nil, err

@@ -9,6 +9,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // gitProviderCI returns the CI system of a GitProvider's Git host: the host's
@@ -61,7 +62,7 @@ func protection(ctx context.Context, c client.Reader, container *c4v1beta1.Conta
 // are merged by the operator, and keeps release tags to the operator. It does
 // nothing for a Container without a Standard, which has no checks to require.
 // It is safe to repeat, so it also brings older repositories up to date.
-func protectRepository(ctx context.Context, c client.Reader, provider gitprovider.Provider,
+func protectRepository(ctx context.Context, c client.Reader, provider ports.GitHost,
 	repo gitprovider.Repository, container *c4v1beta1.Container) error {
 	if !model.Protected(container.Choices().Standard != "") {
 		return nil

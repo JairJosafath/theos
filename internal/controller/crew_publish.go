@@ -70,7 +70,11 @@ type ReleaseTargets interface {
 // once per release and reason, and is tried again on the next poll. The
 // release is named after the Container, its display name or else its name.
 func (r *CrewReconciler) publishRelease(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
-	status *c4v1beta1.CrewStatus, provider gitprovider.Provider, repo gitprovider.Repository,
+	status *c4v1beta1.CrewStatus, provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.Registry
+	}, repo gitprovider.Repository,
 	tasks []c4v1beta1.Task) {
 	spec := crew.Spec.PublishReleases
 	release := status.LastRelease
@@ -176,12 +180,15 @@ type publishPass struct {
 	// container is the Container whose release goes out.
 	container *c4v1beta1.Container
 	log       logr.Logger
-	provider  gitprovider.Provider
-	repo      gitprovider.Repository
-	spec      *c4v1beta1.CrewPublishReleases
-	token     string
-	tag       string
-	facts     *model.PublishFacts
+	provider  interface {
+		ports.GitHost
+		ports.Issues
+	}
+	repo  gitprovider.Repository
+	spec  *c4v1beta1.CrewPublishReleases
+	token string
+	tag   string
+	facts *model.PublishFacts
 	// merged are the issues of the Container's Merged Tasks.
 	merged []int
 	target gitprovider.ReleaseTarget
@@ -395,7 +402,7 @@ func sourceRelease(rel *gitprovider.Release) *model.SourceRelease {
 
 // releaseIssues reads the closed issues of the release's milestone, which the
 // Crew closed when it tagged the release, and keeps those a Task merged.
-func releaseIssues(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func releaseIssues(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	tag string, merged []int) ([]model.ReleaseIssue, error) {
 	id, err := provider.EnsureMilestone(ctx, repo, tag, "")
 	if err != nil {
@@ -519,7 +526,7 @@ func isSourceStep(step model.PublishStep) bool {
 // releaseSource streams the files of the Git host's tag for the Deployer,
 // each with its path and size; a failure of the Git host's own, not of each,
 // is a giteaError.
-func releaseSource(provider gitprovider.Provider, repo gitprovider.Repository,
+func releaseSource(provider ports.GitHost, repo gitprovider.Repository,
 	tag string) func(context.Context, func(string, int64, io.Reader) error) error {
 	return func(ctx context.Context, each func(path string, size int64, content io.Reader) error) error {
 		var eachErr error
@@ -536,7 +543,7 @@ func releaseSource(provider gitprovider.Provider, repo gitprovider.Repository,
 
 // releaseFiles are the files of a Git host's release, each streamed from it
 // when the Deployer sends it; a failure to give one is a giteaError.
-func releaseFiles(provider gitprovider.Provider, repo gitprovider.Repository,
+func releaseFiles(provider ports.GitHost, repo gitprovider.Repository,
 	assets []gitprovider.ReleaseAsset) []ports.File {
 	files := make([]ports.File, 0, len(assets))
 	for _, a := range assets {

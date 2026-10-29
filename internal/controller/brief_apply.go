@@ -29,6 +29,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // briefLabelColor is the color of a label a planner asks for that the factory
@@ -468,7 +469,7 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 // issueRepo is a Container's repository as this reconcile files issues in it:
 // its labels made and its open issues listed once.
 type issueRepo struct {
-	provider gitprovider.Provider
+	provider ports.Issues
 	repo     gitprovider.Repository
 	open     []gitprovider.Issue
 	// minor and patch are the IDs of the milestones the round's other work and

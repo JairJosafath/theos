@@ -17,6 +17,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // reasonStandardFailureFiled is the Event of a filed failure issue.
@@ -62,7 +63,7 @@ func (u *standardUpdate) fileFailure(ctx context.Context, gitCtx context.Context
 
 // fileStandardFailure returns the open issue of the failure in repo, or files
 // it there. isNew says it was filed now.
-func fileStandardFailure(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func fileStandardFailure(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	failure model.StandardFailure) (gitprovider.Issue, bool, error) {
 	l := model.BugLabel()
 	labels := append(issueLabels(),

@@ -28,6 +28,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -50,7 +51,10 @@ func (e errNeedsInput) Error() string { return e.sentence }
 
 // briefGit reads the Brief's GitProvider and its credentials. A missing one is
 // errNeedsInput, naming it.
-func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1beta1.Brief) (gitprovider.Provider, error) {
+func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1beta1.Brief) (interface {
+	ports.GitHost
+	ports.AgentAccess
+}, error) {
 	name := brief.Spec.GitProviderRef.Name
 	var provider c4v1beta1.GitProvider
 	err := r.Get(ctx, client.ObjectKey{Namespace: brief.Namespace, Name: name}, &provider)
@@ -244,7 +248,7 @@ func (r *BriefReconciler) leaveBot(ctx context.Context, brief *c4v1beta1.Brief, 
 
 // writeWorkspace puts files on main: as its first commit in an empty
 // repository, else as one more commit when any of them differs.
-func writeWorkspace(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func writeWorkspace(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
 	files scaffold.Tree) error {
 	author := gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commits, err := provider.History(ctx, repo, 1)
@@ -339,7 +343,10 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1beta1.
 			released[crew.Spec.ContainerRef.Name] = true
 		}
 	}
-	providers := map[string]gitprovider.Provider{}
+	providers := map[string]interface {
+		ports.GitHost
+		ports.Issues
+	}{}
 	var out []model.WorkspaceContainer
 	var suggestions []model.Suggestion
 	var failed []model.FailedIssue
@@ -393,7 +400,10 @@ func (r *BriefReconciler) containerIssues(ctx context.Context, brief *c4v1beta1.
 }
 
 // readFailedRelease is failedRelease with the workspace's Git timeout.
-func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitprovider.Provider,
+func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider interface {
+	ports.GitHost
+	ports.Issues
+},
 	c *c4v1beta1.Container, issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
@@ -401,14 +411,17 @@ func (r *BriefReconciler) readFailedRelease(ctx context.Context, provider gitpro
 }
 
 // readGoneProposal is goneProposal with the workspace's Git timeout.
-func (r *BriefReconciler) readGoneProposal(ctx context.Context, provider gitprovider.Provider,
+func (r *BriefReconciler) readGoneProposal(ctx context.Context, provider ports.GitHost,
 	c *c4v1beta1.Container, issue gitprovider.Issue) (string, error) {
 	gitCtx, cancel := context.WithTimeout(ctx, briefIssuesTimeout)
 	defer cancel()
 	return goneProposal(gitCtx, provider, provider.Repository(c.Name), issue)
 }
 
-func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]gitprovider.Provider,
+func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]interface {
+	ports.GitHost
+	ports.Issues
+},
 	c *c4v1beta1.Container) ([]gitprovider.Issue, error) {
 	name := c.Spec.GitProviderRef.Name
 	provider, ok := providers[name]

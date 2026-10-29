@@ -21,6 +21,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // ConditionPackagesPublished says whether every npm and PyPI package file of a
@@ -55,7 +56,7 @@ const packagesTimeout = 5 * time.Minute
 // PublishPyPIPackage); a file left unpublished is a Warning Event, once per
 // release.
 func (r *CrewReconciler) publishPackages(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider gitprovider.Provider, repo gitprovider.Repository) {
+	provider ports.Registry, repo gitprovider.Repository) {
 	release := status.LastRelease
 	if release == nil {
 		return

@@ -25,6 +25,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // A Standard change: the implementer needed protected files changed, pushed that
@@ -110,7 +111,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1beta1.Task, stat
 // proposal's branch, other than the one numbered skip, or files it: labelled
 // kind/standard-change and status/ready, in the waiting issue's milestone, and
 // urgent when the waiting issue is. isNew says it was filed now.
-func fileStandardChange(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func fileStandardChange(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
 	task *c4v1beta1.Task, proposal model.Proposal, waiting gitprovider.Issue, skip int) (gitprovider.Issue, bool, error) {
 	if err := provider.EnsureLabels(ctx, repo, standardChangeLabels()); err != nil {
 		return gitprovider.Issue{}, false, err
@@ -271,7 +272,7 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1bet
 
 // deleteProposal deletes the proposal branch of the Task's Standard change:
 // nothing reads it once the change merged or will not.
-func deleteProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func deleteProposal(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
 	change *c4v1beta1.TaskStandardChange) error {
 	if change == nil || change.Branch == "" {
 		return nil
@@ -308,7 +309,7 @@ func (r *TaskReconciler) dropProposal(ctx context.Context, task *c4v1beta1.Task,
 
 // deleteChangeProposal deletes the proposal branch a Standard change issue
 // names, if it names one: its change merged or was closed.
-func deleteChangeProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func deleteChangeProposal(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
 	issue gitprovider.Issue) error {
 	branch := model.ProposalBranchOf(issue.Body)
 	if !slices.Contains(issue.Labels, model.LabelStandardChange) || branch == "" {
@@ -320,7 +321,7 @@ func deleteChangeProposal(ctx context.Context, provider gitprovider.Provider, re
 // goneProposal returns the proposal branch of Standard change issue when the
 // Git host no longer has it, so a retry would have nothing to merge; "" for
 // another issue, or a branch still there.
-func goneProposal(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func goneProposal(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
 	issue gitprovider.Issue) (string, error) {
 	branch := model.ProposalBranchOf(issue.Body)
 	if !slices.Contains(issue.Labels, model.LabelStandardChange) || branch == "" {
@@ -363,7 +364,7 @@ func mergeWaitsForChecks(status *c4v1beta1.TaskStatus) bool {
 // running is errChecksPending; a list of changed paths too long to read in full
 // is a refusal, and one it can't read for now an error. The reviewer's approval
 // is posted with the merge only, so waiting for CI posts it once.
-func (r *TaskReconciler) gatedMerge(ctx context.Context, provider gitprovider.Provider, repo gitprovider.Repository,
+func (r *TaskReconciler) gatedMerge(ctx context.Context, provider ports.GitHost, repo gitprovider.Repository,
 	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container,
 	reviewer *c4v1beta1.Agent) (refusal string, err error) {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
