@@ -17,8 +17,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -102,7 +102,7 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		project := gitlabSourceTarget(ns, "open")
 		all, app := appSource("example.com/orders")
 		// GitLab's Commits API carries no symlinks; the tree without one.
-		all = slices.DeleteFunc(all, func(f fake.SourceFile) bool { return f.Mode == gitprovider.SourceSymlink })
+		all = slices.DeleteFunc(all, func(f fake.SourceFile) bool { return f.Mode == ports.SourceSymlink })
 		delete(app, "run")
 		gitFake.SetSource(ns, "orders-cli", "v0.1.0", all...)
 		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",

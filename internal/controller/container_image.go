@@ -21,8 +21,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // imageTimeout bounds one image push: it streams the release's whole archive
@@ -147,14 +147,14 @@ func (r *ContainerReconciler) pushImage(ctx context.Context, container *c4v1beta
 	switch {
 	case err != nil:
 		img.Message = err.Error()
-	case out.Outcome == gitprovider.ImagePublished:
+	case out.Outcome == ports.ImagePublished:
 		now := metav1.Now()
 		img.State, img.PublishedTime = model.ImageStatePublished, &now
 		img.Message = fmt.Sprintf("%s:%s is %s, for %s.", out.Repository, tag, out.Digest,
 			strings.Join(out.Platforms, ", "))
-	case out.Outcome == gitprovider.ImageInvalid:
+	case out.Outcome == ports.ImageInvalid:
 		img.State, img.Message = model.ImageStateInvalid, out.Reason
-	case out.Outcome == gitprovider.ImageTagTaken:
+	case out.Outcome == ports.ImageTagTaken:
 		img.State, img.Message = model.ImageStateTagTaken, out.Reason
 	default:
 		img.State = model.ImageStateNoImage

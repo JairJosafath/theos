@@ -42,13 +42,15 @@ import (
 	"github.com/JairJosafath/c4factory/features"
 	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
 	"github.com/JairJosafath/c4factory/internal/adapters/cloudformation"
-	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/adapters/git"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitea"
+	"github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
 	"github.com/JairJosafath/c4factory/internal/buildinfo"
 	"github.com/JairJosafath/c4factory/internal/controller"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -352,7 +354,7 @@ func main() {
 		OperatorVersion:   buildinfo.Version,
 		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
-		Git:               gitprovider.Client{},
+		Git:               gitClient{},
 		CIGoCache:         ciGoCache,
 		ClusterDNS:        clusterDNSPeers,
 	}).SetupWithManager(mgr); err != nil {
@@ -380,7 +382,7 @@ func main() {
 		setupLog.Error(err, "Failed to make the Argo CD adapter's client")
 		os.Exit(1)
 	}
-	deployers := ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(gitprovider.Client{}),
+	deployers := ports.Deployers{model.DeployMemberGitHub: github.New(github.Client{}),
 		model.DeployMemberGitLab:         gitlab.New(nil),
 		model.DeployMemberArgoCD:         argocd.New(argoClient),
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
@@ -388,7 +390,7 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		APIReader:       mgr.GetAPIReader(),
-		Git:             gitprovider.Client{},
+		Git:             gitClient{},
 		ScaffoldOptions: scaffoldOptions,
 		Recorder:        mgr.GetEventRecorder("container"),
 		Deployers:       deployers,
@@ -422,7 +424,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		APIReader:         mgr.GetAPIReader(),
-		Git:               gitprovider.Client{},
+		Git:               gitClient{},
 		MaxSandboxes:      maxAgentSandboxes,
 		WorkspaceMemory:   workspaceQuantity,
 		SandboxGoCache:    sandboxGoCache,
@@ -440,7 +442,8 @@ func main() {
 		Scheme:    mgr.GetScheme(),
 		APIReader: mgr.GetAPIReader(),
 		Deployers: deployers,
-		Git:       gitprovider.Client{},
+		Git:       gitClient{},
+		Publish:   github.Client{},
 		Recorder:  mgr.GetEventRecorder("crew"),
 		GoProxy:   goProxyURL(goProxy),
 	}).SetupWithManager(mgr); err != nil {
@@ -451,7 +454,8 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		APIReader:       mgr.GetAPIReader(),
-		Git:             gitprovider.Client{},
+		Git:             gitClient{},
+		Issues:          github.Client{},
 		Recorder:        mgr.GetEventRecorder("brief"),
 		SharedSecrets:   sharedSecrets,
 		SourceNamespace: podNamespace,
@@ -524,6 +528,20 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// gitClient is the controllers' GitClient: the Gitea adapter builds the Git
+// host's Providers, and plain Git fetches templates.
+type gitClient struct {
+	hosts     gitea.Client
+	templates git.Client
+}
+
+func (c gitClient) Provider(cfg ports.Config) (ports.Provider, error) { return c.hosts.Provider(cfg) }
+
+func (c gitClient) FetchTemplate(ctx context.Context, url, ref string,
+	creds *ports.Credentials) (scaffold.Tree, error) {
+	return c.templates.FetchTemplate(ctx, url, ref, creds)
 }
 
 // goProxyURL is the Go proxy the --go-proxy flag names, "" for off.

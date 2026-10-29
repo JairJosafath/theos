@@ -19,7 +19,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -33,7 +32,7 @@ const reasonBumpFiled = "BumpFiled"
 // published (model.ReleaseBumpable). A failure is logged and tried again on the
 // next poll.
 func (r *CrewReconciler) fileBumps(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	repo gitprovider.Repository) {
+	repo ports.Repository) {
 	release := status.LastRelease
 	if release == nil {
 		return
@@ -102,27 +101,27 @@ func (r *CrewReconciler) bundlers(ctx context.Context, ns, name string) ([]model
 // repository, or files it there: labelled kind/bump and status/ready, in the
 // bundler's first release that can still take work (releaseTakingWork). isNew
 // says it was filed now.
-func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bump) (gitprovider.Issue, bool, error) {
+func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bump) (ports.Issue, bool, error) {
 	var bundler c4v1beta1.Container
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: bump.Bundler.Container}, &bundler); err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, ns, bundler.Spec.GitProviderRef.Name)
 	if err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	repo := provider.Repository(bundler.Name)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	l := model.BumpLabel()
 	labels := append(issueLabels(),
-		gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+		ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 	if err := provider.EnsureLabels(gitCtx, repo, labels); err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	open, err := provider.ListIssues(gitCtx, repo, model.LabelBump)
 	if err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	for _, issue := range open {
 		if model.HasBumpMarker(issue.Body, bump.Bundled, bump.Tag) {
@@ -131,7 +130,7 @@ func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bum
 	}
 	release, err := releaseTakingWork(gitCtx, provider, repo)
 	if err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	title, body := model.BumpIssue(bump)
 	issue, err := provider.CreateIssue(gitCtx, repo, title, body, []string{model.LabelBump, model.LabelReady},
@@ -142,7 +141,7 @@ func (r *CrewReconciler) fileBump(ctx context.Context, ns string, bump model.Bum
 // releaseTakingWork returns the ID of repo's release due first that has no
 // prepare issue, open or closed (model.ReleaseTakingWork), or 0 when there is
 // none.
-func releaseTakingWork(ctx context.Context, provider ports.Issues, repo gitprovider.Repository) (int64, error) {
+func releaseTakingWork(ctx context.Context, provider ports.Issues, repo ports.Repository) (int64, error) {
 	milestones, err := provider.ListMilestones(ctx, repo)
 	if err != nil {
 		return 0, fmt.Errorf("milestones: %w", err)

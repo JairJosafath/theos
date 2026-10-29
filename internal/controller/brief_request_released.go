@@ -22,7 +22,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -47,7 +46,7 @@ type shipCheck struct {
 type shipContainer struct {
 	gone      bool
 	provider  ports.Issues
-	repo      gitprovider.Repository
+	repo      ports.Repository
 	publishes bool
 	last      *c4v1beta1.CrewRelease
 	// published is the newest release of the Crew the Brief saw published.
@@ -141,12 +140,12 @@ func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1beta1.B
 			return nil, fmt.Errorf("issue %s: %w", name, err)
 		}
 		c := containers[container]
-		var issue gitprovider.Issue
+		var issue ports.Issue
 		if !c.gone {
 			issue, err = c.provider.GetIssue(gitCtx, c.repo, n)
 		}
 		switch {
-		case c.gone || errors.Is(err, gitprovider.ErrIssueNotFound):
+		case c.gone || errors.Is(err, ports.ErrIssueNotFound):
 			// Deleted with its Container, or on its own: nothing more comes of it.
 			facts = append(facts, model.ShipIssue{URL: filedURL(brief, name), Closed: true})
 			continue
@@ -240,7 +239,7 @@ func filedURL(brief *c4v1beta1.Brief, name string) string {
 // closes it as completed; it then leaves the list. It goes on past a request
 // it fails, and returns the first failure.
 func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.Brief,
-	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
+	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
 	for _, req := range requests {
@@ -250,7 +249,7 @@ func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.B
 		}
 		err := sayReleased(ctx, tracker, brief.Name, req)
 		switch {
-		case gitprovider.IssuesReason(err) == gitprovider.ReasonIssueNotFound:
+		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on GitHub: nothing to say.
 		case err != nil:
 			if first == nil {
@@ -269,7 +268,7 @@ func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.B
 
 // sayReleased comments where the request shipped unless the Brief did for
 // the round that planned it, then closes it as completed.
-func sayReleased(ctx context.Context, tracker gitprovider.IssueTracker, brief string, req model.Request) error {
+func sayReleased(ctx context.Context, tracker ports.IssueTracker, brief string, req model.Request) error {
 	marker := model.RequestReleasedMarker(brief, req.Round)
 	said, err := tracker.FindComment(ctx, req.Number, marker)
 	if err != nil {
@@ -281,5 +280,5 @@ func sayReleased(ctx context.Context, tracker gitprovider.IssueTracker, brief st
 			return err
 		}
 	}
-	return tracker.CloseIssue(ctx, req.Number, gitprovider.CloseCompleted)
+	return tracker.CloseIssue(ctx, req.Number, ports.CloseCompleted)
 }

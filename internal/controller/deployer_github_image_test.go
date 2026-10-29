@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
@@ -108,7 +107,7 @@ func TestGitHubDeployerImage(t *testing.T) {
 		}
 		s, _ := pushed(t, "ns/billing", "v1.0.0")
 		err := d.Ship(ctx, tg, s)
-		if gitprovider.ReleaseReason(err) != gitprovider.ReasonTagTaken ||
+		if ports.ReleaseReason(err) != ports.ReasonTagTaken ||
 			!strings.Contains(err.Error(), ghcr.host+"/acme/billing/billing:v1.0.0") {
 			t.Fatalf("Ship() = %v, want TagTaken naming the image", err)
 		}

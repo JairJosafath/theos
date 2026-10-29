@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/contract"
@@ -154,7 +153,7 @@ func TestGitHubDeployer(t *testing.T) {
 	// A release of the tag the factory didn't make is left alone.
 	other := s
 	other.App = "ns/other"
-	if err := d.Ship(ctx, target("acme/orders-cli"), other); gitprovider.ReleaseReason(err) != gitprovider.ReasonTagTaken {
+	if err := d.Ship(ctx, target("acme/orders-cli"), other); ports.ReleaseReason(err) != ports.ReasonTagTaken {
 		t.Errorf("Ship() over another app's tag = %v, want TagTaken", err)
 	}
 }

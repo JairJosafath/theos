@@ -18,8 +18,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // How a round takes requests (docs/plans/done/brief-requests.md, decisions 7 to
@@ -192,7 +192,7 @@ func saidKey(brief *c4v1beta1.Brief, req model.Request) string {
 // as not planned; a closed one leaves the list. It goes on past a request it
 // fails, and returns the first failure.
 func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Brief,
-	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
+	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
 	for _, req := range requests {
@@ -207,7 +207,7 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 		text += model.RequestRoundMarker(brief.Name, req.Round) + "\n"
 		err := sayPlanned(ctx, tracker, brief.Name, req, text)
 		switch {
-		case gitprovider.IssuesReason(err) == gitprovider.ReasonIssueNotFound:
+		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on GitHub: nothing to say.
 			if req.Stage == model.RequestPlanned {
 				r.markSaid(brief, req)
@@ -236,7 +236,7 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 
 // sayPlanned comments text on the request unless the Brief did for the
 // round that answered it, then closes a skipped one as not planned.
-func sayPlanned(ctx context.Context, tracker gitprovider.IssueTracker, brief string, req model.Request,
+func sayPlanned(ctx context.Context, tracker ports.IssueTracker, brief string, req model.Request,
 	text string) error {
 	said, err := tracker.FindComment(ctx, req.Number, model.RequestRoundMarker(brief, req.Round))
 	if err != nil {
@@ -250,7 +250,7 @@ func sayPlanned(ctx context.Context, tracker gitprovider.IssueTracker, brief str
 	if req.Stage != model.RequestSkipped {
 		return nil
 	}
-	return tracker.CloseIssue(ctx, req.Number, gitprovider.CloseNotPlanned)
+	return tracker.CloseIssue(ctx, req.Number, ports.CloseNotPlanned)
 }
 
 func (r *BriefReconciler) markSaid(brief *c4v1beta1.Brief, req model.Request) {

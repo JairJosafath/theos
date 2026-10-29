@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
+	"github.com/JairJosafath/c4factory/internal/adapters/github"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // The issues side of fakeGitHub: a repository's issues and their comments,
@@ -57,9 +58,9 @@ type fakeGitHubIssues struct {
 }
 
 // GitHubIssues is the real client, pointed at the fake.
-func (f *fakeGitHub) GitHubIssues(cfg gitprovider.GitHubConfig) (gitprovider.IssueTracker, error) {
+func (f *fakeGitHub) GitHubIssues(cfg ports.GitHubConfig) (ports.IssueTracker, error) {
 	cfg.APIURL, cfg.UploadURL = f.server.URL, f.server.URL
-	return gitprovider.Client{}.GitHubIssues(cfg)
+	return github.Client{}.GitHubIssues(cfg)
 }
 
 func (f *fakeGitHub) issueState() *fakeGitHubIssues {

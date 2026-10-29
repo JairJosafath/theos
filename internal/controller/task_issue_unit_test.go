@@ -8,8 +8,8 @@ import (
 	"time"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -19,7 +19,7 @@ import (
 func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	git := fake.New()
 	provider := git
-	repo := gitprovider.Repository{Owner: "tools", Name: "vscode-extension"}
+	repo := ports.Repository{Owner: "tools", Name: "vscode-extension"}
 	n := git.AddIssue(repo.Owner, repo.Name, "Check the README's claims", "", []string{model.LabelInProgress})
 	git.AnswerLate()
 
@@ -51,13 +51,13 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 func TestCloseIssueFilesByHandOnce(t *testing.T) {
 	git := fake.New()
 	provider := git
-	repo := gitprovider.Repository{Owner: "tools", Name: "cel-lens"}
+	repo := ports.Repository{Owner: "tools", Name: "cel-lens"}
 	n := git.AddIssue(repo.Owner, repo.Name, "README shows the hover", "", []string{model.LabelInProgress})
 	r := &TaskReconciler{GitTimeout: time.Second}
 	task := &c4v1beta1.Task{ObjectMeta: objectMeta("tools", "cel-lens-1"), Spec: c4v1beta1.TaskSpec{Issue: int32(n)}}
 	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta("tools", "reviewer")}
 	open := []model.OpenCriterion{{Criterion: "The README has a screenshot of the hover", Why: "No desktop editor."}}
-	byHand := func() []gitprovider.Issue {
+	byHand := func() []ports.Issue {
 		issues, err := provider.ListIssues(context.Background(), repo, model.LabelByHand)
 		if err != nil {
 			t.Fatal(err)

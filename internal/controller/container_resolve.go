@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // resolved is everything a Container's scaffold depends on, turned into the plain
@@ -27,7 +27,7 @@ import (
 type resolved struct {
 	provider *c4v1beta1.GitProvider
 	// creds come from the GitProvider's credentials Secret.
-	creds gitprovider.Credentials
+	creds ports.Credentials
 	// entries are the catalog entries in layer order: Framework, Standard,
 	// Compute, Deployment, each Connector, then each Domain.
 	entries []model.CatalogEntry
@@ -182,23 +182,23 @@ func domainNames(system *c4v1beta1.SoftwareSystem) []string {
 
 // credentials reads a GitProvider's Secret. It goes straight to the API server
 // rather than through the cache, so the operator never caches every Secret.
-func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1beta1.GitProvider) (gitprovider.Credentials, bool, error) {
+func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1beta1.GitProvider) (ports.Credentials, bool, error) {
 	return readCredentials(ctx, r.APIReader, provider)
 }
 
 // readCredentials reads a GitProvider's Secret without caching it.
-func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1beta1.GitProvider) (gitprovider.Credentials, bool, error) {
+func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1beta1.GitProvider) (ports.Credentials, bool, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, types.NamespacedName{
 		Namespace: provider.Namespace, Name: provider.Spec.CredentialsSecretRef.Name,
 	}, &secret)
 	if apierrors.IsNotFound(err) {
-		return gitprovider.Credentials{}, false, nil
+		return ports.Credentials{}, false, nil
 	}
 	if err != nil {
-		return gitprovider.Credentials{}, false, err
+		return ports.Credentials{}, false, err
 	}
-	return gitprovider.Credentials{
+	return ports.Credentials{
 		Username: string(secret.Data["username"]),
 		Token:    string(secret.Data["token"]),
 	}, true, nil

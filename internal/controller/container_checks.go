@@ -20,7 +20,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -45,9 +44,9 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err == nil {
-		var checks gitprovider.CheckStatus
+		var checks ports.CheckStatus
 		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		checks, err = provider.CombinedStatus(gitCtx, provider.Repository(container.Name), gitprovider.DefaultBranch)
+		checks, err = provider.CombinedStatus(gitCtx, provider.Repository(container.Name), ports.DefaultBranch)
 		cancel()
 		if err == nil {
 			status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
@@ -77,7 +76,7 @@ func providerFor(ctx context.Context, c client.Client, apiReader client.Reader, 
 // and its CI system.
 type gitAccess struct {
 	gitProvider *c4v1beta1.GitProvider
-	creds       gitprovider.Credentials
+	creds       ports.Credentials
 	provider    interface {
 		ports.GitHost
 		ports.Issues
@@ -108,7 +107,7 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 	if err != nil {
 		return gitAccess{}, fmt.Errorf("GitProvider %s: %w", name, err)
 	}
-	p, err := git.Provider(gitprovider.Config{
+	p, err := git.Provider(ports.Config{
 		Kind:        string(provider.Spec.Provider),
 		URL:         provider.Spec.URL,
 		Owner:       provider.Spec.Owner,

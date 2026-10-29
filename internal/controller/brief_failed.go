@@ -23,7 +23,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -56,8 +55,8 @@ func failedIssue(name string, number int, title, url string, labels []string, bo
 func failedRelease(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
-}, repo gitprovider.Repository,
-	issue gitprovider.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
+}, repo ports.Repository,
+	issue ports.Issue, tasks []model.IssueTask) (*model.FailedRelease, error) {
 	if !slices.Contains(issue.Labels, model.LabelRelease) || issue.Milestone == 0 {
 		return nil, nil
 	}
@@ -215,7 +214,7 @@ func (r *BriefReconciler) failedToCheck(ctx context.Context, brief *c4v1beta1.Br
 		}
 		repo := provider.Repository(c.Name)
 		issue, err := provider.GetIssue(gitCtx, repo, f.Number)
-		if errors.Is(err, gitprovider.ErrIssueNotFound) {
+		if errors.Is(err, ports.ErrIssueNotFound) {
 			continue
 		}
 		if err != nil {
@@ -285,7 +284,7 @@ func (r *BriefReconciler) answerFailed(ctx context.Context, brief *c4v1beta1.Bri
 		}
 		err := answerFailedIssue(gitCtx, c.provider, c.repo, c.issue, c.answer, round,
 			model.FailedComment(c.answer, brief.Name, round, tending(status), prompts, filed))
-		if errors.Is(err, gitprovider.ErrOpenDependencies) {
+		if errors.Is(err, ports.ErrOpenDependencies) {
 			return []string{"an open issue"}, nil // one opened since it was read
 		}
 		if err != nil {
@@ -357,8 +356,8 @@ type answering struct {
 		ports.GitHost
 		ports.Issues
 	}
-	repo     gitprovider.Repository
-	issue    gitprovider.Issue
+	repo     ports.Repository
+	issue    ports.Issue
 	blockers []string
 }
 
@@ -380,7 +379,7 @@ func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1bet
 	}
 	repo := provider.Repository(c.Name)
 	issue, err := provider.GetIssue(gitCtx, repo, a.Issue)
-	if errors.Is(err, gitprovider.ErrIssueNotFound) {
+	if errors.Is(err, ports.ErrIssueNotFound) {
 		return answering{}, false, nil // deleted on the Git host: nothing waits
 	}
 	if err != nil {
@@ -401,8 +400,8 @@ func (r *BriefReconciler) openFailed(ctx, gitCtx context.Context, brief *c4v1bet
 func answerFailedIssue(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
-}, repo gitprovider.Repository,
-	issue gitprovider.Issue, a model.FailedAnswer, round int, comment string) error {
+}, repo ports.Repository,
+	issue ports.Issue, a model.FailedAnswer, round int, comment string) error {
 	if a.Answer == model.AnswerRetry {
 		if body := model.ClarifiedBody(issue.Body, round, a.Clarify); body != issue.Body {
 			if err := provider.EditIssueBody(ctx, repo, issue.Number, body); err != nil {

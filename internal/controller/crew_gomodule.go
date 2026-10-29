@@ -22,7 +22,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -66,7 +65,7 @@ type moduleAnswer struct {
 // fetchable, is a Normal Event; a module Go can't take, or can't fetch, a
 // Warning Event, once per release.
 func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
-	provider ports.Registry, repo gitprovider.Repository) {
+	provider ports.Registry, repo ports.Repository) {
 	release := status.LastRelease
 	if release == nil {
 		return
@@ -96,10 +95,10 @@ func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1beta1.Cr
 		switch {
 		case err != nil:
 			registry, detail = model.RegistryFailed, err.Error()
-		case out.Outcome == gitprovider.GoModulePublished:
+		case out.Outcome == ports.GoModulePublished:
 			uploadedNow = true
-		case out.Outcome == gitprovider.GoModuleExists:
-		case out.Outcome == gitprovider.GoModuleInvalid:
+		case out.Outcome == ports.GoModuleExists:
+		case out.Outcome == ports.GoModuleInvalid:
 			registry, detail = model.RegistryInvalid, out.Reason
 		default:
 			registry = model.RegistryNoGoMod
@@ -218,7 +217,7 @@ func (r *CrewReconciler) readPrivate(ctx context.Context, crew *c4v1beta1.Crew, 
 	if err != nil || token == "" {
 		return
 	}
-	target, err := r.releaseTargets().GitHubReleases(gitprovider.GitHubConfig{Repository: spec.GitHub.Repository,
+	target, err := r.Publish.GitHubReleases(ports.GitHubConfig{Repository: spec.GitHub.Repository,
 		Token: token})
 	if err != nil {
 		return

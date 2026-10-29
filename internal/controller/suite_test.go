@@ -50,7 +50,6 @@ import (
 	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
@@ -481,8 +480,8 @@ func getFirstFoundEnvTestBinaryDir() string {
 // gitlabProjects is the real GitLab client, trusting gitlabFake's certificate.
 type gitlabProjects struct{}
 
-func (gitlabProjects) GitLab(cfg gitprovider.GitLabConfig) (gitprovider.GitLabProject, error) {
-	return gitprovider.Client{HTTP: gitlabFake.Client()}.GitLab(cfg)
+func (gitlabProjects) GitLab(cfg gitlab.GitLabConfig) (gitlab.GitLabProject, error) {
+	return gitlab.Client{HTTP: gitlabFake.Client()}.GitLab(cfg)
 }
 
 // routedDeployer is the github member's Deployer in the suite: the github
@@ -514,7 +513,7 @@ func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version 
 // the host through its own Config.
 type fakeGitClient struct{ *fake.Git }
 
-func (c fakeGitClient) Provider(cfg gitprovider.Config) (gitprovider.Provider, error) {
+func (c fakeGitClient) Provider(cfg ports.Config) (ports.Provider, error) {
 	return c.For(cfg), nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ type Credentials struct {
 	Username string
 	Token    string
 }
+
+// Kinds of Git hosting. Gitea is the only one in v1.
+const KindGitea = "gitea"
 
 // Config is how to reach one Git host and where repositories go.
 type Config struct {
@@ -337,4 +341,24 @@ type GitHost interface {
 	// held whole in memory, and read only during the call. A submodule fails the
 	// read. An error from fn stops the read and is returned.
 	ReadSource(ctx context.Context, repo Repository, tag string, fn func(SourceFile, io.Reader) error) error
+}
+
+// Provider is every Git host port in one, the union of GitHost, Issues, CI,
+// AgentAccess and Registry, for GitClient and cmd/main.go, and the adapter
+// and the fake that implement them all; a helper takes the narrowest port it
+// calls.
+type Provider interface {
+	GitHost
+	Issues
+	CI
+	AgentAccess
+	Registry
+}
+
+// SameHost reports whether two URLs point at the same host, so a Git provider's
+// credentials can be reused for a template on it.
+func SameHost(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && ua.Scheme == ub.Scheme && ua.Host == ub.Host
 }

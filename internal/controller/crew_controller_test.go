@@ -21,8 +21,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -164,7 +164,7 @@ var _ = Describe("Crew", func() {
 			g.Expect(getTask(g, ns, "orders-api-3").Status.MergeCommit).To(Equal(mergeCommit))
 		}).Should(Succeed())
 		Expect(gitFake.Reviews(ns, "orders-api", pr.Number)).To(ConsistOf(And(
-			HaveField("Event", gitprovider.ReviewApprove), HaveField("Commit", "sha-1"),
+			HaveField("Event", ports.ReviewApprove), HaveField("Commit", "sha-1"),
 			HaveField("Body", And(ContainSubstring("Agent `reviewer` (claude-opus-5-5)"), ContainSubstring("Every criterion met."))))))
 		issue := gitFake.Issue(ns, "orders-api", first)
 		Expect(issue.State).To(Equal("closed"))
@@ -356,7 +356,7 @@ var _ = Describe("Crew", func() {
 
 	// approvedBehindMain runs a Crew's Task to its approval while main moved since
 	// its checks ran, and returns the head the operator merged main into.
-	approvedBehindMain := func(ns string) (pr gitprovider.PullRequest, head string) {
+	approvedBehindMain := func(ns string) (pr ports.PullRequest, head string) {
 		readyContainer(ns)
 		crewAgents(ns, 2)
 		gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, []string{model.LabelReady})

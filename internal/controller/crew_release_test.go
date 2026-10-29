@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
@@ -331,7 +331,7 @@ var _ = Describe("Crew releases", func() {
 		}).Should(Succeed())
 
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
-		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "in_progress", URL: runURL}
+		run := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "in_progress", URL: runURL}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Running"))
@@ -382,8 +382,8 @@ var _ = Describe("Crew releases", func() {
 		}).Should(Succeed())
 
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
-		passed := gitprovider.WorkflowRun{ID: 4, Workflow: "notes.yaml", Status: "completed", Conclusion: "success"}
-		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure",
+		passed := ports.WorkflowRun{ID: 4, Workflow: "notes.yaml", Status: "completed", Conclusion: "success"}
+		run := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure",
 			URL: runURL}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", run, passed)
 		Eventually(func(g Gomega) {
@@ -435,7 +435,7 @@ var _ = Describe("Crew releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease).NotTo(BeNil())
 		}).Should(Succeed())
-		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure"}
+		run := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure"}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Failed"))
@@ -481,8 +481,8 @@ var _ = Describe("Crew releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease).NotTo(BeNil())
 		}).Should(Succeed())
-		lint := gitprovider.WorkflowRun{ID: 6, Workflow: "lint.yaml", Status: "completed", Conclusion: "failure"}
-		release := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure"}
+		lint := ports.WorkflowRun{ID: 6, Workflow: "lint.yaml", Status: "completed", Conclusion: "failure"}
+		release := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "failure"}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", lint, release)
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Failed"))
@@ -540,7 +540,7 @@ var _ = Describe("Crew releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease).NotTo(BeNil())
 		}).Should(Succeed())
-		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "success"}
+		run := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "completed", Conclusion: "success"}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
 		Eventually(func(g Gomega) {
 			g.Expect(getCrew(g, ns).Status.LastRelease.Run).To(Equal("Succeeded"))
@@ -576,7 +576,7 @@ var _ = Describe("Crew releases", func() {
 		mustCreate(crew)
 
 		runURL := "http://gitea/" + ns + "/orders-api/actions/runs/5"
-		run := gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "queued", URL: runURL}
+		run := ports.WorkflowRun{ID: 5, Workflow: "release.yaml", Status: "queued", URL: runURL}
 		gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", run)
 		Eventually(func(g Gomega) {
 			release := getCrew(g, ns).Status.LastRelease

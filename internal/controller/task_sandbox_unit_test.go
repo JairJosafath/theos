@@ -17,9 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/c4factory/internal/adapters/gitea"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 func TestBuildSandboxWorkspace(t *testing.T) {
@@ -599,8 +600,8 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: tt.url, Owner: "apps",
-				Credentials: gitprovider.Credentials{Token: "t"}})
+			provider, err := gitea.Client{}.Provider(ports.Config{URL: tt.url, Owner: "apps",
+				Credentials: ports.Credentials{Token: "t"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -642,7 +643,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name, url           string
-		packages            gitprovider.Packages
+		packages            ports.Packages
 		npmSecret, pySecret string
 		want                []corev1.EnvVar
 	}{
@@ -657,7 +658,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 			{Name: "C4_PYPI_INDEX", Value: "https://git.example.com/api/packages/apps/pypi/simple"},
 		}},
 		{name: "a spec.packages of its own", url: "https://git.example.com",
-			packages: gitprovider.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/registry",
+			packages: ports.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/registry",
 				PyPIIndex: "https://pypi.example.com/simple", PyPIUpload: "https://pypi.example.com/upload"},
 			npmSecret: "acme-npm", pySecret: "acme-pypi",
 			want: []corev1.EnvVar{
@@ -669,8 +670,8 @@ func TestBuildSandboxPackages(t *testing.T) {
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := gitprovider.Client{}.Provider(gitprovider.Config{URL: tt.url, Owner: "apps",
-				Credentials: gitprovider.Credentials{Token: "t"}, Packages: tt.packages})
+			provider, err := gitea.Client{}.Provider(ports.Config{URL: tt.url, Owner: "apps",
+				Credentials: ports.Credentials{Token: "t"}, Packages: tt.packages})
 			if err != nil {
 				t.Fatal(err)
 			}

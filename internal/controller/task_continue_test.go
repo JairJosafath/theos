@@ -20,8 +20,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // #607: a new try on an issue goes on from the earlier try's open pull request,
@@ -173,7 +173,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 		n := failTryNoCI(ns)
 		Expect(gitFake.Issue(ns, "orders-api", n).Comments).To(ContainElement(
 			ContainSubstring("this try doesn't count towards the limit")))
-		gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
+		gitFake.SetChecks(ns, "orders-api", "sha-try1", ports.CheckSuccess)
 		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
 		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool {
 			return t.Status.Phase == c4v1beta1.TaskChecking
@@ -211,7 +211,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 	It("starts round 1 when the earlier try's checks failed", func() {
 		ns := newProjectNamespace()
 		n := failTryNoCI(ns)
-		gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckFailure)
+		gitFake.SetChecks(ns, "orders-api", "sha-try1", ports.CheckFailure)
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -248,8 +248,8 @@ func failTryNoCI(ns string) int {
 	mustCreate(first)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
 	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-try1")
-	gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckPending)
-	gitFake.SetCommitRuns(ns, "orders-api", "sha-try1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
+	gitFake.SetChecks(ns, "orders-api", "sha-try1", ports.CheckPending)
+	gitFake.SetCommitRuns(ns, "orders-api", "sha-try1", ports.WorkflowRun{ID: 7, Workflow: "check.yaml",
 		Event: "pull_request", Status: "queued", URL: "http://gitea/" + ns + "/orders-api/actions/runs/7"})
 	setRunnersOnline(0)
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",

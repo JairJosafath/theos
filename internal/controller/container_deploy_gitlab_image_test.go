@@ -17,10 +17,10 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 var _ = Describe("Container ships its image to a gitlab target (#1806)", func() {
@@ -31,7 +31,7 @@ var _ = Describe("Container ships its image to a gitlab target (#1806)", func() 
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", ports.Image{Outcome: ports.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		withImage, without := "Acme/"+ns+"-Img", "acme/"+ns+"-plain"
 		img := gitlabFake.AddProject(withImage, "glpat-"+ns+"-img")

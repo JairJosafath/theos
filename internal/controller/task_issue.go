@@ -18,7 +18,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -44,7 +43,7 @@ func agentName(agent *c4v1beta1.Agent) string {
 
 // announce marks an issue as taken: in progress, assigned to the Container's
 // agent bot, with a comment naming the Task and its Agents.
-func (r *TaskReconciler) announce(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func (r *TaskReconciler) announce(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	task *c4v1beta1.Task, container *c4v1beta1.Container, agents taskAgents) {
 	n := int(task.Spec.Issue)
 	notes := []error{
@@ -65,7 +64,7 @@ func (r *TaskReconciler) announce(ctx context.Context, provider ports.Issues, re
 // unreviewed commit is still the head and its checks now pass
 // (model.StartsAtReview); empty otherwise.
 func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider ports.GitHost,
-	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) (string, error) {
+	repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) (string, error) {
 	var list c4v1beta1.TaskList
 	if err := r.List(ctx, &list, client.InNamespace(task.Namespace),
 		client.MatchingFields{indexTaskContainer: task.Spec.ContainerRef.Name}); err != nil {
@@ -84,7 +83,7 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider ports.
 		return "", nil
 	}
 	pr, err := provider.GetPullRequest(ctx, repo, earlier.PullRequest)
-	if errors.Is(err, gitprovider.ErrPullRequestNotFound) {
+	if errors.Is(err, ports.ErrPullRequestNotFound) {
 		// Gone for good, deleted or with its repository: like a closed one,
 		// the Task starts on its own branch.
 		logf.FromContext(ctx).Info("Earlier pull request not found", "number", earlier.PullRequest,
@@ -132,7 +131,7 @@ func tryHistory(history []c4v1beta1.TaskTransition) []model.TryStep {
 // it. The caller posts it once, with the run's new sandbox, so a retry after a
 // failed status write doesn't post it again.
 func (r *TaskReconciler) noteContinued(ctx context.Context, provider ports.GitHost,
-	repo gitprovider.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
+	repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
 	if err := provider.CommentPullRequest(ctx, repo, int(status.PullRequest), fmt.Sprintf(
 		"Task `%s` continues this pull request, which Task `%s` opened.", task.Name, status.Continues)); err != nil {
 		logf.FromContext(ctx).Info("Could not comment on pull request", "task", task.Name, "error", err.Error())
@@ -162,7 +161,7 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1beta1.Task, statu
 func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
-}, repo gitprovider.Repository,
+}, repo ports.Repository,
 	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, followUps []model.FollowUp,
 	open []model.OpenCriterion) []string {
 	n := int(task.Spec.Issue)
@@ -182,7 +181,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 		if byHand {
 			l := model.ByHandLabel()
 			labels = append(labels,
-				gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+				ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 		}
 		notes = append(notes, r.gitCall(ctx, func(ctx context.Context) error {
 			return provider.EnsureLabels(ctx, repo, labels)
@@ -190,7 +189,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	}
 	for _, f := range followUps {
 		body := model.FollowUpIssue(f, agentName(reviewer), status.PullRequestURL, n, task.Name)
-		var issue gitprovider.Issue
+		var issue ports.Issue
 		err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 			issue, err = provider.CreateIssue(ctx, repo, f.Title, body, []string{model.LabelProposed}, milestone)
 			return err
@@ -235,10 +234,10 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 // fileByHand files the open criteria as the Task's kind/by-hand issue,
 // status/needs-human so no Crew picks it, and returns its address. When the
 // Task's status lost the address, the issue is found again by its marker.
-func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, open []model.OpenCriterion,
 	milestone int64) (string, error) {
-	var existing []gitprovider.Issue
+	var existing []ports.Issue
 	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		existing, err = provider.ListIssues(ctx, repo, model.LabelByHand)
 		return err
@@ -252,7 +251,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, 
 	}
 	title, body := model.ByHandIssue(status.IssueTitle, int(task.Spec.Issue), status.PullRequestURL, task.Name,
 		agentName(reviewer), open)
-	var issue gitprovider.Issue
+	var issue ports.Issue
 	err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		issue, err = provider.CreateIssue(ctx, repo, title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
 			milestone)
@@ -267,7 +266,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, 
 // done: it says instead that the Task ended (ended, how) and why the host
 // refused, and labels the issue status/needs-human so a person sees it. It
 // returns the notes' errors.
-func (r *TaskReconciler) endIssue(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
+func (r *TaskReconciler) endIssue(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	task *c4v1beta1.Task, comment, ended string) []error {
 	n := int(task.Spec.Issue)
 	notes := []error{
@@ -325,11 +324,11 @@ func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context)
 }
 
 // issueLabels are the factory's issue labels, for the Git host.
-func issueLabels() []gitprovider.Label {
+func issueLabels() []ports.Label {
 	labels := append(model.StatusLabels(), model.UrgentLabel())
-	out := make([]gitprovider.Label, 0, len(labels))
+	out := make([]ports.Label, 0, len(labels))
 	for _, l := range labels {
-		out = append(out, gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+		out = append(out, ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 	}
 	return out
 }

@@ -17,7 +17,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -189,8 +188,8 @@ func (r *BriefReconciler) roundReleaseTag(ctx context.Context, run *roundApply, 
 
 // pinUses gives a filed issue the line of each thing it uses, writing body
 // when a line is missing, so a restart writes it once.
-func (r *BriefReconciler) pinUses(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
-	filed gitprovider.Issue, body string, packages []model.UsedPackage) error {
+func (r *BriefReconciler) pinUses(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	filed ports.Issue, body string, packages []model.UsedPackage) error {
 	for _, p := range packages {
 		if !strings.Contains(filed.Body, model.UsesLine(p)) {
 			if err := provider.EditIssueBody(ctx, repo, filed.Number, body); err != nil {

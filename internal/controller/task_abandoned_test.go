@@ -16,8 +16,8 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // startTry creates a Task at issue (or at a goal when issue is 0) and plays its
@@ -56,7 +56,7 @@ func failTry(ns, name string, issue int) *c4v1beta1.Task {
 
 // waitingTry creates a Task at issue that waits for an absent Agent, so it
 // takes no step of its own, with pr as its pull request.
-func waitingTry(ns, name string, issue int, pr gitprovider.PullRequest) {
+func waitingTry(ns, name string, issue int, pr ports.PullRequest) {
 	GinkgoHelper()
 	task := newTask(ns, name, "")
 	task.Spec.Issue, task.Spec.AgentRef.Name = int32(issue), "absent"
@@ -109,7 +109,7 @@ var _ = Describe("Failed Task's pull request", func() {
 		// A newer try with a pull request of its own, as tries before #607 had.
 		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-2", "sha-2")
 		own, err := gitFake.OpenPullRequest(ctx,
-			gitprovider.Repository{Owner: ns, Name: "orders-api"}, "task/orders-api-2", "main", "Validate orders", "")
+			ports.Repository{Owner: ns, Name: "orders-api"}, "task/orders-api-2", "main", "Validate orders", "")
 		Expect(err).NotTo(HaveOccurred())
 		waitingTry(ns, "orders-api-2", n, own)
 

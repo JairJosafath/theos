@@ -18,8 +18,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // defaultPullRequestRecheck: a Failed Task's pull request waits on its issue
@@ -76,7 +76,7 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1beta1
 	if err != nil {
 		return facts, err
 	}
-	var pr gitprovider.PullRequest
+	var pr ports.PullRequest
 	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		pr, err = provider.GetPullRequest(ctx, repo, facts.PullRequest)
 		return err
@@ -87,13 +87,13 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1beta1
 	if !facts.PullOpen || facts.Issue == 0 {
 		return facts, nil
 	}
-	var issue gitprovider.Issue
+	var issue ports.Issue
 	err = r.gitCall(ctx, func(ctx context.Context) (err error) {
 		issue, err = provider.GetIssue(ctx, repo, facts.Issue)
 		return err
 	})
 	switch {
-	case errors.Is(err, gitprovider.ErrIssueNotFound):
+	case errors.Is(err, ports.ErrIssueNotFound):
 		facts.IssueClosed = true // deleted: no try comes back to it
 	case err != nil:
 		return facts, err

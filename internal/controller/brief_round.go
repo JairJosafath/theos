@@ -26,8 +26,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
@@ -671,6 +671,6 @@ func (r *BriefReconciler) event(brief *c4v1beta1.Brief, eventType, reason, actio
 }
 
 // briefAuthor signs the operator's commits on a brief repository.
-func briefAuthor() gitprovider.Signature {
-	return gitprovider.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
+func briefAuthor() ports.Signature {
+	return ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 }

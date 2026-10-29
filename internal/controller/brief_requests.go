@@ -24,8 +24,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // A Brief's requests (docs/plans/done/brief-requests.md): the open issues of each
@@ -36,9 +36,9 @@ import (
 // IssueTrackers builds the clients of the GitHub repositories a Brief takes
 // requests from.
 type IssueTrackers interface {
-	GitHubIssues(cfg gitprovider.GitHubConfig) (gitprovider.IssueTracker, error)
+	GitHubIssues(cfg ports.GitHubConfig) (ports.IssueTracker, error)
 	// GitHubToken is a GitHub Secret's token, or its GitHub App's
-	// installation token, as gitprovider.Client.GitHubToken mints it.
+	// installation token, as the GitHub adapter's Client.GitHubToken mints it.
 	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
 }
 
@@ -59,19 +59,12 @@ type requestsRead struct {
 	readAt time.Time
 	err    error
 	etag   string
-	open   []gitprovider.GitHubIssue
+	open   []ports.GitHubIssue
 	// members are the logins found in, or not in, the entry's teams while
 	// the list is the same; unsure the ones that couldn't be read, with why.
 	members    map[string]bool
 	unsure     []string
 	membersErr error
-}
-
-func (r *BriefReconciler) issueTrackers() IssueTrackers {
-	if r.Issues != nil {
-		return r.Issues
-	}
-	return gitprovider.Client{}
 }
 
 // requestsMode is a releases entry's requests mode, Off when it has none.
@@ -144,7 +137,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
 	secret := entry.GitHub.TokenSecretRef.Name
 	token, err := r.requestsToken(ctx, brief.Namespace, secret, repository)
-	var mint *gitprovider.ReleaseError
+	var mint *ports.ReleaseError
 	switch {
 	case errors.As(err, &mint):
 		return same, &requestsFailure{mint.Reason, mint.Error()}
@@ -156,9 +149,9 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 			fmt.Sprintf("Secret %s with the key token (or a GitHub App's %s) is missing", secret,
 				strings.Join(model.GitHubAppKeys, ", "))}
 	}
-	tracker, err := r.issueTrackers().GitHubIssues(gitprovider.GitHubConfig{Repository: repository, Token: token})
+	tracker, err := r.Issues.GitHubIssues(ports.GitHubConfig{Repository: repository, Token: token})
 	if err != nil {
-		return same, &requestsFailure{gitprovider.ReasonGitHubError, err.Error()}
+		return same, &requestsFailure{ports.ReasonGitHubError, err.Error()}
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -170,7 +163,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	}
 	last := r.readIssues(gitCtx, brief, entry, tracker, owed, now)
 	if last.err != nil {
-		return same, &requestsFailure{gitprovider.IssuesReason(last.err), last.err.Error()}
+		return same, &requestsFailure{ports.IssuesReason(last.err), last.err.Error()}
 	}
 	spec := entry.Requests
 	in := model.RequestsRead{Repository: repository, Mode: spec.Mode, Authors: spec.Authors, Unsure: last.unsure,
@@ -187,19 +180,19 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	got := model.ReadRequests(known, in, now)
 	var failure *requestsFailure
 	if last.membersErr != nil {
-		failure = &requestsFailure{gitprovider.IssuesReason(last.membersErr), last.membersErr.Error()}
+		failure = &requestsFailure{ports.IssuesReason(last.membersErr), last.membersErr.Error()}
 	}
 	got, err = r.declineRequests(gitCtx, brief, tracker, got)
 	if err != nil {
-		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
+		failure = &requestsFailure{ports.IssuesReason(err), err.Error()}
 	}
 	got, err = r.answerPlanned(gitCtx, brief, tracker, got)
 	if err != nil && failure == nil {
-		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
+		failure = &requestsFailure{ports.IssuesReason(err), err.Error()}
 	}
 	got, err = r.answerReleased(gitCtx, brief, tracker, got)
 	if err != nil && failure == nil {
-		failure = &requestsFailure{gitprovider.IssuesReason(err), err.Error()}
+		failure = &requestsFailure{ports.IssuesReason(err), err.Error()}
 	}
 	settled[repository] = model.SettledAnswers(in, got)
 	return got, failure
@@ -211,7 +204,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 // authors not named in authors. owed are the requests the Brief has to
 // answer on GitHub, which it reads again first.
 func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief, entry *c4v1beta1.BriefRelease,
-	tracker gitprovider.IssueTracker, owed []int, now time.Time) *requestsRead {
+	tracker ports.IssueTracker, owed []int, now time.Time) *requestsRead {
 	spec := entry.Requests
 	key := requestsKey(brief, entry.GitHub.Repository)
 	fingerprint := fmt.Sprintf("%s %v %v %s", spec.Mode, spec.Authors, spec.Teams, entry.GitHub.TokenSecretRef.Name)
@@ -222,7 +215,7 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 	// the ETag, so one its author closed meanwhile is dropped rather than
 	// answered.
 	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() &&
-		!slices.ContainsFunc(last.open, func(i gitprovider.GitHubIssue) bool {
+		!slices.ContainsFunc(last.open, func(i ports.GitHubIssue) bool {
 			return slices.Contains(spec.Declined, int32(i.Number)) || slices.Contains(owed, i.Number)
 		}) {
 		return last
@@ -263,7 +256,7 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 // are members of one of the entry's teams. An author already found keeps
 // the answer while the list is the same.
 func (r *BriefReconciler) readMembers(ctx context.Context, spec *c4v1beta1.BriefRequests,
-	tracker gitprovider.IssueTracker, read *requestsRead) {
+	tracker ports.IssueTracker, read *requestsRead) {
 	if len(spec.Teams) == 0 {
 		read.members = nil
 		return
@@ -293,7 +286,7 @@ func (r *BriefReconciler) readMembers(ctx context.Context, spec *c4v1beta1.Brief
 }
 
 // inTeams reports whether login is a member of one of teams.
-func inTeams(ctx context.Context, tracker gitprovider.IssueTracker, teams []string, login string) (bool, error) {
+func inTeams(ctx context.Context, tracker ports.IssueTracker, teams []string, login string) (bool, error) {
 	for _, team := range teams {
 		member, err := tracker.TeamMember(ctx, team, login)
 		if err != nil {
@@ -310,7 +303,7 @@ func inTeams(ctx context.Context, tracker gitprovider.IssueTracker, teams []stri
 // take it, once, and closes it as not planned; a closed one leaves the list.
 // It goes on past a request it fails, and returns the first failure.
 func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1beta1.Brief,
-	tracker gitprovider.IssueTracker, requests []model.Request) ([]model.Request, error) {
+	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
 	for _, req := range requests {
@@ -320,7 +313,7 @@ func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1beta1.
 		}
 		err := declineRequest(ctx, tracker, brief.Name, req.Number)
 		switch {
-		case gitprovider.IssuesReason(err) == gitprovider.ReasonIssueNotFound:
+		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on GitHub: nothing to say.
 		case err != nil:
 			if first == nil {
@@ -338,7 +331,7 @@ func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1beta1.
 
 // declineRequest comments on issue number unless the Brief did before, then
 // closes it as not planned.
-func declineRequest(ctx context.Context, tracker gitprovider.IssueTracker, brief string, number int) error {
+func declineRequest(ctx context.Context, tracker ports.IssueTracker, brief string, number int) error {
 	said, err := tracker.FindComment(ctx, number, model.RequestMarker(brief, model.CommentDeclined))
 	if err != nil {
 		return err
@@ -348,7 +341,7 @@ func declineRequest(ctx context.Context, tracker gitprovider.IssueTracker, brief
 			return err
 		}
 	}
-	return tracker.CloseIssue(ctx, number, gitprovider.CloseNotPlanned)
+	return tracker.CloseIssue(ctx, number, ports.CloseNotPlanned)
 }
 
 // forgetIssue takes an issue the Brief closed out of what it last read, so it
@@ -357,7 +350,7 @@ func (r *BriefReconciler) forgetIssue(brief *c4v1beta1.Brief, repository string,
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
 	if last := r.requestsReads[requestsKey(brief, repository)]; last != nil {
-		last.open = slices.DeleteFunc(slices.Clone(last.open), func(i gitprovider.GitHubIssue) bool {
+		last.open = slices.DeleteFunc(slices.Clone(last.open), func(i ports.GitHubIssue) bool {
 			return i.Number == number
 		})
 	}
@@ -401,7 +394,7 @@ func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name, repositor
 	if _, _, ok := model.GitHubCredential(secret.Data); !ok {
 		return "", nil
 	}
-	return r.issueTrackers().GitHubToken(ctx, "", repository, secret.Data)
+	return r.Issues.GitHubToken(ctx, "", repository, secret.Data)
 }
 
 // recordRequests sets status.requests to all, oldest first, keeping what a

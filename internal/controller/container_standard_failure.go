@@ -15,7 +15,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
 )
@@ -63,17 +62,17 @@ func (u *standardUpdate) fileFailure(ctx context.Context, gitCtx context.Context
 
 // fileStandardFailure returns the open issue of the failure in repo, or files
 // it there. isNew says it was filed now.
-func fileStandardFailure(ctx context.Context, provider ports.Issues, repo gitprovider.Repository,
-	failure model.StandardFailure) (gitprovider.Issue, bool, error) {
+func fileStandardFailure(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	failure model.StandardFailure) (ports.Issue, bool, error) {
 	l := model.BugLabel()
 	labels := append(issueLabels(),
-		gitprovider.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+		ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
 	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	open, err := provider.ListIssues(ctx, repo, model.LabelBug)
 	if err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	for _, issue := range open {
 		if model.HasStandardFailureMarker(issue.Body, failure.Standard, failure.Ref) {
@@ -82,7 +81,7 @@ func fileStandardFailure(ctx context.Context, provider ports.Issues, repo gitpro
 	}
 	release, err := releaseTakingWork(ctx, provider, repo)
 	if err != nil {
-		return gitprovider.Issue{}, false, err
+		return ports.Issue{}, false, err
 	}
 	title, body := model.StandardFailureIssue(failure)
 	issue, err := provider.CreateIssue(ctx, repo, title, body, []string{model.LabelBug, model.LabelReady}, release)

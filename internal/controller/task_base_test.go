@@ -15,15 +15,15 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports"
 )
 
 // #1892: round 1 starts only on a green base.
 var _ = Describe("Task before round 1", func() {
 	const push = "check / check (push)"
 	setMain := func(ns, state string) {
-		gitFake.SetCheckContexts(ns, "orders-api", gitprovider.DefaultBranch, state, map[string]string{push: state})
+		gitFake.SetCheckContexts(ns, "orders-api", ports.DefaultBranch, state, map[string]string{push: state})
 	}
 	waitsWith := func(ns, reason, message string) {
 		Eventually(func(g Gomega) {
