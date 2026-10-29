@@ -232,7 +232,7 @@ each domain's common mistakes; without Domains both read as before (#1758).
   user data); `AGENTS.md.tmpl` (an extension logs to a `LogOutputChannel`).
 - README, Deploy, Auth: n/a: a Standard.
 
-### postgres (v1.2.0)
+### postgres (v1.3.0)
 
 A Connector: on Kubernetes (`deploy/k8s/connector-postgres.yaml`) a
 single-replica Postgres StatefulSet and headless Service `<container>-postgres`
@@ -240,6 +240,9 @@ and a ConfigMap with `DATABASE_URL`; a Postgres in the devcontainer.
 
 - CI: `make test-templates`, combo "fastapi service with postgres": the
   app's `make check`, then `kustomize build deploy/k8s` with its manifests.
+- Guard: since v1.3.0 `.env.example.tmpl` fails a Framework that renders
+  `infra/connectors.ts` (an AWS CDK app), telling it to use `rds`;
+  `TestEachRelationalConnectorFailsTheOtherPlace`.
 - Tests: `TestPostgresRunsOnKubernetes` (the pinned image, probe, volume,
   non-root, and no password literal in its manifests or the Deployment).
   python-fastapi's `tests/test_main.py` covers `/readyz` answering 200 and

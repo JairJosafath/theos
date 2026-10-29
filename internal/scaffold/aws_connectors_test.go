@@ -539,3 +539,55 @@ func TestDynamoDBConnectorFailsAWorkerFrameworkThatDoesNotWireIt(t *testing.T) {
 		}
 	}
 }
+
+// Decision 8 of docs/plans/aws-rds.md (#1927): the relational Connector is
+// the one the Framework takes. python-fastapi with rds fails with the rds
+// guard's message, and an AWS Framework with postgres, whose StatefulSet a
+// CDK app never runs, with the postgres guard's.
+func TestEachRelationalConnectorFailsTheOtherPlace(t *testing.T) {
+	for _, tc := range []struct {
+		typ, framework, standard, connector, path string
+		want                                      []string
+	}{
+		{model.TypeService, "python-fastapi", "python-standard", "rds", "infra/connector_rds.ts.tmpl",
+			[]string{"python-fastapi", "doesn't wire the rds Connector", "infra/connectors.ts"}},
+		{model.TypeFunction, "aws-lambda-ts", "aws-standard", "postgres", ".env.example.tmpl",
+			[]string{"aws-lambda-ts", "infra/connectors.ts", "use the rds Connector"}},
+		{model.TypeService, "aws-fargate-ts", "aws-standard", "postgres", ".env.example.tmpl",
+			[]string{"aws-fargate-ts", "infra/connectors.ts", "use the rds Connector"}},
+	} {
+		t.Run(tc.framework+" with "+tc.connector, func(t *testing.T) {
+			in, layers := loadCombo(t, tc.typ, []side{
+				{model.SideFramework, tc.framework},
+				{model.SideStandard, tc.standard},
+				{model.SideConnector, tc.connector},
+			}, "")
+			_, err := Build(in, layers, Options{})
+			var tmplErr *TemplateError
+			if !errors.As(err, &tmplErr) {
+				t.Fatalf("Build: got %v, want a *TemplateError", err)
+			}
+			if tmplErr.Layer != tc.connector || tmplErr.Path != tc.path {
+				t.Errorf("TemplateError names layer %q path %q, want %s %s", tmplErr.Layer, tmplErr.Path, tc.connector, tc.path)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q lacks %q", err, want)
+				}
+			}
+		})
+	}
+	// In the cluster the postgres guard leaves nothing behind.
+	in, layers := loadCombo(t, model.TypeService, []side{
+		{model.SideFramework, "python-fastapi"},
+		{model.SideStandard, "python-standard"},
+		{model.SideConnector, "postgres"},
+	}, "")
+	result, err := Build(in, layers, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env := string(result.Files[".env.example"].Data); !strings.HasPrefix(env, "# Settings for running ") {
+		t.Errorf(".env.example doesn't start with its first comment:\n%.120s", env)
+	}
+}
