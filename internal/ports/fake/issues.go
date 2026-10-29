@@ -535,8 +535,9 @@ func (g *Git) Retest(owner, name string, number int, testing bool) {
 	}
 }
 
-// AllIssues returns a copy of each issue of owner/name, open or closed, by
-// number.
+// AllIssues returns each issue of owner/name, open or closed, by number. The
+// copies are shallow: their slices are the fake's own, so read them only
+// while no reconciler edits the issue.
 func (g *Git) AllIssues(owner, name string) []Issue {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()

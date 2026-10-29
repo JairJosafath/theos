@@ -108,7 +108,7 @@ func (g *Git) PublishReleasePackages(_ context.Context, repo ports.Repository, t
 }
 
 // SetReleasePackages says which package each file of owner/name's release of
-// Tag holds; the release itself is SetRelease's.
+// tag holds; the release itself is SetRelease's.
 func (g *Git) SetReleasePackages(owner, name, tag string, packages ...Package) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
