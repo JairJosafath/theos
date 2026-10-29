@@ -167,7 +167,10 @@ Done when:
    - `spec.adopt: true` takes a repository that already has history. The
      operator writes nothing to it.
    - The person proves intent first, by committing a `.c4factory.yaml` that
-     names the Container and the Standard's files.
+     names the project and the Container; else `IdentityMismatch`.
+   - The operator compares the Standard's files on main directly with what
+     the Standard renders at its ref; a difference fails
+     `StandardFilesDiffer`, naming the paths.
    - Monorepos stay out of scope.
 
 5. **The factory gets its own Standard, `factory-self`** (step 3).
