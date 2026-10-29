@@ -14,42 +14,6 @@ import (
 	"strings"
 )
 
-// Check states, as Gitea's combined commit status reports them. An empty state
-// means no check has reported on the commit yet.
-const (
-	CheckPending = "pending"
-	CheckSuccess = "success"
-	CheckFailure = "failure"
-	CheckError   = "error"
-)
-
-// CheckStatus is the combined state of the checks on one commit.
-type CheckStatus struct {
-	Commit string
-	State  string
-	URL    string
-	// Contexts is the state of each check by its context, such as
-	// "check / check (pull_request)".
-	Contexts map[string]string
-}
-
-// PullRequest is a pull request on a repository.
-type PullRequest struct {
-	Number  int
-	URL     string
-	Head    string
-	HeadSHA string
-	State   string
-	Merged  bool
-	// Mergeable is false while the pull request conflicts with its base.
-	Mergeable bool
-	// Behind means the base moved since the branch last took it in: checks on
-	// the head ran without what merged into the base since.
-	Behind bool
-	// MergeCommit is the commit the merge made on the base; empty until merged.
-	MergeCommit string
-}
-
 // agentTokenName is the name of the access token made for an agent bot user
 // with AgentTokenScopes. The name carries the scopes, so a token made with
 // other ones, by an operator before an upgrade, keeps its own name: making the

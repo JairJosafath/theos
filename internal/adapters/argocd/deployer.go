@@ -244,7 +244,7 @@ func copyImage(ctx context.Context, t ports.Target, cfg settings, s ports.Shipme
 	if s.CopyImage == nil {
 		return "", &ports.Error{Kind: ports.ErrArtifactMissing, Cause: errors.New("the release's image can't be copied")}
 	}
-	to := ports.Registry{Host: cp.ToHost, Username: string(t.Secret[model.ArgoCDSecretRegistryUsername]),
+	to := ports.ImageRegistry{Host: cp.ToHost, Username: string(t.Secret[model.ArgoCDSecretRegistryUsername]),
 		Password: string(t.Secret[model.ArgoCDSecretRegistryPassword]), Insecure: cfg.ImageRegistryInsecure}
 	err = s.CopyImage(ctx, to, cp.ToRepository, s.Version)
 	switch {

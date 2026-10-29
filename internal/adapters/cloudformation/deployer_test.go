@@ -680,7 +680,7 @@ func TestShipImageReadRefused(t *testing.T) {
 	files := fixtureFiles(t, "aws-fargate-ts")
 	tt.Parameters = map[string]string{"CertificateArn": "arn:aws:acm:eu-west-1:1:certificate/x"}
 	s := w.withImage(shipment("aws-fargate-ts", "v1.0.0", files))
-	s.CopyImage = func(context.Context, ports.Registry, string, string) error {
+	s.CopyImage = func(context.Context, ports.ImageRegistry, string, string) error {
 		return fmt.Errorf("gitea: %w: %s answered 403 Forbidden to the tag's read; it must read tags as well as "+
 			"push: %w", oci.ErrReadRefused, "1.dkr.ecr.eu-west-1.amazonaws.com/assets:0123",
 			&transport.Error{StatusCode: http.StatusForbidden})

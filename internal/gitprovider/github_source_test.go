@@ -24,7 +24,7 @@ import (
 // fakeGit is a repository's git objects and refs, hashed as git hashes them,
 // served as GitHub's Git Data API does.
 type fakeGit struct {
-	defaultBranch string
+	DefaultBranch string
 	private       bool
 	blobs         map[string][]byte
 	// trees holds each tree's direct entries, by name.
@@ -44,7 +44,7 @@ type fakeGit struct {
 }
 
 func newFakeGit() *fakeGit {
-	return &fakeGit{defaultBranch: "main", blobs: map[string][]byte{}, trees: map[string]map[string]githubTreeEntry{},
+	return &fakeGit{DefaultBranch: "main", blobs: map[string][]byte{}, trees: map[string]map[string]githubTreeEntry{},
 		commits: map[string]githubCommit{}, tags: map[string]githubObject{}, refs: map[string]githubObject{},
 		protected: map[string]bool{}}
 }
@@ -179,7 +179,7 @@ func (g *fakeGit) serve(f *fakeGitHub, w http.ResponseWriter, r *http.Request) {
 	repo := "/repos/" + fakeGitHubRepo
 	if r.URL.Path == repo {
 		f.json(w, http.StatusOK, map[string]any{"id": fakeGitHubRepoID, "full_name": fakeGitHubRepo,
-			"default_branch": g.defaultBranch, "private": g.private})
+			"default_branch": g.DefaultBranch, "private": g.private})
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, repo+"/git/")

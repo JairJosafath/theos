@@ -13,17 +13,6 @@ import (
 	"time"
 )
 
-// Milestone is a milestone on a repository.
-type Milestone struct {
-	ID    int64
-	Title string
-	// Due is the milestone's due date, zero when it has none.
-	Due time.Time
-	// Description is the milestone's description, and Closed whether it is closed.
-	Description string
-	Closed      bool
-}
-
 func (m giteaMilestone) milestone() Milestone {
 	out := Milestone{ID: m.ID, Title: m.Title, Description: m.Description, Closed: m.State == stateClosed}
 	if m.DueOn != nil {
@@ -193,26 +182,6 @@ func (g *gitea) CreateTag(ctx context.Context, repo Repository, tag, commit, mes
 	return nil
 }
 
-// WorkflowRun is a CI workflow run.
-type WorkflowRun struct {
-	ID int64
-	// Workflow is the workflow file it runs, such as release.yaml.
-	Workflow string
-	// Event is what started it: push, pull_request and the like.
-	Event string
-	// Ref is the ref it ran at, such as refs/heads/main or refs/pull/3/head.
-	Ref string
-	// Status is queued, waiting, in_progress or completed.
-	Status string
-	// Conclusion is how a completed run ended: success, failure, cancelled or
-	// skipped.
-	Conclusion string
-	// Started is when a runner started it, zero while it waits for one.
-	Started time.Time
-	// URL is the run's page.
-	URL string
-}
-
 // runPages bounds the runs TagRuns and CommitRuns read: a commit's runs are
 // among the newest at it.
 const runPages = 3
@@ -350,22 +319,6 @@ func pageQuery(page int) url.Values {
 	return url.Values{"limit": {strconv.Itoa(issuePageSize)}, "page": {strconv.Itoa(page)}}
 }
 
-// WorkflowJob is a job of a CI workflow run.
-type WorkflowJob struct {
-	ID int64
-	// Status is queued, waiting, in_progress or completed, and Conclusion how a
-	// completed job ended.
-	Status     string
-	Conclusion string
-	// RunnerID is the runner that ran it, zero when none started it, and
-	// RunnerName that runner's name (a pool pod's, when the factory's pool
-	// registered it).
-	RunnerID   int64
-	RunnerName string
-	// Completed is when it ended, zero while it runs.
-	Completed time.Time
-}
-
 // jobPages bounds the jobs RunJobs reads.
 const jobPages = 3
 
@@ -421,29 +374,6 @@ func (g *gitea) RerunFailedJobs(ctx context.Context, repo Repository, id int64) 
 		return fmt.Errorf("gitea: re-running run %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
 	}
 	return nil
-}
-
-// Release is a release on a repository, with the files attached to it.
-type Release struct {
-	ID int64
-	// Tag is the tag it releases.
-	Tag  string
-	Name string
-	// Body is its notes, "" when nobody wrote any.
-	Body  string
-	Draft bool
-	// URL is the release's page.
-	URL    string
-	Assets []ReleaseAsset
-}
-
-// ReleaseAsset is a file attached to a release.
-type ReleaseAsset struct {
-	ID   int64
-	Name string
-	Size int64
-	// UUID names the file's download, independent of the release's tag.
-	UUID string
 }
 
 type giteaRelease struct {

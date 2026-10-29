@@ -114,7 +114,7 @@ func publishImage(ctx context.Context, ses *session, s ports.Shipment, cp model.
 	if err != nil || !ok {
 		return fmt.Errorf("logging in to ECR %s: the token is not base64 user:password", cp.Host)
 	}
-	err = s.CopyImage(ctx, ports.Registry{Host: cp.Host, Username: user, Password: password}, cp.Repository, cp.Tag)
+	err = s.CopyImage(ctx, ports.ImageRegistry{Host: cp.Host, Username: user, Password: password}, cp.Repository, cp.Tag)
 	switch {
 	case err == nil:
 		logr.FromContextOrDiscard(ctx).Info("Copied the image", "image", s.Image, "copy", cp.URI)

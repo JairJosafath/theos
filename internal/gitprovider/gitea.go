@@ -11,10 +11,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
-// gitea is a Provider backed by Gitea's REST API for repositories and plain Git
+// gitea implements every Git host port, backed by Gitea's REST API for repositories and plain Git
 // over HTTP for commits.
 type gitea struct {
 	base  *url.URL
@@ -27,6 +28,14 @@ type gitea struct {
 	// the host's own registries.
 	packages Packages
 }
+
+var (
+	_ ports.GitHost     = (*gitea)(nil)
+	_ ports.Issues      = (*gitea)(nil)
+	_ ports.CI          = (*gitea)(nil)
+	_ ports.AgentAccess = (*gitea)(nil)
+	_ ports.Registry    = (*gitea)(nil)
+)
 
 func newGitea(cfg Config, client *http.Client) (*gitea, error) {
 	base, err := url.Parse(strings.TrimSuffix(cfg.URL, "/"))
@@ -52,7 +61,7 @@ func (g *gitea) EnsureRepository(ctx context.Context, name, description string) 
 		"description":    description,
 		"private":        false,
 		"auto_init":      false,
-		"default_branch": defaultBranch,
+		"default_branch": DefaultBranch,
 	})
 	status, data, err := g.do(ctx, http.MethodPost, "/api/v1/orgs/"+url.PathEscape(g.owner)+"/repos", body)
 	if err != nil {

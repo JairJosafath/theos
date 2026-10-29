@@ -13,39 +13,6 @@ import (
 	"time"
 )
 
-// Issue is an issue on a repository.
-type Issue struct {
-	Number int
-	Title  string
-	Body   string
-	// State is open or closed.
-	State  string
-	Labels []string
-	URL    string
-	// Milestone is the ID of the issue's milestone, or 0 when it has none.
-	Milestone int64
-	// MilestoneTitle is the milestone's title; MilestoneDue its due date, zero when
-	// it has none.
-	MilestoneTitle string
-	MilestoneDue   time.Time
-}
-
-// Label is a label a repository should have.
-type Label struct {
-	Name        string
-	Color       string
-	Description string
-	// Exclusive makes a scoped label ("scope/value") replace the others of its scope.
-	Exclusive bool
-}
-
-// Review events, as Gitea names them.
-const (
-	ReviewApprove        = "APPROVED"
-	ReviewRequestChanges = "REQUEST_CHANGES"
-	ReviewComment        = "COMMENT"
-)
-
 // issuePageSize is how many issues one list call returns; maxIssuePages bounds a list.
 const (
 	issuePageSize = 50
