@@ -47,12 +47,12 @@ linters:
             - pkg: sigs.k8s.io
               desc: business rules must not import controller-runtime or other Kubernetes libraries (docs/architecture.md)
             - pkg: net/http
-              desc: business rules must not do I/O over HTTP; that belongs in internal/gitprovider (docs/architecture.md)
+              desc: business rules must not do I/O over HTTP; that belongs in an adapter, internal/adapters (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/api
               desc: business rules take plain values; controllers convert resources (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: business rules must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+            - pkg: github.com/JairJosafath/c4factory/internal/adapters
               desc: business rules must not depend on adapters (docs/architecture.md)
         model-is-the-bottom:
           files:
@@ -60,9 +60,14 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/c4factory/internal/scaffold
               desc: model is the lowest layer; scaffold builds on it (docs/architecture.md)
+        # Argo CD's adapter talks to the cluster; the Git host's and the
+        # releases' adapters don't.
         adapters-stay-out-of-kubernetes:
           files:
-            - "**/internal/gitprovider/**"
+            - "**/internal/adapters/gitea/**"
+            - "**/internal/adapters/git/**"
+            - "**/internal/adapters/github/**"
+            - "**/internal/adapters/gitlab/**"
           deny:
             - pkg: k8s.io
               desc: adapters must not import Kubernetes (docs/architecture.md)
@@ -86,8 +91,6 @@ linters:
               desc: ports take plain values (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/adapters
               desc: ports must not depend on adapters (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
-              desc: ports must not depend on adapters (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: ports must not depend on controllers (docs/architecture.md)
         adapters-take-plain-values:
@@ -98,17 +101,10 @@ linters:
               desc: adapters take plain values (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: adapters must not depend on controllers (docs/architecture.md)
-        host-adapters-stay-out-of-kubernetes:
-          files:
-            - "**/internal/adapters/github/**"
-          deny:
-            - pkg: k8s.io
-              desc: a host adapter must not import Kubernetes (docs/architecture.md)
-            - pkg: sigs.k8s.io
-              desc: a host adapter must not import controller-runtime (docs/architecture.md)
         controllers-take-ports:
           files:
             - "**/internal/controller/**"
+            - "**/internal/sessionclient/**"
             - "!$test"
           deny:
             - pkg: github.com/JairJosafath/c4factory/internal/adapters
@@ -126,7 +122,7 @@ linters:
               desc: the runner takes plain values from its environment (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: the runner must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+            - pkg: github.com/JairJosafath/c4factory/internal/adapters
               desc: the runner uses git and its token only; the operator talks to the Git host API (docs/architecture.md)
         model-proxy-stands-alone:
           files:
@@ -141,7 +137,7 @@ linters:
               desc: the model proxy knows no resources; it takes its flags and one Secret file (docs/architecture.md)
             - pkg: github.com/JairJosafath/c4factory/internal/controller
               desc: the model proxy must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/gitprovider
+            - pkg: github.com/JairJosafath/c4factory/internal/adapters
               desc: the model proxy talks to the Claude API only, never to the Git host (docs/architecture.md)
         model-proxy-handler-is-a-leaf:
           files:

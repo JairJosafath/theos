@@ -57,8 +57,8 @@ make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
 make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
-make test-gitea          # gitprovider against a local Gitea (make gitea-local), or C4_GITEA_URL if set
-make test-gitea-kind     # gitprovider against the seeded Gitea of the Kind cluster
+make test-gitea          # the Gitea adapter against a local Gitea (make gitea-local), or C4_GITEA_URL if set
+make test-gitea-kind     # the Gitea adapter against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make argocd              # Argo CD core (config/argocd), where the webshop's Containers deploy to
 make e2e-apps            # The e2e fixture project apps: one hello-world Container (test/e2e/testdata/apps)
@@ -196,7 +196,7 @@ Docker, so the Gitea tests run on any device, lite ones included:
 `make test-gitea` starts it, seeds the templates (`hack/gitea-local.sh
 fixtures`: `hack/seed/seed.sh` with no projects, so no Secrets, plus the
 `webshop` organization) and runs the `Integration` tests in
-`internal/gitprovider`. A first run takes about three minutes, mostly
+`internal/adapters/gitea`. A first run takes about three minutes, mostly
 pushing the templates; later runs take about half a minute. The packages
 test (`TestGiteaPackagesIntegration`) installs what it publishes with the
 real tools, so it wants `npm` and `uv` on PATH, and skips, saying which one
@@ -221,7 +221,7 @@ covers the file mode against a stand-in Gitea.
 The Tests workflow runs `make test-gitea` on pull requests to main and on
 main, with node and uv set up in its job, so the tests that install the
 packages they publish run there in full; run it yourself while you change
-`internal/gitprovider` or the seed. Without `npm` or `uv` on PATH only the
+`internal/adapters/gitea` or the seed. Without `npm` or `uv` on PATH only the
 install subtests skip, and say so; the publish still runs (#1702).
 
 ## Deployment Workflow
