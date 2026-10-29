@@ -151,8 +151,8 @@ models; delete a namespace to drop it.
 
 An upgrade keeps your `c4.factory.io` objects valid: write them at `v1beta1`;
 `v1alpha1` still works, deprecated (the API server warns on every request at
-it, and it may be dropped no earlier than 2027-01-22, #1963), and converts to
-`v1beta1`. Within a served version a release never removes, renames or retypes
+it, and a release 90 or more days after v0.30.0 may drop it, #1963), and
+converts to `v1beta1`. Within a served version a release never removes, renames or retypes
 a field, never adds a required one and never tightens a rule so that an
 object applied before is refused after; a change that must break waits for a
 new version that converts them. See
