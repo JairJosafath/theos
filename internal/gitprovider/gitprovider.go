@@ -6,7 +6,6 @@
 package gitprovider
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -58,7 +57,7 @@ func (c Client) httpClient() *http.Client {
 
 // ErrUnpinnedRef means a template ref is a branch or doesn't exist. Templates
 // must be pinned to a tag or a full commit SHA.
-var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
+var ErrUnpinnedRef = ports.ErrUnpinnedRef
 
 // SameHost reports whether two URLs point at the same host, so a Git provider's
 // credentials can be reused for a template on it.

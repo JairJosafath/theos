@@ -19,6 +19,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // readyCLIContainer makes Ready cli Container orders-cli in ns, on Framework
@@ -60,8 +61,8 @@ var _ = Describe("Container deploys to a gitlab target (#1804)", func() {
 		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 
 		build := []byte("the build of v0.1.0")
-		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"orders-cli-v0.1.0.tar.gz", build})
+		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "orders-cli-v0.1.0.tar.gz", Data: build})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
 		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "staging"})
 
@@ -101,11 +102,11 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		project := gitlabSourceTarget(ns, "open")
 		all, app := appSource("example.com/orders")
 		// GitLab's Commits API carries no symlinks; the tree without one.
-		all = slices.DeleteFunc(all, func(f fakeSourceFile) bool { return f.mode == gitprovider.SourceSymlink })
+		all = slices.DeleteFunc(all, func(f fake.SourceFile) bool { return f.Mode == gitprovider.SourceSymlink })
 		delete(app, "run")
-		gitFake.setSource(ns, "orders-cli", "v0.1.0", all...)
-		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
+		gitFake.SetSource(ns, "orders-cli", "v0.1.0", all...)
+		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "orders-cli-v0.1.0.tar.gz", Data: []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
 		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 
@@ -128,9 +129,9 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		readyCLIContainer(ns)
 		project := gitlabSourceTarget(ns, "open")
 		leaky, leaked := leakedSource("example.com/orders")
-		gitFake.setSource(ns, "orders-cli", "v0.1.0", leaky...)
-		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
+		gitFake.SetSource(ns, "orders-cli", "v0.1.0", leaky...)
+		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "orders-cli-v0.1.0.tar.gz", Data: []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
 		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 
@@ -146,9 +147,9 @@ var _ = Describe("Container ships its source to a gitlab target (#1805)", func()
 		readyCLIContainer(ns)
 		project := gitlabSourceTarget(ns, "open")
 		all, _ := appSource("example.com/orders")
-		gitFake.setSource(ns, "orders-cli", "v0.1.0", all...)
-		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
+		gitFake.SetSource(ns, "orders-cli", "v0.1.0", all...)
+		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "orders-cli-v0.1.0.tar.gz", Data: []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
 		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "open"})
 

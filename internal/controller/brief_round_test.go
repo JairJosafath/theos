@@ -166,7 +166,7 @@ func planRoundCosting(ns string, round, try int, files scaffold.Tree, milliUSD *
 	// repo, its plan Task, the Task's Sandbox): give it a whole round, as the
 	// Brief specs do, not the suite's 10s default, which a loaded device ran out (#942).
 	Eventually(func(g Gomega) { sandboxExists(g, ns, sandbox) }).Should(Succeed())
-	sha := gitFake.pushPlan(ns, briefRepo, round, files)
+	sha := gitFake.PushPlan(ns, briefRepo, round, files)
 	result := &agentrunner.Result{Role: "plan", Commit: sha,
 		Summary:      "I've rewritten the plan in `plan/` with the refusal fixed. Nothing is committed or pushed.",
 		CostMilliUSD: milliUSD}
@@ -243,7 +243,7 @@ var _ = Describe("Brief rounds", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}, orderWait).Should(Succeed())
-		Expect(gitFake.openIssues(ns, "linter")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "linter")).To(HaveLen(1))
 	})
 
 	It("plans the idea, applies the model, makes the Crew and files the issues", func() {
@@ -296,11 +296,11 @@ var _ = Describe("Brief rounds", func() {
 		for i, issue := range brief.Status.Issues {
 			Expect(issue.Repository).To(Equal(ns + "/linter"))
 			Expect(issue.Title).To(Equal(fmt.Sprintf("Lint rule %d", i+1)))
-			filed := gitFake.issue(ns, "linter", int(issue.Number))
+			filed := gitFake.Issue(ns, "linter", int(issue.Number))
 			Expect(model.HasIssueMarker(filed.Body, "cel-lens", 1, i+1)).To(BeTrue())
 			Expect(filed.Labels).To(ContainElement("kind/feature"))
 			Expect(filed.Labels).NotTo(ContainElement("status/proposed"))
-			Expect(filed.milestone).To(BeEmpty())
+			Expect(filed.InMilestone).To(BeEmpty())
 		}
 
 		By("accepting the plan on the Task, and merging it into the repository's main")
@@ -308,7 +308,7 @@ var _ = Describe("Brief rounds", func() {
 		Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 		Expect(task.Annotations).To(And(HaveKeyWithValue(c4v1beta1.AnnotationPlanChecked, sha),
 			Not(HaveKey(c4v1beta1.AnnotationPlanRefusals))))
-		main := gitFake.mainFiles(ns, briefRepo)
+		main := gitFake.MainFiles(ns, briefRepo)
 		Expect(main).To(HaveKey("plan/issues/02-linter.md"))
 		Expect(string(main[model.PlanChoicesFile].Data)).To(ContainSubstring("Postgres keeps them"))
 
@@ -361,15 +361,15 @@ var _ = Describe("Brief rounds", func() {
 		Eventually(func(g Gomega) { getTask(g, ns, "cel-lens-plan-1") }).Should(Succeed())
 
 		By("leaving a prompt appended during round 1 for round 2")
-		reads := gitFake.historyCount(ns, briefRepo)
+		reads := gitFake.HistoryCount(ns, briefRepo)
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Support VAP files first."} })).To(Succeed())
-		Eventually(func() int { return gitFake.historyCount(ns, briefRepo) }).Should(BeNumerically(">", reads),
+		Eventually(func() int { return gitFake.HistoryCount(ns, briefRepo) }).Should(BeNumerically(">", reads),
 			"the workspace was not written again")
 		Consistently(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Round).To(Equal(int32(1)))
 			g.Expect(b.Status.RoundPrompts).To(BeZero())
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).NotTo(
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).NotTo(
 				ContainSubstring("Support VAP"), "a try of round 1 that starts now must not plan it")
 		}, "1s").Should(Succeed())
 		planRound(ns, 1, 1, quietPlan(ns))
@@ -392,7 +392,7 @@ var _ = Describe("Brief rounds", func() {
 		Expect(getBrief(Default, ns).Status.History).To(HaveEach(HaveField("Summary",
 			"The model has no Containers; the round files no issues.")), "a plan without summary.md says what it holds")
 		// The status says Planned first; the next reconcile rewrites brief.md (#1293).
-		Eventually(func() string { return string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data) }).
+		Eventually(func() string { return string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data) }).
 			Should(ContainSubstring("1. (planned) Support VAP files first.\n"), "brief.md marks it planned")
 
 		By("starting round 3 at once for a prompt appended while idle")
@@ -463,7 +463,7 @@ spec:
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanning))
 			getTask(g, ns, "cel-lens-plan-2")
 		}).Should(Succeed())
-		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(And(
+		Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).To(And(
 			ContainSubstring("## Idea (**new**)"), ContainSubstring("1. (**new**) Keep it simple.")),
 			"a failed round planned nothing, the idea neither")
 	})
@@ -476,7 +476,7 @@ spec:
 		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc("other") + linterDocs)}
 
 		planRound(ns, 1, 1, bad)
-		Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
+		Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).
 			To(ContainSubstring("a Project the plan makes is named `"+ns+"`"), "brief.md names the namespace")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "cel-lens-plan-1")
@@ -728,7 +728,7 @@ spec:
 			g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionPlanned)).To(
 				HaveField("Message", ContainSubstring("Container checker")))
 		}).Should(Succeed())
-		Expect(gitFake.closeIssue(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "linter", int(getBrief(Default, ns).Status.Issues[0].Number))).To(Succeed())
 
 		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")
 		stale := getBrief(Default, ns)
@@ -736,15 +736,15 @@ spec:
 		stale.Status.Issues = nil
 		linter := &c4v1beta1.Container{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
-		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: gitFake}
+		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: fakeGitClient{gitFake}}
 		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
 		Expect(r.fileIssues(ctx, run, map[string]*c4v1beta1.Container{"linter": linter}, []model.PlanIssue{
 			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
-		Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
+		Expect(gitFake.OpenIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
 
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
+			g.Expect(gitFake.OpenIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefApplying))
 		}, "3s").Should(Succeed())
 	})
@@ -814,7 +814,7 @@ spec:
 		By("finding two of the four issues and the Crew already there, as a restart would")
 		for n := 1; n <= 2; n++ {
 			issue := model.PlanIssue{N: n, Body: "Filed before the restart."}
-			gitFake.addIssue(ns, "linter", fmt.Sprintf("Lint rule %d", n), model.BriefIssueBody(issue, "cel-lens", 1),
+			gitFake.AddIssue(ns, "linter", fmt.Sprintf("Lint rule %d", n), model.BriefIssueBody(issue, "cel-lens", 1),
 				[]string{"status/ready"})
 		}
 		mustCreate(&c4v1beta1.Crew{ObjectMeta: objectMeta(ns, "linter"), Spec: c4v1beta1.CrewSpec{
@@ -829,7 +829,7 @@ spec:
 		}).Should(Succeed())
 		brief := getBrief(Default, ns)
 		Expect(brief.Status.Issues).To(HaveLen(4))
-		issues := gitFake.openIssues(ns, "linter")
+		issues := gitFake.OpenIssues(ns, "linter")
 		Expect(issues).To(HaveLen(4))
 		for n := 1; n <= 4; n++ {
 			marked := 0

@@ -23,7 +23,7 @@ import (
 var _ = Describe("Task before round 1", func() {
 	const push = "check / check (push)"
 	setMain := func(ns, state string) {
-		gitFake.setCheckContexts(ns, "orders-api", gitprovider.DefaultBranch, state, map[string]string{push: state})
+		gitFake.SetCheckContexts(ns, "orders-api", gitprovider.DefaultBranch, state, map[string]string{push: state})
 	}
 	waitsWith := func(ns, reason, message string) {
 		Eventually(func(g Gomega) {

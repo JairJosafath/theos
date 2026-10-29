@@ -19,6 +19,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // crewSkew moves the Crew's clock ahead of the real one, so a test sees
@@ -37,7 +38,7 @@ func skewCrewClock(d time.Duration) {
 // releaseRun sets the run orders-api's v0.1.0 tag started to status and
 // conclusion.
 func releaseRun(ns, status, conclusion string) {
-	gitFake.setRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
+	gitFake.SetRuns(ns, "orders-api", "v0.1.0", "5a-merge", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
 		Status: status, Conclusion: conclusion, URL: "http://gitea/" + ns + "/orders-api/actions/runs/5"})
 }
 
@@ -63,9 +64,9 @@ func bundles(ns, source string, bundling bool) *c4v1beta1.Relationship {
 }
 
 // bumpIssues are the open issues of name labelled kind/bump.
-func bumpIssues(ns, name string) []fakeIssue {
-	var out []fakeIssue
-	for _, issue := range gitFake.openIssues(ns, name) {
+func bumpIssues(ns, name string) []fake.Issue {
+	var out []fake.Issue
+	for _, issue := range gitFake.OpenIssues(ns, name) {
 		for _, l := range issue.Labels {
 			if l == model.LabelBump {
 				out = append(out, issue)
@@ -83,10 +84,10 @@ var _ = Describe("Crew release bumps", func() {
 		bundlerContainer(ns, "web")
 		bundlerContainer(ns, "client")
 		// web's next release is v0.5.0; Later is no release.
-		n := gitFake.addIssue(ns, "web", "Later work", clearIssue, nil)
-		gitFake.setIssueMilestone(ns, "web", n, model.FollowUpMilestone)
-		n = gitFake.addIssue(ns, "web", "Next work", clearIssue, nil)
-		gitFake.setIssueRelease(ns, "web", n, "v0.5.0", releaseDue)
+		n := gitFake.AddIssue(ns, "web", "Later work", clearIssue, nil)
+		gitFake.PutInMilestone(ns, "web", n, model.FollowUpMilestone)
+		n = gitFake.AddIssue(ns, "web", "Next work", clearIssue, nil)
+		gitFake.SetIssueRelease(ns, "web", n, "v0.5.0", releaseDue)
 		broken := newContainer(ns, "broken", "webshop-core", c4v1beta1.ContainerTypeService)
 		broken.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: "missing"}
 		mustCreate(broken, bundles(ns, "web", true), bundles(ns, "client", false), bundles(ns, "broken", true))
@@ -100,8 +101,8 @@ var _ = Describe("Crew release bumps", func() {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
 			g.Expect(issues[0].Title).To(Equal("Bump orders-api to v0.1.0"))
-			g.Expect(issues[0].filedLabels).To(ContainElement(model.LabelReady))
-			g.Expect(issues[0].milestone).To(Equal("v0.5.0"))
+			g.Expect(issues[0].FiledLabels).To(ContainElement(model.LabelReady))
+			g.Expect(issues[0].InMilestone).To(Equal("v0.5.0"))
 			g.Expect(issues[0].Body).To(ContainSubstring("orders-api released v0.1.0 at `5a-merge`"))
 			release := getCrew(g, ns).Status.LastRelease
 			g.Expect(release).NotTo(BeNil())
@@ -125,7 +126,7 @@ var _ = Describe("Crew release bumps", func() {
 		// The status write that recorded it was lost.
 		_, body := model.BumpIssue(model.Bump{Bundled: "orders-api", Tag: "v0.1.0", Commit: "5a-merge",
 			Bundler: model.Bundler{Container: "web", Relationship: "web-to-orders-api"}})
-		filed := gitFake.addIssue(ns, "web", "Bump orders-api to v0.1.0", body,
+		filed := gitFake.AddIssue(ns, "web", "Bump orders-api to v0.1.0", body,
 			[]string{model.LabelBump, model.LabelReady})
 		mustCreate(bundles(ns, "web", true))
 		mergedIssue(ns)
@@ -138,7 +139,7 @@ var _ = Describe("Crew release bumps", func() {
 			release := getCrew(g, ns).Status.LastRelease
 			g.Expect(release).NotTo(BeNil())
 			g.Expect(release.Bumps).To(ConsistOf(c4v1beta1.CrewReleaseBump{Container: "web",
-				IssueURL: gitFake.issue(ns, "web", filed).URL}))
+				IssueURL: gitFake.Issue(ns, "web", filed).URL}))
 		}).Should(Succeed())
 		Expect(bumpIssues(ns, "web")).To(HaveLen(1))
 		Expect(crewEvents(Default, ns)).NotTo(ContainElement(HaveField("Reason", "BumpFiled")))
@@ -150,11 +151,11 @@ var _ = Describe("Crew release bumps", func() {
 		crewAgents(ns, 1)
 		bundlerContainer(ns, "web")
 		// web's v0.5.0 is being prepared: its prepare issue merged, its tag not yet made.
-		prepare := gitFake.addIssue(ns, "web", "Prepare v0.5.0", clearIssue, []string{model.LabelRelease})
-		gitFake.setIssueRelease(ns, "web", prepare, "v0.5.0", releaseDue)
-		Expect(gitFake.closeIssue(ns, "web", prepare)).To(Succeed())
-		n := gitFake.addIssue(ns, "web", "Later work", clearIssue, nil)
-		gitFake.setIssueRelease(ns, "web", n, "v0.6.0", releaseDue.AddDate(0, 0, 7))
+		prepare := gitFake.AddIssue(ns, "web", "Prepare v0.5.0", clearIssue, []string{model.LabelRelease})
+		gitFake.SetIssueRelease(ns, "web", prepare, "v0.5.0", releaseDue)
+		Expect(gitFake.CloseIssueByHand(ns, "web", prepare)).To(Succeed())
+		n := gitFake.AddIssue(ns, "web", "Later work", clearIssue, nil)
+		gitFake.SetIssueRelease(ns, "web", n, "v0.6.0", releaseDue.AddDate(0, 0, 7))
 		mustCreate(bundles(ns, "web", true))
 		mergedIssue(ns)
 		releaseRun(ns, "completed", "success")
@@ -165,7 +166,7 @@ var _ = Describe("Crew release bumps", func() {
 		Eventually(func(g Gomega) {
 			issues := bumpIssues(ns, "web")
 			g.Expect(issues).To(HaveLen(1))
-			g.Expect(issues[0].milestone).To(Equal("v0.6.0"))
+			g.Expect(issues[0].InMilestone).To(Equal("v0.6.0"))
 		}).Should(Succeed())
 	})
 

@@ -46,12 +46,12 @@ func operationsFile(rpo, email string) string {
 func newOperationsFramework(ns string, renders bool) *c4v1beta1.Framework {
 	GinkgoHelper()
 	url := templatesURL + ns + "/" + opsFramework
-	tree := maps.Clone(gitFake.template(templatesURL+"python-fastapi", "v1.6.0"))
+	tree := maps.Clone(gitFake.Template(templatesURL+"python-fastapi", "v1.6.0"))
 	Expect(tree).NotTo(BeEmpty())
 	if renders {
 		tree[model.OperationsFile+".tmpl"] = scaffold.File{Data: []byte(operationsTemplate)}
 	}
-	gitFake.addTemplate(url, "v1.3.0", tree)
+	gitFake.AddTemplate(url, "v1.3.0", tree)
 	spec := newFrameworkSpec(url, "v1.3.0", c4v1beta1.ContainerTypeService)
 	spec.ReadsOperations = true
 	return &c4v1beta1.Framework{ObjectMeta: objectMeta(ns, opsFramework), Spec: spec}
@@ -110,7 +110,7 @@ func openedOperations(ns, rpo string) c4v1beta1.OperationsUpdateStatus {
 func mergedOperations(ns string, update c4v1beta1.OperationsUpdateStatus) {
 	GinkgoHelper()
 	container := eventuallyOperationsApplied(ns, metav1.ConditionTrue, c4v1beta1.ReasonUpdateMerged)
-	head := gitFake.mainHead(ns, "orders-api")
+	head := gitFake.MainHead(ns, "orders-api")
 	Expect(container.Status.OperationsUpdate).To(PointTo(MatchFields(IgnoreExtras, Fields{
 		"PullRequest": Equal(update.PullRequest), "MergeCommit": Equal(head.Hash), "Stopped": BeEmpty()})))
 	Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(Equal(
@@ -160,7 +160,7 @@ var _ = Describe("Container operations", func() {
 			Expect(container.Status.Operations).To(BeNil(), "nothing was rendered, so nothing is recorded")
 
 			By("setting the block")
-			pushes := gitFake.pushCount()
+			pushes := gitFake.PushCount()
 			Expect(patch(container, func() {
 				container.Spec.Operations = &c4v1beta1.OperationsSpec{
 					Recovery: &c4v1beta1.OperationsRecovery{RPO: "5m"}}
@@ -171,9 +171,9 @@ var _ = Describe("Container operations", func() {
 					"so its repository has none of it; change the repository by a Task"))
 			Expect(container.Status.Operations).To(BeNil())
 			Expect(container.Status.OperationsUpdate).To(BeNil(), "no update acts")
-			Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
+			Consistently(gitFake.PushCount).WithTimeout(time.Second).Should(Equal(pushes),
 				"nothing reaches the repository")
-			Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 
 			By("leaving the block out again")
 			Expect(patch(container, func() { container.Spec.Operations = nil })).To(Succeed())
@@ -201,7 +201,7 @@ var _ = Describe("Container operations", func() {
 		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).
 			To(HavePrefix("Framework go-cli doesn't read spec.operations"))
 		Expect(container.Status.Operations).To(BeNil())
-		Expect(gitFake.repo(ns, "orders-api").files).NotTo(HaveKey(model.OperationsFile))
+		Expect(gitFake.Repo(ns, "orders-api").Files).NotTo(HaveKey(model.OperationsFile))
 	})
 
 	It("scaffolds with the block, then reports a change its Framework says it reads but can't render, until it is undone",
@@ -226,7 +226,7 @@ var _ = Describe("Container operations", func() {
 			Expect(container.Status.Operations.Alerts.Email).To(Equal("ops@example.com"))
 
 			By("changing the block after the scaffold, on a Framework that says it reads it but renders no infra/operations.ts")
-			pushes := gitFake.pushCount()
+			pushes := gitFake.PushCount()
 			Expect(patch(container, func() {
 				container.Spec.Operations.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 			})).To(Succeed())
@@ -236,9 +236,9 @@ var _ = Describe("Container operations", func() {
 			Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"), "status keeps what the scaffold rendered")
 			Expect(container.Status.OperationsUpdate).To(PointTo(HaveField("Stopped",
 				c4v1beta1.ReasonChangedAfterScaffold)))
-			Consistently(gitFake.pushCount).WithTimeout(time.Second).Should(Equal(pushes),
+			Consistently(gitFake.PushCount).WithTimeout(time.Second).Should(Equal(pushes),
 				"nothing reaches the repository")
-			Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 
 			By("writing the default out, which is the block the scaffold rendered")
 			Expect(patch(container, func() {
@@ -265,14 +265,14 @@ var _ = Describe("Container operations", func() {
 			Recovery: &c4v1beta1.OperationsRecovery{RPO: "5m", RTO: "4h"},
 			Alerts:   &c4v1beta1.OperationsAlerts{Email: "ops@example.com"},
 		}), "the update records the block it renders, every field set")
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
 			"Number": BeEquivalentTo(update.PullRequest), "Head": Equal(update.Branch),
 			"HeadSHA": Equal(update.Commit), "State": Equal("open")})))
-		Expect(gitFake.branchEdits(ns, "orders-api", update.Branch)).To(MatchAllKeys(Keys{
+		Expect(gitFake.BranchEdits(ns, "orders-api", update.Branch)).To(MatchAllKeys(Keys{
 			model.OperationsFile: PointTo(HaveField("Data",
 				BeEquivalentTo(operationsFile("5m", "ops@example.com"))))}),
 			"the pull request writes infra/operations.ts and nothing else")
-		title, body := gitFake.pullText(ns, "orders-api", int(update.PullRequest))
+		title, body := gitFake.PullText(ns, "orders-api", int(update.PullRequest))
 		Expect(title).To(Equal("Render infra/operations.ts from spec.operations"))
 		Expect(body).To(ContainSubstring("recovery.rpo 1h"))
 		Expect(body).To(ContainSubstring("recovery.rpo 5m"))
@@ -281,23 +281,23 @@ var _ = Describe("Container operations", func() {
 
 		By("waiting while CI runs")
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
 			cond := condition(getContainer(g, ns).Status.Conditions, c4v1beta1.ConditionOperationsApplied)
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdating))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 
 		By("merging it as admin once CI passes on its commit")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		mergedOperations(ns, update)
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
 		Expect(mainFile(ns, model.OperationsFile)).To(Equal(operationsFile("5m", "ops@example.com")))
-		Expect(gitFake.mainHead(ns, "orders-api").Message).
+		Expect(gitFake.MainHead(ns, "orders-api").Message).
 			To(HavePrefix("Render infra/operations.ts from spec.operations\n\n"))
-		Expect(gitFake.hasBranch(ns, "orders-api", update.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", update.Branch)).To(BeFalse())
 
 		By("staying merged on the next passes")
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 			cond := condition(getContainer(g, ns).Status.Conditions, c4v1beta1.ConditionOperationsApplied)
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUpdateMerged))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
@@ -311,15 +311,15 @@ var _ = Describe("Container operations", func() {
 			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		update := openedOperations(ns, "5m")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "failure")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "failure")
 		container := eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonChecksFailed)
 		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(Equal(
 			"CI is failure on http://gitea/" + ns + "/orders-api/actions/runs/1; the update merges once a re-run " +
 				"passes, or close " + update.PullRequestURL + " to drop it"))
 		Expect(container.Status.Operations.Recovery.RPO).To(Equal("1h"))
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(BeEmpty())
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		mergedOperations(ns, update)
 		Expect(mainFile(ns, model.OperationsFile)).To(Equal(operationsFile("5m", "")))
 	})
@@ -338,13 +338,13 @@ var _ = Describe("Container operations", func() {
 		})
 		second := openedOperations(ns, "15m")
 		Expect(second.Branch).NotTo(Equal(first.Branch))
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(
 			MatchFields(IgnoreExtras, Fields{"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"),
 				"Merged": BeFalse()}),
 			MatchFields(IgnoreExtras, Fields{"Number": BeEquivalentTo(second.PullRequest), "State": Equal("open")})))
-		Expect(gitFake.hasBranch(ns, "orders-api", first.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "orders-api", first.Branch)).To(BeFalse())
 
-		gitFake.setChecks(ns, "orders-api", second.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", second.Commit, "success")
 		mergedOperations(ns, second)
 		Expect(mainFile(ns, model.OperationsFile)).To(Equal(operationsFile("15m", "")))
 	})
@@ -355,17 +355,17 @@ var _ = Describe("Container operations", func() {
 		createOperationsContainer(ns, nil)
 		Expect(getContainer(Default, ns).Spec.StandardRef).To(BeNil())
 		url := templatesURL + ns + "/" + opsFramework
-		tree := gitFake.template(url, "v1.3.0")
-		gitFake.dropTemplate(url, "v1.3.0")
+		tree := gitFake.Template(url, "v1.3.0")
+		gitFake.DropTemplate(url, "v1.3.0")
 
 		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
 			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonGitError)
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 
 		By("opening it at a recheck once the host answers, with no change to the Container")
-		gitFake.addTemplate(url, "v1.3.0", tree)
+		gitFake.AddTemplate(url, "v1.3.0", tree)
 		openedOperations(ns, "5m")
 	})
 
@@ -374,15 +374,15 @@ var _ = Describe("Container operations", func() {
 	It("records its own merge at main's head when the host names no merge commit", func() {
 		ns := newProjectNamespace()
 		createOperationsContainer(ns, nil)
-		gitFake.leaveMergeCommitsUnnamed(ns, "orders-api")
+		gitFake.LeaveMergeCommitsUnnamed(ns, "orders-api")
 
 		changeOperations(ns, func(o *c4v1beta1.OperationsSpec) {
 			o.Recovery = &c4v1beta1.OperationsRecovery{RPO: "5m"}
 		})
 		update := openedOperations(ns, "5m")
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		mergedOperations(ns, update)
-		Expect(gitFake.forcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
+		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(update.PullRequest)}))
 	})
 
 	DescribeTable("refuses a value outside the block's patterns and ranges",

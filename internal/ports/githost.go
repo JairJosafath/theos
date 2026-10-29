@@ -227,6 +227,12 @@ var ErrConflict = errors.New("the branch conflicts with its base")
 // repository doesn't have, say one deleted or of a repository made again.
 var ErrPullRequestNotFound = errors.New("no such pull request")
 
+// ErrUnpinnedRef means a template ref is a branch or doesn't exist. Templates
+// must be pinned to a tag or a full commit SHA. Fetching templates is plain
+// Git and no port (docs/plans/git-host-ports.md, decision 6); the error is
+// here so the fetcher and the controllers' fake share it.
+var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
+
 // GitHost is the Git host port (docs/architecture.md, "Ports"): repositories,
 // files, pushes, branches, tags, branch rules, pull requests, merges, commit
 // statuses, a release beside its tag, and the source at a tag. One GitHost

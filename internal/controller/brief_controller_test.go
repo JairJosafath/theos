@@ -70,11 +70,11 @@ var _ = Describe("Brief", func() {
 
 	Describe("repository", func() {
 		const repo = "brief-cel-lens"
-		file := func(name string) string { return string(gitFake.mainFiles(ns, repo)[name].Data) }
+		file := func(name string) string { return string(gitFake.MainFiles(ns, repo)[name].Data) }
 
 		It("gets the brief, the model, the catalog and the guide on main, once", func() {
 			readyContainer(ns)
-			gitFake.addIssue(ns, "orders-api", "Add a health check", "", []string{"status/ready"})
+			gitFake.AddIssue(ns, "orders-api", "Add a health check", "", []string{"status/ready"})
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
 
@@ -87,7 +87,7 @@ var _ = Describe("Brief", func() {
 			Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Message", HavePrefix("Agent planner is missing")))
 
-			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
+			Expect(gitFake.CommitCount(ns, repo)).To(Equal(1))
 			Expect(file(model.BriefFile)).To(ContainSubstring("## Idea (**new**)\n\nA linter for CEL rules in CRDs.\n"))
 			Expect(file(model.PlannerGuide)).To(ContainSubstring("Plan the story kinds only"))
 			Expect(file(model.WorkspaceModelFile)).To(And(
@@ -101,9 +101,9 @@ var _ = Describe("Brief", func() {
 				ContainSubstring("'#1 Add a health check'")))
 
 			By("letting only the operator push main, and the bot write the repository")
-			rule, _ := gitFake.branchRule(ns, repo)
+			rule, _ := gitFake.BranchRule(ns, repo)
 			Expect(rule.OperatorPushes).To(BeTrue())
-			Expect(gitFake.agentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
+			Expect(gitFake.AgentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
 			secret := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), secret)).To(Succeed())
 			Expect(controlledBy(secret, brief)).To(BeTrue())
@@ -113,18 +113,18 @@ var _ = Describe("Brief", func() {
 
 			By("writing nothing new when nothing changed")
 			token := string(secret.Data["token"])
-			reads := gitFake.historyCount(ns, repo)
+			reads := gitFake.HistoryCount(ns, repo)
 			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "another"), Spec: c4v1beta1.GitProviderSpec{
 				URL: "http://gitea.invalid", Owner: ns, CredentialsSecretRef: c4v1beta1.LocalRef{Name: "none"}}})
-			Eventually(func() int { return gitFake.historyCount(ns, repo) }).Should(BeNumerically(">", reads),
+			Eventually(func() int { return gitFake.HistoryCount(ns, repo) }).Should(BeNumerically(">", reads),
 				"the Brief was not reconciled again")
-			Consistently(func() int { return gitFake.commitCount(ns, repo) }, "1s").Should(Equal(1))
+			Consistently(func() int { return gitFake.CommitCount(ns, repo) }, "1s").Should(Equal(1))
 			Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), secret)).To(Succeed())
 			Expect(string(secret.Data["token"])).To(Equal(token), "the bot's token was rotated")
 
 			By("writing a new prompt as one more commit")
 			Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Support VAP files first."} })).To(Succeed())
-			Eventually(func() int { return gitFake.commitCount(ns, repo) }).Should(Equal(2))
+			Eventually(func() int { return gitFake.CommitCount(ns, repo) }).Should(Equal(2))
 			Expect(file(model.BriefFile)).To(ContainSubstring("1. (**new**) Support VAP files first.\n"))
 		})
 
@@ -132,7 +132,7 @@ var _ = Describe("Brief", func() {
 			createFactory(ns)
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
-			Eventually(func() int { return gitFake.commitCount(ns, repo) }).Should(Equal(1))
+			Eventually(func() int { return gitFake.CommitCount(ns, repo) }).Should(Equal(1))
 
 			moved := ns + "-moved"
 			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "moved"), Spec: c4v1beta1.GitProviderSpec{
@@ -143,10 +143,10 @@ var _ = Describe("Brief", func() {
 				g.Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
 				g.Expect(brief.Status.RepositoryURL).To(HaveSuffix("/" + moved + "/" + repo))
 			}).Should(Succeed())
-			Expect(gitFake.commitCount(moved, repo)).To(Equal(1))
-			rule, _ := gitFake.branchRule(moved, repo)
+			Expect(gitFake.CommitCount(moved, repo)).To(Equal(1))
+			rule, _ := gitFake.BranchRule(moved, repo)
 			Expect(rule.OperatorPushes).To(BeTrue())
-			Expect(gitFake.agentUser(moved, repo)).To(Equal(model.AgentUsername(ns, repo)))
+			Expect(gitFake.AgentUser(moved, repo)).To(Equal(model.AgentUsername(ns, repo)))
 			secret := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), secret)).To(Succeed())
 			Expect(string(secret.Data["repository"])).To(ContainSubstring("/" + moved + "/" + repo))
@@ -163,14 +163,14 @@ var _ = Describe("Brief", func() {
 				g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 					To(HaveField("Message", HavePrefix("Container "+repo+" has the repository the Brief needs")))
 			}).Should(Succeed())
-			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty())
+			Expect(gitFake.AgentUser(ns, repo)).To(BeEmpty())
 		})
 
 		It("deletes its bot when deleted, and keeps its repository (B16)", func() {
 			createFactory(ns)
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
-			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(model.AgentUsername(ns, repo)))
+			Eventually(func() string { return gitFake.AgentUser(ns, repo) }).Should(Equal(model.AgentUsername(ns, repo)))
 			Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
 			Expect(brief.Finalizers).To(ContainElement("c4.factory.io/brief-bot"))
 
@@ -178,15 +178,15 @@ var _ = Describe("Brief", func() {
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).Should(BeTrue(), "the finalizer was not removed")
-			Expect(gitFake.agentUser(ns, repo)).To(BeEmpty(), "the bot is still there")
-			Expect(gitFake.commitCount(ns, repo)).To(Equal(1), "the repository went")
+			Expect(gitFake.AgentUser(ns, repo)).To(BeEmpty(), "the bot is still there")
+			Expect(gitFake.CommitCount(ns, repo)).To(Equal(1), "the repository went")
 		})
 
 		It("goes without deleting its bot when its GitProvider is gone", func() {
 			createFactory(ns)
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
-			Eventually(func() string { return gitFake.agentUser(ns, repo) }).ShouldNot(BeEmpty())
+			Eventually(func() string { return gitFake.AgentUser(ns, repo) }).ShouldNot(BeEmpty())
 
 			Expect(k8sClient.Delete(ctx, &c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "gitea")})).To(Succeed())
 			// The reconciler reads GitProviders from the cache, which may lag the
@@ -198,7 +198,7 @@ var _ = Describe("Brief", func() {
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).Should(BeTrue(), "the finalizer held the Brief")
-			Expect(gitFake.agentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
+			Expect(gitFake.AgentUser(ns, repo)).To(Equal(model.AgentUsername(ns, repo)))
 		})
 
 		It("leaves its bot when the Git host fails the delete for too long, saying why", func() {
@@ -206,8 +206,8 @@ var _ = Describe("Brief", func() {
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
 			user := model.AgentUsername(ns, repo)
-			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(user))
-			gitFake.failAgentRemoval(user, errors.New("connection refused"))
+			Eventually(func() string { return gitFake.AgentUser(ns, repo) }).Should(Equal(user))
+			gitFake.FailAgentRemoval(user, errors.New("connection refused"))
 
 			deleted := time.Now()
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
@@ -230,7 +230,7 @@ var _ = Describe("Brief", func() {
 				g.Expect(briefEventNotes(g, ns, "BotLeft")).To(ContainElement(And(ContainSubstring(user),
 					ContainSubstring("connection refused"), ContainSubstring("waited "+testBotDeleteTimeout.String()))))
 			}).Should(Succeed())
-			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
+			Expect(gitFake.AgentUser(ns, repo)).To(Equal(user))
 		})
 
 		It("leaves its bot at once when the Git host fails the delete in a terminating namespace", func() {
@@ -238,8 +238,8 @@ var _ = Describe("Brief", func() {
 			brief := newBrief(ns, "cel-lens")
 			mustCreate(brief)
 			user := model.AgentUsername(ns, repo)
-			Eventually(func() string { return gitFake.agentUser(ns, repo) }).Should(Equal(user))
-			gitFake.failAgentRemoval(user, errors.New("500 Internal Server Error"))
+			Eventually(func() string { return gitFake.AgentUser(ns, repo) }).Should(Equal(user))
+			gitFake.FailAgentRemoval(user, errors.New("500 Internal Server Error"))
 
 			// envtest runs no namespace controller: the namespace stays
 			// Terminating and its Brief is deleted by hand.
@@ -248,7 +248,7 @@ var _ = Describe("Brief", func() {
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "cel-lens"), &c4v1beta1.Brief{}))
 			}).WithTimeout(3*time.Second).Should(BeTrue(), "the Brief waited out the timeout")
-			Expect(gitFake.agentUser(ns, repo)).To(Equal(user))
+			Expect(gitFake.AgentUser(ns, repo)).To(Equal(user))
 		})
 
 		It("waits for a missing GitProvider, naming it", func() {
@@ -263,7 +263,7 @@ var _ = Describe("Brief", func() {
 				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(cond.Message).To(HavePrefix("GitProvider forgejo is missing"))
 			}).Should(Succeed())
-			Expect(gitFake.commitCount(ns, repo)).To(BeZero())
+			Expect(gitFake.CommitCount(ns, repo)).To(BeZero())
 
 			By("going on once it exists, waiting for its Secret first")
 			mustCreate(&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "forgejo"), Spec: c4v1beta1.GitProviderSpec{
@@ -281,7 +281,7 @@ var _ = Describe("Brief", func() {
 				g.Expect(condition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 					To(HaveField("Message", HavePrefix("Agent planner is missing")), "the next thing it needs")
 			}).Should(Succeed())
-			Expect(gitFake.commitCount(ns, repo)).To(Equal(1))
+			Expect(gitFake.CommitCount(ns, repo)).To(Equal(1))
 		})
 	})
 

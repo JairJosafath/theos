@@ -123,7 +123,7 @@ var _ = Describe("Brief parallel", func() {
 
 		By("telling the planner where the number comes from")
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).
 				To(ContainSubstring("up to 2 issues at once, as a prompt of round 2 asked"))
 		}).Should(Succeed())
 

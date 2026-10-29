@@ -31,7 +31,7 @@ var _ = Describe("Container ships its image to a gitlab target (#1806)", func() 
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		withImage, without := "Acme/"+ns+"-Img", "acme/"+ns+"-plain"
 		img := gitlabFake.AddProject(withImage, "glpat-"+ns+"-img")

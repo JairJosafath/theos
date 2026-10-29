@@ -38,7 +38,7 @@ func failLinterTask(ns, name string, n int) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskFailed))
-		g.Expect(gitFake.issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+		g.Expect(gitFake.Issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 	}).Should(Succeed())
 }
 
@@ -84,10 +84,10 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &c)).To(Succeed())
 			g.Expect(c.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 		}).Should(Succeed())
-		gitFake.addIssue(ns, "orders-api", "A person's question", "What now?", []string{model.LabelNeedsHuman})
+		gitFake.AddIssue(ns, "orders-api", "A person's question", "What now?", []string{model.LabelNeedsHuman})
 
 		By("the linter's Crew failing an issue: the linter has no Standard to protect it")
-		n := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
 		var message string
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "linter-1")
@@ -95,14 +95,14 @@ var _ = Describe("Brief failed issues", func() {
 			cond := meta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded)
 			g.Expect(cond).NotTo(BeNil())
 			message = cond.Message
-			g.Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
+			g.Expect(gitFake.Issue(ns, "linter", n).Comments).To(ContainElement(
 				ContainSubstring("or say in a prompt on Brief `cel-lens`")))
 		}).Should(Succeed())
 		reason := "Task `linter-1` failed: " + strings.Join(strings.Fields(message), " ")
 
 		By("listing it with the Task's message, in the status, the condition, an Event and the workspace")
 		want := []c4v1beta1.BriefFailedIssue{{Container: "linter", Number: int32(n), Title: "Lint rule 1",
-			URL: gitFake.issue(ns, "linter", n).URL, Kind: model.FailedTask, Reason: reason, Tries: 1}}
+			URL: gitFake.Issue(ns, "linter", n).URL, Kind: model.FailedTask, Reason: reason, Tries: 1}}
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(Equal(int32(1)))
@@ -114,17 +114,17 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(cond.Message).To(And(ContainSubstring(fmt.Sprintf("Issue linter#%d \"Lint rule 1\" was handed back: %s", n, reason)),
 				HaveSuffix("Say in a prompt whether to try again.")))
 			g.Expect(briefEventNotes(g, ns, eventIssueFailed)).To(ConsistOf(ContainSubstring(fmt.Sprintf("Issue linter#%d", n))))
-			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			failed := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
 			g.Expect(failed).To(And(ContainSubstring("container: linter"), ContainSubstring("kind: failed"),
 				ContainSubstring("Rule 1 is linted.")))
 			g.Expect(failed).NotTo(ContainSubstring("orders-api"))
 		}).Should(Succeed())
 
 		By("keeping the failed issues last seen while the repository can't be read")
-		gitFake.failListIssues(ns, "linter", errors.New("the host is down"))
-		DeferCleanup(func() { gitFake.failListIssues(ns, "linter", nil) })
+		gitFake.FailListIssues(ns, "linter", errors.New("the host is down"))
+		DeferCleanup(func() { gitFake.FailListIssues(ns, "linter", nil) })
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).To(
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).To(
 				ContainSubstring("issuesUnread: true"))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
@@ -135,8 +135,8 @@ var _ = Describe("Brief failed issues", func() {
 		Expect(briefEventNotes(Default, ns, eventIssueFailed)).To(HaveLen(1), "one Event per failed issue")
 
 		By("clearing them once the issue is no longer handed back")
-		gitFake.failListIssues(ns, "linter", nil)
-		Expect(gitFake.closeIssue(ns, "linter", n)).To(Succeed())
+		gitFake.FailListIssues(ns, "linter", nil)
+		Expect(gitFake.CloseIssueByHand(ns, "linter", n)).To(Succeed())
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.FailedWaiting).To(BeZero())
@@ -158,12 +158,12 @@ var _ = Describe("Brief failed issues", func() {
 
 		title, body := model.ByHandIssue("Lint rule 1", 1, "http://gitea/pulls/2", "linter-1", "Agent `reviewer`",
 			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}})
-		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman})
+		n := gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Failed).To(ConsistOf(And(HaveField("Number", int32(n)),
 				HaveField("Kind", model.FailedByHand), HaveField("Reason", "Needs a person: No desktop editor."))))
-			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			failed := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
 			g.Expect(failed).To(ContainSubstring("kind: byHand"))
 		}).Should(Succeed())
 
@@ -176,15 +176,15 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(briefEventNotes(g, ns, eventPlanRefused)).To(ContainElement(And(
 				ContainSubstring(fmt.Sprintf("retries linter#%d", n)), ContainSubstring("needs a person, not agents"))))
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", n).State).To(Equal("open"))
+		Expect(gitFake.Issue(ns, "linter", n).State).To(Equal("open"))
 
 		By("closing it when a plan closes it")
 		planRound(ns, 2, 2, failedPlan(ns,
 			fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt says the screenshot is in.}\n", n)))
 		Eventually(func(g Gomega) {
-			issue := gitFake.issue(ns, "linter", n)
+			issue := gitFake.Issue(ns, "linter", n)
 			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
 			g.Expect(getBrief(g, ns).Status.Failed).To(BeEmpty())
 		}).Should(Succeed())
 	})
@@ -207,13 +207,13 @@ var _ = Describe("Brief failed issues", func() {
 			proposal := model.Proposal{Branch: model.ProposalBranch(run), Paths: []string{"Makefile"},
 				Reason: "make dist must build the packages"}
 			title, body := model.StandardChangeIssue(1, run, proposal)
-			gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-"+run)
-			return gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+			gitFake.PushBranchHead(ns, "linter", proposal.Branch, "sha-"+run)
+			return gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
 		}
 		byHand := func(rule int, blocker int) int {
 			title, body := model.ByHandIssue(fmt.Sprintf("Lint rule %d", rule), rule, "http://gitea/pulls/2",
 				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}})
-			return gitFake.addIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
+			return gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
 				fmt.Sprintf("#%d", blocker))
 		}
 		firstChange := change("linter-1")
@@ -243,15 +243,15 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(cond.Message).To(Equal("Applied round 2"))
 		}).Should(Succeed())
 		for _, n := range []int{first, firstChange, secondChange, second} {
-			issue := gitFake.issue(ns, "linter", n)
+			issue := gitFake.Issue(ns, "linter", n)
 			Expect(issue.State).To(Equal("closed"), "issue #%d", n)
-			Expect(issue.comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
+			Expect(issue.Comments).To(ContainElement(ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
 		}
 		Expect(briefEventNotes(Default, ns, eventPlanned)).To(ContainElement(
 			ContainSubstring("retried 0 and closed 4 failed issues")))
 
 		By("a round closing an issue that waits on one the round doesn't close")
-		other := gitFake.addIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
+		other := gitFake.AddIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
 		blocked := byHand(4, other)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Failed).To(ConsistOf(HaveField("Number", int32(blocked))))
@@ -273,12 +273,12 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(briefEventNotes(g, ns, eventPlanned)).To(ContainElement(ContainSubstring(refused)))
 			g.Expect(b.Status.Failed).To(ConsistOf(HaveField("Number", int32(blocked))), "it stays handed back")
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "linter", blocked)
+		issue := gitFake.Issue(ns, "linter", blocked)
 		Expect(issue.State).To(Equal("open"))
-		Expect(issue.comments).To(ContainElement(And(
+		Expect(issue.Comments).To(ContainElement(And(
 			ContainSubstring("Brief `cel-lens`'s round 3 answered this with close, but it can't be closed"),
 			ContainSubstring(fmt.Sprintf("it waits on #%d", other)))))
-		Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Closed for Brief")))
+		Expect(issue.Comments).NotTo(ContainElement(ContainSubstring("Closed for Brief")))
 		Expect(briefEventNotes(Default, ns, eventApplyFailed)).To(BeEmpty())
 	})
 
@@ -297,12 +297,12 @@ var _ = Describe("Brief failed issues", func() {
 		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
 			Reason: "make dist must build the packages"}
 		title, body := model.StandardChangeIssue(1, "linter-1", proposal)
-		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+		n := gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Failed).To(ConsistOf(And(HaveField("Number", int32(n)),
 				HaveField("Reason", HavePrefix(model.ProposalGoneNote(proposal.Branch))))))
-			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			failed := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
 			g.Expect(failed).To(ContainSubstring("is gone, so a retry would have nothing to merge"))
 		}).Should(Succeed())
 
@@ -316,16 +316,16 @@ var _ = Describe("Brief failed issues", func() {
 				ContainSubstring(fmt.Sprintf("retries linter#%d", n)),
 				ContainSubstring(fmt.Sprintf("proposal branch `%s` is gone", proposal.Branch)))))
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", n).State).To(Equal("open"))
+		Expect(gitFake.Issue(ns, "linter", n).State).To(Equal("open"))
 
 		By("deleting its proposal when a plan closes it")
-		gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-proposal")
+		gitFake.PushBranchHead(ns, "linter", proposal.Branch, "sha-proposal")
 		planRound(ns, 2, 2, failedPlan(ns,
 			fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt drops it.}\n", n)))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.issue(ns, "linter", n).State).To(Equal("closed"))
+			g.Expect(gitFake.Issue(ns, "linter", n).State).To(Equal("closed"))
 		}).Should(Succeed())
-		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "linter", proposal.Branch)).To(BeFalse())
 	})
 
 	// #994: a blocker opened after the round read the blockers makes the
@@ -343,15 +343,15 @@ var _ = Describe("Brief failed issues", func() {
 		proposal := model.Proposal{Branch: model.ProposalBranch("linter-1"), Paths: []string{"Makefile"},
 			Reason: "make dist must build the packages"}
 		title, body := model.StandardChangeIssue(1, "linter-1", proposal)
-		gitFake.pushBranch(ns, "linter", proposal.Branch, "sha-proposal")
-		n := gitFake.addIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
+		gitFake.PushBranchHead(ns, "linter", proposal.Branch, "sha-proposal")
+		n := gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelStandardChange, model.LabelNeedsHuman})
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Failed).To(ConsistOf(HaveField("Number", int32(n))))
 		}).Should(Succeed())
 
 		By("a round whose close the host refuses for a blocker opened since it was read")
-		other := gitFake.addIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
-		gitFake.blockOnClose(ns, "linter", n, fmt.Sprintf("#%d", other))
+		other := gitFake.AddIssue(ns, "linter", "Lint rule 3", linterIssue(3), nil)
+		gitFake.BlockOnClose(ns, "linter", n, fmt.Sprintf("#%d", other))
 		brief = getBrief(Default, ns)
 		Expect(patch(brief, func() { brief.Spec.Prompts = []string{"Drop the Makefile change."} })).To(Succeed())
 		closeAnswer := fmt.Sprintf("- {container: linter, issue: %d, answer: close, why: The prompt drops it.}\n", n)
@@ -366,31 +366,31 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(cond.Message).To(And(HavePrefix("Applied round 2; "), ContainSubstring(refused)))
 			g.Expect(b.Status.Failed).To(ConsistOf(HaveField("Number", int32(n))), "it stays handed back")
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "linter", n)
+		issue := gitFake.Issue(ns, "linter", n)
 		Expect(issue.State).To(Equal("open"))
-		Expect(issue.comments).To(ConsistOf(
+		Expect(issue.Comments).To(ConsistOf(
 			ContainSubstring("Brief `cel-lens`'s round 2 answered this with close, but it can't be closed")))
-		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeTrue(), "its proposal is kept")
+		Expect(gitFake.BranchExists(ns, "linter", proposal.Branch)).To(BeTrue(), "its proposal is kept")
 
 		By("a later round closing it once its blocker is closed")
-		Expect(gitFake.closeIssue(ns, "linter", other)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "linter", other)).To(Succeed())
 		brief = getBrief(Default, ns)
 		Expect(patch(brief, func() {
 			brief.Spec.Prompts = append(brief.Spec.Prompts, "Drop it again.")
 		})).To(Succeed())
 		planRound(ns, 3, 1, failedPlan(ns, closeAnswer))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.issue(ns, "linter", n).State).To(Equal("closed"))
+			g.Expect(gitFake.Issue(ns, "linter", n).State).To(Equal("closed"))
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Failed).To(BeEmpty())
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", n).comments).To(HaveLen(2))
-		Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
+		Expect(gitFake.Issue(ns, "linter", n).Comments).To(HaveLen(2))
+		Expect(gitFake.Issue(ns, "linter", n).Comments).To(ContainElement(
 			ContainSubstring("Closed for Brief `cel-lens` in round 3.")))
-		Expect(gitFake.issue(ns, "linter", n).comments).NotTo(ContainElement(
+		Expect(gitFake.Issue(ns, "linter", n).Comments).NotTo(ContainElement(
 			ContainSubstring("Closed for Brief `cel-lens` in round 2.")))
-		Expect(gitFake.hasBranch(ns, "linter", proposal.Branch)).To(BeFalse())
+		Expect(gitFake.BranchExists(ns, "linter", proposal.Branch)).To(BeFalse())
 	})
 
 	// #624: a release step's last try found its milestone empty; work merged
@@ -411,24 +411,24 @@ var _ = Describe("Brief failed issues", func() {
 			if slices.Contains(labels, model.LabelRelease) {
 				_, body = model.PrepareIssue("v0.3.0", nil, nil)
 			}
-			n := gitFake.addIssue(ns, "linter", title, body, labels)
-			gitFake.setIssueRelease(ns, "linter", n, "v0.3.0", due)
+			n := gitFake.AddIssue(ns, "linter", title, body, labels)
+			gitFake.SetIssueRelease(ns, "linter", n, "v0.3.0", due)
 			return n
 		}
 		stopped := time.Now().Add(-time.Hour).Truncate(time.Second)
 		shipped := inRelease("Lint rule 136")
-		Expect(gitFake.closeIssue(ns, "linter", shipped)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "linter", shipped)).To(Succeed())
 		endedTask(ns, "linter-shipped", shipped, c4v1beta1.TaskMerged, stopped.Add(-time.Hour))
 		step := inRelease("Prepare v0.3.0", model.LabelRelease, model.LabelNeedsHuman)
 		endedTask(ns, "linter-step", step, c4v1beta1.TaskFailed, stopped)
 		fresh := inRelease("Lint rule 147")
-		Expect(gitFake.closeIssue(ns, "linter", fresh)).To(Succeed())
+		Expect(gitFake.CloseIssueByHand(ns, "linter", fresh)).To(Succeed())
 		endedTask(ns, "linter-fresh", fresh, c4v1beta1.TaskMerged, stopped.Add(30*time.Minute))
 
 		By("giving the planner the milestone's merges, and which came after the try stopped")
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Failed).To(ContainElement(HaveField("Number", int32(step))))
-			failed := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
+			failed := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)
 			g.Expect(failed).To(And(ContainSubstring("milestone: v0.3.0"),
 				ContainSubstring(fmt.Sprintf("stopped: \"%s\"", stopped.UTC().Format(time.RFC3339))),
 				ContainSubstring(fmt.Sprintf("issue: %d\n          title: Lint rule 136\n", shipped)),
@@ -447,14 +447,14 @@ var _ = Describe("Brief failed issues", func() {
 				ContainSubstring(fmt.Sprintf("closes linter#%d, the release step of v0.3.0, but #%d merged", step,
 					fresh)), ContainSubstring("retry it"))))
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", step).State).To(Equal("open"))
+		Expect(gitFake.Issue(ns, "linter", step).State).To(Equal("open"))
 
 		By("closing it once a person tagged the release: nothing is left to prepare")
-		gitFake.setTag(ns, "linter", "v0.3.0", "c-by-hand")
+		gitFake.SetTag(ns, "linter", "v0.3.0", "c-by-hand")
 		planRound(ns, 2, 2, failedPlan(ns, fmt.Sprintf(
 			"- {container: linter, issue: %d, answer: close, why: A person released v0.3.0.}\n", step)))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.issue(ns, "linter", step).State).To(Equal("closed"))
+			g.Expect(gitFake.Issue(ns, "linter", step).State).To(Equal("closed"))
 		}).Should(Succeed())
 	})
 
@@ -469,13 +469,13 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 
 		By("an issue failing three Tasks, and another failing one: the linter has no Standard to protect it")
-		tired := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		tired := gitFake.AddIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", tired, 1), tired)
 		for attempt := 2; attempt <= model.MaxIssueAttempts; attempt++ {
-			Expect(gitFake.labelIssue(ns, "linter", tired, model.LabelReady)).To(Succeed())
+			Expect(gitFake.LabelIssue(ns, "linter", tired, model.LabelReady)).To(Succeed())
 			failLinterTask(ns, model.IssueTaskName("linter", tired, attempt), tired)
 		}
-		cli := gitFake.addIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
+		cli := gitFake.AddIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", cli, 1), cli)
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
@@ -496,7 +496,7 @@ var _ = Describe("Brief failed issues", func() {
 				ContainSubstring(model.PlanFailedFile), ContainSubstring(fmt.Sprintf("retries linter#%d", tired)),
 				ContainSubstring("agents tried 3 times"))))
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", tired).State).To(Equal("open"))
+		Expect(gitFake.Issue(ns, "linter", tired).State).To(Equal("open"))
 
 		By("retrying one with its clarification and closing the other, both with the prompt quoted")
 		planRound(ns, 2, 2, failedPlan(ns, fmt.Sprintf(`
@@ -516,16 +516,16 @@ var _ = Describe("Brief failed issues", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(b.Status.PromptsPlanned).To(Equal(int32(1)))
 		}).Should(Succeed())
-		retried := gitFake.issue(ns, "linter", cli)
+		retried := gitFake.Issue(ns, "linter", cli)
 		Expect(retried.State).To(Equal("open"))
 		Expect(retried.Body).To(And(HavePrefix(strings.TrimRight(linterIssue(2), "\n")),
 			HaveSuffix("\n\n## Clarification (Brief round 2)\n\nThe engine's checker is merged; import it.\n")))
-		Expect(retried.comments).To(ContainElement(And(ContainSubstring("Tried again for Brief `cel-lens` in round 2"),
+		Expect(retried.Comments).To(ContainElement(And(ContainSubstring("Tried again for Brief `cel-lens` in round 2"),
 			ContainSubstring("The planner: The prompt says the engine's checker is merged now."),
 			ContainSubstring("> "+prompt))))
-		closed := gitFake.issue(ns, "linter", tired)
+		closed := gitFake.Issue(ns, "linter", tired)
 		Expect(closed.State).To(Equal("closed"))
-		Expect(closed.comments).To(ContainElement(And(ContainSubstring("Closed for Brief `cel-lens` in round 2."),
+		Expect(closed.Comments).To(ContainElement(And(ContainSubstring("Closed for Brief `cel-lens` in round 2."),
 			ContainSubstring("The planner: The prompt drops rule 1."), ContainSubstring("> "+prompt))))
 		Expect(briefEventNotes(Default, ns, eventPlanned)).To(ContainElement(
 			ContainSubstring("retried 1 and closed 1 failed issues")))
@@ -549,9 +549,9 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 
 		By("two issues failing a Task each: the linter has no Standard to protect it")
-		waited := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		waited := gitFake.AddIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", waited, 1), waited)
-		asked := gitFake.addIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
+		asked := gitFake.AddIssue(ns, "linter", "Lint rule 2", linterIssue(2), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", asked, 1), asked)
 		// Settled: the Brief may list an issue as a person's before it sees
 		// its failed Task, so wait for both reasons to name their Task.
@@ -565,8 +565,8 @@ var _ = Describe("Brief failed issues", func() {
 			}
 			failed = b.Status.Failed
 		}).Should(Succeed())
-		comments := map[int]int{waited: len(gitFake.issue(ns, "linter", waited).comments),
-			asked: len(gitFake.issue(ns, "linter", asked).comments)}
+		comments := map[int]int{waited: len(gitFake.Issue(ns, "linter", waited).Comments),
+			asked: len(gitFake.Issue(ns, "linter", asked).Comments)}
 
 		By("a prompt round waiting on one and asking about the other, recommending a retry")
 		brief = getBrief(Default, ns)
@@ -597,12 +597,12 @@ var _ = Describe("Brief failed issues", func() {
 		By("leaving both open, handed back, untouched and on the Brief's failed list, with no new Task")
 		Consistently(func(g Gomega) {
 			for _, n := range []int{waited, asked} {
-				issue := gitFake.issue(ns, "linter", n)
+				issue := gitFake.Issue(ns, "linter", n)
 				g.Expect(issue.State).To(Equal("open"))
 				g.Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
 				g.Expect(issue.Labels).NotTo(ContainElement(model.LabelReady))
 				g.Expect(issue.Body).NotTo(ContainSubstring("Clarification"))
-				g.Expect(issue.comments).To(HaveLen(comments[n]))
+				g.Expect(issue.Comments).To(HaveLen(comments[n]))
 				var task c4v1beta1.Task
 				g.Expect(k8sClient.Get(ctx, key(ns, model.IssueTaskName("linter", n, 2)), &task)).NotTo(Succeed())
 			}

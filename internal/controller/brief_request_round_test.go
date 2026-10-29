@@ -61,10 +61,10 @@ var _ = Describe("Brief requests in rounds", func() {
 			g.Expect(status.RoundRequests).To(Equal([]string{themeName, rulesName}))
 			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(theme): model.RequestPlanning,
 				int32(rules): model.RequestPlanning}))
-			requests := string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceRequestsFile].Data)
+			requests := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceRequestsFile].Data)
 			g.Expect(requests).To(And(ContainSubstring("request: "+themeName), ContainSubstring("author: gray-lenovo"),
 				ContainSubstring("body: Please add a dark theme."), ContainSubstring("request: "+rulesName)))
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).To(
 				ContainSubstring("## Requests (**new**)"))
 		}).Should(Succeed())
 
@@ -110,7 +110,7 @@ var _ = Describe("Brief requests in rounds", func() {
 				HaveField("Issues", []string{fmt.Sprintf("linter#%d", filed.Number)}),
 				HaveField("Release", "v0.2.0"))), "the skipped one is closed, so it leaves the list")
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", int(filed.Number)).Title).To(Equal("Lint rule 1"))
+		Expect(gitFake.Issue(ns, "linter", int(filed.Number)).Title).To(Equal("Lint rule 1"))
 
 		Eventually(func(g Gomega) {
 			issue, comments := githubFake.gitHubIssue(repository, theme)

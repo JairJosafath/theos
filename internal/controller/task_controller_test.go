@@ -153,7 +153,7 @@ var _ = Describe("Task", func() {
 		))
 		Expect(env).To(ContainElement(map[string]any{"name": "C4_PROTECTED_PATHS",
 			"value": ".c4factory.yaml,.devcontainer/,.gitea/,Makefile,ruff.toml"}))
-		rule, tags := gitFake.branchRule(ns, "orders-api")
+		rule, tags := gitFake.BranchRule(ns, "orders-api")
 		Expect(rule.ProtectedPaths).To(Equal([]string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "ruff.toml"}),
 			"the Git host refuses changes to the Standard's and the platform's files")
 		Expect(tags).To(Equal([]string{"v*"}), "only the operator tags releases")
@@ -169,7 +169,7 @@ var _ = Describe("Task", func() {
 		), "the agent fetches the owner's released Go modules from the Git host, through c4agent's proxy only")
 
 		By("opening a pull request for the pushed branch")
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
@@ -179,10 +179,10 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Commit).To(Equal("sha-r1"))
 			g.Expect(task.Status.Summary).To(Equal("Added crop."))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 
 		By("reviewing once the checks pass")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, "add-crop-r1-review-a1")
 			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
@@ -199,15 +199,15 @@ var _ = Describe("Task", func() {
 			g.Expect(task.Status.Review).To(HaveField("Verdict", "changes"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewRequestChanges),
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(ConsistOf(And(HaveField("Event", gitprovider.ReviewRequestChanges),
 			HaveField("Commit", "sha-r1"), HaveField("Body", ContainSubstring("Test an empty image.")))),
 			"the reviewer's verdict is a review in the Git host")
 
 		By("merging the approved second round")
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r2")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r2")
 		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r2", Summary: "Tested it."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r2", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r2", "success")
 		Eventually(func(g Gomega) {
 			review := sandboxExists(g, ns, "add-crop-r2-review-a1")
 			containers, _, _ := unstructured.NestedSlice(review.Object, "spec", "podTemplate", "spec", "containers")
@@ -225,7 +225,7 @@ var _ = Describe("Task", func() {
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).NotTo(BeNil(), "%+v", task.Status.Conditions)
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
 		expectSandboxGone(ns, "add-crop-r2-review-a1") // #1293
 
 		By("keeping its timeline")
@@ -250,7 +250,7 @@ var _ = Describe("Task", func() {
 		task.Labels = map[string]string{LabelCrew: crew.Name}
 		mustCreate(crew, task)
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(1000))}, "")
 		Eventually(func(g Gomega) {
@@ -258,7 +258,7 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 
 		By("starting no review once the runs' cost reached the cap")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			cond := condition(task.Status.Conditions, "Progressing")
@@ -291,13 +291,13 @@ var _ = Describe("Task", func() {
 		task.Labels = map[string]string{LabelCrew: crew.Name}
 		mustCreate(crew, task)
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(999))}, "")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 	})
 
@@ -314,7 +314,7 @@ var _ = Describe("Task", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crew), &stored)).To(Succeed())
 		Expect(stored.Spec.TaskBudgetUSD).To(BeZero())
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(250_000))}, "")
 		Eventually(func(g Gomega) {
@@ -322,7 +322,7 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 
 		By("starting the review however much the runs cost")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 		cond := condition(getTask(Default, ns, "add-crop").Status.Conditions, "Progressing")
 		if cond != nil {
@@ -335,7 +335,7 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", CostMilliUSD: new(int64(312)),
 				Tokens: &model.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}}, "")
@@ -349,7 +349,7 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 
 		By("counting a review whose agent didn't report its cost")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop",
 			&agentrunner.Result{Role: "review", Verdict: "changes", Summary: "Test an empty image."}, "")
@@ -364,7 +364,7 @@ var _ = Describe("Task", func() {
 
 		By("adding a smaller session's tokens, keeping the largest session, and counting its handoffs")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r2-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r2")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r2")
 		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r2", CostMilliUSD: new(int64(100)),
 				Tokens:          &model.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000, LargestSession: 60000},
@@ -411,10 +411,10 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
-		gitFake.setCheckLog("--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1\n")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "failure")
+		gitFake.SetCheckLog("--- FAIL: TestA (0.00s)\n    a_test.go:9: got 2, want 1\n")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
@@ -428,7 +428,7 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
 			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
 		Eventually(func(g Gomega) {
@@ -441,7 +441,7 @@ var _ = Describe("Task", func() {
 				"the round's history keeps the step's message after the checks' wait replaces it")
 		}).Should(Succeed())
 		pr := getTask(Default, ns, "add-crop").Status.PullRequest
-		Expect(gitFake.pullComments(ns, "orders-api", int(pr))).To(ContainElement(And(
+		Expect(gitFake.PullComments(ns, "orders-api", int(pr))).To(ContainElement(And(
 			ContainSubstring("Round 1: `make check` fails in the agent's workspace on main too"),
 			ContainSubstring("curl: (22) 404 Not Found"))))
 		Eventually(func(g Gomega) {
@@ -470,7 +470,7 @@ var _ = Describe("Task", func() {
 		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool {
 			return t.Status.Phase == c4v1beta1.TaskChecking
 		})
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
 			CheckFailsOnBase: "download engine\ncurl: (22) 404 Not Found\n"}, "")
 		Eventually(func(g Gomega) {
@@ -482,11 +482,11 @@ var _ = Describe("Task", func() {
 		task := getTask(Default, ns, "add-crop")
 		Expect(task.Status.Round).To(Equal(int32(1)))
 		Expect(task.Status.Runs).To(HaveLen(1), "the retry keeps the run's result instead of implementing again")
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(HaveLen(1))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 		// The status is written before the note is posted, so the note may
 		// follow it; it is posted once all the same.
 		notes := func() int {
-			return countContaining(gitFake.pullComments(ns, "orders-api", int(task.Status.PullRequest)),
+			return countContaining(gitFake.PullComments(ns, "orders-api", int(task.Status.PullRequest)),
 				"`make check` fails in the agent's workspace on main too")
 		}
 		Eventually(notes).Should(Equal(1))
@@ -512,9 +512,9 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
 		taskKey := client.ObjectKey{Namespace: ns, Name: "add-crop"}
 		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool { return t.Status.Round == 2 })
@@ -539,11 +539,11 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1"}, "")
-		gitFake.setCheckLog("compile: writing output: write $WORK/b001/_pkg_.a: no space left on device\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "failure")
+		gitFake.SetCheckLog("compile: writing output: write $WORK/b001/_pkg_.a: no space left on device\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "failure")
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
@@ -576,12 +576,12 @@ var _ = Describe("Task", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 2), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
-		gitFake.closePull(ns, "orders-api", 1)
+		gitFake.ClosePull(ns, "orders-api", 1)
 		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop",
 			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Fine."}, "")
 		Eventually(func(g Gomega) {
@@ -590,7 +590,7 @@ var _ = Describe("Task", func() {
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).
 				To(HaveField("Reason", "PullRequestClosed"))
 		}).Should(Succeed())
-		Expect(gitFake.reviews(ns, "orders-api", 1)).To(BeEmpty(), "no approval on a closed pull request")
+		Expect(gitFake.Reviews(ns, "orders-api", 1)).To(BeEmpty(), "no approval on a closed pull request")
 	})
 
 	It("refuses a Container whose default branch isn't protected", func() {
@@ -854,10 +854,10 @@ var _ = Describe("Task with an interrupted run", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }, "20s").Should(Succeed())
 
 		By("rerunning the review whose pod an outage past its shutdown time took")
@@ -935,21 +935,21 @@ var _ = Describe("Agent tokens after an upgrade", func() {
 		Expect(secret.Annotations).To(HaveKey(annotationOldTokensBefore))
 
 		By("keeping the old token while the sandbox started before it runs")
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}).Should(Succeed())
-		Expect(gitFake.revocations(user)).To(BeZero(), "a running agent never loses its token")
+		Expect(gitFake.Revocations(user)).To(BeZero(), "a running agent never loses its token")
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
 		Expect(secret.Annotations).To(HaveKey(annotationOldTokensBefore))
 
 		By("revoking it at the next run once that sandbox is gone")
 		Expect(k8sClient.Delete(ctx, running)).To(Succeed())
-		gitFake.setChecks(ns, "orders-api", "sha-r1", "success")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }, "20s").Should(Succeed())
-		Expect(gitFake.revocations(user)).To(Equal(1))
+		Expect(gitFake.Revocations(user)).To(Equal(1))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-agent-git"), &secret)).To(Succeed())
 		Expect(secret.Annotations).NotTo(HaveKey(annotationOldTokensBefore))
 	})

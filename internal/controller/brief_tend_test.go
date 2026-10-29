@@ -64,7 +64,7 @@ func autopilotBrief(ns, mode string) {
 // and the Brief to list it.
 func failedLinterIssue(ns string, rule int) int {
 	GinkgoHelper()
-	n := gitFake.addIssue(ns, "linter", fmt.Sprintf("Lint rule %d", rule), linterIssue(rule), []string{model.LabelReady})
+	n := gitFake.AddIssue(ns, "linter", fmt.Sprintf("Lint rule %d", rule), linterIssue(rule), []string{model.LabelReady})
 	failLinterTask(ns, model.IssueTaskName("linter", n, 1), n)
 	return n
 }
@@ -80,7 +80,7 @@ func awaitTendRound(ns string, round int) {
 		g.Expect(b.Status.LastTendTime).NotTo(BeNil())
 		task := getTask(g, ns, fmt.Sprintf("cel-lens-plan-%d", round))
 		g.Expect(task.Labels).To(HaveKeyWithValue(c4v1beta1.LabelBriefRoundKind, c4v1beta1.BriefRoundKindTend))
-		g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).To(ContainSubstring(model.TendingHeading))
+		g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).To(ContainSubstring(model.TendingHeading))
 		// #871: the planner clones the workspace as it was when its Task was
 		// made, and reads it as a tending round's.
 		cloned, ok := planBriefs.briefAt(key(ns, task.Name))
@@ -147,14 +147,14 @@ var _ = Describe("Brief autopilot", func() {
 			g.Expect(b.Status.Tended).To(ConsistOf(And(HaveField("Number", int32(n)),
 				HaveField("Answer", model.AnswerRetry), HaveField("Round", int32(2)), HaveField("Tries", int32(1)))))
 		}).Should(Succeed())
-		issue := gitFake.issue(ns, "linter", n)
+		issue := gitFake.Issue(ns, "linter", n)
 		Expect(issue.State).To(Equal("open"))
 		// #823: no check of the issue's labels here. The Crew starts the next
 		// Task once the issue is status/ready, and the linter has no Standard,
 		// so that Task can fail and label it status/needs-human before a
 		// check sees status/ready. The next Task below shows it was readied.
 		Expect(issue.Body).To(HaveSuffix("\n\n## Clarification (Brief round 2)\n\nImport the checker from the engine.\n"))
-		Expect(issue.comments).To(ContainElement(And(
+		Expect(issue.Comments).To(ContainElement(And(
 			ContainSubstring("Tried again by Brief `cel-lens` in tending round 2, with no prompt"),
 			ContainSubstring("The planner: The checker it needs is merged now."))))
 		Expect(briefEventNotes(Default, ns, eventTended)).To(ContainElement(
@@ -204,12 +204,12 @@ var _ = Describe("Brief autopilot", func() {
 				g.Expect(briefEventNotes(g, ns, eventTended)).To(ContainElement(ContainSubstring("asks you about 1")))
 			}).Should(Succeed())
 			Consistently(func(g Gomega) {
-				issue := gitFake.issue(ns, "linter", n)
+				issue := gitFake.Issue(ns, "linter", n)
 				g.Expect(issue.Labels).To(ContainElement(model.LabelNeedsHuman))
-				g.Expect(issue.comments).NotTo(ContainElement(ContainSubstring("Tried again")))
+				g.Expect(issue.Comments).NotTo(ContainElement(ContainSubstring("Tried again")))
 				g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)), "an asked issue starts no other round")
 			}, "3s").Should(Succeed())
-			Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)).To(
+			Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceFailedFile].Data)).To(
 				And(ContainSubstring("asked:"), ContainSubstring("recommend:")))
 
 			By("a prompt answering it")
@@ -224,7 +224,7 @@ var _ = Describe("Brief autopilot", func() {
 				g.Expect(condition(b.Status.Conditions, c4v1beta1.ConditionNeedsYou)).To(
 					HaveField("Status", metav1.ConditionFalse))
 			}).Should(Succeed())
-			Expect(gitFake.issue(ns, "linter", n).comments).To(ContainElement(
+			Expect(gitFake.Issue(ns, "linter", n).Comments).To(ContainElement(
 				ContainSubstring("Tried again for Brief `cel-lens` in round 3")))
 		})
 	}
@@ -235,9 +235,9 @@ var _ = Describe("Brief autopilot", func() {
 		It("in "+mode+", lists a Container whose Standard files are behind under Needs you until they aren't", func() {
 			autopilotBrief(ns, mode)
 			standardContainer(ns, map[string]string{c4v1beta1.LabelBrief: "cel-lens"})
-			gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
+			gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte("check:\n\tpytest\n")}})
 			bumpStandard(ns, "v1.2.0")
-			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.2.0").Commit, "success")
+			gitFake.SetChecks(ns, "orders-api", openedUpdate(ns, "v1.2.0").Commit, "success")
 			eventuallyAt(ns, "v1.2.0", makefile)
 
 			Eventually(func(g Gomega) {
@@ -259,7 +259,7 @@ var _ = Describe("Brief autopilot", func() {
 
 			By("dropping it once an update brings the file up to date")
 			bumpStandard(ns, "v1.4.0")
-			gitFake.setChecks(ns, "orders-api", openedUpdate(ns, "v1.4.0").Commit, "success")
+			gitFake.SetChecks(ns, "orders-api", openedUpdate(ns, "v1.4.0").Commit, "success")
 			eventuallyAt(ns, "v1.4.0")
 			Eventually(func(g Gomega) {
 				b := getBrief(g, ns)
@@ -318,7 +318,7 @@ var _ = Describe("Brief autopilot", func() {
 				HaveField("Name", name))))
 			g.Expect(b.Status.NeedsYou).To(BeEmpty())
 		}).Should(Succeed())
-		Expect(gitFake.issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
+		Expect(gitFake.Issue(ns, "linter", n).Labels).To(ContainElement(model.LabelNeedsHuman))
 
 		By("starting none past TendInterval while nothing changed")
 		skewBriefClock(2 * time.Hour)
@@ -347,10 +347,10 @@ var _ = Describe("Brief autopilot", func() {
 		}).Should(Succeed())
 
 		By("an issue failing three Tasks while autopilot is Off")
-		tired := gitFake.addIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
+		tired := gitFake.AddIssue(ns, "linter", "Lint rule 1", linterIssue(1), []string{model.LabelReady})
 		failLinterTask(ns, model.IssueTaskName("linter", tired, 1), tired)
 		for attempt := 2; attempt <= model.MaxIssueAttempts; attempt++ {
-			Expect(gitFake.labelIssue(ns, "linter", tired, model.LabelReady)).To(Succeed())
+			Expect(gitFake.LabelIssue(ns, "linter", tired, model.LabelReady)).To(Succeed())
 			failLinterTask(ns, model.IssueTaskName("linter", tired, attempt), tired)
 		}
 		Eventually(func(g Gomega) {
@@ -404,9 +404,9 @@ var _ = Describe("Brief autopilot", func() {
 				HaveField("Summary", "Split rule 1 in two.")))
 			g.Expect(b.Status.Issues).To(ContainElement(HaveField("Title", "Lint rule 11")))
 		}).Should(Succeed())
-		closed := gitFake.issue(ns, "linter", tired)
+		closed := gitFake.Issue(ns, "linter", tired)
 		Expect(closed.State).To(Equal("closed"))
-		Expect(closed.comments).To(ContainElement(ContainSubstring("Closed by Brief `cel-lens` in tending round 2")))
+		Expect(closed.Comments).To(ContainElement(ContainSubstring("Closed by Brief `cel-lens` in tending round 2")))
 		fourth := model.IssueTaskName("linter", tired, model.MaxIssueAttempts+1)
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, fourth), &c4v1beta1.Task{})).NotTo(Succeed())

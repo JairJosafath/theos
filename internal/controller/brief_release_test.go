@@ -21,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
@@ -55,7 +54,7 @@ func mixedLinterPlan(ns string) scaffold.Tree {
 // milestoneDue returns the due date of the linter's milestone titled title.
 func milestoneDue(ns, title string) time.Time {
 	GinkgoHelper()
-	for _, m := range gitFake.allMilestones(ns, "linter") {
+	for _, m := range gitFake.AllMilestones(ns, "linter") {
 		if m.Title == title {
 			return m.Due
 		}
@@ -64,34 +63,13 @@ func milestoneDue(ns, title string) time.Time {
 	return time.Time{}
 }
 
-// allMilestones returns the fake host's milestones of owner/name, open and closed.
-//
-//nolint:unparam // takes owner and name like the other helpers
-func (g *fakeGit) allMilestones(owner, name string) []gitprovider.Milestone {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.milestones(owner+"/"+name, true)
-}
-
-// addMilestone makes a milestone of owner/name as CreateMilestone would.
-func (g *fakeGit) addMilestone(owner, name, title, description string, due time.Time) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	key := owner + "/" + name
-	s := g.issueState()
-	s.milestones[key] = append(s.milestones[key], title)
-	id := int64(len(s.milestones[key]))
-	g.releaseState().created[fmt.Sprintf("%s#%d", key, id)] = gitprovider.Milestone{ID: id, Title: title,
-		Description: description, Due: due}
-}
-
 // roundIssueMilestones returns the milestone titles of the issues Brief
 // cel-lens recorded for round.
 func roundIssueMilestones(g Gomega, ns string, round int32) []string {
 	var out []string
 	for _, issue := range getBrief(g, ns).Status.Issues {
 		if issue.Round == round {
-			out = append(out, gitFake.issue(ns, "linter", int(issue.Number)).milestone)
+			out = append(out, gitFake.Issue(ns, "linter", int(issue.Number)).InMilestone)
 		}
 	}
 	return out
@@ -202,14 +180,14 @@ var _ = Describe("Brief releases", func() {
 		Expect(crew.Spec.PrepareReleases).To(BeTrue())
 		Expect(crew.Spec.PublishReleases).To(BeNil(), "no spec.releases entry names it")
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
-		milestones := gitFake.allMilestones(ns, "linter")
+		milestones := gitFake.AllMilestones(ns, "linter")
 		Expect(milestones).To(HaveLen(1))
 		Expect(model.HasReleaseMilestoneMarker(milestones[0].Description, "cel-lens", 1)).To(BeTrue())
 		Expect(milestones[0].Due).To(BeTemporally("~", before.Add(model.ReleaseMilestoneDue), time.Minute))
 
 		By("telling the planner the linter ships releases")
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).
 				To(ContainSubstring("released: true"))
 		}).Should(Succeed())
 
@@ -223,7 +201,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(2))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(2))
 		Expect(linterCrew(Default, ns).Spec.TagReleases).To(BeTrue())
 	})
 
@@ -232,7 +210,7 @@ var _ = Describe("Brief releases", func() {
 		briefAgents(ns, 3)
 
 		By("finding the milestone of round 1 there already, titled as a restart left it")
-		gitFake.addMilestone(ns, "linter", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
+		gitFake.AddMilestone(ns, "linter", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
 			time.Now().Add(model.ReleaseMilestoneDue))
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 2))
@@ -240,7 +218,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(1))
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
 	})
 
@@ -268,7 +246,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.1.1"}))
-		milestones := gitFake.allMilestones(ns, "linter")
+		milestones := gitFake.AllMilestones(ns, "linter")
 		Expect(milestones).To(HaveLen(2))
 		Expect(milestones[1].Due).To(BeTemporally(">", milestones[0].Due), "lined up after v0.1.0")
 
@@ -281,14 +259,14 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
 		}).Should(Succeed())
-		safety := gitFake.addIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
+		safety := gitFake.AddIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
 			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
-		gitFake.setIssueMilestone(ns, "linter", safety, model.FollowUpMilestone)
-		flaky := gitFake.addIssue(ns, "linter", "Test the empty rule", model.FollowUpIssue(model.FollowUp{
+		gitFake.PutInMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		flaky := gitFake.AddIssue(ns, "linter", "Test the empty rule", model.FollowUpIssue(model.FollowUp{
 			Body: "No test covers it.", Criteria: []string{"A test lints the empty rule"}},
 			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
-		gitFake.setIssueMilestone(ns, "linter", flaky, model.FollowUpMilestone)
+		gitFake.PutInMilestone(ns, "linter", flaky, model.FollowUpMilestone)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(2)))
 		}).Should(Succeed())
@@ -307,17 +285,17 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 3)).To(Equal([]string{"v0.1.1"}))
-		taken := gitFake.issue(ns, "linter", safety)
+		taken := gitFake.Issue(ns, "linter", safety)
 		Expect(taken.Labels).To(ContainElement(model.LabelReady))
-		Expect(taken.milestone).To(Equal("v0.2.0"))
-		fix := gitFake.issue(ns, "linter", flaky)
+		Expect(taken.InMilestone).To(Equal("v0.2.0"))
+		fix := gitFake.Issue(ns, "linter", flaky)
 		Expect(fix.Labels).To(ContainElement(model.LabelReady))
-		Expect(fix.milestone).To(Equal("v0.1.1"))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4), "v0.1.0, v0.1.1, Later and v0.2.0")
+		Expect(fix.InMilestone).To(Equal("v0.1.1"))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(4), "v0.1.0, v0.1.1, Later and v0.2.0")
 
 		By("leaving no issue the Brief filed or took in no milestone")
 		for _, issue := range getBrief(Default, ns).Status.Issues {
-			Expect(gitFake.issue(ns, "linter", int(issue.Number)).milestone).To(MatchRegexp(`^v\d+\.\d+\.\d+$`))
+			Expect(gitFake.Issue(ns, "linter", int(issue.Number)).InMilestone).To(MatchRegexp(`^v\d+\.\d+\.\d+$`))
 		}
 	})
 
@@ -356,7 +334,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.1", "v0.2.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.1 and v0.2.0")
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.1 and v0.2.0")
 		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
 	})
 
@@ -377,9 +355,9 @@ var _ = Describe("Brief releases", func() {
 
 		By("finding round 2's milestones there already, titled as no new round would title them")
 		awaitTendRound(ns, 2)
-		gitFake.addMilestone(ns, "linter", "v0.1.7", model.PatchMilestoneDescription("cel-lens", 2),
+		gitFake.AddMilestone(ns, "linter", "v0.1.7", model.PatchMilestoneDescription("cel-lens", 2),
 			time.Now().Add(time.Hour))
-		gitFake.addMilestone(ns, "linter", "v0.9.0", model.ReleaseMilestoneDescription("cel-lens", 2),
+		gitFake.AddMilestone(ns, "linter", "v0.9.0", model.ReleaseMilestoneDescription("cel-lens", 2),
 			time.Now().Add(model.ReleaseMilestoneDue))
 		plan := tendPlan(fmt.Sprintf(
 			"- {container: linter, issue: %d, answer: close, why: The fix below replaces it.}\n", n))
@@ -393,7 +371,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.History[1].Outcome).To(Equal(model.ReasonTended))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.1.7", "v0.9.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.7 and v0.9.0")
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(3), "v0.1.0, v0.1.7 and v0.9.0")
 	})
 
 	// #884: a mixed round files its fixes in the patch release right after
@@ -402,15 +380,15 @@ var _ = Describe("Brief releases", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
 		inProgress, planned := time.Now().Add(time.Hour), time.Now().Add(48*time.Hour)
-		gitFake.addMilestone(ns, "linter", "v0.13.0", "", inProgress)
-		gitFake.addMilestone(ns, "linter", "v0.14.0", "", planned)
+		gitFake.AddMilestone(ns, "linter", "v0.13.0", "", inProgress)
+		gitFake.AddMilestone(ns, "linter", "v0.14.0", "", planned)
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.15.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(4))
 		Expect(milestoneDue(ns, "v0.13.1")).To(BeTemporally(">", inProgress))
 		Expect(milestoneDue(ns, "v0.13.1")).To(BeTemporally("<", planned))
 		Expect(milestoneDue(ns, "v0.15.0")).To(BeTemporally(">", planned))
@@ -419,9 +397,9 @@ var _ = Describe("Brief releases", func() {
 	It("files a round of only fixes in the open v0.13.1, making no milestone", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.addMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
-		gitFake.addMilestone(ns, "linter", "v0.13.1", "", time.Now().Add(2*time.Hour))
-		gitFake.addMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
+		gitFake.AddMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
+		gitFake.AddMilestone(ns, "linter", "v0.13.1", "", time.Now().Add(2*time.Hour))
+		gitFake.AddMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
 		mustCreate(newBrief(ns, "cel-lens"))
 		plan := bugLinterPlan(ns, 2)
 		plan[model.PlanReleasesFile] = scaffold.File{Data: []byte("containers: [linter]\n")}
@@ -430,14 +408,14 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.1", "v0.13.1"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(3))
 	})
 
 	It("files a feature filed before a fix in v0.2.0, and the fix in a v0.1.1 due before it, after a closed v0.1.0", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.addMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(-time.Hour))
-		gitFake.closeMilestone(ns, "linter", "v0.1.0")
+		gitFake.AddMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(-time.Hour))
+		gitFake.MarkMilestoneClosed(ns, "linter", "v0.1.0")
 		mustCreate(newBrief(ns, "cel-lens"))
 		plan := releasingLinterPlan(ns, 2)
 		plan["plan/issues/02-linter.md"] = scaffold.File{
@@ -447,7 +425,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.2.0", "v0.1.1"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(3))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(3))
 		Expect(milestoneDue(ns, "v0.1.1")).To(BeTemporally("<", milestoneDue(ns, "v0.2.0")))
 	})
 
@@ -460,18 +438,18 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(1))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(1))
 	})
 
 	It("finds a mixed round's patch and release milestones again after a restart, making neither twice", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.addMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
-		gitFake.addMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
+		gitFake.AddMilestone(ns, "linter", "v0.13.0", "", time.Now().Add(time.Hour))
+		gitFake.AddMilestone(ns, "linter", "v0.14.0", "", time.Now().Add(48*time.Hour))
 		By("finding round 1's milestones there already, titled as no new round would title them")
-		gitFake.addMilestone(ns, "linter", "v0.13.4", model.PatchMilestoneDescription("cel-lens", 1),
+		gitFake.AddMilestone(ns, "linter", "v0.13.4", model.PatchMilestoneDescription("cel-lens", 1),
 			time.Now().Add(2*time.Hour))
-		gitFake.addMilestone(ns, "linter", "v0.19.0", model.ReleaseMilestoneDescription("cel-lens", 1),
+		gitFake.AddMilestone(ns, "linter", "v0.19.0", model.ReleaseMilestoneDescription("cel-lens", 1),
 			time.Now().Add(72*time.Hour))
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, mixedLinterPlan(ns))
@@ -479,7 +457,7 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.13.4", "v0.19.0"}))
-		Expect(gitFake.allMilestones(ns, "linter")).To(HaveLen(4))
+		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(4))
 	})
 
 	It("puts a released app's ready work in no milestone in its first open release, before the round's (#599)", func() {
@@ -499,14 +477,14 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
 		}).Should(Succeed())
-		older := gitFake.addIssue(ns, "linter", "Bundle the engine", "", []string{model.LabelReady})
-		gitFake.addMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(time.Hour))
-		proposed := gitFake.addIssue(ns, "linter", "Follow-up", "", []string{model.LabelProposed})
-		gitFake.setIssueMilestone(ns, "linter", proposed, model.FollowUpMilestone)
-		byHand := gitFake.addIssue(ns, "linter", "Try it in an editor", "",
+		older := gitFake.AddIssue(ns, "linter", "Bundle the engine", "", []string{model.LabelReady})
+		gitFake.AddMilestone(ns, "linter", "v0.1.0", "", time.Now().Add(time.Hour))
+		proposed := gitFake.AddIssue(ns, "linter", "Follow-up", "", []string{model.LabelProposed})
+		gitFake.PutInMilestone(ns, "linter", proposed, model.FollowUpMilestone)
+		byHand := gitFake.AddIssue(ns, "linter", "Try it in an editor", "",
 			[]string{model.LabelNeedsHuman, model.LabelByHand})
-		gitFake.setIssueMilestone(ns, "linter", byHand, model.FollowUpMilestone)
-		handedBack := gitFake.addIssue(ns, "linter", "Failed thrice", "", []string{model.LabelNeedsHuman})
+		gitFake.PutInMilestone(ns, "linter", byHand, model.FollowUpMilestone)
+		handedBack := gitFake.AddIssue(ns, "linter", "Failed thrice", "", []string{model.LabelNeedsHuman})
 
 		By("applying round 2, which releases the linter")
 		brief = getBrief(Default, ns)
@@ -518,10 +496,10 @@ var _ = Describe("Brief releases", func() {
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
-		Expect(gitFake.issue(ns, "linter", older).milestone).To(Equal("v0.1.0"))
-		Expect(gitFake.issue(ns, "linter", proposed).milestone).To(Equal(model.FollowUpMilestone))
-		Expect(gitFake.issue(ns, "linter", byHand).milestone).To(Equal(model.FollowUpMilestone))
-		Expect(gitFake.issue(ns, "linter", handedBack).milestone).To(BeEmpty())
+		Expect(gitFake.Issue(ns, "linter", older).InMilestone).To(Equal("v0.1.0"))
+		Expect(gitFake.Issue(ns, "linter", proposed).InMilestone).To(Equal(model.FollowUpMilestone))
+		Expect(gitFake.Issue(ns, "linter", byHand).InMilestone).To(Equal(model.FollowUpMilestone))
+		Expect(gitFake.Issue(ns, "linter", handedBack).InMilestone).To(BeEmpty())
 	})
 
 	It("files no release milestone for a Container the round doesn't release (B11)", func() {
@@ -532,7 +510,7 @@ var _ = Describe("Brief releases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
-		Expect(gitFake.allMilestones(ns, "linter")).To(BeEmpty())
+		Expect(gitFake.AllMilestones(ns, "linter")).To(BeEmpty())
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{""}))
 	})
 
@@ -546,7 +524,7 @@ var _ = Describe("Brief releases", func() {
 		By("listing the entry in brief.md for the planner")
 		Eventually(func(g Gomega) { getTask(g, ns, "cel-lens-plan-1") }).Should(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).
 				To(ContainSubstring("`linter`, published by the factory to github.com/acme/cel-lens"))
 		}).Should(Succeed())
 
@@ -578,7 +556,7 @@ var _ = Describe("Brief releases", func() {
 		brief = getBrief(Default, ns)
 		Expect(patch(brief, func() { brief.Spec.Releases = nil })).To(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.BriefFile].Data)).NotTo(ContainSubstring("## Releases"))
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).NotTo(ContainSubstring("## Releases"))
 		}).Should(Succeed())
 		crew = linterCrew(Default, ns)
 		Expect(crew.Spec.TagReleases).To(BeTrue())
@@ -835,7 +813,7 @@ var _ = Describe("Brief apps", func() {
 		}).Should(Succeed())
 		// A busy Gitea: the Crew's poll still publishes a release's module when
 		// the spec moves on (#1202).
-		gitFake.slowModulePublishes(ns, "linter", time.Second)
+		gitFake.SlowModulePublishes(ns, "linter", time.Second)
 		setLinterRelease(ns, "v0.1.0")
 		Eventually(func(g Gomega) {
 			release := briefApp(g, ns, "linter").LastRelease
@@ -853,7 +831,7 @@ var _ = Describe("Brief apps", func() {
 
 		By("following the Crew's next release")
 		// Its go.mod names a v2 module, which Go can't take at v0.2.0.
-		gitFake.setGoMod(ns, "linter", "github.com/acme/cel-lens/v2")
+		gitFake.SetGoMod(ns, "linter", "github.com/acme/cel-lens/v2")
 		setLinterRelease(ns, "v0.2.0")
 		Eventually(func(g Gomega) {
 			app := briefApp(g, ns, "linter")

@@ -57,11 +57,11 @@ func deployingContainer(ns string) {
 // and makes it the Crew's last release, its runs succeeded.
 func shipRelease(ns, tag string, withFiles bool) {
 	GinkgoHelper()
-	var files []fakeFile
+	var files []fake.ReleaseFile
 	if withFiles {
-		files = []fakeFile{{"orders-api-" + tag + ".tar.gz", []byte("the build of " + tag)}}
+		files = []fake.ReleaseFile{{Name: "orders-api-" + tag + ".tar.gz", Data: []byte("the build of " + tag)}}
 	}
-	gitFake.setGiteaRelease(ns, "orders-api", tag, "Notes of "+tag, files...)
+	gitFake.SetRelease(ns, "orders-api", tag, "Notes of "+tag, files...)
 	crewRelease(ns, tag, model.RunSucceeded)
 }
 
@@ -340,8 +340,8 @@ var _ = Describe("Container deploys", func() {
 			deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		}
 		shipRelease(ns, "v0.1.0", true)
-		gitFake.setGiteaRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"orders-cli-v0.1.0.tar.gz", []byte("the build of v0.1.0")})
+		gitFake.SetRelease(ns, "orders-cli", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "orders-cli-v0.1.0.tar.gz", Data: []byte("the build of v0.1.0")})
 		crewReleaseOf(ns, "orders-cli", "v0.1.0", model.RunSucceeded)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "shared"}, c4v1beta1.ContainerDeploy{Target: "bare"})
 		setDeployOf(ns, "orders-cli", c4v1beta1.ContainerDeploy{Target: "shared"})
@@ -374,7 +374,7 @@ var _ = Describe("Container deploys", func() {
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		withImage, without := "Acme/"+ns+"-Shop", "acme/"+ns+"-plain"
 		for name, repository := range map[string]string{"oss": withImage, "plain": without} {
@@ -410,7 +410,7 @@ var _ = Describe("Container deploys", func() {
 		rels := githubFake.releases(withImage)
 		Expect(rels).To(HaveLen(1))
 		Expect(rels[0].Body).To(ContainSubstring("Image: `" + want + "`"))
-		Expect(gitFake.imageCopy(ghcrFake.host + "/" + strings.ToLower(without) + "/orders-api:v0.1.0")).To(BeEmpty())
+		Expect(gitFake.ImageCopy(ghcrFake.host + "/" + strings.ToLower(without) + "/orders-api:v0.1.0")).To(BeEmpty())
 	})
 
 	It("ships a service's source to its folder of a github target, its release tag on the source, its files but the image archive (#1599)", func() {
@@ -418,9 +418,9 @@ var _ = Describe("Container deploys", func() {
 		deployingContainer(ns)
 		repository := sourceTarget(ns, "open", c4v1beta1.DeployTargetSource{})
 		all, app := appSource("example.com/orders")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"install.yaml", []byte("kind: List\n")}, fakeFile{"orders-api.oci.tar", []byte("an image")})
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", all...)
+		gitFake.SetRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")}, fake.ReleaseFile{Name: "orders-api.oci.tar", Data: []byte("an image")})
 		crewRelease(ns, "v0.1.0", model.RunSucceeded)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "open"})
 
@@ -493,10 +493,10 @@ var _ = Describe("Container deploys", func() {
 		_, err := oci.Push(ctx, oci.Registry{Host: registryFake.host}, ns+"/orders-api", "v0.1.0",
 			bytes.NewReader(archive))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.setImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
+		gitFake.SetImage(ns, "orders-api", "v0.1.0", gitprovider.Image{Outcome: gitprovider.ImagePublished,
 			Digest: digest, Platforms: []string{"linux/amd64", "linux/arm64"}})
 		all, app := appSource("example.com/orders")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", all...)
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", all...)
 		shipRelease(ns, "v0.1.0", true)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "ghes"})
 
@@ -524,9 +524,9 @@ var _ = Describe("Container deploys", func() {
 		repository := sourceTarget(ns, "open", c4v1beta1.DeployTargetSource{})
 		head := githubFake.ref(repository, "heads/main")
 		leaky, leaked := leakedSource("example.com/orders")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", leaky...)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"install.yaml", []byte("kind: List\n")})
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", leaky...)
+		gitFake.SetRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")})
 		crewRelease(ns, "v0.1.0", model.RunSucceeded)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "open"})
 
@@ -541,20 +541,20 @@ var _ = Describe("Container deploys", func() {
 
 		By("failing the next release, the line gone but so is the license, LicenseMissing")
 		all, app := appSource("example.com/orders")
-		gitFake.setSource(ns, "orders-api", "v0.2.0", slices.DeleteFunc(slices.Clone(all), func(f fakeSourceFile) bool {
-			return f.path == "LICENSE"
+		gitFake.SetSource(ns, "orders-api", "v0.2.0", slices.DeleteFunc(slices.Clone(all), func(f fake.SourceFile) bool {
+			return f.Path == "LICENSE"
 		})...)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.2.0", "Notes of v0.2.0",
-			fakeFile{"install.yaml", []byte("kind: List\n")})
+		gitFake.SetRelease(ns, "orders-api", "v0.2.0", "Notes of v0.2.0",
+			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")})
 		crewRelease(ns, "v0.2.0", model.RunSucceeded)
 		d = deployIs(ns, "open", model.DeployPhaseFailed, model.DeployLicenseMissing, "", model.DeployFailed)
 		Expect(d.Message).To(ContainSubstring("no license"))
 		Expect(githubFake.releases(repository)).To(BeEmpty())
 
 		By("shipping the next release, with its license")
-		gitFake.setSource(ns, "orders-api", "v0.3.0", all...)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.3.0", "Notes of v0.3.0",
-			fakeFile{"install.yaml", []byte("kind: List\n")})
+		gitFake.SetSource(ns, "orders-api", "v0.3.0", all...)
+		gitFake.SetRelease(ns, "orders-api", "v0.3.0", "Notes of v0.3.0",
+			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")})
 		crewRelease(ns, "v0.3.0", model.RunSucceeded)
 		deployIs(ns, "open", model.DeployPhaseDeployed, model.DeployDeployed, "v0.3.0", model.DeployDeployed)
 		Expect(githubFake.folder(repository, "tags/orders-api/v0.3.0", "orders-api")).To(Equal(app))
@@ -574,10 +574,10 @@ var _ = Describe("Container deploys", func() {
 		mustCreate(newDeploySecret(ns, "mirror-github", map[string]string{"token": token}), dt)
 		deployReady(dt, metav1.ConditionTrue, model.DeployTargetReady)
 		all, _ := appSource("example.com/orders")
-		gitFake.setSource(ns, "orders-api", "v0.1.0", append(all,
-			fakeSourceFile{"config/app.env", gitprovider.SourcePlain, "TOKEN=" + token + "\n"})...)
-		gitFake.setGiteaRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
-			fakeFile{"install.yaml", []byte("kind: List\n")})
+		gitFake.SetSource(ns, "orders-api", "v0.1.0", append(all,
+			fake.SourceFile{Path: "config/app.env", Mode: gitprovider.SourcePlain, Data: "TOKEN=" + token + "\n"})...)
+		gitFake.SetRelease(ns, "orders-api", "v0.1.0", "Notes of v0.1.0",
+			fake.ReleaseFile{Name: "install.yaml", Data: []byte("kind: List\n")})
 		crewRelease(ns, "v0.1.0", model.RunSucceeded)
 		setDeploy(ns, c4v1beta1.ContainerDeploy{Target: "public"}, c4v1beta1.ContainerDeploy{Target: "mirror"})
 
@@ -624,8 +624,8 @@ var _ = Describe("Container deploys", func() {
 			sourceTarget(ns, "open", source)
 			all, _ := appSource("example.com/orders")
 			for _, name := range []string{"orders-api", "orders-cli"} {
-				gitFake.setSource(ns, name, "v0.1.0", all...)
-				gitFake.setGiteaRelease(ns, name, "v0.1.0", "Notes of v0.1.0")
+				gitFake.SetSource(ns, name, "v0.1.0", all...)
+				gitFake.SetRelease(ns, name, "v0.1.0", "Notes of v0.1.0")
 				crewReleaseOf(ns, name, "v0.1.0", model.RunSucceeded)
 				setDeployOf(ns, name, c4v1beta1.ContainerDeploy{Target: "open"})
 			}

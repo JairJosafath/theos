@@ -51,7 +51,7 @@ var _ = Describe("Brief checks", func() {
 
 		By("showing the planner each Container's checks")
 		Eventually(func(g Gomega) {
-			g.Expect(string(gitFake.mainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).
+			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceContainersFile].Data)).
 				To(ContainSubstring("checks: EveryChange"))
 		}).Should(Succeed())
 

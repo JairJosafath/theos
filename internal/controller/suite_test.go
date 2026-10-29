@@ -52,6 +52,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/oci"
 	"github.com/JairJosafath/c4factory/internal/ports"
 	"github.com/JairJosafath/c4factory/internal/ports/fake"
 	// +kubebuilder:scaffold:imports
@@ -88,7 +89,7 @@ const testBotDeleteTimeout = 5 * time.Second
 
 var (
 	// gitFake is the Git host every test scaffolds into.
-	gitFake *fakeGit
+	gitFake *fake.Git
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
 	// gitlabFake is the GitLab a gitlab DeployTarget ships to: a target's
@@ -334,8 +335,9 @@ var _ = BeforeSuite(func() {
 	mgr.GetWebhookServer().Register("/convert",
 		conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	managerClient = mgr.GetClient()
-	gitFake, err = newFakeGit(filepath.Join("..", "..", "templates"))
+	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
+	gitFake.SetImageCopier(copySuiteImage)
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
 	DeferCleanup(githubFake.enterprise.Close)
@@ -387,26 +389,26 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			ModelProxyURL:   testModelProxyURL,
 			OperatorVersion: testOperatorVersion, ChartVersion: testChartVersion,
 			UIServiceAccount: k8stypes.NamespacedName{Namespace: operatorNamespace, Name: testUIAccount},
-			Git:              gitFake, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept,
+			Git:              fakeGitClient{gitFake}, CIGoCache: testCIGoCache, RunnerRecordKept: testRunnerRecordKept,
 			RunnerBackoff: testRunnerBackoff},
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
-		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
+		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
 			Deployers: deployers, DeployMembers: testDeployMember,
 			DeployPoll: time.Second},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
-		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake, ChecksRecheck: time.Second, SecretRecheck: time.Second,
+		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
 			Now: taskNow},
-		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: gitFake,
+		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			ModelProxyURL: testModelProxyURL,
 			Issues:        githubFake, Now: briefNow},
-		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: gitFake, PollInterval: time.Second,
+		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: fakeGitClient{gitFake}, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,
 			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
@@ -506,4 +508,25 @@ func (r routedDeployer) Ship(ctx context.Context, t ports.Target, s ports.Shipme
 
 func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version string) (ports.DeployState, error) {
 	return r.of(t).State(ctx, t, app, version)
+}
+
+// fakeGitClient is the GitClient of the fake Git host: each GitProvider sees
+// the host through its own Config.
+type fakeGitClient struct{ *fake.Git }
+
+func (c fakeGitClient) Provider(cfg gitprovider.Config) (gitprovider.Provider, error) {
+	return c.For(cfg), nil
+}
+
+// copySuiteImage copies an image for the fake Git host's CopyImage, from
+// owner/name in registryFake. Only the suite's registries take a real copy:
+// GHCR's stand-in and a GitLab project's (#1806); the fake records a copy to
+// any other host alone.
+func copySuiteImage(ctx context.Context, repo ports.Repository, digest string, to ports.ImageRegistry,
+	toRepository, tag string) error {
+	if ghcrFake == nil || (to.Host != ghcrFake.host && to.Host != gitlabRegistryFake.host) {
+		return nil
+	}
+	return oci.Copy(ctx, oci.Registry{Host: registryFake.host}, repo.Owner+"/"+repo.Name, digest,
+		oci.Registry{Host: to.Host, Username: to.Username, Password: to.Password, Insecure: to.Insecure}, toRepository, tag)
 }

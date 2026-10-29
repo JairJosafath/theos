@@ -31,7 +31,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 1))
-		n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
+		n := gitFake.AddIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
 		issueTask := func(name string) *c4v1beta1.Task {
 			task := newTask(ns, name, "")
 			task.Spec.Issue = int32(n)
@@ -41,8 +41,8 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		By("failing the first try with its pull request open")
 		mustCreate(issueTask("orders-api-1"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
-		gitFake.setChecks(ns, "orders-api", "sha-try1", "success")
+		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-try1")
+		gitFake.SetChecks(ns, "orders-api", "sha-try1", "success")
 		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 			&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-review-a1") }).Should(Succeed())
@@ -51,7 +51,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 		}).Should(Succeed())
-		Expect(gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 
 		By("starting the next try on the earlier try's branch, with its feedback")
 		mustCreate(issueTask("orders-api-2"))
@@ -70,7 +70,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			map[string]any{"name": "C4_PULL_REQUEST", "value": "1"},
 			And(HaveKeyWithValue("name", "C4_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("how to try it"))),
 		))
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).To(ContainElement(
+		Expect(gitFake.PullComments(ns, "orders-api", 1)).To(ContainElement(
 			ContainSubstring("Task `orders-api-2` continues this pull request")))
 
 		By("reviewing a round that changed only the pull request, and merging it when approved")
@@ -84,16 +84,16 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Status", metav1.ConditionTrue))
 		}).Should(Succeed())
-		pulls := gitFake.pullRequests(ns, "orders-api")
+		pulls := gitFake.PullRequests(ns, "orders-api")
 		Expect(pulls).To(HaveLen(1), "no second pull request")
 		Expect(pulls[0].Merged).To(BeTrue())
-		Expect(gitFake.issue(ns, "orders-api", n).State).To(Equal("closed"))
+		Expect(gitFake.Issue(ns, "orders-api", n).State).To(Equal("closed"))
 	})
 
 	It("starts its own branch when the earlier try's pull request is closed", func() {
 		ns := newProjectNamespace()
 		n := failTryWithOpenPull(ns)
-		gitFake.closePull(ns, "orders-api", 1)
+		gitFake.ClosePull(ns, "orders-api", 1)
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -112,7 +112,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 	It("starts its own branch when the earlier try's pull request is gone", func() {
 		ns := newProjectNamespace()
 		n := failTryWithOpenPull(ns)
-		gitFake.deletePull(ns, "orders-api", 1)
+		gitFake.DeletePull(ns, "orders-api", 1)
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -124,7 +124,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			g.Expect(task.Status.Continues).To(BeEmpty())
 			g.Expect(task.Status.PullRequest).To(BeZero())
 		}).Should(Succeed())
-		Expect(gitFake.pullComments(ns, "orders-api", 1)).NotTo(ContainElement(ContainSubstring("orders-api-2")))
+		Expect(gitFake.PullComments(ns, "orders-api", 1)).NotTo(ContainElement(ContainSubstring("orders-api-2")))
 	})
 
 	// #656: a read that fails for now is retried, and the comments a run starts
@@ -132,7 +132,7 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 	It("retries a failed read of the earlier pull request and comments once when the status write fails", func() {
 		ns := newProjectNamespace()
 		n := failTryWithOpenPull(ns)
-		gitFake.failPullReads(ns, "orders-api", 1, 2)
+		gitFake.FailPullReads(ns, "orders-api", 1, 2)
 		key := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
 		taskStatusFaults.failNext(key, 2, func(t *c4v1beta1.Task) bool { return t.Status.Sandbox != "" })
 
@@ -146,17 +146,17 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 			g.Expect(task.Status.Continues).To(Equal("orders-api-1"))
 			g.Expect(task.Status.Branch).To(Equal("task/orders-api-1"))
 		}).Should(Succeed())
-		Expect(gitFake.pullReadsToFail(ns, "orders-api", 1)).To(BeZero())
+		Expect(gitFake.PullReadsToFail(ns, "orders-api", 1)).To(BeZero())
 		Expect(taskStatusFaults.pending(key)).To(BeZero())
 		continues := 0
-		for _, c := range gitFake.pullComments(ns, "orders-api", 1) {
+		for _, c := range gitFake.PullComments(ns, "orders-api", 1) {
 			if strings.Contains(c, "Task `orders-api-2` continues this pull request") {
 				continues++
 			}
 		}
 		Expect(continues).To(Equal(1))
 		picked := 0
-		for _, c := range gitFake.issue(ns, "orders-api", n).comments {
+		for _, c := range gitFake.Issue(ns, "orders-api", n).Comments {
 			if strings.Contains(c, "Task `orders-api-2` picked this up") {
 				picked++
 			}
@@ -171,9 +171,9 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 	It("reviews the earlier try's commit with no implement run once its checks pass", func() {
 		ns := newProjectNamespace()
 		n := failTryNoCI(ns)
-		Expect(gitFake.issue(ns, "orders-api", n).comments).To(ContainElement(
+		Expect(gitFake.Issue(ns, "orders-api", n).Comments).To(ContainElement(
 			ContainSubstring("this try doesn't count towards the limit")))
-		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
+		gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckSuccess)
 		taskKey := client.ObjectKey{Namespace: ns, Name: "orders-api-2"}
 		taskStatusFaults.failNext(taskKey, 2, func(t *c4v1beta1.Task) bool {
 			return t.Status.Phase == c4v1beta1.TaskChecking
@@ -195,9 +195,9 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 			HaveField("Phase", c4v1beta1.TaskChecking),
 			HaveField("Message", ContainSubstring("which Task orders-api-1 pushed and no one reviewed")))))
 		Expect(taskStatusFaults.pending(taskKey)).To(BeZero())
-		Expect(countContaining(gitFake.pullComments(ns, "orders-api", 1),
+		Expect(countContaining(gitFake.PullComments(ns, "orders-api", 1),
 			"Task `orders-api-2` continues this pull request")).To(Equal(1))
-		Expect(countContaining(gitFake.issue(ns, "orders-api", n).comments,
+		Expect(countContaining(gitFake.Issue(ns, "orders-api", n).Comments,
 			"Task `orders-api-2` picked this up")).To(Equal(1))
 
 		By("merging it once the reviewer approves")
@@ -211,7 +211,7 @@ var _ = Describe("Task on an issue whose earlier try CI never reported on", func
 	It("starts round 1 when the earlier try's checks failed", func() {
 		ns := newProjectNamespace()
 		n := failTryNoCI(ns)
-		gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckFailure)
+		gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckFailure)
 
 		second := newTask(ns, "orders-api-2", "")
 		second.Spec.Issue = int32(n)
@@ -242,16 +242,16 @@ func countContaining(comments []string, s string) int {
 func failTryNoCI(ns string) int {
 	readyContainer(ns)
 	mustCreate(newAgent(ns, 1))
-	n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
+	n := gitFake.AddIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
 	first := newTask(ns, "orders-api-1", "")
 	first.Spec.Issue = int32(n)
 	mustCreate(first)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
-	gitFake.setChecks(ns, "orders-api", "sha-try1", gitprovider.CheckPending)
-	gitFake.setCommitRuns(ns, "orders-api", "sha-try1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
+	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-try1")
+	gitFake.SetChecks(ns, "orders-api", "sha-try1", gitprovider.CheckPending)
+	gitFake.SetCommitRuns(ns, "orders-api", "sha-try1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
 		Event: "pull_request", Status: "queued", URL: "http://gitea/" + ns + "/orders-api/actions/runs/7"})
-	gitFake.setRunnersOnline(0)
+	setRunnersOnline(0)
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
 	Eventually(func(g Gomega) {
@@ -264,7 +264,7 @@ func failTryNoCI(ns string) int {
 		g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(HaveField("Reason", model.ReasonNoCIResult))
 	}).Should(Succeed())
 	taskSkew.Store(0)
-	ExpectWithOffset(1, gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+	ExpectWithOffset(1, gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 	return n
 }
 
@@ -273,18 +273,18 @@ func failTryNoCI(ns string) int {
 func failTryWithOpenPull(ns string) int {
 	readyContainer(ns)
 	mustCreate(newAgent(ns, 1))
-	n := gitFake.addIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
+	n := gitFake.AddIssue(ns, "orders-api", "Add crop", clearIssue, []string{model.LabelReady})
 	first := newTask(ns, "orders-api-1", "")
 	first.Spec.Issue = int32(n)
 	mustCreate(first)
 	Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
-	gitFake.pushBranch(ns, "orders-api", "task/orders-api-1", "sha-try1")
-	gitFake.setChecks(ns, "orders-api", "sha-try1", "failure")
+	gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-try1")
+	gitFake.SetChecks(ns, "orders-api", "sha-try1", "failure")
 	finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1",
 		&agentrunner.Result{Role: "implement", Commit: "sha-try1", Summary: "Added crop."}, "")
 	Eventually(func(g Gomega) {
 		g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1beta1.TaskFailed))
 	}).Should(Succeed())
-	ExpectWithOffset(1, gitFake.pullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
+	ExpectWithOffset(1, gitFake.PullRequests(ns, "orders-api")).To(ConsistOf(HaveField("State", "open")))
 	return n
 }

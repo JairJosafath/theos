@@ -10,17 +10,18 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // A slow call to the Git host must not leave a merged issue open: each call gets
 // its own time, so the comment and the close still happen after a follow-up that
 // the host filed but answered too late for (vscode-extension #19).
 func TestCloseIssueAfterALateAnswer(t *testing.T) {
-	git := &fakeGit{repos: map[string]*fakeRepo{}, hangs: map[string]chan struct{}{}}
-	provider := &fakeProvider{git: git}
+	git := fake.New()
+	provider := git
 	repo := gitprovider.Repository{Owner: "tools", Name: "vscode-extension"}
-	n := git.addIssue(repo.Owner, repo.Name, "Check the README's claims", "", []string{model.LabelInProgress})
-	git.issueState().late = true
+	n := git.AddIssue(repo.Owner, repo.Name, "Check the README's claims", "", []string{model.LabelInProgress})
+	git.AnswerLate()
 
 	r := &TaskReconciler{GitTimeout: 50 * time.Millisecond}
 	task := &c4v1beta1.Task{ObjectMeta: objectMeta("tools", "vscode-extension-19"),
@@ -33,12 +34,12 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	r.closeIssue(ctx, provider, repo, task, status, reviewer,
 		[]model.FollowUp{{Title: "Warn when the server is too old", Body: "Compare serverInfo.version."}}, nil)
 
-	got := git.issue(repo.Owner, repo.Name, n)
+	got := git.Issue(repo.Owner, repo.Name, n)
 	if got.State != "closed" {
 		t.Errorf("issue #%d is %s, want closed", n, got.State)
 	}
-	if len(got.comments) != 1 || !strings.HasPrefix(got.comments[0], "Merged in ") {
-		t.Errorf("comments %q, want the merge reported", got.comments)
+	if len(got.Comments) != 1 || !strings.HasPrefix(got.Comments[0], "Merged in ") {
+		t.Errorf("comments %q, want the merge reported", got.Comments)
 	}
 	if slices.Contains(got.Labels, model.LabelInProgress) {
 		t.Errorf("labels %v, want %s removed", got.Labels, model.LabelInProgress)
@@ -48,10 +49,10 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 // A rerun of the merge step files the open criteria once: by status.byHand, or,
 // when the status lost it, by the marker in the issue's body (#474).
 func TestCloseIssueFilesByHandOnce(t *testing.T) {
-	git := &fakeGit{repos: map[string]*fakeRepo{}, hangs: map[string]chan struct{}{}}
-	provider := &fakeProvider{git: git}
+	git := fake.New()
+	provider := git
 	repo := gitprovider.Repository{Owner: "tools", Name: "cel-lens"}
-	n := git.addIssue(repo.Owner, repo.Name, "README shows the hover", "", []string{model.LabelInProgress})
+	n := git.AddIssue(repo.Owner, repo.Name, "README shows the hover", "", []string{model.LabelInProgress})
 	r := &TaskReconciler{GitTimeout: time.Second}
 	task := &c4v1beta1.Task{ObjectMeta: objectMeta("tools", "cel-lens-1"), Spec: c4v1beta1.TaskSpec{Issue: int32(n)}}
 	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta("tools", "reviewer")}
@@ -85,7 +86,7 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 		if again.ByHand != filed[0].URL {
 			t.Errorf("%s: status.byHand %q, want %q", rerun.name, again.ByHand, filed[0].URL)
 		}
-		comments := git.issue(repo.Owner, repo.Name, n).comments
+		comments := git.Issue(repo.Owner, repo.Name, n).Comments
 		if last := comments[len(comments)-1]; !strings.Contains(last, filed[0].URL) {
 			t.Errorf("%s: closing comment %q doesn't link the by-hand issue", rerun.name, last)
 		}

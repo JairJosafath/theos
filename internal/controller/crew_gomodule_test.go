@@ -52,7 +52,7 @@ var _ = Describe("Crew Go modules", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		gitFake.setGoMod(ns, "orders-api", ordersModule(ns))
+		gitFake.SetGoMod(ns, "orders-api", ordersModule(ns))
 		mergedIssue(ns)
 		taggingCrew(ns)
 
@@ -74,8 +74,8 @@ var _ = Describe("Crew Go modules", func() {
 		// more, and finds the version there.
 		Consistently(func(g Gomega) {
 			g.Expect(goProxyFake.asks(ordersModule(ns))).To(BeZero(), "the registry is the publish")
-			g.Expect(gitFake.moduleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
-			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.ModuleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
+			g.Expect(gitFake.ModulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "ModulePublished")
 			g.Expect(events).To(HaveLen(1))
 			g.Expect(events[0].Series).To(BeNil())
@@ -105,7 +105,7 @@ var _ = Describe("Crew Go modules", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(moduleEvents(g, ns, "ModulePublished")).To(BeEmpty())
 			g.Expect(moduleEvents(g, ns, "InvalidModule")).To(BeEmpty())
-			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.ModulePublishes(ns, "orders-api", "v0.1.0")).To(BeNumerically("<=", 2))
 		}, 3*time.Second).Should(Succeed())
 	})
 
@@ -113,7 +113,7 @@ var _ = Describe("Crew Go modules", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		gitFake.setGoMod(ns, "orders-api", ordersModule(ns))
+		gitFake.SetGoMod(ns, "orders-api", ordersModule(ns))
 		mergedIssueIn(ns, "v2.0.0", "5a-merge")
 		taggingCrew(ns)
 
@@ -134,8 +134,8 @@ var _ = Describe("Crew Go modules", func() {
 			g.Expect(moduleEvents(g, ns, "InvalidModule")).To(ConsistOf(HaveField("Type", "Warning")))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.moduleUploads(ordersModule(ns), "v2.0.0")).To(BeZero())
-			g.Expect(gitFake.modulePublishes(ns, "orders-api", "v2.0.0")).To(BeNumerically("<=", 2))
+			g.Expect(gitFake.ModuleUploads(ordersModule(ns), "v2.0.0")).To(BeZero())
+			g.Expect(gitFake.ModulePublishes(ns, "orders-api", "v2.0.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "InvalidModule")
 			g.Expect(events).To(HaveLen(1))
 			g.Expect(events[0].Series).To(BeNil())
@@ -146,8 +146,8 @@ var _ = Describe("Crew Go modules", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		crewAgents(ns, 1)
-		gitFake.setGoMod(ns, "orders-api", ordersModule(ns))
-		gitFake.failModulePublishes(ns, "orders-api", 2)
+		gitFake.SetGoMod(ns, "orders-api", ordersModule(ns))
+		gitFake.FailModulePublishes(ns, "orders-api", 2)
 		mergedIssue(ns)
 		taggingCrew(ns)
 
@@ -160,8 +160,8 @@ var _ = Describe("Crew Go modules", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		}).Should(Succeed())
-		Expect(gitFake.modulePublishFailuresLeft(ns, "orders-api")).To(BeZero())
-		Expect(gitFake.moduleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
+		Expect(gitFake.ModulePublishFailuresLeft(ns, "orders-api")).To(BeZero())
+		Expect(gitFake.ModuleUploads(ordersModule(ns), "v0.1.0")).To(Equal(1))
 	})
 
 	It("waits for the source tag of a module in its GitHub folder, then asks the Go proxy (#1001)", func() {
@@ -170,7 +170,7 @@ var _ = Describe("Crew Go modules", func() {
 		module := "github.com/" + repository + "/engine"
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
-		gitFake.setGoMod(ns, "orders-api", module)
+		gitFake.SetGoMod(ns, "orders-api", module)
 		// The proxy would find it: only the missing tag holds it back.
 		goProxyFake.setFound(module, "v0.1.0", true)
 		mustCreate(publishSecret(ns, rand.Text()))
@@ -226,7 +226,7 @@ var _ = Describe("Crew Go modules", func() {
 		token := rand.Text()
 		githubFake.addRepository(repository, token)
 		githubFake.setPrivate(repository)
-		gitFake.setGoMod(ns, "orders-api", module)
+		gitFake.SetGoMod(ns, "orders-api", module)
 		mustCreate(publishSecret(ns, token))
 		sourcePublished(ns, repository, "engine", sourceCrew(ns, repository, "engine", module))
 
@@ -263,7 +263,7 @@ var _ = Describe("Crew Go modules", func() {
 		readyContainer(ns)
 		crewAgents(ns, 1)
 		module := "github.com/someone/" + ns
-		gitFake.setGoMod(ns, "orders-api", module)
+		gitFake.SetGoMod(ns, "orders-api", module)
 		mergedIssue(ns)
 		taggingCrew(ns)
 
@@ -306,7 +306,7 @@ var _ = Describe("Crew Go modules", func() {
 		readyContainer(ns)
 		crewAgents(ns, 1)
 		module := "github.com/someone/" + ns
-		gitFake.setGoMod(ns, "orders-api", module)
+		gitFake.SetGoMod(ns, "orders-api", module)
 		goProxyFake.setFound(module, "v0.1.0", true)
 		mergedIssue(ns)
 		taggingCrew(ns)

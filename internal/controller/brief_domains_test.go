@@ -30,7 +30,7 @@ var _ = Describe("Brief rounds with Domains", func() {
 		var workspace scaffold.Tree
 		Eventually(func(g Gomega) {
 			getTask(g, ns, "cel-lens-plan-1")
-			workspace = gitFake.mainFiles(ns, briefRepo)
+			workspace = gitFake.MainFiles(ns, briefRepo)
 			g.Expect(string(workspace[model.WorkspaceCatalogFile].Data)).To(ContainSubstring(
 				"domains:\n    - name: payments\n    - name: webshop\n"))
 		}).Should(Succeed())

@@ -138,21 +138,21 @@ var _ = Describe("Container naming a Bundle", func() {
 		Expect(bundled.Status.Bundle).To(Equal(want))
 		Expect(bundled.Choices()).To(Equal(c4v1beta1.ContainerChoices{Bundle: "web-service",
 			Framework: "python-fastapi", Compute: "small", Deployment: "k8s-manifests"}))
-		Expect(gitFake.repo(ns, "bundled").files).To(HaveKey("deploy/k8s/compute.yaml"))
+		Expect(gitFake.Repo(ns, "bundled").Files).To(HaveKey("deploy/k8s/compute.yaml"))
 
 		By("a Bundle changed after the scaffold changing nothing")
-		pushes := gitFake.pushCount()
+		pushes := gitFake.PushCount()
 		Expect(patch(bundle, func() { bundle.Spec.DeploymentRef = nil })).To(Succeed())
 		Expect(patch(bundled, func() {
 			bundled.Annotations = map[string]string{c4v1beta1.AnnotationRetry: time.Now().String()}
 		})).To(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pushCount()).To(Equal(pushes))
+			g.Expect(gitFake.PushCount()).To(Equal(pushes))
 			g.Expect(k8sClient.Get(ctx, key(ns, "bundled"), bundled)).To(Succeed())
 			g.Expect(bundled.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 			g.Expect(bundled.Status.Bundle).To(Equal(want))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
-		Expect(gitFake.repo(ns, "bundled").commits).To(HaveLen(1))
+		Expect(gitFake.Repo(ns, "bundled").Commits).To(HaveLen(1))
 	})
 
 	It("reports a changed or deleted Bundle, never applying it (#1621)", func() {
@@ -180,7 +180,7 @@ var _ = Describe("Container naming a Bundle", func() {
 			Expect(bundled.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
 			Expect(bundled.Status.Bundle).To(Equal(scaffoldedBundle), "status.bundle keeps the expansion it scaffolded from")
 			Expect(bundled.Status.ScaffoldedFrom).To(Equal(scaffoldedFrom))
-			Expect(gitFake.repo(ns, "bundled").commits).To(HaveLen(1), "no second scaffold")
+			Expect(gitFake.Repo(ns, "bundled").Commits).To(HaveLen(1), "no second scaffold")
 		}
 
 		By("a Bundle still naming what it scaffolded from")
@@ -204,8 +204,8 @@ var _ = Describe("Container naming a Bundle", func() {
 		in := scaffold.Input{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api", Bundle: "web-service",
 			Framework: "python-fastapi", Standard: "python-standard", Compute: "small", Deployment: "k8s-manifests"}
 		from := []string{"python-fastapi@v1.6.0", "python-standard@v1.0.0", "small@v1.1.0", "k8s-manifests@v1.9.1"}
-		gitFake.seedRepo(ns, "orders-api", scaffold.CommitMessage(in, from, nil))
-		pushes := gitFake.pushCount()
+		gitFake.SeedRepo(ns, "orders-api", scaffold.CommitMessage(in, from, nil))
+		pushes := gitFake.PushCount()
 		createFactory(ns)
 		// The Bundle no longer names the Standard the push used.
 		mustCreate(newSystem(ns, "webshop-core"), newStandard(ns, "python-standard", "python-fastapi"),
@@ -218,7 +218,7 @@ var _ = Describe("Container naming a Bundle", func() {
 		Expect(container.Status.Standard).To(SatisfyAll(
 			HaveField("Name", "python-standard"), HaveField("Ref", "v1.0.0")))
 		Expect(container.Status.ScaffoldedFrom).To(Equal(from))
-		Expect(gitFake.pushCount()).To(Equal(pushes))
+		Expect(gitFake.PushCount()).To(Equal(pushes))
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 			cond := condition(container.Status.Conditions, c4v1beta1.ConditionBundleCurrent)
@@ -228,7 +228,7 @@ var _ = Describe("Container naming a Bundle", func() {
 			g.Expect(cond.Message).To(Equal("standard: python-standard, now none"))
 		}).Should(Succeed())
 		Expect(container.Status.ScaffoldedFrom).To(Equal(from))
-		Expect(gitFake.repo(ns, "orders-api").commits).To(HaveLen(1))
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1))
 	})
 
 	It("fails a Bundle whose entries don't fit the Container, naming the bundle", func() {

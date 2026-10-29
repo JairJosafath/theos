@@ -19,7 +19,7 @@ import (
 // newWiredConnector returns a Connector for services that the named Frameworks
 // wire, served by the fake Git host with one file.
 func newWiredConnector(ns, name string, wiredBy ...string) *c4v1beta1.Connector {
-	gitFake.addTemplate(templatesURL+name, "v1.0.0", scaffold.Tree{
+	gitFake.AddTemplate(templatesURL+name, "v1.0.0", scaffold.Tree{
 		"infra/connector_" + name + ".ts": {Data: []byte("export const " + name + " = true\n")},
 	})
 	return &c4v1beta1.Connector{

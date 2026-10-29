@@ -38,18 +38,18 @@ var _ = Describe("Package registry Actions", func() {
 		mustCreate(provider)
 
 		By("setting the three variables, the PyPI index defaulted, and the one secret with a readToken")
-		Eventually(func() map[string]string { return gitFake.actionsVariables(ns) }).Should(Equal(map[string]string{
+		Eventually(func() map[string]string { return gitFake.ActionsVariables(ns) }).Should(Equal(map[string]string{
 			ActionsVarNpmScope:    "@acme",
 			ActionsVarNpmRegistry: "https://npm.example.com/registry/",
 			ActionsVarPyPIIndex:   "http://gitea.gitea.svc.cluster.local:3000/api/packages/" + ns + "/pypi/simple",
 		}))
-		Expect(gitFake.actionsSecrets(ns)).To(Equal(map[string]string{ActionsSecretNpmToken: "npm-read"}))
+		Expect(gitFake.ActionsSecrets(ns)).To(Equal(map[string]string{ActionsSecretNpmToken: "npm-read"}))
 
 		By("deleting all five when spec.packages returns to the default")
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(provider), provider)).To(Succeed())
 		provider.Spec.Packages = nil
 		Expect(k8sClient.Update(ctx, provider)).To(Succeed())
-		Eventually(func() map[string]string { return gitFake.actionsVariables(ns) }).Should(BeEmpty())
-		Expect(gitFake.actionsSecrets(ns)).To(BeEmpty())
+		Eventually(func() map[string]string { return gitFake.ActionsVariables(ns) }).Should(BeEmpty())
+		Expect(gitFake.ActionsSecrets(ns)).To(BeEmpty())
 	})
 })

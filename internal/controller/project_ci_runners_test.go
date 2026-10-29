@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 )
 
 // poolPods lists a namespace's CI runner pool pods, the kept records included.
@@ -125,7 +126,7 @@ var _ = Describe("CI runner pool", func() {
 		var token corev1.Secret
 		Expect(k8sClient.Get(ctx, key(ns, "c4-ci-runner-gitea"), &token)).To(Succeed())
 		Expect(controlledBy(&token, &project)).To(BeTrue())
-		Expect(string(token.Data["token"])).To(Equal(runnerTokenPrefix + ns))
+		Expect(string(token.Data["token"])).To(Equal(fake.RunnerTokenPrefix + ns))
 
 		By("fencing the pool and giving it the job.env")
 		var env corev1.ConfigMap
@@ -194,9 +195,9 @@ var _ = Describe("CI runner pool", func() {
 		// gives it a job, as its init container and the host would.
 		busyPod := func(pod corev1.Pod) {
 			GinkgoHelper()
-			_, err := gitFake.registerRunner(runnerTokenPrefix+ns, pod.Name, "go:host")
+			_, err := gitFake.RegisterRunner(fake.RunnerTokenPrefix+ns, pod.Name, "go:host")
 			Expect(err).NotTo(HaveOccurred())
-			gitFake.setRunnerOnline(ns, pod.Name, true, true)
+			gitFake.SetRunnerOnline(ns, pod.Name, true, true)
 		}
 		names := func(pods []corev1.Pod) []string {
 			out := make([]string, 0, len(pods))
@@ -376,8 +377,8 @@ var _ = Describe("CI runner pool", func() {
 		}
 
 		By("saying the host gave no token, keeping the live pod and adding none")
-		gitFake.failRunnerToken(ns, errors.New("403 Forbidden"))
-		DeferCleanup(func() { gitFake.failRunnerToken(ns, nil) })
+		gitFake.FailRunnerToken(ns, errors.New("403 Forbidden"))
+		DeferCleanup(func() { gitFake.FailRunnerToken(ns, nil) })
 		ended := livePoolPods(ns)[0]
 		setPodPhase(&ended, corev1.PodSucceeded)
 		Eventually(func(g Gomega) {
@@ -400,7 +401,7 @@ var _ = Describe("CI runner pool", func() {
 		}, 500*time.Millisecond).Should(ConsistOf(kept.Name))
 
 		By("filling the pool again once the host answers")
-		gitFake.failRunnerToken(ns, nil)
+		gitFake.FailRunnerToken(ns, nil)
 		Eventually(func(g Gomega) {
 			g.Expect(ciRunners(g)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Reason", "PoolKept")))

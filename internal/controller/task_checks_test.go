@@ -9,7 +9,6 @@ permission. See the LICENSE file.
 package controller
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -38,37 +37,21 @@ func skewTaskClock(d time.Duration) {
 	DeferCleanup(func() { taskSkew.Store(0) })
 }
 
-// setRunnersOnline makes the host say n runners are online until the spec ends.
-func (g *fakeGit) setRunnersOnline(n int) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.releaseState().runners = &n
-	DeferCleanup(func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		g.releaseState().runners = nil
-	})
+// setRunnersOnline makes the fake host say n runners are online until the
+// spec ends.
+func setRunnersOnline(n int) {
+	gitFake.SetRunnersOnline(n)
+	DeferCleanup(gitFake.ForgetRunnersOnline)
 }
 
-// setRunJobs sets the jobs of run id, and marks the runners online until the
-// spec ends.
+// setRunJobs sets the jobs of run id on the fake host, and marks the runners
+// online until the spec ends.
 //
 //nolint:unparam // takes owner and name like the other helpers
-func (g *fakeGit) setRunJobs(owner, name string, id int64, online []int64, jobs ...gitprovider.WorkflowJob) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	s := g.releaseState()
-	s.runJobs[fmt.Sprintf("%s/%s#%d", owner, name, id)] = jobs
-	for _, runner := range online {
-		s.onlineRunners[runner] = true
-	}
-	DeferCleanup(func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		for _, runner := range online {
-			delete(g.releaseState().onlineRunners, runner)
-		}
-	})
+func setRunJobs(owner, name string, id int64, online []int64, jobs ...gitprovider.WorkflowJob) {
+	gitFake.SetRunJobs(owner, name, id, jobs...)
+	gitFake.MarkRunnersOnline(online...)
+	DeferCleanup(func() { gitFake.MarkRunnersOffline(online...) })
 }
 
 // heldPoolPod gives ns's provider gitea a CI pool of one go runner and returns
@@ -110,11 +93,11 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckPending)
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckPending)
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", gitprovider.WorkflowRun{ID: 7, Workflow: "check.yaml",
 			Event: "pull_request", Status: "queued", URL: "http://gitea/" + ns + "/orders-api/actions/runs/7"})
-		gitFake.setRunnersOnline(1)
+		setRunnersOnline(1)
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
@@ -134,7 +117,7 @@ var _ = Describe("A Task's checks", func() {
 		}, 3*time.Second).Should(Succeed(), "the checks are rechecked every second, and keep waiting")
 
 		By("failing once no runner is online")
-		gitFake.setRunnersOnline(0)
+		setRunnersOnline(0)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
@@ -150,11 +133,11 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", runs...)
-		gitFake.setCheckLog("go build example.com/app: signal: killed\nFAIL\texample.com/app\t613.2s\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", runs...)
+		gitFake.SetCheckLog("go build example.com/app: signal: killed\nFAIL\texample.com/app\t613.2s\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 	}
@@ -163,7 +146,7 @@ var _ = Describe("A Task's checks", func() {
 		ns := newProjectNamespace()
 		killedChecks(ns, killedRun(ns, time.Now().Add(-20*time.Minute)))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
@@ -178,14 +161,14 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 		}, 3*time.Second).Should(Succeed(), "the failure from before the rerun is not read")
 
 		By("reviewing once the rerun passes")
 		rerun := killedRun(ns, time.Now().Add(time.Second))
 		rerun.Conclusion = "success"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", rerun)
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", rerun)
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
@@ -198,22 +181,22 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		// The runner's pod is replaced mid-job: it cancels the job on its way
 		// down, and its successor registers as a new runner.
 		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
 		cancelled.Conclusion = "cancelled"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
-		gitFake.setRunJobs(ns, "orders-api", 962, []int64{32}, gitprovider.WorkflowJob{ID: 1, Status: "completed",
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		setRunJobs(ns, "orders-api", 962, []int64{32}, gitprovider.WorkflowJob{ID: 1, Status: "completed",
 			Conclusion: "cancelled", RunnerID: 31, Completed: time.Now().Add(-10 * time.Minute)})
-		gitFake.setCheckLog("2026-10-15T12:00:00.1234567Z go test ./...\n2026-10-15T12:00:09.1234567Z Job cancelled\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.SetCheckLog("2026-10-15T12:00:00.1234567Z go test ./...\n2026-10-15T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		var at time.Time
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
@@ -224,10 +207,10 @@ var _ = Describe("A Task's checks", func() {
 		}).Should(Succeed())
 
 		By("running them again when the rerun's runner dies with no word, and Gitea fails the job")
-		gitFake.setCheckLog("2026-10-15T12:30:00.1234567Z go test ./...\n2026-10-15T12:30:01.1234567Z === RUN   TestCrop\n")
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, at.Add(time.Second)))
+		gitFake.SetCheckLog("2026-10-15T12:30:00.1234567Z go test ./...\n2026-10-15T12:30:01.1234567Z === RUN   TestCrop\n")
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, at.Add(time.Second)))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(2))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(2))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(2)))
@@ -237,8 +220,8 @@ var _ = Describe("A Task's checks", func() {
 		By("reviewing once the rerun passes")
 		rerun := killedRun(ns, at.Add(time.Second))
 		rerun.Conclusion = "success"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", rerun)
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", rerun)
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))
@@ -251,19 +234,19 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		// A person cancels the run in Gitea: its runner stays online, taking the
 		// next job, and leaves the log a runner's own cancel would.
 		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
 		cancelled.Conclusion = "cancelled"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
-		gitFake.setRunJobs(ns, "orders-api", 962, []int64{31},
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		setRunJobs(ns, "orders-api", 962, []int64{31},
 			gitprovider.WorkflowJob{ID: 1, Status: "completed", Conclusion: "cancelled", RunnerID: 31,
 				Completed: time.Now()},
 			gitprovider.WorkflowJob{ID: 2, Status: "completed", Conclusion: "cancelled"})
-		gitFake.setCheckLog("2026-10-16T12:00:00.1234567Z go test ./...\n2026-10-16T12:00:09.1234567Z Job cancelled\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.SetCheckLog("2026-10-16T12:00:00.1234567Z go test ./...\n2026-10-16T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 
@@ -287,7 +270,7 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
+		Expect(gitFake.Reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
 	})
 
 	It("runs the job again at no round when its pool pod was lost mid-job (#1140)", func() {
@@ -295,19 +278,19 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		pod := heldPoolPod(ns)
 		// The pod is deleted mid-job: its runner cancels the job on its way
 		// down. The runner is still listed online, as a person's cancel would
 		// leave it: the pod's fate decides, not the runner.
 		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
 		cancelled.Conclusion = "cancelled"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
-		gitFake.setRunJobs(ns, "orders-api", 962, []int64{31}, gitprovider.WorkflowJob{ID: 1, Status: "completed",
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		setRunJobs(ns, "orders-api", 962, []int64{31}, gitprovider.WorkflowJob{ID: 1, Status: "completed",
 			Conclusion: "cancelled", RunnerID: 31, RunnerName: pod.Name, Completed: time.Now()})
-		gitFake.setCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.SetCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(poolPod(ns, pod.Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateLost))
@@ -315,7 +298,7 @@ var _ = Describe("A Task's checks", func() {
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
@@ -329,19 +312,19 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
 		pod := heldPoolPod(ns)
 		// A person cancels the run: the runner ends its one job and the pod
 		// exits on its own, and Gitea deletes the ephemeral runner, so it is
 		// offline, as a runner told to stop would be.
 		cancelled := killedRun(ns, time.Now().Add(-20*time.Minute))
 		cancelled.Conclusion = "cancelled"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", cancelled)
-		gitFake.setRunJobs(ns, "orders-api", 962, nil, gitprovider.WorkflowJob{ID: 1, Status: "completed",
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", cancelled)
+		setRunJobs(ns, "orders-api", 962, nil, gitprovider.WorkflowJob{ID: 1, Status: "completed",
 			Conclusion: "cancelled", RunnerID: 31, RunnerName: pod.Name, Completed: time.Now()})
-		gitFake.setCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
-		DeferCleanup(gitFake.setCheckLog, "")
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.SetCheckLog("2026-10-22T12:00:00.1234567Z go test ./...\n2026-10-22T12:00:09.1234567Z Job cancelled\n")
+		DeferCleanup(gitFake.SetCheckLog, "")
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		setPodPhase(pod, corev1.PodSucceeded)
 		Eventually(func(g Gomega) {
 			g.Expect(poolPod(ns, pod.Name).Annotations).To(HaveKeyWithValue(AnnotationRunnerFate, RunnerFateEnded))
@@ -355,7 +338,7 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(task.Status.Feedback).To(ContainSubstring("Someone cancelled the checks before they ended"))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
+		Expect(gitFake.Reruns(ns, "orders-api", 962)).To(BeZero(), "a person's cancel is not run again")
 	})
 
 	It("fails a Task whose checks are killed a third time in a round, costing no try", func() {
@@ -369,9 +352,9 @@ var _ = Describe("A Task's checks", func() {
 				g.Expect(task.Status.ChecksRerunAt).NotTo(BeNil())
 				at = task.Status.ChecksRerunAt.Time
 			}).Should(Succeed())
-			Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(rerun))
+			Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(rerun))
 			// The rerun starts, and the machine kills it again.
-			gitFake.setCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, at.Add(time.Second)))
+			gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, at.Add(time.Second)))
 		}
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
@@ -381,7 +364,7 @@ var _ = Describe("A Task's checks", func() {
 				HaveField("Reason", model.ReasonRunnerOutOfMemory))
 			g.Expect(failedNoCI(&task.Status)).To(BeTrue(), "it costs its issue no try")
 		}).Should(Succeed())
-		Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(model.MaxChecksReruns))
+		Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(model.MaxChecksReruns))
 	})
 
 	It("waits for the commit's other runs to end before running the killed jobs again", func() {
@@ -396,16 +379,16 @@ var _ = Describe("A Task's checks", func() {
 				To(HaveField("Message", HavePrefix("Waiting for checks: running since ")))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero())
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(BeZero())
 			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 		}, 2*time.Second).Should(Succeed(), "the Git host runs a run's jobs again only once it ended")
 
 		By("running the killed jobs again once the other run ended")
 		lint.Status, lint.Conclusion = "completed", "success"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", lint, killedRun(ns, time.Now().Add(-20*time.Minute)))
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", lint, killedRun(ns, time.Now().Add(-20*time.Minute)))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
-			g.Expect(gitFake.reruns(ns, "orders-api", 963)).To(BeZero())
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 963)).To(BeZero())
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.ChecksReruns).To(Equal(int32(1)))
@@ -414,7 +397,7 @@ var _ = Describe("A Task's checks", func() {
 
 	It("fails a Task whose killed checks the Git host refuses to run again, costing no try", func() {
 		ns := newProjectNamespace()
-		gitFake.refuseRerun(ns, "orders-api", 962, true)
+		gitFake.RefuseRerun(ns, "orders-api", 962, true)
 		killedChecks(ns, killedRun(ns, time.Now().Add(-20*time.Minute)))
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
@@ -431,9 +414,9 @@ var _ = Describe("A Task's checks", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
-		gitFake.pushBranch(ns, "orders-api", "task/add-crop", "sha-r1")
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, time.Now().Add(-20*time.Minute)))
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", killedRun(ns, time.Now().Add(-20*time.Minute)))
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckFailure)
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Added crop."}, "")
 		Eventually(func(g Gomega) {
@@ -442,13 +425,13 @@ var _ = Describe("A Task's checks", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			sandboxExists(g, ns, "add-crop-r2-implement")
 		}).Should(Succeed())
-		Expect(gitFake.reruns(ns, "orders-api", 962)).To(BeZero(), "a real failure goes back to the agent")
+		Expect(gitFake.Reruns(ns, "orders-api", 962)).To(BeZero(), "a real failure goes back to the agent")
 
 		By("pushing the same commit again in round 2")
 		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r1", Summary: "Found nothing to fix."}, "")
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
@@ -460,14 +443,14 @@ var _ = Describe("A Task's checks", func() {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskChecking))
 			g.Expect(task.Status.Round).To(Equal(int32(2)))
-			g.Expect(gitFake.reruns(ns, "orders-api", 962)).To(Equal(1))
+			g.Expect(gitFake.Reruns(ns, "orders-api", 962)).To(Equal(1))
 		}, 3*time.Second).Should(Succeed(), "the failure from round 1 is not read again")
 
 		By("reviewing once the rerun passes")
 		rerun := killedRun(ns, time.Now().Add(time.Second))
 		rerun.Conclusion = "success"
-		gitFake.setCommitRuns(ns, "orders-api", "sha-r1", rerun)
-		gitFake.setChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
+		gitFake.SetCommitRuns(ns, "orders-api", "sha-r1", rerun)
+		gitFake.SetChecks(ns, "orders-api", "sha-r1", gitprovider.CheckSuccess)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskReviewing))

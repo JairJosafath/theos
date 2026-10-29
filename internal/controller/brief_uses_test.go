@@ -18,16 +18,17 @@ import (
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/gitprovider"
 	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/c4factory/internal/ports/fake"
 	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 // The package files a release of the core attaches, and what they hold.
 var (
-	coreTarball = fakeFile{name: "c4factory-core-0.1.0.tgz", data: []byte("tgz")}
-	coreWheel   = fakeFile{name: "core-0.1.0-py3-none-any.whl", data: []byte("whl")}
-	coreNpm     = fakePackage{ecosystem: gitprovider.EcosystemNpm, name: "@c4factory/core", version: "0.1.0",
-		file: coreTarball.name}
-	corePyPI = fakePackage{ecosystem: gitprovider.EcosystemPyPI, name: "core", version: "0.1.0", file: coreWheel.name}
+	coreTarball = fake.ReleaseFile{Name: "c4factory-core-0.1.0.tgz", Data: []byte("tgz")}
+	coreWheel   = fake.ReleaseFile{Name: "core-0.1.0-py3-none-any.whl", Data: []byte("whl")}
+	coreNpm     = fake.Package{Ecosystem: gitprovider.EcosystemNpm, Name: "@c4factory/core", Version: "0.1.0",
+		File: coreTarball.Name}
+	corePyPI = fake.Package{Ecosystem: gitprovider.EcosystemPyPI, Name: "core", Version: "0.1.0", File: coreWheel.Name}
 )
 
 // usesPlan is the cel-lens plan of a core and a CLI that uses the core's
@@ -108,7 +109,7 @@ func releaseCoreRun(ns, tag, run string) {
 
 // coreReleaseRun sets the core's release run of v0.1.0 to status and conclusion.
 func coreReleaseRun(ns, status, conclusion string) {
-	gitFake.setRuns(ns, "core", "v0.1.0", "abc123", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
+	gitFake.SetRuns(ns, "core", "v0.1.0", "abc123", gitprovider.WorkflowRun{ID: 5, Workflow: "release.yaml",
 		Status: status, Conclusion: conclusion, URL: "http://gitea/" + ns + "/core/actions/runs/5"})
 }
 
@@ -135,21 +136,21 @@ var _ = Describe("Brief issues that use another app", func() {
 	It("files the CLI's issue unready until the core's module is published, then readies it pinned to it", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.setGoMod(ns, "core", coreModule(ns))
-		gitFake.setGiteaRelease(ns, "core", "v0.1.0", "")
+		gitFake.SetGoMod(ns, "core", coreModule(ns))
+		gitFake.SetRelease(ns, "core", "v0.1.0", "")
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
 
 		By("filing the CLI's issue without status/ready while the core has no release")
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
-			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 			cond := condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionPlanned)
 			g.Expect(cond).To(And(HaveField("Reason", "Applying"),
 				HaveField("Message", ContainSubstring("issue "+ns+"/cli#1 waits for core's release v0.1.0"))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			cli := gitFake.issue(ns, "cli", 1)
+			cli := gitFake.Issue(ns, "cli", 1)
 			g.Expect(cli.Labels).NotTo(ContainElement(model.LabelReady), "no Crew may take it before the core's release")
 			g.Expect(cliTaskStarted(ns)).To(BeFalse())
 			g.Expect(cli.Body).NotTo(ContainSubstring("Uses "))
@@ -163,11 +164,11 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
-		cli := gitFake.issue(ns, "cli", 1)
+		cli := gitFake.Issue(ns, "cli", 1)
 		Expect(cli.Labels).To(ContainElement("kind/feature"))
 		Expect(cli.Body).To(ContainSubstring("\nUses " + coreModule(ns) + " v0.1.0: go get it at that version.\n"))
 		Expect(model.HasIssueMarker(cli.Body, "cel-lens", 1, 2)).To(BeTrue())
-		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 		Expect(getBrief(Default, ns).Status.Issues).To(ConsistOf(
 			HaveField("Repository", ns+"/core"), HaveField("Repository", ns+"/cli")))
 	})
@@ -175,11 +176,11 @@ var _ = Describe("Brief issues that use another app", func() {
 	It("says so while the core's release published nothing other apps install", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.setGiteaRelease(ns, "core", "v0.1.0", "")
+		gitFake.SetRelease(ns, "core", "v0.1.0", "")
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 		}).Should(Succeed())
 
 		releaseCore(ns)
@@ -191,7 +192,7 @@ var _ = Describe("Brief issues that use another app", func() {
 					"v0.1.0 attached no npm tarball, wheel or sdist; no package to publish"))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.issue(ns, "cli", 1).Labels).NotTo(ContainElement(model.LabelReady))
+			g.Expect(gitFake.Issue(ns, "cli", 1).Labels).NotTo(ContainElement(model.LabelReady))
 			g.Expect(cliTaskStarted(ns)).To(BeFalse())
 		}, "1s").Should(Succeed())
 	})
@@ -199,17 +200,17 @@ var _ = Describe("Brief issues that use another app", func() {
 	It("finishes an issue a restart left filed but not ready, filing nothing twice", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.setGoMod(ns, "core", coreModule(ns))
-		gitFake.setGiteaRelease(ns, "core", "v0.1.0", "")
+		gitFake.SetGoMod(ns, "core", coreModule(ns))
+		gitFake.SetRelease(ns, "core", "v0.1.0", "")
 
 		By("finding the core's issue in the round's milestone and the CLI's filed but not ready")
 		plan, err := model.ParsePlan(planFiles(usesPlan(ns)))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.addMilestone(ns, "core", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
+		gitFake.AddMilestone(ns, "core", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
 			time.Now().Add(model.ReleaseMilestoneDue))
-		gitFake.addIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
+		gitFake.AddIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
 			[]string{model.LabelReady, "kind/feature"})
-		gitFake.addIssue(ns, "cli", "Check a file from the command line",
+		gitFake.AddIssue(ns, "cli", "Check a file from the command line",
 			model.BriefIssueBody(plan.Issues[1], "cel-lens", 1), []string{"kind/feature"})
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
@@ -223,11 +224,11 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
-		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
-		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
-		cli := gitFake.issue(ns, "cli", 1)
+		Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
+		cli := gitFake.Issue(ns, "cli", 1)
 		Expect(cli.Body).To(ContainSubstring("\nUses " + coreModule(ns) + " v0.1.0: go get it at that version.\n"))
-		Expect(gitFake.allMilestones(ns, "core")).To(HaveLen(1))
+		Expect(gitFake.AllMilestones(ns, "core")).To(HaveLen(1))
 		Expect(getBrief(Default, ns).Status.Issues).To(HaveLen(2))
 	})
 
@@ -235,12 +236,12 @@ var _ = Describe("Brief issues that use another app", func() {
 	It("readies a TypeScript CLI's issue once the core's npm package is published, pinned to it", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.setGiteaRelease(ns, "core", "v0.1.0", "", coreTarball)
-		gitFake.setReleasePackages(ns, "core", "v0.1.0", coreNpm)
+		gitFake.SetRelease(ns, "core", "v0.1.0", "", coreTarball)
+		gitFake.SetReleasePackages(ns, "core", "v0.1.0", coreNpm)
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
 		Eventually(func(g Gomega) {
-			g.Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
+			g.Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 		}).Should(Succeed())
 
 		By("keeping it unready while the core's release runs, its packages Waiting")
@@ -253,7 +254,7 @@ var _ = Describe("Brief issues that use another app", func() {
 					"to publish its packages"))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			cli := gitFake.issue(ns, "cli", 1)
+			cli := gitFake.Issue(ns, "cli", 1)
 			g.Expect(cli.Labels).NotTo(ContainElement(model.LabelReady), "no Crew may take it before the package is out")
 			g.Expect(cliTaskStarted(ns)).To(BeFalse())
 			g.Expect(cli.Body).NotTo(ContainSubstring("Uses "))
@@ -265,7 +266,7 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
-		cli := gitFake.issue(ns, "cli", 1)
+		cli := gitFake.Issue(ns, "cli", 1)
 		Expect(cli.Body).To(ContainSubstring("\nUses npm package @c4factory/core 0.1.0: " +
 			"npm install --save-exact @c4factory/core@0.1.0.\n"))
 		Expect(cli.Body).NotTo(ContainSubstring("go get"), "the core is no Go module")
@@ -279,15 +280,15 @@ var _ = Describe("Brief issues that use another app", func() {
 	It("readies a Python CLI's issue a restart left unready once the core's PyPI package is published", func() {
 		createFactory(ns)
 		briefAgents(ns, 3)
-		gitFake.setGiteaRelease(ns, "core", "v0.1.0", "", coreWheel)
-		gitFake.setReleasePackages(ns, "core", "v0.1.0", corePyPI)
+		gitFake.SetRelease(ns, "core", "v0.1.0", "", coreWheel)
+		gitFake.SetReleasePackages(ns, "core", "v0.1.0", corePyPI)
 		plan, err := model.ParsePlan(planFiles(usesPlan(ns)))
 		Expect(err).NotTo(HaveOccurred())
-		gitFake.addMilestone(ns, "core", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
+		gitFake.AddMilestone(ns, "core", "v0.1.0", model.ReleaseMilestoneDescription("cel-lens", 1),
 			time.Now().Add(model.ReleaseMilestoneDue))
-		gitFake.addIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
+		gitFake.AddIssue(ns, "core", "The checker", model.BriefIssueBody(plan.Issues[0], "cel-lens", 1),
 			[]string{model.LabelReady, "kind/feature"})
-		gitFake.addIssue(ns, "cli", "Check a file from the command line",
+		gitFake.AddIssue(ns, "cli", "Check a file from the command line",
 			model.BriefIssueBody(plan.Issues[1], "cel-lens", 1), []string{"kind/feature"})
 		mustCreate(newBrief(ns, "cel-lens"))
 		planRound(ns, 1, 1, usesPlan(ns))
@@ -301,9 +302,9 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
-		Expect(gitFake.openIssues(ns, "core")).To(HaveLen(1))
-		Expect(gitFake.openIssues(ns, "cli")).To(HaveLen(1))
-		cli := gitFake.issue(ns, "cli", 1)
+		Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
+		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
+		cli := gitFake.Issue(ns, "cli", 1)
 		Expect(cli.Body).To(ContainSubstring("\nUses PyPI package core 0.1.0 from the c4factory index " +
 			corePyPIIndex(ns) + ": uv add core==0.1.0, pinned to that index as AGENTS.md says.\n"))
 		Expect(cli.Body).NotTo(ContainSubstring("go get"), "the core is no Go module")

@@ -86,7 +86,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 					update.PullRequestURL + " merges")}))
 		}).Should(Succeed())
 
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAtChecks(ns, beforeRelease)
 		Eventually(func(g Gomega) {
 			cond := checksApplied(g, ns)
@@ -94,7 +94,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonBeforeRelease))
 		}).Should(Succeed())
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check-light\nfull: make check\n"))
-		head := gitFake.mainHead(ns, "orders-api")
+		head := gitFake.MainHead(ns, "orders-api")
 		Expect(head.Message).To(HavePrefix(
 			"Update the Standard python-strict to v1.0.0, with the full check before release\n\n"))
 		Expect(head.Message).To(ContainSubstring("Checks: EveryChange..BeforeRelease\n"))
@@ -105,7 +105,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		setChecks(ns, c4v1beta1.ChecksEveryChange)
 		back := openedUpdateTo(ns, everyChange)
 		Expect(back.Branch).To(Equal("standard-update/python-strict-v1.0.0"))
-		gitFake.setChecks(ns, "orders-api", back.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", back.Commit, "success")
 		eventuallyAtChecks(ns, everyChange)
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check\n"))
 	})
@@ -119,7 +119,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		bumpStandard(ns, "v1.1.0")
 		update := openedUpdateTo(ns, model.StandardVersion{Ref: "v1.1.0", Checks: model.ChecksBeforeRelease})
 		Expect(update.Paths).To(Equal([]string{checkWorkflow, "AGENTS.md", implementer}))
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAtChecks(ns, model.StandardVersion{Ref: "v1.1.0", Checks: model.ChecksBeforeRelease})
 	})
 
@@ -129,7 +129,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		eventuallyAtChecks(ns, beforeRelease)
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check-light\nfull: make check\n"))
 		Expect(mainFile(ns, scaffold.IdentityPath)).To(ContainSubstring("checks: BeforeRelease\n"))
-		Expect(gitFake.mainHead(ns, "orders-api").Message).To(ContainSubstring("Checks: BeforeRelease\n"))
+		Expect(gitFake.MainHead(ns, "orders-api").Message).To(ContainSubstring("Checks: BeforeRelease\n"))
 	})
 
 	It("opens nothing when the Container's Standard can't run the full check only before a release", func() {
@@ -144,7 +144,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonStandardRunsFullChecks))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 			container := getContainer(g, ns)
 			g.Expect(container.Status.Standard.Checks).To(Equal(c4v1beta1.ChecksEveryChange))
 			g.Expect(container.Status.Standard.Update).To(BeNil())
@@ -157,7 +157,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		ns := newProjectNamespace()
 		createUpdatableContainer(ns, checksRefs(), true, "")
 		eventuallyAtChecks(ns, everyChange)
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{checkWorkflow: {Data: []byte("check: make test\n")}})
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{checkWorkflow: {Data: []byte("check: make test\n")}})
 
 		setChecks(ns, c4v1beta1.ChecksBeforeRelease)
 		message := stoppedUpdate(ns, c4v1beta1.ReasonChecksLeftOut)
@@ -165,7 +165,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 			" changed in the repository since v1.0.0 and doesn't merge with the change; CI keeps running it on " +
 			"every change until the Container's checks or the Standard's ref change again"))
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 			container := getContainer(g, ns)
 			g.Expect(container.Status.Standard.Checks).To(Equal(c4v1beta1.ChecksEveryChange))
 			g.Expect(standardCondition(g, container).Status).To(Equal(metav1.ConditionFalse))
@@ -191,7 +191,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 		createUpdatableContainer(ns, checksRefs(), true, "")
 		eventuallyAtChecks(ns, everyChange)
 		// The app's own Makefile, with its own targets and no check-light.
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
 			"check:\n\ttrue\nrelease:\n\ttrue\n")}})
 
 		setChecks(ns, c4v1beta1.ChecksBeforeRelease)
@@ -205,17 +205,17 @@ var _ = Describe("Container Standard update of the checks", func() {
 				"Message": Equal(message)}))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.pullRequests(ns, "orders-api")).To(BeEmpty())
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
 			g.Expect(getContainer(g, ns).Status.Standard.Checks).To(Equal(c4v1beta1.ChecksEveryChange))
 		}).WithTimeout(2 * time.Second).Should(Succeed())
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check\n"))
 
 		By("letting it through once the Makefile has one")
-		gitFake.commitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{makefile: {Data: []byte(
 			"check:\n\ttrue\ncheck-light:\n\ttrue\nrelease:\n\ttrue\n")}})
 		update := openedUpdateTo(ns, beforeRelease)
 		Expect(update.Paths).To(Equal([]string{checkWorkflow}))
-		gitFake.setChecks(ns, "orders-api", update.Commit, "success")
+		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAtChecks(ns, beforeRelease)
 		Eventually(func(g Gomega) {
 			g.Expect(checksApplied(g, ns).Reason).To(Equal(c4v1beta1.ReasonBeforeRelease))
