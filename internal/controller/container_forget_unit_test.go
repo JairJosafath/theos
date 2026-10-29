@@ -70,3 +70,56 @@ func TestReconcilingADeletedContainerForgetsItsEntries(t *testing.T) {
 		t.Error("deploySaid lost the other Container's entry")
 	}
 }
+
+// #1629: a Container deleted outright, with no finalizer, is gone by the
+// next reconcile, whose Get is NotFound with no UID; the reconciler still
+// forgets its entries, and another Container's stay.
+func TestReconcilingAContainerGoneWithoutAFinalizerForgetsItsEntries(t *testing.T) {
+	scheme := briefScheme(t)
+	container := &c4v1beta1.Container{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "orders-api",
+		UID: types.UID("uid-orders")}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(container).
+		WithStatusSubresource(&c4v1beta1.Container{}).Build()
+	r := &ContainerReconciler{Client: c, Scheme: scheme}
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(container)}
+	// The first reconcile sees the Container; whatever it makes of its
+	// missing references, it learns the UID.
+	_, _ = r.Reconcile(context.Background(), req)
+
+	const other = types.UID("uid-other")
+	r.imageSaid.Store(container.UID, "v0.1.0 pushed")
+	r.imageSaid.Store(other, "v0.2.0 pushed")
+	r.imagePushed.Store(container.UID, &c4v1beta1.ContainerImageStatus{Tag: "v0.1.0"})
+	r.imagePushed.Store(other, &c4v1beta1.ContainerImageStatus{Tag: "v0.2.0"})
+	r.deploySaid.Store(string(container.UID)+"/staging", "deployed")
+	r.deploySaid.Store(string(other)+"/staging", "deployed")
+	r.deploySources.Store(string(container.UID)+"/apps/open", sourceRead{tag: "v0.1.0"})
+	r.deploySources.Store(string(other)+"/apps/open", sourceRead{tag: "v0.2.0"})
+
+	if err := c.Delete(context.Background(), container); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, m := range map[string]interface{ Range(func(any, any) bool) }{
+		"imageSaid": &r.imageSaid, "imagePushed": &r.imagePushed, "deploySaid": &r.deploySaid,
+		"deploySources": &r.deploySources,
+	} {
+		var got []any
+		m.Range(func(key, _ any) bool { got = append(got, key); return true })
+		if len(got) != 1 {
+			t.Errorf("%s keeps %v, want only the other Container's entry", name, got)
+		}
+	}
+	if _, ok := r.imageSaid.Load(other); !ok {
+		t.Error("imageSaid lost the other Container's entry")
+	}
+	if _, ok := r.deploySaid.Load(string(other) + "/staging"); !ok {
+		t.Error("deploySaid lost the other Container's entry")
+	}
+	if _, ok := r.uids.Load(req.NamespacedName); ok {
+		t.Error("uids keeps the deleted Container's name")
+	}
+}
