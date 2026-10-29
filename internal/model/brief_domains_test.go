@@ -10,7 +10,7 @@ import (
 // #1760: a plan's SoftwareSystem names its Domains in domainRefs, from the
 // catalog's installed Domains; happyModel's shop system exists, plants is new.
 func TestCheckPlanDomains(t *testing.T) {
-	const plants = "---\napiVersion: c4.factory.io/v1alpha1\nkind: SoftwareSystem\nmetadata:\n  name: plants\nspec:\n" +
+	const plants = "---\napiVersion: c4.factory.io/v1beta1\nkind: SoftwareSystem\nmetadata:\n  name: plants\nspec:\n" +
 		"  description: Sells plants\n"
 	for _, tc := range []struct {
 		name string

@@ -27,8 +27,8 @@ const PlanAPIVersion = "c4.factory.io/v1beta1"
 
 // planAPIVersions are the apiVersions a plan may carry: every served version,
 // since a plan a person wrote by hand, or one written before the upgrade, may
-// still say v1alpha1, and the operator applies it through conversion as it
-// would any older client's object (docs/design.md, "Compatibility").
+// still say v1alpha1. Nothing is converted: the operator reads a plan's fields
+// the same at either version and applies them as v1beta1 objects.
 var planAPIVersions = []string{PlanAPIVersion, "c4.factory.io/v1alpha1"}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
