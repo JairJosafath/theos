@@ -23,7 +23,7 @@ aws-lambda-py v1.5.0
 aws-queue-ts v1.3.0
 aws-schedule-ts v1.3.0
 aws-static-site-ts v1.0.0
-aws-standard v1.21.0
+aws-standard v1.21.1
 python-standard v1.7.0
 gitea-release v1.8.0
 hello v1.0.0

@@ -918,8 +918,9 @@ with an object may change, as the release notes say.
   gives the object back exactly.
 - **A release deprecates a version** by saying so under *Deprecated* in its
   notes and marking the CRD version `deprecated: true`, with a
-  `deprecationWarning` that names the successor and the earliest release
-  that may drop it.
+  `deprecationWarning` that names the successor and the rule for the
+  earliest release that may drop it (90 or more days after this one), never
+  a date: the date lives in the drop issue's body alone (#1983).
 - **A deprecated version stays served at least 90 days** after the release
   that deprecated it, and is dropped only once every CRD's
   `status.storedVersions` holds the storage version alone, under *Removed*

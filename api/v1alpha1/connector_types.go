@@ -29,7 +29,7 @@ type ConnectorSpec struct {
 	WiredBy []string `json:"wiredBy,omitempty"`
 }
 
-// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 (2027-01-22 at the earliest) may drop it (#1963)."
+// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"

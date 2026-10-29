@@ -648,6 +648,12 @@ whose tag already exists. The tag starts *Release*, which first runs
 guide names another version; `hack/release_test.sh` holds both to that, and
 `test/chart/guide_version_test.go` keeps main's guide on the chart's version.
 
+A release that deprecates a version gives its drop issue the date: once the
+release is published, the maintainer writes the earliest drop date (the
+release's date plus 90 days) into that issue's body (#1963 for `v1alpha1`).
+The CRDs' warnings, the guide and the chart's README name the rule ("a
+release 90 or more days after v0.30.0"), never the date (#1983).
+
 The relay can't pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has
 published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
