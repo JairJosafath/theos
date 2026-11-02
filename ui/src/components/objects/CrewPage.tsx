@@ -2,9 +2,9 @@
 // and what a person does: re-run a failed release, resume it, or fix what
 // keeps it waiting), then who works and how many at once, its issues, and its
 // routes by label, and its last release with its runs, Go module, publishing
-// and bump issues. With the
-// UI server's actions on, the person pauses or resumes it, sets those and its
-// release settings, and re-runs a failed release's runs (CrewActions). Where
+// and bump issues. With the UI server's actions on, the person pauses or
+// resumes it or its running Tasks, sets those and its release settings, and
+// re-runs a failed release's runs (CrewActions). Where
 // it publishes says so when its Brief sets that, and the form changes it on
 // the Brief.
 
@@ -19,7 +19,14 @@ import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
-import { CrewPauseButton, ParallelForm, ReleaseForm, RerunButton, SignInToAct } from './CrewActions'
+import {
+  CrewPauseButton,
+  CrewPauseRunsButton,
+  ParallelForm,
+  ReleaseForm,
+  RerunButton,
+  SignInToAct,
+} from './CrewActions'
 import { pageHref, storyHref } from './links'
 import { crewTasks } from './rows'
 
@@ -75,7 +82,14 @@ export function CrewPage({
         children={crewTasks(crew, tasks)}
         links={links}
         next={crewNextStep(crew, briefs)}
-        actions={acts === 'act' ? <CrewPauseButton crew={crew} writer={writer} /> : undefined}
+        actions={
+          acts === 'act' ? (
+            <>
+              <CrewPauseRunsButton crew={crew} writer={writer} />
+              <CrewPauseButton crew={crew} writer={writer} />
+            </>
+          ) : undefined
+        }
       />
       {acts === 'sign-in' ? (
         <section className="panel">
@@ -102,7 +116,13 @@ export function CrewPage({
             {crew.spec.parallel
               ? `${summary.active.length} of ${crew.spec.parallel} busy`
               : `${summary.active.length} busy, of the factory’s default`}
-            {crew.spec.paused ? <span className="muted"> · paused: it picks up no new issues</span> : null}
+            {crew.spec.paused ? (
+              <span className="muted">
+                {crew.spec.pauseRuns
+                  ? ' · paused: it picks up no new issues, and its running Tasks pause at their next tool call'
+                  : ' · paused: it picks up no new issues'}
+              </span>
+            ) : null}
           </dd>
           <dt>Now</dt>
           <dd>

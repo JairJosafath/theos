@@ -62,6 +62,8 @@ export interface BriefView {
   failure?: string
   /** spec.paused: the Brief and its Crews start nothing new. */
   paused: boolean
+  /** spec.pauseRuns: its running Tasks pause too, at their next tool boundary. */
+  pauseRuns: boolean
   /** While paused, the Paused condition's message: which Tasks still run, or that nothing does. */
   pausedNote?: string
   round: number
@@ -186,6 +188,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     needsInput,
     failure: status.phase === 'Failed' ? planned?.message?.trim() || undefined : undefined,
     paused,
+    pauseRuns: Boolean(brief.spec.pauseRuns),
     pausedNote: paused
       ? (pausedCondition?.status === 'True' && pausedCondition.message?.trim()) ||
         'Pausing; the factory has not said yet what still runs.'
@@ -245,6 +248,29 @@ export function pauseAction(view: Pick<BriefView, 'paused'>): PauseAction {
         label: 'Pause',
         paused: true,
         explanation: 'Pause this brief and its crews: they start nothing new, and running Tasks finish',
+      }
+}
+
+/** What the Pause runs or Resume runs button does, on a Brief's card and a Crew's: the spec.pauseRuns it sets, its label and why. */
+export interface PauseRunsAction {
+  label: 'Pause runs' | 'Resume runs'
+  /** The value it patches spec.pauseRuns to; true sets spec.paused too. */
+  pauseRuns: boolean
+  explanation: string
+}
+
+export function pauseRunsAction(pauseRuns: boolean, kind: 'brief' | 'crew'): PauseRunsAction {
+  const whose = kind === 'brief' ? 'this brief’s and its crews’' : 'this crew’s'
+  return pauseRuns
+    ? {
+        label: 'Resume runs',
+        pauseRuns: false,
+        explanation: `Resume ${whose} paused Tasks where they stopped; the ${kind} itself stays paused until you resume it`,
+      }
+    : {
+        label: 'Pause runs',
+        pauseRuns: true,
+        explanation: `Pause the ${kind} and stop ${whose} running Tasks at their next tool call, each saved to resume where it stopped`,
       }
 }
 

@@ -12,6 +12,7 @@ import {
   formatCost,
   formatTokens,
   pauseAction,
+  pauseRunsAction,
   sortBriefs,
 } from './brief'
 
@@ -254,6 +255,19 @@ describe('pauseAction', () => {
   it('pauses a running Brief and resumes a paused one', () => {
     expect(pauseAction({ paused: false })).toMatchObject({ label: 'Pause', paused: true })
     expect(pauseAction({ paused: true })).toMatchObject({ label: 'Resume', paused: false })
+  })
+})
+
+describe('pauseRunsAction', () => {
+  it('pauses running Tasks and resumes paused ones, from spec.pauseRuns (#1995)', () => {
+    expect(pauseRunsAction(false, 'brief')).toMatchObject({ label: 'Pause runs', pauseRuns: true })
+    expect(pauseRunsAction(true, 'crew')).toMatchObject({ label: 'Resume runs', pauseRuns: false })
+  })
+
+  it('reads spec.pauseRuns into the view', () => {
+    const paused = brief('b', '2026-10-01T00:00:00Z', { spec: { idea: 'x', paused: true, pauseRuns: true } })
+    expect(describeBrief(paused)).toMatchObject({ paused: true, pauseRuns: true })
+    expect(describeBrief(brief('c', '2026-10-01T00:00:00Z')).pauseRuns).toBe(false)
   })
 })
 

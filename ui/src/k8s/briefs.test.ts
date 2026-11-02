@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { isBriefName } from '../demo/limits'
-import { briefManifest, LiveBriefWriter, nameFromIdea, pausedPatch, promptPatch, settingsPatch } from './briefs'
+import {
+  briefManifest,
+  LiveBriefWriter,
+  nameFromIdea,
+  pausedPatch,
+  pauseRunsPatch,
+  promptPatch,
+  settingsPatch,
+} from './briefs'
 
 function respond(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -41,6 +49,22 @@ describe('briefManifest and promptPatch', () => {
   it('sets spec.paused', () => {
     expect(pausedPatch(true)).toEqual([{ op: 'add', path: '/spec/paused', value: true }])
     expect(pausedPatch(false)).toEqual([{ op: 'add', path: '/spec/paused', value: false }])
+  })
+
+  it('resumes a Brief whose runs are paused with pauseRuns unset too, as the CRD needs (#1995)', () => {
+    expect(pausedPatch(false, true)).toEqual([
+      { op: 'add', path: '/spec/paused', value: false },
+      { op: 'add', path: '/spec/pauseRuns', value: false },
+    ])
+    expect(pausedPatch(true, true)).toEqual([{ op: 'add', path: '/spec/paused', value: true }])
+  })
+
+  it('pauses runs with paused, and resumes them leaving paused as it is (#1995)', () => {
+    expect(pauseRunsPatch(true)).toEqual([
+      { op: 'add', path: '/spec/paused', value: true },
+      { op: 'add', path: '/spec/pauseRuns', value: true },
+    ])
+    expect(pauseRunsPatch(false)).toEqual([{ op: 'add', path: '/spec/pauseRuns', value: false }])
   })
 
   it('sets only the settings given, each as given', () => {
@@ -122,6 +146,15 @@ describe('LiveBriefWriter', () => {
     expect(init.method).toBe('PATCH')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
     expect(init.body).toBe(`[{"op":"add","path":"/spec/paused","value":${paused}}]`)
+  })
+
+  it.each([true, false])('PATCHes spec.pauseRuns to %s (#1995)', async (pauseRuns) => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveBriefWriter('k8s', fetchImpl).setPauseRuns('webshop', 'plant-care', pauseRuns)
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/plant-care')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual(pauseRunsPatch(pauseRuns))
   })
 
   it("rejects with the API's message", async () => {

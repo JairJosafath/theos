@@ -12,6 +12,7 @@ const writer: BriefWriter = {
   create: async () => {},
   addPrompt: async () => {},
   setPaused: async () => {},
+  setPauseRuns: async () => {},
   setSettings: async () => {},
 }
 const NOW = Date.parse('2026-10-07T12:00:00Z')
