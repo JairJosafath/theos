@@ -268,7 +268,10 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 		return result
 	}
 	prog.repo, prog.step = r, StepAgent
-	if prog.from = restoreCheckpoint(ctx, job, r); prog.from != nil {
+	if prog.from, err = restoreCheckpoint(ctx, job, r); err != nil {
+		result.Error = err.Error()
+		return result
+	} else if prog.from != nil {
 		prog.step, prog.summary = prog.from.Step, prog.from.Summary
 	}
 	if job.Role == RolePlan {

@@ -176,14 +176,15 @@ func newSessionID() string {
 // there is one this run can use: it puts the bundle's working tree and
 // branch state into the fresh clone r. It returns nil when the run starts
 // over: no checkpoint, an unknown version, another run's, or one that can't
-// be restored.
-func restoreCheckpoint(ctx context.Context, job Job, r *repo) *checkpoint {
+// be restored. An error means a restore that failed half way could not put
+// the clone back as it was: the run can't start over in it.
+func restoreCheckpoint(ctx context.Context, job Job, r *repo) (*checkpoint, error) {
 	if job.CheckpointDir == "" {
-		return nil
+		return nil, nil
 	}
 	data, err := os.ReadFile(filepath.Join(job.CheckpointDir, checkpointStateFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return nil, nil
 	}
 	var cp checkpoint
 	switch {
@@ -198,20 +199,29 @@ func restoreCheckpoint(ctx context.Context, job Job, r *repo) *checkpoint {
 		filepath.Base(cp.Bundle) != cp.Bundle:
 		err = errors.New("state.json misses what the run goes on from")
 	default:
-		err = cp.restore(ctx, job, r)
+		if err = cp.restore(ctx, job, r); errors.Is(err, errCloneChanged) {
+			return nil, err
+		}
 	}
 	if err != nil {
 		slog.Warn("Starting the run over: its checkpoint can't be used", "error", err.Error())
-		return nil
+		return nil, nil
 	}
 	slog.Info("Going on from a checkpoint", "kind", cp.Kind, "step", cp.Step, "session", cp.SessionID)
-	return &cp
+	return &cp, nil
 }
 
 // restore fetches the bundle into r, then makes r's work branch, index and
 // working tree what they were. The fetch touches no file, so a bundle that
-// can't be read leaves the clone as it was.
+// can't be read leaves the clone as it was; a step after it that fails puts
+// the clone back where it was, so a run that starts over never builds on, or
+// pushes, the checkpoint's commit of the working tree. One it can't put back
+// fails with errCloneChanged.
 func (cp *checkpoint) restore(ctx context.Context, job Job, r *repo) error {
+	orig, err := r.head(ctx)
+	if err != nil {
+		return err
+	}
 	bundle := filepath.Join(job.CheckpointDir, cp.Bundle)
 	refs := []string{checkpointRef + ":" + checkpointRef}
 	if cp.MergeHead != "" {
@@ -220,6 +230,25 @@ func (cp *checkpoint) restore(ctx context.Context, job Job, r *repo) error {
 	if _, err := r.git(ctx, r.dir, append([]string{"fetch", "--quiet", "--force", bundle}, refs...)...); err != nil {
 		return err
 	}
+	if err := cp.apply(ctx, r); err != nil {
+		// A hard reset also drops a MERGE_HEAD apply wrote.
+		if _, undo := r.git(ctx, r.dir, "reset", "--quiet", "--hard", orig); undo != nil {
+			return fmt.Errorf("%w: restoring the checkpoint failed (%w), and putting it back at %s too: %w",
+				errCloneChanged, err, orig, undo)
+		}
+		return err
+	}
+	r.start, r.conflicts = cp.Start, cp.Conflicts
+	return nil
+}
+
+// errCloneChanged is a restore that failed half way and could not put the
+// clone back as it was.
+var errCloneChanged = errors.New("the clone is not as it was cloned")
+
+// apply makes the clone's work branch, index and working tree the
+// checkpoint's, from its fetched commits.
+func (cp *checkpoint) apply(ctx context.Context, r *repo) error {
 	tree := cp.Head
 	if cp.Work != "" {
 		tree = cp.Work
@@ -238,7 +267,6 @@ func (cp *checkpoint) restore(ctx context.Context, job Job, r *repo) error {
 			return err
 		}
 	}
-	r.start, r.conflicts = cp.Start, cp.Conflicts
 	return nil
 }
 
@@ -290,7 +318,8 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 		refs = append(refs, checkpointMergeRef)
 	}
 	bundle := filepath.Join(job.CheckpointDir, cp.Bundle)
-	if _, err := r.git(ctx, r.dir, append([]string{"bundle", "create", "--quiet", bundle}, refs...)...); err != nil {
+	if _, err := r.git(ctx, r.dir, append([]string{"bundle", "create", "--quiet", bundle},
+		append(refs, bundleBase(ctx, r, refs, tip)...)...)...); err != nil {
 		return err
 	}
 	if id != "" {
@@ -317,6 +346,19 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 		}
 	}
 	return nil
+}
+
+// bundleBase is what a checkpoint's bundle of refs leaves out: what the
+// remote has, which the next pod's fresh clone has too, so the bundle holds
+// only the run's own commits. When the remote has them all, git refuses an
+// empty bundle: it then holds tip's commit alone, on its parents.
+func bundleBase(ctx context.Context, r *repo, refs []string, tip string) []string {
+	base := []string{"--not", "--remotes"}
+	out, err := r.git(ctx, r.dir, append(append([]string{"rev-list", "--count"}, refs...), base...)...)
+	if err == nil && strings.TrimSpace(out) == "0" {
+		return []string{"--not", tip + "^@"}
+	}
+	return base
 }
 
 // addUsage adds the stopped pod's usage to the run's earlier pods'. A cost

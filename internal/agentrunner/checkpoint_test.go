@@ -1,6 +1,7 @@
 package agentrunner
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -128,6 +129,31 @@ func TestSIGTERMMidSessionLeavesAHardCheckpoint(t *testing.T) {
 	if err != nil || !strings.Contains(string(out), cp.Work+" "+checkpointRef) {
 		t.Errorf("the bundle's heads = %s, %v; want %s at the working tree's commit %s", out, err, checkpointRef, cp.Work)
 	}
+	// The review of step 11: the bundle carried the whole history. It holds
+	// only what the remote lacks, on the remote's main as its prerequisite.
+	if prereqs := bundlePrerequisites(t, filepath.Join(checkpoints, cp.Bundle)); !slices.Contains(prereqs,
+		branchHead(t, url, "main")) {
+		t.Errorf("the bundle's prerequisites = %v, want the remote's main, %s, left out", prereqs, branchHead(t, url, "main"))
+	}
+}
+
+// bundlePrerequisites lists the commits a git bundle needs its repository to
+// have: the header's lines that start with a dash.
+func bundlePrerequisites(t *testing.T, bundle string) []string {
+	t.Helper()
+	f, err := os.Open(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	var prereqs []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() && scanner.Text() != "" {
+		if line, ok := strings.CutPrefix(scanner.Text(), "-"); ok {
+			prereqs = append(prereqs, strings.Fields(line)[0])
+		}
+	}
+	return prereqs
 }
 
 // stoppedWorkAgent records the prompts it gets and whether the stopped
@@ -164,6 +190,11 @@ func TestRunGoesOnFromAHardCheckpoint(t *testing.T) {
 		}, resumed: true},
 		{name: "an unknown version starts over", edit: func(cp *checkpoint) { cp.Version = 99 }, prompted: true},
 		{name: "another run's starts over", edit: func(cp *checkpoint) { cp.Round = 2 }, prompted: true},
+		// The review of step 11: a restore that failed after it reset the clone
+		// to the working tree's commit started over on it, and pushed it.
+		{name: "a restore that fails half way starts over from the clone", edit: func(cp *checkpoint) {
+			cp.Head = strings.Repeat("0", 40)
+		}, prompted: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -230,5 +261,40 @@ func TestCheckpointAddsThePodsUsageToTheRuns(t *testing.T) {
 	cp.addUsage(from, Result{})
 	if cp.CostMilliUSD != nil {
 		t.Errorf("addUsage() of a pod without a cost = %d, want the run's cost unreported", *cp.CostMilliUSD)
+	}
+}
+
+// The review of step 11: a bundle holds only what the remote lacks. When the
+// remote has the checkpoint's commit already (the agent committed nothing new
+// and left the tree clean), git refuses an empty bundle; it then holds that
+// commit alone, and a fresh clone still restores from it.
+func TestCheckpointBundleOfACommitTheRemoteHas(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	dir := filepath.Join(t.TempDir(), "repo")
+	if out, err := exec.Command("git", "clone", "--quiet", url, dir).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v: %s", err, out)
+	}
+	ctx := context.Background()
+	r := &repo{dir: dir}
+	head, err := r.head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.git(ctx, dir, "update-ref", checkpointRef, head); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(t.TempDir(), "work.bundle")
+	refs := []string{checkpointRef}
+	if _, err := r.git(ctx, dir, append(append([]string{"bundle", "create", "--quiet", bundle}, refs...),
+		bundleBase(ctx, r, refs, head)...)...); err != nil {
+		t.Fatalf("bundle create: %v", err)
+	}
+	fresh := filepath.Join(t.TempDir(), "fresh")
+	if out, err := exec.Command("git", "clone", "--quiet", url, fresh).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", fresh, "fetch", "--quiet", bundle,
+		checkpointRef+":"+checkpointRef).CombinedOutput(); err != nil {
+		t.Errorf("a fresh clone can't fetch the bundle: %v: %s", err, out)
 	}
 }
