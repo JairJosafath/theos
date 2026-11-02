@@ -1,5 +1,5 @@
 // What a person does to a Crew from its page (design.md, UI actions): pause or
-// resume it, set how many issues it works on at once, its release settings,
+// resume it or its running Tasks, set how many issues it works on at once, its release settings,
 // and re-run its last release's failed runs. Shown only when the UI server
 // takes actions; with OIDC and nobody signed in, a "Sign in" link instead. The
 // API server decides each write; a refusal shows its message. Where a Crew
@@ -23,6 +23,7 @@ import {
   type CrewWriter,
 } from '../../k8s/crews'
 import type { Brief, Crew, PublishSource } from '../../k8s/types'
+import { pauseRunsAction } from '../../model/brief'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
 import { FormError } from '../briefs/PromptForm'
@@ -58,7 +59,7 @@ function useWrite() {
   return { sending, error, done, run }
 }
 
-/** Pauses a Crew or resumes a paused one by patching spec.paused. */
+/** Pauses a Crew or resumes a paused one by patching spec.paused, and spec.pauseRuns when its runs are paused too. */
 export function CrewPauseButton({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
   const { sending, error, run } = useWrite()
   const paused = Boolean(crew.spec.paused)
@@ -71,9 +72,36 @@ export function CrewPauseButton({ crew, writer }: { crew: Crew; writer: CrewWrit
         className="button button-secondary button-small"
         title={paused ? 'Pick up ready issues again' : 'Pick up no new issues; a Task at work runs to its end'}
         disabled={sending}
-        onClick={() => run(() => writer.setPaused(ns, name, !paused))}
+        onClick={() => run(() => writer.setPaused(ns, name, !paused, Boolean(crew.spec.pauseRuns)))}
       >
         {sending ? (paused ? 'Resuming…' : 'Pausing…') : paused ? 'Resume crew' : 'Pause crew'}
+      </button>
+      {error ? <FormError error={error} /> : null}
+    </>
+  )
+}
+
+/**
+ * Pauses a Crew's running Tasks at their next tool boundary, or resumes them,
+ * by patching spec.pauseRuns (with spec.paused when pausing).
+ */
+export function CrewPauseRunsButton({ crew, writer }: { crew: Crew; writer: CrewWriter }) {
+  const { sending, error, run } = useWrite()
+  const pauseRuns = Boolean(crew.spec.pauseRuns)
+  const action = pauseRunsAction(pauseRuns, 'crew')
+  const ns = crew.metadata.namespace ?? ''
+  const name = crew.metadata.name
+  return (
+    <>
+      <button
+        type="button"
+        className="button button-secondary button-small"
+        title={action.explanation}
+        aria-pressed={pauseRuns}
+        disabled={sending}
+        onClick={() => run(() => writer.setPauseRuns(ns, name, action.pauseRuns))}
+      >
+        {sending ? (action.pauseRuns ? 'Pausing runs…' : 'Resuming runs…') : action.label}
       </button>
       {error ? <FormError error={error} /> : null}
     </>

@@ -635,6 +635,8 @@ export interface Crew extends K8sObject {
     reviewer: LocalRef
     /** Stops picking up new issues; a Task already started runs to its end. */
     paused?: boolean
+    /** With paused, also pauses its running Tasks at their next tool boundary; unset, each resumes where it stopped. */
+    pauseRuns?: boolean
     /** How many Tasks run at once; the API server fills in its default. */
     parallel?: number
     /** Lets the Crew tag a release once its milestone is done; off, a person tags it. */
@@ -895,6 +897,8 @@ export interface Brief extends K8sObject {
     releases?: BriefRelease[]
     /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
     paused?: boolean
+    /** With paused, also pauses running Tasks, its Crews' and its planner's, at their next tool boundary; unset, each resumes where it stopped. */
+    pauseRuns?: boolean
   }
   status?: {
     phase?: BriefPhase

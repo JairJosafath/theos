@@ -192,6 +192,29 @@ describe('the Crew writer', () => {
     expect(JSON.parse(sent[1].init.body as string)).toEqual([{ op: 'add', path: '/spec/parallel', value: 3 }])
   })
 
+  it('pauses and resumes its running Tasks with JSON patches of pauseRuns (#1995)', async () => {
+    const { sent, w } = writer()
+    await w.setPauseRuns('webshop', 'orders-api', true)
+    await w.setPauseRuns('webshop', 'orders-api', false)
+    await w.setPaused('webshop', 'orders-api', false, true)
+    expect(sent.map((s) => [s.url, (s.init.headers as Record<string, string>)['Content-Type']])).toEqual([
+      [url, 'application/json-patch+json'],
+      [url, 'application/json-patch+json'],
+      [url, 'application/json-patch+json'],
+    ])
+    expect(sent.map((s) => JSON.parse(s.init.body as string))).toEqual([
+      [
+        { op: 'add', path: '/spec/paused', value: true },
+        { op: 'add', path: '/spec/pauseRuns', value: true },
+      ],
+      [{ op: 'add', path: '/spec/pauseRuns', value: false }],
+      [
+        { op: 'add', path: '/spec/paused', value: false },
+        { op: 'add', path: '/spec/pauseRuns', value: false },
+      ],
+    ])
+  })
+
   it('asks for a re-run with a merge patch of the annotation', async () => {
     const { sent, w } = writer()
     await w.rerunRelease('webshop', 'orders-api', 'v1')

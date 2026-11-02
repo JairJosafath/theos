@@ -19,6 +19,7 @@ const crew = (run?: 'Failed' | 'Succeeded'): Crew => ({
 })
 const writer: CrewWriter = {
   setPaused: async () => {},
+  setPauseRuns: async () => {},
   setParallel: async () => {},
   setReleases: async () => {},
   rerunRelease: async () => {},
@@ -35,7 +36,15 @@ function render(session: UiSession | undefined, c: Crew, agents: Agent[] = []): 
 }
 
 /** What each of the Crew's controls shows. */
-const CONTROLS = ['Pause crew', 'Resume crew', 'Issues at once', 'Save release settings', 'Re-run']
+const CONTROLS = [
+  'Pause runs',
+  'Resume runs',
+  'Pause crew',
+  'Resume crew',
+  'Issues at once',
+  'Save release settings',
+  'Re-run',
+]
 const ACTING: UiSession = { actions: true, mode: 'service-account', user: null }
 const SIGNED_OUT: UiSession = { actions: true, mode: 'oidc', user: null, login: '/ui/login', logout: '/ui/logout' }
 
@@ -46,6 +55,7 @@ describe('the Crew page’s actions', () => {
   it('offers pause, parallel and the release settings when the UI server acts', () => {
     const html = render(ACTING, crew('Succeeded'))
     expect(html).toContain('Pause crew</button>')
+    expect(html).toContain('Pause runs</button>')
     expect(html).toContain('Issues at once')
     expect(html).toContain('Save release settings')
   })

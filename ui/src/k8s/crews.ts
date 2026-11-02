@@ -1,9 +1,10 @@
-// A Crew's writes from its page (design.md, UI actions): pause or resume it,
-// its parallel and release settings, and a re-run of its failed release runs.
+// A Crew's writes from its page (design.md, UI actions): pause or resume it or
+// its running Tasks, its parallel and release settings, and a re-run of its failed release runs.
 // server.mjs passes on only these requests; the CRD's rules decide whether they
 // are accepted, so this file copies none of them: a refused write shows the API
 // server's message.
 
+import { pausedPatch, pauseRunsPatch } from './briefs'
 import {
   RESOURCES,
   findCondition,
@@ -174,8 +175,13 @@ export function publishPatch(crew: Crew, value: PublishReleases | undefined, fro
 
 /** Pauses, sets and re-runs a Crew; each rejects with the API's message when it refuses. */
 export interface CrewWriter {
-  /** Sets spec.paused: true stops the Crew picking up issues, false resumes it. */
-  setPaused(namespace: string, name: string, paused: boolean): Promise<void>
+  /**
+   * Sets spec.paused: true stops the Crew picking up issues, false resumes it;
+   * with `runsPaused` (spec.pauseRuns is set) a resume unsets pauseRuns too.
+   */
+  setPaused(namespace: string, name: string, paused: boolean, runsPaused?: boolean): Promise<void>
+  /** Sets spec.pauseRuns (with spec.paused when true): true pauses the Crew's running Tasks, false resumes them. */
+  setPauseRuns(namespace: string, name: string, pauseRuns: boolean): Promise<void>
   /** Sets spec.parallel, sent as given so the API server judges it. */
   setParallel(namespace: string, name: string, parallel: number): Promise<void>
   /** Sends a JSON patch of releasePatch; an empty one sends nothing. */
@@ -194,10 +200,12 @@ export class LiveCrewWriter implements CrewWriter {
     this.fetchImpl = fetchImpl
   }
 
-  setPaused(namespace: string, name: string, paused: boolean): Promise<void> {
-    return this.patch(namespace, name, 'application/json-patch+json', [
-      { op: 'add', path: '/spec/paused', value: paused },
-    ])
+  setPaused(namespace: string, name: string, paused: boolean, runsPaused?: boolean): Promise<void> {
+    return this.patch(namespace, name, 'application/json-patch+json', pausedPatch(paused, runsPaused))
+  }
+
+  setPauseRuns(namespace: string, name: string, pauseRuns: boolean): Promise<void> {
+    return this.patch(namespace, name, 'application/json-patch+json', pauseRunsPatch(pauseRuns))
   }
 
   setParallel(namespace: string, name: string, parallel: number): Promise<void> {

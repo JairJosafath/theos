@@ -349,6 +349,24 @@ describe('server.mjs', () => {
       }
     })
 
+    it("pauses and resumes a Brief's running Tasks with exactly the patch it was sent (#1995)", async () => {
+      const pauseRuns = [
+        { op: 'add', path: '/spec/paused', value: true },
+        { op: 'add', path: '/spec/pauseRuns', value: true },
+      ]
+      const resumeRuns = [{ op: 'add', path: '/spec/pauseRuns', value: false }]
+      const resumeAll = [
+        { op: 'add', path: '/spec/paused', value: false },
+        { op: 'add', path: '/spec/pauseRuns', value: false },
+      ]
+      for (const body of [pauseRuns, resumeRuns, resumeAll]) {
+        seen.length = 0
+        const res = await write('PATCH', `${briefsPath}/lens`, body)
+        assert.equal(res.status, 200)
+        assert.deepEqual(seen[0].body, body)
+      }
+    })
+
     it("passes the API's refusal back, such as a Brief that isn't there", async () => {
       seen.length = 0
       const res = await write('PATCH', `${briefsPath}/gone`, prompt())
@@ -379,6 +397,14 @@ describe('server.mjs', () => {
         403,
       ],
       ['a patch removing paused', 'PATCH', `${briefsPath}/lens`, [{ op: 'remove', path: '/spec/paused' }], 403],
+      [
+        'a patch pausing runs with a string',
+        'PATCH',
+        `${briefsPath}/lens`,
+        [{ op: 'add', path: '/spec/pauseRuns', value: 'true' }],
+        403,
+      ],
+      ['a patch removing pauseRuns', 'PATCH', `${briefsPath}/lens`, [{ op: 'remove', path: '/spec/pauseRuns' }], 403],
       [
         'a pause with a prompt',
         'PATCH',
@@ -533,6 +559,15 @@ describe('server.mjs', () => {
         [add('/spec/paused', true), add('/spec/autopilot', 'Suggest'), add('/spec/parallel', 2)],
       ],
       ['a Brief pause alone', 'PATCH', '/briefs/lens', JP, [add('/spec/paused', false)]],
+      ['a Brief runs pause', 'PATCH', '/briefs/lens', JP, [add('/spec/paused', true), add('/spec/pauseRuns', true)]],
+      [
+        "a Crew's runs pause",
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [add('/spec/paused', true), add('/spec/pauseRuns', true)],
+      ],
+      ["a Crew's runs resume", 'PATCH', '/crews/orders-api', JP, [add('/spec/pauseRuns', false)]],
       [
         "a Crew's settings",
         'PATCH',

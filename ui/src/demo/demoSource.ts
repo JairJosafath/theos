@@ -96,19 +96,35 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
 
-  /** Sets spec.paused and, as the operator would, the Paused condition; the demo has no Task running. */
+  /**
+   * Sets spec.paused and, as the operator would, the Paused condition; the
+   * demo has no Task running. A resume unsets spec.pauseRuns too.
+   */
   async setPaused(_namespace: string, name: string, paused: boolean): Promise<void> {
+    this.pause(name, paused, paused ? undefined : false)
+  }
+
+  /** Sets spec.pauseRuns, and spec.paused when true, as the API would take them. */
+  async setPauseRuns(_namespace: string, name: string, pauseRuns: boolean): Promise<void> {
+    this.pause(name, pauseRuns ? true : undefined, pauseRuns)
+  }
+
+  /** Sets spec.paused and spec.pauseRuns where given, and the Paused condition as the operator would. */
+  private pause(name: string, paused: boolean | undefined, pauseRuns: boolean | undefined) {
     const data = this.snapshot.data
     const brief = data.briefs.find((b) => b.metadata.name === name)
     if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
-    const condition: Condition = paused
+    const spec = { ...brief.spec }
+    if (paused !== undefined) spec.paused = paused
+    if (pauseRuns !== undefined) spec.pauseRuns = pauseRuns
+    const condition: Condition = spec.paused
       ? { type: 'Paused', status: 'True', reason: 'Paused', message: 'Paused; nothing is running' }
       : { type: 'Paused', status: 'False', reason: 'Resumed', message: 'Not paused' }
     const conditions = [
       ...(brief.status?.conditions ?? []).filter((c) => c.type !== 'Paused'),
       { ...condition, lastTransitionTime: new Date().toISOString() },
     ]
-    const changed = { ...brief, spec: { ...brief.spec, paused }, status: { ...brief.status, conditions } }
+    const changed = { ...brief, spec, status: { ...brief.status, conditions } }
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
 
