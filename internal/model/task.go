@@ -1072,6 +1072,11 @@ const (
 	// resumes in place once the pause ends, with no round, rerun or resume
 	// spent.
 	ActionPauseRun TaskAction = "PauseRun"
+	// ActionRerunPaused ends a run that paused at the factory's ask but lost
+	// its checkpoint with its sandbox's expiry, and runs the same step again,
+	// in the same round, with no rerun spent: the pause, not the run, cost it
+	// the checkpoint, and no agent starts while the pause lasts.
+	ActionRerunPaused TaskAction = "RerunPaused"
 	// ActionReviewAgain checks and reviews an approved Standard change again, in
 	// the same round, as the review run whose approval its gated merge needs
 	// ended while CI ran again: no try and no round is spent.
@@ -1429,7 +1434,7 @@ func implementingStep(f TaskFacts) TaskStep {
 		return suspendedStep(f)
 	case !f.Run.Done:
 		return workingStep(f, fmt.Sprintf("The agent is working on round %d", f.Round))
-	case f.Run.Result != nil && f.Run.Result.Paused:
+	case pausedRun(f.Run):
 		return pausedRunStep(f)
 	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
 		return interruptedStep(f)
@@ -1461,7 +1466,7 @@ func reviewingStep(f TaskFacts) TaskStep {
 		return suspendedStep(f)
 	case !f.Run.Done:
 		return workingStep(f, "The reviewer is reviewing")
-	case f.Run.Result != nil && f.Run.Result.Paused:
+	case pausedRun(f.Run):
 		return pausedRunStep(f)
 	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
 		return interruptedStep(f)
@@ -1686,16 +1691,28 @@ func workingStep(f TaskFacts, working string) TaskStep {
 		working, f.Pause)}
 }
 
+// pausedRun reports whether the run ended paused at the factory's ask:
+// it reported Paused, or it was suspended for the pause and can't resume.
+func pausedRun(run RunState) bool {
+	return run.Result != nil && run.Result.Paused || run.Paused && run.Done && !run.Suspended
+}
+
 // pausedRunStep suspends the sandbox of a run that paused at the factory's
 // ask, with no round, rerun or resume spent. One whose checkpoint is gone
 // with its sandbox's expiry can't resume: its step runs again, as an
-// interrupted one's does.
+// interrupted one's does, but with no rerun spent either (#1995).
 func pausedRunStep(f TaskFacts) TaskStep {
+	if f.Run.Result == nil {
+		// Suspended for the pause, it can't resume any more (settleSuspended).
+		return TaskStep{Action: ActionRerunPaused, Message: fmt.Sprintf(
+			"The paused run can't resume (%s); round %d runs again, with no rerun spent",
+			orUnknown(f.Run.Failure), f.Round)}
+	}
 	reason := orUnknown(f.Run.Result.PauseReason)
 	if !f.Run.Checkpoint {
-		return TaskStep{Action: ActionRerun, Message: fmt.Sprintf(
-			"The run paused (%s), but its sandbox has no checkpoint any more; round %d runs again (rerun %d of %d)",
-			reason, f.Round, f.Reruns+1, MaxReruns)}
+		return TaskStep{Action: ActionRerunPaused, Message: fmt.Sprintf(
+			"The run paused (%s), but its sandbox has no checkpoint any more; round %d runs again, "+
+				"with no rerun spent", reason, f.Round)}
 	}
 	return TaskStep{Action: ActionPauseRun, Message: fmt.Sprintf(
 		"The run of round %d paused (%s) and saved its checkpoint; it resumes in place when the pause ends",

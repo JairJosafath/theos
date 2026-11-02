@@ -52,6 +52,11 @@ func TestTaskProgressTransitions(t *testing.T) {
 		{name: "an interrupted run that resumes counts a resume, not a rerun", got: SuspendRun(mid),
 			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Resumes: 1,
 				Feedback: "earlier", Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
+		// #1995: a pause costs no rerun, even when it costs the checkpoint.
+		{name: "a paused run that can't resume runs again with no rerun spent, in a sandbox of its own",
+			got: RerunPaused(mid),
+			want: TaskProgress{Phase: TaskReviewing, Round: 2, ReviewAttempts: 1, ReviewAgains: 1, Reruns: 1, Restarts: 1,
+				Feedback: "earlier", Commit: "abc", HasChecks: true, ResumedRound: 2, MergeWhenChecksPass: true}},
 		{name: "the next round starts its resumes afresh",
 			got:  NextRound(TaskProgress{Phase: TaskReviewing, Round: 2, Resumes: 5}, "again"),
 			want: TaskProgress{Phase: TaskImplementing, Round: 3, Feedback: "again"}},

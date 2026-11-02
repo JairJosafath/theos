@@ -24,7 +24,7 @@ type TaskProgress struct {
 	// failed: their failed jobs run again before the checks are read.
 	ChecksRerunDue bool
 	// Restarts counts how often the round started over in place (conflicts,
-	// a resume); sandbox names include it.
+	// a resume) and its paused runs that ran again; sandbox names include it.
 	Restarts int
 	Feedback string
 	Commit   string
@@ -169,6 +169,15 @@ func RetryReview(p TaskProgress) TaskProgress {
 // the same step runs again, and counts the rerun.
 func Rerun(p TaskProgress) TaskProgress {
 	p.Reruns++
+	return p
+}
+
+// RerunPaused is the progress of a Task whose run paused at the factory's
+// ask but can't resume: the same step runs again with no rerun spent, as a
+// pause costs none (#1995). Restarts gives the run a sandbox name of its
+// own, apart from the paused one's, which may still be being deleted.
+func RerunPaused(p TaskProgress) TaskProgress {
+	p.Restarts++
 	return p
 }
 

@@ -446,7 +446,9 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   far, suspends the Sandbox as it does an interrupted run's and drops its
   shutdown time, so a pause may last as long as it likes; the Task gets
   `Paused=True`. A pause costs no round, rerun or resume, and starts no run
-  and resumes none of the Task's until it ends; checks and merges go on.
+  and resumes none of the Task's until it ends; checks and merges go on. A
+  paused run that can't resume (its Sandbox expired first) runs its step
+  again, still with no rerun spent.
   Unsetting `pauseRuns` resumes each paused run in place. A run in a Sandbox
   without the checkpoint volume isn't asked: it runs to its end. The Crew's
   `Paused` condition names the Tasks still stopping.

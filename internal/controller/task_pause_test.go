@@ -9,6 +9,8 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -190,6 +192,57 @@ var _ = Describe("Paused runs", func() {
 				HaveField("Message", ContainSubstring("Resuming the paused run of round 1 in place")))))
 		}, "20s").Should(Succeed())
 		crewPausedMessage(ns, crew.Name, "Paused; 1 Task still running: add-crop")
+	})
+
+	// #1995: a pause costs no rerun, even when it costs the checkpoint.
+	It("reruns a paused run whose sandbox expired before the suspend with no rerun spent", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 3)
+		crew := newCrew(ns)
+		task := newTask(ns, "add-crop", "Add crop")
+		task.Labels = map[string]string{LabelCrew: crew.Name}
+		mustCreate(crew, task)
+		const name = "add-crop-r1-implement"
+		runningPod(ns, name, "add-crop")
+		const reason = "Crew orders-api paused its runs"
+		Expect(patch(crew, func() { crew.Spec.Paused, crew.Spec.PauseRuns = true, true })).To(Succeed())
+		Eventually(func(g Gomega) {
+			got, _ := pauseAsked(g, ns, name)
+			g.Expect(got).To(Equal(reason))
+		}, "20s").Should(Succeed())
+
+		By("expiring the sandbox, then the run reports Paused")
+		sandbox := newSandbox()
+		Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+		Expect(unstructured.SetNestedSlice(sandbox.Object, []any{map[string]any{
+			"type": "Ready", "status": "False", "reason": "SandboxExpired", "message": "the sandbox expired",
+			"lastTransitionTime": metav1.Now().UTC().Format(time.RFC3339)}}, "status", "conditions")).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, sandbox)).To(Succeed())
+		finishSandbox(ns, name, "add-crop", &agentrunner.Result{Role: "implement", Paused: true,
+			PauseReason: reason, CostMilliUSD: new(int64(400))}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Reruns).To(BeZero(), "a pause costs no rerun")
+			g.Expect(task.Status.Restarts).To(Equal(int32(1)), "the next run gets a sandbox name of its own")
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(400)))
+			g.Expect(task.Status.History).To(ContainElement(HaveField("Message",
+				ContainSubstring("round 1 runs again, with no rerun spent"))))
+			taskPaused(g, task, metav1.ConditionTrue, reasonRunsPaused)
+		}, "20s").Should(Succeed())
+		rerun := model.SandboxName("add-crop", 1, 1, model.RoleImplementer, 1, 0)
+		Consistently(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, rerun), newSandbox()))
+		}, "2s").Should(BeTrue(), "no run starts while the pause lasts")
+
+		By("starting the run again once pauseRuns is unset")
+		crew = getCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.PauseRuns = false })).To(Succeed())
+		Eventually(func(g Gomega) {
+			sandboxExists(g, ns, rerun)
+			g.Expect(getTask(g, ns, "add-crop").Status.Reruns).To(BeZero())
+		}, "20s").Should(Succeed())
 	})
 
 	It("passes a Brief's pauseRuns on to the Crews it paused and pauses its planner Task's run", func() {

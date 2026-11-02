@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Step 12 of docs/plans/self-hosting.md: running Tasks pause at a tool
@@ -155,17 +157,16 @@ func shortPause(t *testing.T, grace time.Duration) {
 	t.Cleanup(func() { pausePoll, pauseGrace = oldPoll, oldGrace })
 }
 
-// waitFor waits for path to exist and returns its content.
-func waitFor(t *testing.T, path string) string {
+// waitFor waits for path to exist.
+func waitFor(t *testing.T, path string) {
 	t.Helper()
 	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
-		if data, err := os.ReadFile(path); err == nil { //nolint:gosec // the test's own
-			return string(data)
+		if _, err := os.Stat(path); err == nil {
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("%s never appeared", path)
-	return ""
+	t.Errorf("%s never appeared", path)
 }
 
 // pausedRun runs an implement job on a stand-in Claude Code in mode, and
@@ -389,5 +390,99 @@ func TestRestoreTranscriptTakesAFileName(t *testing.T) {
 	}
 	if err := restoreTranscript(checkpoints, "0b6f0f9e-5c1a-4d4e-9c2b-1f2e3d4c5b6a", t.TempDir()); err != nil {
 		t.Errorf("restoreTranscript() of a session ID = %v, want it restored", err)
+	}
+}
+
+// A run that went on from a checkpoint and is paused again before its first
+// agent call keeps the stopped session's kind and model (#1995): a hard
+// session, or one on another model, is not resumed with --resume later.
+func TestPauseBeforeTheResumedSessionKeepsItsKindAndModel(t *testing.T) {
+	tests := []struct {
+		name  string
+		mode  string
+		grace time.Duration
+		// model is the Agent's model on both resumes.
+		model   string
+		resumed bool
+	}{
+		{name: "hard stays hard", mode: "pause-busy", grace: 300 * time.Millisecond, model: "claude-opus-5-5"},
+		{name: "clean on another model stays on the old one", mode: "pause", grace: time.Minute,
+			model: "claude-sonnet-5"},
+		{name: "clean on the same model resumes", mode: "pause", grace: time.Minute, model: "claude-opus-5-5",
+			resumed: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, checkpoints, _, _, paused := pausedRun(t, tt.mode, tt.grace)
+			if !paused.Paused {
+				t.Fatalf("Run() = %+v, want it paused", paused)
+			}
+			first := readCheckpoint(t, checkpoints)
+
+			// Resumed, and paused again before its session starts.
+			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+			agent, log := standInAgent(t, "record")
+			agent.SessionIDs = true
+			job := testJob(t, url, RoleImplement, 1)
+			job.CheckpointDir, job.Model, job.PodInfoDir = checkpoints, tt.model, t.TempDir()
+			annotationsFile(t, filepath.Join(job.PodInfoDir, podAnnotationsFile), map[string]string{PauseAnnotation: "drain"})
+			result := Run(context.Background(), job, agent, t.TempDir())
+			if !result.Paused || len(prompts(t, log)) != 0 {
+				t.Fatalf("Run() = %+v, want it paused before any session", result)
+			}
+			second := readCheckpoint(t, checkpoints)
+			if second.Kind != first.Kind || second.Model != first.Model || second.SessionID != first.SessionID ||
+				second.Note != first.Note {
+				t.Errorf("state.json = %+v, want the first checkpoint's session, kind %s and model %s",
+					second, first.Kind, first.Model)
+			}
+
+			// Resumed again: --resume only for a clean session on its model.
+			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+			agent, log = standInAgent(t, "record")
+			agent.SessionIDs = true
+			job.PodInfoDir = t.TempDir()
+			result = Run(context.Background(), job, agent, t.TempDir())
+			if result.Error != "" || result.Commit == "" || result.Paused {
+				t.Fatalf("Run() = %+v, want a pushed commit", result)
+			}
+			args, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+			if got := strings.Contains(string(args), "--resume\n"+first.SessionID); got != tt.resumed {
+				t.Errorf("the session ran with %q; --resume = %t, want %t", args, got, tt.resumed)
+			}
+		})
+	}
+}
+
+// A pause asked while the base's check runs for a blocked session kills that
+// check too (#1995): the run stops with a clean checkpoint, not blocked, and
+// the check runs again on resume.
+func TestPauseKillsTheBaseCheckOfABlockedSession(t *testing.T) {
+	shortPause(t, time.Minute)
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints, marker := t.TempDir(), filepath.Join(t.TempDir(), "base-check-started")
+	job := testJob(t, url, RoleImplement, 1, "sh", "-c", "touch "+marker+"; sleep 15; true")
+	job.CheckpointDir, job.PodInfoDir = checkpoints, t.TempDir()
+	go func() {
+		waitFor(t, marker)
+		annotationsFile(t, filepath.Join(job.PodInfoDir, podAnnotationsFile), map[string]string{PauseAnnotation: "drain"})
+	}()
+	blocked := "Nothing changed.\n" + model.BlockedPrefix + " the engine's release must be published first."
+	start := time.Now()
+	result := Run(context.Background(), job, &scriptAgent{replies: []string{blocked}}, t.TempDir())
+	if !result.Paused || result.Blocked != "" || result.Commit != "" || time.Since(start) > 10*time.Second {
+		t.Fatalf("Run() = %+v after %s, want it paused at once, not blocked", result, time.Since(start))
+	}
+	if cp := readCheckpoint(t, checkpoints); cp.Kind != CheckpointClean || cp.Step != StepAgent {
+		t.Errorf("state.json = %+v, want a clean checkpoint at the agent's session", cp)
+	}
+
+	job.CheckCommand, job.PodInfoDir = []string{"sh", "-c", "touch " + marker + "-again"}, t.TempDir()
+	result = Run(context.Background(), job, &scriptAgent{replies: []string{blocked}}, t.TempDir())
+	if result.Paused || result.ResumedFrom != CheckpointClean {
+		t.Errorf("Run() = %+v, want it resumed from the clean checkpoint", result)
+	}
+	if _, err := os.Stat(marker + "-again"); err != nil {
+		t.Errorf("the base's check didn't run again on resume: %v", err)
 	}
 }

@@ -96,7 +96,7 @@ func (r *BriefReconciler) setPausedCondition(ctx context.Context, brief *c4v1bet
 		}
 		return nil
 	}
-	tasks, err := r.briefTasks(ctx, brief, crews)
+	tasks, err := r.briefTasks(ctx, brief, crews, brief.Spec.PauseRuns)
 	if err != nil {
 		return err
 	}
@@ -106,12 +106,15 @@ func (r *BriefReconciler) setPausedCondition(ctx context.Context, brief *c4v1bet
 }
 
 // briefTasks are the Tasks that are not final in the Brief's Crews and its
-// planner's, sorted by name.
+// planner's, sorted by name. With runs, only those whose runs the pause
+// stops (#1995): a Crew paused by hand without pauseRuns, which the Brief
+// leaves as it is, lets its Tasks' runs go on to their end, and they would
+// never count as stopped.
 func (r *BriefReconciler) briefTasks(ctx context.Context, brief *c4v1beta1.Brief,
-	crews []c4v1beta1.Crew) ([]*c4v1beta1.Task, error) {
+	crews []c4v1beta1.Crew, runs bool) ([]*c4v1beta1.Task, error) {
 	mine := make(map[string]bool, len(crews))
-	for _, crew := range crews {
-		mine[crew.Name] = true
+	for i := range crews {
+		mine[crews[i].Name] = !runs || crewPause(&crews[i]) != ""
 	}
 	var tasks c4v1beta1.TaskList
 	if err := r.List(ctx, &tasks, client.InNamespace(brief.Namespace)); err != nil {

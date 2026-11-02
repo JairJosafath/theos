@@ -373,10 +373,13 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 	cp.Note = endedNote(ctx, r.dir, headline, lastText)
 	if id == "" {
 		// No session ran in this pod: the stopped one is still the earlier
-		// pod's, or none ran yet and there is nothing to tell.
+		// pod's, or none ran yet and there is nothing to tell. The earlier
+		// pod's session keeps its kind and model too (#1995): a hard one, or
+		// one on another model, is never resumed with --resume.
 		cp.SessionID, cp.Note = "", ""
 		if prog.from != nil {
 			cp.SessionID, cp.Note = prog.from.SessionID, prog.from.Note
+			cp.Kind, cp.Model = prog.from.Kind, prog.from.Model
 		}
 	}
 

@@ -332,7 +332,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 			return agentFailed(result, err)
 		}
 		if model.BlockedNote(summary) != "" {
-			if summary, err = sendBackBlocked(ctx, job, agent, r.dir, &base, summary); err != nil {
+			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, summary); err != nil {
 				result.Summary = summary
 				return agentFailed(result, err)
 			}
@@ -454,8 +454,13 @@ func roundChange(ctx context.Context, job Job, r *repo) (changed []string, empty
 // sendBackBlocked sends an agent that wrote a blocked note back once when the
 // check fails on the base: that is the workspace's, not a reason to block. It
 // returns the agent's newest summary.
-func sendBackBlocked(ctx context.Context, job Job, agent Agent, dir string, base *baseCheck, summary string) (string, error) {
-	baseOutput := base.fails(ctx)
+func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
+	summary string) (string, error) {
+	baseOutput := base.fails(checks)
+	if checks.Err() != nil && ctx.Err() == nil {
+		// The pause killed the base's check (#1995): it runs again on resume.
+		return summary, errPaused
+	}
 	if baseOutput == "" {
 		return summary, nil
 	}

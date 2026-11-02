@@ -123,8 +123,9 @@ func ranBefore(sandbox *unstructured.Unstructured) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-// applyInterrupted ends an interrupted run and runs its step again, or
-// suspends its sandbox to resume it in place, or resumes a suspended one.
+// applyInterrupted ends an interrupted run, or a paused one that can't
+// resume, and runs its step again, or suspends its sandbox to resume it in
+// place, or resumes a suspended one.
 func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.Task,
 	status *c4v1beta1.TaskStatus, container *c4v1beta1.Container, agents taskAgents,
 	step model.TaskStep) (ctrl.Result, error) {
@@ -139,7 +140,12 @@ func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.T
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
-	setProgress(status, model.Rerun(progressOf(status)))
+	if step.Action == model.ActionRerunPaused {
+		// A pause costs no rerun, even when it costs the checkpoint (#1995).
+		setProgress(status, model.RerunPaused(progressOf(status)))
+	} else {
+		setProgress(status, model.Rerun(progressOf(status)))
+	}
 	r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
 	logf.FromContext(ctx).Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
 	return ctrl.Result{}, nil // the status write triggers the next step

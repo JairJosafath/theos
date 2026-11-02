@@ -292,6 +292,53 @@ func TestPausedConditionMessage(t *testing.T) {
 	}
 }
 
+// #1995: a Brief that pauses its runs counts as still stopping only the
+// Tasks its pause stops: those of a Crew paused by hand without pauseRuns,
+// which the Brief leaves as it is, run to their end and never stop.
+func TestBriefPausedCountsOnlyTheRunsItStops(t *testing.T) {
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "shop"),
+		Spec: c4v1beta1.BriefSpec{Paused: true, PauseRuns: true}}
+	crew := func(name string, byBrief bool) *c4v1beta1.Crew {
+		c := &c4v1beta1.Crew{ObjectMeta: objectMeta("apps", name)}
+		c.Labels = map[string]string{c4v1beta1.LabelBrief: "shop"}
+		c.Spec.Paused = true
+		if byBrief {
+			markPaused(c, true)
+		}
+		return c
+	}
+	task := func(name, crew string, plan bool) *c4v1beta1.Task {
+		t := &c4v1beta1.Task{ObjectMeta: objectMeta("apps", name)}
+		t.Labels = map[string]string{LabelCrew: crew}
+		if plan {
+			t.Labels = map[string]string{c4v1beta1.LabelBrief: "shop"}
+			t.Spec.Kind = c4v1beta1.TaskPlan
+		}
+		t.Status.Phase = c4v1beta1.TaskImplementing
+		return t
+	}
+	marked, byHand := crew("cart", true), crew("orders", false)
+	c := fake.NewClientBuilder().WithScheme(checkpointScheme(t)).WithObjects(brief, marked, byHand,
+		task("add-cart", "cart", false), task("add-orders", "orders", false), task("plan-1", "", true)).Build()
+	r := &BriefReconciler{Client: c}
+	if err := r.setPausedCondition(context.Background(), brief, []c4v1beta1.Crew{*marked, *byHand}); err != nil {
+		t.Fatal(err)
+	}
+	cond := findCondition(brief.Status.Conditions, c4v1beta1.ConditionPaused)
+	if want := "Paused, runs too; 2 Tasks still stopping: add-cart, plan-1"; cond == nil || cond.Message != want {
+		t.Errorf("Paused condition = %+v, want %q", cond, want)
+	}
+	// A Brief that only drains counts every Task still running.
+	brief.Spec.PauseRuns = false
+	if err := r.setPausedCondition(context.Background(), brief, []c4v1beta1.Crew{*marked, *byHand}); err != nil {
+		t.Fatal(err)
+	}
+	cond = findCondition(brief.Status.Conditions, c4v1beta1.ConditionPaused)
+	if want := "Paused; 3 Tasks still running: add-cart, add-orders, plan-1"; cond == nil || cond.Message != want {
+		t.Errorf("Paused condition = %+v, want %q", cond, want)
+	}
+}
+
 func findCondition(conds []metav1.Condition, typ string) *metav1.Condition {
 	for i := range conds {
 		if conds[i].Type == typ {
