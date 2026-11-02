@@ -38,6 +38,15 @@ const (
 	CheckpointClean = "clean"
 )
 
+// PodInfoDir is where the Sandbox pod mounts its own annotations through the
+// downward API (a file named annotations, one key="value" per line). The
+// pause-guard hook reads it to see the c4.factory.io/pause annotation.
+const PodInfoDir = "/etc/c4agent/podinfo"
+
+// PauseGrace is how long a tool may still run after the pause annotation
+// appears: past it, c4agent ends the run as on SIGTERM (a hard checkpoint).
+const PauseGrace = 5 * time.Minute
+
 // checkpointVersion is the format of state.json this c4agent writes and
 // reads; one of another version starts the run over.
 const checkpointVersion = 1

@@ -293,6 +293,13 @@ const AnnotationPausedBy = "c4.factory.io/paused-by"
 // PausedByBrief is AnnotationPausedBy's value on a Crew its Brief paused.
 const PausedByBrief = "brief"
 
+// AnnotationPause on the pod template of a running Task's Sandbox asks the
+// run to pause at its next tool boundary; its value is the reason. It is the
+// one thing the operator changes under a running agent: c4agent reads it
+// through the downward API (agentrunner.PodInfoDir) and saves a clean
+// checkpoint (docs/plans/self-hosting.md, step 12).
+const AnnotationPause = "c4.factory.io/pause"
+
 // AnnotationBriefPublishReleases on a Crew a Brief made holds the JSON of the
 // spec.publishReleases its Brief last wrote from a spec.releases entry
 // (docs/plans/done/brief-release-target.md). A Crew whose spec.publishReleases

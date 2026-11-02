@@ -73,6 +73,12 @@ type Result struct {
 	// clean; empty when it started afresh. The cost, tokens and handoffs are
 	// this pod's: the operator counted the earlier pods' when they ended.
 	ResumedFrom string `json:"resumedFrom,omitempty"`
+	// Paused means the run stopped because the factory asked it to (the pod's
+	// c4.factory.io/pause annotation) and saved a clean checkpoint: the
+	// operator suspends the Sandbox with no round or rerun spent. PauseReason
+	// is the annotation's value.
+	Paused      bool   `json:"paused,omitempty"`
+	PauseReason string `json:"pauseReason,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
