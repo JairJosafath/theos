@@ -80,6 +80,10 @@ type Result struct {
 	// is the annotation's value.
 	Paused      bool   `json:"paused,omitempty"`
 	PauseReason string `json:"pauseReason,omitempty"`
+	// Checkpoint is the kind of checkpoint the run saved before it reported,
+	// hard or clean; empty when it saved none. An unavailable agent's run
+	// that saved one is suspended until the agent is back, and resumes.
+	Checkpoint string `json:"checkpoint,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -235,7 +239,10 @@ var stopGrace = 2 * time.Second
 // there before it reports, and a run that finds one goes on from it
 // (checkpoint.go). A run the factory pauses stops at its next tool boundary
 // or step, saves a clean checkpoint (a hard one when it is still busy
-// pauseGrace later), and reports Paused (pause.go).
+// pauseGrace later), and reports Paused (pause.go). A run whose agent's
+// service was unavailable saves a clean checkpoint (a hard one when c4agent
+// was told to stop) before it reports Unavailable, to go on from when the
+// agent is back.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	sessions := &sessionLog{}
 	pause := newPauseWatch(job)
@@ -259,8 +266,10 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 			kind = CheckpointHard
 		}
 		slog.Info("Paused by the factory", "reason", reason, "checkpoint", kind, "step", prog.step)
-		if err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
+		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over on resume", "error", err.Error())
+		} else if saved {
+			result.Checkpoint = kind
 		}
 		result.Paused, result.PauseReason = true, reason
 		result.Error, result.Interrupted, result.Unavailable, result.RetryAt = "", false, false, nil
@@ -272,8 +281,27 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Interrupted = true
 	}
 	if result.Interrupted && ctx.Err() != nil {
-		if err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
+		if saved, err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
+		} else if saved {
+			result.Checkpoint = CheckpointHard
+		}
+	}
+	if result.Unavailable {
+		// The agent's own process ended with the service's error: its
+		// transcript is whole, and the same session can go on. One c4agent
+		// had to stop is ended as on SIGTERM.
+		kind := CheckpointClean
+		if ctx.Err() != nil {
+			kind = CheckpointHard
+		}
+		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, nil); err != nil {
+			slog.Error("Failed to save the checkpoint; the step runs again when the agent is back",
+				"error", err.Error())
+		} else if saved {
+			slog.Info("The agent is unavailable; saved the run to go on when it is back", "checkpoint", kind,
+				"step", prog.step)
+			result.Checkpoint = kind
 		}
 	}
 	return result

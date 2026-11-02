@@ -1005,6 +1005,9 @@ func TestRunReportsAnUnavailableAgent(t *testing.T) {
 	if !got.Unavailable || got.RetryAt == nil || got.RetryAt.Unix() != 4102444800 {
 		t.Errorf("Run() = %+v, want an unavailable agent back at its reset", got)
 	}
+	if got.Checkpoint != "" {
+		t.Errorf("Run() saved a %s checkpoint, want none without a checkpoint directory", got.Checkpoint)
+	}
 }
 
 func TestRunReportsAnInterruptedRun(t *testing.T) {

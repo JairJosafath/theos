@@ -97,7 +97,8 @@ func TestParseAnnotations(t *testing.T) {
 // line, as Claude Code does. In "pause-busy" its third tool never ends. In
 // "record" it writes its arguments to args-n.txt, and whether the session it
 // resumes has its transcript where Claude Code reads it to transcript-n.txt,
-// and answers.
+// and answers. In "limit" it ends at its second turn with Claude Code's
+// usage limit error.
 func pausingClaude(mode string, n int, postHook string) int {
 	dir := os.Getenv(standInClaudeDir)
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("args-%d.txt", n)), []byte(strings.Join(os.Args[1:], "\n")), 0o600)
@@ -127,6 +128,11 @@ func pausingClaude(mode string, n int, postHook string) int {
 		_, _ = fmt.Fprintln(f, transcriptLine(1000, false))
 		_ = f.Close()
 		_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("turns-%d", n)), []byte(strconv.Itoa(turn)), 0o600)
+		if mode == "limit" && turn == 2 {
+			fmt.Printf(`{"type":"result","subtype":"success","is_error":true,`+
+				`"result":"Claude AI usage limit reached|%d","total_cost_usd":0.03}`+"\n", standInLimitReset)
+			return 1
+		}
 		if mode == "pause-busy" && turn == 3 {
 			// A tool that doesn't end: the hook never runs.
 			time.Sleep(time.Minute)
@@ -316,6 +322,84 @@ func TestPausedRunResumes(t *testing.T) {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("the fresh session's prompt = %q, want it to say %q", prompt, want)
 				}
+			}
+		})
+	}
+}
+
+// standInLimitReset is when the stand-in's usage limit resets: 2100-01-01.
+const standInLimitReset = 4102444800
+
+// #1996: a run whose agent's service is unavailable saves a clean
+// checkpoint before it reports Unavailable: the agent's own process ended,
+// so its transcript is whole. The resumed run goes on in the same session
+// on the same model, and in a fresh one told why on another.
+func TestUnavailableAgentSavesACheckpointBeforeItReports(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	agent, log := standInAgent(t, "limit")
+	agent.SessionIDs = true
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.Model = checkpoints, "claude-opus-5-5"
+	result := Run(context.Background(), job, agent, t.TempDir())
+	if !result.Unavailable || result.RetryAt == nil || result.RetryAt.Unix() != standInLimitReset ||
+		result.Checkpoint != CheckpointClean || result.Interrupted || result.Commit != "" {
+		t.Fatalf("Run() = %+v, want an unavailable agent back at its reset, with a clean checkpoint saved", result)
+	}
+	if result.CostMilliUSD == nil || *result.CostMilliUSD != 30 {
+		t.Errorf("cost = %v, want the session's 30 so far", result.CostMilliUSD)
+	}
+	if head := branchHead(t, url, "task/add-crop"); head != "" {
+		t.Errorf("the branch is at %s, want it not pushed", head)
+	}
+	cp := readCheckpoint(t, checkpoints)
+	args, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+	if cp.Kind != CheckpointClean || cp.Step != StepAgent || cp.SessionID == "" || cp.Work == "" ||
+		!strings.Contains(string(args), "--session-id\n"+cp.SessionID) ||
+		!strings.Contains(cp.Unavailable, "usage limit reached") || cp.PauseReason != "" {
+		t.Errorf("state.json = %+v, want a clean checkpoint at the agent's session, with its ID and the error", cp)
+	}
+	if !strings.Contains(cp.Note, "The agent's service was unavailable (") {
+		t.Errorf("the note = %q, want it to say the service was unavailable", cp.Note)
+	}
+	if info, err := os.Stat(filepath.Join(checkpoints, checkpointTranscript)); err != nil || info.Size() == 0 {
+		t.Errorf("the transcript: %v, want it saved", err)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		model   string
+		resumed bool
+	}{{"the same model: --resume", "claude-opus-5-5", true}, {"another model: the note", "claude-sonnet-5", false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			saved := t.TempDir()
+			if err := os.CopyFS(saved, os.DirFS(checkpoints)); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+			agent, log := standInAgent(t, "record")
+			agent.SessionIDs = true
+			job := testJob(t, url, RoleImplement, 1)
+			job.CheckpointDir, job.Model = saved, tt.model
+			resumed := Run(context.Background(), job, agent, t.TempDir())
+			if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
+				t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
+			}
+			args, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+			prompt := prompts(t, log)[0]
+			if tt.resumed {
+				if !strings.Contains(string(args), "--resume\n"+cp.SessionID) ||
+					!strings.HasPrefix(prompt, "Your service was unavailable (") ||
+					!strings.Contains(prompt, "the factory resumed you once it was back") {
+					t.Errorf("the session ran with %q and prompt %q; want --resume %s, told why", args, prompt,
+						cp.SessionID)
+				}
+				return
+			}
+			if strings.Contains(string(args), "--resume") ||
+				!strings.Contains(prompt, "The agent's service was unavailable (") {
+				t.Errorf("the session ran with %q and prompt %q, want a fresh session told why", args, prompt)
 			}
 		})
 	}

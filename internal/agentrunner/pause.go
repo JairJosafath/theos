@@ -69,8 +69,14 @@ func pauseStopReason(reason string) string {
 	return "Paused by the factory: " + reason
 }
 
-// resumePrompt is the prompt that resumes a session the pause ended cleanly.
-func resumePrompt(reason string) string {
+// resumePrompt is the prompt that resumes a session that ended cleanly at
+// cp: the pause ended it, or its agent's service being unavailable did.
+func resumePrompt(cp *checkpoint) string {
+	if cp.Unavailable != "" {
+		return fmt.Sprintf("Your service was unavailable (%s), and the factory resumed you once it was back. "+
+			"The working tree is as you left it. Carry on.", cp.Unavailable)
+	}
+	reason := cp.PauseReason
 	if reason == "" {
 		return "The factory paused you and resumed you. The working tree is as you left it. Carry on."
 	}
