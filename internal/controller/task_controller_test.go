@@ -743,14 +743,60 @@ var _ = Describe("Agent", func() {
 	})
 })
 
+// playSuspension plays Agent Sandbox for a run the operator resumes in place:
+// once the operator suspends the sandbox, its pod goes; then the operator
+// resumes it, and the Task forgets the old pod (step 11 of
+// docs/plans/self-hosting.md).
+func playSuspension(ns, name string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		mode, _, _ := unstructured.NestedString(sandboxExists(g, ns, name).Object, "spec", "operatingMode")
+		g.Expect(mode).To(Equal(operatingModeSuspended), "the operator suspends sandbox %s", name)
+	}, "20s").Should(Succeed())
+	Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: ns, Name: name}}, client.GracePeriodSeconds(0)))).To(Succeed())
+	Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, name), &corev1.Pod{}))
+	}).Should(BeTrue(), "the pod of sandbox %s is gone", name)
+	Eventually(func(g Gomega) {
+		mode, _, _ := unstructured.NestedString(sandboxExists(g, ns, name).Object, "spec", "operatingMode")
+		g.Expect(mode).To(Equal(operatingModeRunning), "the operator resumes sandbox %s", name)
+		g.Expect(getTask(g, ns, "add-crop").Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")
+	}, "20s").Should(Succeed())
+}
+
+// sandboxPodSpec is the pod template's spec of a sandbox.
+func sandboxPodSpec(g Gomega, sandbox *unstructured.Unstructured) corev1.PodSpec {
+	spec, _, err := unstructured.NestedMap(sandbox.Object, "spec", "podTemplate", "spec")
+	g.Expect(err).NotTo(HaveOccurred())
+	var pod corev1.PodSpec
+	g.Expect(runtime.DefaultUnstructuredConverter.FromUnstructured(spec, &pod)).To(Succeed())
+	return pod
+}
+
 var _ = Describe("Task with an interrupted run", func() {
-	It("reruns the same round, up to MaxReruns times, then spends it", func() {
+	It("resumes it in place up to MaxResumes times, then reruns it up to MaxReruns times, then spends the round", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		killed := &agentrunner.Result{Role: "implement", Error: "claude failed: signal: killed", Interrupted: true}
+		first := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, 0)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, first) }, "20s").Should(Succeed())
+		for resume := 1; resume <= model.MaxResumes; resume++ {
+			finishSandbox(ns, first, "add-crop", killed, "")
+			playSuspension(ns, first)
+			Eventually(func(g Gomega) {
+				task := getTask(g, ns, "add-crop")
+				g.Expect(task.Status.Resumes).To(Equal(int32(resume)))
+				g.Expect(task.Status.Reruns).To(BeZero(), "a resume costs no rerun")
+				g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
+				g.Expect(task.Status.Sandbox).To(Equal(first), "the run resumes in its own sandbox")
+			}).Should(Succeed())
+		}
+
+		By("rerunning past MaxResumes")
 		for rerun := 1; rerun <= model.MaxReruns+1; rerun++ {
-			// Each rerun has a sandbox of its own: add-crop-r1-implement, then -x1, -x2.
+			// The sixth interruption reruns in a sandbox of its own: add-crop-r1-implement-x1, then -x2.
 			name := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, rerun-1)
 			Eventually(func(g Gomega) { sandboxExists(g, ns, name) }, "20s").Should(Succeed())
 			finishSandbox(ns, name, "add-crop", killed, "")
@@ -760,18 +806,117 @@ var _ = Describe("Task with an interrupted run", func() {
 			Eventually(func(g Gomega) {
 				task := getTask(g, ns, "add-crop")
 				g.Expect(task.Status.Reruns).To(Equal(int32(rerun)))
+				g.Expect(task.Status.Resumes).To(Equal(int32(model.MaxResumes)))
 				g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
 			}).Should(Succeed())
 		}
 
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Round).To(Equal(int32(2)), "past the cap the round is spent")
+			g.Expect(task.Status.Round).To(Equal(int32(2)), "past the caps the round is spent")
 			g.Expect(task.Status.Reruns).To(BeZero())
+			g.Expect(task.Status.Resumes).To(BeZero(), "each round resumes afresh")
 		}).Should(Succeed())
 	})
 
-	It("reruns a round whose Git host stayed unreachable without counting it", func() {
+	It("gives the sandbox a checkpoint volume, and resumes an interrupted run with the current Agent and its remaining time", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		const name = "add-crop-r1-implement"
+		var sandbox *unstructured.Unstructured
+		Eventually(func(g Gomega) { sandbox = sandboxExists(g, ns, name) }, "20s").Should(Succeed())
+
+		By("making the pod with the checkpoint volume and a minute to save a checkpoint")
+		claims, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "volumeClaimTemplates")
+		Expect(claims).To(ConsistOf(And(
+			HaveKeyWithValue("metadata", HaveKeyWithValue("name", checkpointVolume)),
+			HaveKeyWithValue("spec", HaveKeyWithValue("resources",
+				HaveKeyWithValue("requests", HaveKeyWithValue("storage", "1Gi")))))))
+		pod := sandboxPodSpec(Default, sandbox)
+		Expect(pod.TerminationGracePeriodSeconds).To(HaveValue(Equal(int64(60))))
+		Expect(pod.Containers[0].VolumeMounts).To(ContainElement(
+			corev1.VolumeMount{Name: checkpointVolume, MountPath: agentrunner.CheckpointDir}))
+		Expect(pod.Containers[0].Env).To(ContainElement(
+			corev1.EnvVar{Name: agentrunner.EnvCheckpointDir, Value: agentrunner.CheckpointDir}))
+		shutdownBefore, _, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
+
+		By("suspending the Sandbox when a node shutdown ends its pod after nine minutes")
+		started := time.Now().Truncate(time.Second).Add(-9 * time.Minute)
+		running := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name,
+			Labels:          map[string]string{LabelTask: "add-crop"},
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, SandboxGVK)}},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "agent"}}}}
+		Expect(k8sClient.Create(ctx, running)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.SandboxPod).To(Equal(string(running.UID)))
+		}).Should(Succeed())
+		running.Status = corev1.PodStatus{Phase: corev1.PodFailed, StartTime: &metav1.Time{Time: started},
+			Conditions: []corev1.PodCondition{{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue,
+				Reason: "TerminationByKubelet", LastTransitionTime: metav1.Now()}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "agent", Image: "agent", State: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 143,
+					StartedAt:  metav1.Time{Time: started},
+					FinishedAt: metav1.Time{Time: started.Add(9 * time.Minute)}}}}}}
+		Expect(k8sClient.Status().Update(ctx, running)).To(Succeed())
+		Eventually(func(g Gomega) {
+			sandbox = sandboxExists(g, ns, name)
+			mode, _, _ := unstructured.NestedString(sandbox.Object, "spec", "operatingMode")
+			g.Expect(mode).To(Equal(operatingModeSuspended))
+			g.Expect(sandbox.GetAnnotations()).To(HaveKeyWithValue(annotationRanSeconds, "540"))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Resumes).To(Equal(int32(1)))
+			g.Expect(task.Status.Reruns).To(BeZero())
+			g.Expect(task.Status.SandboxPod).To(Equal(string(running.UID)), "the old pod is the run's until it goes")
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Interrupted"),
+				HaveField("Message", ContainSubstring("resumes in place from its checkpoint (resume 1 of 5)")))))
+		}, "20s").Should(Succeed())
+		Consistently(func(g Gomega) {
+			mode, _, _ := unstructured.NestedString(sandboxExists(g, ns, name).Object, "spec", "operatingMode")
+			g.Expect(mode).To(Equal(operatingModeSuspended), "the sandbox stays suspended while its pod is there")
+		}, "2s").Should(Succeed())
+
+		By("resuming it with the Agent's new image once the pod is gone")
+		Eventually(func(g Gomega) {
+			var agent c4v1beta1.Agent
+			g.Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
+			agent.Spec.Image = "c4factory/agent-go:new"
+			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
+		}).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, running, client.GracePeriodSeconds(0))).To(Succeed())
+		var agent c4v1beta1.Agent
+		Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
+		remaining := int64((runTimeout(&agent) - 9*time.Minute).Seconds())
+		Eventually(func(g Gomega) {
+			sandbox = sandboxExists(g, ns, name)
+			mode, _, _ := unstructured.NestedString(sandbox.Object, "spec", "operatingMode")
+			g.Expect(mode).To(Equal(operatingModeRunning))
+			pod := sandboxPodSpec(g, sandbox)
+			g.Expect(pod.ActiveDeadlineSeconds).To(HaveValue(Equal(remaining)), "the run's remaining time")
+			g.Expect(pod.Containers[0].Image).To(Equal("c4factory/agent-go:new"), "the current Agent's image")
+			g.Expect(pod.TerminationGracePeriodSeconds).To(HaveValue(Equal(int64(60))))
+			shutdown, _, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
+			g.Expect(parseTime(shutdown)).To(BeTemporally(">", time.Now().Add(time.Duration(remaining)*time.Second)),
+				"a shutdown time past the new deadline")
+			g.Expect(shutdown).NotTo(Equal(shutdownBefore))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")
+			g.Expect(task.Status.Sandbox).To(Equal(name))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Running"),
+				HaveField("Message", ContainSubstring("Resuming the interrupted run of round 1 in place")))))
+		}, "20s").Should(Succeed())
+
+		By("going on with the resumed run's pod as the run's")
+		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
+		finishSandbox(ns, name, "add-crop", &agentrunner.Result{Role: "implement", Commit: "sha-r1",
+			Summary: "Added crop."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskChecking))
+		}, "20s").Should(Succeed())
+	})
+
+	It("resumes in place a round whose Git host stayed unreachable, without counting a rerun", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
@@ -781,30 +926,26 @@ var _ = Describe("Task with an interrupted run", func() {
 			"unreachable: git clone: exit status 128: fatal: unable to access 'http://gitea/apps/x.git/': " +
 			"Couldn't connect to server"}
 		finishSandbox(ns, "add-crop-r1-implement", "add-crop", unreachable, "")
-
-		rerun := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, 1)
+		playSuspension(ns, "add-crop-r1-implement")
 		Eventually(func(g Gomega) {
-			sandboxExists(g, ns, rerun)
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+			g.Expect(task.Status.Resumes).To(Equal(int32(1)))
+			g.Expect(task.Status.Reruns).To(BeZero())
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "an unreachable Git host costs no round")
 			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Interrupted"),
 				HaveField("Message", ContainSubstring("the Git host stayed unreachable")))))
 		}, "20s").Should(Succeed())
 	})
 
-	It("reruns a round whose pod was deleted and replaced under the same sandbox", func() {
+	It("resumes a round whose pod was deleted and replaced under the same sandbox", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
 
 		// Agent Sandbox starts the pod of the round's sandbox; the operator
-		// remembers it. The sandbox is the one the Task's status names, not a
-		// fixed name: under load the operator may see the first pod gone and
-		// rerun the round before the replacement arrives (#1417), and then the
-		// pod starts under the rerun's sandbox. Either way one interrupted run
-		// costs a rerun and no round.
+		// remembers it. A pod that goes before it finished, replaced or not,
+		// is an interruption the run resumes from in place, in its sandbox.
 		startPod := func() *corev1.Pod {
 			GinkgoHelper()
 			sandbox := newSandbox()
@@ -831,22 +972,16 @@ var _ = Describe("Task with an interrupted run", func() {
 		By("force-deleting the pod, which Agent Sandbox replaces")
 		Expect(k8sClient.Delete(ctx, first, client.GracePeriodSeconds(0))).To(Succeed())
 		startPod()
-
-		rerun := model.SandboxName("add-crop", 1, 0, model.RoleImplementer, 1, 1)
+		playSuspension(ns, "add-crop-r1-implement")
 		Eventually(func(g Gomega) {
-			sandboxExists(g, ns, rerun)
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.Reruns).To(Equal(int32(1)))
+			g.Expect(task.Status.Resumes).To(Equal(int32(1)))
+			g.Expect(task.Status.Reruns).To(BeZero())
 			g.Expect(task.Status.Round).To(Equal(int32(1)), "an interrupted run costs no round")
+			g.Expect(task.Status.Sandbox).To(Equal("add-crop-r1-implement"))
 			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Interrupted"),
-				HaveField("Message", ContainSubstring("(rerun 1 of 2)")))))
+				HaveField("Message", ContainSubstring("(resume 1 of 5)")))))
 		}, "20s").Should(Succeed())
-		Eventually(func(g Gomega) {
-			old := newSandbox()
-			err := k8sClient.Get(ctx, key(ns, "add-crop-r1-implement"), old)
-			g.Expect(apierrors.IsNotFound(err) || err == nil && !old.GetDeletionTimestamp().IsZero()).To(BeTrue(),
-				"the replaced run's sandbox goes")
-		}).Should(Succeed())
 	})
 
 	It("reruns a review lost in a cluster outage, but spends one that ran out its time", func() {

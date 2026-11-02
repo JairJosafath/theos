@@ -151,10 +151,7 @@ const (
 // ServiceAccount token: it reports through its termination message.
 func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstructured.Unstructured, error) {
 	task, agent := run.task, run.agent
-	timeout := time.Duration(agent.Spec.TimeoutMinutes) * time.Minute
-	if timeout <= 0 {
-		timeout = 45 * time.Minute
-	}
+	timeout := runTimeout(agent)
 	env := runEnv(run)
 	if agent.Spec.Model != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvModel, Value: agent.Spec.Model})
@@ -176,6 +173,9 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if run.resumed {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvResumed, Value: "true"})
 	}
+	// c4agent saves an interrupted run on the sandbox's checkpoint volume,
+	// and goes on from it in the sandbox's next pod.
+	env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckpointDir, Value: checkpointMount})
 	if related := relatedEnv(run.related); related != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvRelated, Value: related})
 	}
@@ -248,7 +248,10 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		// the API server. The size counts against the agent's memory limit.
 		workspace.Medium, workspace.SizeLimit = corev1.StorageMediumMemory, run.workspaceMemory
 	}
-	mounts := []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}}
+	// Agent Sandbox makes the checkpoint volume from the claim template and
+	// mounts it where the container names it, as a StatefulSet does.
+	mounts := []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"},
+		{Name: checkpointVolume, MountPath: checkpointMount}}
 	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}}
 	var initContainers []corev1.Container
 	if run.goCache != "" {
@@ -280,13 +283,15 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	for _, name := range run.pullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
+	grace := checkpointGrace
 	pod := corev1.PodSpec{
-		RestartPolicy:                corev1.RestartPolicyNever,
-		AutomountServiceAccountToken: &no,
-		EnableServiceLinks:           &no,
-		ActiveDeadlineSeconds:        &deadline,
-		ImagePullSecrets:             pullSecrets,
-		InitContainers:               initContainers,
+		RestartPolicy:                 corev1.RestartPolicyNever,
+		TerminationGracePeriodSeconds: &grace,
+		AutomountServiceAccountToken:  &no,
+		EnableServiceLinks:            &no,
+		ActiveDeadlineSeconds:         &deadline,
+		ImagePullSecrets:              pullSecrets,
+		InitContainers:                initContainers,
 		Containers: []corev1.Container{{
 			Name:                     agentContainer,
 			Image:                    agent.Spec.Image,
@@ -314,13 +319,23 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			"metadata": map[string]any{"labels": toAnyMap(labels)},
 			"spec":     podMap,
 		},
-		"shutdownTime":   shutdown,
-		"shutdownPolicy": "Retain",
+		"shutdownTime":         shutdown,
+		"shutdownPolicy":       "Retain",
+		"volumeClaimTemplates": checkpointClaims(),
 	}
 	if err := controllerutil.SetControllerReference(task, sandbox, scheme); err != nil {
 		return nil, err
 	}
 	return sandbox, nil
+}
+
+// runTimeout is how long one run of the Agent may take: its timeoutMinutes,
+// 45 when unset.
+func runTimeout(agent *c4v1beta1.Agent) time.Duration {
+	if agent.Spec.TimeoutMinutes <= 0 {
+		return 45 * time.Minute
+	}
+	return time.Duration(agent.Spec.TimeoutMinutes) * time.Minute
 }
 
 // runEnv is the start of a run's environment: what c4agent needs to know of
@@ -409,10 +424,22 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		return state, err
 	}
 	state.Started = true
+	expired, missed := sandboxExpiry(sandbox)
+	// An expired sandbox is not resumed: Agent Sandbox is done with it.
+	state.Checkpoint = hasCheckpoint(sandbox) && !expired
 
 	var pod corev1.Pod
 	err = c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &pod)
-	expired, missed := sandboxExpiry(sandbox)
+	if sandboxSuspended(sandbox) {
+		// Suspended to resume: the run waits for its pod to go.
+		state.Suspended = true
+		if err == nil && metav1.IsControlledBy(&pod, sandbox) {
+			state.Pod = string(pod.UID)
+		} else if err != nil && !apierrors.IsNotFound(err) {
+			return state, err
+		}
+		return state, nil
+	}
 	if apierrors.IsNotFound(err) {
 		switch {
 		case missed:

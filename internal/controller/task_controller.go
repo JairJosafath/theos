@@ -131,7 +131,7 @@ const eventCheckFailsOnBase = "CheckFailsOnBase"
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=agents;softwaresystems;briefs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -268,6 +268,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
 		Reruns:         int(status.Reruns),
+		Resumes:        int(status.Resumes),
 
 		MergeWaitsForChecks: mergeWaitsForChecks(status),
 		MergeWhenChecksPass: status.MergeWhenChecksPass,

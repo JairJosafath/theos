@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -88,6 +89,7 @@ func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1beta1.Task, st
 		Round:     int(status.Round),
 		MaxRounds: int(agent.Spec.MaxRounds),
 		Reruns:    int(status.Reruns),
+		Resumes:   int(status.Resumes),
 		Feedback:  status.Feedback,
 		Plan:      true,
 	}
@@ -146,9 +148,16 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1beta1.Task, st
 	case model.ActionStartImplement:
 		return r.startPlan(ctx, task, status, brief, agent, round, step.Message)
 
-	case model.ActionRerun, model.ActionAgentUnavailable:
-		// Neither touches the Container, which a Plan Task doesn't have.
+	case model.ActionRerun, model.ActionAgentUnavailable, model.ActionSuspendRun:
+		// None touches the Container, which a Plan Task doesn't have.
 		return r.apply(ctx, task, status, nil, taskAgents{implementer: agent, reviewer: agent}, step)
+
+	case model.ActionResumeRun:
+		fresh, result, err := r.planSandbox(ctx, task, status, brief, agent, round, status.Sandbox)
+		if fresh == nil {
+			return result, err
+		}
+		return ctrl.Result{}, r.resumeWith(ctx, task, status, agent, fresh, step)
 
 	case model.ActionAwaitPlanCheck:
 		run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
@@ -198,40 +207,16 @@ func (r *TaskReconciler) failPlan(ctx context.Context, task *c4v1beta1.Task, sta
 // starts a round; until it is there, the Task waits.
 func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	brief *c4v1beta1.Brief, agent *c4v1beta1.Agent, round int, message string) (ctrl.Result, error) {
-	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
-		return ctrl.Result{}, err
-	} else if !found {
-		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	progress := model.StartRun(progressOf(status), model.RolePlanner)
+	next := status.DeepCopy()
+	setProgress(next, progress)
+	name := sandboxName(task, next, model.RolePlanner)
+	sandbox, result, err := r.planSandbox(ctx, task, status, brief, agent, round, name)
+	if sandbox == nil {
+		return result, err
 	}
-	gitSecret := briefGitSecret(brief.Name)
-	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: gitSecret}, &secret)
-	if apierrors.IsNotFound(err) {
-		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
-			fmt.Sprintf("Secret %s of Brief %s not found; the Brief makes it with its repository", gitSecret, brief.Name))
-		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
-	}
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, brief.Spec.GitProviderRef.Name)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	repo := provider.Repository(model.BriefRepository(brief.Name))
-
-	setProgress(status, model.StartRun(progressOf(status), model.RolePlanner))
+	setProgress(status, progress)
 	status.Branch = model.PlanBranch(round)
-	name := sandboxName(task, status, model.RolePlanner)
-	sandbox, err := buildSandbox(sandboxRun{
-		task: task, status: status, agent: agent, name: name, role: model.RolePlanner,
-		repoURL: repo.CloneURL, gitSecret: gitSecret, goal: task.Spec.Goal, maxRounds: agent.Spec.MaxRounds,
-		brief: brief.Name, briefRound: round, workspaceMemory: r.WorkspaceMemory, pullSecrets: r.SharedPullSecrets,
-		modelProxyURL: r.sandboxModelProxy(agent),
-	}, r.Scheme, r.now())
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 	if err := r.Create(ctx, sandbox); err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, err
 	}
@@ -240,4 +225,41 @@ func (r *TaskReconciler) startPlan(ctx context.Context, task *c4v1beta1.Task, st
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", model.RolePlanner,
 		"round", status.Round, "briefRound", round)
 	return ctrl.Result{}, nil
+}
+
+// planSandbox builds the planner's Sandbox named name, once the Agent's
+// credentials and the Brief bot's Secret are there; until then it is nil,
+// and result says when to look again.
+func (r *TaskReconciler) planSandbox(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	brief *c4v1beta1.Brief, agent *c4v1beta1.Agent, round int, name string) (*unstructured.Unstructured, ctrl.Result, error) {
+	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
+		return nil, ctrl.Result{}, err
+	} else if !found {
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
+	gitSecret := briefGitSecret(brief.Name)
+	var secret corev1.Secret
+	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: gitSecret}, &secret)
+	if apierrors.IsNotFound(err) {
+		r.progress(task, status, metav1.ConditionFalse, "CredentialsNotFound",
+			fmt.Sprintf("Secret %s of Brief %s not found; the Brief makes it with its repository", gitSecret, brief.Name))
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, task.Namespace, brief.Spec.GitProviderRef.Name)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	repo := provider.Repository(model.BriefRepository(brief.Name))
+	run := status.DeepCopy()
+	run.Branch = model.PlanBranch(round)
+	sandbox, err := buildSandbox(sandboxRun{
+		task: task, status: run, agent: agent, name: name, role: model.RolePlanner,
+		repoURL: repo.CloneURL, gitSecret: gitSecret, goal: task.Spec.Goal, maxRounds: agent.Spec.MaxRounds,
+		brief: brief.Name, briefRound: round, workspaceMemory: r.WorkspaceMemory, pullSecrets: r.SharedPullSecrets,
+		modelProxyURL: r.sandboxModelProxy(agent),
+	}, r.Scheme, r.now())
+	return sandbox, ctrl.Result{}, err
 }

@@ -107,6 +107,12 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	case model.ActionRerunChecks:
 		return r.rerunChecks(ctx, task, status, container, agents, step)
 
+	case model.ActionSuspendRun:
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step) // the status write triggers the next step
+
+	case model.ActionResumeRun:
+		return r.resumeRun(ctx, task, status, container, agents, step)
+
 	case model.ActionAgentUnavailable:
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -249,54 +255,20 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 // Container's agent Git access and the Agent's credentials exist.
 func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, role, message string) (ctrl.Result, error) {
-	agent := agents.forRole(role)
-	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
-		return ctrl.Result{}, err
-	} else if !found {
-		return ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	in, result, err := r.runInputs(ctx, task, status, container, agents, role)
+	if in == nil {
+		return result, err
 	}
-	provider, repo, err := r.gitRepo(ctx, container)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	// Bring the Git host's rules up to date before an agent gets access: older
-	// repositories were protected with fewer of them.
-	protectCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	if err := protectRepository(protectCtx, r.Client, provider, repo, container); err != nil {
-		return ctrl.Result{}, err
-	}
-	protected, err := protectedPaths(ctx, r.Client, container)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	gitSecret, err := r.ensureAgentGit(ctx, container, provider, repo)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	goal := task.Spec.Goal
 	firstIssueRun := task.Spec.Issue > 0 && model.FirstRun(progressOf(status))
-	if task.Spec.Issue > 0 {
-		// Read before every run: a person may have clarified the issue since.
-		issue, err := provider.GetIssue(protectCtx, repo, int(task.Spec.Issue))
+	if firstIssueRun {
+		commit, err := r.continueEarlierTry(gitCtx, in.provider, in.repo, task, status)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if issue.State == stateClosed {
-			r.end(task, status, model.IssueClosed(issue.Number))
-			return ctrl.Result{}, nil
-		}
-		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
-		goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
-		if firstIssueRun {
-			commit, err := r.continueEarlierTry(protectCtx, provider, repo, task, status)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			if commit != "" {
-				return r.startAtReview(ctx, task, status, commit)
-			}
+		if commit != "" {
+			return r.startAtReview(ctx, task, status, commit)
 		}
 	}
 
@@ -305,21 +277,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 		status.Branch = model.TaskBranch(task.Name)
 	}
 	name := sandboxName(task, status, role)
-	story := c4Context(ctx, r.Client, container)
-	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	sandbox, err := buildSandbox(sandboxRun{
-		task: task, status: status, container: container, agent: agent, name: name, role: role,
-		repoURL: repo.CloneURL, gitSecret: gitSecret, context: story.Text(), goal: goal,
-		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
-		protectedPaths: protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
-		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
-		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
-		npmSecret: npmSecret, pypiSecret: pypiSecret,
-		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
-	}, r.Scheme, r.now())
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -332,14 +290,99 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 	// are there.
 	if err == nil && (firstIssueRun || firstReviewAtStart(status, role)) {
 		if status.Continues != "" {
-			r.noteContinued(protectCtx, provider, repo, task, status)
+			r.noteContinued(gitCtx, in.provider, in.repo, task, status)
 		}
-		r.announce(protectCtx, provider, repo, task, container, agents)
+		r.announce(gitCtx, in.provider, in.repo, task, container, agents)
 	}
 	status.Sandbox, status.SandboxPod, status.AgentBackAt = name, "", nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// runInput is what a run of a Container's Task gets from its Git host, read
+// before each run, a resumed one too: the fence and the goal as they are now.
+type runInput struct {
+	provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+		ports.AgentAccess
+	}
+	repo      ports.Repository
+	protected []string
+	gitSecret string
+	goal      string
+}
+
+// runInputs makes sure the Agent's credentials and the Container's agent Git
+// access exist, and reads the run's fence and goal. A nil input ends the
+// step: the credentials are missing (look again after result's wait), or
+// the Task's issue was closed, which ends the Task.
+func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents, role string) (*runInput, ctrl.Result, error) {
+	agent := agents.forRole(role)
+	if found, err := r.agentCredentials(ctx, task, status, agent); err != nil {
+		return nil, ctrl.Result{}, err
+	} else if !found {
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	// Bring the Git host's rules up to date before an agent gets access: older
+	// repositories were protected with fewer of them.
+	protectCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	if err := protectRepository(protectCtx, r.Client, provider, repo, container); err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	protected, err := protectedPaths(ctx, r.Client, container)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	gitSecret, err := r.ensureAgentGit(ctx, container, provider, repo)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	in := &runInput{provider: provider, repo: repo, protected: protected, gitSecret: gitSecret, goal: task.Spec.Goal}
+	if task.Spec.Issue > 0 {
+		// Read before every run: a person may have clarified the issue since.
+		issue, err := provider.GetIssue(protectCtx, repo, int(task.Spec.Issue))
+		if err != nil {
+			return nil, ctrl.Result{}, err
+		}
+		if issue.State == stateClosed {
+			r.end(task, status, model.IssueClosed(issue.Number))
+			return nil, ctrl.Result{}, nil
+		}
+		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
+		in.goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
+	}
+	return in, ctrl.Result{}, nil
+}
+
+// runSandbox builds the Sandbox named name for a run of role on the Container.
+func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput) (*unstructured.Unstructured, error) {
+	agent := agents.forRole(role)
+	story := c4Context(ctx, r.Client, container)
+	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
+	if err != nil {
+		return nil, err
+	}
+	repo := in.repo
+	return buildSandbox(sandboxRun{
+		task: task, status: status, container: container, agent: agent, name: name, role: role,
+		repoURL: repo.CloneURL, gitSecret: in.gitSecret, context: story.Text(), goal: in.goal,
+		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
+		protectedPaths: in.protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
+		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
+		npmSecret: npmSecret, pypiSecret: pypiSecret,
+		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
+	}, r.Scheme, r.now())
 }
 
 // startAtReview starts a try that continues an earlier try's green, unreviewed
@@ -689,6 +732,12 @@ func (r *TaskReconciler) endRun(ctx context.Context, task *c4v1beta1.Task, statu
 	if err != nil {
 		return err
 	}
+	return r.afterStatusWrite(ctx, task, ended)
+}
+
+// afterStatusWrite drops, suspends or resumes the ended run's sandbox once
+// writeStatus wrote the status that records it, or now outside a Reconcile.
+func (r *TaskReconciler) afterStatusWrite(ctx context.Context, task *c4v1beta1.Task, ended endedRun) error {
 	if pending, ok := ctx.Value(endedRunsKey{}).(*[]endedRun); ok {
 		if ended.sandbox != "" {
 			*pending = append(*pending, ended)
@@ -722,11 +771,16 @@ func (r *TaskReconciler) dropEndedRuns(ctx context.Context, task *c4v1beta1.Task
 	return errors.Join(errs...)
 }
 
-// endedRun is a run recordRun took out of the Task's status, for dropRun.
+// endedRun is a run recordRun took out of the Task's status, for dropRun,
+// or one whose pod ended and whose sandbox suspends or resumes.
 type endedRun struct {
 	sandbox string
 	round   int32
 	result  *model.RunResult
+	// suspend keeps the sandbox, and suspends it: its run resumes in place.
+	suspend bool
+	// resume, when set, resumes the suspended sandbox with it.
+	resume *sandboxResume
 }
 
 // recordRun adds what the current run cost to the Task's, records the run,
@@ -741,6 +795,15 @@ func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	if err != nil {
 		return endedRun{}, err
 	}
+	r.countRun(status, run)
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
+	status.Sandbox, status.SandboxPod = "", ""
+	return ended, nil
+}
+
+// countRun adds what the current sandbox's run cost to the Task's, and
+// records the run.
+func (r *TaskReconciler) countRun(status *c4v1beta1.TaskStatus, run model.RunState) {
 	milliUSD, withoutCost := run.Cost()
 	status.CostMilliUSD += milliUSD
 	status.RunsWithoutCost += withoutCost
@@ -748,26 +811,31 @@ func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	if rec, ok := run.Record(int(status.Round), status.Sandbox, r.now()); ok {
 		status.Runs = model.KeepNewest(append(status.Runs, runRecord(rec)), model.MaxRunRecords)
 	}
-	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
-	status.Sandbox, status.SandboxPod = "", ""
-	return ended, nil
 }
 
-// dropRun deletes the sandbox of a run recordRun ended, and posts when its
-// sessions handed off.
+// dropRun deletes the sandbox of a run recordRun ended, or suspends or
+// resumes it, and posts when the ended pod's sessions handed off.
 func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ended endedRun) error {
-	if ended.sandbox == "" {
+	switch {
+	case ended.sandbox == "":
 		return nil
-	}
-	sandbox := newSandbox()
-	sandbox.SetNamespace(task.Namespace)
-	sandbox.SetName(ended.sandbox)
-	if err := r.Delete(ctx, sandbox, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil &&
-		!apierrors.IsNotFound(err) {
-		return err
-	}
-	if container := task.Spec.ContainerRef.Name; container != "" {
-		r.revokeOldAgentTokens(ctx, task.Namespace, container, ended.sandbox)
+	case ended.resume != nil:
+		return r.resumeSandbox(ctx, task.Namespace, ended.sandbox, ended.resume)
+	case ended.suspend:
+		if err := r.suspendSandbox(ctx, task.Namespace, ended.sandbox); err != nil {
+			return err
+		}
+	default:
+		sandbox := newSandbox()
+		sandbox.SetNamespace(task.Namespace)
+		sandbox.SetName(ended.sandbox)
+		if err := r.Delete(ctx, sandbox, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil &&
+			!apierrors.IsNotFound(err) {
+			return err
+		}
+		if container := task.Spec.ContainerRef.Name; container != "" {
+			r.revokeOldAgentTokens(ctx, task.Namespace, container, ended.sandbox)
+		}
 	}
 	if res := ended.result; res != nil && len(res.SessionHandoffs) > 0 && r.Recorder != nil {
 		r.Recorder.Eventf(task, nil, corev1.EventTypeNormal, eventSessionHandedOff, "HandOff", "%s",
@@ -805,6 +873,7 @@ func addTokens(tokens *c4v1beta1.TokenUsage, add model.TokenUsage) *c4v1beta1.To
 func progressOf(status *c4v1beta1.TaskStatus) model.TaskProgress {
 	p := model.TaskProgress{Phase: string(status.Phase), Round: int(status.Round),
 		ReviewAttempts: int(status.ReviewAttempts), ReviewAgains: int(status.ReviewAgains), Reruns: int(status.Reruns),
+		Resumes:  int(status.Resumes),
 		Restarts: int(status.Restarts), ChecksReruns: int(status.ChecksReruns), ChecksRerunDue: status.ChecksRerunDue,
 		Feedback: status.Feedback, ChecksFailed: failedChecks(status),
 		Commit: status.Commit, HasChecks: status.Checks != nil, MergeWhenChecksPass: status.MergeWhenChecksPass}
@@ -829,6 +898,7 @@ func setProgress(status *c4v1beta1.TaskStatus, p model.TaskProgress) {
 	status.Phase, status.Round = c4v1beta1.TaskPhase(p.Phase), int32(p.Round)
 	status.ReviewAttempts, status.ReviewAgains = int32(p.ReviewAttempts), int32(p.ReviewAgains)
 	status.Reruns, status.Restarts = int32(p.Reruns), int32(p.Restarts)
+	status.Resumes = int32(p.Resumes)
 	status.Feedback, status.Commit = p.Feedback, p.Commit
 	status.MergeWhenChecksPass = p.MergeWhenChecksPass
 	status.ChecksReruns, status.ChecksRerunAt = int32(p.ChecksReruns), nil

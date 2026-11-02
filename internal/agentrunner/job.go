@@ -81,7 +81,14 @@ const (
 	// EnvSessionTokenLimit is the Agent's sessionTokenLimit: the size at which
 	// an agent session hands off to a fresh one.
 	EnvSessionTokenLimit = "C4AGENT_SESSION_TOKEN_LIMIT"
+	// EnvCheckpointDir is where the sandbox mounts its checkpoint volume:
+	// c4agent saves an interrupted run there and goes on from it in the
+	// sandbox's next pod (checkpoint.go). Unset: no checkpoints.
+	EnvCheckpointDir = "C4_CHECKPOINT_DIR"
 )
+
+// CheckpointDir is where the operator mounts a sandbox's checkpoint volume.
+const CheckpointDir = "/checkpoint"
 
 // Harnesses: the agent programs c4agent can run.
 const (
@@ -144,6 +151,8 @@ type Job struct {
 	// SessionTokenLimit is the size at which an agent session hands off to a
 	// fresh one; 0: sessions run to their end.
 	SessionTokenLimit int64
+	// CheckpointDir is the sandbox's checkpoint volume; empty: none.
+	CheckpointDir string
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -170,6 +179,8 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		NpmToken:    getenv(EnvNpmToken),
 		PyPIIndex:   getenv(EnvPyPIIndex),
 		PyPIToken:   getenv(EnvPyPIToken),
+
+		CheckpointDir: getenv(EnvCheckpointDir),
 	}
 	if job.Base == "" {
 		job.Base = "main"
