@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
@@ -199,6 +200,50 @@ var _ = Describe("Plan Task run", func() {
 			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(And(
 				HaveField("Status", metav1.ConditionTrue), HaveField("Message", "The Brief accepted the plan")))
 		}).Should(Succeed())
+	})
+
+	// The review of step 11: a planner's interrupted run resumes in place too,
+	// through planSandbox, with the current Agent's pod template.
+	It("resumes an interrupted planner in place with the current Agent", func() {
+		roundTask("cel-lens-plan-3", 3, "3")
+		const name = "cel-lens-plan-3-r1-plan"
+		Eventually(func(g Gomega) { sandboxExists(g, ns, name) }).Should(Succeed())
+		finishSandbox(ns, name, "cel-lens-plan-3", &agentrunner.Result{Role: "plan",
+			Error: "claude failed: signal: killed", Interrupted: true}, "")
+		Eventually(func(g Gomega) {
+			mode, _, _ := unstructured.NestedString(sandboxExists(g, ns, name).Object, "spec", "operatingMode")
+			g.Expect(mode).To(Equal(operatingModeSuspended))
+			task := getTask(g, ns, "cel-lens-plan-3")
+			g.Expect(task.Status.Resumes).To(Equal(int32(1)))
+			g.Expect(task.Status.SandboxPod).NotTo(BeEmpty(), "the old pod is the run's until it goes")
+		}, "20s").Should(Succeed())
+
+		By("resuming it with the planner's new image once the pod is gone")
+		Eventually(func(g Gomega) {
+			var agent c4v1beta1.Agent
+			g.Expect(k8sClient.Get(ctx, key(ns, "planner"), &agent)).To(Succeed())
+			agent.Spec.Image = "c4factory/agent-go:new"
+			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
+		}).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}},
+			client.GracePeriodSeconds(0))).To(Succeed())
+		Eventually(func(g Gomega) {
+			sandbox := sandboxExists(g, ns, name)
+			mode, _, _ := unstructured.NestedString(sandbox.Object, "spec", "operatingMode")
+			g.Expect(mode).To(Equal(operatingModeRunning))
+			pod := sandboxPodSpec(g, sandbox)
+			g.Expect(pod.Containers[0].Image).To(Equal("c4factory/agent-go:new"), "the current Agent's image")
+			g.Expect(pod.Containers[0].Env).To(ContainElements(
+				corev1.EnvVar{Name: "C4_ROLE", Value: "plan"},
+				corev1.EnvVar{Name: "C4_ROUND", Value: "3"},
+				corev1.EnvVar{Name: "C4_BRANCH", Value: "plan/3"}))
+			task := getTask(g, ns, "cel-lens-plan-3")
+			g.Expect(task.Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")
+			g.Expect(task.Status.Sandbox).To(Equal(name))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.Reruns).To(BeZero())
+		}, "20s").Should(Succeed())
 	})
 
 	It("tries again with the Brief's reasons, and fails after the planner's rounds", func() {
