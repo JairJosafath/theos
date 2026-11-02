@@ -485,6 +485,14 @@ spec:
                   It gives each run of the round a sandbox name of its own.
                 format: int32
                 type: integer
+              resumes:
+                description: |-
+                  resumes counts the runs in this round that the infrastructure
+                  interrupted and that resumed in place, from the checkpoint their
+                  sandbox kept, without a rerun or spending the round. Past five, an
+                  interrupted run is rerun.
+                format: int32
+                type: integer
               review:
                 description: review is the reviewer's latest verdict.
                 properties:
@@ -1181,6 +1189,14 @@ spec:
                   restarts counts how often this round started over in place: sent back to
                   resolve conflicts with main, or resumed after its Standard change merged.
                   It gives each run of the round a sandbox name of its own.
+                format: int32
+                type: integer
+              resumes:
+                description: |-
+                  resumes counts the runs in this round that the infrastructure
+                  interrupted and that resumed in place, from the checkpoint their
+                  sandbox kept, without a rerun or spending the round. Past five, an
+                  interrupted run is rerun.
                 format: int32
                 type: integer
               review:
