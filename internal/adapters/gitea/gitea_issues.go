@@ -35,8 +35,9 @@ const fieldBody = "body"
 var labelLocks sync.Map // string -> chan struct{}, holding one token while locked
 
 type giteaLabel struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Exclusive bool   `json:"exclusive"`
 }
 
 // Request bodies of the issue API.
@@ -112,8 +113,10 @@ func issuePath(repo ports.Repository, number int) string {
 	return "/api/v1/repos/" + repoPath(repo) + "/issues/" + strconv.Itoa(number)
 }
 
-// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat,
-// and to call at once from more than one provider of this process.
+// EnsureLabels creates the labels repo doesn't have yet and makes the exclusive
+// flag of those it has match the one asked for (a migration brings labels over
+// non-exclusive). It is safe to repeat, and to call at once from more than one
+// provider of this process.
 func (g *gitea) EnsureLabels(ctx context.Context, repo ports.Repository, labels []ports.Label) error {
 	lock, _ := labelLocks.LoadOrStore(g.base.JoinPath(repoPath(repo)).String(), make(chan struct{}, 1))
 	select {
@@ -127,7 +130,19 @@ func (g *gitea) EnsureLabels(ctx context.Context, repo ports.Repository, labels 
 		return err
 	}
 	for _, l := range labels {
-		if _, ok := existing[l.Name]; ok {
+		if have, ok := existing[l.Name]; ok {
+			if have.Exclusive == l.Exclusive {
+				continue
+			}
+			payload, _ := json.Marshal(map[string]bool{"exclusive": l.Exclusive})
+			path := "/api/v1/repos/" + repoPath(repo) + "/labels/" + strconv.FormatInt(have.ID, 10)
+			status, data, err := g.do(ctx, http.MethodPatch, path, payload)
+			if err != nil {
+				return err
+			}
+			if status != http.StatusOK {
+				return fmt.Errorf("gitea: updating label %s in %s failed (HTTP %d): %s", l.Name, repoPath(repo), status, apiMessage(data))
+			}
 			continue
 		}
 		payload, _ := json.Marshal(giteaLabelOption(l))
@@ -143,8 +158,8 @@ func (g *gitea) EnsureLabels(ctx context.Context, repo ports.Repository, labels 
 }
 
 // labels returns the repository's labels by name.
-func (g *gitea) labels(ctx context.Context, repo ports.Repository) (map[string]int64, error) {
-	ids := map[string]int64{}
+func (g *gitea) labels(ctx context.Context, repo ports.Repository) (map[string]giteaLabel, error) {
+	ids := map[string]giteaLabel{}
 	for page := 1; page <= maxIssuePages; page++ {
 		path := fmt.Sprintf("/api/v1/repos/%s/labels?limit=%d&page=%d", repoPath(repo), issuePageSize, page)
 		status, data, err := g.do(ctx, http.MethodGet, path, nil)
@@ -156,7 +171,7 @@ func (g *gitea) labels(ctx context.Context, repo ports.Repository) (map[string]i
 			return nil, fmt.Errorf("gitea: listing labels of %s failed (HTTP %d): %s", repoPath(repo), status, apiMessage(data))
 		}
 		for _, l := range labels {
-			ids[l.Name] = l.ID
+			ids[l.Name] = l
 		}
 		if len(labels) < issuePageSize {
 			break
@@ -405,11 +420,11 @@ func (g *gitea) CreateIssue(ctx context.Context, repo ports.Repository, title, b
 			return ports.Issue{}, err
 		}
 		for _, name := range labels {
-			id, ok := existing[name]
+			label, ok := existing[name]
 			if !ok {
 				return ports.Issue{}, fmt.Errorf("gitea: %s has no label %s", repoPath(repo), name)
 			}
-			ids = append(ids, id)
+			ids = append(ids, label.ID)
 		}
 	}
 	payload, _ := json.Marshal(giteaNewIssue{Title: title, Body: body, Labels: ids, Milestone: milestone})

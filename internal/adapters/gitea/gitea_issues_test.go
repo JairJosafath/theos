@@ -25,9 +25,11 @@ import (
 // their siblings, milestone lists show only open ones unless asked for all, and
 // a milestone edit clears the due date unless it gives one, as in Gitea.
 type issueHost struct {
-	mu         sync.Mutex
-	labels     []giteaLabel
-	scoped     map[int64]bool
+	mu     sync.Mutex
+	labels []giteaLabel
+	scoped map[int64]bool
+	// patches counts the label edits.
+	patches    int
 	milestones []hostMilestone
 	// milestonePages counts the milestone list calls.
 	milestonePages int
@@ -54,6 +56,24 @@ type hostMilestone struct {
 	Description string     `json:"description"`
 	State       string     `json:"state"`
 	DueOn       *time.Time `json:"due_on,omitempty"`
+}
+
+// editLabel answers Gitea's label edit, which here only changes "exclusive".
+func (h *issueHost) editLabel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Exclusive bool `json:"exclusive"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if id < 1 || int(id) > len(h.labels) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"no label"}`))
+		return
+	}
+	h.labels[id-1].Exclusive = body.Exclusive
+	h.scoped[id] = body.Exclusive
+	h.patches++
+	_ = json.NewEncoder(w).Encode(h.labels[id-1])
 }
 
 func newIssueHost(t *testing.T) (*issueHost, ports.Provider) {
@@ -83,11 +103,12 @@ func newIssueHost(t *testing.T) (*issueHost, ports.Provider) {
 			Exclusive bool   `json:"exclusive"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		l := giteaLabel{ID: int64(len(h.labels) + 1), Name: body.Name}
+		l := giteaLabel{ID: int64(len(h.labels) + 1), Name: body.Name, Exclusive: body.Exclusive}
 		h.labels = append(h.labels, l)
 		h.scoped[l.ID] = body.Exclusive
 		reply(w, http.StatusCreated, l)
 	})
+	mux.HandleFunc("PATCH "+repo+"/labels/{id}", h.editLabel)
 	mux.HandleFunc("GET "+repo+"/milestones", func(w http.ResponseWriter, r *http.Request) {
 		out := []hostMilestone{}
 		for _, m := range h.milestones {
@@ -358,6 +379,29 @@ func (h *issueHost) milestoneIssues(t *testing.T, r *http.Request) []giteaIssue 
 	return out
 }
 
+// A migration brings labels over non-exclusive; EnsureLabels makes them match
+// what is asked for, and leaves matching ones alone (#2039).
+func TestEnsureLabelsMakesExclusiveMatch(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	h.labels = []giteaLabel{{ID: 1, Name: "status/ready"}, {ID: 2, Name: "kind/bug", Exclusive: true}}
+	h.scoped = map[int64]bool{2: true}
+
+	labels := []ports.Label{{Name: "status/ready", Exclusive: true}, {Name: "kind/bug", Exclusive: true}, {Name: "kind/docs"}}
+	for range 2 {
+		if err := p.EnsureLabels(ctx, repo, labels); err != nil {
+			t.Fatalf("EnsureLabels() error = %v", err)
+		}
+	}
+	if !h.labels[0].Exclusive || !h.scoped[1] {
+		t.Errorf("status/ready = %+v, want exclusive (#2039)", h.labels[0])
+	}
+	if len(h.labels) != 3 || h.patches != 1 {
+		t.Errorf("labels = %v, patches = %d; want the missing label created and one edit", h.labels, h.patches)
+	}
+}
+
 func TestIssues(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()
@@ -461,7 +505,7 @@ func TestEnsureLabelsConcurrently(t *testing.T) {
 		var body giteaLabelOption
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
-		l := giteaLabel{ID: int64(len(labels) + 1), Name: body.Name}
+		l := giteaLabel{ID: int64(len(labels) + 1), Name: body.Name, Exclusive: body.Exclusive}
 		labels = append(labels, l)
 		mu.Unlock()
 		w.WriteHeader(http.StatusCreated)

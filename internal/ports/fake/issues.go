@@ -40,11 +40,15 @@ type Review struct {
 type issueStore struct {
 	issues     map[string][]*Issue // owner/name, by number - 1
 	labels     map[string][]string // owner/name
+	exclusive  map[string]bool     // owner/name label, for the labels that are exclusive
 	milestones map[string][]string // owner/name, titles by ID - 1
 	reviews    map[string][]Review // owner/name#number
 	// late makes CreateIssue file the issue but answer only once the caller has
 	// given up, as a host under load does.
 	late bool
+	// migrated are the owner/names whose labels stay as a migration left them:
+	// EnsureLabels does not make their exclusive match.
+	migrated map[string]bool
 	// listErrs makes ListIssues of an owner/name fail.
 	listErrs map[string]error
 	// depErrs makes AddIssueDependency on an issue of an owner/name fail.
@@ -65,6 +69,18 @@ func (g *Git) BlockOnClose(owner, name string, number int, ref string) {
 		s.closeBlockers = map[string]string{}
 	}
 	s.closeBlockers[fmt.Sprintf("%s/%s#%d", owner, name, number)] = ref
+}
+
+// KeepLabelsAsMigrated makes the labels of owner/name non-exclusive, as Gitea's
+// migration from GitHub leaves them, and EnsureLabels leave them so from now on.
+func (g *Git) KeepLabelsAsMigrated(owner, name string) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	s := g.s.issueState()
+	if s.migrated == nil {
+		s.migrated = map[string]bool{}
+	}
+	s.migrated[owner+"/"+name] = true
 }
 
 // FailDependencies makes adding a dependency to an issue of owner/name fail
@@ -94,6 +110,7 @@ func (g *Git) FailListIssues(owner, name string, err error) {
 func (s *state) issueState() *issueStore {
 	if s.issues == nil {
 		s.issues = &issueStore{issues: map[string][]*Issue{}, labels: map[string][]string{},
+			exclusive:  map[string]bool{},
 			milestones: map[string][]string{}, reviews: map[string][]Review{}}
 	}
 	return s.issues
@@ -187,6 +204,8 @@ func (g *Git) ReviewPullRequest(_ context.Context, repo ports.Repository, number
 	return nil
 }
 
+// EnsureLabels creates the missing labels and makes the existing ones' exclusive
+// flag match, as the port promises.
 func (g *Git) EnsureLabels(_ context.Context, repo ports.Repository, labels []ports.Label) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
@@ -195,6 +214,9 @@ func (g *Git) EnsureLabels(_ context.Context, repo ports.Repository, labels []po
 	for _, l := range labels {
 		if !slices.Contains(s.labels[key], l.Name) {
 			s.labels[key] = append(s.labels[key], l.Name)
+		}
+		if !s.migrated[key] {
+			s.exclusive[key+" "+l.Name] = l.Exclusive
 		}
 	}
 	return nil
@@ -323,7 +345,8 @@ func (g *Git) openBlockers(repo ports.Repository, i *Issue) []string {
 	return out
 }
 
-// AddIssueLabel emulates Gitea's exclusive scoped labels for the "status/" scope.
+// AddIssueLabel emulates Gitea's exclusive scoped labels: an exclusive label
+// replaces the issue's other labels of its scope.
 func (g *Git) AddIssueLabel(_ context.Context, repo ports.Repository, number int, label string) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
@@ -335,8 +358,9 @@ func (g *Git) AddIssueLabel(_ context.Context, repo ports.Repository, number int
 		return fmt.Errorf("no label %s", label)
 	}
 	scope, _, _ := strings.Cut(label, "/")
+	exclusive := g.s.issueState().exclusive[repo.Owner+"/"+repo.Name+" "+label]
 	i.Labels = slices.DeleteFunc(i.Labels, func(l string) bool {
-		return l == label || scope == "status" && strings.HasPrefix(l, "status/")
+		return l == label || exclusive && strings.HasPrefix(l, scope+"/")
 	})
 	i.Labels = append(i.Labels, label)
 	return nil

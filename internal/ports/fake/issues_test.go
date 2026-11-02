@@ -19,8 +19,8 @@ func TestIssuesHandOutACopyOfTheLabels(t *testing.T) {
 	provider := git
 	repo := ports.Repository{Owner: "tools", Name: "cel-lens"}
 	ctx := context.Background()
-	if err := provider.EnsureLabels(ctx, repo, []ports.Label{{Name: model.LabelReady},
-		{Name: model.LabelInProgress}, {Name: model.LabelBug}}); err != nil {
+	if err := provider.EnsureLabels(ctx, repo, []ports.Label{{Name: model.LabelReady, Exclusive: true},
+		{Name: model.LabelInProgress, Exclusive: true}, {Name: model.LabelBug}}); err != nil {
 		t.Fatal(err)
 	}
 	n := git.AddIssue(repo.Owner, repo.Name, "The hover shows the rule", "", []string{model.LabelReady, model.LabelBug})
