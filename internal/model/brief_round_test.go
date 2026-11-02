@@ -64,6 +64,26 @@ func TestBriefPausedMessage(t *testing.T) {
 	}
 }
 
+func TestRunsPausedMessage(t *testing.T) {
+	many := make([]string, 21)
+	for i := range many {
+		many[i] = fmt.Sprintf("t%d", i)
+	}
+	for _, tc := range []struct {
+		stopping []string
+		want     string
+	}{
+		{nil, "Paused, runs too; every run stopped"},
+		{[]string{"cel-lens-plan-2"}, "Paused, runs too; 1 Task still stopping: cel-lens-plan-2"},
+		{[]string{"cli-1", "cli-2"}, "Paused, runs too; 2 Tasks still stopping: cli-1, cli-2"},
+		{many, "Paused, runs too; 21 Tasks still stopping: " + strings.Join(many[:20], ", ") + " and 1 more"},
+	} {
+		if got := RunsPausedMessage(tc.stopping); got != tc.want {
+			t.Errorf("RunsPausedMessage(%v) = %q, want %q", tc.stopping, got, tc.want)
+		}
+	}
+}
+
 func TestBriefPhaseOf(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

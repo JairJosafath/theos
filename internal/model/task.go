@@ -90,6 +90,11 @@ type RunResult struct {
 	SessionHandoffs []int64
 	// Role is the sandbox's role as c4agent reported it: implement, review or plan.
 	Role string
+	// Paused means the run stopped because the factory asked it to (its
+	// sandbox's pause annotation) and saved a checkpoint; PauseReason is the
+	// annotation's value.
+	Paused      bool
+	PauseReason string
 }
 
 // FollowUp is work a reviewer suggests for later, outside the change it reviewed:
@@ -171,6 +176,10 @@ type RunState struct {
 	Suspended    bool
 	SuspendedAt  time.Time
 	SuspendedFor time.Duration
+	// Paused means the sandbox is suspended because its run paused when the
+	// factory asked: it resumes in place once the pause ends, with no resume
+	// counted.
+	Paused bool
 }
 
 // Cost is what a run adds to its Task's cost: what its agent reported, or one
@@ -264,16 +273,18 @@ func AfterInterruption(run RunState, resumes, reruns int) Interruption {
 // pod to go before it resumes. Agent Sandbox deletes the pod at once, and
 // c4agent has its grace period to save the run; a pod still there long after
 // (kept, or stuck terminating on a lost node) would hold the Task forever, as
-// the operator deletes no pods.
+// the operator deletes no pods. Once the pod is gone the bound is over: a run
+// whose resume waits, for the end of a pause or a raised cost cap, waits as
+// long as that takes (step 12 of docs/plans/self-hosting.md).
 const MaxSuspendWait = 10 * time.Minute
 
 // settleSuspended is a suspended run that can no longer resume, because its
 // sandbox expired (it has no Checkpoint any more) or its old pod did not go
 // within MaxSuspendWait, as an interrupted run without a checkpoint: it is
 // rerun, as a run in a sandbox without the volume is. Any other run is as it
-// is.
+// is, a paused one whose pod is gone included, however long it waits.
 func settleSuspended(run RunState) RunState {
-	if !run.Suspended || run.Checkpoint && run.SuspendedFor <= MaxSuspendWait {
+	if !run.Suspended || run.Checkpoint && (run.Pod == "" || run.SuspendedFor <= MaxSuspendWait) {
 		return run
 	}
 	reason := fmt.Sprintf("its pod did not go within %s of the suspend", MaxSuspendWait)
@@ -369,6 +380,9 @@ type TaskFacts struct {
 	// dollar, and BudgetMilliUSD its Crew's cap on it; zero means no cap.
 	CostMilliUSD   int64
 	BudgetMilliUSD int64
+	// Pause is why the factory pauses the Task's runs (its Crew's or, for a
+	// Plan Task, its Brief's spec.pauseRuns); empty while it doesn't.
+	Pause string
 	// Unmergeable means the Git host doesn't say the pull request merges. It is
 	// no conflict by itself: the host says so too while it tests the pull
 	// request against a main that just moved. Only merging main into the
@@ -597,6 +611,11 @@ const MaxChecksReruns = 2
 // its runs cost at least taskBudgetUSD, so it starts no further run until
 // the cap is raised.
 const ReasonOverBudget = "OverBudget"
+
+// ReasonPaused is the reason of a Task whose runs the factory paused (its
+// Crew's or Brief's spec.pauseRuns): it starts and resumes no agent run until
+// the pause ends.
+const ReasonPaused = "Paused"
 
 // ReasonApprovalRanOut is the reason of a Task whose approved Standard change
 // was reviewed again maxReviewAgains times in a round and whose approval ran
@@ -1048,6 +1067,11 @@ const (
 	// current Agent and the run's remaining time: c4agent goes on from the
 	// checkpoint.
 	ActionResumeRun TaskAction = "ResumeRun"
+	// ActionPauseRun counts what a run that paused at the factory's ask cost
+	// so far and suspends its sandbox, which keeps the checkpoint: the run
+	// resumes in place once the pause ends, with no round, rerun or resume
+	// spent.
+	ActionPauseRun TaskAction = "PauseRun"
 	// ActionReviewAgain checks and reviews an approved Standard change again, in
 	// the same round, as the review run whose approval its gated merge needs
 	// ended while CI ran again: no try and no round is spent.
@@ -1080,8 +1104,49 @@ type TaskStep struct {
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
 	// Reason is a failed Task's reason, when not ReasonFailed, or a waiting
-	// one's when it is not a plain wait (ReasonOverBudget, ReasonBaseRed).
+	// one's when it is not a plain wait (ReasonOverBudget, ReasonBaseRed,
+	// ReasonPaused).
 	Reason string
+	// Pause is where the Task is in a pause of its runs; PauseNone when the
+	// factory doesn't pause them.
+	Pause PauseState
+}
+
+// PauseState is where a Task is in a pause of its runs (its Crew's or Brief's
+// spec.pauseRuns, step 12 of docs/plans/self-hosting.md).
+type PauseState string
+
+// Pause states: no pause; the pause is asked and the Task's agent still runs
+// toward its next tool boundary (or, in a sandbox without the checkpoint
+// volume, to its end); no agent of the Task runs.
+const (
+	PauseNone    PauseState = ""
+	PausePausing PauseState = "Pausing"
+	PausePaused  PauseState = "Paused"
+)
+
+// PauseRequest is the pause annotation the sandbox of a Task's working run
+// carries: the pause's reason while the factory pauses the runs and the
+// sandbox has the checkpoint volume, empty otherwise. A run that can't save a
+// checkpoint isn't asked: it runs to its end, as a paused Crew's runs did
+// before pauseRuns.
+func PauseRequest(f TaskFacts) string {
+	if !f.Run.Checkpoint {
+		return ""
+	}
+	return f.Pause
+}
+
+// pauseState is where a step leaves the Task in a pause of its runs: an
+// agent still working is Pausing, and every other step runs no agent.
+func pauseState(f TaskFacts, step TaskStep) PauseState {
+	switch {
+	case f.Pause == "":
+		return PauseNone
+	case f.Run.Started && !f.Run.Done && !f.Run.Suspended && step.Action == ActionWait:
+		return PausePausing
+	}
+	return PausePaused
 }
 
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
@@ -1090,9 +1155,15 @@ func NextTaskStep(f TaskFacts) TaskStep {
 	f.Run = settleSuspended(f.Run)
 	step := nextTaskStep(f)
 	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
+	if f.Pause != "" && (starts || step.Action == ActionResumeRun) {
+		// A pause of the runs starts no agent and resumes none, for any reason.
+		return TaskStep{Action: ActionWait, Reason: ReasonPaused, Pause: PausePaused, Message: fmt.Sprintf(
+			"Paused by the factory (%s); no agent runs until the pause ends", f.Pause)}
+	}
+	step.Pause = pauseState(f, step)
 	// A resumed run spends like a new one: what the run cost so far counts.
 	if (starts || step.Action == ActionResumeRun) && f.BudgetMilliUSD > 0 && f.CostMilliUSD >= f.BudgetMilliUSD {
-		return TaskStep{Action: ActionWait, Reason: ReasonOverBudget, Message: fmt.Sprintf(
+		return TaskStep{Action: ActionWait, Reason: ReasonOverBudget, Pause: step.Pause, Message: fmt.Sprintf(
 			"The Task's runs cost $%.2f, at its Crew's cap of $%d; raise the Crew's taskBudgetUSD to go on",
 			float64(f.CostMilliUSD)/1000, f.BudgetMilliUSD/1000)}
 	}
@@ -1357,7 +1428,9 @@ func implementingStep(f TaskFacts) TaskStep {
 	case f.Run.Suspended:
 		return suspendedStep(f)
 	case !f.Run.Done:
-		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
+		return workingStep(f, fmt.Sprintf("The agent is working on round %d", f.Round))
+	case f.Run.Result != nil && f.Run.Result.Paused:
+		return pausedRunStep(f)
 	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
 		return interruptedStep(f)
 	case f.Run.Result == nil:
@@ -1387,7 +1460,9 @@ func reviewingStep(f TaskFacts) TaskStep {
 	case f.Run.Suspended:
 		return suspendedStep(f)
 	case !f.Run.Done:
-		return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
+		return workingStep(f, "The reviewer is reviewing")
+	case f.Run.Result != nil && f.Run.Result.Paused:
+		return pausedRunStep(f)
 	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
 		return interruptedStep(f)
 	case f.Run.Result != nil && f.Run.Result.Unavailable:
@@ -1597,12 +1672,51 @@ func interruptedStep(f TaskFacts) TaskStep {
 		gist(orUnknown(reason)), f.Round, f.Reruns+1, MaxReruns)}
 }
 
+// workingStep waits for a working agent, which the factory asked to pause
+// when it pauses the runs (PauseRequest).
+func workingStep(f TaskFacts, working string) TaskStep {
+	switch {
+	case f.Pause == "":
+		return TaskStep{Action: ActionWait, Message: working}
+	case PauseRequest(f) == "":
+		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("%s; it runs to its end, as its sandbox "+
+			"has no checkpoint to pause to (%s)", working, f.Pause)}
+	}
+	return TaskStep{Action: ActionWait, Message: fmt.Sprintf("%s; it pauses at its next tool boundary (%s)",
+		working, f.Pause)}
+}
+
+// pausedRunStep suspends the sandbox of a run that paused at the factory's
+// ask, with no round, rerun or resume spent. One whose checkpoint is gone
+// with its sandbox's expiry can't resume: its step runs again, as an
+// interrupted one's does.
+func pausedRunStep(f TaskFacts) TaskStep {
+	reason := orUnknown(f.Run.Result.PauseReason)
+	if !f.Run.Checkpoint {
+		return TaskStep{Action: ActionRerun, Message: fmt.Sprintf(
+			"The run paused (%s), but its sandbox has no checkpoint any more; round %d runs again (rerun %d of %d)",
+			reason, f.Round, f.Reruns+1, MaxReruns)}
+	}
+	return TaskStep{Action: ActionPauseRun, Message: fmt.Sprintf(
+		"The run of round %d paused (%s) and saved its checkpoint; it resumes in place when the pause ends",
+		f.Round, reason)}
+}
+
 // suspendedStep waits for a suspended sandbox's pod to go, then resumes it.
 func suspendedStep(f TaskFacts) TaskStep {
+	what := "interrupted"
+	if f.Run.Paused {
+		what = "paused"
+	}
 	if f.Run.Pod != "" {
 		// Nothing tells the Task when MaxSuspendWait is up: it looks again.
 		return TaskStep{Action: ActionWait, Recheck: true, Message: fmt.Sprintf(
-			"The interrupted run of round %d waits for its pod to go before it resumes", f.Round)}
+			"The %s run of round %d waits for its pod to go before it resumes", what, f.Round)}
+	}
+	if f.Run.Paused {
+		// A pause's resume counts against no cap.
+		return TaskStep{Action: ActionResumeRun, Message: fmt.Sprintf(
+			"Resuming the paused run of round %d in place", f.Round)}
 	}
 	return TaskStep{Action: ActionResumeRun, Message: fmt.Sprintf(
 		"Resuming the interrupted run of round %d in place (resume %d of %d)", f.Round, f.Resumes, MaxResumes)}

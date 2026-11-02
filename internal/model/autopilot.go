@@ -346,6 +346,10 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for an agent slot.", t.Name, waited),
 			"Give the factory more agent slots, or stop a Crew so fewer Tasks wait.",
 			"Every slot was taken for longer than a slot is.")
+	case t.Reason == ReasonPaused:
+		// A person paused its runs; only a person resumes them, so no window.
+		return &Healing{AttentionTask, t.Name, "Its runs are paused; it goes on when they resume.",
+			time.Time{}}, nil
 	}
 	stuck, ok := StuckAfter[t.Stage]
 	if !ok {
