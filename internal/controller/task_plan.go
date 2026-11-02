@@ -156,7 +156,7 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1beta1.Task, st
 		return r.startPlan(ctx, task, status, brief, agent, round, step.Message)
 
 	case model.ActionRerun, model.ActionRerunPaused, model.ActionAgentUnavailable, model.ActionSuspendRun,
-		model.ActionPauseRun:
+		model.ActionPauseRun, model.ActionSuspendForAgent:
 		// None touches the Container, which a Plan Task doesn't have.
 		return r.apply(ctx, task, status, nil, taskAgents{implementer: agent, reviewer: agent}, step)
 

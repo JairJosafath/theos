@@ -112,7 +112,7 @@ func TestPausedRunSuspendsAndResumes(t *testing.T) {
 	if step.Action != model.ActionPauseRun {
 		t.Fatalf("NextTaskStep() = %+v, want PauseRun", step)
 	}
-	if err := r.suspendRun(ctx, task, status, step, true); err != nil {
+	if err := r.suspendRun(ctx, task, status, step, suspendPaused); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.dropEndedRuns(withEndedRuns(ctx), task); err != nil {
@@ -146,7 +146,7 @@ func TestSuspendSandboxMarksAPausedRun(t *testing.T) {
 		return got
 	}
 
-	if err := r.suspendSandbox(ctx, "apps", name, reason); err != nil {
+	if err := r.suspendSandbox(ctx, "apps", name, suspension{pause: reason}); err != nil {
 		t.Fatal(err)
 	}
 	got := get()
@@ -183,7 +183,7 @@ func TestSuspendSandboxMarksAPausedRun(t *testing.T) {
 	_ = unstructured.SetNestedField(other.Object, "2026-11-02T11:00:00Z", "spec", "shutdownTime")
 	c = fake.NewClientBuilder().WithScheme(checkpointScheme(t)).WithObjects(other, otherPod).Build()
 	r.Client = c
-	if err := r.suspendSandbox(ctx, "apps", other.GetName(), ""); err != nil {
+	if err := r.suspendSandbox(ctx, "apps", other.GetName(), suspension{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(other), other); err != nil {
