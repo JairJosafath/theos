@@ -270,6 +270,10 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 	cp.SessionID = id
 	cp.Note = endedNote(ctx, r.dir, "The previous session was stopped with its sandbox, before it could write a note.",
 		lastText)
+	if id == "" && prog.from != nil {
+		// No session ran in this pod: the stopped one is still the earlier pod's.
+		cp.SessionID, cp.Note = prog.from.SessionID, prog.from.Note
+	}
 
 	tip := cp.Head
 	if cp.Work != "" {

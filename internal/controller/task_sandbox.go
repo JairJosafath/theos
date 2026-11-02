@@ -425,21 +425,13 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 	}
 	state.Started = true
 	expired, missed := sandboxExpiry(sandbox)
-	// An expired sandbox is not resumed: Agent Sandbox is done with it.
-	state.Checkpoint = hasCheckpoint(sandbox) && !expired
+	state.Checkpoint = resumable(sandbox, expired)
+	if sandboxSuspended(sandbox) {
+		return suspendedState(ctx, c, sandbox, state)
+	}
 
 	var pod corev1.Pod
 	err = c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &pod)
-	if sandboxSuspended(sandbox) {
-		// Suspended to resume: the run waits for its pod to go.
-		state.Suspended = true
-		if err == nil && metav1.IsControlledBy(&pod, sandbox) {
-			state.Pod = string(pod.UID)
-		} else if err != nil && !apierrors.IsNotFound(err) {
-			return state, err
-		}
-		return state, nil
-	}
 	if apierrors.IsNotFound(err) {
 		switch {
 		case missed:

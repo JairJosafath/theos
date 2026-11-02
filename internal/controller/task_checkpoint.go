@@ -54,6 +54,9 @@ const (
 	operatingModeSuspended = "Suspended"
 )
 
+// fieldSpec is a Sandbox's spec, in its unstructured form.
+const fieldSpec = "spec"
+
 // annotationRanSeconds on a Sandbox is how long its run ran, in seconds, on
 // the pods before the current one: a resumed run gets what is left of its
 // timeout.
@@ -64,7 +67,7 @@ const annotationRanSeconds = "c4.factory.io/ran-seconds"
 func checkpointClaims() []any {
 	return []any{map[string]any{
 		"metadata": map[string]any{"name": checkpointVolume},
-		"spec": map[string]any{
+		fieldSpec: map[string]any{
 			"accessModes": []any{string(corev1.ReadWriteOnce)},
 			"resources":   map[string]any{"requests": map[string]any{"storage": checkpointSize}},
 		},
@@ -74,7 +77,7 @@ func checkpointClaims() []any {
 // hasCheckpoint reports whether the sandbox has the checkpoint volume; one
 // made before checkpoints has none, and the field is immutable.
 func hasCheckpoint(sandbox *unstructured.Unstructured) bool {
-	claims, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "volumeClaimTemplates")
+	claims, _, _ := unstructured.NestedSlice(sandbox.Object, fieldSpec, "volumeClaimTemplates")
 	for _, c := range claims {
 		claim, ok := c.(map[string]any)
 		if !ok {
@@ -89,7 +92,7 @@ func hasCheckpoint(sandbox *unstructured.Unstructured) bool {
 
 // sandboxSuspended reports whether the sandbox's operatingMode is Suspended.
 func sandboxSuspended(sandbox *unstructured.Unstructured) bool {
-	mode, _, _ := unstructured.NestedString(sandbox.Object, "spec", "operatingMode")
+	mode, _, _ := unstructured.NestedString(sandbox.Object, fieldSpec, "operatingMode")
 	return mode == operatingModeSuspended
 }
 
@@ -100,6 +103,50 @@ func ranBefore(sandbox *unstructured.Unstructured) time.Duration {
 		return 0
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// applyInterrupted ends an interrupted run and runs its step again, or
+// suspends its sandbox to resume it in place, or resumes a suspended one.
+func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.Task,
+	status *c4v1beta1.TaskStatus, container *c4v1beta1.Container, agents taskAgents,
+	step model.TaskStep) (ctrl.Result, error) {
+	switch step.Action {
+	case model.ActionSuspendRun:
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step) // the status write triggers the next step
+	case model.ActionResumeRun:
+		return r.resumeRun(ctx, task, status, container, agents, step)
+	}
+	if err := r.endRun(ctx, task, status); err != nil {
+		return ctrl.Result{}, err
+	}
+	setProgress(status, model.Rerun(progressOf(status)))
+	r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
+	logf.FromContext(ctx).Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
+	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// resumable reports whether an interrupted run in the sandbox can resume in
+// place: it has the checkpoint volume, and has not expired, which leaves
+// Agent Sandbox done with it.
+func resumable(sandbox *unstructured.Unstructured, expired bool) bool {
+	return hasCheckpoint(sandbox) && !expired
+}
+
+// suspendedState is the state of a suspended sandbox's run: it waits for
+// the old pod to go.
+func suspendedState(ctx context.Context, c client.Client, sandbox *unstructured.Unstructured,
+	state model.RunState) (model.RunState, error) {
+	state.Suspended = true
+	var pod corev1.Pod
+	err := c.Get(ctx, client.ObjectKey{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName()}, &pod)
+	switch {
+	case apierrors.IsNotFound(err):
+	case err != nil:
+		return state, err
+	case metav1.IsControlledBy(&pod, sandbox):
+		state.Pod = string(pod.UID)
+	}
+	return state, nil
 }
 
 // suspendRun counts what the interrupted run cost and the resume, and
@@ -142,7 +189,7 @@ func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name string) er
 	}
 	annotations[annotationRanSeconds] = strconv.FormatInt(int64((ranBefore(sandbox) + ran).Seconds()), 10)
 	sandbox.SetAnnotations(annotations)
-	if err := unstructured.SetNestedField(sandbox.Object, operatingModeSuspended, "spec", "operatingMode"); err != nil {
+	if err := unstructured.SetNestedField(sandbox.Object, operatingModeSuspended, fieldSpec, "operatingMode"); err != nil {
 		return err
 	}
 	// A merge patch, not an update: the resume is counted already, and a
@@ -200,12 +247,12 @@ func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, s
 	if err := r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: status.Sandbox}, sandbox); err != nil {
 		return err
 	}
-	template, _, err := unstructured.NestedMap(fresh.Object, "spec", "podTemplate")
+	template, _, err := unstructured.NestedMap(fresh.Object, fieldSpec, "podTemplate")
 	if err != nil {
 		return err
 	}
 	deadline := model.ResumeDeadline(runTimeout(agent), ranBefore(sandbox))
-	if err := unstructured.SetNestedField(template, int64(deadline.Seconds()), "spec", "activeDeadlineSeconds"); err != nil {
+	if err := unstructured.SetNestedField(template, int64(deadline.Seconds()), fieldSpec, "activeDeadlineSeconds"); err != nil {
 		return err
 	}
 	status.SandboxPod, status.AgentBackAt = "", nil
@@ -239,9 +286,9 @@ func (r *TaskReconciler) resumeSandbox(ctx context.Context, ns, name string, res
 		value any
 		path  []string
 	}{
-		{resume.podTemplate, []string{"spec", "podTemplate"}},
-		{shutdown, []string{"spec", "shutdownTime"}},
-		{operatingModeRunning, []string{"spec", "operatingMode"}},
+		{resume.podTemplate, []string{fieldSpec, "podTemplate"}},
+		{shutdown, []string{fieldSpec, "shutdownTime"}},
+		{operatingModeRunning, []string{fieldSpec, "operatingMode"}},
 	} {
 		if err := unstructured.SetNestedField(sandbox.Object, field.value, field.path...); err != nil {
 			return err
