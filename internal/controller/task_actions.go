@@ -366,7 +366,8 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 		repoURL: repo.CloneURL, gitSecret: in.gitSecret, context: story.Text(), goal: in.goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: in.protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
-		workspaceMemory: r.WorkspaceMemory, goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		workspaceMemory: r.WorkspaceMemory, checkpointClass: r.CheckpointClass,
+		goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
 		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
 		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
@@ -772,7 +773,7 @@ type endedRun struct {
 }
 
 // recordRun adds what the current run cost to the Task's, records the run,
-// and takes its sandbox out of status; dropRun then deletes it. An empty
+// unless suspendRun did, and takes its sandbox out of status; dropRun then deletes it. An empty
 // sandbox means no run was current.
 func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	status *c4v1beta1.TaskStatus) (endedRun, error) {
@@ -783,9 +784,13 @@ func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	if err != nil {
 		return endedRun{}, err
 	}
-	r.countRun(status, run)
+	// A run suspendRun counted, its sandbox suspended or its suspend failed,
+	// is not counted again.
+	if !runCounted(status, run) {
+		r.countRun(status, run)
+	}
 	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
-	status.Sandbox, status.SandboxPod = "", ""
+	status.Sandbox, status.SandboxPod, status.CountedPod = "", "", ""
 	return ended, nil
 }
 

@@ -127,7 +127,7 @@ func (r *TaskReconciler) planFacts(ctx context.Context, task *c4v1beta1.Task, st
 		if name == status.Sandbox && startedOn == "" {
 			status.SandboxPod = run.Pod // the pod the run started on
 		}
-		facts.Run = run
+		facts.Run = r.withSuspendedFor(run)
 	}
 	return facts, nil
 }
@@ -258,8 +258,8 @@ func (r *TaskReconciler) planSandbox(ctx context.Context, task *c4v1beta1.Task, 
 	sandbox, err := buildSandbox(sandboxRun{
 		task: task, status: run, agent: agent, name: name, role: model.RolePlanner,
 		repoURL: repo.CloneURL, gitSecret: gitSecret, goal: task.Spec.Goal, maxRounds: agent.Spec.MaxRounds,
-		brief: brief.Name, briefRound: round, workspaceMemory: r.WorkspaceMemory, pullSecrets: r.SharedPullSecrets,
-		modelProxyURL: r.sandboxModelProxy(agent),
+		brief: brief.Name, briefRound: round, workspaceMemory: r.WorkspaceMemory, checkpointClass: r.CheckpointClass,
+		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
 	}, r.Scheme, r.now())
 	return sandbox, ctrl.Result{}, err
 }

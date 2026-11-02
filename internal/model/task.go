@@ -166,7 +166,11 @@ type RunState struct {
 	Checkpoint bool
 	// Suspended means the operator suspended the sandbox to resume its run:
 	// its pod goes, its volume stays. Pod is the old pod until it is gone.
-	Suspended bool
+	// SuspendedAt is when, if the operator knows, and SuspendedFor how long
+	// ago.
+	Suspended    bool
+	SuspendedAt  time.Time
+	SuspendedFor time.Duration
 }
 
 // Cost is what a run adds to its Task's cost: what its agent reported, or one
@@ -254,6 +258,31 @@ func AfterInterruption(run RunState, resumes, reruns int) Interruption {
 		return InterruptionRerun
 	}
 	return InterruptionNone
+}
+
+// MaxSuspendWait bounds how long a suspended sandbox's run waits for its old
+// pod to go before it resumes. Agent Sandbox deletes the pod at once, and
+// c4agent has its grace period to save the run; a pod still there long after
+// (kept, or stuck terminating on a lost node) would hold the Task forever, as
+// the operator deletes no pods.
+const MaxSuspendWait = 10 * time.Minute
+
+// settleSuspended is a suspended run that can no longer resume, because its
+// sandbox expired (it has no Checkpoint any more) or its old pod did not go
+// within MaxSuspendWait, as an interrupted run without a checkpoint: it is
+// rerun, as a run in a sandbox without the volume is. Any other run is as it
+// is.
+func settleSuspended(run RunState) RunState {
+	if !run.Suspended || run.Checkpoint && run.SuspendedFor <= MaxSuspendWait {
+		return run
+	}
+	reason := fmt.Sprintf("its pod did not go within %s of the suspend", MaxSuspendWait)
+	if !run.Checkpoint {
+		reason = "its sandbox reached its shutdown time"
+	}
+	run.Suspended, run.Checkpoint, run.Done, run.Interrupted = false, false, true, true
+	run.Failure = "the suspended run could not resume: " + reason
+	return run
 }
 
 // MinResumeDeadline is the least time a resumed run gets, however long its
@@ -1045,8 +1074,8 @@ type TaskStep struct {
 	// SlotWait means the Task would start a sandbox but waits for a free slot;
 	// only such Tasks queue for one (see HasSlotTurn).
 	SlotWait bool
-	// Recheck means the wait ends on the Git host, which sends no event: the
-	// Task looks again after a while.
+	// Recheck means the wait ends on the Git host, or at a time, which send
+	// no event: the Task looks again after a while.
 	Recheck bool
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
@@ -1058,6 +1087,7 @@ type TaskStep struct {
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
 // for a free agent slot.
 func NextTaskStep(f TaskFacts) TaskStep {
+	f.Run = settleSuspended(f.Run)
 	step := nextTaskStep(f)
 	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
 	// A resumed run spends like a new one: what the run cost so far counts.
@@ -1570,7 +1600,8 @@ func interruptedStep(f TaskFacts) TaskStep {
 // suspendedStep waits for a suspended sandbox's pod to go, then resumes it.
 func suspendedStep(f TaskFacts) TaskStep {
 	if f.Run.Pod != "" {
-		return TaskStep{Action: ActionWait, Message: fmt.Sprintf(
+		// Nothing tells the Task when MaxSuspendWait is up: it looks again.
+		return TaskStep{Action: ActionWait, Recheck: true, Message: fmt.Sprintf(
 			"The interrupted run of round %d waits for its pod to go before it resumes", f.Round)}
 	}
 	return TaskStep{Action: ActionResumeRun, Message: fmt.Sprintf(

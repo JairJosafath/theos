@@ -62,16 +62,28 @@ const fieldSpec = "spec"
 // timeout.
 const annotationRanSeconds = "c4.factory.io/ran-seconds"
 
+// annotationSuspendedAt on a suspended Sandbox is when the operator suspended
+// it, in RFC 3339: its run waits model.MaxSuspendWait at most for the old pod
+// to go.
+const annotationSuspendedAt = "c4.factory.io/suspended-at"
+
+// NoCheckpointClass, as the checkpoint StorageClass (the operator's
+// --sandbox-checkpoint-storage-class), gives sandboxes no checkpoint volume,
+// for a cluster with no class to provision one: an interrupted run is then
+// rerun, as one in a sandbox made before checkpoints is.
+const NoCheckpointClass = "none"
+
 // checkpointClaims is the sandbox's volumeClaimTemplates: the checkpoint
-// volume, on the cluster's default StorageClass.
-func checkpointClaims() []any {
-	return []any{map[string]any{
-		"metadata": map[string]any{"name": checkpointVolume},
-		fieldSpec: map[string]any{
-			"accessModes": []any{string(corev1.ReadWriteOnce)},
-			"resources":   map[string]any{"requests": map[string]any{"storage": checkpointSize}},
-		},
-	}}
+// volume, of the StorageClass class, the cluster's default when empty.
+func checkpointClaims(class string) []any {
+	spec := map[string]any{
+		"accessModes": []any{string(corev1.ReadWriteOnce)},
+		"resources":   map[string]any{"requests": map[string]any{"storage": checkpointSize}},
+	}
+	if class != "" {
+		spec["storageClassName"] = class
+	}
+	return []any{map[string]any{"metadata": map[string]any{"name": checkpointVolume}, fieldSpec: spec}}
 }
 
 // hasCheckpoint reports whether the sandbox has the checkpoint volume; one
@@ -137,6 +149,7 @@ func resumable(sandbox *unstructured.Unstructured, expired bool) bool {
 func suspendedState(ctx context.Context, c client.Client, sandbox *unstructured.Unstructured,
 	state model.RunState) (model.RunState, error) {
 	state.Suspended = true
+	state.SuspendedAt = parseTime(sandbox.GetAnnotations()[annotationSuspendedAt])
 	var pod corev1.Pod
 	err := c.Get(ctx, client.ObjectKey{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName()}, &pod)
 	switch {
@@ -149,22 +162,55 @@ func suspendedState(ctx context.Context, c client.Client, sandbox *unstructured.
 	return state, nil
 }
 
+// withSuspendedFor adds to a suspended run how long ago its sandbox was
+// suspended.
+func (r *TaskReconciler) withSuspendedFor(run model.RunState) model.RunState {
+	if run.Suspended && !run.SuspendedAt.IsZero() {
+		run.SuspendedFor = r.now().Sub(run.SuspendedAt)
+	}
+	return run
+}
+
 // suspendRun counts what the interrupted run cost and the resume, and
 // suspends its sandbox once the status that counts them is written: a
-// failed write leaves the run to be found and counted again.
+// failed write leaves the run to be found and counted again. A run counted
+// already, whose suspend failed after the write, is only suspended again.
 func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	step model.TaskStep) error {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return err
 	}
-	r.countRun(status, run)
-	setProgress(status, model.SuspendRun(progressOf(status)))
-	r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
+	if !runCounted(status, run) {
+		r.countRun(status, run)
+		status.CountedPod = runPod(status, run)
+		setProgress(status, model.SuspendRun(progressOf(status)))
+		r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
+	}
 	logf.FromContext(ctx).Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
 		"round", status.Round, "resumes", status.Resumes)
 	return r.afterStatusWrite(ctx, task, endedRun{sandbox: status.Sandbox, round: status.Round,
 		result: run.Result, suspend: true})
+}
+
+// runPod is the pod the sandbox's current run started on: the one the
+// operator saw, or the one there now.
+func runPod(status *c4v1beta1.TaskStatus, run model.RunState) string {
+	if status.SandboxPod != "" {
+		return status.SandboxPod
+	}
+	return run.Pod
+}
+
+// runCounted reports whether the sandbox's current run is counted already:
+// its sandbox is suspended, which suspendRun counted, or the pod it started
+// on is the one suspendRun counted before its suspend failed.
+func runCounted(status *c4v1beta1.TaskStatus, run model.RunState) bool {
+	if run.Suspended {
+		return true
+	}
+	pod := runPod(status, run)
+	return pod != "" && pod == status.CountedPod
 }
 
 // suspendSandbox adds the time the run ran on its pod to the sandbox and
@@ -188,6 +234,7 @@ func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name string) er
 		annotations = map[string]string{}
 	}
 	annotations[annotationRanSeconds] = strconv.FormatInt(int64((ranBefore(sandbox) + ran).Seconds()), 10)
+	annotations[annotationSuspendedAt] = r.now().UTC().Format(time.RFC3339)
 	sandbox.SetAnnotations(annotations)
 	if err := unstructured.SetNestedField(sandbox.Object, operatingModeSuspended, fieldSpec, "operatingMode"); err != nil {
 		return err
@@ -282,6 +329,9 @@ func (r *TaskReconciler) resumeSandbox(ctx context.Context, ns, name string, res
 		return nil
 	}
 	shutdown := r.now().Add(resume.deadline + sandboxGrace).UTC().Format(time.RFC3339)
+	annotations := sandbox.GetAnnotations()
+	delete(annotations, annotationSuspendedAt)
+	sandbox.SetAnnotations(annotations)
 	for _, field := range []struct {
 		value any
 		path  []string

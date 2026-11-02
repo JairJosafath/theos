@@ -387,6 +387,12 @@ type TaskStatus struct {
 	// +optional
 	SandboxPod string `json:"sandboxPod,omitempty"`
 
+	// countedPod is the UID of the pod, under the running sandbox, whose
+	// interrupted run's cost and resume are counted already: a suspend that
+	// fails after the count is tried again without counting them twice.
+	// +optional
+	CountedPod string `json:"countedPod,omitempty"`
+
 	// agentBackAt is when to try an unavailable agent again: its service hit a
 	// usage limit, was overloaded or refused the credentials. Waiting costs no round.
 	// +optional

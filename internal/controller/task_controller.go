@@ -99,6 +99,10 @@ type TaskReconciler struct {
 	// WorkspaceMemory, when set, gives each sandbox a workspace in memory of up to
 	// this size instead of on the node's disk.
 	WorkspaceMemory *resource.Quantity
+	// CheckpointClass is the StorageClass of each sandbox's checkpoint volume:
+	// empty is the cluster's default class, NoCheckpointClass none, so an
+	// interrupted run is rerun.
+	CheckpointClass string
 	// SandboxGoCache, when set, is a directory on the node that sandboxes share as
 	// their Go build cache.
 	SandboxGoCache string
@@ -349,7 +353,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		if name == status.Sandbox && startedOn == "" {
 			status.SandboxPod = run.Pod // the pod the run started on
 		}
-		facts.Run = run
+		facts.Run = r.withSuspendedFor(run)
 	}
 
 	if status.Phase == c4v1beta1.TaskChecking && status.Commit != "" {

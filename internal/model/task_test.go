@@ -873,8 +873,27 @@ func TestNextTaskStepResumesFromACheckpoint(t *testing.T) {
 		{"a planner resumes too", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Plan: true,
 			Run: killed}, ActionSuspendRun, "resumes in place"},
 		{"a resume waits at the Crew's cost cap", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
-			Resumes: 1, BudgetMilliUSD: 5000, CostMilliUSD: 5000, Run: RunState{Started: true, Suspended: true}},
+			Resumes: 1, BudgetMilliUSD: 5000, CostMilliUSD: 5000,
+			Run: RunState{Started: true, Suspended: true, Checkpoint: true}},
 			ActionWait, "at its Crew's cap of $5"},
+		{"a suspended sandbox whose pod is still there within the bound waits", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Run: RunState{Started: true, Suspended: true, Checkpoint: true,
+				Pod: "uid-1", SuspendedFor: MaxSuspendWait}}, ActionWait, "waits for its pod to go"},
+		// The review of step 11: a suspended sandbox's pod that never goes, or a
+		// sandbox that expires while suspended, held the Task forever.
+		{"a suspended sandbox whose pod outlasts the bound is rerun", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Run: RunState{Started: true, Suspended: true, Checkpoint: true,
+				Pod: "uid-1", SuspendedFor: MaxSuspendWait + time.Second}}, ActionRerun,
+			"(the suspended run could not resume: its pod did not go within 10m0s of the suspend); round 1 runs again"},
+		{"a suspended sandbox that expired is rerun", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			Resumes: 1, Run: RunState{Started: true, Suspended: true}}, ActionRerun,
+			"its sandbox reached its shutdown time); round 1 runs again (rerun 1 of 2)"},
+		{"a planner's suspended sandbox that expired is rerun", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Plan: true, Resumes: 1, Run: RunState{Started: true, Suspended: true, Pod: "uid-1"}},
+			ActionRerun, "runs again"},
+		{"past the reruns an expired suspended run spends the round", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Reruns: MaxReruns, Run: RunState{Started: true, Suspended: true}},
+			ActionRetry, "could not resume"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

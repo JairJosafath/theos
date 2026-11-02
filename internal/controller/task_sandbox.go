@@ -87,6 +87,9 @@ type sandboxRun struct {
 	resumed bool
 	// workspaceMemory, when set, puts the workspace in memory, up to this size.
 	workspaceMemory *resource.Quantity
+	// checkpointClass is the checkpoint volume's StorageClass: empty is the
+	// cluster's default, NoCheckpointClass no volume.
+	checkpointClass string
 	// goCache, when set, is the directory on the node of the Go build cache the
 	// sandboxes share.
 	goCache string
@@ -173,9 +176,12 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if run.resumed {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvResumed, Value: "true"})
 	}
-	// c4agent saves an interrupted run on the sandbox's checkpoint volume,
-	// and goes on from it in the sandbox's next pod.
-	env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckpointDir, Value: checkpointMount})
+	checkpoint := run.checkpointClass != NoCheckpointClass
+	if checkpoint {
+		// c4agent saves an interrupted run on the sandbox's checkpoint volume,
+		// and goes on from it in the sandbox's next pod.
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckpointDir, Value: checkpointMount})
+	}
 	if related := relatedEnv(run.related); related != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvRelated, Value: related})
 	}
@@ -250,8 +256,10 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	}
 	// Agent Sandbox makes the checkpoint volume from the claim template and
 	// mounts it where the container names it, as a StatefulSet does.
-	mounts := []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"},
-		{Name: checkpointVolume, MountPath: checkpointMount}}
+	mounts := []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace"}}
+	if checkpoint {
+		mounts = append(mounts, corev1.VolumeMount{Name: checkpointVolume, MountPath: checkpointMount})
+	}
 	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}}
 	var initContainers []corev1.Container
 	if run.goCache != "" {
@@ -319,9 +327,11 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			"metadata": map[string]any{"labels": toAnyMap(labels)},
 			"spec":     podMap,
 		},
-		"shutdownTime":         shutdown,
-		"shutdownPolicy":       "Retain",
-		"volumeClaimTemplates": checkpointClaims(),
+		"shutdownTime":   shutdown,
+		"shutdownPolicy": "Retain",
+	}
+	if checkpoint {
+		sandbox.Object["spec"].(map[string]any)["volumeClaimTemplates"] = checkpointClaims(run.checkpointClass)
 	}
 	if err := controllerutil.SetControllerReference(task, sandbox, scheme); err != nil {
 		return nil, err
