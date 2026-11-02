@@ -84,6 +84,7 @@ func main() {
 	var maxAgentSandboxes int
 	var leaseDuration time.Duration
 	var workspaceMemory string
+	var checkpointStorageClass string
 	var sandboxGoCache string
 	var ciGoCache string
 	var goProxy string
@@ -129,6 +130,11 @@ func main() {
 		"When set, such as 3Gi, each agent sandbox's workspace is in memory, up to this size, instead of "+
 			"on the node's disk; it counts against the Agent's memory limit. On a small cluster, checks "+
 			"writing to the disk etcd uses stall the API server.")
+	flag.StringVar(&checkpointStorageClass, "sandbox-checkpoint-storage-class", "",
+		"The StorageClass of each agent sandbox's checkpoint volume, where an interrupted run is saved "+
+			"to resume in place; empty means the cluster's default class. "+controller.NoCheckpointClass+
+			" gives sandboxes no checkpoint volume, for a cluster without a class to provision one: an "+
+			"interrupted run then runs again.")
 	flag.StringVar(&sandboxGoCache, "sandbox-go-cache", "",
 		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
 			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
@@ -427,6 +433,7 @@ func main() {
 		Git:               gitClient{},
 		MaxSandboxes:      maxAgentSandboxes,
 		WorkspaceMemory:   workspaceQuantity,
+		CheckpointClass:   checkpointStorageClass,
 		SandboxGoCache:    sandboxGoCache,
 		SharedPullSecrets: sharedPullSecrets,
 		SharedSecrets:     sharedSecrets,

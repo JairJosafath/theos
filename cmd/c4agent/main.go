@@ -98,8 +98,9 @@ func serveGoProxy(job agentrunner.Job) (func(), error) {
 }
 
 // agentFor picks the agent: the stand-in for the stand-in harness (or when
-// C4AGENT_FAKE is set), else Claude Code with the job's model and session
-// limit, or the command in C4AGENT_COMMAND, whose one session runs to its end.
+// C4AGENT_FAKE is set), else Claude Code with the job's model, session
+// limit and session IDs, or the command in C4AGENT_COMMAND, whose one session
+// runs to its end.
 func agentFor(job agentrunner.Job) agentrunner.Agent {
 	if job.Harness == agentrunner.HarnessStandIn || os.Getenv("C4AGENT_FAKE") != "" {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("C4AGENT_FAKE_CHANGES_FIRST"))
@@ -111,6 +112,8 @@ func agentFor(job agentrunner.Job) agentrunner.Agent {
 		agent.Command = command
 		return agent
 	}
+	// Claude Code's own command takes a --session-id, which a checkpoint records.
+	agent.SessionIDs = true
 	if self, err := os.Executable(); err == nil {
 		agent.SessionTokenLimit, agent.Guard = job.SessionTokenLimit, self
 	} else {

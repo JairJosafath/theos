@@ -247,6 +247,13 @@ type TaskStatus struct {
 	// +optional
 	Reruns int32 `json:"reruns,omitempty"`
 
+	// resumes counts the runs in this round that the infrastructure
+	// interrupted and that resumed in place, from the checkpoint their
+	// sandbox kept, without a rerun or spending the round. Past five, an
+	// interrupted run is rerun.
+	// +optional
+	Resumes int32 `json:"resumes,omitempty"`
+
 	// checksReruns counts the CI runs at this round's commit whose failed jobs
 	// ran again because the machine killed them for lack of memory, without
 	// spending the round.
@@ -379,6 +386,12 @@ type TaskStatus struct {
 	// means the run was interrupted.
 	// +optional
 	SandboxPod string `json:"sandboxPod,omitempty"`
+
+	// countedPod is the UID of the pod, under the running sandbox, whose
+	// interrupted run's cost and resume are counted already: a suspend that
+	// fails after the count is tried again without counting them twice.
+	// +optional
+	CountedPod string `json:"countedPod,omitempty"`
 
 	// agentBackAt is when to try an unavailable agent again: its service hit a
 	// usage limit, was overloaded or refused the credentials. Waiting costs no round.

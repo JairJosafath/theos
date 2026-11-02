@@ -160,6 +160,17 @@ type RunState struct {
 	// restart, an eviction, a preemption, a cluster outage), not the agent: an
 	// out-of-memory kill is the agent's.
 	Interrupted bool
+	// Checkpoint means the sandbox has the checkpoint volume and has not
+	// expired: an interrupted run can resume in place from what c4agent saved
+	// there. A sandbox made before checkpoints has none, and is rerun.
+	Checkpoint bool
+	// Suspended means the operator suspended the sandbox to resume its run:
+	// its pod goes, its volume stays. Pod is the old pod until it is gone.
+	// SuspendedAt is when, if the operator knows, and SuspendedFor how long
+	// ago.
+	Suspended    bool
+	SuspendedAt  time.Time
+	SuspendedFor time.Duration
 }
 
 // Cost is what a run adds to its Task's cost: what its agent reported, or one
@@ -215,6 +226,85 @@ func EndedAtDeadline(deadline, finished time.Time) bool {
 // time, which may be the run's own doing, from looping forever.
 const MaxReruns = 2
 
+// MaxResumes is how often a round's interrupted runs resume in place, from
+// their sandbox's checkpoint, before an interruption is rerun instead
+// (docs/design.md, "A run continues from a checkpoint"). The cap keeps a run
+// whose own doing ends its pod each time from resuming forever.
+const MaxResumes = 5
+
+// Interruption is what an interrupted run gets.
+type Interruption string
+
+// What an interrupted run gets: it resumes in place, it runs again in a new
+// sandbox, or neither, and the round is judged on what it left.
+const (
+	InterruptionResume Interruption = "Resume"
+	InterruptionRerun  Interruption = "Rerun"
+	InterruptionNone   Interruption = ""
+)
+
+// AfterInterruption decides what a run gets, given the resumes and reruns its
+// round had so far: a run the infrastructure interrupted resumes in place
+// when its sandbox has the checkpoint volume, up to MaxResumes times in the
+// round; past that, or without the volume, it runs again, up to MaxReruns
+// times. A run that wasn't interrupted, or one past both caps, gets neither.
+func AfterInterruption(run RunState, resumes, reruns int) Interruption {
+	switch {
+	case !interrupted(run):
+		return InterruptionNone
+	case run.Checkpoint && resumes < MaxResumes:
+		return InterruptionResume
+	case reruns < MaxReruns:
+		return InterruptionRerun
+	}
+	return InterruptionNone
+}
+
+// MaxSuspendWait bounds how long a suspended sandbox's run waits for its old
+// pod to go before it resumes. Agent Sandbox deletes the pod at once, and
+// c4agent has its grace period to save the run; a pod still there long after
+// (kept, or stuck terminating on a lost node) would hold the Task forever, as
+// the operator deletes no pods.
+const MaxSuspendWait = 10 * time.Minute
+
+// settleSuspended is a suspended run that can no longer resume, because its
+// sandbox expired (it has no Checkpoint any more) or its old pod did not go
+// within MaxSuspendWait, as an interrupted run without a checkpoint: it is
+// rerun, as a run in a sandbox without the volume is. Any other run is as it
+// is.
+func settleSuspended(run RunState) RunState {
+	if !run.Suspended || run.Checkpoint && run.SuspendedFor <= MaxSuspendWait {
+		return run
+	}
+	reason := fmt.Sprintf("its pod did not go within %s of the suspend", MaxSuspendWait)
+	if !run.Checkpoint {
+		reason = "its sandbox reached its shutdown time"
+	}
+	run.Suspended, run.Checkpoint, run.Done, run.Interrupted = false, false, true, true
+	run.Failure = "the suspended run could not resume: " + reason
+	return run
+}
+
+// MinResumeDeadline is the least time a resumed run gets, however long its
+// pods ran before: a run that ran out its own time was not interrupted, so
+// what it lacks is the time an outage took.
+const MinResumeDeadline = 10 * time.Minute
+
+// ResumeDeadline is the time a resumed run gets: what its timeout leaves
+// after the time its earlier pods ran, and at least MinResumeDeadline.
+func ResumeDeadline(timeout, ran time.Duration) time.Duration {
+	return max(timeout-ran, MinResumeDeadline)
+}
+
+// PodRunTime is how long a pod's run took, from its start to its end; zero
+// when either is unknown or the end is not after the start.
+func PodRunTime(started, ended time.Time) time.Duration {
+	if started.IsZero() || ended.IsZero() || !ended.After(started) {
+		return 0
+	}
+	return ended.Sub(started)
+}
+
 // TaskFacts is everything the next step of a Task depends on.
 type TaskFacts struct {
 	Phase     string
@@ -251,6 +341,8 @@ type TaskFacts struct {
 	ReviewAgains int
 	// Reruns counts the free reruns of interrupted runs in this round.
 	Reruns int
+	// Resumes counts the interrupted runs in this round that resumed in place.
+	Resumes int
 	// ChecksReruns counts the reruns of CI jobs the runner failed in this
 	// round, killed for lack of memory or abandoned, and
 	// ChecksRerunAt is when the last one was asked for, SinceChecksRerun how long
@@ -949,6 +1041,13 @@ const (
 	// ActionRerun ends a run the infrastructure interrupted and runs the same
 	// step again, in the same round.
 	ActionRerun TaskAction = "Rerun"
+	// ActionSuspendRun counts what an interrupted run cost and suspends its
+	// sandbox, which keeps its checkpoint volume: the run resumes in place.
+	ActionSuspendRun TaskAction = "SuspendRun"
+	// ActionResumeRun resumes a suspended sandbox, its pod gone, with the
+	// current Agent and the run's remaining time: c4agent goes on from the
+	// checkpoint.
+	ActionResumeRun TaskAction = "ResumeRun"
 	// ActionReviewAgain checks and reviews an approved Standard change again, in
 	// the same round, as the review run whose approval its gated merge needs
 	// ended while CI ran again: no try and no round is spent.
@@ -975,8 +1074,8 @@ type TaskStep struct {
 	// SlotWait means the Task would start a sandbox but waits for a free slot;
 	// only such Tasks queue for one (see HasSlotTurn).
 	SlotWait bool
-	// Recheck means the wait ends on the Git host, which sends no event: the
-	// Task looks again after a while.
+	// Recheck means the wait ends on the Git host, or at a time, which send
+	// no event: the Task looks again after a while.
 	Recheck bool
 	// RetryAt is when to try an unavailable agent again; zero means the default delay.
 	RetryAt time.Time
@@ -988,9 +1087,11 @@ type TaskStep struct {
 // NextTaskStep decides what happens next to a Task. Starting a sandbox waits
 // for a free agent slot.
 func NextTaskStep(f TaskFacts) TaskStep {
+	f.Run = settleSuspended(f.Run)
 	step := nextTaskStep(f)
 	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
-	if starts && f.BudgetMilliUSD > 0 && f.CostMilliUSD >= f.BudgetMilliUSD {
+	// A resumed run spends like a new one: what the run cost so far counts.
+	if (starts || step.Action == ActionResumeRun) && f.BudgetMilliUSD > 0 && f.CostMilliUSD >= f.BudgetMilliUSD {
 		return TaskStep{Action: ActionWait, Reason: ReasonOverBudget, Message: fmt.Sprintf(
 			"The Task's runs cost $%.2f, at its Crew's cap of $%d; raise the Crew's taskBudgetUSD to go on",
 			float64(f.CostMilliUSD)/1000, f.BudgetMilliUSD/1000)}
@@ -1253,10 +1354,12 @@ func implementingStep(f TaskFacts) TaskStep {
 	switch {
 	case !f.Run.Started:
 		return TaskStep{Action: ActionStartImplement, Message: fmt.Sprintf("Starting round %d", f.Round)}
+	case f.Run.Suspended:
+		return suspendedStep(f)
 	case !f.Run.Done:
 		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is working on round %d", f.Round)}
-	case interrupted(f.Run) && f.Reruns < MaxReruns:
-		return rerun(f)
+	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
+		return interruptedStep(f)
 	case f.Run.Result == nil:
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
@@ -1281,10 +1384,12 @@ func reviewingStep(f TaskFacts) TaskStep {
 	switch {
 	case !f.Run.Started:
 		return TaskStep{Action: ActionStartReview, Message: "Starting the review"}
+	case f.Run.Suspended:
+		return suspendedStep(f)
 	case !f.Run.Done:
 		return TaskStep{Action: ActionWait, Message: "The reviewer is reviewing"}
-	case interrupted(f.Run) && f.Reruns < MaxReruns:
-		return rerun(f)
+	case AfterInterruption(f.Run, f.Resumes, f.Reruns) != InterruptionNone:
+		return interruptedStep(f)
 	case f.Run.Result != nil && f.Run.Result.Unavailable:
 		return agentUnavailable(f)
 	}
@@ -1475,15 +1580,32 @@ func interrupted(run RunState) bool {
 	return run.Interrupted && (run.Result == nil || run.Result.Error != "" && !run.Result.Unavailable)
 }
 
-// rerun runs the step of an interrupted run again, without spending the round.
-func rerun(f TaskFacts) TaskStep {
+// interruptedStep resumes an interrupted run in place or runs its step
+// again, as AfterInterruption says, without spending the round.
+func interruptedStep(f TaskFacts) TaskStep {
 	reason := f.Run.Failure
 	if f.Run.Result != nil {
 		reason = f.Run.Result.Error
 	}
+	if AfterInterruption(f.Run, f.Resumes, f.Reruns) == InterruptionResume {
+		return TaskStep{Action: ActionSuspendRun, Message: fmt.Sprintf(
+			"The run was interrupted (%s); round %d resumes in place from its checkpoint (resume %d of %d)",
+			gist(orUnknown(reason)), f.Round, f.Resumes+1, MaxResumes)}
+	}
 	return TaskStep{Action: ActionRerun, Message: fmt.Sprintf(
 		"The run was interrupted (%s); round %d runs again (rerun %d of %d)",
 		gist(orUnknown(reason)), f.Round, f.Reruns+1, MaxReruns)}
+}
+
+// suspendedStep waits for a suspended sandbox's pod to go, then resumes it.
+func suspendedStep(f TaskFacts) TaskStep {
+	if f.Run.Pod != "" {
+		// Nothing tells the Task when MaxSuspendWait is up: it looks again.
+		return TaskStep{Action: ActionWait, Recheck: true, Message: fmt.Sprintf(
+			"The interrupted run of round %d waits for its pod to go before it resumes", f.Round)}
+	}
+	return TaskStep{Action: ActionResumeRun, Message: fmt.Sprintf(
+		"Resuming the interrupted run of round %d in place (resume %d of %d)", f.Round, f.Resumes, MaxResumes)}
 }
 
 // roundFailed sends the Task into its next round with feedback, or fails it after

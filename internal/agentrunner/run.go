@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,10 @@ type Result struct {
 	// SessionHandoffs are the sizes, in tokens, at which the run's agent
 	// sessions handed off to fresh ones.
 	SessionHandoffs []int64 `json:"sessionHandoffs,omitempty"`
+	// ResumedFrom is the kind of checkpoint the run went on from, hard or
+	// clean; empty when it started afresh. The cost, tokens and handoffs are
+	// this pod's: the operator counted the earlier pods' when they ended.
+	ResumedFrom string `json:"resumedFrom,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -218,14 +223,28 @@ var stopGrace = 2 * time.Second
 // stop, and the kill of the agent that comes with it is not the agent's failure.
 // So is a run whose Git host stayed unreachable through every retry: a Gitea
 // restart, not the agent, failed it.
+//
+// With a checkpoint directory, a run told to stop saves a hard checkpoint
+// there before it reports, and a run that finds one goes on from it
+// (checkpoint.go).
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
-	meter := &usageMeter{agent: agent}
-	result := run(ctx, job, meter, dir)
+	sessions := &sessionLog{}
+	meter := &usageMeter{agent: withSessionLog(agent, sessions)}
+	prog := &runProgress{}
+	result := run(ctx, job, meter, dir, prog)
 	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
 	result.SessionHandoffs = meter.handoffs
 	if result.Error != "" && !result.Unavailable &&
 		(unreachableHost(result.Error) || stoppedWithin(ctx, stopGrace)) {
 		result.Interrupted = true
+	}
+	if prog.from != nil {
+		result.ResumedFrom = prog.from.Kind
+	}
+	if result.Interrupted && ctx.Err() != nil {
+		if err := saveCheckpoint(job, prog, sessions, result); err != nil {
+			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
+		}
 	}
 	return result
 }
@@ -241,45 +260,60 @@ func stoppedWithin(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func run(ctx context.Context, job Job, agent Agent, dir string) Result {
+func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgress) Result {
 	result := Result{Role: job.Role}
 	r, err := clone(ctx, job, dir)
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
+	prog.repo, prog.step = r, StepAgent
+	if prog.from, err = restoreCheckpoint(ctx, job, r); err != nil {
+		result.Error = err.Error()
+		return result
+	} else if prog.from != nil {
+		prog.step, prog.summary = prog.from.Step, prog.from.Summary
+	}
 	if job.Role == RolePlan {
-		return plan(ctx, job, agent, r, result)
+		return plan(ctx, job, agent, r, prog, result)
 	}
 	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role]), Conflicts: r.conflicts}
 	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {
-		return review(ctx, job, agent, r, ws, result)
+		return review(ctx, job, agent, r, ws, prog, result)
 	}
-	return implement(ctx, job, agent, r, ws, result)
+	return implement(ctx, job, agent, r, ws, prog, result)
 }
 
-func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
+func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, prog *runProgress,
+	result Result) Result {
 	start := r.start
 	check := strings.Join(job.CheckCommand, " ")
 	base := baseCheck{job: job, r: r}
-	summary, err := agent.Run(ctx, r.dir, ImplementPrompt(job, ws))
-	if err != nil {
-		result.Summary = summary
-		return agentFailed(result, err)
-	}
-	if model.BlockedNote(summary) != "" {
-		if summary, err = sendBackBlocked(ctx, job, agent, r.dir, &base, summary); err != nil {
+	var summary string
+	if prog.resumesAt(StepCheck) {
+		// The agent's session had ended: the run goes on at its check.
+		summary = prog.from.Summary
+	} else {
+		var err error
+		if summary, err = agent.Run(ctx, r.dir, prog.prompt(ImplementPrompt(job, ws))); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
 		}
-		if note := model.BlockedNote(summary); note != "" {
-			// The agent can't start the issue and says why: nothing it left is kept.
-			result.Summary, result.Blocked = summary, note
-			return result
+		if model.BlockedNote(summary) != "" {
+			if summary, err = sendBackBlocked(ctx, job, agent, r.dir, &base, summary); err != nil {
+				result.Summary = summary
+				return agentFailed(result, err)
+			}
+			if note := model.BlockedNote(summary); note != "" {
+				// The agent can't start the issue and says why: nothing it left is kept.
+				result.Summary, result.Blocked = summary, note
+				return result
+			}
 		}
 	}
 	result.Summary = summary
+	prog.step, prog.summary = StepCheck, summary
 
 	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, job, agent, r.dir, &base)
 	if err != nil {
@@ -503,7 +537,8 @@ func proposalFits(result Result, head string, p model.Proposal) error {
 	return nil
 }
 
-func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, result Result) Result {
+func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, prog *runProgress,
+	result Result) Result {
 	head, err := r.head(ctx)
 	if err != nil {
 		result.Error = err.Error()
@@ -514,7 +549,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, re
 		result.Error = err.Error()
 		return result
 	}
-	output, err := agent.Run(ctx, r.dir, ReviewPrompt(job, ws))
+	output, err := agent.Run(ctx, r.dir, prog.prompt(ReviewPrompt(job, ws)))
 	if err != nil {
 		return agentFailed(result, err)
 	}

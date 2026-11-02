@@ -272,7 +272,7 @@ on a Standard change), then `Merged` or `Failed`.
   | Reason | What happened | The Task |
   | --- | --- | --- |
   | `AgentUnavailable` | usage limit, overloaded or 5xx model API, rejected credentials | waits, then runs the step again; no round |
-  | `Interrupted` | node shutdown, eviction, pod deleted, Git host unreachable past the runner's retries | runs again in the round, at most twice |
+  | `Interrupted` | node shutdown, eviction, pod deleted, Git host unreachable past the runner's retries | resumes in place from its checkpoint, up to five times a round; then runs again in the round, at most twice |
   | `NoCIResult` | no CI run started in 30 minutes, or none ended in its bound (6 h queued, 3 h 15 running) | fails |
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
@@ -281,6 +281,45 @@ on a Standard change), then `Merged` or `Failed`.
 
   An agent killed for memory or past its deadline fails its own round. A job
   a person cancelled costs the round.
+- **A run continues from a checkpoint.** Each agent sandbox has a 1Gi
+  volume of its own (`volumeClaimTemplates`, `checkpoint`, at `/checkpoint`)
+  that outlives its pod, and a pod grace period of 60 seconds. The volume's
+  StorageClass is a setting (the operator's
+  `--sandbox-checkpoint-storage-class`, the chart's `checkpointStorageClass`):
+  empty is the cluster's default class, and `none` gives sandboxes no volume,
+  for a cluster without a class to provision one; their interrupted runs are
+  rerun. Told to stop, c4agent ends the agent's session, then saves a `hard`
+  checkpoint: the working tree as a git bundle of the commits the remote
+  lacks (uncommitted changes as a commit inside it, never pushed), the
+  session's Claude Code transcript (each session starts
+  with a `--session-id` c4agent records), and `state.json` (format version,
+  the run's step, session ID, handoffs, model, cost and tokens so far,
+  `clean` or `hard`). The workspace stays in memory. When the infrastructure
+  interrupts a run whose sandbox has the volume, the operator counts what the
+  run cost, sets the Sandbox's `operatingMode: Suspended` (Agent Sandbox
+  deletes the pod and keeps the volume) and, once the pod is gone, writes the
+  current Agent's image and env and the run's remaining time (its timeout
+  less what its pods ran, at least ten minutes) into the pod template, clears
+  `status.sandboxPod` and sets it `Running`: a resumed run gets the current
+  runner and fence. The new pod's c4agent restores the
+  bundle after its clone and goes on at the recorded step in a fresh session,
+  told what the stopped one left (the note it writes for a session it ended);
+  an unreadable checkpoint, or one of an unknown version, starts the run over.
+  Its result says `resumedFrom`. A resume costs no round and no rerun, and its
+  cost so far counts toward `taskBudgetUSD`; the Task's `status.resumes`
+  counts them, at most five a round. Past that, and for a Sandbox made before
+  checkpoints (no `checkpoint` claim; the field is immutable), an interrupted
+  run is rerun in a new sandbox as before. So is a suspended run that can't
+  resume: its sandbox reached its shutdown time, or its old pod (kept, or
+  stuck terminating) did not go within ten minutes of the suspend. The
+  operator records the counted pod (`status.countedPod`), so a suspend that
+  fails after the count is tried again without counting the run twice. A
+  pod whose agent container was lost with its node, or that is gone, ran
+  for an unknown time and counts none of it, so each such resume gets the
+  run's full timeout again; `MaxResumes` bounds them. A restore that fails
+  half way puts the clone back as it was cloned before the run starts over.
+  Only `hard` checkpoints are written so far; a `clean` one, saved between
+  turns, will resume the same session with `claude -p --resume`.
 - **Roles get their own model and guide.** An Agent has a `harness` and a
   `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
   read from the base branch so a change can't rewrite its own review. The

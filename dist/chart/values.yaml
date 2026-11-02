@@ -214,6 +214,15 @@ prometheus:
 ##
 goProxy: https://proxy.golang.org
 
+## The StorageClass of each agent sandbox's checkpoint volume (1Gi), where an
+## interrupted run is saved to resume in place (the operator's
+## --sandbox-checkpoint-storage-class). Empty uses the cluster's default
+## class; on a cluster without one the volume never binds and no sandbox pod
+## schedules, so name a class, or set none: sandboxes then get no checkpoint
+## volume, and an interrupted run runs again from the start.
+##
+checkpointStorageClass: ""
+
 ## Where cluster DNS runs: the peers the agent and CI fences let port 53 out
 ## to (the operator's --cluster-dns, and the CI runners' NetworkPolicy). Each
 ## entry is namespace/key=value[,key=value], a namespace and pod labels, or an

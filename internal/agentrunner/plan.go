@@ -15,7 +15,7 @@ const maxPlanSummary = 1000
 
 // plan runs the planner on the brief repository and pushes what it wrote in
 // plan/, and nothing else, to the round's branch.
-func plan(ctx context.Context, job Job, agent Agent, r *repo, result Result) Result {
+func plan(ctx context.Context, job Job, agent Agent, r *repo, prog *runProgress, result Result) Result {
 	guide := r.showBase(ctx, job.Base, model.PlannerGuide)
 	brief := r.showBase(ctx, job.Base, model.BriefFile)
 	for name, data := range map[string]string{model.PlannerGuide: guide, model.BriefFile: brief} {
@@ -24,12 +24,15 @@ func plan(ctx context.Context, job Job, agent Agent, r *repo, result Result) Res
 			return result
 		}
 	}
-	// Earlier rounds' plans stay in the history; this round writes its own.
-	if err := os.RemoveAll(filepath.Join(r.dir, model.PlanDir)); err != nil {
-		result.Error = err.Error()
-		return result
+	// Earlier rounds' plans stay in the history; this round writes its own,
+	// and goes on with what it wrote before a checkpoint.
+	if prog.from == nil {
+		if err := os.RemoveAll(filepath.Join(r.dir, model.PlanDir)); err != nil {
+			result.Error = err.Error()
+			return result
+		}
 	}
-	summary, err := agent.Run(ctx, r.dir, PlanPrompt(job, guide, brief))
+	summary, err := agent.Run(ctx, r.dir, prog.prompt(PlanPrompt(job, guide, brief)))
 	result.Summary = shorten(summary, maxPlanSummary)
 	if err != nil {
 		return agentFailed(result, err)

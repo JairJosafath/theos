@@ -829,6 +829,141 @@ func TestNextTaskStepInterrupted(t *testing.T) {
 	}
 }
 
+// Step 11 of docs/plans/self-hosting.md: an interrupted run whose sandbox has
+// the checkpoint volume resumes in place, up to MaxResumes times in a round,
+// and is rerun past that, as is one whose sandbox was made before checkpoints.
+func TestNextTaskStepResumesFromACheckpoint(t *testing.T) {
+	killed := RunState{Started: true, Done: true, Interrupted: true, Checkpoint: true,
+		Result: &RunResult{Error: "claude failed: signal: killed"}}
+	lost := RunState{Started: true, Done: true, Interrupted: true, Checkpoint: true,
+		Failure: "the sandbox's pod was deleted before it finished"}
+	old := RunState{Started: true, Done: true, Interrupted: true, Failure: "Evicted"}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		message string
+	}{
+		{"an interrupted run with the volume resumes without a rerun", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Run: killed}, ActionSuspendRun,
+			"The run was interrupted (claude failed: signal: killed); round 1 resumes in place from its checkpoint (resume 1 of 5)"},
+		{"so does one whose pod went without a result", TaskFacts{Phase: TaskImplementing, Round: 2,
+			MaxRounds: 3, Run: lost}, ActionSuspendRun, "round 2 resumes in place"},
+		{"so does a reviewer", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Resumes: 2, Run: lost},
+			ActionSuspendRun, "(resume 3 of 5)"},
+		{"the fifth resume in a round still resumes", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Resumes: 4, Run: killed}, ActionSuspendRun, "(resume 5 of 5)"},
+		{"the sixth resume in a round falls back to a rerun", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Resumes: MaxResumes, Run: killed}, ActionRerun, "round 1 runs again (rerun 1 of 2)"},
+		{"past both caps the round is spent", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Resumes: MaxResumes, Reruns: MaxReruns, Run: killed}, ActionRetry, "claude failed: signal: killed"},
+		{"a sandbox made before checkpoints is rerun as before", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: old}, ActionRerun, "(Evicted); round 1 runs again (rerun 1 of 2)"},
+		{"a run that reported its outcome is not resumed", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: RunState{Started: true, Done: true, Interrupted: true, Checkpoint: true,
+				Result: &RunResult{Commit: "abc1234"}}}, ActionOpenPR, ""},
+		{"a suspended sandbox waits for its pod to go", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Resumes: 1, Run: RunState{Started: true, Suspended: true, Checkpoint: true, Pod: "uid-1"}},
+			ActionWait, "waits for its pod to go"},
+		{"then resumes", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Resumes: 1,
+			Run: RunState{Started: true, Suspended: true, Checkpoint: true}}, ActionResumeRun,
+			"Resuming the interrupted run of round 1 in place (resume 1 of 5)"},
+		{"a suspended review resumes too", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Resumes: 1,
+			Run: RunState{Started: true, Suspended: true, Checkpoint: true}}, ActionResumeRun, ""},
+		{"a planner resumes too", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Plan: true,
+			Run: killed}, ActionSuspendRun, "resumes in place"},
+		{"a resume waits at the Crew's cost cap", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Resumes: 1, BudgetMilliUSD: 5000, CostMilliUSD: 5000,
+			Run: RunState{Started: true, Suspended: true, Checkpoint: true}},
+			ActionWait, "at its Crew's cap of $5"},
+		{"a suspended sandbox whose pod is still there within the bound waits", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Run: RunState{Started: true, Suspended: true, Checkpoint: true,
+				Pod: "uid-1", SuspendedFor: MaxSuspendWait}}, ActionWait, "waits for its pod to go"},
+		// The review of step 11: a suspended sandbox's pod that never goes, or a
+		// sandbox that expires while suspended, held the Task forever.
+		{"a suspended sandbox whose pod outlasts the bound is rerun", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Run: RunState{Started: true, Suspended: true, Checkpoint: true,
+				Pod: "uid-1", SuspendedFor: MaxSuspendWait + time.Second}}, ActionRerun,
+			"(the suspended run could not resume: its pod did not go within 10m0s of the suspend); round 1 runs again"},
+		{"a suspended sandbox that expired is rerun", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			Resumes: 1, Run: RunState{Started: true, Suspended: true}}, ActionRerun,
+			"its sandbox reached its shutdown time); round 1 runs again (rerun 1 of 2)"},
+		{"a planner's suspended sandbox that expired is rerun", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Plan: true, Resumes: 1, Run: RunState{Started: true, Suspended: true, Pod: "uid-1"}},
+			ActionRerun, "runs again"},
+		{"past the reruns an expired suspended run spends the round", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Resumes: 1, Reruns: MaxReruns, Run: RunState{Started: true, Suspended: true}},
+			ActionRetry, "could not resume"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s with %q", got, tt.want, tt.message)
+			}
+		})
+	}
+}
+
+func TestAfterInterruption(t *testing.T) {
+	interrupted := RunState{Started: true, Done: true, Interrupted: true, Failure: "Evicted"}
+	withVolume := interrupted
+	withVolume.Checkpoint = true
+	tests := []struct {
+		name            string
+		run             RunState
+		resumes, reruns int
+		want            Interruption
+	}{
+		{"with the volume: resume", withVolume, 0, 0, InterruptionResume},
+		{"a resume costs no rerun", withVolume, 4, 0, InterruptionResume},
+		{"the sixth resume reruns", withVolume, 5, 0, InterruptionRerun},
+		{"the sixth resume past the reruns: neither", withVolume, 5, 2, InterruptionNone},
+		{"without the volume: rerun", interrupted, 0, 0, InterruptionRerun},
+		{"without the volume past the reruns: neither", interrupted, 0, 2, InterruptionNone},
+		{"not interrupted: neither", RunState{Started: true, Done: true, Checkpoint: true,
+			Failure: "OOMKilled"}, 0, 0, InterruptionNone},
+		{"a result stands: neither", RunState{Started: true, Done: true, Interrupted: true, Checkpoint: true,
+			Result: &RunResult{Verdict: VerdictApprove}}, 0, 0, InterruptionNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AfterInterruption(tt.run, tt.resumes, tt.reruns); got != tt.want {
+				t.Errorf("AfterInterruption() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResumeDeadline(t *testing.T) {
+	tests := []struct {
+		name         string
+		timeout, ran time.Duration
+		want         time.Duration
+	}{
+		{"what the timeout leaves", 45 * time.Minute, 9 * time.Minute, 36 * time.Minute},
+		{"a run that ran nothing gets it all", 45 * time.Minute, 0, 45 * time.Minute},
+		{"at least the floor", 45 * time.Minute, 40 * time.Minute, MinResumeDeadline},
+		{"even past the timeout", 45 * time.Minute, 3 * time.Hour, MinResumeDeadline},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResumeDeadline(tt.timeout, tt.ran); got != tt.want {
+				t.Errorf("ResumeDeadline(%s, %s) = %s, want %s", tt.timeout, tt.ran, got, tt.want)
+			}
+		})
+	}
+	start := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	if got := PodRunTime(start, start.Add(9*time.Minute)); got != 9*time.Minute {
+		t.Errorf("PodRunTime() = %s, want 9m", got)
+	}
+	for _, ended := range []time.Time{{}, start.Add(-time.Minute)} {
+		if got := PodRunTime(start, ended); got != 0 {
+			t.Errorf("PodRunTime(start, %s) = %s, want 0", ended, got)
+		}
+	}
+}
+
 func TestMissedShutdown(t *testing.T) {
 	shutdown := time.Date(2026, 10, 3, 9, 58, 49, 0, time.UTC)
 	tests := []struct {

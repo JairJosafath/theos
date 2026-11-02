@@ -110,7 +110,7 @@ func TestBuildSandboxGoCache(t *testing.T) {
 				env[e.Name] = append(env[e.Name], e.Value)
 			}
 			if tt.cache == "" {
-				if len(hostPaths) != 0 || len(pod.InitContainers) != 0 || len(pod.Containers[0].VolumeMounts) != 1 {
+				if len(hostPaths) != 0 || len(pod.InitContainers) != 0 || len(pod.Containers[0].VolumeMounts) != 2 {
 					t.Fatalf("host paths %v, init containers %d, mounts %v; want none", hostPaths,
 						len(pod.InitContainers), pod.Containers[0].VolumeMounts)
 				}
@@ -120,8 +120,8 @@ func TestBuildSandboxGoCache(t *testing.T) {
 				t.Errorf("host paths %v, want only %q", hostPaths, tt.cache)
 			}
 			want := corev1.VolumeMount{Name: goCacheVolume, MountPath: goCacheMount}
-			if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 2 || !reflect.DeepEqual(mounts[1], want) {
-				t.Errorf("agent mounts %v, want the workspace and %v", mounts, want)
+			if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 3 || !reflect.DeepEqual(mounts[2], want) {
+				t.Errorf("agent mounts %v, want the workspace, the checkpoint and %v", mounts, want)
 			}
 			// The Agent's own setting comes last, so it wins.
 			if got := env["GOCACHE"]; !reflect.DeepEqual(got, []string{"/cache/go/build", "/agent/own"}) {
@@ -557,7 +557,7 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 	}
 	want := []string{"C4_ROLE", "C4_REPO_URL", "C4_BRANCH", "C4_BASE", "C4_GOAL", "C4_CONTEXT", "C4_PROJECT",
 		"C4_CONTAINER", "C4_TASK", "C4_ROUND", "C4_MAX_ROUNDS", "C4_HARNESS", "C4_PROTECTED_PATHS",
-		"C4_GIT_USERNAME", "C4_GIT_TOKEN"}
+		"C4_GIT_USERNAME", "C4_GIT_TOKEN", "C4_CHECKPOINT_DIR"}
 	if got := envNames(podOf(t, sandbox).Containers[0].Env); !reflect.DeepEqual(got, want) {
 		t.Errorf("env %v, want %v", got, want)
 	}
@@ -751,6 +751,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 			secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
 			{Name: "C4_MODEL", Value: "opus"},
 			{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
+			{Name: "C4_CHECKPOINT_DIR", Value: "/checkpoint"},
 		}},
 		{name: "a try after a refusal, with a goal", goal: "Keep it small.", feedback: "The Brief refused the plan:\nx",
 			want: []corev1.EnvVar{
@@ -769,6 +770,7 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 				secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
 				{Name: "C4_MODEL", Value: "opus"},
 				{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
+				{Name: "C4_CHECKPOINT_DIR", Value: "/checkpoint"},
 				{Name: "C4_FEEDBACK", Value: "The Brief refused the plan:\nx"},
 			}},
 	} {

@@ -97,6 +97,9 @@ spec:
         {{- with .Values.goProxy }}
         - --go-proxy={{ . }}
         {{- end }}
+        {{- with .Values.checkpointStorageClass }}
+        - --sandbox-checkpoint-storage-class={{ . }}
+        {{- end }}
         {{- range .Values.clusterDNS }}
         - --cluster-dns={{ . }}
         {{- end }}

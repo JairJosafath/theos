@@ -99,6 +99,10 @@ type TaskReconciler struct {
 	// WorkspaceMemory, when set, gives each sandbox a workspace in memory of up to
 	// this size instead of on the node's disk.
 	WorkspaceMemory *resource.Quantity
+	// CheckpointClass is the StorageClass of each sandbox's checkpoint volume:
+	// empty is the cluster's default class, NoCheckpointClass none, so an
+	// interrupted run is rerun.
+	CheckpointClass string
 	// SandboxGoCache, when set, is a directory on the node that sandboxes share as
 	// their Go build cache.
 	SandboxGoCache string
@@ -131,7 +135,7 @@ const eventCheckFailsOnBase = "CheckFailsOnBase"
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=c4.factory.io,resources=agents;softwaresystems;briefs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -268,6 +272,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
 		Reruns:         int(status.Reruns),
+		Resumes:        int(status.Resumes),
 
 		MergeWaitsForChecks: mergeWaitsForChecks(status),
 		MergeWhenChecksPass: status.MergeWhenChecksPass,
@@ -348,7 +353,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		if name == status.Sandbox && startedOn == "" {
 			status.SandboxPod = run.Pod // the pod the run started on
 		}
-		facts.Run = run
+		facts.Run = r.withSuspendedFor(run)
 	}
 
 	if status.Phase == c4v1beta1.TaskChecking && status.Commit != "" {
