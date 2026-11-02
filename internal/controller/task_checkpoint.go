@@ -67,6 +67,12 @@ const annotationRanSeconds = "c4.factory.io/ran-seconds"
 // to go.
 const annotationSuspendedAt = "c4.factory.io/suspended-at"
 
+// annotationPausedRun on a suspended Sandbox says its run paused at the
+// factory's ask, rather than being interrupted; its value is the pause's
+// reason. Such a run resumes once the pause ends, counting no resume, and
+// waits however long that takes (step 12 of docs/plans/self-hosting.md).
+const annotationPausedRun = "c4.factory.io/paused-run"
+
 // NoCheckpointClass, as the checkpoint StorageClass (the operator's
 // --sandbox-checkpoint-storage-class), gives sandboxes no checkpoint volume,
 // for a cluster with no class to provision one: an interrupted run is then
@@ -124,7 +130,9 @@ func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.T
 	step model.TaskStep) (ctrl.Result, error) {
 	switch step.Action {
 	case model.ActionSuspendRun:
-		return ctrl.Result{}, r.suspendRun(ctx, task, status, step) // the status write triggers the next step
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, false) // the status write triggers the next step
+	case model.ActionPauseRun:
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, true)
 	case model.ActionResumeRun:
 		return r.resumeRun(ctx, task, status, container, agents, step)
 	}
@@ -150,6 +158,7 @@ func suspendedState(ctx context.Context, c client.Client, sandbox *unstructured.
 	state model.RunState) (model.RunState, error) {
 	state.Suspended = true
 	state.SuspendedAt = parseTime(sandbox.GetAnnotations()[annotationSuspendedAt])
+	_, state.Paused = sandbox.GetAnnotations()[annotationPausedRun]
 	var pod corev1.Pod
 	err := c.Get(ctx, client.ObjectKey{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName()}, &pod)
 	switch {
@@ -174,9 +183,10 @@ func (r *TaskReconciler) withSuspendedFor(run model.RunState) model.RunState {
 // suspendRun counts what the interrupted run cost and the resume, and
 // suspends its sandbox once the status that counts them is written: a
 // failed write leaves the run to be found and counted again. A run counted
-// already, whose suspend failed after the write, is only suspended again.
+// already, whose suspend failed after the write, is only suspended again. A
+// run that paused at the factory's ask counts its cost and no resume.
 func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	step model.TaskStep) error {
+	step model.TaskStep, paused bool) error {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return err
@@ -184,13 +194,34 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 	if !runCounted(status, run) {
 		r.countRun(status, run)
 		status.CountedPod = runPod(status, run)
-		setProgress(status, model.SuspendRun(progressOf(status)))
-		r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
+		reason := model.ReasonPaused
+		if !paused {
+			setProgress(status, model.SuspendRun(progressOf(status)))
+			reason = "Interrupted"
+		}
+		r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 	}
-	logf.FromContext(ctx).Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
-		"round", status.Round, "resumes", status.Resumes)
-	return r.afterStatusWrite(ctx, task, endedRun{sandbox: status.Sandbox, round: status.Round,
-		result: run.Result, suspend: true})
+	if paused {
+		logf.FromContext(ctx).Info("Suspending a paused run to resume it in place", "sandbox", status.Sandbox,
+			"round", status.Round)
+	} else {
+		logf.FromContext(ctx).Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
+			"round", status.Round, "resumes", status.Resumes)
+	}
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true}
+	if paused {
+		ended.pause = pauseReason(run)
+	}
+	return r.afterStatusWrite(ctx, task, ended)
+}
+
+// pauseReason is the reason a paused run reported, or a stand-in when it
+// gave none: a paused run's sandbox is marked with it.
+func pauseReason(run model.RunState) string {
+	if run.Result != nil && run.Result.PauseReason != "" {
+		return run.Result.PauseReason
+	}
+	return "paused"
 }
 
 // runPod is the pod the sandbox's current run started on: the one the
@@ -215,8 +246,10 @@ func runCounted(status *c4v1beta1.TaskStatus, run model.RunState) bool {
 
 // suspendSandbox adds the time the run ran on its pod to the sandbox and
 // suspends it: Agent Sandbox deletes the pod and keeps the volume. A
-// sandbox already suspended stays as it is.
-func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name string) error {
+// sandbox already suspended stays as it is. A paused run's sandbox is marked
+// with pause, its reason, and loses its shutdown time: a pause may last past
+// it, and the resume sets a new one.
+func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name, pause string) error {
 	sandbox := newSandbox()
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, sandbox); err != nil {
 		return client.IgnoreNotFound(err)
@@ -235,6 +268,10 @@ func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name string) er
 	}
 	annotations[annotationRanSeconds] = strconv.FormatInt(int64((ranBefore(sandbox) + ran).Seconds()), 10)
 	annotations[annotationSuspendedAt] = r.now().UTC().Format(time.RFC3339)
+	if pause != "" {
+		annotations[annotationPausedRun] = pause
+		unstructured.RemoveNestedField(sandbox.Object, fieldSpec, "shutdownTime")
+	}
 	sandbox.SetAnnotations(annotations)
 	if err := unstructured.SetNestedField(sandbox.Object, operatingModeSuspended, fieldSpec, "operatingMode"); err != nil {
 		return err
@@ -304,7 +341,8 @@ func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, s
 	}
 	status.SandboxPod, status.AgentBackAt = "", nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", step.Message, status.Sandbox))
-	logf.FromContext(ctx).Info("Resuming an interrupted run in place", "sandbox", status.Sandbox,
+	_, paused := sandbox.GetAnnotations()[annotationPausedRun]
+	logf.FromContext(ctx).Info("Resuming a run in place", "sandbox", status.Sandbox, "paused", paused,
 		"round", status.Round, "resumes", status.Resumes, "deadline", deadline)
 	return r.afterStatusWrite(ctx, task, endedRun{sandbox: status.Sandbox, round: status.Round,
 		resume: &sandboxResume{podTemplate: template, deadline: deadline}})
@@ -331,6 +369,7 @@ func (r *TaskReconciler) resumeSandbox(ctx context.Context, ns, name string, res
 	shutdown := r.now().Add(resume.deadline + sandboxGrace).UTC().Format(time.RFC3339)
 	annotations := sandbox.GetAnnotations()
 	delete(annotations, annotationSuspendedAt)
+	delete(annotations, annotationPausedRun)
 	sandbox.SetAnnotations(annotations)
 	for _, field := range []struct {
 		value any

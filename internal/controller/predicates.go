@@ -109,16 +109,47 @@ func taskPhaseChanges() builder.Predicates {
 	})
 }
 
-// crewBudgetChanges passes a Crew's deletion and a change of its cost cap
-// (spec.taskBudgetUSD), which resume its Tasks waiting at the cap (#1893).
-func crewBudgetChanges() builder.WatchesOption {
+// crewBudgetOrPauseChanges passes a Crew's deletion, a change of its cost cap
+// (spec.taskBudgetUSD), which resume its Tasks waiting at the cap (#1893), and
+// a change of its pause of their runs (spec.paused with spec.pauseRuns).
+func crewBudgetOrPauseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
 		CreateFunc:  func(event.CreateEvent) bool { return false },
 		GenericFunc: func(event.GenericEvent) bool { return false },
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldCrew, ok1 := e.ObjectOld.(*c4v1beta1.Crew)
 			newCrew, ok2 := e.ObjectNew.(*c4v1beta1.Crew)
-			return !ok1 || !ok2 || oldCrew.Spec.TaskBudgetUSD != newCrew.Spec.TaskBudgetUSD
+			return !ok1 || !ok2 || oldCrew.Spec.TaskBudgetUSD != newCrew.Spec.TaskBudgetUSD ||
+				crewPause(oldCrew) != crewPause(newCrew)
+		},
+	})
+}
+
+// briefPauseChanges passes a change of a Brief's pause of its runs
+// (spec.paused with spec.pauseRuns), which pauses or resumes its planner's.
+func briefPauseChanges() builder.WatchesOption {
+	return builder.WithPredicates(predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldBrief, ok1 := e.ObjectOld.(*c4v1beta1.Brief)
+			newBrief, ok2 := e.ObjectNew.(*c4v1beta1.Brief)
+			return !ok1 || !ok2 || briefPause(oldBrief) != briefPause(newBrief)
+		},
+	})
+}
+
+// taskPhaseOrPausedChanges passes what taskPhaseChanges does, and a change of
+// a Task's Paused condition: a paused Crew or Brief counts the runs still
+// stopping.
+func taskPhaseOrPausedChanges() builder.Predicates {
+	return builder.WithPredicates(predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldTask, ok1 := e.ObjectOld.(*c4v1beta1.Task)
+			newTask, ok2 := e.ObjectNew.(*c4v1beta1.Task)
+			return !ok1 || !ok2 || oldTask.Status.Phase != newTask.Status.Phase ||
+				runsStopped(oldTask) != runsStopped(newTask)
 		},
 	})
 }

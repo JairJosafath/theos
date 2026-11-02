@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -204,6 +205,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
 			r.wait(&crew, status, "GitProviderUnavailable", err.Error())
+			setCrewPaused(&crew, status, tasks.Items)
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
 		repo = provider.Repository(container.Name)
@@ -216,6 +218,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
 			r.wait(&crew, status, "GitHostUnavailable", "Could not read the issues: "+err.Error())
+			setCrewPaused(&crew, status, tasks.Items)
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
 		// Before the Crew picks issues: a prepare issue filed now keeps its
@@ -284,6 +287,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ready, reason = metav1.ConditionFalse, "ContainerNotReady"
 	}
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
+	setCrewPaused(&crew, status, tasks.Items)
 	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
@@ -506,7 +510,7 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return nil
 				}
 				return crewsOf(ctx, task.Namespace, task.Spec.ContainerRef.Name)
-			}), taskPhaseChanges()).
+			}), taskPhaseOrPausedChanges()).
 		// A Crew read before its Agents were in the cache waits on AgentNotFound
 		// with no requeue; their creation wakes it.
 		Watches(&c4v1beta1.Agent{}, handler.EnqueueRequestsFromMapFunc(
@@ -527,4 +531,27 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		Named("crew").
 		Complete(r)
+}
+
+// setCrewPaused sets a paused Crew's Paused condition to its Tasks still
+// running, or, when it pauses their runs too, to those whose agent still runs
+// (step 12 of docs/plans/self-hosting.md); False once the Crew is resumed. A
+// Crew never paused has none.
+func setCrewPaused(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus, all []c4v1beta1.Task) {
+	if !crew.Spec.Paused {
+		if apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionPaused) != nil {
+			setCondition(&status.Conditions, crew.Generation, c4v1beta1.ConditionPaused, metav1.ConditionFalse,
+				reasonBriefResumed, "Not paused")
+		}
+		return
+	}
+	var tasks []*c4v1beta1.Task
+	for i := range all {
+		if all[i].Labels[LabelCrew] == crew.Name {
+			tasks = append(tasks, &all[i])
+		}
+	}
+	slices.SortFunc(tasks, func(a, b *c4v1beta1.Task) int { return strings.Compare(a.Name, b.Name) })
+	setCondition(&status.Conditions, crew.Generation, c4v1beta1.ConditionPaused, metav1.ConditionTrue,
+		reasonBriefPaused, pausedConditionMessage(tasks, crew.Spec.PauseRuns))
 }

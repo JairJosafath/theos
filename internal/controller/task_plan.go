@@ -70,13 +70,20 @@ func (r *TaskReconciler) reconcilePlan(ctx context.Context, task *c4v1beta1.Task
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	facts.Pause = briefPause(&brief)
 	step := model.NextTaskStep(facts)
 	logf.FromContext(ctx).V(1).Info("Took Task step", "phase", status.Phase, "round", status.Round,
 		"action", step.Action, "message", step.Message)
+	if status.Phase == c4v1beta1.TaskImplementing {
+		if err := r.syncPause(ctx, task, status, sandboxName(task, status, model.RolePlanner), facts); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	result, err := r.applyPlan(ctx, task, status, &brief, &agent, round, step)
 	if err != nil {
 		return result, err
 	}
+	r.setPaused(task, status, step, facts.Pause)
 	r.queueForSlot(status, step, &result)
 	return result, r.writeStatus(ctx, task, status)
 }
@@ -148,7 +155,7 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1beta1.Task, st
 	case model.ActionStartImplement:
 		return r.startPlan(ctx, task, status, brief, agent, round, step.Message)
 
-	case model.ActionRerun, model.ActionAgentUnavailable, model.ActionSuspendRun:
+	case model.ActionRerun, model.ActionAgentUnavailable, model.ActionSuspendRun, model.ActionPauseRun:
 		// None touches the Container, which a Plan Task doesn't have.
 		return r.apply(ctx, task, status, nil, taskAgents{implementer: agent, reviewer: agent}, step)
 

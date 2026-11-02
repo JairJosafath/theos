@@ -234,10 +234,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	step := model.NextTaskStep(facts)
 	logf.FromContext(ctx).V(1).Info("Took Task step", "phase", status.Phase, "round", status.Round,
 		"action", step.Action, "message", step.Message)
+	if role := runRole(status.Phase); role != "" {
+		if err := r.syncPause(ctx, &task, status, sandboxName(&task, status, role), facts); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	result, err := r.apply(ctx, &task, status, &container, agents, step)
 	if err != nil {
 		return result, err
 	}
+	r.setPaused(&task, status, step, facts.Pause)
 	r.queueForSlot(status, step, &result)
 	return result, r.writeStatus(ctx, &task, status)
 }
@@ -317,6 +323,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		default:
 			facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
 			facts.CostMilliUSD = status.CostMilliUSD
+			facts.Pause = crewPause(&crew)
 		}
 	}
 
@@ -772,7 +779,8 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return containerTasks(ctx, task.Namespace, task.Spec.ContainerRef.Name)
 	})
 	// A Crew's cost cap changing, or the Crew going away, resumes its Tasks
-	// waiting at the cap (#1893).
+	// waiting at the cap (#1893); a pause of its runs starting or ending
+	// pauses or resumes them.
 	fromCrew := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 		var tasks c4v1beta1.TaskList
 		if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(obj.GetNamespace()),
@@ -787,13 +795,30 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return reqs
 	})
+	// A Brief's pause of its runs starting or ending pauses or resumes its
+	// planner's.
+	fromBrief := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var tasks c4v1beta1.TaskList
+		if err := mgr.GetClient().List(ctx, &tasks, client.InNamespace(obj.GetNamespace()),
+			client.MatchingLabels{c4v1beta1.LabelBrief: obj.GetName()}); err != nil {
+			return nil
+		}
+		var reqs []reconcile.Request
+		for _, t := range tasks.Items {
+			if t.Spec.Kind == c4v1beta1.TaskPlan && !isFinal(t.Status.Phase) {
+				reqs = append(reqs, requestFor(t.Namespace, t.Name))
+			}
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1beta1.Task{}).
 		Owns(newSandbox()).
 		Watches(&corev1.Pod{}, podTask, podFinished()).
 		Watches(&c4v1beta1.Container{}, fromContainer, containerPhaseChanges()).
 		Watches(&c4v1beta1.Task{}, fromTask, taskPhaseChanges()).
-		Watches(&c4v1beta1.Crew{}, fromCrew, crewBudgetChanges()).
+		Watches(&c4v1beta1.Crew{}, fromCrew, crewBudgetOrPauseChanges()).
+		Watches(&c4v1beta1.Brief{}, fromBrief, briefPauseChanges()).
 		Watches(&c4v1beta1.Agent{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				var tasks c4v1beta1.TaskList

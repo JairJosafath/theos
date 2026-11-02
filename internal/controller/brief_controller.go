@@ -317,10 +317,12 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&c4v1beta1.Brief{}, briefSpecOrOperatorWait()).
-		Owns(&c4v1beta1.Task{}, taskPhaseChanges()).
+		// A Task's phase moving on, or its runs stopping for a pause, changes
+		// what the Paused condition counts.
+		Owns(&c4v1beta1.Task{}, taskPhaseOrPausedChanges()).
 		// A Task on a Container the Brief made may file reviewers' suggestions.
 		Watches(&c4v1beta1.Task{}, handler.EnqueueRequestsFromMapFunc(briefOfTaskContainer(mgr.GetClient())),
-			taskPhaseChanges()).
+			taskPhaseOrPausedChanges()).
 		Watches(&c4v1beta1.GitProvider{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1beta1.Agent{}, allInNamespace, createOrDelete()).
 		Watches(&c4v1beta1.Container{}, fromBriefLabel, containerPhaseOrBehindChanges()).

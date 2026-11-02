@@ -120,6 +120,13 @@ spec:
                 maximum: 5
                 minimum: 1
                 type: integer
+              pauseRuns:
+                description: |-
+                  pauseRuns, with paused, also pauses the Crew's running Tasks at their
+                  next tool boundary (docs/plans/self-hosting.md, step 12): each run saves
+                  a clean checkpoint and suspends, with no round or rerun spent and its
+                  cost so far counted. Unset, each paused run resumes where it stopped.
+                type: boolean
               paused:
                 description: |-
                   paused stops the Crew from picking up new issues. A Task already started
@@ -319,6 +326,10 @@ spec:
             - message: 'publishReleases needs tagReleases: only a release the Crew
                 tagged is published'
               rule: '!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)'
+            - message: 'pauseRuns needs paused: a Crew pauses its running Tasks only
+                while it picks up no new issue'
+              rule: '!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused)
+                && self.paused)'
           status:
             description: status defines the observed state of Crew
             properties:

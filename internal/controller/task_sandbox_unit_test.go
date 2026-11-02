@@ -110,7 +110,7 @@ func TestBuildSandboxGoCache(t *testing.T) {
 				env[e.Name] = append(env[e.Name], e.Value)
 			}
 			if tt.cache == "" {
-				if len(hostPaths) != 0 || len(pod.InitContainers) != 0 || len(pod.Containers[0].VolumeMounts) != 2 {
+				if len(hostPaths) != 0 || len(pod.InitContainers) != 0 || len(pod.Containers[0].VolumeMounts) != 3 {
 					t.Fatalf("host paths %v, init containers %d, mounts %v; want none", hostPaths,
 						len(pod.InitContainers), pod.Containers[0].VolumeMounts)
 				}
@@ -120,8 +120,8 @@ func TestBuildSandboxGoCache(t *testing.T) {
 				t.Errorf("host paths %v, want only %q", hostPaths, tt.cache)
 			}
 			want := corev1.VolumeMount{Name: goCacheVolume, MountPath: goCacheMount}
-			if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 3 || !reflect.DeepEqual(mounts[2], want) {
-				t.Errorf("agent mounts %v, want the workspace, the checkpoint and %v", mounts, want)
+			if mounts := pod.Containers[0].VolumeMounts; len(mounts) != 4 || !reflect.DeepEqual(mounts[3], want) {
+				t.Errorf("agent mounts %v, want the workspace, the checkpoint, the pod's annotations and %v", mounts, want)
 			}
 			// The Agent's own setting comes last, so it wins.
 			if got := env["GOCACHE"]; !reflect.DeepEqual(got, []string{"/cache/go/build", "/agent/own"}) {
