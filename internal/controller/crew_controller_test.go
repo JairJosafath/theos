@@ -77,6 +77,26 @@ var _ = Describe("Crew", func() {
 			To(MatchError(ContainSubstring("containerRef is immutable")))
 	})
 
+	It("turns an issue down once, not again on every poll (#2039)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		// The labels came over from GitHub non-exclusive, so adding
+		// status/needs-human drops nothing by itself.
+		gitFake.KeepLabelsAsMigrated(ns, "orders-api")
+		vague := gitFake.AddIssue(ns, "orders-api", "Make it better", "Somehow.", []string{model.LabelReady})
+		mustCreate(newCrew(ns))
+
+		Eventually(func(g Gomega) {
+			issue := gitFake.Issue(ns, "orders-api", vague)
+			g.Expect(issue.Labels).To(Equal([]string{model.LabelNeedsHuman}))
+			g.Expect(issue.Comments).To(HaveLen(1))
+		}).Should(Succeed())
+		// The Crew polls every second here: several polls pass.
+		Consistently(func() []string { return gitFake.Issue(ns, "orders-api", vague).Comments },
+			4*time.Second).Should(HaveLen(1))
+	})
+
 	It("works through ready issues in order, each one reviewed by its own Agent and closed on merge", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

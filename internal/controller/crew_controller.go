@@ -236,6 +236,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		for _, n := range step.NotReady {
 			notes := []error{
 				provider.AddIssueLabel(gitCtx, repo, n.Issue, model.LabelNeedsHuman),
+				// The exclusive scope drops it too, but not where the labels came
+				// over non-exclusive from a migration (#2039).
+				provider.RemoveIssueLabel(gitCtx, repo, n.Issue, model.LabelReady),
 				provider.CommentIssue(gitCtx, repo, n.Issue, n.Reason),
 			}
 			for _, err := range notes {

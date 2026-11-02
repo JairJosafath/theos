@@ -58,7 +58,9 @@ var ErrOpenDependencies = errors.New("the issue still has open dependencies")
 // issues, comments, assignment, dependencies and milestones of the
 // repositories of one owner.
 type Issues interface {
-	// EnsureLabels creates the labels repo doesn't have yet. It is safe to repeat.
+	// EnsureLabels creates the labels repo doesn't have yet and makes the
+	// Exclusive flag of those it has match the one asked for (a migrated
+	// repository brings its labels over non-exclusive). It is safe to repeat.
 	EnsureLabels(ctx context.Context, repo Repository, labels []Label) error
 	// EnsureMilestone returns the ID of repo's milestone titled title, open or
 	// closed, and creates it, open and with description, if there is none. It
