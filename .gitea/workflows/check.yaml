@@ -18,5 +18,30 @@ jobs:
           git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
             fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
           git checkout -q FETCH_HEAD
+      # The runner's /tmp and /data/work are memory-backed and small; /data is
+      # on the node's disk (Fence issue #2043).
+      - name: Scratch on disk
+        run: mkdir -p /data/tmp
       - name: make check
-        run: make check
+        run: |
+          python3 - make check <<'PY'
+          # A child subreaper: orphans reparent here and are reaped, since the
+          # runner's PID 1 reaps nothing (Fence issue #2047).
+          import ctypes, os, subprocess, sys
+          PR_SET_CHILD_SUBREAPER = 36
+          ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
+          child = subprocess.Popen(sys.argv[1:])
+          rc = None
+          while rc is None:
+              try:
+                  pid, status = os.wait()
+              except ChildProcessError:
+                  rc = 1
+                  break
+              if pid == child.pid:
+                  rc = os.waitstatus_to_exitcode(status)
+          sys.exit(rc)
+          PY
+        env:
+          TMPDIR: /data/tmp
+          GOTMPDIR: /data/tmp
