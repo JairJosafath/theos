@@ -247,6 +247,13 @@ type TaskStatus struct {
 	// +optional
 	Reruns int32 `json:"reruns,omitempty"`
 
+	// resumes counts the runs in this round that the infrastructure
+	// interrupted and that resumed in place, from the checkpoint their
+	// sandbox kept, without a rerun or spending the round. Past five, an
+	// interrupted run is rerun.
+	// +optional
+	Resumes int32 `json:"resumes,omitempty"`
+
 	// checksReruns counts the CI runs at this round's commit whose failed jobs
 	// ran again because the machine killed them for lack of memory, without
 	// spending the round.
