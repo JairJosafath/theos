@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -232,23 +233,46 @@ var stopGrace = 2 * time.Second
 //
 // With a checkpoint directory, a run told to stop saves a hard checkpoint
 // there before it reports, and a run that finds one goes on from it
-// (checkpoint.go).
+// (checkpoint.go). A run the factory pauses stops at its next tool boundary
+// or step, saves a clean checkpoint (a hard one when it is still busy
+// pauseGrace later), and reports Paused (pause.go).
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	sessions := &sessionLog{}
-	meter := &usageMeter{agent: withSessionLog(agent, sessions)}
-	prog := &runProgress{}
-	result := run(ctx, job, meter, dir, prog)
+	pause := newPauseWatch(job)
+	runCtx, checks, stopWatch := pause.start(ctx)
+	defer stopWatch()
+	meter := &usageMeter{agent: withSessionLog(agent, sessions, pause)}
+	prog := &runProgress{resumable: resumable(agent), checks: checks}
+	result := run(runCtx, job, pausingAgent{agent: meter, pause: pause}, dir, prog)
+	stopWatch()
 	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
 	result.SessionHandoffs = meter.handoffs
+	if prog.from != nil {
+		result.ResumedFrom = prog.from.Kind
+	}
+	// A run the pause stopped didn't finish: its error is the pause's, or the
+	// grace or a stop ended it after the pause was asked.
+	if paused, reason, hard := pause.state(); paused &&
+		(result.Error == errPaused.Error() || hard || ctx.Err() != nil && result.Error != "") {
+		kind := CheckpointClean
+		if hard || ctx.Err() != nil {
+			kind = CheckpointHard
+		}
+		slog.Info("Paused by the factory", "reason", reason, "checkpoint", kind, "step", prog.step)
+		if err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
+			slog.Error("Failed to save the checkpoint; the run starts over on resume", "error", err.Error())
+		}
+		result.Paused, result.PauseReason = true, reason
+		result.Error, result.Interrupted, result.Unavailable, result.RetryAt = "", false, false, nil
+		result.Commit, result.Blocked = "", ""
+		return result
+	}
 	if result.Error != "" && !result.Unavailable &&
 		(unreachableHost(result.Error) || stoppedWithin(ctx, stopGrace)) {
 		result.Interrupted = true
 	}
-	if prog.from != nil {
-		result.ResumedFrom = prog.from.Kind
-	}
 	if result.Interrupted && ctx.Err() != nil {
-		if err := saveCheckpoint(job, prog, sessions, result); err != nil {
+		if err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
 		}
 	}
@@ -279,6 +303,7 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 		return result
 	} else if prog.from != nil {
 		prog.step, prog.summary = prog.from.Step, prog.from.Summary
+		prog.resume = resumeSession(job, prog.from, prog.resumable, r.dir)
 	}
 	if job.Role == RolePlan {
 		return plan(ctx, job, agent, r, prog, result)
@@ -302,7 +327,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		summary = prog.from.Summary
 	} else {
 		var err error
-		if summary, err = agent.Run(ctx, r.dir, prog.prompt(ImplementPrompt(job, ws))); err != nil {
+		if summary, err = prog.session(ctx, agent, r.dir, ImplementPrompt(job, ws)); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
 		}
@@ -321,7 +346,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	result.Summary = summary
 	prog.step, prog.summary = StepCheck, summary
 
-	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, job, agent, r.dir, &base)
+	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base)
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -444,13 +469,21 @@ func sendBackBlocked(ctx context.Context, job Job, agent Agent, dir string, base
 // checkAndFix runs the check, and while it fails sends the agent back up to
 // checkFixAttempts times, telling it when the check fails on the base too. It
 // returns the check's last output, the base's output when the base fails too,
-// the check's error, and the agent's.
-func checkAndFix(ctx context.Context, job Job, agent Agent, dir string, base *baseCheck) (string, string, error, error) {
+// the check's error, and the agent's. The checks run in checks, which the
+// pause ends: a check it killed is errPaused, and runs again on resume.
+func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck) (string, string, error, error) {
 	check := strings.Join(job.CheckCommand, " ")
-	checkOutput, checkErr := runCheck(ctx, job, dir)
+	paused := func() bool { return checks.Err() != nil && ctx.Err() == nil }
+	checkOutput, checkErr := runCheck(checks, job, dir)
+	if paused() {
+		return checkOutput, "", checkErr, errPaused
+	}
 	var baseOutput string
 	if checkErr != nil {
-		baseOutput = base.fails(ctx)
+		baseOutput = base.fails(checks)
+	}
+	if paused() {
+		return checkOutput, "", checkErr, errPaused
 	}
 	for attempt := 1; checkErr != nil && attempt <= checkFixAttempts && ctx.Err() == nil; attempt++ {
 		prompt := fmt.Sprintf("%q fails. Fix every failure, then run it again until it passes. Output:\n%s",
@@ -464,7 +497,10 @@ func checkAndFix(ctx context.Context, job Job, agent Agent, dir string, base *ba
 		if _, err := agent.Run(ctx, dir, prompt); err != nil {
 			return checkOutput, baseOutput, checkErr, err
 		}
-		checkOutput, checkErr = runCheck(ctx, job, dir)
+		checkOutput, checkErr = runCheck(checks, job, dir)
+		if paused() {
+			return checkOutput, baseOutput, checkErr, errPaused
+		}
 	}
 	return checkOutput, baseOutput, checkErr, nil
 }
@@ -555,7 +591,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 		result.Error = err.Error()
 		return result
 	}
-	output, err := agent.Run(ctx, r.dir, prog.prompt(ReviewPrompt(job, ws)))
+	output, err := prog.session(ctx, agent, r.dir, ReviewPrompt(job, ws))
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -585,6 +621,11 @@ func agentFailed(result Result, err error) Result {
 func runCheck(ctx context.Context, job Job, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, job.CheckCommand[0], job.CheckCommand[1:]...) //nolint:gosec // the Standard's check; running it is the runner's job
 	cmd.Dir = dir
+	// A check the pause or a stop ends ends what it started too, such as the
+	// tests make runs, which would hold its output open.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = stopWait
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

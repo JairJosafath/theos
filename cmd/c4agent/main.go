@@ -33,6 +33,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == agentrunner.SessionGuardCommand {
 		os.Exit(agentrunner.SessionGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == agentrunner.PauseGuardCommand {
+		os.Exit(agentrunner.PauseGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	resultPath := flag.String("result", "/dev/termination-log", "where to write the JSON result")
 	workdir := flag.String("workdir", "/workspace/repo", "where to clone the repository")
 	flag.Parse()
@@ -42,7 +45,7 @@ func main() {
 
 	result := run(ctx, *workdir)
 	slog.Info("Finished job", "role", result.Role, "commit", result.Commit, "verdict", result.Verdict,
-		"error", result.Error)
+		"paused", result.Paused, "error", result.Error)
 	fmt.Println(result.Summary)
 	if err := os.WriteFile(*resultPath, result.Encode(), 0o600); err != nil {
 		slog.Error("Failed to write the result", "path", *resultPath, "error", err)
@@ -112,12 +115,14 @@ func agentFor(job agentrunner.Job) agentrunner.Agent {
 		agent.Command = command
 		return agent
 	}
-	// Claude Code's own command takes a --session-id, which a checkpoint records.
+	// Claude Code's own command takes a --session-id, which a checkpoint
+	// records, and a --resume of a session the pause ended.
 	agent.SessionIDs = true
 	if self, err := os.Executable(); err == nil {
 		agent.SessionTokenLimit, agent.Guard = job.SessionTokenLimit, self
 	} else {
-		slog.Error("Running sessions unguarded: c4agent can't find itself", "error", err)
+		slog.Error("Running sessions unguarded, and paused only between steps: c4agent can't find itself",
+			"error", err)
 	}
 	return agent
 }
