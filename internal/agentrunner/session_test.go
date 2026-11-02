@@ -144,6 +144,9 @@ func standInClaude(mode string) int {
 		_ = json.Unmarshal(data, &settings)
 		hook = settings.Hooks.PreToolUse[0].Hooks[0].Command
 	}
+	if mode == "hang" {
+		return hangingClaude(n)
+	}
 	transcript := filepath.Join(dir, fmt.Sprintf("transcript-%d.jsonl", n))
 	runHook := func(tool, file string) string {
 		input, _ := json.Marshal(map[string]any{"transcript_path": transcript, "tool_name": tool,

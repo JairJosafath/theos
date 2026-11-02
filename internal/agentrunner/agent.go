@@ -39,6 +39,11 @@ type ClaudeAgent struct {
 	// Guard is the program whose session-guard subcommand guards a session:
 	// c4agent itself.
 	Guard string
+	// SessionIDs starts each session with a --session-id of its own, which
+	// c4agent records for a checkpoint; Claude Code's own command takes it.
+	SessionIDs bool
+	// sessions, when set, records each session's ID and last words.
+	sessions *sessionLog
 }
 
 // DefaultClaudeCommand runs Claude Code once, headless, streaming every turn
@@ -96,6 +101,11 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	if a.Model != "" {
 		command = append(slices.Clone(command), "--model", a.Model)
 	}
+	if a.SessionIDs {
+		id := newSessionID()
+		command = append(slices.Clone(command), "--session-id", id)
+		a.sessions.started(id)
+	}
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var s session
@@ -121,6 +131,7 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	output := stdout.buf.String()
 	out, ok, streamed := parseClaudeOutput(stdout.buf.Bytes())
 	s.size, s.lastText = out.mainSession, out.lastText
+	a.sessions.ended(s.lastText)
 	if !ok {
 		switch {
 		case s.stopped:

@@ -112,12 +112,20 @@ func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
 		}
 		ended = "stopped"
 	}
+	return endedNote(ctx, dir, fmt.Sprintf("The previous session %s at %d tokens, past its limit of %d, "+
+		"without writing a note.", ended, s.size, g.limit), s.lastText)
+}
+
+// endedNote is the note for a session that ended without writing one: why
+// it ended, its last words and the working tree's state. c4agent writes it
+// for a session it ended past its limit, and for one its sandbox's stop
+// ended (checkpoint.go).
+func endedNote(ctx context.Context, dir, headline, lastText string) string {
 	cmd := exec.CommandContext(ctx, "git", "status", "--short")
 	cmd.Dir = dir
 	status, _ := cmd.CombinedOutput()
-	return fmt.Sprintf("The previous session %s at %d tokens, past its limit of %d, without writing a note. "+
-		"Its last words:\n\n%s\n\n`git status --short`:\n\n%s", ended, s.size, g.limit,
-		tail(orDefault(s.lastText, "(none)"), maxHandoffNote), orDefault(strings.TrimSpace(string(status)), "(clean)"))
+	return fmt.Sprintf("%s Its last words:\n\n%s\n\n`git status --short`:\n\n%s", headline,
+		tail(orDefault(lastText, "(none)"), maxHandoffNote), orDefault(strings.TrimSpace(string(status)), "(clean)"))
 }
 
 // handoffPrompt is the job's prompt for the session after a handoff.
