@@ -44,6 +44,9 @@ type ClaudeAgent struct {
 	SessionIDs bool
 	// sessions, when set, records each session's ID and last words.
 	sessions *sessionLog
+	// pause, when set, guards each session with Guard's pause-guard, and
+	// learns of the sessions it ended.
+	pause *pauseWatch
 }
 
 // DefaultClaudeCommand runs Claude Code once, headless, streaming every turn
@@ -80,10 +83,11 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 // what the call cost and used, from the CLI's stream-json output, or the one
 // JSON object a custom command prints.
 func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) (string, Usage, error) {
-	if a.SessionTokenLimit > 0 && a.Guard != "" {
+	if a.Guard != "" && (a.SessionTokenLimit > 0 || a.pause.annotations() != "") {
 		return a.runSessions(ctx, dir, prompt)
 	}
-	s := a.runSession(ctx, dir, prompt, nil)
+	resume, _ := resumeFrom(ctx)
+	s := a.runSession(ctx, dir, prompt, nil, resume.id)
 	return s.answer, s.usage, s.err
 }
 
@@ -91,9 +95,9 @@ func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) 
 // through a process it started.
 const stopWait = 10 * time.Second
 
-// runSession runs one Claude Code session; with a guard, it is guarded and
-// ended when it passes the guard's stopAt.
-func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *sessionGuard) session {
+// runSession runs one Claude Code session, or with resume, goes on with that
+// one; with a guard, it is guarded and ended when it passes the guard's stopAt.
+func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *sessionGuard, resume string) session {
 	command := a.Command
 	if len(command) == 0 {
 		command = DefaultClaudeCommand
@@ -101,7 +105,12 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	if a.Model != "" {
 		command = append(slices.Clone(command), "--model", a.Model)
 	}
-	if a.SessionIDs {
+	switch {
+	case resume != "":
+		// A resumed session keeps its ID.
+		command = append(slices.Clone(command), "--resume", resume)
+		a.sessions.started(resume)
+	case a.SessionIDs:
 		id := newSessionID()
 		command = append(slices.Clone(command), "--session-id", id)
 		a.sessions.started(id)
@@ -112,6 +121,8 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	stdout := &streamWatch{}
 	if guard != nil {
 		command = append(slices.Clone(command), "--settings", guard.settings())
+	}
+	if guard != nil && guard.limit > 0 {
 		stdout.stopAt = guard.stopAt()
 		stdout.stop = func() { s.stopped = true; cancel() }
 	}
@@ -132,6 +143,18 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	out, ok, streamed := parseClaudeOutput(stdout.buf.Bytes())
 	s.size, s.lastText = out.mainSession, out.lastText
 	a.sessions.ended(s.lastText)
+	if reason, paused := guard.paused(); paused {
+		// pause-guard ended it after a tool: what it used counts, its answer doesn't.
+		a.pause.request(reason)
+		s.usage.Tokens, s.err = &out.turns, errPaused
+		if ok {
+			s.usage.Tokens = out.tokens()
+			if out.CostUSD != nil && *out.CostUSD >= 0 {
+				s.usage.MilliUSD, s.usage.Reported = int64(math.Round(*out.CostUSD*1000)), true
+			}
+		}
+		return s
+	}
 	if !ok {
 		switch {
 		case s.stopped:
