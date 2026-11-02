@@ -153,6 +153,9 @@ type Job struct {
 	SessionTokenLimit int64
 	// CheckpointDir is the sandbox's checkpoint volume; empty: none.
 	CheckpointDir string
+	// PodInfoDir is where the pod sees its own annotations, which may ask the
+	// run to pause (pause.go); empty: the run never pauses.
+	PodInfoDir string
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -181,6 +184,7 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		PyPIToken:   getenv(EnvPyPIToken),
 
 		CheckpointDir: getenv(EnvCheckpointDir),
+		PodInfoDir:    PodInfoDir,
 	}
 	if job.Base == "" {
 		job.Base = "main"

@@ -244,11 +244,11 @@ func TestSuspendRunCountsARunOnce(t *testing.T) {
 	status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1, Sandbox: name, SandboxPod: "pod-1"}
 	step := model.TaskStep{Action: model.ActionSuspendRun, Message: "resumes in place"}
 
-	if err := r.suspendRun(context.Background(), task, status, step); err == nil {
+	if err := r.suspendRun(context.Background(), task, status, step, false); err == nil {
 		t.Fatal("suspendRun() = nil, want the failed patch's error")
 	}
 	failPatch = false
-	if err := r.suspendRun(context.Background(), task, status, step); err != nil {
+	if err := r.suspendRun(context.Background(), task, status, step, false); err != nil {
 		t.Fatal(err)
 	}
 	if status.Resumes != 1 || status.RunsWithoutCost != 1 || len(status.Runs) != 1 || status.CountedPod != "pod-1" {

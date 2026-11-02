@@ -180,6 +180,13 @@ spec:
                 maximum: 5
                 minimum: 1
                 type: integer
+              pauseRuns:
+                description: |-
+                  pauseRuns, with paused, also pauses running Tasks at their next tool
+                  boundary (docs/plans/self-hosting.md, step 12): the Brief sets pauseRuns
+                  on the Crews it paused, as it does paused, and pauses its planner Task's
+                  run. Unset, each paused run resumes where it stopped.
+                type: boolean
               paused:
                 description: |-
                   paused stops the Brief's work in one step (docs/plans/done/upgrade-in-place.md):
@@ -437,6 +444,10 @@ spec:
                 || self.prompts[i - ((has(self.promptsRetired) ? self.promptsRetired
                 : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))]
                 == p)))'
+            - message: 'pauseRuns needs paused: a Brief pauses its running Tasks only
+                while its work is paused'
+              rule: '!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused)
+                && self.paused)'
           status:
             description: status defines the observed state of Brief
             properties:
@@ -1535,6 +1546,13 @@ spec:
                 maximum: 5
                 minimum: 1
                 type: integer
+              pauseRuns:
+                description: |-
+                  pauseRuns, with paused, also pauses running Tasks at their next tool
+                  boundary (docs/plans/self-hosting.md, step 12): the Brief sets pauseRuns
+                  on the Crews it paused, as it does paused, and pauses its planner Task's
+                  run. Unset, each paused run resumes where it stopped.
+                type: boolean
               paused:
                 description: |-
                   paused stops the Brief's work in one step (docs/plans/done/upgrade-in-place.md):
@@ -1792,6 +1810,10 @@ spec:
                 || self.prompts[i - ((has(self.promptsRetired) ? self.promptsRetired
                 : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))]
                 == p)))'
+            - message: 'pauseRuns needs paused: a Brief pauses its running Tasks only
+                while its work is paused'
+              rule: '!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused)
+                && self.paused)'
           status:
             description: status defines the observed state of Brief
             properties:

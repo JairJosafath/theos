@@ -21,7 +21,7 @@
 // are creating a Brief in a namespace that holds a Project, and a JSON patch
 // on a Brief that appends a prompt at /spec/prompts/- (to a full list, the
 // server retires the planned prompts past the newest ten in the same patch)
-// or adds a boolean at /spec/paused. With UI_ACTIONS=service-account (over port-forward) the table
+// or adds a boolean at /spec/paused, /spec/pauseRuns or both. With UI_ACTIONS=service-account (over port-forward) the table
 // also takes design.md's UI actions: a Brief's and a Crew's settings, a
 // release re-run, a Container's scaffold retry, its answer to the Standard's
 // files left out (take or keep), a Task from a goal and a Standard's ref.
@@ -52,9 +52,10 @@ const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 /** Only the c4.factory.io API group is reachable: the UI needs nothing else. */
 const ALLOWED_PREFIX = '/apis/c4.factory.io/'
 
-/** The JSON patch paths the UI may write: append a prompt, and pause or resume. */
+/** The JSON patch paths the UI may write: append a prompt, and pause or resume a Brief or its running Tasks. */
 const PROMPT_PATH = '/spec/prompts/-'
 const PAUSED_PATH = '/spec/paused'
+const PAUSE_RUNS_PATH = '/spec/pauseRuns'
 
 /** Most bytes of a write's body; an idea is at most 4000 characters. */
 const MAX_WRITE_BYTES = 64 * 1024
@@ -399,10 +400,11 @@ function approvesDeploy(body) {
  *
  * With actions off (`actions: false`) only the entries marked `always`, the
  * Brief writes the UI has always made, and the Brief's settings narrowed to
- * spec.paused.
+ * spec.paused and spec.pauseRuns.
  */
 const BRIEF_SETTINGS = {
   '/spec/paused': 'boolean',
+  '/spec/pauseRuns': 'boolean',
   '/spec/autopilot': 'string',
   '/spec/parallel': 'integer',
   '/spec/releases': 'array',
@@ -483,13 +485,13 @@ const ACTIONS = [
     write: addPrompt,
   },
   {
-    what: `pause or resume a Brief (a boolean at ${PAUSED_PATH})`,
+    what: `pause or resume a Brief or its running Tasks (a boolean at ${PAUSED_PATH}, ${PAUSE_RUNS_PATH} or both)`,
     always: true,
     offOnly: true,
     method: 'PATCH',
     path: resourcePath('briefs', true),
     type: JSON_PATCH,
-    check: addsFields({ [PAUSED_PATH]: 'boolean' }),
+    check: addsFields({ [PAUSED_PATH]: 'boolean', [PAUSE_RUNS_PATH]: 'boolean' }),
   },
   {
     what: `set a Brief's ${Object.keys(BRIEF_SETTINGS).join(', ')} (${RELEASES_PATH} after a test of ${RV_PATH})`,
@@ -500,7 +502,7 @@ const ACTIONS = [
     write: writeTested('Brief'),
   },
   {
-    what: `set a Crew's /spec/paused, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, ${PUBLISH_PATH} (or remove it; ${PUBLISH_PATH} after a test of ${RV_PATH})`,
+    what: `set a Crew's /spec/paused, /spec/pauseRuns, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, ${PUBLISH_PATH} (or remove it; ${PUBLISH_PATH} after a test of ${RV_PATH})`,
     method: 'PATCH',
     path: resourcePath('crews', true),
     type: JSON_PATCH,
@@ -508,6 +510,7 @@ const ACTIONS = [
       addsFields(
         {
           '/spec/paused': 'boolean',
+          '/spec/pauseRuns': 'boolean',
           '/spec/parallel': 'integer',
           '/spec/tagReleases': 'boolean',
           '/spec/prepareReleases': 'boolean',

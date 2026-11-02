@@ -31,12 +31,22 @@ import (
 // the stopped one left. A checkpoint it can't read starts the run over.
 
 // Checkpoint kinds: a hard one is saved when c4agent is told to stop, and
-// its session could not end on its own; a clean one, saved between turns,
-// can go on in the same session (a later step: c4agent saves hard ones only).
+// its session could not end on its own; a clean one, saved when the pause
+// ended the session after a tool or stopped the run between its steps, can go
+// on in the same session (pause.go).
 const (
 	CheckpointHard  = "hard"
 	CheckpointClean = "clean"
 )
+
+// PodInfoDir is where the Sandbox pod mounts its own annotations through the
+// downward API (a file named annotations, one key="value" per line). The
+// pause-guard hook reads it to see the c4.factory.io/pause annotation.
+const PodInfoDir = "/etc/c4agent/podinfo"
+
+// PauseGrace is how long a tool may still run after the pause annotation
+// appears: past it, c4agent ends the run as on SIGTERM (a hard checkpoint).
+const PauseGrace = 5 * time.Minute
 
 // checkpointVersion is the format of state.json this c4agent writes and
 // reads; one of another version starts the run over.
@@ -98,6 +108,9 @@ type checkpoint struct {
 	Summary string `json:"summary,omitempty"`
 	// Note is what the fresh session is told of the stopped one.
 	Note string `json:"note,omitempty"`
+	// PauseReason is the pause annotation's value when the factory paused
+	// the run: the resumed session is told it.
+	PauseReason string `json:"pauseReason,omitempty"`
 }
 
 // runProgress is where a run is, for its checkpoint.
@@ -107,6 +120,13 @@ type runProgress struct {
 	summary string
 	// from is the checkpoint the run went on from; nil when it started afresh.
 	from *checkpoint
+	// resumable means the run's agent can resume a session (pause.go), and
+	// resume is the session it resumes at StepAgent: from's, when from is
+	// clean, on the job's model and its transcript restored.
+	resumable bool
+	resume    string
+	// checks is the context of the run's checks: it ends at the pause.
+	checks context.Context
 }
 
 // resumesAt reports whether the run went on from a checkpoint at step.
@@ -114,13 +134,54 @@ func (p *runProgress) resumesAt(step string) bool {
 	return p.from != nil && p.from.Step == step
 }
 
-// prompt is the prompt of the run's agent session: the job's, and when the
-// run went on from a checkpoint at that session, the stopped session's note.
-func (p *runProgress) prompt(prompt string) string {
+// session runs the run's agent session with the job's prompt. When the run
+// went on from a checkpoint at that session, it resumes the stopped session,
+// told it was paused, or else starts a fresh one with the stopped one's note.
+func (p *runProgress) session(ctx context.Context, agent Agent, dir, prompt string) (string, error) {
 	if !p.resumesAt(StepAgent) {
-		return prompt
+		return agent.Run(ctx, dir, prompt)
 	}
-	return handoffPrompt(prompt, p.from.Note)
+	if p.resume != "" {
+		answer, err := agent.Run(withResume(ctx, p.resume, prompt), dir, resumePrompt(p.from.PauseReason))
+		if err == nil || !noConversation.MatchString(err.Error()) {
+			return answer, err
+		}
+		slog.Warn("Starting a fresh session: Claude Code can't resume the paused one", "session", p.resume,
+			"error", err.Error())
+	}
+	if p.from.Note == "" {
+		return agent.Run(ctx, dir, prompt)
+	}
+	return agent.Run(ctx, dir, handoffPrompt(prompt, p.from.Note))
+}
+
+// checksContext is the context the run's checks run in: ctx, ended at the
+// pause.
+func (p *runProgress) checksContext(ctx context.Context) context.Context {
+	if p.checks == nil {
+		return ctx
+	}
+	return p.checks
+}
+
+// resumeSession picks the session a run that went on from cp resumes: cp's,
+// when it is clean, of the job's model, its agent can resume one, and the
+// session's transcript is back where Claude Code reads it. Else "": a fresh
+// session with the note.
+func resumeSession(job Job, cp *checkpoint, agentResumes bool, dir string) string {
+	if cp == nil || cp.Kind != CheckpointClean || cp.Step != StepAgent || cp.SessionID == "" || !agentResumes {
+		return ""
+	}
+	if cp.Model != job.Model {
+		slog.Info("Starting a fresh session: the Agent's model changed since the pause", "was", cp.Model,
+			"now", job.Model)
+		return ""
+	}
+	if err := restoreTranscript(job.CheckpointDir, cp.SessionID, dir); err != nil {
+		slog.Warn("Starting a fresh session: the paused session's transcript can't be restored", "error", err.Error())
+		return ""
+	}
+	return cp.SessionID
 }
 
 // sessionLog records the agent's newest session: its ID and last words.
@@ -154,10 +215,11 @@ func (l *sessionLog) newest() (id, lastText string) {
 	return l.id, l.lastText
 }
 
-// withSessionLog has a Claude Code agent record its sessions in log.
-func withSessionLog(agent Agent, log *sessionLog) Agent {
+// withSessionLog has a Claude Code agent record its sessions in log, and
+// guard them with pause.
+func withSessionLog(agent Agent, log *sessionLog, pause *pauseWatch) Agent {
 	if claude, ok := agent.(ClaudeAgent); ok {
-		claude.sessions = log
+		claude.sessions, claude.pause = log, pause
 		return claude
 	}
 	return agent
@@ -271,9 +333,11 @@ func (cp *checkpoint) apply(ctx context.Context, r *repo) error {
 }
 
 // saveCheckpoint saves the run, stopped at prog's step, to the job's
-// checkpoint directory as a hard checkpoint. result is what the stopped pod
-// reports; the checkpoint adds it to what the run's earlier pods used.
-func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Result) error {
+// checkpoint directory as a checkpoint of kind; pauseReason is the pause's,
+// when the factory paused the run. result is what the stopped pod reports;
+// the checkpoint adds it to what the run's earlier pods used.
+func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
+	pauseReason *string) error {
 	if job.CheckpointDir == "" || prog.repo == nil || prog.step == "" {
 		return nil
 	}
@@ -284,7 +348,7 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 	if err != nil {
 		return err
 	}
-	cp := checkpoint{Version: checkpointVersion, Kind: CheckpointHard, Role: job.Role, Task: job.Task,
+	cp := checkpoint{Version: checkpointVersion, Kind: kind, Role: job.Role, Task: job.Task,
 		Round: job.Round, Step: prog.step, Model: job.Model, Head: head, Start: r.start, Conflicts: r.conflicts,
 		Summary: prog.summary, Bundle: fmt.Sprintf("work-%d.bundle", time.Now().UnixNano())}
 	if cp.Work, err = r.snapshot(ctx); err != nil {
@@ -296,11 +360,27 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 	cp.addUsage(prog.from, result)
 	id, lastText := sessions.newest()
 	cp.SessionID = id
-	cp.Note = endedNote(ctx, r.dir, "The previous session was stopped with its sandbox, before it could write a note.",
-		lastText)
-	if id == "" && prog.from != nil {
-		// No session ran in this pod: the stopped one is still the earlier pod's.
-		cp.SessionID, cp.Note = prog.from.SessionID, prog.from.Note
+	headline := "The previous session was stopped with its sandbox, before it could write a note."
+	if pauseReason != nil {
+		cp.PauseReason = *pauseReason
+		headline = fmt.Sprintf("The factory paused the previous session (%s) after a tool call.",
+			orDefault(*pauseReason, "no reason given"))
+		if kind == CheckpointHard {
+			headline = fmt.Sprintf("The factory paused the previous session (%s), and ended it when it was "+
+				"still busy %s later.", orDefault(*pauseReason, "no reason given"), pauseGrace)
+		}
+	}
+	cp.Note = endedNote(ctx, r.dir, headline, lastText)
+	if id == "" {
+		// No session ran in this pod: the stopped one is still the earlier
+		// pod's, or none ran yet and there is nothing to tell. The earlier
+		// pod's session keeps its kind and model too (#1995): a hard one, or
+		// one on another model, is never resumed with --resume.
+		cp.SessionID, cp.Note = "", ""
+		if prog.from != nil {
+			cp.SessionID, cp.Note = prog.from.SessionID, prog.from.Note
+			cp.Kind, cp.Model = prog.from.Kind, prog.from.Model
+		}
 	}
 
 	tip := cp.Head
@@ -432,13 +512,9 @@ func (r *repo) gitEnv(ctx context.Context, env []string, args ...string) (string
 // Claude Code keeps it as projects/<project>/<id>.jsonl in its config
 // directory: CLAUDE_CONFIG_DIR, else ~/.claude.
 func copyTranscript(id, dst string) error {
-	config := os.Getenv("CLAUDE_CONFIG_DIR")
-	if config == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		config = filepath.Join(home, ".claude")
+	config, err := claudeConfigDir()
+	if err != nil {
+		return err
 	}
 	found, _ := filepath.Glob(filepath.Join(config, "projects", "*", id+".jsonl"))
 	if len(found) == 0 {

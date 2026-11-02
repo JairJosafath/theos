@@ -54,4 +54,16 @@ describe('DemoStorySource as a BriefWriter', () => {
     expect(returns()?.status?.conditions?.filter((c) => c.type === 'Paused')).toMatchObject([{ status: 'False' }])
     await expect(source.setPaused(DEMO_NAMESPACE, 'nope', true)).rejects.toThrow('not found')
   })
+
+  it("pauses a Brief's runs with paused, and a resume unsets both (#1995)", async () => {
+    const source = new DemoStorySource()
+    const spec = () => source.getSnapshot().data.briefs.find((b) => b.metadata.name === 'returns')?.spec
+    await source.setPauseRuns(DEMO_NAMESPACE, 'returns', true)
+    expect(spec()).toMatchObject({ paused: true, pauseRuns: true })
+    await source.setPauseRuns(DEMO_NAMESPACE, 'returns', false)
+    expect(spec()).toMatchObject({ paused: true, pauseRuns: false })
+    await source.setPauseRuns(DEMO_NAMESPACE, 'returns', true)
+    await source.setPaused(DEMO_NAMESPACE, 'returns', false)
+    expect(spec()).toMatchObject({ paused: false, pauseRuns: false })
+  })
 })

@@ -18,6 +18,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.prompts) || size(oldSelf.prompts) == 0 || has(self.prompts)",message="prompts are append-only: an earlier prompt can't change or go"
 // +kubebuilder:validation:XValidation:rule="(has(self.promptsRetired) ? self.promptsRetired : 0) >= (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)",message="promptsRetired only grows"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.prompts) ? (has(self.promptsRetired) ? self.promptsRetired : 0) <= (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0) : (((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) < 0 || (((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) <= size(oldSelf.prompts) && (has(self.prompts) ? size(self.prompts) : 0) >= size(oldSelf.prompts) - ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) && oldSelf.prompts.all(i, p, i < ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0)) || self.prompts[i - ((has(self.promptsRetired) ? self.promptsRetired : 0) - (has(oldSelf.promptsRetired) ? oldSelf.promptsRetired : 0))] == p)))",message="prompts are append-only: only the oldest can go, each counted in promptsRetired, and an earlier prompt can't change"
+// +kubebuilder:validation:XValidation:rule="!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused) && self.paused)",message="pauseRuns needs paused: a Brief pauses its running Tasks only while its work is paused"
 type BriefSpec struct {
 	// idea says in plain words what the app is for and who uses it. It can't
 	// change; steer with prompts.
@@ -96,6 +97,13 @@ type BriefSpec struct {
 	// paused by hand stays paused. The Paused condition says what still runs.
 	// +optional
 	Paused bool `json:"paused,omitempty"`
+
+	// pauseRuns, with paused, also pauses running Tasks at their next tool
+	// boundary (docs/plans/self-hosting.md, step 12): the Brief sets pauseRuns
+	// on the Crews it paused, as it does paused, and pauses its planner Task's
+	// run. Unset, each paused run resumes where it stopped.
+	// +optional
+	PauseRuns bool `json:"pauseRuns,omitempty"`
 }
 
 // BriefRelease is where a Container's releases are published: the fields of a

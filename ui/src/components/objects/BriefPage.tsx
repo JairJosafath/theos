@@ -1,5 +1,5 @@
 // A Brief's page: the object header (its lifecycle, conditions, rounds as the
-// timeline, what it made, its repository and the pause button), then what its
+// timeline, what it made, its repository and the pause buttons), then what its
 // card shows: what needs you, with a one-click answer on each item, its
 // rounds, prompts, issues and suggestions, and the prompt box; then its
 // settings (autopilot, parallel, releases and their requests), which it
@@ -9,7 +9,7 @@ import { useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'
 import type { Agent, Brief } from '../../k8s/types'
 import { describeBrief } from '../../model/brief'
-import { BriefBody, PauseButton } from '../Briefs'
+import { BriefBody, PauseButton, PauseRunsButton } from '../Briefs'
 import { plannerLimit } from './rows'
 import { FormError } from '../briefs/PromptForm'
 import type { WriteError } from '../briefs/errors'
@@ -43,7 +43,12 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
           href: pageHref(ns, c.kind, c.name),
         }))}
         links={view.repositoryURL ? [{ href: view.repositoryURL, label: 'Its plans, in its repository' }] : []}
-        actions={<PauseButton namespace={ns} view={view} writer={writer} onError={setPauseError} />}
+        actions={
+          <>
+            <PauseRunsButton namespace={ns} view={view} writer={writer} onError={setPauseError} />
+            <PauseButton namespace={ns} view={view} writer={writer} onError={setPauseError} />
+          </>
+        }
       />
       <section
         className={`panel brief brief-${view.phase.tone}`}

@@ -448,7 +448,7 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 	if brief.Spec.Paused {
 		// A round that was running when the Brief paused makes its Crews
 		// paused, so none starts a Task before syncPaused reaches it.
-		markPaused(crew)
+		markPaused(crew, brief.Spec.PauseRuns)
 	}
 	err := r.Get(ctx, client.ObjectKeyFromObject(crew), &c4v1beta1.Crew{})
 	if err == nil {

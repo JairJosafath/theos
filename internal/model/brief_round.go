@@ -307,12 +307,13 @@ func IdeaPlanned(outcomes []string, promptsPlanned int) bool {
 	return promptsPlanned > 0 || slices.Contains(outcomes, ReasonApplied) || slices.Contains(outcomes, ReasonTended)
 }
 
-// maxPausedNames is how many running Tasks a paused Brief's condition names.
+// maxPausedNames is how many Tasks a Paused condition names.
 const maxPausedNames = 20
 
 // BriefPausedMessage is the message of a paused Brief's Paused condition: the
 // Tasks still running in its Crews and its planner Task, by name, until none
-// is (decision 5 of docs/plans/done/upgrade-in-place.md).
+// is (decision 5 of docs/plans/done/upgrade-in-place.md). A paused Crew's
+// says the same of its Tasks.
 func BriefPausedMessage(running []string) string {
 	switch len(running) {
 	case 0:
@@ -320,9 +321,28 @@ func BriefPausedMessage(running []string) string {
 	case 1:
 		return "Paused; 1 Task still running: " + running[0]
 	}
-	names := strings.Join(running[:min(len(running), maxPausedNames)], ", ")
-	if more := len(running) - maxPausedNames; more > 0 {
-		names += fmt.Sprintf(" and %d more", more)
+	return fmt.Sprintf("Paused; %d Tasks still running: %s", len(running), pausedNames(running))
+}
+
+// RunsPausedMessage is the message of the Paused condition of a Crew or Brief
+// whose runs paused too (spec.pauseRuns, step 12 of
+// docs/plans/self-hosting.md): the Tasks whose agent still runs, toward its
+// next tool boundary or its end, by name, until none does.
+func RunsPausedMessage(stopping []string) string {
+	switch len(stopping) {
+	case 0:
+		return "Paused, runs too; every run stopped"
+	case 1:
+		return "Paused, runs too; 1 Task still stopping: " + stopping[0]
 	}
-	return fmt.Sprintf("Paused; %d Tasks still running: %s", len(running), names)
+	return fmt.Sprintf("Paused, runs too; %d Tasks still stopping: %s", len(stopping), pausedNames(stopping))
+}
+
+// pausedNames joins the first maxPausedNames names, and counts the rest.
+func pausedNames(names []string) string {
+	joined := strings.Join(names[:min(len(names), maxPausedNames)], ", ")
+	if more := len(names) - maxPausedNames; more > 0 {
+		joined += fmt.Sprintf(" and %d more", more)
+	}
+	return joined
 }

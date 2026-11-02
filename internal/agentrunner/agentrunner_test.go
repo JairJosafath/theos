@@ -26,10 +26,13 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// The test binary is also the session guard and the stand-in Claude Code
+	// The test binary is also the session and pause guards and the stand-in Claude Code
 	// of session_test.go.
 	if len(os.Args) > 1 && os.Args[1] == SessionGuardCommand {
 		os.Exit(SessionGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == PauseGuardCommand {
+		os.Exit(PauseGuardMain(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	if mode := os.Getenv(standInClaudeMode); mode != "" {
 		os.Exit(standInClaude(mode))

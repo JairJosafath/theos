@@ -272,7 +272,8 @@ type TaskStatus struct {
 	ChecksRerunDue bool `json:"checksRerunDue,omitempty"`
 
 	// restarts counts how often this round started over in place: sent back to
-	// resolve conflicts with main, or resumed after its Standard change merged.
+	// resolve conflicts with main, or resumed after its Standard change merged,
+	// and how often a run of it that paused could not resume and ran again.
 	// It gives each run of the round a sandbox name of its own.
 	// +optional
 	Restarts int32 `json:"restarts,omitempty"`

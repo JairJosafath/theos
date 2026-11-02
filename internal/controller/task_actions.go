@@ -95,7 +95,8 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
-	case model.ActionRerun, model.ActionSuspendRun, model.ActionResumeRun:
+	case model.ActionRerun, model.ActionRerunPaused, model.ActionSuspendRun, model.ActionResumeRun,
+		model.ActionPauseRun:
 		return r.applyInterrupted(ctx, task, status, container, agents, step)
 
 	case model.ActionRerunChecks:
@@ -767,7 +768,9 @@ type endedRun struct {
 	round   int32
 	result  *model.RunResult
 	// suspend keeps the sandbox, and suspends it: its run resumes in place.
+	// pause, when set, is why the run paused: it resumes once the pause ends.
 	suspend bool
+	pause   string
 	// resume, when set, resumes the suspended sandbox with it.
 	resume *sandboxResume
 }
@@ -815,7 +818,7 @@ func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ende
 	case ended.resume != nil:
 		return r.resumeSandbox(ctx, task.Namespace, ended.sandbox, ended.resume)
 	case ended.suspend:
-		if err := r.suspendSandbox(ctx, task.Namespace, ended.sandbox); err != nil {
+		if err := r.suspendSandbox(ctx, task.Namespace, ended.sandbox, ended.pause); err != nil {
 			return err
 		}
 	default:

@@ -54,26 +54,40 @@ type session struct {
 }
 
 // sessionGuard is one guarded session's settings: a directory outside the
-// repository with the Claude Code settings file and, once written, the note.
+// repository with the Claude Code settings file and, once written, the note
+// and the pause's mark.
 type sessionGuard struct {
-	dir   string
+	dir string
+	// limit is the session's token limit; zero: none.
 	limit int64
 }
 
 // newSessionGuard writes the settings that make program's session-guard the
-// session's PreToolUse hook.
-func newSessionGuard(program string, limit int64) (*sessionGuard, error) {
+// session's PreToolUse hook, with a limit, and its pause-guard its
+// PostToolUse hook, with the downward API file of the pod's annotations. It
+// is nil with neither.
+func newSessionGuard(program string, limit int64, annotations string) (*sessionGuard, error) {
+	if limit <= 0 && annotations == "" {
+		return nil, nil
+	}
 	dir, err := os.MkdirTemp("", "c4agent-session-")
 	if err != nil {
 		return nil, err
 	}
-	g := &sessionGuard{dir: dir, limit: limit}
-	hook := fmt.Sprintf("%s %s --limit %d --handoff %s", shellQuote(program), SessionGuardCommand, limit,
-		shellQuote(g.handoff()))
-	settings := map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{
-		"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": hook}},
-	}}}}
-	data, err := json.Marshal(settings)
+	g := &sessionGuard{dir: dir, limit: max(limit, 0)}
+	hooks := map[string]any{}
+	matchAll := func(command string) []any {
+		return []any{map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": command}}}}
+	}
+	if g.limit > 0 {
+		hooks["PreToolUse"] = matchAll(fmt.Sprintf("%s %s --limit %d --handoff %s", shellQuote(program),
+			SessionGuardCommand, limit, shellQuote(g.handoff())))
+	}
+	if annotations != "" {
+		hooks["PostToolUse"] = matchAll(fmt.Sprintf("%s %s --annotations %s --stopped %s", shellQuote(program),
+			PauseGuardCommand, shellQuote(annotations), shellQuote(g.pausedMark())))
+	}
+	data, err := json.Marshal(map[string]any{"hooks": hooks})
 	if err == nil {
 		err = os.WriteFile(g.settings(), data, 0o600)
 	}
@@ -88,6 +102,18 @@ func (g *sessionGuard) settings() string { return filepath.Join(g.dir, "settings
 func (g *sessionGuard) handoff() string  { return filepath.Join(g.dir, handoffFile) }
 func (g *sessionGuard) remove()          { _ = os.RemoveAll(g.dir) }
 
+func (g *sessionGuard) pausedMark() string { return filepath.Join(g.dir, pausedFile) }
+
+// paused reports whether pause-guard ended the session, and the reason it
+// gave.
+func (g *sessionGuard) paused() (string, bool) {
+	if g == nil {
+		return "", false
+	}
+	data, err := os.ReadFile(g.pausedMark())
+	return string(data), err == nil
+}
+
 // stopAt is the size past which c4agent ends a session that didn't stop.
 func (g *sessionGuard) stopAt() int64 { return g.limit + g.limit/2 }
 
@@ -96,7 +122,7 @@ func (g *sessionGuard) stopAt() int64 { return g.limit + g.limit/2 }
 // without one, its last words and the working tree's state. A session that
 // failed otherwise doesn't hand off: its error, such as a usage limit, says more.
 func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || g.limit == 0 {
 		return ""
 	}
 	ended := "ended"
@@ -138,25 +164,34 @@ func handoffPrompt(prompt, note string) string {
 // runSessions runs the agent in sessions of at most SessionTokenLimit tokens:
 // a session that hands off is followed by a fresh one with the note. The last
 // session's answer is the call's; every session's cost and tokens add up.
+// Each session is guarded by the pause too. A call that resumes a session
+// resumes it in the first; a fresh one after it gets the job's prompt.
 func (a ClaudeAgent) runSessions(ctx context.Context, dir, prompt string) (string, Usage, error) {
 	total := Usage{Reported: true}
 	var tokens model.TokenUsage
 	tokensReported := true
 	next := prompt
+	// The resumed session is the first; a fresh one after it gets the job's prompt.
+	resume, resuming := resumeFrom(ctx)
+	if resuming {
+		prompt = resume.prompt
+	}
 	for {
-		var guard *sessionGuard
-		if len(total.Handoffs) < maxSessionHandoffs {
-			var err error
-			if guard, err = newSessionGuard(a.Guard, a.SessionTokenLimit); err != nil {
-				// What the sessions so far used stays counted.
-				total.Reported, total.Tokens = false, nil
-				if tokensReported {
-					total.Tokens = &tokens
-				}
-				return "", total, fmt.Errorf("session guard: %w", err)
-			}
+		limit := a.SessionTokenLimit
+		if len(total.Handoffs) >= maxSessionHandoffs {
+			limit = 0
 		}
-		s := a.runSession(ctx, dir, next, guard)
+		guard, err := newSessionGuard(a.Guard, limit, a.pause.annotations())
+		if err != nil {
+			// What the sessions so far used stays counted.
+			total.Reported, total.Tokens = false, nil
+			if tokensReported {
+				total.Tokens = &tokens
+			}
+			return "", total, fmt.Errorf("session guard: %w", err)
+		}
+		s := a.runSession(ctx, dir, next, guard, resume.id)
+		resume.id = ""
 		total.MilliUSD += s.usage.MilliUSD
 		total.Reported = total.Reported && s.usage.Reported
 		if s.usage.Tokens != nil {

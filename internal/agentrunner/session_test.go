@@ -90,7 +90,7 @@ func TestSessionGuard(t *testing.T) {
 }
 
 func TestSessionGuardSettings(t *testing.T) {
-	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000)
+	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000, "/etc/c4agent/podinfo/annotations")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,13 +99,31 @@ func TestSessionGuardSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"hooks":{"PreToolUse":[{"hooks":[{"command":"'/usr/local/bin/c4 agent' session-guard --limit 130000 ` +
+	// Step 12 of docs/plans/self-hosting.md: every session's settings have
+	// the pause-guard as their PostToolUse hook.
+	want := `{"hooks":{"PostToolUse":[{"hooks":[{"command":"'/usr/local/bin/c4 agent' pause-guard ` +
+		`--annotations '/etc/c4agent/podinfo/annotations' --stopped '` + g.pausedMark() + `'","type":"command"}],` +
+		`"matcher":"*"}],"PreToolUse":[{"hooks":[{"command":"'/usr/local/bin/c4 agent' session-guard --limit 130000 ` +
 		`--handoff '` + g.handoff() + `'","type":"command"}],"matcher":"*"}]}}`
 	if string(data) != want {
 		t.Errorf("settings = %s\nwant %s", data, want)
 	}
 	if g.stopAt() != 195000 {
 		t.Errorf("stopAt() = %d, want 195000", g.stopAt())
+	}
+
+	// The session after the last handoff has no limit, and still the pause-guard.
+	unlimited, err := newSessionGuard("c4agent", 0, "/etc/c4agent/podinfo/annotations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlimited.remove()
+	data, _ = os.ReadFile(unlimited.settings())
+	if strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data), "PostToolUse") {
+		t.Errorf("settings without a limit = %s, want the pause-guard alone", data)
+	}
+	if none, err := newSessionGuard("c4agent", 0, ""); none != nil || err != nil {
+		t.Errorf("newSessionGuard() without a limit or a pause = %v, %v; want no guard", none, err)
 	}
 }
 
@@ -131,21 +149,12 @@ func standInClaude(mode string) int {
 	prompt, _ := readAll(os.Stdin)
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("prompt-%d.txt", n)), prompt, 0o600)
 
-	hook := ""
-	if i := slices.Index(os.Args, "--settings"); i > 0 {
-		var settings struct {
-			Hooks struct {
-				PreToolUse []struct {
-					Hooks []struct{ Command string }
-				}
-			}
-		}
-		data, _ := os.ReadFile(os.Args[i+1])
-		_ = json.Unmarshal(data, &settings)
-		hook = settings.Hooks.PreToolUse[0].Hooks[0].Command
-	}
-	if mode == "hang" {
+	hook, postHook := settingsHooks()
+	switch mode {
+	case "hang":
 		return hangingClaude(n)
+	case "pause", "pause-busy", "record":
+		return pausingClaude(mode, n, postHook)
 	}
 	transcript := filepath.Join(dir, fmt.Sprintf("transcript-%d.jsonl", n))
 	runHook := func(tool, file string) string {
@@ -197,6 +206,33 @@ func standInClaude(mode string) int {
 		return result(turn)
 	}
 	return 1
+}
+
+// settingsHooks are the commands of the PreToolUse and PostToolUse hooks in
+// the session's --settings; "" for one it doesn't have.
+func settingsHooks() (pre, post string) {
+	i := slices.Index(os.Args, "--settings")
+	if i < 0 || i+1 >= len(os.Args) {
+		return "", ""
+	}
+	type hooks []struct {
+		Hooks []struct{ Command string }
+	}
+	var settings struct {
+		Hooks struct {
+			PreToolUse  hooks
+			PostToolUse hooks
+		}
+	}
+	data, _ := os.ReadFile(os.Args[i+1])
+	_ = json.Unmarshal(data, &settings)
+	command := func(h hooks) string {
+		if len(h) == 0 || len(h[0].Hooks) == 0 {
+			return ""
+		}
+		return h[0].Hooks[0].Command
+	}
+	return command(settings.Hooks.PreToolUse), command(settings.Hooks.PostToolUse)
 }
 
 func readAll(f *os.File) ([]byte, error) {

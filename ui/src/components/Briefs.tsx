@@ -7,7 +7,7 @@ import { useState } from 'react'
 import type { BriefWriter } from '../k8s/briefs'
 import type { Problem } from '../k8s/sources'
 import type { Agent, Brief } from '../k8s/types'
-import { describeBrief, pauseAction, sortBriefs, type BriefView } from '../model/brief'
+import { describeBrief, pauseAction, pauseRunsAction, sortBriefs, type BriefView } from '../model/brief'
 import { UsageLine, When } from './bits'
 import { ExternalLinkIcon } from './icons'
 import { PanelState } from './PanelState'
@@ -131,6 +131,7 @@ function BriefCard({
             <span className="badge-dot" aria-hidden="true" />
             {view.phase.label}
           </span>
+          <PauseRunsButton namespace={namespace} view={view} writer={writer} onError={setPauseError} />
           <PauseButton namespace={namespace} view={view} writer={writer} onError={setPauseError} />
         </div>
       </div>
@@ -184,7 +185,10 @@ export function BriefBody({
   )
 }
 
-/** Pauses a running Brief or resumes a paused one by patching spec.paused; the card shows the API's refusal. */
+/**
+ * Pauses a running Brief or resumes a paused one by patching spec.paused, and
+ * spec.pauseRuns when its runs are paused too; the card shows the API's refusal.
+ */
 export function PauseButton({
   namespace,
   view,
@@ -203,7 +207,7 @@ export function PauseButton({
     setSending(true)
     onError(undefined)
     try {
-      await writer.setPaused(namespace, view.name, action.paused)
+      await writer.setPaused(namespace, view.name, action.paused, view.pauseRuns)
     } catch (err) {
       onError(writeError(err))
     } finally {
@@ -221,6 +225,52 @@ export function PauseButton({
       onClick={click}
     >
       {sending ? (action.paused ? 'Pausing…' : 'Resuming…') : action.label}
+    </button>
+  )
+}
+
+/**
+ * Pauses the running Tasks of a Brief and its Crews at their next tool
+ * boundary, or resumes them, by patching spec.pauseRuns (with spec.paused when
+ * pausing); the card shows the API's refusal.
+ */
+export function PauseRunsButton({
+  namespace,
+  view,
+  writer,
+  onError,
+}: {
+  namespace: string
+  view: BriefView
+  writer: BriefWriter
+  onError: (error: WriteError | undefined) => void
+}) {
+  const [sending, setSending] = useState(false)
+  const action = pauseRunsAction(view.pauseRuns, 'brief')
+
+  async function click() {
+    setSending(true)
+    onError(undefined)
+    try {
+      await writer.setPauseRuns(namespace, view.name, action.pauseRuns)
+    } catch (err) {
+      onError(writeError(err))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="button button-secondary button-small"
+      title={action.explanation}
+      aria-label={`${action.label} of brief ${view.name}`}
+      aria-pressed={view.pauseRuns}
+      disabled={sending}
+      onClick={click}
+    >
+      {sending ? (action.pauseRuns ? 'Pausing runs…' : 'Resuming runs…') : action.label}
     </button>
   )
 }

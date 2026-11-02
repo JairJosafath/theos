@@ -261,6 +261,10 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		mounts = append(mounts, corev1.VolumeMount{Name: checkpointVolume, MountPath: checkpointMount})
 	}
 	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}}
+	// The pod's own annotations, which the kubelet keeps up to date: c4agent's
+	// pause guard reads the pause the operator asks for there.
+	mounts = append(mounts, corev1.VolumeMount{Name: podInfoVolume, MountPath: agentrunner.PodInfoDir, ReadOnly: true})
+	volumes = append(volumes, podInfo())
 	var initContainers []corev1.Container
 	if run.goCache != "" {
 		// Compiled packages outlive the pod, so the next round, reviewer and Task
@@ -506,6 +510,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 			}
 			state.Result.Tokens, state.Result.SessionHandoffs = result.Tokens, result.SessionHandoffs
 			state.Result.Role = result.Role
+			state.Result.Paused, state.Result.PauseReason = result.Paused, result.PauseReason
 			return state, nil
 		}
 		state.Failure = term.Reason

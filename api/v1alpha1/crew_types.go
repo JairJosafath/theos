@@ -17,6 +17,7 @@ import (
 // Agent that reviews, the Agents labelled issues go to instead, and whether they
 // pick up ready issues.
 // +kubebuilder:validation:XValidation:rule="!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)",message="publishReleases needs tagReleases: only a release the Crew tagged is published"
+// +kubebuilder:validation:XValidation:rule="!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused) && self.paused)",message="pauseRuns needs paused: a Crew pauses its running Tasks only while it picks up no new issue"
 type CrewSpec struct {
 	// containerRef names the Container whose repository's issues the Crew works
 	// on. It can't change.
@@ -47,6 +48,13 @@ type CrewSpec struct {
 	// runs to its end.
 	// +optional
 	Paused bool `json:"paused,omitempty"`
+
+	// pauseRuns, with paused, also pauses the Crew's running Tasks at their
+	// next tool boundary (docs/plans/self-hosting.md, step 12): each run saves
+	// a clean checkpoint and suspends, with no round or rerun spent and its
+	// cost so far counted. Unset, each paused run resumes where it stopped.
+	// +optional
+	PauseRuns bool `json:"pauseRuns,omitempty"`
 
 	// parallel is how many issues the Crew works on at once, each in its own Task
 	// and branch. A change that conflicts with one merged before it goes back to

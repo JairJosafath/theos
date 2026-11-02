@@ -1,5 +1,5 @@
 // The UI's writes to a Brief: create one from an idea, add a follow-up prompt
-// to one, pause or resume one and, with actions on, set its autopilot,
+// to one, pause or resume one or its running Tasks and, with actions on, set its autopilot,
 // parallel and releases. server.mjs passes exactly these requests on and
 // nothing else; the CRD's rules decide whether they are accepted, so this file
 // copies none of them: a refused write shows the API server's message.
@@ -30,14 +30,38 @@ export function briefManifest(namespace: string, name: string, idea: string, opt
   }
 }
 
-/** The JSON patch that appends one prompt; server.mjs passes on only this and pausedPatch. */
+/** The JSON patch that appends one prompt; server.mjs passes on only this, pausedPatch and pauseRunsPatch. */
 export function promptPatch(prompt: string): [{ op: 'add'; path: '/spec/prompts/-'; value: string }] {
   return [{ op: 'add', path: '/spec/prompts/-', value: prompt }]
 }
 
-/** The JSON patch that pauses (true) or resumes (false) a Brief and every Crew it made. */
-export function pausedPatch(paused: boolean): [{ op: 'add'; path: '/spec/paused'; value: boolean }] {
-  return [{ op: 'add', path: '/spec/paused', value: paused }]
+type PauseOp = { op: 'add'; path: '/spec/paused' | '/spec/pauseRuns'; value: boolean }
+
+/**
+ * The JSON patch that pauses (true) or resumes (false) a Brief and every Crew
+ * it made. A resume while its runs are paused (`runsPaused`, spec.pauseRuns as
+ * the page shows it) unsets pauseRuns too, as the CRD takes pauseRuns only
+ * with paused: Resume resumes everything.
+ */
+export function pausedPatch(paused: boolean, runsPaused = false): PauseOp[] {
+  const ops: PauseOp[] = [{ op: 'add', path: '/spec/paused', value: paused }]
+  if (!paused && runsPaused) ops.push({ op: 'add', path: '/spec/pauseRuns', value: false })
+  return ops
+}
+
+/**
+ * The JSON patch that pauses (true) the running Tasks of a Brief or a Crew at
+ * their next tool boundary, or resumes them (false). Pausing them sets paused
+ * too, which the CRD needs; resuming them leaves paused as it is, so a drained
+ * Brief or Crew stays drained.
+ */
+export function pauseRunsPatch(pauseRuns: boolean): PauseOp[] {
+  return pauseRuns
+    ? [
+        { op: 'add', path: '/spec/paused', value: true },
+        { op: 'add', path: '/spec/pauseRuns', value: true },
+      ]
+    : [{ op: 'add', path: '/spec/pauseRuns', value: false }]
 }
 
 /** A Brief's settings the UI sets with actions on; each one given is set, the rest left as they are. */
@@ -114,8 +138,13 @@ export interface BriefWriter {
   /** Each unset option leaves the factory's default. */
   create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void>
   addPrompt(namespace: string, name: string, prompt: string): Promise<void>
-  /** Sets spec.paused: true pauses the Brief and its Crews, false resumes them. */
-  setPaused(namespace: string, name: string, paused: boolean): Promise<void>
+  /**
+   * Sets spec.paused: true pauses the Brief and its Crews, false resumes them;
+   * with `runsPaused` (spec.pauseRuns is set) a resume unsets pauseRuns too.
+   */
+  setPaused(namespace: string, name: string, paused: boolean, runsPaused?: boolean): Promise<void>
+  /** Sets spec.pauseRuns (with spec.paused when true): true pauses running Tasks, false resumes them. */
+  setPauseRuns(namespace: string, name: string, pauseRuns: boolean): Promise<void>
   /** Sets spec.autopilot, spec.parallel or spec.releases; the UI server refuses it with actions off. */
   setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void>
 }
@@ -142,8 +171,12 @@ export class LiveBriefWriter implements BriefWriter {
     await this.patch(namespace, name, promptPatch(prompt))
   }
 
-  async setPaused(namespace: string, name: string, paused: boolean): Promise<void> {
-    await this.patch(namespace, name, pausedPatch(paused))
+  async setPaused(namespace: string, name: string, paused: boolean, runsPaused?: boolean): Promise<void> {
+    await this.patch(namespace, name, pausedPatch(paused, runsPaused))
+  }
+
+  async setPauseRuns(namespace: string, name: string, pauseRuns: boolean): Promise<void> {
+    await this.patch(namespace, name, pauseRunsPatch(pauseRuns))
   }
 
   async setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void> {

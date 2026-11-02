@@ -32,7 +32,7 @@ func plan(ctx context.Context, job Job, agent Agent, r *repo, prog *runProgress,
 			return result
 		}
 	}
-	summary, err := agent.Run(ctx, r.dir, prog.prompt(PlanPrompt(job, guide, brief)))
+	summary, err := prog.session(ctx, agent, r.dir, PlanPrompt(job, guide, brief))
 	result.Summary = shorten(summary, maxPlanSummary)
 	if err != nil {
 		return agentFailed(result, err)

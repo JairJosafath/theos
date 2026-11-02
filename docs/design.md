@@ -318,8 +318,8 @@ on a Standard change), then `Merged` or `Failed`.
   for an unknown time and counts none of it, so each such resume gets the
   run's full timeout again; `MaxResumes` bounds them. A restore that fails
   half way puts the clone back as it was cloned before the run starts over.
-  Only `hard` checkpoints are written so far; a `clean` one, saved between
-  turns, will resume the same session with `claude -p --resume`.
+  A `clean` checkpoint is saved when a run pauses at a tool boundary (below);
+  on the same model it resumes the same session with `claude -p --resume`.
 - **Roles get their own model and guide.** An Agent has a `harness` and a
   `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
   read from the base branch so a change can't rewrite its own review. The
@@ -428,11 +428,30 @@ the node's: the pods share it with everything else
 A Crew per Container names the implementer and reviewer Agents, polls the
 repository's `status/ready` issues and starts up to `parallel` Tasks (one by
 default; `Blocked` ones don't count), with three tries per issue.
-`spec.paused` stops new starts; running Tasks are never stopped.
+`spec.paused` stops new starts; running Tasks run to their end, unless
+`spec.pauseRuns` pauses them too.
 `spec.taskBudgetUSD` caps what one Task's agent runs may cost, in US dollars,
 summed from what its agents report; at the cap the Task starts no further
 run (`OverBudget`) until the cap is raised, and unset means no cap.
 
+- **Pausing runs.** `spec.pauseRuns`, which CEL allows only with `paused`,
+  pauses the Crew's running Tasks at their next tool boundary. The operator
+  sets the annotation `c4.factory.io/pause: <reason>` on the pod template of
+  each running Task's Sandbox, the one thing it changes under a running
+  agent; Agent Sandbox copies it onto the pod, and the pod sees its own
+  annotations through a downward API volume at `/etc/c4agent/podinfo`.
+  c4agent's `pause-guard` hook stops the agent after its current tool (a tool
+  still running five minutes on is ended as on `SIGTERM`), saves a `clean`
+  checkpoint and reports `Paused`. The operator counts what the run cost so
+  far, suspends the Sandbox as it does an interrupted run's and drops its
+  shutdown time, so a pause may last as long as it likes; the Task gets
+  `Paused=True`. A pause costs no round, rerun or resume, and starts no run
+  and resumes none of the Task's until it ends; checks and merges go on. A
+  paused run that can't resume (its Sandbox expired first) runs its step
+  again, still with no rerun spent.
+  Unsetting `pauseRuns` resumes each paused run in place. A run in a Sandbox
+  without the checkpoint volume isn't asked: it runs to its end. The Crew's
+  `Paused` condition names the Tasks still stopping.
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
   goes first, even past `parallel`; then a Standard change a `Blocked` Task
   waits on; then releases, due first first, the next taking places the
@@ -649,7 +668,9 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   `retry`, `close`, `wait` or `ask`; in `Ask` each waits in
   `status.needsYou` with the choice the Brief would make.
 - **Pause.** `spec.paused` pauses the Crews the Brief made and starts no
-  round; `Paused` names the Tasks still running. No issue may ask to change
+  round; `Paused` names the Tasks still running. `spec.pauseRuns`, only with
+  `paused`, passes on to the Crews it paused, as `paused` does, and pauses
+  its planner Task's run too; `Paused` then names the Tasks still stopping. No issue may ask to change
   `model.AgentNeverPaths` (`AGENTS.md`, `docs/agents/`, `.c4factory.yaml`).
 - **Follow-ups keep scaffold once:** a change to a scaffolded Container is an
   issue in its repository, a new Relationship's wiring too.
@@ -692,8 +713,8 @@ other path, method, content type or field, and by RBAC for anything else:
 | Kind | Request | Fields |
 | --- | --- | --- |
 | Brief | `POST` | a new Brief |
-| Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
-| Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
+| Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
+| Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
 | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take`, `c4.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |

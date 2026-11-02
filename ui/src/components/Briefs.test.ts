@@ -11,6 +11,7 @@ const writer: BriefWriter = {
   create: async () => {},
   addPrompt: async () => {},
   setPaused: async () => {},
+  setPauseRuns: async () => {},
   setSettings: async () => {},
 }
 

@@ -905,6 +905,115 @@ func TestNextTaskStepResumesFromACheckpoint(t *testing.T) {
 	}
 }
 
+// Step 12 of docs/plans/self-hosting.md: a pause of the runs (a Crew's or
+// Brief's spec.pauseRuns) asks a working agent to pause, suspends the run that
+// paused with no round, rerun or resume spent, holds every start and resume,
+// and resumes the paused run in place once it ends.
+func TestNextTaskStepPausesRuns(t *testing.T) {
+	const pause = "Crew linter paused its runs"
+	working := RunState{Started: true, Checkpoint: true, Pod: "uid-1"}
+	paused := RunState{Started: true, Done: true, Checkpoint: true, Pod: "uid-1",
+		Result: &RunResult{Paused: true, PauseReason: pause, CostMilliUSD: 400, CostReported: true}}
+	suspended := RunState{Started: true, Suspended: true, Paused: true, Checkpoint: true}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		state   PauseState
+		message string
+	}{
+		{"a working agent is asked to pause", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Pause: pause, Run: working}, ActionWait, PausePausing,
+			"The agent is working on round 1; it pauses at its next tool boundary (" + pause + ")"},
+		{"so is a reviewer", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3, Pause: pause, Run: working},
+			ActionWait, PausePausing, "The reviewer is reviewing; it pauses at its next tool boundary"},
+		{"one without the checkpoint volume runs to its end", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Pause: pause, Run: RunState{Started: true, Pod: "uid-1"}}, ActionWait, PausePausing,
+			"it runs to its end, as its sandbox has no checkpoint to pause to"},
+		{"a paused run suspends with no round, rerun or resume", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Pause: pause, Run: paused}, ActionPauseRun, PausePaused,
+			"The run of round 1 paused (" + pause + ") and saved its checkpoint"},
+		{"even past the resume and rerun caps", TaskFacts{Phase: TaskReviewing, Round: 3, MaxRounds: 3,
+			Resumes: MaxResumes, Reruns: MaxReruns, Pause: pause, Run: paused}, ActionPauseRun, PausePaused, ""},
+		{"a run that paused as the pause ended suspends too", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: paused}, ActionPauseRun, PauseNone, "resumes in place when the pause ends"},
+		{"a paused planner suspends", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Plan: true,
+			Pause: pause, Run: paused}, ActionPauseRun, PausePaused, ""},
+		{"a paused run whose sandbox expired runs again", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Pause: pause, Run: RunState{Started: true, Done: true,
+				Result: &RunResult{Paused: true, PauseReason: pause}}}, ActionRerunPaused, PausePaused,
+			"its sandbox has no checkpoint any more; round 1 runs again, with no rerun spent"},
+		// #1995: a pause costs no rerun, even when it costs the checkpoint.
+		{"with no rerun spent, past the rerun cap too", TaskFacts{Phase: TaskReviewing, Round: 2, MaxRounds: 3,
+			Reruns: MaxReruns, Run: RunState{Started: true, Done: true,
+				Result: &RunResult{Paused: true, PauseReason: pause}}}, ActionRerunPaused, PauseNone,
+			"round 2 runs again, with no rerun spent"},
+		{"as does one whose sandbox expired while suspended", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Reruns: MaxReruns, Run: RunState{Started: true, Suspended: true, Paused: true}},
+			ActionRerunPaused, PauseNone,
+			"The paused run can't resume (the suspended run could not resume: its sandbox reached its shutdown " +
+				"time); round 1 runs again, with no rerun spent"},
+		{"a paused run waits for its pod to go", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Pause: pause, Run: RunState{Started: true, Suspended: true, Paused: true, Checkpoint: true, Pod: "uid-1"}},
+			ActionWait, PausePaused, "The paused run of round 1 waits for its pod to go"},
+		{"then stays paused", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Pause: pause,
+			Run: suspended}, ActionWait, PausePaused,
+			"Paused by the factory (" + pause + "); no agent runs until the pause ends"},
+		{"however long the pause lasts", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3, Pause: pause,
+			Run: RunState{Started: true, Suspended: true, Paused: true, Checkpoint: true,
+				SuspendedFor: 3 * 24 * time.Hour}}, ActionWait, PausePaused, "Paused by the factory"},
+		{"and resumes in place, counting no resume, once it ends", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Resumes: MaxResumes, Run: RunState{Started: true, Suspended: true, Paused: true,
+				Checkpoint: true, SuspendedFor: 3 * 24 * time.Hour}}, ActionResumeRun, PauseNone,
+			"Resuming the paused run of round 1 in place"},
+		{"an interrupted run's resume waits for the pause too", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Resumes: 1, Pause: pause, Run: RunState{Started: true, Suspended: true, Checkpoint: true,
+				SuspendedFor: time.Hour}}, ActionWait, PausePaused, "Paused by the factory"},
+		{"a paused resume still waits at the cost cap", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, BudgetMilliUSD: 1000, CostMilliUSD: 1000, Run: suspended}, ActionWait, PauseNone,
+			"at its Crew's cap of $1"},
+		{"no round starts while paused", TaskFacts{Phase: TaskPending, Protected: true, ContainerReady: true,
+			Base: checkSuccess, Pause: pause}, ActionWait, PausePaused, "Paused by the factory"},
+		{"nor a review", TaskFacts{Phase: TaskChecking, Round: 1, MaxRounds: 3, Checks: checkSuccess,
+			Pause: pause}, ActionWait, PausePaused, "Paused by the factory"},
+		{"nor the next round", TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3, Pause: pause},
+			ActionWait, PausePaused, "Paused by the factory"},
+		{"a Task waiting on CI is paused, and its checks go on", TaskFacts{Phase: TaskChecking, Round: 1,
+			MaxRounds: 3, Checks: checkPending, CIRun: CIRun{State: CIRunRunning}, Pause: pause}, ActionWait,
+			PausePaused, "Waiting for checks"},
+		{"a Task that merges while paused merges", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			Pause: pause, Run: RunState{Started: true, Done: true, Result: &RunResult{Verdict: VerdictApprove}}},
+			ActionMerge, PausePaused, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || got.Pause != tt.state || !strings.Contains(got.Message, tt.message) {
+				t.Errorf("NextTaskStep() = %+v, want %s, pause %q, with %q", got, tt.want, tt.state, tt.message)
+			}
+		})
+	}
+}
+
+// The pause annotation goes only on the sandbox of a run that can save a
+// checkpoint, while the factory pauses the runs.
+func TestPauseRequest(t *testing.T) {
+	const pause = "Brief cel-lens paused its runs"
+	for _, tt := range []struct {
+		name  string
+		facts TaskFacts
+		want  string
+	}{
+		{"a pause with the volume", TaskFacts{Pause: pause, Run: RunState{Started: true, Checkpoint: true}}, pause},
+		{"no pause", TaskFacts{Run: RunState{Started: true, Checkpoint: true}}, ""},
+		{"a sandbox without the volume", TaskFacts{Pause: pause, Run: RunState{Started: true}}, ""},
+	} {
+		if got := PauseRequest(tt.facts); got != tt.want {
+			t.Errorf("%s: PauseRequest() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestAfterInterruption(t *testing.T) {
 	interrupted := RunState{Started: true, Done: true, Interrupted: true, Failure: "Evicted"}
 	withVolume := interrupted
