@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -381,6 +382,56 @@ func TestUnavailableAgentSavesACheckpointBeforeItReports(t *testing.T) {
 			t.Errorf("the session ran with %q and prompt %q, want a fresh session told why", args, prompt)
 		}
 	})
+}
+
+// scriptedAgent answers each call with the next of its steps, and records
+// the prompts.
+type scriptedAgent struct {
+	steps   []func(dir string) (string, error)
+	prompts []string
+}
+
+func (a *scriptedAgent) Run(_ context.Context, dir, prompt string) (string, error) {
+	a.prompts = append(a.prompts, prompt)
+	step := a.steps[0]
+	a.steps = a.steps[1:]
+	return step(dir)
+}
+
+// #1996: an agent that is unavailable while it fixes the check leaves a
+// checkpoint at the check; the resumed run's first fix session, a fresh
+// one, is told why the earlier one stopped.
+func TestUnavailableDuringTheCheckFixTellsTheResumedFix(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints := t.TempDir()
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.CheckCommand = checkpoints, []string{"sh", "-c", "test -f fixed"}
+	write := func(name, reply string) func(string) (string, error) {
+		return func(dir string) (string, error) {
+			return reply, os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o600)
+		}
+	}
+	limited := &scriptedAgent{steps: []func(string) (string, error){write("crop.go", "Added crop."),
+		func(string) (string, error) {
+			return "", errors.New("claude ended with an error: Claude AI usage limit reached|4102444800")
+		}}}
+	stopped := Run(context.Background(), job, limited, t.TempDir())
+	if !stopped.Unavailable || stopped.Checkpoint != CheckpointClean {
+		t.Fatalf("Run() = %+v, want an unavailable agent with a clean checkpoint", stopped)
+	}
+	if cp := readCheckpoint(t, checkpoints); cp.Step != StepCheck || cp.Summary != "Added crop." {
+		t.Fatalf("state.json = %+v, want a checkpoint at the check", cp)
+	}
+
+	fixer := &scriptedAgent{steps: []func(string) (string, error){write("fixed", "Fixed.")}}
+	resumed := Run(context.Background(), job, fixer, t.TempDir())
+	if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
+		t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
+	}
+	if len(fixer.prompts) != 1 || !strings.HasPrefix(fixer.prompts[0], "The agent's service was unavailable (") ||
+		!strings.Contains(fixer.prompts[0], `"sh -c test -f fixed" fails.`) {
+		t.Errorf("the resumed run's prompts = %q, want one fix prompt told the service was unavailable", fixer.prompts)
+	}
 }
 
 // resumeUnavailable resumes, on onModel, a copy of the checkpoint an

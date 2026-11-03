@@ -374,7 +374,8 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	result.Summary = summary
 	prog.step, prog.summary = StepCheck, summary
 
-	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base)
+	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base,
+		prog.checkNote())
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -504,7 +505,11 @@ func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir stri
 // returns the check's last output, the base's output when the base fails too,
 // the check's error, and the agent's. The checks run in checks, which the
 // pause ends: a check it killed is errPaused, and runs again on resume.
-func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck) (string, string, error, error) {
+//
+// note, when set, starts the first fix prompt: it tells a run that went on
+// from a checkpoint at its check why the earlier one stopped.
+func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
+	note string) (string, string, error, error) {
 	check := strings.Join(job.CheckCommand, " ")
 	paused := func() bool { return checks.Err() != nil && ctx.Err() == nil }
 	checkOutput, checkErr := runCheck(checks, job, dir)
@@ -526,6 +531,9 @@ func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, 
 				"It was green in CI when this Task started, so that failure is the workspace's. Fix the failures your change causes, and leave the rest to CI, which runs the check and decides it. "+
 				"Then run it again. Output on your branch:\n%s",
 				check, job.Base, tail(baseOutput, 2000), tail(checkOutput, 6000))
+		}
+		if note != "" {
+			prompt, note = note+"\n\n"+prompt, ""
 		}
 		if _, err := agent.Run(ctx, dir, prompt); err != nil {
 			return checkOutput, baseOutput, checkErr, err

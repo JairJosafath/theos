@@ -162,6 +162,18 @@ func (p *runProgress) session(ctx context.Context, agent Agent, dir, prompt stri
 	return agent.Run(ctx, dir, handoffPrompt(prompt, p.from.Note))
 }
 
+// checkNote is what the first fix session of a run that went on at its
+// check from an unavailable agent's checkpoint is told (#1996): a fresh
+// session, it would not know the earlier one stopped. "" for any other run.
+func (p *runProgress) checkNote() string {
+	if !p.resumesAt(StepCheck) || p.from.Unavailable == "" {
+		return ""
+	}
+	return fmt.Sprintf("The agent's service was unavailable (%s) while the check was being fixed, and the "+
+		"factory resumed the run once it was back. The working tree is as the stopped session left it.",
+		p.from.Unavailable)
+}
+
 // checksContext is the context the run's checks run in: ctx, ended at the
 // pause.
 func (p *runProgress) checksContext(ctx context.Context) context.Context {
