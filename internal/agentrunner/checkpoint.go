@@ -31,7 +31,8 @@ import (
 // the stopped one left. A checkpoint it can't read starts the run over.
 
 // Checkpoint kinds: a hard one is saved when c4agent is told to stop, and
-// its session could not end on its own; a clean one, saved when the pause
+// its session could not end on its own, and between tool calls while the
+// session goes on (periodic.go); a clean one, saved when the pause
 // ended the session after a tool or stopped the run between its steps, can go
 // on in the same session (pause.go).
 const (
@@ -219,6 +220,17 @@ func (l *sessionLog) started(id string) {
 	l.id, l.lastText = id, ""
 }
 
+// said records the session's newest words while it runs, for a checkpoint
+// saved between its tool calls.
+func (l *sessionLog) said(text string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastText = text
+}
+
 func (l *sessionLog) ended(lastText string) {
 	if l == nil {
 		return
@@ -234,11 +246,11 @@ func (l *sessionLog) newest() (id, lastText string) {
 	return l.id, l.lastText
 }
 
-// withSessionLog has a Claude Code agent record its sessions in log, and
-// guard them with pause.
-func withSessionLog(agent Agent, log *sessionLog, pause *pauseWatch) Agent {
+// withSessionLog has a Claude Code agent record its sessions in log, guard
+// them with pause, and save periodic checkpoints between their tool calls.
+func withSessionLog(agent Agent, log *sessionLog, pause *pauseWatch, periodic *periodicCheckpoints) Agent {
 	if claude, ok := agent.(ClaudeAgent); ok {
-		claude.sessions, claude.pause = log, pause
+		claude.sessions, claude.pause, claude.checkpoints = log, pause, periodic
 		return claude
 	}
 	return agent
@@ -351,23 +363,27 @@ func (cp *checkpoint) apply(ctx context.Context, r *repo) error {
 	return nil
 }
 
-// saveCheckpoint saves the run, stopped at prog's step, to the job's
-// checkpoint directory as a checkpoint of kind, and reports whether it did:
-// a run with no directory, or stopped before its clone, saves none.
+// saveCheckpoint saves the run, stopped at prog's step or between two of its
+// tool calls, to the job's checkpoint directory as a checkpoint of kind, and
+// reports whether it did: a run with no directory, or stopped before its
+// clone, saves none.
 // pauseReason is the pause's, when the factory paused the run. result is
 // what the stopped pod reports; the checkpoint adds it to what the run's
 // earlier pods used, and says when the agent's service was unavailable.
-func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
-	pauseReason *string) (bool, error) {
+func saveCheckpoint(ctx context.Context, job Job, prog *runProgress, sessions *sessionLog, result Result,
+	kind string, pauseReason *string) (bool, error) {
 	if job.CheckpointDir == "" || prog.repo == nil || prog.step == "" {
 		return false, nil
 	}
-	return true, saveRun(job, prog, sessions, result, kind, pauseReason)
+	return true, saveRun(ctx, job, prog, sessions, result, kind, pauseReason)
 }
 
-func saveRun(job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
+// saveRun saves the run within checkpointTimeout, or until ctx ends: a save
+// between tool calls ends with the run's context (periodic.go), the saves
+// of a stopped run get a context of their own.
+func saveRun(ctx context.Context, job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
 	pauseReason *string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), checkpointTimeout)
+	ctx, cancel := context.WithTimeout(ctx, checkpointTimeout)
 	defer cancel()
 	r := prog.repo
 	head, err := r.head(ctx)

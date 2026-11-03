@@ -237,7 +237,8 @@ var stopGrace = 2 * time.Second
 //
 // With a checkpoint directory, a run told to stop saves a hard checkpoint
 // there before it reports, and a run that finds one goes on from it
-// (checkpoint.go). A run the factory pauses stops at its next tool boundary
+// (checkpoint.go). Between tool calls, a run saves a hard checkpoint every
+// CheckpointEvery and goes on, for a pod lost with no warning (periodic.go). A run the factory pauses stops at its next tool boundary
 // or step, saves a clean checkpoint (a hard one when it is still busy
 // pauseGrace later), and reports Paused (pause.go). A run whose agent's
 // service was unavailable saves a clean checkpoint before it reports
@@ -248,8 +249,9 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	pause := newPauseWatch(job)
 	runCtx, checks, stopWatch := pause.start(ctx)
 	defer stopWatch()
-	meter := &usageMeter{agent: withSessionLog(agent, sessions, pause)}
 	prog := &runProgress{resumable: resumable(agent), checks: checks}
+	meter := &usageMeter{}
+	meter.agent = withSessionLog(agent, sessions, pause, newPeriodicCheckpoints(job, prog, sessions, meter))
 	result := run(runCtx, job, pausingAgent{agent: meter, pause: pause}, dir, prog)
 	stopWatch()
 	result.CostMilliUSD, result.Tokens = meter.total(), meter.totalTokens()
@@ -266,7 +268,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 			kind = CheckpointHard
 		}
 		slog.Info("Paused by the factory", "reason", reason, "checkpoint", kind, "step", prog.step)
-		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
+		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, kind, &reason); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over on resume", "error", err.Error())
 		} else if saved {
 			result.Checkpoint = kind
@@ -288,7 +290,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Interrupted = true
 	}
 	if result.Interrupted && ctx.Err() != nil {
-		if saved, err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
+		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, CheckpointHard, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
 		} else if saved {
 			result.Checkpoint = CheckpointHard
@@ -299,7 +301,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		// nobody stopped c4agent: its transcript is whole, and the same
 		// session can go on.
 		kind := CheckpointClean
-		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, nil); err != nil {
+		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, kind, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the step runs again when the agent is back",
 				"error", err.Error())
 		} else if saved {
