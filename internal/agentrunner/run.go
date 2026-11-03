@@ -240,9 +240,9 @@ var stopGrace = 2 * time.Second
 // (checkpoint.go). A run the factory pauses stops at its next tool boundary
 // or step, saves a clean checkpoint (a hard one when it is still busy
 // pauseGrace later), and reports Paused (pause.go). A run whose agent's
-// service was unavailable saves a clean checkpoint (a hard one when c4agent
-// was told to stop) before it reports Unavailable, to go on from when the
-// agent is back.
+// service was unavailable saves a clean checkpoint before it reports
+// Unavailable, to go on from when the agent is back; one c4agent was told to
+// stop is interrupted instead, whatever the agent printed.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	sessions := &sessionLog{}
 	pause := newPauseWatch(job)
@@ -276,6 +276,13 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Commit, result.Blocked = "", ""
 		return result
 	}
+	// A run c4agent was told to stop (a SIGTERM, or the run's deadline) is
+	// interrupted, whatever the agent printed before it was killed: an
+	// earlier "overloaded" in its output doesn't make the stop a wait for the
+	// service, which would resume it with no round spent (#1996).
+	if result.Unavailable && ctx.Err() != nil {
+		result.Unavailable, result.RetryAt = false, nil
+	}
 	if result.Error != "" && !result.Unavailable &&
 		(unreachableHost(result.Error) || stoppedWithin(ctx, stopGrace)) {
 		result.Interrupted = true
@@ -288,13 +295,10 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		}
 	}
 	if result.Unavailable {
-		// The agent's own process ended with the service's error: its
-		// transcript is whole, and the same session can go on. One c4agent
-		// had to stop is ended as on SIGTERM.
+		// The agent's own process ended with the service's error, and
+		// nobody stopped c4agent: its transcript is whole, and the same
+		// session can go on.
 		kind := CheckpointClean
-		if ctx.Err() != nil {
-			kind = CheckpointHard
-		}
 		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the step runs again when the agent is back",
 				"error", err.Error())
