@@ -443,6 +443,14 @@ func resumeUnavailable(t *testing.T, url, checkpoints, onModel string) (args, pr
 	if err := os.CopyFS(saved, os.DirFS(checkpoints)); err != nil {
 		t.Fatal(err)
 	}
+	// Each resume pushes to its own copy of the origin: two resumes of one
+	// checkpoint a second apart make different commits on the same branch,
+	// and the second push would not fast-forward (#1996).
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := os.CopyFS(origin, os.DirFS(strings.TrimPrefix(url, "file://"))); err != nil {
+		t.Fatal(err)
+	}
+	url = "file://" + origin
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	agent, log := standInAgent(t, "record")
 	agent.SessionIDs = true
