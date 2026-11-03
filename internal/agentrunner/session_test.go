@@ -90,7 +90,7 @@ func TestSessionGuard(t *testing.T) {
 }
 
 func TestSessionGuardSettings(t *testing.T) {
-	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000, "/etc/c4agent/podinfo/annotations")
+	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000, "/etc/c4agent/podinfo/annotations", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestSessionGuardSettings(t *testing.T) {
 	}
 
 	// The session after the last handoff has no limit, and still the pause-guard.
-	unlimited, err := newSessionGuard("c4agent", 0, "/etc/c4agent/podinfo/annotations")
+	unlimited, err := newSessionGuard("c4agent", 0, "/etc/c4agent/podinfo/annotations", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSessionGuardSettings(t *testing.T) {
 	if strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data), "PostToolUse") {
 		t.Errorf("settings without a limit = %s, want the pause-guard alone", data)
 	}
-	if none, err := newSessionGuard("c4agent", 0, ""); none != nil || err != nil {
+	if none, err := newSessionGuard("c4agent", 0, "", false); none != nil || err != nil {
 		t.Errorf("newSessionGuard() without a limit or a pause = %v, %v; want no guard", none, err)
 	}
 }
@@ -155,6 +155,8 @@ func standInClaude(mode string) int {
 		return hangingClaude(n)
 	case "pause", "pause-busy", "record", "limit":
 		return pausingClaude(mode, n, postHook)
+	case "periodic":
+		return periodicClaude(n, postHook)
 	}
 	transcript := filepath.Join(dir, fmt.Sprintf("transcript-%d.jsonl", n))
 	runHook := func(tool, file string) string {

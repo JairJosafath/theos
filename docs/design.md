@@ -320,6 +320,9 @@ on a Standard change), then `Merged` or `Failed`.
   half way puts the clone back as it was cloned before the run starts over.
   A `clean` checkpoint is saved when a run pauses at a tool boundary (below);
   on the same model it resumes the same session with `claude -p --resume`.
+  Between tool calls, `pause-guard` also has c4agent save a `hard`
+  checkpoint when the last is 10 minutes old, and the session goes on; a
+  pod lost without warning (a power loss, `wsl --shutdown`) resumes from it.
 - **An unavailable agent's run waits, suspended.** c4agent saves a
   checkpoint before it reports `Unavailable`: `clean` when the agent ended
   on the service's error, its transcript whole, `hard` when c4agent had to

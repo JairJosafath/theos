@@ -47,6 +47,9 @@ type ClaudeAgent struct {
 	// pause, when set, guards each session with Guard's pause-guard, and
 	// learns of the sessions it ended.
 	pause *pauseWatch
+	// checkpoints, when set, saves the run between the sessions' tool calls
+	// when Guard's pause-guard asks (periodic.go).
+	checkpoints *periodicCheckpoints
 }
 
 // DefaultClaudeCommand runs Claude Code once, headless, streaming every turn
@@ -83,7 +86,7 @@ func (a ClaudeAgent) Run(ctx context.Context, dir, prompt string) (string, error
 // what the call cost and used, from the CLI's stream-json output, or the one
 // JSON object a custom command prints.
 func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) (string, Usage, error) {
-	if a.Guard != "" && (a.SessionTokenLimit > 0 || a.pause.annotations() != "") {
+	if a.Guard != "" && (a.SessionTokenLimit > 0 || a.pause.annotations() != "" || a.checkpoints != nil) {
 		return a.runSessions(ctx, dir, prompt)
 	}
 	resume, _ := resumeFrom(ctx)
@@ -119,6 +122,11 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 	defer cancel()
 	var s session
 	stdout := &streamWatch{}
+	if guard != nil && guard.checkpoints {
+		// A checkpoint saved between tool calls tells of the session's
+		// newest words.
+		stdout.said = a.sessions.said
+	}
 	if guard != nil {
 		command = append(slices.Clone(command), "--settings", guard.settings())
 	}

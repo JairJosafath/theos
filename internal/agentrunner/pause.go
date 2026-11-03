@@ -117,17 +117,20 @@ func parseAnnotations(data []byte) map[string]string {
 // PauseGuardMain is c4agent pause-guard: every session's PostToolUse hook.
 // It reads the hook's input on stdin and, while the pod's annotations ask for
 // a pause, writes the reason to --stopped and tells Claude Code on stdout to
-// end the session. It allows what it can't judge: a broken guard never stops
-// an agent.
+// end the session. Else, with --checkpoint, it asks c4agent on that socket to
+// save the run when its last checkpoint is CheckpointEvery old, and waits
+// for it (periodic.go). It allows what it can't judge: a broken guard never
+// stops an agent.
 func PauseGuardMain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(PauseGuardCommand, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	annotations := flags.String("annotations", filepath.Join(PodInfoDir, podAnnotationsFile),
-		"the downward API file of the pod's annotations")
+	annotations := flags.String("annotations", "",
+		"the downward API file of the pod's annotations; none: no pause")
 	stopped := flags.String("stopped", "", "where to write the reason when the session is ended")
+	checkpoint := flags.String("checkpoint", "", "the socket c4agent saves a checkpoint on when asked")
 	err := flags.Parse(args)
 	if err == nil {
-		err = guardPause(stdin, stdout, *annotations, *stopped)
+		err = guardPause(stdin, stdout, *annotations, *stopped, *checkpoint)
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "c4agent %s: %v\n", PauseGuardCommand, err)
@@ -135,12 +138,20 @@ func PauseGuardMain(args []string, stdin io.Reader, stdout, stderr io.Writer) in
 	return 0
 }
 
-func guardPause(stdin io.Reader, stdout io.Writer, annotations, stopped string) error {
+func guardPause(stdin io.Reader, stdout io.Writer, annotations, stopped, checkpoint string) error {
 	// Claude Code writes the hook's input whether it is read or not.
 	_, _ = io.Copy(io.Discard, stdin)
-	reason, paused := pauseRequest(annotations)
+	var reason string
+	var paused bool
+	if annotations != "" {
+		reason, paused = pauseRequest(annotations)
+	}
 	if !paused {
-		return nil
+		if checkpoint == "" {
+			return nil
+		}
+		// A session the pause ends gets its clean checkpoint instead.
+		return askCheckpoint(checkpoint)
 	}
 	if stopped != "" {
 		if err := os.WriteFile(stopped, []byte(reason), 0o600); err != nil {

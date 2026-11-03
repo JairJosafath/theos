@@ -54,27 +54,31 @@ type session struct {
 }
 
 // sessionGuard is one guarded session's settings: a directory outside the
-// repository with the Claude Code settings file and, once written, the note
-// and the pause's mark.
+// repository with the Claude Code settings file and, once written, the note,
+// the pause's mark and c4agent's checkpoint socket.
 type sessionGuard struct {
 	dir string
 	// limit is the session's token limit; zero: none.
 	limit int64
+	// checkpoints means pause-guard asks c4agent for a checkpoint on the
+	// socket after each tool (periodic.go).
+	checkpoints bool
 }
 
 // newSessionGuard writes the settings that make program's session-guard the
 // session's PreToolUse hook, with a limit, and its pause-guard its
-// PostToolUse hook, with the downward API file of the pod's annotations. It
-// is nil with neither.
-func newSessionGuard(program string, limit int64, annotations string) (*sessionGuard, error) {
-	if limit <= 0 && annotations == "" {
+// PostToolUse hook, with the downward API file of the pod's annotations, or
+// with checkpoints, the socket it asks c4agent for one on, or both. It is nil
+// with none of the three.
+func newSessionGuard(program string, limit int64, annotations string, checkpoints bool) (*sessionGuard, error) {
+	if limit <= 0 && annotations == "" && !checkpoints {
 		return nil, nil
 	}
 	dir, err := os.MkdirTemp("", "c4agent-session-")
 	if err != nil {
 		return nil, err
 	}
-	g := &sessionGuard{dir: dir, limit: max(limit, 0)}
+	g := &sessionGuard{dir: dir, limit: max(limit, 0), checkpoints: checkpoints}
 	hooks := map[string]any{}
 	matchAll := func(command string) []any {
 		return []any{map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": command}}}}
@@ -83,9 +87,16 @@ func newSessionGuard(program string, limit int64, annotations string) (*sessionG
 		hooks["PreToolUse"] = matchAll(fmt.Sprintf("%s %s --limit %d --handoff %s", shellQuote(program),
 			SessionGuardCommand, limit, shellQuote(g.handoff())))
 	}
-	if annotations != "" {
-		hooks["PostToolUse"] = matchAll(fmt.Sprintf("%s %s --annotations %s --stopped %s", shellQuote(program),
-			PauseGuardCommand, shellQuote(annotations), shellQuote(g.pausedMark())))
+	if annotations != "" || checkpoints {
+		command := shellQuote(program) + " " + PauseGuardCommand
+		if annotations != "" {
+			command += fmt.Sprintf(" --annotations %s --stopped %s", shellQuote(annotations),
+				shellQuote(g.pausedMark()))
+		}
+		if checkpoints {
+			command += " --checkpoint " + shellQuote(g.checkpointSocket())
+		}
+		hooks["PostToolUse"] = matchAll(command)
 	}
 	data, err := json.Marshal(map[string]any{"hooks": hooks})
 	if err == nil {
@@ -103,6 +114,15 @@ func (g *sessionGuard) handoff() string  { return filepath.Join(g.dir, handoffFi
 func (g *sessionGuard) remove()          { _ = os.RemoveAll(g.dir) }
 
 func (g *sessionGuard) pausedMark() string { return filepath.Join(g.dir, pausedFile) }
+
+// checkpointSocket is where c4agent answers pause-guard's asks for a
+// checkpoint; "" without them.
+func (g *sessionGuard) checkpointSocket() string {
+	if g == nil || !g.checkpoints {
+		return ""
+	}
+	return filepath.Join(g.dir, checkpointSocket)
+}
 
 // paused reports whether pause-guard ended the session, and the reason it
 // gave.
@@ -147,7 +167,9 @@ func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
 // for a session it ended past its limit, and for one its sandbox's stop
 // ended (checkpoint.go).
 func endedNote(ctx context.Context, dir, headline, lastText string) string {
-	cmd := exec.CommandContext(ctx, "git", "status", "--short")
+	// No optional locks: a periodic save runs this beside the session, whose
+	// own git commands mustn't find the index locked.
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "status", "--short")
 	cmd.Dir = dir
 	status, _ := cmd.CombinedOutput()
 	return fmt.Sprintf("%s Its last words:\n\n%s\n\n`git status --short`:\n\n%s", headline,
@@ -181,7 +203,7 @@ func (a ClaudeAgent) runSessions(ctx context.Context, dir, prompt string) (strin
 		if len(total.Handoffs) >= maxSessionHandoffs {
 			limit = 0
 		}
-		guard, err := newSessionGuard(a.Guard, limit, a.pause.annotations())
+		guard, err := newSessionGuard(a.Guard, limit, a.pause.annotations(), a.checkpoints != nil)
 		if err != nil {
 			// What the sessions so far used stays counted.
 			total.Reported, total.Tokens = false, nil
@@ -190,7 +212,13 @@ func (a ClaudeAgent) runSessions(ctx context.Context, dir, prompt string) (strin
 			}
 			return "", total, fmt.Errorf("session guard: %w", err)
 		}
+		sofar := Usage{MilliUSD: total.MilliUSD, Reported: total.Reported, Handoffs: slices.Clone(total.Handoffs)}
+		if tokensReported {
+			sofar.Tokens = new(tokens)
+		}
+		stopCheckpoints := a.checkpoints.serve(ctx, guard.checkpointSocket(), sofar)
 		s := a.runSession(ctx, dir, next, guard, resume.id)
+		stopCheckpoints()
 		resume.id = ""
 		total.MilliUSD += s.usage.MilliUSD
 		total.Reported = total.Reported && s.usage.Reported
@@ -216,26 +244,32 @@ func (a ClaudeAgent) runSessions(ctx context.Context, dir, prompt string) (strin
 }
 
 // streamWatch keeps a session's output and ends the session, with stop, when
-// a turn of its main session passes stopAt.
+// a turn of its main session passes stopAt. said, when set, hears the main
+// session's newest words as they come.
 type streamWatch struct {
 	buf     bytes.Buffer
 	scanned int
 	stopAt  int64
 	stop    func()
+	said    func(string)
 }
 
 func (w *streamWatch) Write(p []byte) (int, error) {
 	n, _ := w.buf.Write(p)
-	for w.stop != nil {
+	for w.stop != nil || w.said != nil {
 		rest := w.buf.Bytes()[w.scanned:]
 		i := bytes.IndexByte(rest, '\n')
 		if i < 0 {
 			break
 		}
 		w.scanned += i + 1
-		if mainTurnSize(rest[:i]) > w.stopAt {
+		size, text := mainTurn(rest[:i])
+		if w.stop != nil && size > w.stopAt {
 			w.stop()
 			w.stop = nil
+		}
+		if w.said != nil && text != "" {
+			w.said(text)
 		}
 	}
 	return n, nil
@@ -248,18 +282,26 @@ const lineAssistant = "assistant"
 // results are big.
 var assistantMark = []byte(`"` + lineAssistant + `"`)
 
-// mainTurnSize is the prompt of a main-session turn on a stream-json line,
-// else zero.
-func mainTurnSize(raw []byte) int64 {
+// mainTurn is the prompt of a main-session turn on a stream-json line, and
+// its last words; zero and "" for any other line.
+func mainTurn(raw []byte) (size int64, text string) {
 	if !bytes.Contains(raw, assistantMark) {
-		return 0
+		return 0, ""
 	}
 	var line claudeLine
 	if json.Unmarshal(raw, &line) != nil || line.Type != lineAssistant || line.ParentToolUseID != "" ||
-		line.Message == nil || line.Message.Usage == nil {
-		return 0
+		line.Message == nil {
+		return 0, ""
 	}
-	return line.Message.Usage.prompt()
+	for _, c := range line.Message.Content {
+		if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
+			text = strings.TrimSpace(c.Text)
+		}
+	}
+	if line.Message.Usage != nil {
+		size = line.Message.Usage.prompt()
+	}
+	return size, text
 }
 
 // SessionGuardMain is c4agent session-guard: Claude Code's PreToolUse hook
