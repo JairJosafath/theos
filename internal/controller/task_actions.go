@@ -183,11 +183,17 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}
 	}
-	if reason == reasonAgentUnavailable {
-		return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}
+	if status.AgentBackAt != nil && step.Reason == "" && !step.SlotWait {
+		// Looked at again when the agent is back, also when that came while
+		// this pass ran (#1996): a requeue after zero is none.
+		return ctrl.Result{RequeueAfter: max(status.AgentBackAt.Sub(r.now()), agentBackRecheck)}
 	}
 	return ctrl.Result{}
 }
+
+// agentBackRecheck is the least time after which a Task waiting for its
+// agent looks again: it is due back already.
+const agentBackRecheck = time.Second
 
 // openPR opens the round's pull request as the agent bot, and moves on to the checks.
 func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
