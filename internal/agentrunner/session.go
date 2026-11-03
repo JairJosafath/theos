@@ -167,7 +167,9 @@ func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
 // for a session it ended past its limit, and for one its sandbox's stop
 // ended (checkpoint.go).
 func endedNote(ctx context.Context, dir, headline, lastText string) string {
-	cmd := exec.CommandContext(ctx, "git", "status", "--short")
+	// No optional locks: a periodic save runs this beside the session, whose
+	// own git commands mustn't find the index locked.
+	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "status", "--short")
 	cmd.Dir = dir
 	status, _ := cmd.CombinedOutput()
 	return fmt.Sprintf("%s Its last words:\n\n%s\n\n`git status --short`:\n\n%s", headline,
@@ -210,7 +212,11 @@ func (a ClaudeAgent) runSessions(ctx context.Context, dir, prompt string) (strin
 			}
 			return "", total, fmt.Errorf("session guard: %w", err)
 		}
-		stopCheckpoints := a.checkpoints.serve(ctx, guard.checkpointSocket())
+		sofar := Usage{MilliUSD: total.MilliUSD, Reported: total.Reported, Handoffs: slices.Clone(total.Handoffs)}
+		if tokensReported {
+			sofar.Tokens = new(tokens)
+		}
+		stopCheckpoints := a.checkpoints.serve(ctx, guard.checkpointSocket(), sofar)
 		s := a.runSession(ctx, dir, next, guard, resume.id)
 		stopCheckpoints()
 		resume.id = ""

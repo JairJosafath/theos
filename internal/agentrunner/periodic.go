@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // A run killed with no warning (a power loss, wsl --shutdown) has no SIGTERM
@@ -68,6 +71,9 @@ type periodicCheckpoints struct {
 	// started: a checkpoint it restored doesn't count, as the pod's own work
 	// starts the clock.
 	last time.Time
+	// call is what the agent call in progress's finished sessions used: the
+	// meter hears of them only when the call returns, after a handoff too.
+	call Usage
 }
 
 func newPeriodicCheckpoints(job Job, prog *runProgress, sessions *sessionLog,
@@ -75,7 +81,8 @@ func newPeriodicCheckpoints(job Job, prog *runProgress, sessions *sessionLog,
 	if job.CheckpointDir == "" {
 		return nil
 	}
-	return &periodicCheckpoints{job: job, prog: prog, sessions: sessions, meter: meter, last: checkpointNow()}
+	return &periodicCheckpoints{job: job, prog: prog, sessions: sessions, meter: meter, last: checkpointNow(),
+		call: Usage{Reported: true, Tokens: &model.TokenUsage{}}}
 }
 
 // save saves a hard checkpoint of the run, in its session, when the last is
@@ -88,15 +95,19 @@ func (p *periodicCheckpoints) save(ctx context.Context) string {
 	if checkpointNow().Sub(p.last) < checkpointEvery {
 		return answerNotDue
 	}
-	// What this pod's finished agent calls used. The session in progress
-	// reports its cost only when it ends, so it adds none yet: the run's
-	// final result, or a later checkpoint, counts it.
-	result := Result{Role: p.job.Role, SessionHandoffs: p.meter.handoffs}
-	if cost := p.meter.total(); cost != nil {
-		result.CostMilliUSD = new(*cost)
+	// What this pod's finished agent calls used, and the call in progress's
+	// finished sessions. The session in progress reports its cost only when
+	// it ends, so it adds none yet: the run's final result, or a later
+	// checkpoint, counts it.
+	result := Result{Role: p.job.Role,
+		SessionHandoffs: append(slices.Clone(p.meter.handoffs), p.call.Handoffs...)}
+	if cost := p.meter.total(); cost != nil && p.call.Reported {
+		result.CostMilliUSD = new(*cost + p.call.MilliUSD)
 	}
-	if tokens := p.meter.totalTokens(); tokens != nil {
-		result.Tokens = new(*tokens)
+	if tokens := p.meter.totalTokens(); tokens != nil && p.call.Tokens != nil {
+		sum := *tokens
+		sum.Add(*p.call.Tokens)
+		result.Tokens = &sum
 	}
 	saved, err := saveCheckpoint(ctx, p.job, p.prog, p.sessions, result, CheckpointHard, nil)
 	if err != nil || saved {
@@ -115,14 +126,17 @@ func (p *periodicCheckpoints) save(ctx context.Context) string {
 	return answerSaved
 }
 
-// serve answers pause-guard's asks on socket while one session runs. The
-// returned func stops it and waits for a save in progress: the next session,
+// serve answers pause-guard's asks on socket while one session runs; call is
+// what the call's sessions before it used. The returned func stops it and waits for a save in progress: the next session,
 // or a later save of the run, must not run beside it. ctx ends a save in
 // progress, so a stop doesn't wait for it before its own save.
-func (p *periodicCheckpoints) serve(ctx context.Context, socket string) (stop func()) {
+func (p *periodicCheckpoints) serve(ctx context.Context, socket string, call Usage) (stop func()) {
 	if p == nil || socket == "" {
 		return func() {}
 	}
+	p.mu.Lock()
+	p.call = call
+	p.mu.Unlock()
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "unix", socket)
 	if err != nil {

@@ -269,7 +269,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		}
 		slog.Info("Paused by the factory", "reason", reason, "checkpoint", kind, "step", prog.step)
 		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, kind, &reason); err != nil {
-			slog.Error("Failed to save the checkpoint; the run starts over on resume", "error", err.Error())
+			slog.Error("Failed to save the checkpoint; a resume starts from an earlier one, else over", "error", err.Error())
 		} else if saved {
 			result.Checkpoint = kind
 		}
@@ -291,7 +291,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	}
 	if result.Interrupted && ctx.Err() != nil {
 		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, CheckpointHard, nil); err != nil {
-			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
+			slog.Error("Failed to save the checkpoint; a resume starts from an earlier one, else over", "error", err.Error())
 		} else if saved {
 			result.Checkpoint = CheckpointHard
 		}

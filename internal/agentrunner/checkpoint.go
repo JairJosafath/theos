@@ -516,7 +516,9 @@ func (cp *checkpoint) addUsage(from *checkpoint, result Result) {
 // through an index of its own, and returns the commit; "" when the tree is
 // clean. The branch, the index and the files stay as they are.
 func (r *repo) snapshot(ctx context.Context) (string, error) {
-	status, err := r.git(ctx, r.dir, "status", "--porcelain")
+	// No optional locks: a periodic save runs this beside the session, whose
+	// own git commands mustn't find the index locked.
+	status, err := r.gitEnv(ctx, []string{"GIT_OPTIONAL_LOCKS=0"}, "status", "--porcelain")
 	if err != nil || strings.TrimSpace(status) == "" {
 		return "", err
 	}

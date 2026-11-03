@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/JairJosafath/c4factory/internal/model"
 )
 
 // Step 14 of docs/plans/self-hosting.md (#1997): between tool calls,
@@ -376,5 +378,86 @@ func TestSessionGuardWithTheCheckpointSocketAlone(t *testing.T) {
 	if !strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data),
 		`--stopped '`+all.pausedMark()+`' --checkpoint '`+all.checkpointSocket()+`'`) {
 		t.Errorf("settings with all three = %s, want the session-guard and one pause-guard that pauses and asks", data)
+	}
+}
+
+// #1997, review of step 14: a save between tool calls counts the sessions of
+// the agent call in progress that already handed off, not only the calls
+// that returned, so a lost pod's next one doesn't under-count the run's cost.
+func TestPeriodicCheckpointCountsTheCallsHandedOffSessions(t *testing.T) {
+	set := checkpointClock(t)
+	ctx := context.Background()
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir = t.TempDir()
+	r, err := clone(ctx, job, filepath.Join(t.TempDir(), "repo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.dir, "crop.go"), []byte("package crop\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sessions := &sessionLog{}
+	sessions.started("0b6f0f9e-5c1a-4d4e-9c2b-1f2e3d4c5b6a")
+	meter := &usageMeter{milliUSD: 120, handoffs: []int64{90_000}, tokens: model.TokenUsage{Input: 10}}
+	p := newPeriodicCheckpoints(job, &runProgress{repo: r, step: StepAgent}, sessions, meter)
+
+	sockDir, err := os.MkdirTemp("", "c4ck-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	socket := filepath.Join(sockDir, checkpointSocket)
+	stop := p.serve(ctx, socket, Usage{MilliUSD: 3000, Reported: true, Handoffs: []int64{130_500},
+		Tokens: &model.TokenUsage{Input: 5}})
+	set(CheckpointEvery)
+	if err := askCheckpoint(socket); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	cp := readCheckpoint(t, job.CheckpointDir)
+	if cp.CostMilliUSD == nil || *cp.CostMilliUSD != 3120 || !slices.Equal(cp.Handoffs, []int64{90_000, 130_500}) ||
+		cp.Tokens == nil || cp.Tokens.Input != 15 {
+		t.Errorf("state.json cost %v, handoffs %v, tokens %+v; want 3120, [90000 130500] and 15 input",
+			cp.CostMilliUSD, cp.Handoffs, cp.Tokens)
+	}
+}
+
+// #1997, review of step 14: a save between tool calls runs git beside the
+// session, so it takes no optional lock: git status doesn't refresh the
+// clone's index, which the agent's own git add or commit would find locked.
+func TestPeriodicCheckpointLeavesTheIndexAlone(t *testing.T) {
+	ctx := context.Background()
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	job := testJob(t, url, RoleImplement, 1)
+	r, err := clone(ctx, job, filepath.Join(t.TempDir(), "repo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same content, new stat data: a plain git status would rewrite the index.
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(filepath.Join(r.dir, "README.md"), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.dir, "crop.go"), []byte("package crop\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(r.dir, ".git", "index")
+	before, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if work, err := r.snapshot(ctx); err != nil || work == "" {
+		t.Fatalf("snapshot() = %q, %v; want a commit", work, err)
+	}
+	if note := endedNote(ctx, r.dir, "Stopped.", "half"); !strings.Contains(note, "crop.go") {
+		t.Errorf("endedNote() = %q, want the tree's state", note)
+	}
+	after, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the save rewrote the clone's index; want it untouched")
 	}
 }
