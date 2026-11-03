@@ -38,13 +38,13 @@ func StatusLabels() []IssueLabel {
 }
 
 // LabelUrgent asks a Crew to pick an issue up at once: it starts before every other
-// ready issue, whatever its release, even when every place is taken.
+// ready issue, whatever its release, but never past the Crew's parallel count.
 const LabelUrgent = "priority/urgent"
 
 // UrgentLabel is the label a person adds to have an issue picked up at once.
 func UrgentLabel() IssueLabel {
 	return IssueLabel{LabelUrgent, "#b60205",
-		"Pick up at once: starts before every other issue, whatever its release, even when the Crew is full", false}
+		"Pick up at once: goes next, whatever its release, within the Crew's parallel count", false}
 }
 
 // FollowUpMilestone is the milestone the factory files reviewers' follow-ups in,
@@ -208,8 +208,8 @@ type CrewStep struct {
 
 // NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
 // starting them for the lowest-numbered ready issues whose dependencies are
-// closed, one Task per issue. An urgent issue starts first, even beyond
-// Parallel; then a Standard change a Task waits on.
+// closed, one Task per issue. Parallel is a hard cap. An urgent issue starts
+// first, then a Standard change a Task waits on.
 func NextCrewStep(container string, f CrewFacts) CrewStep {
 	var step CrewStep
 	working := map[int]bool{}
@@ -306,7 +306,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	free := max(f.Parallel, 1) - (len(step.Active) - blockedTasks(f.Tasks))
 	// A release's prepare step is built on the main every other Task's work
 	// merged into, and lists that work (#956): while a release is being
-	// prepared, no other issue starts but an urgent one, and its prepare issue
+	// prepared, no other issue starts but an urgent one, within parallel, and its prepare issue
 	// starts once the Tasks at work, Blocked ones aside, have ended.
 	preparing, others := preparingRelease(f, candidates, prepare)
 	held := 0
@@ -317,7 +317,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			held++
 			continue
 		}
-		if free <= 0 && !urgent[issue] {
+		if free <= 0 {
 			step.Ready = append(step.Ready, issue)
 			continue
 		}

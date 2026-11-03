@@ -485,8 +485,8 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   without the checkpoint volume isn't asked: it runs to its end. The Crew's
   `Paused` condition names the Tasks still stopping.
 - **Order.** An issue waits for its Git host dependencies. `priority/urgent`
-  goes first, even past `parallel`; then a Standard change a `Blocked` Task
-  waits on; then releases, due first first, the next taking places the
+  goes first, never past `parallel`, which is a hard cap; then a Standard
+  change a `Blocked` Task waits on; then releases, due first first, the next taking places the
   current can't use; then undated milestones, then none.
 - **A try continues an open pull request.** A failed Task's pull request stays
   open while a later try may continue it on that branch, with its feedback
