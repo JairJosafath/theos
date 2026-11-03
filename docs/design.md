@@ -241,6 +241,20 @@ start the next round with that feedback, up to the Agent's `maxRounds`.
 Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
 on a Standard change), then `Merged` or `Failed`.
 
+- **A merge that passed skips main's push run.** When a Task's head has all
+  its required checks green (the CI system's `CheckContexts`, else the
+  combined state) and its pull request is not behind main, the squash commit
+  is the head's tree byte for byte, so main's push run would check a tree that
+  has just passed, at 20 to 50 minutes of the one CI job. The squash commit's
+  title then ends in `[skip ci]`, which the Git host reads as "run no push
+  workflow", and the operator copies the head's required statuses onto the
+  merge commit (same context, state and link, description `same tree as #<pr>
+  head <sha>`) after reading that its tree equals the head's. If the trees
+  differ (main moved during the merge) the required contexts are set to
+  `error`, `merged without a check: main moved during the merge`, so main's
+  head is red and `BaseRed` shows it. A head that is behind main, or not
+  green, merges without the marker. Standard-update and release merges keep
+  their push runs. (#2060)
 - **Issues are the work.** The operator labels the issue
   `status/in-progress` (`status/*` labels are exclusive), reads it before
   every run and closes it on merge; a failed Task hands it back

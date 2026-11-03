@@ -567,6 +567,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	}
 	action := model.DecideMerge(model.PullFacts{Merged: pr.Merged, Closed: pr.State == stateClosed,
 		HeadSHA: pr.HeadSHA}, status.Commit)
+	var skip *pushSkip
 	switch action {
 	case model.MergeFailClosed:
 		if err := r.endRun(ctx, task, status); err != nil {
@@ -581,7 +582,8 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 			"The branch moved after the review; checking "+pr.HeadSHA)
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 	case model.MergeSquash:
-		refusal, err := r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer)
+		var refusal string
+		refusal, skip, err = r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer, pr.Behind)
 		pending := errors.Is(err, errChecksPending)
 		if err != nil && !pending {
 			return ctrl.Result{}, err
@@ -602,6 +604,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	status.MergeCommit = pr.MergeCommit
 	if action == model.MergeSquash {
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+		r.carryChecks(ctx, provider, repo, status, skip)
 	}
 	if task.Spec.Issue > 0 {
 		var followUps []model.FollowUp
@@ -674,18 +677,22 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
 // approval; a push since the review makes the merge fail. A Standard change goes
-// through gatedMerge, which may refuse it or wait for CI.
+// through gatedMerge, which may refuse it or wait for CI. A merge that skips
+// main's push run (#2060) returns what carryChecks needs.
 func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHost,
 	repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent) (refusal string, err error) {
+	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent, behind bool) (refusal string, skip *pushSkip, err error) {
 	if len(task.Spec.AllowedProtectedPaths) > 0 {
-		return r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
+		refusal, err = r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
+		return refusal, nil, err
 	}
 	r.approve(ctx, task, status, container, reviewer)
+	skip = r.planSkip(ctx, provider, repo, status, container, behind)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	return "", provider.MergePullRequest(gitCtx, repo, int(status.PullRequest), status.Commit,
-		pullTitle(task, status), mergeMessage(task, status, container))
+	err = provider.MergePullRequest(gitCtx, repo, int(status.PullRequest), status.Commit,
+		model.SquashTitle(pullTitle(task, status), skip != nil), mergeMessage(task, status, container))
+	return "", skip, err
 }
 
 // approve posts the reviewer's approval of the round's commit.

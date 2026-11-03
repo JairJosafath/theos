@@ -184,6 +184,7 @@ func (g *Git) merge(repo ports.Repository, number int, headSHA, title, message s
 		pr.MergeCommit = commits[len(commits)-1].Hash
 	} else {
 		pr.MergeCommit = g.s.newSHA()
+		s.trees[key+"@"+pr.MergeCommit] = treeID(g.s.repos[key].files)
 	}
 	return nil
 }

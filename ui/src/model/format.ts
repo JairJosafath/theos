@@ -17,12 +17,14 @@ export function formatDuration(ms: number, { fine = false } = {}): string {
   return h % 24 ? `${d} d ${h % 24} h` : `${d} d`
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
 /** A time of day, "15:04"; with the weekday when it isn't today, "Fri 03:00". */
 export function formatClock(t: number, now: number): string {
   const d = new Date(t)
   const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   if (d.toDateString() === new Date(now).toDateString()) return clock
-  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
+  return `${WEEKDAYS[d.getDay()]} ${clock}`
 }
 
 /** A moment as a date and time in the reader's locale, "1 Jun 2026, 11:48:05"; '' for no valid time. */

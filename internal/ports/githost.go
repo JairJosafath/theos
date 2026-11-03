@@ -141,6 +141,14 @@ type CheckStatus struct {
 	Contexts map[string]string
 }
 
+// CommitStatus is one check's status written onto a commit.
+type CommitStatus struct {
+	Context     string
+	State       string
+	TargetURL   string
+	Description string
+}
+
 // PullRequest is a pull request on a repository.
 type PullRequest struct {
 	Number  int
@@ -283,6 +291,12 @@ type GitHost interface {
 	// CombinedStatus returns the combined state of the checks on ref, and the
 	// latest state of each check by its context.
 	CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error)
+	// CommitStatuses returns the latest status of each check on the commit sha.
+	CommitStatuses(ctx context.Context, repo Repository, sha string) ([]CommitStatus, error)
+	// SetCommitStatus writes a check's status onto the commit sha.
+	SetCommitStatus(ctx context.Context, repo Repository, sha string, status CommitStatus) error
+	// CommitTree returns the id of the tree commit sha holds.
+	CommitTree(ctx context.Context, repo Repository, sha string) (string, error)
 	// OpenPullRequest opens a pull request from head into base, or returns the
 	// open one for head.
 	OpenPullRequest(ctx context.Context, repo Repository, head, base, title, body string) (PullRequest, error)

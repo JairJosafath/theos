@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,6 +29,7 @@ import (
 	"github.com/JairJosafath/c4factory/internal/agentrunner"
 	"github.com/JairJosafath/c4factory/internal/model"
 	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/c4factory/internal/scaffold"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
@@ -238,6 +240,57 @@ var _ = Describe("Task", func() {
 		}
 		Expect(steps).To(Equal([]string{"Implementing r1", "Checking r1", "Reviewing r1",
 			"Implementing r2", "Checking r2", "Reviewing r2", "Merged r2"}))
+	})
+
+	// mergedWithEdit runs a Task whose branch changes a file to its merge, and
+	// returns the head it merged and the commit on main. moved, when set, is
+	// the tree the head holds: not main's, as if main moved during the merge.
+	mergedWithEdit := func(ns, moved string) (head string, merge ports.Commit) {
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }).Should(Succeed())
+		head, err := gitFake.PushBranch(ctx, ports.Repository{Owner: ns, Name: "orders-api"}, gitFake.MainHead(ns, "orders-api").Hash,
+			"task/add-crop", scaffold.Tree{"crop.go": {Data: []byte("package crop\n")}}, nil, "", ports.Signature{})
+		Expect(err).NotTo(HaveOccurred())
+		if moved != "" {
+			gitFake.SetCommitTree(ns, "orders-api", head, moved)
+		}
+		finishSandbox(ns, "add-crop-r1-implement", "add-crop",
+			&agentrunner.Result{Role: "implement", Commit: head, Summary: "Added crop."}, "")
+		gitFake.SetChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
+		finishSandbox(ns, "add-crop-r1-review-a1", "add-crop",
+			&agentrunner.Result{Role: "review", Verdict: "approve", Summary: "Good."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+		}).Should(Succeed())
+		return head, gitFake.MainHead(ns, "orders-api")
+	}
+
+	It("skips main's push run when the merge has the tree of the head that passed (#2060)", func() {
+		ns := newProjectNamespace()
+		head, merge := mergedWithEdit(ns, "")
+		Expect(strings.SplitN(merge.Message, "\n", 2)[0]).To(HaveSuffix(" [skip ci]"), "the title carries the marker")
+		Expect(gitFake.CommitStatusesWritten(ns, "orders-api", merge.Hash)).To(ConsistOf(ports.CommitStatus{
+			Context: "check / check (pull_request)", State: ports.CheckSuccess,
+			TargetURL:   "http://gitea/" + ns + "/orders-api/actions/runs/1",
+			Description: "same tree as #1 head " + head,
+		}), "main's head carries the head's result")
+		checks, err := gitFake.CombinedStatus(ctx, ports.Repository{Owner: ns, Name: "orders-api"}, merge.Hash)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(checks.State).To(Equal(ports.CheckSuccess))
+	})
+
+	It("marks a merge whose tree is not the head's as unchecked (#2060)", func() {
+		ns := newProjectNamespace()
+		_, merge := mergedWithEdit(ns, "tree-of-an-older-main")
+		Expect(gitFake.CommitStatusesWritten(ns, "orders-api", merge.Hash)).To(ConsistOf(HaveField("State", ports.CheckError)))
+		Expect(gitFake.CommitStatusesWritten(ns, "orders-api", merge.Hash)[0].Description).
+			To(Equal("merged without a check: main moved during the merge"))
+		checks, err := gitFake.CombinedStatus(ctx, ports.Repository{Owner: ns, Name: "orders-api"}, merge.Hash)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(model.BaseState([]string{"check / check (pull_request)"}, checks.State, checks.Contexts)).
+			To(Equal(ports.CheckFailure), "BaseRed shows it at once")
 	})
 
 	It("stops at its Crew's cost cap and goes on when the cap is raised (#1893)", func() {

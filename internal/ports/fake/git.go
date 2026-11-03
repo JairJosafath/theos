@@ -3,6 +3,8 @@ package fake
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -459,7 +461,15 @@ func (g *Git) CommitToMain(owner, name string, files scaffold.Tree) {
 func (s *state) applyToMain(key string, edits map[string]*scaffold.File, message string) {
 	r := s.repos[key]
 	r.files = withEdits(r.files, edits)
-	r.commits = append(r.commits, ports.Commit{Hash: s.newSHA(), Message: message})
+	hash := s.newSHA()
+	r.commits = append(r.commits, ports.Commit{Hash: hash, Message: message})
+	s.agentState().trees[key+"@"+hash] = treeID(r.files)
+}
+
+// treeID names a tree by what it holds.
+func treeID(files scaffold.Tree) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%v", files)))
+	return hex.EncodeToString(sum[:])
 }
 
 // agentStore is what the fake host keeps for the agent loop: protected
@@ -490,6 +500,11 @@ type agentStore struct {
 	removeErrs map[string]error
 	// revoked counts the RevokeOldAgentTokens calls, by bot user.
 	revoked map[string]int
+	// trees are the tree ids set for commits, and the ones main's commits
+	// got, by owner/name@sha.
+	trees map[string]string
+	// written are the statuses SetCommitStatus wrote, by owner/name@sha.
+	written map[string][]ports.CommitStatus
 }
 
 func (s *state) agentState() *agentStore {
@@ -503,6 +518,7 @@ func (s *state) agentState() *agentStore {
 			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{}, unnamed: map[string]bool{},
 			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
+			trees: map[string]string{}, written: map[string][]ports.CommitStatus{},
 		}
 	}
 	return s.agent
