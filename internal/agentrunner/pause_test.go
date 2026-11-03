@@ -554,7 +554,11 @@ func TestPauseBeforeTheResumedSessionKeepsItsKindAndModel(t *testing.T) {
 			}
 			first := readCheckpoint(t, checkpoints)
 
-			// Resumed, and paused again before its session starts.
+			// Resumed, and paused again before its session starts. The
+			// first run's short grace would end the restore itself on a
+			// loaded machine (Gitea run 20): no session runs here, so the
+			// grace only has to outlast the restore.
+			shortPause(t, time.Minute)
 			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 			agent, log := standInAgent(t, "record")
 			agent.SessionIDs = true
