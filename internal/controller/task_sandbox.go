@@ -511,6 +511,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 			state.Result.Tokens, state.Result.SessionHandoffs = result.Tokens, result.SessionHandoffs
 			state.Result.Role = result.Role
 			state.Result.Paused, state.Result.PauseReason = result.Paused, result.PauseReason
+			state.Result.Checkpoint = result.Checkpoint != ""
 			return state, nil
 		}
 		state.Failure = term.Reason

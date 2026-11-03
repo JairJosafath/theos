@@ -592,7 +592,9 @@ func (r *TaskReconciler) noFreeSlot(ctx context.Context, task *c4v1beta1.Task) (
 
 // slotHolders lists the agent sandboxes, as namespace/name, that hold a slot:
 // every one whose run hasn't ended. A sandbox kept after its pod succeeded or
-// failed, a reviewer's while its Task waits for CI, holds none.
+// failed, a reviewer's while its Task waits for CI, holds none; nor does a
+// suspended one whose run paused or waits for its agent, once its pod is
+// gone (#1996): its resume waits for a free slot.
 func (r *TaskReconciler) slotHolders(ctx context.Context) ([]string, error) {
 	sandboxes := &unstructured.UnstructuredList{}
 	sandboxes.SetGroupVersionKind(SandboxGVK.GroupVersion().WithKind("SandboxList"))
@@ -605,22 +607,38 @@ func (r *TaskReconciler) slotHolders(ctx context.Context) ([]string, error) {
 	if err := r.APIReader.List(ctx, &pods, agents); err != nil {
 		return nil, err
 	}
-	ended := map[string]*corev1.Pod{}
+	byName := map[string]*corev1.Pod{}
 	for i, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
-			ended[pod.Namespace+"/"+pod.Name] = &pods.Items[i]
-		}
+		byName[pod.Namespace+"/"+pod.Name] = &pods.Items[i]
 	}
 	var held []string
 	for i := range sandboxes.Items {
 		sandbox := &sandboxes.Items[i]
 		name := sandbox.GetNamespace() + "/" + sandbox.GetName()
 		// A pod of an earlier sandbox with this name is not this one's run.
-		if pod := ended[name]; pod == nil || !metav1.IsControlledBy(pod, sandbox) {
+		pod := byName[name]
+		own := pod != nil && metav1.IsControlledBy(pod, sandbox)
+		switch {
+		case own && (pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed):
+		case !own && waitsSuspended(sandbox):
+		default:
 			held = append(held, name)
 		}
 	}
 	return held, nil
+}
+
+// waitsSuspended reports whether the sandbox is suspended for a run that
+// paused or waits for its agent, which may wait for hours with no agent
+// running.
+func waitsSuspended(sandbox *unstructured.Unstructured) bool {
+	if !sandboxSuspended(sandbox) {
+		return false
+	}
+	annotations := sandbox.GetAnnotations()
+	_, paused := annotations[annotationPausedRun]
+	_, waits := annotations[annotationAgentBack]
+	return paused || waits
 }
 
 // pullFacts reads whether an approved change's pull request misses what merged

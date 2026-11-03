@@ -96,7 +96,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionRerun, model.ActionRerunPaused, model.ActionSuspendRun, model.ActionResumeRun,
-		model.ActionPauseRun:
+		model.ActionPauseRun, model.ActionSuspendForAgent:
 		return r.applyInterrupted(ctx, task, status, container, agents, step)
 
 	case model.ActionRerunChecks:
@@ -108,7 +108,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		}
 		back := model.AgentBackAt(step.RetryAt, r.now())
 		status.AgentBackAt = &metav1.Time{Time: back}
-		r.progress(task, status, metav1.ConditionTrue, "AgentUnavailable",
+		r.progress(task, status, metav1.ConditionTrue, reasonAgentUnavailable,
 			fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
 		log.Info("Agent unavailable; Task waits", "until", back, "message", step.Message)
 		return ctrl.Result{RequeueAfter: back.Sub(r.now())}, nil
@@ -155,6 +155,10 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	return ctrl.Result{}, nil
 }
 
+// reasonAgentUnavailable is the Progressing reason of a Task waiting for its
+// agent's service to be back.
+const reasonAgentUnavailable = "AgentUnavailable"
+
 // wait records what the Task waits for, and when to look again.
 func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
 	if status.Phase == c4v1beta1.TaskBlocked {
@@ -168,7 +172,7 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 		reason = "WaitingForSlot"
 	}
 	if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
-		reason = "AgentUnavailable"
+		reason = reasonAgentUnavailable
 	}
 	if step.Reason != "" {
 		// At its Crew's cost cap (OverBudget): the Crew watch wakes the Task
@@ -179,11 +183,17 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}
 	}
-	if reason == "AgentUnavailable" {
-		return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}
+	if status.AgentBackAt != nil && step.Reason == "" && !step.SlotWait {
+		// Looked at again when the agent is back, also when that came while
+		// this pass ran (#1996): a requeue after zero is none.
+		return ctrl.Result{RequeueAfter: max(status.AgentBackAt.Sub(r.now()), agentBackRecheck)}
 	}
 	return ctrl.Result{}
 }
+
+// agentBackRecheck is the least time after which a Task waiting for its
+// agent looks again: it is due back already.
+const agentBackRecheck = time.Second
 
 // openPR opens the round's pull request as the agent bot, and moves on to the checks.
 func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
@@ -768,9 +778,10 @@ type endedRun struct {
 	round   int32
 	result  *model.RunResult
 	// suspend keeps the sandbox, and suspends it: its run resumes in place.
-	// pause, when set, is why the run paused: it resumes once the pause ends.
+	// why, when set, says the run paused or waits for its agent, rather than
+	// being interrupted.
 	suspend bool
-	pause   string
+	why     suspension
 	// resume, when set, resumes the suspended sandbox with it.
 	resume *sandboxResume
 }
@@ -818,7 +829,7 @@ func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ende
 	case ended.resume != nil:
 		return r.resumeSandbox(ctx, task.Namespace, ended.sandbox, ended.resume)
 	case ended.suspend:
-		if err := r.suspendSandbox(ctx, task.Namespace, ended.sandbox, ended.pause); err != nil {
+		if err := r.suspendSandbox(ctx, task.Namespace, ended.sandbox, ended.why); err != nil {
 			return err
 		}
 	default:

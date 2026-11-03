@@ -73,6 +73,10 @@ const (
 	StepCheck = "check"
 )
 
+// maxUnavailableNote bounds the service's error a checkpoint keeps, for the
+// resumed session.
+const maxUnavailableNote = 300
+
 // checkpointTimeout bounds saving a checkpoint: the pod's grace period is a
 // minute, and the session ends first.
 const checkpointTimeout = 40 * time.Second
@@ -111,6 +115,9 @@ type checkpoint struct {
 	// PauseReason is the pause annotation's value when the factory paused
 	// the run: the resumed session is told it.
 	PauseReason string `json:"pauseReason,omitempty"`
+	// Unavailable is the error of the agent's service that stopped the run,
+	// when it was unavailable: the resumed session is told it.
+	Unavailable string `json:"unavailable,omitempty"`
 }
 
 // runProgress is where a run is, for its checkpoint.
@@ -142,7 +149,7 @@ func (p *runProgress) session(ctx context.Context, agent Agent, dir, prompt stri
 		return agent.Run(ctx, dir, prompt)
 	}
 	if p.resume != "" {
-		answer, err := agent.Run(withResume(ctx, p.resume, prompt), dir, resumePrompt(p.from.PauseReason))
+		answer, err := agent.Run(withResume(ctx, p.resume, prompt), dir, resumePrompt(p.from))
 		if err == nil || !noConversation.MatchString(err.Error()) {
 			return answer, err
 		}
@@ -153,6 +160,18 @@ func (p *runProgress) session(ctx context.Context, agent Agent, dir, prompt stri
 		return agent.Run(ctx, dir, prompt)
 	}
 	return agent.Run(ctx, dir, handoffPrompt(prompt, p.from.Note))
+}
+
+// checkNote is what the first fix session of a run that went on at its
+// check from an unavailable agent's checkpoint is told (#1996): a fresh
+// session, it would not know the earlier one stopped. "" for any other run.
+func (p *runProgress) checkNote() string {
+	if !p.resumesAt(StepCheck) || p.from.Unavailable == "" {
+		return ""
+	}
+	return fmt.Sprintf("The agent's service was unavailable (%s) while the check was being fixed, and the "+
+		"factory resumed the run once it was back. The working tree is as the stopped session left it.",
+		p.from.Unavailable)
 }
 
 // checksContext is the context the run's checks run in: ctx, ended at the
@@ -333,14 +352,21 @@ func (cp *checkpoint) apply(ctx context.Context, r *repo) error {
 }
 
 // saveCheckpoint saves the run, stopped at prog's step, to the job's
-// checkpoint directory as a checkpoint of kind; pauseReason is the pause's,
-// when the factory paused the run. result is what the stopped pod reports;
-// the checkpoint adds it to what the run's earlier pods used.
+// checkpoint directory as a checkpoint of kind, and reports whether it did:
+// a run with no directory, or stopped before its clone, saves none.
+// pauseReason is the pause's, when the factory paused the run. result is
+// what the stopped pod reports; the checkpoint adds it to what the run's
+// earlier pods used, and says when the agent's service was unavailable.
 func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
-	pauseReason *string) error {
+	pauseReason *string) (bool, error) {
 	if job.CheckpointDir == "" || prog.repo == nil || prog.step == "" {
-		return nil
+		return false, nil
 	}
+	return true, saveRun(job, prog, sessions, result, kind, pauseReason)
+}
+
+func saveRun(job Job, prog *runProgress, sessions *sessionLog, result Result, kind string,
+	pauseReason *string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), checkpointTimeout)
 	defer cancel()
 	r := prog.repo
@@ -361,7 +387,12 @@ func saveCheckpoint(job Job, prog *runProgress, sessions *sessionLog, result Res
 	id, lastText := sessions.newest()
 	cp.SessionID = id
 	headline := "The previous session was stopped with its sandbox, before it could write a note."
-	if pauseReason != nil {
+	switch {
+	case pauseReason == nil && result.Unavailable:
+		cp.Unavailable = shorten(strings.Join(strings.Fields(result.Error), " "), maxUnavailableNote)
+		headline = fmt.Sprintf("The agent's service was unavailable (%s), which ended the previous session; "+
+			"the factory waited for it to be back.", cp.Unavailable)
+	case pauseReason != nil:
 		cp.PauseReason = *pauseReason
 		headline = fmt.Sprintf("The factory paused the previous session (%s) after a tool call.",
 			orDefault(*pauseReason, "no reason given"))

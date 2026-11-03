@@ -244,11 +244,11 @@ func TestSuspendRunCountsARunOnce(t *testing.T) {
 	status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1, Sandbox: name, SandboxPod: "pod-1"}
 	step := model.TaskStep{Action: model.ActionSuspendRun, Message: "resumes in place"}
 
-	if err := r.suspendRun(context.Background(), task, status, step, false); err == nil {
+	if err := r.suspendRun(context.Background(), task, status, step, suspendInterrupted); err == nil {
 		t.Fatal("suspendRun() = nil, want the failed patch's error")
 	}
 	failPatch = false
-	if err := r.suspendRun(context.Background(), task, status, step, false); err != nil {
+	if err := r.suspendRun(context.Background(), task, status, step, suspendInterrupted); err != nil {
 		t.Fatal(err)
 	}
 	if status.Resumes != 1 || status.RunsWithoutCost != 1 || len(status.Runs) != 1 || status.CountedPod != "pod-1" {
@@ -297,5 +297,35 @@ func TestSuspendedRunKnowsWhenItWasSuspended(t *testing.T) {
 	if step := model.NextTaskStep(model.TaskFacts{Phase: model.TaskImplementing, Round: 1, MaxRounds: 3,
 		Resumes: 1, Run: run}); step.Action != model.ActionRerun {
 		t.Errorf("NextTaskStep() = %+v, want a rerun past MaxSuspendWait", step)
+	}
+}
+
+// #1996: a Task waiting for its agent looks again when the agent is due
+// back, also when that time came while the pass ran: a requeue after zero
+// would be none. One whose wait has a reason of its own (a pause, the cost
+// cap) is woken by that.
+func TestWaitForTheAgentLooksAgain(t *testing.T) {
+	now := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	r := &TaskReconciler{Now: func() time.Time { return now }}
+	task := &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")}
+	tests := []struct {
+		name string
+		back time.Duration
+		step model.TaskStep
+		want time.Duration
+	}{
+		{"due back later", 10 * time.Minute, model.TaskStep{Action: model.ActionWait}, 10 * time.Minute},
+		{"due back as the pass ran", -time.Second, model.TaskStep{Action: model.ActionWait}, agentBackRecheck},
+		{"due back now", 0, model.TaskStep{Action: model.ActionWait}, agentBackRecheck},
+		{"paused", -time.Second, model.TaskStep{Action: model.ActionWait, Reason: model.ReasonPaused}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing,
+				AgentBackAt: &metav1.Time{Time: now.Add(tt.back)}}
+			if got := r.wait(task, status, tt.step); got.RequeueAfter != tt.want {
+				t.Errorf("wait() = %+v, want a requeue after %s", got, tt.want)
+			}
+		})
 	}
 }

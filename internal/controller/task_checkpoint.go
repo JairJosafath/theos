@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"time"
 
@@ -73,6 +74,44 @@ const annotationSuspendedAt = "c4.factory.io/suspended-at"
 // waits however long that takes (step 12 of docs/plans/self-hosting.md).
 const annotationPausedRun = "c4.factory.io/paused-run"
 
+// annotationAgentBack on a suspended Sandbox says its run waits for its
+// agent's service, which was unavailable; its value is when the agent is
+// due back, in RFC 3339 (the Task's status.agentBackAt). Such a run resumes
+// then, counting no resume (step 13 of docs/plans/self-hosting.md).
+const annotationAgentBack = "c4.factory.io/agent-back-at"
+
+// suspension is why a run's sandbox is suspended, when its run was not
+// interrupted: it paused at the factory's ask (pause, the pause's reason),
+// or its agent's service was unavailable (agentBack, when it is due back).
+// Either marks the sandbox and drops its shutdown time, so the wait may last
+// past it; the resume sets a new one.
+type suspension struct {
+	pause     string
+	agentBack time.Time
+}
+
+// marks are the annotations a sandbox suspended for why gets.
+func (why suspension) marks() map[string]string {
+	marks := map[string]string{}
+	if why.pause != "" {
+		marks[annotationPausedRun] = why.pause
+	}
+	if !why.agentBack.IsZero() {
+		marks[annotationAgentBack] = why.agentBack.UTC().Format(time.RFC3339)
+	}
+	return marks
+}
+
+// The kinds of suspend: an interrupted run's, which counts a resume; a
+// paused run's; and that of a run whose agent was unavailable.
+type suspendKind int
+
+const (
+	suspendInterrupted suspendKind = iota
+	suspendPaused
+	suspendForAgent
+)
+
 // NoCheckpointClass, as the checkpoint StorageClass (the operator's
 // --sandbox-checkpoint-storage-class), gives sandboxes no checkpoint volume,
 // for a cluster with no class to provision one: an interrupted run is then
@@ -131,9 +170,11 @@ func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.T
 	step model.TaskStep) (ctrl.Result, error) {
 	switch step.Action {
 	case model.ActionSuspendRun:
-		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, false) // the status write triggers the next step
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, suspendInterrupted) // the status write triggers the next step
 	case model.ActionPauseRun:
-		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, true)
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, suspendPaused)
+	case model.ActionSuspendForAgent:
+		return ctrl.Result{}, r.suspendRun(ctx, task, status, step, suspendForAgent)
 	case model.ActionResumeRun:
 		return r.resumeRun(ctx, task, status, container, agents, step)
 	}
@@ -165,6 +206,7 @@ func suspendedState(ctx context.Context, c client.Client, sandbox *unstructured.
 	state.Suspended = true
 	state.SuspendedAt = parseTime(sandbox.GetAnnotations()[annotationSuspendedAt])
 	_, state.Paused = sandbox.GetAnnotations()[annotationPausedRun]
+	_, state.AgentWait = sandbox.GetAnnotations()[annotationAgentBack]
 	var pod corev1.Pod
 	err := c.Get(ctx, client.ObjectKey{Namespace: sandbox.GetNamespace(), Name: sandbox.GetName()}, &pod)
 	switch {
@@ -190,9 +232,11 @@ func (r *TaskReconciler) withSuspendedFor(run model.RunState) model.RunState {
 // suspends its sandbox once the status that counts them is written: a
 // failed write leaves the run to be found and counted again. A run counted
 // already, whose suspend failed after the write, is only suspended again. A
-// run that paused at the factory's ask counts its cost and no resume.
+// run that paused at the factory's ask counts its cost and no resume, and
+// so does one whose agent was unavailable, which waits until the agent is
+// due back (status.agentBackAt, as an unavailable agent's Task always did).
 func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	step model.TaskStep, paused bool) error {
+	step model.TaskStep, kind suspendKind) error {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return err
@@ -200,23 +244,33 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 	if !runCounted(status, run) {
 		r.countRun(status, run)
 		status.CountedPod = runPod(status, run)
-		reason := model.ReasonPaused
-		if !paused {
+		reason, message := model.ReasonPaused, step.Message
+		switch kind {
+		case suspendInterrupted:
 			setProgress(status, model.SuspendRun(progressOf(status)))
 			reason = "Interrupted"
+		case suspendForAgent:
+			back := model.AgentBackAt(step.RetryAt, r.now())
+			status.AgentBackAt = &metav1.Time{Time: back}
+			reason, message = reasonAgentUnavailable, fmt.Sprintf("%s, at %s", message, back.UTC().Format(time.RFC3339))
 		}
-		r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
-	}
-	if paused {
-		logf.FromContext(ctx).Info("Suspending a paused run to resume it in place", "sandbox", status.Sandbox,
-			"round", status.Round)
-	} else {
-		logf.FromContext(ctx).Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
-			"round", status.Round, "resumes", status.Resumes)
+		r.progress(task, status, metav1.ConditionTrue, reason, message)
 	}
 	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true}
-	if paused {
-		ended.pause = pauseReason(run)
+	log := logf.FromContext(ctx)
+	switch kind {
+	case suspendPaused:
+		ended.why.pause = pauseReason(run)
+		log.Info("Suspending a paused run to resume it in place", "sandbox", status.Sandbox, "round", status.Round)
+	case suspendForAgent:
+		if status.AgentBackAt != nil {
+			ended.why.agentBack = status.AgentBackAt.Time
+		}
+		log.Info("Suspending the run of an unavailable agent to resume it in place", "sandbox", status.Sandbox,
+			"round", status.Round, "until", ended.why.agentBack)
+	default:
+		log.Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
+			"round", status.Round, "resumes", status.Resumes)
 	}
 	return r.afterStatusWrite(ctx, task, ended)
 }
@@ -252,10 +306,10 @@ func runCounted(status *c4v1beta1.TaskStatus, run model.RunState) bool {
 
 // suspendSandbox adds the time the run ran on its pod to the sandbox and
 // suspends it: Agent Sandbox deletes the pod and keeps the volume. A
-// sandbox already suspended stays as it is. A paused run's sandbox is marked
-// with pause, its reason, and loses its shutdown time: a pause may last past
-// it, and the resume sets a new one.
-func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name, pause string) error {
+// sandbox already suspended stays as it is. The sandbox of a run that
+// paused, or waits for its agent, is marked with why and loses its shutdown
+// time: the wait may last past it, and the resume sets a new one.
+func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name string, why suspension) error {
 	sandbox := newSandbox()
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, sandbox); err != nil {
 		return client.IgnoreNotFound(err)
@@ -274,8 +328,8 @@ func (r *TaskReconciler) suspendSandbox(ctx context.Context, ns, name, pause str
 	}
 	annotations[annotationRanSeconds] = strconv.FormatInt(int64((ranBefore(sandbox) + ran).Seconds()), 10)
 	annotations[annotationSuspendedAt] = r.now().UTC().Format(time.RFC3339)
-	if pause != "" {
-		annotations[annotationPausedRun] = pause
+	if marks := why.marks(); len(marks) > 0 {
+		maps.Copy(annotations, marks)
 		unstructured.RemoveNestedField(sandbox.Object, fieldSpec, "shutdownTime")
 	}
 	sandbox.SetAnnotations(annotations)
@@ -348,8 +402,9 @@ func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, s
 	status.SandboxPod, status.AgentBackAt = "", nil
 	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", step.Message, status.Sandbox))
 	_, paused := sandbox.GetAnnotations()[annotationPausedRun]
+	_, waited := sandbox.GetAnnotations()[annotationAgentBack]
 	logf.FromContext(ctx).Info("Resuming a run in place", "sandbox", status.Sandbox, "paused", paused,
-		"round", status.Round, "resumes", status.Resumes, "deadline", deadline)
+		"waitedForAgent", waited, "round", status.Round, "resumes", status.Resumes, "deadline", deadline)
 	return r.afterStatusWrite(ctx, task, endedRun{sandbox: status.Sandbox, round: status.Round,
 		resume: &sandboxResume{podTemplate: template, deadline: deadline}})
 }
@@ -376,6 +431,7 @@ func (r *TaskReconciler) resumeSandbox(ctx context.Context, ns, name string, res
 	annotations := sandbox.GetAnnotations()
 	delete(annotations, annotationSuspendedAt)
 	delete(annotations, annotationPausedRun)
+	delete(annotations, annotationAgentBack)
 	sandbox.SetAnnotations(annotations)
 	for _, field := range []struct {
 		value any

@@ -1141,6 +1141,106 @@ func TestNextTaskStepAgentUnavailable(t *testing.T) {
 	}
 }
 
+// Step 13 of docs/plans/self-hosting.md (#1996): an unavailable agent's run
+// that saved its checkpoint, in a sandbox that has the volume, waits
+// suspended and resumes in place when the agent is back, with no round,
+// rerun or resume spent; any other is handled as before.
+func TestNextTaskStepSuspendsAnUnavailableRun(t *testing.T) {
+	back := time.Date(2026, 11, 3, 15, 0, 0, 0, time.UTC)
+	saved := func(retryAt time.Time) RunState {
+		return RunState{Started: true, Done: true, Checkpoint: true, Pod: "uid-1", Result: &RunResult{
+			Unavailable: true, RetryAt: retryAt, Error: "usage limit reached", Checkpoint: true,
+			CostMilliUSD: 250, CostReported: true}}
+	}
+	waiting := RunState{Started: true, Suspended: true, AgentWait: true, Checkpoint: true}
+	tests := []struct {
+		name    string
+		facts   TaskFacts
+		want    TaskAction
+		retryAt time.Time
+		message string
+	}{
+		{"#1996: with the volume and its checkpoint saved, it suspends until RetryAt", TaskFacts{
+			Phase: TaskImplementing, Round: 2, MaxRounds: 3, Run: saved(back)}, ActionSuspendForAgent, back,
+			"The agent is unavailable (usage limit reached); the run of round 2 saved its checkpoint and " +
+				"resumes in place when the agent is back"},
+		{"#1996: or the default delay when the service gave no time", TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Run: saved(time.Time{})}, ActionSuspendForAgent, time.Time{}, ""},
+		{"#1996: past the resume and rerun caps and in the last round too", TaskFacts{Phase: TaskReviewing,
+			Round: 3, MaxRounds: 3, Resumes: MaxResumes, Reruns: MaxReruns, Run: saved(back)},
+			ActionSuspendForAgent, back, "the run of round 3 saved its checkpoint"},
+		{"#1996: a planner's run too", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Plan: true,
+			Run: saved(back)}, ActionSuspendForAgent, back, ""},
+		{"#1996: without the volume, as before", TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3,
+			Run: func() RunState { r := saved(back); r.Checkpoint = false; return r }()},
+			ActionAgentUnavailable, back, "The agent is unavailable (usage limit reached); round 2 waits for it"},
+		{"#1996: with no checkpoint saved, as before", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			Run: func() RunState { r := saved(back); r.Result.Checkpoint = false; return r }()},
+			ActionAgentUnavailable, back, "round 1 waits for it"},
+		{"#1996: it waits for its pod to go", TaskFacts{Phase: TaskImplementing, Round: 2, MaxRounds: 3,
+			AgentBackIn: time.Hour, Run: RunState{Started: true, Suspended: true, AgentWait: true,
+				Checkpoint: true, Pod: "uid-1"}}, ActionWait, time.Time{},
+			"The waiting run of round 2 waits for its pod to go"},
+		{"#1996: then until the agent is back, however long", TaskFacts{Phase: TaskImplementing, Round: 2,
+			MaxRounds: 3, AgentBackIn: 5 * time.Hour, Run: RunState{Started: true, Suspended: true,
+				AgentWait: true, Checkpoint: true, SuspendedFor: 3 * time.Hour}}, ActionWait, time.Time{},
+			"The agent is unavailable; the run of round 2 resumes in place in 5h0m0s"},
+		{"#1996: and resumes in place at RetryAt, counting no resume", TaskFacts{Phase: TaskImplementing,
+			Round: 2, MaxRounds: 3, Resumes: MaxResumes, Run: waiting}, ActionResumeRun, time.Time{},
+			"Resuming the run of round 2 in place: its agent is due back"},
+		{"#1996: a reviewer's too", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			AgentBackIn: -time.Minute, Run: waiting}, ActionResumeRun, time.Time{}, ""},
+		{"#1996: a pause holds the resume", TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			Pause: "Crew linter paused its runs", Run: waiting}, ActionWait, time.Time{}, "Paused by the factory"},
+		{"#1996: so does the cost cap, the cost so far counted", TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, BudgetMilliUSD: 1000, CostMilliUSD: 1000, Run: waiting}, ActionWait, time.Time{},
+			"at its Crew's cap of $1"},
+		{"#1996: checkpoint gone on resume: its step runs again, with no rerun spent", TaskFacts{
+			Phase: TaskImplementing, Round: 2, MaxRounds: 3, Reruns: MaxReruns, Run: RunState{Started: true,
+				Suspended: true, AgentWait: true}}, ActionRerunPaused, time.Time{},
+			"The run that waited for its agent can't resume (the suspended run could not resume: its sandbox " +
+				"reached its shutdown time); round 2 runs again, with no rerun spent"},
+		{"#1996: as does one whose pod did not go", TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
+			Run: RunState{Started: true, Suspended: true, AgentWait: true, Checkpoint: true, Pod: "uid-1",
+				SuspendedFor: MaxSuspendWait + time.Minute}}, ActionRerunPaused, time.Time{},
+			"its pod did not go within 10m0s of the suspend"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextTaskStep(tt.facts)
+			if got.Action != tt.want || !strings.Contains(got.Message, tt.message) || !got.RetryAt.Equal(tt.retryAt) {
+				t.Errorf("NextTaskStep() = %+v, want %s, RetryAt %v, with %q", got, tt.want, tt.retryAt, tt.message)
+			}
+		})
+	}
+	// #1996: a run that waits for its agent, or paused, gives up its agent
+	// slot, so its resume waits for a free one, as a start does; an
+	// interrupted run keeps its own and resumes at once.
+	for _, tt := range []struct {
+		name string
+		run  RunState
+		slot bool
+	}{
+		{"#1996: a run back from its agent wait", waiting, true},
+		{"#1996: a run back from a pause", RunState{Started: true, Suspended: true, Paused: true, Checkpoint: true}, true},
+		{"#1996: an interrupted run", RunState{Started: true, Suspended: true, Checkpoint: true}, false},
+	} {
+		got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Run: tt.run, NoFreeSlot: true})
+		if tt.slot && (got.Action != ActionWait || !got.SlotWait || got.Message != "Waiting for a free agent slot") {
+			t.Errorf("%s: NextTaskStep() = %+v, want a wait for a free slot", tt.name, got)
+		}
+		if !tt.slot && got.Action != ActionResumeRun {
+			t.Errorf("%s: NextTaskStep() = %+v, want it resumed in its own slot", tt.name, got)
+		}
+	}
+	// Its wait for the pod to go looks again; its wait for the agent is the
+	// operator's to time.
+	if got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, AgentBackIn: time.Hour,
+		Run: waiting}); got.Recheck || got.SlotWait {
+		t.Errorf("NextTaskStep() = %+v, want a plain wait", got)
+	}
+}
+
 func TestNextTaskStepConflicts(t *testing.T) {
 	got := ConflictStep(3)
 	if got.Action != ActionResolveConflicts || !strings.Contains(got.Feedback, "Merge main into your branch") ||

@@ -153,7 +153,7 @@ func standInClaude(mode string) int {
 	switch mode {
 	case "hang":
 		return hangingClaude(n)
-	case "pause", "pause-busy", "record":
+	case "pause", "pause-busy", "record", "limit":
 		return pausingClaude(mode, n, postHook)
 	}
 	transcript := filepath.Join(dir, fmt.Sprintf("transcript-%d.jsonl", n))

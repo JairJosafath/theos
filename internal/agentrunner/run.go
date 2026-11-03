@@ -80,6 +80,10 @@ type Result struct {
 	// is the annotation's value.
 	Paused      bool   `json:"paused,omitempty"`
 	PauseReason string `json:"pauseReason,omitempty"`
+	// Checkpoint is the kind of checkpoint the run saved before it reported,
+	// hard or clean; empty when it saved none. An unavailable agent's run
+	// that saved one is suspended until the agent is back, and resumes.
+	Checkpoint string `json:"checkpoint,omitempty"`
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -235,7 +239,10 @@ var stopGrace = 2 * time.Second
 // there before it reports, and a run that finds one goes on from it
 // (checkpoint.go). A run the factory pauses stops at its next tool boundary
 // or step, saves a clean checkpoint (a hard one when it is still busy
-// pauseGrace later), and reports Paused (pause.go).
+// pauseGrace later), and reports Paused (pause.go). A run whose agent's
+// service was unavailable saves a clean checkpoint before it reports
+// Unavailable, to go on from when the agent is back; one c4agent was told to
+// stop is interrupted instead, whatever the agent printed.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	sessions := &sessionLog{}
 	pause := newPauseWatch(job)
@@ -259,21 +266,46 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 			kind = CheckpointHard
 		}
 		slog.Info("Paused by the factory", "reason", reason, "checkpoint", kind, "step", prog.step)
-		if err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
+		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, &reason); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over on resume", "error", err.Error())
+		} else if saved {
+			result.Checkpoint = kind
 		}
 		result.Paused, result.PauseReason = true, reason
 		result.Error, result.Interrupted, result.Unavailable, result.RetryAt = "", false, false, nil
 		result.Commit, result.Blocked = "", ""
 		return result
 	}
+	// A run c4agent was told to stop (a SIGTERM, or the run's deadline) is
+	// interrupted, whatever the agent printed before it was killed: an
+	// earlier "overloaded" in its output doesn't make the stop a wait for the
+	// service, which would resume it with no round spent (#1996).
+	if result.Unavailable && ctx.Err() != nil {
+		result.Unavailable, result.RetryAt = false, nil
+	}
 	if result.Error != "" && !result.Unavailable &&
 		(unreachableHost(result.Error) || stoppedWithin(ctx, stopGrace)) {
 		result.Interrupted = true
 	}
 	if result.Interrupted && ctx.Err() != nil {
-		if err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
+		if saved, err := saveCheckpoint(job, prog, sessions, result, CheckpointHard, nil); err != nil {
 			slog.Error("Failed to save the checkpoint; the run starts over", "error", err.Error())
+		} else if saved {
+			result.Checkpoint = CheckpointHard
+		}
+	}
+	if result.Unavailable {
+		// The agent's own process ended with the service's error, and
+		// nobody stopped c4agent: its transcript is whole, and the same
+		// session can go on.
+		kind := CheckpointClean
+		if saved, err := saveCheckpoint(job, prog, sessions, result, kind, nil); err != nil {
+			slog.Error("Failed to save the checkpoint; the step runs again when the agent is back",
+				"error", err.Error())
+		} else if saved {
+			slog.Info("The agent is unavailable; saved the run to go on when it is back", "checkpoint", kind,
+				"step", prog.step)
+			result.Checkpoint = kind
 		}
 	}
 	return result
@@ -346,7 +378,8 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	result.Summary = summary
 	prog.step, prog.summary = StepCheck, summary
 
-	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base)
+	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base,
+		prog.checkNote())
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -476,7 +509,11 @@ func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir stri
 // returns the check's last output, the base's output when the base fails too,
 // the check's error, and the agent's. The checks run in checks, which the
 // pause ends: a check it killed is errPaused, and runs again on resume.
-func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck) (string, string, error, error) {
+//
+// note, when set, starts the first fix prompt: it tells a run that went on
+// from a checkpoint at its check why the earlier one stopped.
+func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
+	note string) (string, string, error, error) {
 	check := strings.Join(job.CheckCommand, " ")
 	paused := func() bool { return checks.Err() != nil && ctx.Err() == nil }
 	checkOutput, checkErr := runCheck(checks, job, dir)
@@ -498,6 +535,9 @@ func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, 
 				"It was green in CI when this Task started, so that failure is the workspace's. Fix the failures your change causes, and leave the rest to CI, which runs the check and decides it. "+
 				"Then run it again. Output on your branch:\n%s",
 				check, job.Base, tail(baseOutput, 2000), tail(checkOutput, 6000))
+		}
+		if note != "" {
+			prompt, note = note+"\n\n"+prompt, ""
 		}
 		if _, err := agent.Run(ctx, dir, prompt); err != nil {
 			return checkOutput, baseOutput, checkErr, err

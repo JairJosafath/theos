@@ -1005,6 +1005,9 @@ func TestRunReportsAnUnavailableAgent(t *testing.T) {
 	if !got.Unavailable || got.RetryAt == nil || got.RetryAt.Unix() != 4102444800 {
 		t.Errorf("Run() = %+v, want an unavailable agent back at its reset", got)
 	}
+	if got.Checkpoint != "" {
+		t.Errorf("Run() saved a %s checkpoint, want none without a checkpoint directory", got.Checkpoint)
+	}
 }
 
 func TestRunReportsAnInterruptedRun(t *testing.T) {
@@ -1014,6 +1017,39 @@ func TestRunReportsAnInterruptedRun(t *testing.T) {
 	if !got.Interrupted || got.Unavailable || got.Error != "claude failed: signal: killed" {
 		t.Errorf("Run() = %+v, want an interrupted run", got)
 	}
+}
+
+// #1996: c4agent stopped at the run's deadline, or by a SIGTERM, while the
+// agent's earlier output said the service was overloaded: the run is
+// interrupted, with a hard checkpoint that counts against MaxResumes, not
+// an unavailable agent the operator would resume with no round spent.
+func TestRunStoppedAfterAnOverloadIsInterruptedNotUnavailable(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints := t.TempDir()
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir = checkpoints
+	ctx, cancel := context.WithCancel(context.Background())
+	agent := stoppedAgent{stop: cancel,
+		err: errors.New("claude failed: signal: killed: API Error: 529 overloaded, retrying")}
+	got := Run(ctx, job, agent, t.TempDir())
+	if !got.Interrupted || got.Unavailable || got.RetryAt != nil || got.Checkpoint != CheckpointHard {
+		t.Errorf("Run() = %+v, want an interrupted run with a hard checkpoint, not an unavailable one", got)
+	}
+	if cp := readCheckpoint(t, checkpoints); cp.Kind != CheckpointHard || cp.Unavailable != "" {
+		t.Errorf("state.json = %+v, want a hard checkpoint that doesn't say the service was unavailable", cp)
+	}
+}
+
+// stoppedAgent is an agent killed because c4agent was told to stop, whose
+// error carries what it printed before.
+type stoppedAgent struct {
+	stop context.CancelFunc
+	err  error
+}
+
+func (a stoppedAgent) Run(context.Context, string, string) (string, error) {
+	a.stop()
+	return "", a.err
 }
 
 func TestRunKilledBeforeTheStopIsInterrupted(t *testing.T) {

@@ -271,7 +271,7 @@ on a Standard change), then `Merged` or `Failed`.
 
   | Reason | What happened | The Task |
   | --- | --- | --- |
-  | `AgentUnavailable` | usage limit, overloaded or 5xx model API, rejected credentials | waits, then runs the step again; no round |
+  | `AgentUnavailable` | usage limit, overloaded or 5xx model API, rejected credentials | waits, then resumes in place from its checkpoint, or without one runs the step again; no round |
   | `Interrupted` | node shutdown, eviction, pod deleted, Git host unreachable past the runner's retries | resumes in place from its checkpoint, up to five times a round; then runs again in the round, at most twice |
   | `NoCIResult` | no CI run started in 30 minutes, or none ended in its bound (6 h queued, 3 h 15 running) | fails |
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
@@ -320,6 +320,21 @@ on a Standard change), then `Merged` or `Failed`.
   half way puts the clone back as it was cloned before the run starts over.
   A `clean` checkpoint is saved when a run pauses at a tool boundary (below);
   on the same model it resumes the same session with `claude -p --resume`.
+- **An unavailable agent's run waits, suspended.** c4agent saves a
+  checkpoint before it reports `Unavailable`: `clean` when the agent ended
+  on the service's error, its transcript whole, `hard` when c4agent had to
+  stop it. Its result says it saved one (`checkpoint`). The operator counts
+  what the run cost so far, suspends the Sandbox as for an interruption,
+  marked with when the agent is back (`c4.factory.io/agent-back-at`: the
+  service's `RetryAt`, or 15 minutes on) and without its shutdown time, and
+  resumes it then with the current Agent. The resumed session is told the
+  service was unavailable. The wait costs no round, rerun or resume. Once
+  its pod is gone a waiting run holds no agent slot, nor does a paused
+  one, and its resume waits for a free slot as a start does. A run
+  that saved no checkpoint, or in a Sandbox without the volume, ends, and
+  its step runs again once the agent is back; a waiting run that can't
+  resume runs its step again with no rerun spent. A Task still waiting past
+  when its agent was due back is a needs-you item, as before.
 - **Roles get their own model and guide.** An Agent has a `harness` and a
   `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
   read from the base branch so a change can't rewrite its own review. The

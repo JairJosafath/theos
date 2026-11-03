@@ -1042,6 +1042,121 @@ var _ = Describe("Task with an unavailable agent", func() {
 			g.Expect(task.Status.Round).To(Equal(int32(1)))
 		}, "20s").Should(Succeed())
 	})
+
+	// Step 13 of docs/plans/self-hosting.md (#1996).
+	It("suspends a run that saved its checkpoint until RetryAt, then resumes it in place with the current "+
+		"Agent, no round spent (#1996)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		const name = "add-crop-r1-implement"
+		runningPod(ns, name, "add-crop")
+		back := time.Now().Add(8 * time.Second).Truncate(time.Second).UTC()
+		finishSandbox(ns, name, "add-crop", &agentrunner.Result{Role: "implement",
+			Error: "claude ended with an error: Claude AI usage limit reached", Unavailable: true, RetryAt: &back,
+			Checkpoint: agentrunner.CheckpointClean, CostMilliUSD: new(int64(250))}, "")
+
+		By("suspending the Sandbox, its volume kept, the run's cost counted and no round, rerun or resume spent")
+		Eventually(func(g Gomega) {
+			sandbox := sandboxExists(g, ns, name)
+			g.Expect(sandboxMode(g, ns, name)).To(Equal(operatingModeSuspended))
+			g.Expect(sandbox.GetAnnotations()).To(HaveKeyWithValue(annotationAgentBack, back.Format(time.RFC3339)))
+			_, hasShutdown, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
+			g.Expect(hasShutdown).To(BeFalse(), "the wait may last past the sandbox's shutdown time")
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "a usage limit costs no round")
+			g.Expect(task.Status.Resumes).To(BeZero(), "a wait for the agent is no interruption")
+			g.Expect(task.Status.Reruns).To(BeZero())
+			g.Expect(task.Status.CostMilliUSD).To(Equal(int64(250)))
+			g.Expect(task.Status.AgentBackAt).NotTo(BeNil())
+			g.Expect(task.Status.AgentBackAt.Time).To(BeTemporally("==", back))
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "AgentUnavailable"),
+				HaveField("Message", ContainSubstring("the run of round 1 saved its checkpoint and resumes in "+
+					"place when the agent is back")))))
+		}, "20s").Should(Succeed())
+
+		By("waiting, suspended, for the agent once the pod went")
+		deletePod(ns, name)
+		Eventually(func(g Gomega) {
+			cond := condition(getTask(g, ns, "add-crop").Status.Conditions, ConditionProgressing)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal("AgentUnavailable"))
+			g.Expect(cond.Message).To(ContainSubstring("the run of round 1 resumes in place in"))
+		}, "20s").Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(sandboxMode(g, ns, name)).To(Equal(operatingModeSuspended))
+		}, "2s").Should(Succeed())
+		Eventually(func(g Gomega) {
+			var agent c4v1beta1.Agent
+			g.Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
+			agent.Spec.Image = "c4factory/agent-go:new"
+			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
+		}).Should(Succeed())
+
+		By("resuming it in place at RetryAt with the current Agent")
+		Eventually(func(g Gomega) {
+			sandbox := sandboxExists(g, ns, name)
+			g.Expect(sandboxMode(g, ns, name)).To(Equal(operatingModeRunning))
+			g.Expect(sandbox.GetAnnotations()).NotTo(HaveKey(annotationAgentBack))
+			g.Expect(sandboxPodSpec(g, sandbox).Containers[0].Image).To(Equal("c4factory/agent-go:new"))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Sandbox).To(Equal(name))
+			g.Expect(task.Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")
+			g.Expect(task.Status.AgentBackAt).To(BeNil())
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+			g.Expect(task.Status.Resumes).To(BeZero(), "the resume counts against no cap")
+			g.Expect(task.Status.Reruns).To(BeZero())
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "Running"),
+				HaveField("Message", ContainSubstring("Resuming the run of round 1 in place: its agent is due back")))))
+		}, "20s").Should(Succeed())
+		Expect(time.Now()).To(BeTemporally(">=", back), "not before the agent is back")
+	})
+
+	It("handles one in a Sandbox without the checkpoint volume as before (#1996)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		const name = "add-crop-r1-implement"
+		By("a Sandbox made before checkpoints, with no checkpoint claim")
+		old := newSandbox()
+		old.SetNamespace(ns)
+		old.SetName(name)
+		old.SetLabels(map[string]string{LabelTask: "add-crop"})
+		Expect(unstructured.SetNestedSlice(old.Object, []any{map[string]any{"name": "agent", "image": "agent"}},
+			"spec", "podTemplate", "spec", "containers")).To(Succeed())
+		Expect(k8sClient.Create(ctx, old)).To(Succeed())
+		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "add-crop").Status.Sandbox).To(Equal(name))
+		}, "20s").Should(Succeed())
+
+		back := time.Now().Add(3 * time.Second).UTC()
+		finishSandbox(ns, name, "add-crop", &agentrunner.Result{Role: "implement",
+			Error: "claude ended with an error: usage limit reached", Unavailable: true, RetryAt: &back,
+			Checkpoint: agentrunner.CheckpointClean}, "")
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.Round).To(Equal(int32(1)), "a usage limit costs no round")
+			g.Expect(task.Status.Resumes).To(BeZero())
+			g.Expect(task.Status.AgentBackAt).NotTo(BeNil())
+			g.Expect(task.Status.History).To(ContainElement(And(HaveField("Reason", "AgentUnavailable"),
+				HaveField("Message", ContainSubstring("round 1 waits for it")))))
+			sandbox := newSandbox()
+			err := k8sClient.Get(ctx, key(ns, name), sandbox)
+			g.Expect(err == nil && sandbox.GetUID() == old.GetUID()).To(BeFalse(), "the old sandbox is not kept")
+		}, "20s").Should(Succeed())
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: objectMeta(ns, name)}))).
+			To(Succeed())
+
+		By("starting the step again in a new sandbox once the agent is back")
+		Eventually(func(g Gomega) {
+			sandbox := sandboxExists(g, ns, name)
+			g.Expect(sandbox.GetUID()).NotTo(Equal(old.GetUID()))
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.AgentBackAt).To(BeNil())
+			g.Expect(task.Status.Round).To(Equal(int32(1)))
+		}, "20s").Should(Succeed())
+	})
 })
 
 var _ = Describe("Agent tokens after an upgrade", func() {

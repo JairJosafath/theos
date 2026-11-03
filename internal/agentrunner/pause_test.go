@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -97,7 +98,8 @@ func TestParseAnnotations(t *testing.T) {
 // line, as Claude Code does. In "pause-busy" its third tool never ends. In
 // "record" it writes its arguments to args-n.txt, and whether the session it
 // resumes has its transcript where Claude Code reads it to transcript-n.txt,
-// and answers.
+// and answers. In "limit" it ends at its second turn with Claude Code's
+// usage limit error.
 func pausingClaude(mode string, n int, postHook string) int {
 	dir := os.Getenv(standInClaudeDir)
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("args-%d.txt", n)), []byte(strings.Join(os.Args[1:], "\n")), 0o600)
@@ -127,6 +129,11 @@ func pausingClaude(mode string, n int, postHook string) int {
 		_, _ = fmt.Fprintln(f, transcriptLine(1000, false))
 		_ = f.Close()
 		_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("turns-%d", n)), []byte(strconv.Itoa(turn)), 0o600)
+		if mode == "limit" && turn == 2 {
+			fmt.Printf(`{"type":"result","subtype":"success","is_error":true,`+
+				`"result":"Claude AI usage limit reached|%d","total_cost_usd":0.03}`+"\n", standInLimitReset)
+			return 1
+		}
 		if mode == "pause-busy" && turn == 3 {
 			// A tool that doesn't end: the hook never runs.
 			time.Sleep(time.Minute)
@@ -321,6 +328,142 @@ func TestPausedRunResumes(t *testing.T) {
 	}
 }
 
+// standInLimitReset is when the stand-in's usage limit resets: 2100-01-01.
+const standInLimitReset = 4102444800
+
+// #1996: a run whose agent's service is unavailable saves a clean
+// checkpoint before it reports Unavailable: the agent's own process ended,
+// so its transcript is whole. The resumed run goes on in the same session
+// on the same model, and in a fresh one told why on another.
+func TestUnavailableAgentSavesACheckpointBeforeItReports(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	agent, log := standInAgent(t, "limit")
+	agent.SessionIDs = true
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.Model = checkpoints, "claude-opus-5-5"
+	result := Run(context.Background(), job, agent, t.TempDir())
+	if !result.Unavailable || result.RetryAt == nil || result.RetryAt.Unix() != standInLimitReset ||
+		result.Checkpoint != CheckpointClean || result.Interrupted || result.Commit != "" {
+		t.Fatalf("Run() = %+v, want an unavailable agent back at its reset, with a clean checkpoint saved", result)
+	}
+	if result.CostMilliUSD == nil || *result.CostMilliUSD != 30 {
+		t.Errorf("cost = %v, want the session's 30 so far", result.CostMilliUSD)
+	}
+	if head := branchHead(t, url, "task/add-crop"); head != "" {
+		t.Errorf("the branch is at %s, want it not pushed", head)
+	}
+	cp := readCheckpoint(t, checkpoints)
+	args, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+	if cp.Kind != CheckpointClean || cp.Step != StepAgent || cp.SessionID == "" || cp.Work == "" ||
+		!strings.Contains(string(args), "--session-id\n"+cp.SessionID) ||
+		!strings.Contains(cp.Unavailable, "usage limit reached") || cp.PauseReason != "" {
+		t.Errorf("state.json = %+v, want a clean checkpoint at the agent's session, with its ID and the error", cp)
+	}
+	if !strings.Contains(cp.Note, "The agent's service was unavailable (") {
+		t.Errorf("the note = %q, want it to say the service was unavailable", cp.Note)
+	}
+	if info, err := os.Stat(filepath.Join(checkpoints, checkpointTranscript)); err != nil || info.Size() == 0 {
+		t.Errorf("the transcript: %v, want it saved", err)
+	}
+
+	t.Run("the same model: --resume", func(t *testing.T) {
+		args, prompt := resumeUnavailable(t, url, checkpoints, "claude-opus-5-5")
+		if !strings.Contains(args, "--resume\n"+cp.SessionID) ||
+			!strings.HasPrefix(prompt, "Your service was unavailable (") ||
+			!strings.Contains(prompt, "the factory resumed you once it was back") {
+			t.Errorf("the session ran with %q and prompt %q; want --resume %s, told why", args, prompt, cp.SessionID)
+		}
+	})
+	t.Run("another model: the note", func(t *testing.T) {
+		args, prompt := resumeUnavailable(t, url, checkpoints, "claude-sonnet-5")
+		if strings.Contains(args, "--resume") || !strings.Contains(prompt, "The agent's service was unavailable (") {
+			t.Errorf("the session ran with %q and prompt %q, want a fresh session told why", args, prompt)
+		}
+	})
+}
+
+// scriptedAgent answers each call with the next of its steps, and records
+// the prompts.
+type scriptedAgent struct {
+	steps   []func(dir string) (string, error)
+	prompts []string
+}
+
+func (a *scriptedAgent) Run(_ context.Context, dir, prompt string) (string, error) {
+	a.prompts = append(a.prompts, prompt)
+	step := a.steps[0]
+	a.steps = a.steps[1:]
+	return step(dir)
+}
+
+// #1996: an agent that is unavailable while it fixes the check leaves a
+// checkpoint at the check; the resumed run's first fix session, a fresh
+// one, is told why the earlier one stopped.
+func TestUnavailableDuringTheCheckFixTellsTheResumedFix(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+	checkpoints := t.TempDir()
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.CheckCommand = checkpoints, []string{"sh", "-c", "test -f fixed"}
+	write := func(name, reply string) func(string) (string, error) {
+		return func(dir string) (string, error) {
+			return reply, os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o600)
+		}
+	}
+	limited := &scriptedAgent{steps: []func(string) (string, error){write("crop.go", "Added crop."),
+		func(string) (string, error) {
+			return "", errors.New("claude ended with an error: Claude AI usage limit reached|4102444800")
+		}}}
+	stopped := Run(context.Background(), job, limited, t.TempDir())
+	if !stopped.Unavailable || stopped.Checkpoint != CheckpointClean {
+		t.Fatalf("Run() = %+v, want an unavailable agent with a clean checkpoint", stopped)
+	}
+	if cp := readCheckpoint(t, checkpoints); cp.Step != StepCheck || cp.Summary != "Added crop." {
+		t.Fatalf("state.json = %+v, want a checkpoint at the check", cp)
+	}
+
+	fixer := &scriptedAgent{steps: []func(string) (string, error){write("fixed", "Fixed.")}}
+	resumed := Run(context.Background(), job, fixer, t.TempDir())
+	if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
+		t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
+	}
+	if len(fixer.prompts) != 1 || !strings.HasPrefix(fixer.prompts[0], "The agent's service was unavailable (") ||
+		!strings.Contains(fixer.prompts[0], `"sh -c test -f fixed" fails.`) {
+		t.Errorf("the resumed run's prompts = %q, want one fix prompt told the service was unavailable", fixer.prompts)
+	}
+}
+
+// resumeUnavailable resumes, on onModel, a copy of the checkpoint an
+// unavailable agent's run left, and returns the resumed session's arguments
+// and prompt.
+func resumeUnavailable(t *testing.T, url, checkpoints, onModel string) (args, prompt string) {
+	t.Helper()
+	saved := t.TempDir()
+	if err := os.CopyFS(saved, os.DirFS(checkpoints)); err != nil {
+		t.Fatal(err)
+	}
+	// Each resume pushes to its own copy of the origin: two resumes of one
+	// checkpoint a second apart make different commits on the same branch,
+	// and the second push would not fast-forward (#1996).
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := os.CopyFS(origin, os.DirFS(strings.TrimPrefix(url, "file://"))); err != nil {
+		t.Fatal(err)
+	}
+	url = "file://" + origin
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	agent, log := standInAgent(t, "record")
+	agent.SessionIDs = true
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.Model = saved, onModel
+	resumed := Run(context.Background(), job, agent, t.TempDir())
+	if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
+		t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
+	}
+	data, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+	return string(data), prompts(t, log)[0]
+}
+
 // A pause asked while the check runs kills the check; the run stops with a
 // clean checkpoint at its check, which runs again on resume.
 func TestPauseKillsARunningCheckThatRunsAgainOnResume(t *testing.T) {
@@ -419,7 +562,11 @@ func TestPauseBeforeTheResumedSessionKeepsItsKindAndModel(t *testing.T) {
 			}
 			first := readCheckpoint(t, checkpoints)
 
-			// Resumed, and paused again before its session starts.
+			// Resumed, and paused again before its session starts. The
+			// first run's short grace would end the restore itself on a
+			// loaded machine (Gitea run 20): no session runs here, so the
+			// grace only has to outlast the restore.
+			shortPause(t, time.Minute)
 			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 			agent, log := standInAgent(t, "record")
 			agent.SessionIDs = true
