@@ -1191,10 +1191,19 @@ func NextTaskStep(f TaskFacts) TaskStep {
 		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is unavailable; trying again in %s",
 			f.AgentBackIn.Round(time.Second))}
 	}
-	if f.NoFreeSlot && (step.Action == ActionStartImplement || step.Action == ActionStartReview) {
+	if f.NoFreeSlot && (starts || step.Action == ActionResumeRun && releasesSlot(f.Run)) {
 		return TaskStep{Action: ActionWait, Message: "Waiting for a free agent slot", SlotWait: true}
 	}
 	return step
+}
+
+// releasesSlot reports whether a suspended run gives up its agent slot
+// while it waits: one that paused, or waits for its agent, may wait for
+// hours, and no agent of it runs (#1996). Its resume then waits for a free
+// slot, as a start does. An interrupted run resumes at once, and keeps its
+// slot.
+func releasesSlot(run RunState) bool {
+	return run.Suspended && (run.Paused || run.AgentWait)
 }
 
 func nextTaskStep(f TaskFacts) TaskStep {

@@ -328,7 +328,9 @@ on a Standard change), then `Merged` or `Failed`.
   marked with when the agent is back (`c4.factory.io/agent-back-at`: the
   service's `RetryAt`, or 15 minutes on) and without its shutdown time, and
   resumes it then with the current Agent. The resumed session is told the
-  service was unavailable. The wait costs no round, rerun or resume. A run
+  service was unavailable. The wait costs no round, rerun or resume. Once
+  its pod is gone a waiting run holds no agent slot, nor does a paused
+  one, and its resume waits for a free slot as a start does. A run
   that saved no checkpoint, or in a Sandbox without the volume, ends, and
   its step runs again once the agent is back; a waiting run that can't
   resume runs its step again with no rerun spent. A Task still waiting past

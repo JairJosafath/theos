@@ -1213,6 +1213,26 @@ func TestNextTaskStepSuspendsAnUnavailableRun(t *testing.T) {
 			}
 		})
 	}
+	// #1996: a run that waits for its agent, or paused, gives up its agent
+	// slot, so its resume waits for a free one, as a start does; an
+	// interrupted run keeps its own and resumes at once.
+	for _, tt := range []struct {
+		name string
+		run  RunState
+		slot bool
+	}{
+		{"#1996: a run back from its agent wait", waiting, true},
+		{"#1996: a run back from a pause", RunState{Started: true, Suspended: true, Paused: true, Checkpoint: true}, true},
+		{"#1996: an interrupted run", RunState{Started: true, Suspended: true, Checkpoint: true}, false},
+	} {
+		got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, Run: tt.run, NoFreeSlot: true})
+		if tt.slot && (got.Action != ActionWait || !got.SlotWait || got.Message != "Waiting for a free agent slot") {
+			t.Errorf("%s: NextTaskStep() = %+v, want a wait for a free slot", tt.name, got)
+		}
+		if !tt.slot && got.Action != ActionResumeRun {
+			t.Errorf("%s: NextTaskStep() = %+v, want it resumed in its own slot", tt.name, got)
+		}
+	}
 	// Its wait for the pod to go looks again; its wait for the agent is the
 	// operator's to time.
 	if got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3, AgentBackIn: time.Hour,

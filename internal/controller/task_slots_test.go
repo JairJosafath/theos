@@ -43,6 +43,17 @@ func agentSandbox(ns, name string, phase corev1.PodPhase) {
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 }
 
+// suspendAgentSandbox suspends an agent sandbox as the operator would, marked
+// with annotations.
+func suspendAgentSandbox(ns, name string, annotations map[string]string) {
+	GinkgoHelper()
+	sandbox := newSandbox()
+	Expect(k8sClient.Get(ctx, key(ns, name), sandbox)).To(Succeed())
+	sandbox.SetAnnotations(annotations)
+	Expect(unstructured.SetNestedField(sandbox.Object, operatingModeSuspended, "spec", "operatingMode")).To(Succeed())
+	Expect(k8sClient.Update(ctx, sandbox)).To(Succeed())
+}
+
 var _ = Describe("Agent slots", func() {
 	It("are held by sandboxes whose run hasn't ended, not by finished ones kept around", func() {
 		ns := newProjectNamespace()
@@ -57,6 +68,16 @@ var _ = Describe("Agent slots", func() {
 		Expect(k8sClient.Delete(ctx, old)).To(Succeed())
 		agentSandbox(ns, "next-round", "")
 
+		By("suspending runs: one waiting for its agent and one paused, their pods gone, give their slots up (#1996)")
+		agentSandbox(ns, "waits-for-agent", "")
+		suspendAgentSandbox(ns, "waits-for-agent", map[string]string{annotationAgentBack: "2026-11-03T15:00:00Z"})
+		agentSandbox(ns, "paused", "")
+		suspendAgentSandbox(ns, "paused", map[string]string{annotationPausedRun: "Crew linter paused its runs"})
+		agentSandbox(ns, "still-saving", corev1.PodRunning)
+		suspendAgentSandbox(ns, "still-saving", map[string]string{annotationAgentBack: "2026-11-03T15:00:00Z"})
+		agentSandbox(ns, "interrupted", "")
+		suspendAgentSandbox(ns, "interrupted", nil)
+
 		By("counting them as the operator, under its generated role")
 		operator, err := client.New(managerCfg, client.Options{Scheme: k8sClient.Scheme()})
 		Expect(err).NotTo(HaveOccurred())
@@ -66,5 +87,9 @@ var _ = Describe("Agent slots", func() {
 		Expect(held).To(ContainElements(ns+"/starting", ns+"/implementer", ns+"/next-round"))
 		Expect(held).NotTo(ContainElement(ns + "/approved-reviewer"))
 		Expect(held).NotTo(ContainElement(ns + "/failed-run"))
+		Expect(held).NotTo(ContainElement(ns + "/waits-for-agent"))
+		Expect(held).NotTo(ContainElement(ns + "/paused"))
+		Expect(held).To(ContainElements(ns+"/still-saving", ns+"/interrupted"),
+			"a pod still saving the run, and an interrupted run that resumes at once, keep their slots")
 	})
 })
