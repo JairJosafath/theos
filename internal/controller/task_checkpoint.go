@@ -252,7 +252,7 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 		case suspendForAgent:
 			back := model.AgentBackAt(step.RetryAt, r.now())
 			status.AgentBackAt = &metav1.Time{Time: back}
-			reason, message = "AgentUnavailable", fmt.Sprintf("%s, at %s", message, back.UTC().Format(time.RFC3339))
+			reason, message = reasonAgentUnavailable, fmt.Sprintf("%s, at %s", message, back.UTC().Format(time.RFC3339))
 		}
 		r.progress(task, status, metav1.ConditionTrue, reason, message)
 	}

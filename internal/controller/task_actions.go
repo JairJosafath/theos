@@ -108,7 +108,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		}
 		back := model.AgentBackAt(step.RetryAt, r.now())
 		status.AgentBackAt = &metav1.Time{Time: back}
-		r.progress(task, status, metav1.ConditionTrue, "AgentUnavailable",
+		r.progress(task, status, metav1.ConditionTrue, reasonAgentUnavailable,
 			fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
 		log.Info("Agent unavailable; Task waits", "until", back, "message", step.Message)
 		return ctrl.Result{RequeueAfter: back.Sub(r.now())}, nil
@@ -155,6 +155,10 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	return ctrl.Result{}, nil
 }
 
+// reasonAgentUnavailable is the Progressing reason of a Task waiting for its
+// agent's service to be back.
+const reasonAgentUnavailable = "AgentUnavailable"
+
 // wait records what the Task waits for, and when to look again.
 func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
 	if status.Phase == c4v1beta1.TaskBlocked {
@@ -168,7 +172,7 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 		reason = "WaitingForSlot"
 	}
 	if status.AgentBackAt != nil && status.AgentBackAt.After(r.now()) && !step.SlotWait {
-		reason = "AgentUnavailable"
+		reason = reasonAgentUnavailable
 	}
 	if step.Reason != "" {
 		// At its Crew's cost cap (OverBudget): the Crew watch wakes the Task
@@ -179,7 +183,7 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}
 	}
-	if reason == "AgentUnavailable" {
+	if reason == reasonAgentUnavailable {
 		return ctrl.Result{RequeueAfter: status.AgentBackAt.Sub(r.now())}
 	}
 	return ctrl.Result{}

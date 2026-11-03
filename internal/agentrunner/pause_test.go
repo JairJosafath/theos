@@ -367,42 +367,42 @@ func TestUnavailableAgentSavesACheckpointBeforeItReports(t *testing.T) {
 		t.Errorf("the transcript: %v, want it saved", err)
 	}
 
-	for _, tt := range []struct {
-		name    string
-		model   string
-		resumed bool
-	}{{"the same model: --resume", "claude-opus-5-5", true}, {"another model: the note", "claude-sonnet-5", false}} {
-		t.Run(tt.name, func(t *testing.T) {
-			saved := t.TempDir()
-			if err := os.CopyFS(saved, os.DirFS(checkpoints)); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-			agent, log := standInAgent(t, "record")
-			agent.SessionIDs = true
-			job := testJob(t, url, RoleImplement, 1)
-			job.CheckpointDir, job.Model = saved, tt.model
-			resumed := Run(context.Background(), job, agent, t.TempDir())
-			if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
-				t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
-			}
-			args, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
-			prompt := prompts(t, log)[0]
-			if tt.resumed {
-				if !strings.Contains(string(args), "--resume\n"+cp.SessionID) ||
-					!strings.HasPrefix(prompt, "Your service was unavailable (") ||
-					!strings.Contains(prompt, "the factory resumed you once it was back") {
-					t.Errorf("the session ran with %q and prompt %q; want --resume %s, told why", args, prompt,
-						cp.SessionID)
-				}
-				return
-			}
-			if strings.Contains(string(args), "--resume") ||
-				!strings.Contains(prompt, "The agent's service was unavailable (") {
-				t.Errorf("the session ran with %q and prompt %q, want a fresh session told why", args, prompt)
-			}
-		})
+	t.Run("the same model: --resume", func(t *testing.T) {
+		args, prompt := resumeUnavailable(t, url, checkpoints, "claude-opus-5-5")
+		if !strings.Contains(args, "--resume\n"+cp.SessionID) ||
+			!strings.HasPrefix(prompt, "Your service was unavailable (") ||
+			!strings.Contains(prompt, "the factory resumed you once it was back") {
+			t.Errorf("the session ran with %q and prompt %q; want --resume %s, told why", args, prompt, cp.SessionID)
+		}
+	})
+	t.Run("another model: the note", func(t *testing.T) {
+		args, prompt := resumeUnavailable(t, url, checkpoints, "claude-sonnet-5")
+		if strings.Contains(args, "--resume") || !strings.Contains(prompt, "The agent's service was unavailable (") {
+			t.Errorf("the session ran with %q and prompt %q, want a fresh session told why", args, prompt)
+		}
+	})
+}
+
+// resumeUnavailable resumes, on onModel, a copy of the checkpoint an
+// unavailable agent's run left, and returns the resumed session's arguments
+// and prompt.
+func resumeUnavailable(t *testing.T, url, checkpoints, onModel string) (args, prompt string) {
+	t.Helper()
+	saved := t.TempDir()
+	if err := os.CopyFS(saved, os.DirFS(checkpoints)); err != nil {
+		t.Fatal(err)
 	}
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	agent, log := standInAgent(t, "record")
+	agent.SessionIDs = true
+	job := testJob(t, url, RoleImplement, 1)
+	job.CheckpointDir, job.Model = saved, onModel
+	resumed := Run(context.Background(), job, agent, t.TempDir())
+	if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
+		t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
+	}
+	data, _ := os.ReadFile(filepath.Join(log, "args-1.txt"))
+	return string(data), prompts(t, log)[0]
 }
 
 // A pause asked while the check runs kills the check; the run stops with a
