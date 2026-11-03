@@ -35,8 +35,8 @@ references a model credential Secret, and a unit test (no build tag) shows
 that guard failing. `go vet -tags=e2e ./test/e2e/...` checks the suite
 compiles without a cluster.
 
-The scripts in `hack/` (the relay, the heavy-job slots, the check cache, the
-cluster pool, the seed) have shell tests of their own, `hack/**/*_test.sh`.
+The scripts in `hack/` (the heavy-job slots, the check cache, the cluster
+pool, the seed) have shell tests of their own, `hack/**/*_test.sh`.
 Each fakes what it calls (docker, kind, kubectl, gh, claude, curl), so none
 needs a cluster or the network; `make test-hack` runs them all at once
 (`hack/test-hack.sh`), and `make check` runs that. A new `*_test.sh` under
@@ -295,12 +295,16 @@ publishes and tests nothing. `make check` is the gate before a merge; it runs
 and its tests) too, so a UI change can't merge with what would turn *UI* red
 (#1006).
 
-## Work on the factory: GitHub issues and the relay
+## Work on the factory: GitHub issues by hand
 
-Work on the factory itself is tracked as issues on `JairJosafath/c4factory`; the
-apps it builds keep their issues in Gitea. Sessions hand off through issue
-comments (the `handoff` skill), and `hack/lib/github.sh` does every GitHub call,
-with the token from the git credential helper.
+The relay (`hack/relay.sh`, `hack/relay-watch.sh`) is retired: the factory works
+its own issues in Gitea, through the Crew `c4factory`. How that runs is in
+[docs/plans/self-hosting.md](../plans/self-hosting.md).
+
+A human who works an issue by hand still finds it on GitHub
+(`JairJosafath/c4factory`), and `hack/lib/github.sh` does every GitHub call,
+with the token from the git credential helper. Sessions hand off through issue
+comments (the `handoff` skill).
 
 ```bash
 hack/lib/github.sh pick            # the issue to work next
@@ -316,158 +320,45 @@ hack/lib/github.sh cluster holder  # who holds which cluster
 hack/lib/github.sh cluster pool    # each pool cluster: leased, free or not created yet
 hack/lib/github.sh labels          # create the status/priority/kind/source labels (safe to repeat)
 hack/lib/github.sh yolo on|off|status  # yolo mode: a pull request merges once made (no make check, review or merge turn) until only the Maintainer report is open
-RELAY_DRY_RUN=1 hack/relay.sh      # the issue and prompt the next headless session would get
-hack/relay.sh                      # headless sessions one after another, overnight (billed)
-hack/relay.sh --workers 2          # two relay workers side by side, each in its own worktree (no-cluster devices)
-hack/relay-watch.sh --workers 2    # keep the relay ready: start it within a minute of an issue becoming ready
-hack/relay-watch.sh --install --workers 2  # the same, kept up by systemd (or cron) across crashes and reboots
-touch .relay/stop                  # stop the watch, and every worker after its current session
-rm -f .relay/stop; hack/relay-watch.sh  # restore it on a systemd install: starts the unit, with its own worker count
-rm -f .relay/stop                  # restore it on a cron install: cron's next tick (within 5 minutes) starts the watch
 ```
 
-The restore depends on the install, and the two are told apart by what
-`--install` wrote: `systemctl --user is-enabled c4factory-relay-watch` prints
-`enabled` on a systemd install, and `crontab -l | grep -F 'c4factory relay
-watch'` prints the two crontab lines on a cron install. On systemd,
-`hack/relay-watch.sh` starts the unit, which runs under the login the install
-recorded. On a cron install there is no unit to start: `hack/relay-watch.sh`
-starts a detached watch under the caller's own login and the default worker
-count, and that watch holds `watch.lock`, so cron's own watch cannot start
-until it ends. Run from a maintainer or helper session, that is the *Not
-logged in* trap below (#1981). So on a cron install, only remove the stop
-file; cron's next tick starts the watch under its own login, with its own
-worker count.
+`pick` chooses by `priority/N`, 1 first: an issue with no priority label counts
+as 5, and of several labels the lowest counts. 1 is something broken now, 3 what
+makes development itself faster
+([docs/plans/done/velocity.md](../plans/done/velocity.md)), 10 last. Within a
+number, the oldest `status/in-progress` issue nobody holds goes first, else the
+oldest `status/ready` one, skipping issues with a live claim or an open
+`Depends on #M`.
 
-Every session the watch starts runs under the login `--install` recorded:
-`CLAUDE_CONFIG_DIR` as it was in the installer's shell (`~/.claude` when
-unset), written into the unit and the crontab lines, so `./dev run` cannot
-point the sessions at `.dev/claude` (#1435). A `hack/relay.sh` started from
-anywhere else, a maintainer session or another `claude -p` session, runs
-outside that login and its sessions answer `Not logged in`; so does
-`hack/relay-watch.sh` itself on a cron install (above). A quiet window for
-one issue goes through the watch's own workers and the stop file (the
-`maintainer` skill, Health).
+`hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` outside a
+worker's session files the issue `status/ready` and reserves nothing. Follow-ups
+that need a decision are filed `status/proposed`.
 
-The relay picks the issue its worker's last session reserved (`create --next`,
-below), else by `priority/N`, 1 first: an issue with no priority label counts
-as 5, and of several labels the lowest counts. 1 is something broken now (a
-red main, a dead relay, a failed release check), 3 what makes development
-itself faster ([docs/plans/done/velocity.md](../plans/done/velocity.md)), 10 last.
-Within a number, the oldest `status/in-progress` issue nobody holds goes
-first, else the oldest `status/ready` one, skipping issues with a live claim
-or an open `Depends on #M`, and claims it (see
-[docs/plans/parallel-agents.md](../plans/done/parallel-agents.md)). Worker
-k runs its sessions in the git worktree `.claude/worktrees/relay-k`, switched
-to the issue's branch; uncommitted changes a dead session left there are
-stashed, not dropped. Before it claims anything, a worker checks that a
-session there could commit (#1289): `git -C <worktree> var
-GIT_COMMITTER_IDENT`, in the environment the session gets, which sees the
-global, `$XDG_CONFIG_HOME/git/config` and repository configs alike. When git
-has no committer identity there, the worker logs git's reason, starts no
-session and stops, and puts one line under the Maintainer report's *Needs
-you* naming the host and the worktree (`report-note ident-<host>-relay-k`),
-so the owner sets `user.name` and `user.email`; the line goes away at the
-first check that passes again. Triage and maintainer sessions commit nothing
-and skip the check. `land`'s own merge of main says what stopped it when it
-fails with no conflict, such as `fatal: empty ident name`. Claims keep workers and hand-started sessions off each
-other's issues, so the relay starts right away. A session that ends still
-holding its claim gets it released; a worker stops when a session leaves no
-handoff comment and doesn't close the issue or escalate it
-(`status/needs-maintainer`; only the maintainer sets `status/needs-human`). With
-nothing ready a worker stops.
+A claim whose heartbeat stays live but whose work shows no progress for
+`C4_CLAIM_STALE` (2h; `0` turns it off) is stale: `hack/lib/github.sh stale`
+lists such claims, and `stale --apply` sets the issue to
+`status/needs-maintainer` with one comment naming the last progress, the holder
+and the branch. The claim is left alone, since the live heartbeat says it may
+still be worked.
+
 Yolo mode (#1534) is the owner's switch: while it is on, a pull request merges
 once it is made, with no `make check`, no review pass, no merge turn and no
-bug-fix-test gate; only the closing-keyword refusals stay, since they guard
-the issues' state, not the code. `hack/lib/github.sh yolo on` puts the
-`mode/yolo` label on the pinned Maintainer report issue, so every device sees
-the same answer, and `yolo off` takes it off; `land` and `merge` ask `yolo
-status` first and, while it is on, merge at once from any checkout (a branch
-behind main gets main merged in by GitHub first). Before each session a relay
-worker runs `yolo merge`, which merges every open non-draft pull request to
-main, saying which one it could not and going on with the rest. `yolo status`
-turns the mode off itself when the Maintainer report is the only open issue.
-The simple path (#1524) needs no switch: a pull request that changes only
-files nothing but the docs read (`docs/` but `docs/getting-started.md`,
+bug-fix-test gate; only the closing-keyword refusals stay, since they guard the
+issues' state, not the code. `hack/lib/github.sh yolo on` puts the `mode/yolo`
+label on the pinned Maintainer report issue, so every device sees the same
+answer, and `yolo off` takes it off; `land` and `merge` ask `yolo status` first
+and, while it is on, merge at once from any checkout (a branch behind main gets
+main merged in by GitHub first). `yolo status` turns the mode off itself when
+the Maintainer report is the only open issue.
+
+The simple path (#1524) needs no switch: a pull request that changes only files
+nothing but the docs read (`docs/` but `docs/getting-started.md`,
 `.claude/skills/`, and `*.md` anywhere but the root README.md and under
-`templates/`, `dist/` or `ui/`), under 200 lines in all, merges without a
-heavy-job slot or the merge turn, with `make test-hack` only when one of them
-is `docs/dev/testenv.md` or under `.claude/skills/`; `land` says it took the
-simple path, and a move of main by such files under the turn is merged in
+`templates/`, `dist/` or `ui/`), under 200 lines in all, merges through `land`
+without a heavy-job slot or the merge turn, with `make test-hack` only when one
+of them is `docs/dev/testenv.md` or under `.claude/skills/`; `land` says it took
+the simple path, and a move of main by such files under the turn is merged in
 unchecked the same way.
-The relay's sessions run on `RELAY_MODEL` (default `opus`, #1727), and their
-prompts tell them to name a subagent's model by the task's weight, sonnet for a
-bounded check, opus for a review or a design, as the `handoff` skill does.
-A follow-up a session decided goes to the front of its own worker's queue:
-`hack/lib/github.sh create --next TITLE FILE kind/<bug|chore|docs>` files it
-`status/ready` and reserves it, with a claim comment that says "reserved this
-issue" and a line in the worktree's `.relay/next`. That worker's next `pick`
-returns it before every other issue, `priority/1` ones too, and its `take` turns
-the reservation into the claim; every other `pick` skips it and every other
-`take` refuses it, until the reservation is `C4_LEASE_TTL` (2h) old, after
-which anyone picks it. The log shows such a session as `(next)`. The watch's
-`pick` counts every worker's `.relay/next`, so a reserved issue starts the
-relay after its worker stopped. Outside a worker's session (a hand-started
-one, the triage's, the maintainer's: `C4_RELAY_WORKER`, which the relay sets,
-is no number) `--next` files the issue ready and reserves nothing.
-Follow-ups that need a decision are still filed `status/proposed` for the
-triage.
-Each session, the triage's and the maintainer's too, gets
-`TMPDIR=~/.cache/c4factory/tmp/<its worktree>` (#1269, #1307;
-`RELAY_SCRATCH` moves the parent): on disk, not the device's `/tmp`, a small
-tmpfs every session shares, which one session's scratch, Go's build dirs and
-envtest's once filled; and outside any git checkout, so a test that runs git in
-a `mktemp -d` directory finds no repository above it, as it would in the
-worktree. The relay empties it before the session starts and removes it when
-the session ends.
-Its `OLDPWD` is its worktree too, not the main checkout the relay runs from,
-so an agent's `cd -` stays in the worktree (#1371). A session that leaves the
-main checkout with uncommitted changes, which stop `hack/pull.sh` for every
-session on the device, is named with the paths in the worker's log and at the
-end of its account; the relay leaves the files as they are.
-Before the session, the relay also replaces a worktree's `.dev/` of its own,
-the caches `make check` left there before `hack/dev/env.sh` pointed worktrees
-at the main checkout's (#1132), with the link to the main checkout's `.dev/`,
-as `./dev setup` makes in a worktree, and logs what that freed (#1246).
-Worker k logs to `.relay/relay-k.log`, with one account per session next to
-it. A handoff that couldn't reach GitHub waits in the worktree's
-`.relay/pending-handoff-<issue>.md`, and the worker's next round posts it first.
-A session that ends on a usage limit or a failed login pauses the relay until
-the limit resets (`.relay/paused-until`): every worker waits, and the watch
-starts nothing. So does one that exits non-zero before any API call, whatever
-the CLI said (`a limit: no API call`, `RELAY_LIMIT_WAIT`): that is the device
-failing, not the issue (#1421). Its claim's comment then names the limit and keeps its host,
-as every released or expired claim does: `released this issue: session ended
-without a handoff (a limit: OAuth session expired) · host ...`. A session whose transcript stops changing for `RELAY_IDLE`
-(45m) is ended and counts as failed; a device that slept doesn't count (#1500):
-when the clock between two looks at the transcript (`RELAY_IDLE_POLL`, 60s)
-jumps more than a minute past the poll, the idle time starts over at the wake. A claim whose heartbeat stays live but
-whose work shows no progress for `C4_CLAIM_STALE` (2h; `0` turns it off) is
-stale (#1513, the owner asked for it on 2026-10-21): progress is the newest of
-a commit on the claim's branch on origin or a `<branch>-*` takeover branch, a
-handoff comment and the claim's start; heartbeats don't count. Every
-`WATCH_PARENTS`, the relay watch (`hack/lib/github.sh stale --apply`; without
-`--apply` it only lists) sets such an issue to `status/needs-maintainer` with
-one comment marked `<!-- c4-claim-stale -->` naming the last progress, the
-holder and its host, the heartbeat's age and the branch. The claim is left
-alone: the live heartbeat says it may still be worked, so the maintainer
-decides. A stretch is flagged once; after new progress, another
-`C4_CLAIM_STALE` of none flags it again. Watches on two devices that flag at
-once keep the older comment. A session that ends without a handoff and
-without a new commit on the issue's branch, or on `<branch>-2` or
-`<branch>-<name>` (local or pushed), is a failed one: a strike, a comment on
-the issue naming the session, its host and the last lines of its stderr and
-account. The count is read from the issue, so every device's strikes add up;
-one older than `RELAY_STRIKE_TTL` (24h) doesn't count. At `RELAY_MAX_FAILS`
-(3) the relay posts one comment linking them and sets the issue to
-`status/needs-maintainer`; when only that status swap fails, the next failed
-session on any device retries it without a new strike or comment: the newest
-of the issue's handoff, reset and escalation comments is the escalation, and
-the issue wasn't labeled `status/needs-maintainer` after it. A
-handoff, a commit or a finish on any device resets the count: the relay posts
-a reset comment when any strike counts. One that leaves the issue in
-`status/waiting` (a plan's parent) has finished, like a handoff; one that sets
-it back to `status/ready` or `status/proposed` isn't counted either way.
 
 ### Sharing the Kind clusters between checkouts
 
@@ -475,164 +366,6 @@ A human who runs Kind leases a cluster of the device's pool around the steps
 that touch it (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`, then
 `cluster release`); agents never do. The pool and its leases are in
 [devices.md](devices.md#sharing-the-kind-clusters-between-checkouts).
-
-The relay stops when no issue is ready, so an issue marked ready or handed back
-later waits until someone starts it again. `hack/relay-watch.sh` stays up
-instead: every minute it asks `pick` (which changes nothing) and, when there is
-an issue and a worker is free, runs `hack/relay.sh --workers N`, which leaves
-running workers alone. Asking first keeps the relay's logs free of a worker that
-starts, finds nothing and stops every minute. It logs only changes, to `.relay/watch.log`, pulls main every 5
-minutes and restarts itself when that changed its code. The watch and the
-workers run origin/main's scripts, whatever branch the main checkout has
-(#1126): from the worktree `.claude/worktrees/relay-code`, which each pull moves
-to origin/main, while their state (`.relay/`, the workers' worktrees) stays in
-the main checkout. One started from the checkout moves there at its first pull,
-and one whose code there changed restarts on it; `RELAY_PULL=0` keeps them on
-the code where they were started, to try relay changes from a branch. A worker
-started again while its last session still runs (after a crash, a kill or a
-restart by hand) ends that session first, SIGTERM then SIGKILL after
-`RELAY_IDLE_KILL`, before it releases the claim or starts a session in the
-worktree: `.relay/session-K.pid` names the session while it runs (#1341). Every 30 minutes
-(`WATCH_TRIM_EVERY`) it runs `hack/prune-caches.sh` and logs what that
-dropped: nine workers grow Go's build cache by gigabytes an hour, and WSL's and
-Docker Desktop's disk images never shrink (#1343). It prunes:
-- with `hack/trim-go-cache.sh`, Go's build cache (`GOCACHE`), golangci-lint's
-  and Go's default cache `~/.cache/go-build`, which `go` runs outside `./dev`
-  fill, to `C4_GOCACHE_MAX_GB` (4) each; `C4_TRIM_GO=0` turns it off;
-- the GH runners' cache volume `c4factory-gh-runner-cache`: the same trim over
-  its `go-build` and `golangci-lint`, in a throwaway container of the runner
-  image, keeping what was used in the last two hours, so a running job keeps
-  its cache; skipped without the volume or the image,
-  `C4_PRUNE_RUNNER_CACHE=0` turns it off;
-- Docker's build cache unused for `C4_PRUNE_DOCKER_UNTIL` (72h, so the latest
-  builds stay warm), then what is over `C4_PRUNE_DOCKER_MAX_GB` (10, oldest
-  first; 0 for no cap: a release's builds grew it past 20 GB within 72h,
-  #1636), and the dangling images; `C4_PRUNE_DOCKER=0` turns it off.
-
-Without `docker` it skips the last two.
-
-Busy or idle, with issues ready or not (#1191), it starts a triage of the
-`status/proposed` issues: for a new one, for one that changed since the last
-triage or waits on an issue that closed since, and every `WATCH_RETRIAGE` (3h)
-in any case, at most every `WATCH_TRIAGE` (10m) and never while one runs. Past
-`WATCH_TRIAGE` it asks GitHub for the proposed issues at most every
-`WATCH_RETRY` (10m), as each ask reads every open issue. The triage runs in its own worktree,
-`.claude/worktrees/relay-triage`, on origin/main, under `.relay/triage.lock`,
-as the maintainer does: it needs no free worker, doesn't count against
-`RELAY_MAX_WORKERS` and, running no `make`, takes no `HEAVY_JOBS` slot; it
-goes through `admit` like any session and logs to `.relay/relay-triage.log`.
-To triage now, say after a session files follow-ups `status/proposed`, run
-`./dev run hack/relay.sh --triage`: it starts one triage session unless one
-runs, and records its time and issues in `.relay/triaged`, as every triage
-session does (the watch only reads that file), so the watch starts no second
-triage for the same issues, only for one filed after it. Every `WATCH_CI_EVERY` (15 minutes) it checks main's CI:
-a workflow that runs on a push to main and failed its two newest finished runs
-there (`hack/lib/github.sh red`) gets one issue, `main is red: <workflow>`,
-ready and `priority/1`, so the next session fixes main before anything else; a single
-failure files nothing. When GitHub started none of the newest failed run's
-jobs (no steps, an annotation saying the job was not started: failed
-payments, a spending limit), no code is at fault: the watch files one
-`GitHub Actions starts no jobs` issue in `status/needs-maintainer`, carrying
-the annotation, and no `main is red`. It keeps that issue's number in
-`.relay/ci-stopped` until every workflow runs its jobs again, and files no
-other while the outage lasts, even after the issue is closed as a duplicate.
-A flaky spec rarely fails twice in a row, so in the same round the watch
-records each Ginkgo spec that failed on main (the `[FAIL]` lines of each failed
-run's log, `hack/lib/github.sh flakes`) in `.relay/flakes.tsv`, spec, run and
-time and red streak, and files `Flaky: <spec>`, a ready `kind/bug` with
-`priority/3`, when one failed in two runs within `WATCH_FLAKE_DAYS` days (7)
-with a pass of the workflow between them; failures in a row (a cancelled run
-between them counts as neither) are main being red, which `main is red`
-tracks, and count once (#1398). While it is open, a third failure files nothing.
-Once it is closed, the runs it listed are its fixed flake: before filing, the
-watch asks GitHub for the newest closed `Flaky: <spec>` bug and counts only
-the runs after it closed, so a watch that starts fresh (an empty
-`.relay/flakes-runs`) and reads the window's failed runs again refiles no
-fixed flake, and a spec that fails twice again after its fix is filed anew
-(#1824).
-`hack/lib/github.sh flakes --count` lists the specs that failed on main this
-week, from GitHub, on any device.
-A queued run never fails, so `red` can't see that every self-hosted runner is
-offline (Docker Desktop stopped). So in the same round the watch asks
-`hack/lib/github.sh queued`. When a run on main has had a job waiting more
-than `WATCH_QUEUED` minutes (30) for a runner, it puts a note under the
-Maintainer report's Health, and as a task under Needs you
-(`hack/lib/github.sh report-note runners`). With no runner of the repository
-online the note is `Runners offline since T: N runs queued`, and the task asks
-for Docker Desktop. With some online it is `N runs queued since T with M
-runners online`: the runners are busy, or none has the labels the jobs ask
-for. Each line is marked `<!-- watch:runners -->`, the maintainer's sweep
-keeps it, and later rounds update it or put it back. `.relay/runners-offline`
-holds the note while it lasts. The first round in which no run waits that
-long removes both lines. `make gh-runner-status` says why ([devices.md](devices.md#github-actions-on-self-hosted-runners)). A run
-GitHub made no jobs for stays queued for good, and GitHub won't cancel it
-(#1236): no runner can take it, so the watch logs it once, by id
-(`.relay/runs-without-jobs`), and never notes it.
-In the same round, when `/tmp` on the device is at least `WATCH_TMP_FULL`
-percent full (90), the watch puts `/tmp on HOST is N% full; largest: ...`,
-naming its three largest entries, under the Maintainer report's Health only,
-with no Needs you line (`hack/lib/github.sh report-note tmp-<host> TEXT ""`).
-`.relay/tmp-full` holds the note while it lasts; the first round under the
-threshold removes it. Relay sessions keep their scratch in
-`~/.cache/c4factory/tmp`, so what fills `/tmp` is someone else's.
-With nothing ready, it also logs, once per change, which skipped issue waits on
-which issue nobody works (`hack/lib/github.sh blocked --unworked`; `blocked`
-alone lists every skipped issue's blockers, with status and claim), and when
-issues wait on each other in a cycle, `cycles --report` comments each of them
-once and moves the newest to `status/needs-maintainer`.
-Every `WATCH_PARENTS` seconds (600; 0 turns it off), busy or idle, it tends the
-plans' parents (`hack/lib/github.sh parents --apply`): an issue in progress or
-waiting, with a `Depends on #S` line per step and a merged pull request that
-says `Refs #N` and adds its plan in `docs/plans/`, closes with a comment naming
-the steps once every step closed; while a step is open, one no live claim holds
-goes to `status/waiting`, with a comment naming the steps left. `pick` takes
-neither. `close` and the *Issue closed* workflow do the same as each step
-closes; the watch catches what they missed while the relay was down.
-`parents` alone lists each parent and the steps it still waits on.
-On every pass, busy or idle, it may start the maintainer
-(`hack/relay.sh --maintain`), a headless opus session that acts as the
-project's maintainer on the owner's behalf ([GOVERNANCE.md](../../GOVERNANCE.md),
-the `maintainer` skill): it decides escalations, corrects agents, answers
-reporters, cuts releases and rewrites the pinned *Maintainer report* issue
-(label `maintainer/report`, set with `hack/lib/github.sh report FILE`), and
-commits nothing. The watch starts it when none runs, the last sweep is
-`WATCH_MAINTAIN` old (7200 s, 2h; 0 turns it off) and
-`hack/lib/github.sh activity` (the newest change to an issue or pull request,
-the report left out, and main's commit) differs from the one that sweep
-recorded, so a quiet night costs nothing. The last sweep is the project's,
-not the device's (#1322): the newer of this device's `.relay/maintained` and
-the `<!-- c4-swept -->` record on the Maintainer report issue
-(`hack/lib/github.sh swept`), which every full sweep writes in place; the
-watch reads the record only when its own says a sweep is due, and the
-sweep's prompt names the newer of the two.
-Agents escalate to the maintainer, never to the owner: a session, the triage,
-three failed sessions in a row and `cycles --report` set
-`status/needs-maintainer` (which releases the claim and lease, and ends the
-session as closing would); only the maintainer sets `status/needs-human`, for
-what [GOVERNANCE.md](../../GOVERNANCE.md) reserves to the owner. When an
-issue got `status/needs-maintainer` after the last full sweep started
-(`hack/lib/github.sh escalated` lists them, with when each got it), the watch
-starts the maintainer within a pass, however recent the last sweep, at most
-once per `WATCH_RETRY`; one the sweep left there waits for the next regular
-sweep, or for an agent to escalate it again. It runs in
-its own worktree, `.claude/worktrees/relay-maintainer`, on origin/main, under
-`.relay/maintain.lock`, and doesn't count against `RELAY_MAX_WORKERS`, but
-goes through `admit` like any session, except that it goes first: while it
-waits, `.relay/admit-first` holds its PID and no worker takes the start slot
-(#262). It runs once per project, not once per device (#526): before its
-session it takes the maintainer lease, a `<!-- c4-maintainer -->` comment on
-the Maintainer report issue that it refreshes every `GH_BEAT_EVERY` seconds
-and deletes when the session ends. While another device holds a live one it
-starts nothing and logs the holder; one that missed `GH_MAINT_BEATS`
-heartbeats (3, 45 minutes; not the claims' `C4_LEASE_TTL`, #1322), or this
-host's own (a crashed maintainer's), is taken over. It logs to
-`.relay/relay-maintainer.log`.
-`hack/relay-watch_test.sh` tests its rounds with `pick` and the relay faked,
-the triage's reasons with `proposed --since` against a stubbed GitHub, and its
-CI rounds with `gh` faked.
-
-Install the watch once on each device that runs the relay overnight:
-[devices.md](devices.md#the-relay-watch-as-a-service).
 
 ### Checking a release
 
@@ -654,7 +387,7 @@ release's date plus 90 days) into that issue's body (#1963 for `v1alpha1`).
 The CRDs' warnings, the guide and the chart's README name the rule ("a
 release 90 or more days after v0.30.0"), never the date (#1983).
 
-The relay can't pull a release (the GHCR packages are private and no device's
+No agent can pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has
 published `vX.Y.Z`, *Verify Release* (`.github/workflows/verify-release.yml`)
 checks it twice, each on a Kind cluster of its own, building nothing.
@@ -667,7 +400,7 @@ upgrade path its minor checked. A human checks any other release by hand:
 Actions → Verify Release → Run workflow, or `gh workflow run
 verify-release.yml -f tag=vX.Y.Z`. Agents never dispatch it. A failed run on
 main files (or comments on) `Release vX.Y.Z fails its check`, ready and
-`priority/1`, as the watch does for a red main.
+`priority/1`, as for a red main.
 
 The install check installs the published chart and images on a fresh cluster,
 waits for the seed's repositories, the runners, the manager and the UI, and
@@ -715,7 +448,7 @@ the newest samples that made their own catalog and Agents, from history.
 Their results are the run's job summaries and the artifacts
 `release-vX.Y.Z-install` and `release-vX.Y.Z-upgrade` (Actions → Verify
 Release). When a dispatch on main fails it files `Release vX.Y.Z fails its check` (`status/ready`, `priority/1`), or
-comments on the open one, so the relay picks it up; the issue says which check
+comments on the open one; the issue says which check
 failed and if the runner ran short of memory or disk. A dispatch on another
 branch only reports in its run. Any published release can be checked; add
 `--ref <branch>` to try a branch's workflow, and `-f from=vA.B.C` to upgrade
