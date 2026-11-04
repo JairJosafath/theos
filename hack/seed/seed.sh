@@ -260,7 +260,7 @@ ensure_credentials() {
   local ns=$1 secret=$CREDENTIALS_SECRET token="" scopes=""
   if token=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) &&
     [[ -n $token ]]; then
-    scopes=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-scopes}')
+    scopes=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.metadata.annotations.theos\.factory\.io/token-scopes}')
     if [[ $scopes != "$TOKEN_SCOPES" ]]; then
       log "Secret $ns/$secret holds a token with scopes '${scopes:-unknown}'; replacing it"
     elif token_works "$token"; then
@@ -301,7 +301,7 @@ ensure_runner_token() {
   (umask 077 && jq -j .token <<<"$BODY" > "$file")
   local held_owner held
   held_owner=$(kubectl -n "$ns" get secret "$secret" \
-    -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-owner}' 2>/dev/null || true)
+    -o jsonpath='{.metadata.annotations.theos\.factory\.io/token-owner}' 2>/dev/null || true)
   held=$(kubectl -n "$ns" get secret "$secret" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d || true)
   if [[ $held_owner == "$owner" && -n $held && $held == "$(cat "$file")" ]]; then
     log "Secret $ns/$secret holds organization $TEMPLATE_ORG's runner registration token; keeping it"
@@ -339,7 +339,7 @@ EOF
 # Secrets. The chart's Namespaces have the label; one made by hand gets it here.
 ensure_shared_label() {
   local ns=$1
-  if [[ $(kubectl get namespace "$ns" -o jsonpath='{.metadata.labels.c4\.factory\.io/shared-secrets}') == true ]]; then
+  if [[ $(kubectl get namespace "$ns" -o jsonpath='{.metadata.labels.theos\.factory\.io/shared-secrets}') == true ]]; then
     log "Namespace $ns has $SHARED_LABEL=true"
     return
   fi

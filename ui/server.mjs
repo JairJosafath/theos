@@ -290,7 +290,7 @@ const isObject = (value) => typeof value === 'object' && value !== null && !Arra
 /** A namespaced theos.factory.io resource path: the collection, or one object with `one`. */
 const resourcePath = (plural, one = false) =>
   new RegExp(
-    `^/apis/c4\\.factory\\.io/v1beta1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
+    `^/apis/theos\\.factory\\.io/v1beta1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
   )
 
 const JSON_MEDIA = 'application/json'

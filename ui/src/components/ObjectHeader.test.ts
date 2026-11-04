@@ -88,7 +88,7 @@ describe('ObjectHeader for a Failed Container', () => {
     const args = command.split(' ')
     expect(args.slice(0, 5)).toEqual(['kubectl', '-n', 'webshop', 'annotate', 'containers.theos.factory.io'])
     expect(args[5]).toBe(failed.metadata.name)
-    expect(args[6]).toMatch(/^c4\.factory\.io\/retry=/)
+    expect(args[6]).toMatch(/^theos\.factory\.io\/retry=/)
     expect(html).toContain('aria-label="Copy the command"')
   })
 

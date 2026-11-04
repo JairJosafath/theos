@@ -271,7 +271,7 @@ describe('Needs you', () => {
     // The page gives the same next step: re-run the failed release run.
     assert.match(
       await crew.locator('.command-line code').textContent(),
-      /^kubectl -n shop annotate crews\.c4\.factory\.io orders c4\.factory\.io\/rerun-release=/,
+      /^kubectl -n shop annotate crews\.theos\.factory\.io orders theos\.factory\.io\/rerun-release=/,
     )
     await page.goBack()
     await item('Brief', 'checkout').getByRole('link', { name: 'Open the Brief' }).click()

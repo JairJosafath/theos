@@ -199,7 +199,7 @@ want() {
 }
 ns=$(doc "$OUT/chart-gitea.yaml" Namespace apps)
 want "no Namespace apps for gitea.projects={apps}" "$ns" '^kind: Namespace$'
-want "Namespace apps lacks the shared-secrets label" "$ns" '^    c4\.factory\.io/shared-secrets: "true"$'
+want "Namespace apps lacks the shared-secrets label" "$ns" '^    theos\.factory\.io/shared-secrets: "true"$'
 want "Namespace apps is not kept on uninstall" "$ns" '^    helm\.sh/resource-policy: keep$'
 if [ -n "$(doc "$OUT/chart-gitea-bare.yaml" Namespace apps)" ]; then
 	echo "The chart renders Namespace apps with projectNamespaces.create=false" >&2
@@ -253,7 +253,7 @@ want "ClusterRole theos-ui-pods doesn't grant pods" "$(doc "$OUT/chart-gitea.yam
 	'^  resources: \[pods\]$'
 bound=$(awk '/^---/ { k = 0; n = 0 } /^kind: RoleBinding$/ { k = 1 } k && $0 == "  name: theos-ui-pods" { n = 1 }
 	k && n && /^  namespace: / { print $2; k = 0 }' "$OUT/chart-gitea.yaml" | sort | tr '\n' ' ')
-if [ "$bound" != "agent-sandbox-system theos-system gitea kube-system " ]; then
+if [ "$bound" != "agent-sandbox-system gitea kube-system theos-system " ]; then
 	echo "The chart binds theos-ui-pods in [$bound], not in its components' namespaces" >&2
 	exit 1
 fi
